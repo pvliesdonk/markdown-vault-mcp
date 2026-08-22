@@ -1,3 +1,9 @@
+<!-- DOMAIN-START -->
+<p align="center">
+  <img src="assets/icon.svg" alt="Markdown Vault MCP logo" width="128" height="128">
+</p>
+<!-- DOMAIN-END -->
+
 # Markdown Vault MCP
 
 <!-- mcp-name: io.github.pvliesdonk/markdown-vault-mcp -->

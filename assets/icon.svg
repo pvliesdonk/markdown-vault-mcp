@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="title desc">
+  <title id="title">VaultMCP matrix Markdown icon, extra-wide iteration</title>
+  <desc id="desc">An extra-wide heavy Markdown M and a compact far-spaced down arrow enclosed by matrix brackets.</desc>
+  <rect width="512" height="512" rx="112" fill="#F4F1E8"/>
+  <rect x="12" y="12" width="488" height="488" rx="100" fill="none" stroke="#DDD8CB" stroke-width="24"/>
+  <path d="M136 134H96V378H136" fill="none" stroke="#25241F" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M376 134H416V378H376" fill="none" stroke="#25241F" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- The broadest, heaviest interpretation: low, stable, and unmistakably Markdown. -->
+  <path d="M136 320V190H174L213 237L252 190H290V320H252V246L213 292L174 246V320Z" fill="#25241F"/>
+
+  <!-- Compact arrow held farther away from the M. -->
+  <path d="M333 194H363V263H386L348 305L310 263H333Z" fill="#2F6659"/>
+</svg>
