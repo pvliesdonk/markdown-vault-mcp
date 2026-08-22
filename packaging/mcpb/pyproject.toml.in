@@ -1,6 +1,12 @@
 # Rendered at build time by envsubst. ${VERSION} matches the package release.
 [build-system]
-requires = ["hatchling"]
+# Bounded at the minor, matching the root pyproject.toml. This backend runs
+# only on the bundle's fallback launch path (server.type "uv" with
+# entry_point), where the host builds this project on the end user's machine;
+# the primary path fetches the published wheel and never touches it. Nothing
+# twine checks this project, so #479's release failure cannot happen here —
+# the bound just keeps one story about the build backend rather than two.
+requires = ["hatchling>=1.32,<1.33"]
 build-backend = "hatchling.build"
 
 [project]

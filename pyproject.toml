@@ -128,7 +128,19 @@ Issues = "https://github.com/pvliesdonk/markdown-vault-mcp/issues"
 Changelog = "https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md"
 
 [build-system]
-requires = ["hatchling"]
+# Bounded on purpose, at the minor.  hatchling emits the newest core-metadata
+# version it knows, and the publisher's twine refuses metadata it does not
+# know -- an invariant spanning this file and release.yml's
+# gh-action-pypi-publish pin.  Unpinned, this side moves on hatchling's
+# release schedule rather than on anyone's decision, and the break lands at
+# release time in every project at once (#479).
+#
+# The ceiling has to bind at the minor, because that is where the metadata
+# version moves: 1.27 took it to 2.4 and 1.32 took it to 2.5.  A `<2` ceiling
+# would have stopped neither, so it buys the look of a guard without one.
+# Patch releases stay open; a minor bump is a deliberate edit here, paired
+# with a publisher that accepts whatever the new minor emits.
+requires = ["hatchling>=1.32,<1.33"]
 build-backend = "hatchling.build"
 
 [tool.uv]

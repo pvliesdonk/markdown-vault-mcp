@@ -419,7 +419,21 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        # v1.14.2 or newer is a hard floor, not a routine bump.  The action
+        # runs `twine check` on every file before upload, using the twine it
+        # bundles, and twine only learned `Metadata-Version: 2.5` in 7.0.0.
+        # v1.14.0 and v1.14.1 both bundle twine 6.1.0, which rejects a 2.5
+        # wheel with "'2.5' is not a valid metadata version" -- so once
+        # hatchling 1.32 started emitting 2.5, this step failed for every
+        # downstream, on every release, stable and candidate alike (#479).
+        # Upstream's own requirements say it: "v7 is needed to support
+        # metadata v2.5 including PEP 794".
+        #
+        # The build backend's metadata version and the publisher's twine are
+        # one invariant across two files; `pyproject.toml` bounds hatchling so
+        # this side cannot be outrun again, and template-ci's
+        # publish-metadata gate proves the pair still agree.
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
         with:
           packages-dir: dist/
           print-hash: true

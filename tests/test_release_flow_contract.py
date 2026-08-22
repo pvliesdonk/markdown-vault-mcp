@@ -66,6 +66,7 @@ DOCS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "docs.yml"
 UNSTABLE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "unstable.yml"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 COVERAGE_STATUS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "coverage-status.yml"
+PYPROJECT = REPO_ROOT / "pyproject.toml"
 PLUGIN_JSON = Path(".claude-plugin/plugin/.claude-plugin/plugin.json")
 MCP_JSON = Path(".claude-plugin/plugin/.mcp.json")
 
@@ -1247,6 +1248,95 @@ def test_pypi_publishes_prereleases_too() -> None:
     assert "is_prerelease" not in block, (
         "publish-pypi must not skip prereleases — an rc that never reaches "
         "PyPI ships an uninstallable .mcpb bundle"
+    )
+
+
+# The publisher runs `twine check` before upload, and twine learned
+# `Metadata-Version: 2.5` in 7.0.0.  v1.14.2 is the first release bundling
+# it; v1.14.0 and v1.14.1 both ship twine 6.1.0.
+_PUBLISHER_TWINE7_FLOOR = (1, 14, 2)
+
+
+def _hatchling_requirement() -> str:
+    """The single hatchling entry in ``[build-system] requires``."""
+    data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    requires = data["build-system"]["requires"]
+    hatchling = [
+        r for r in requires if r.split("[")[0].strip().lower().startswith("hatchling")
+    ]
+    assert len(hatchling) == 1, (
+        f"expected exactly one hatchling requirement, got: {requires!r}"
+    )
+    return str(hatchling[0])
+
+
+def test_build_backend_is_bounded_at_the_minor() -> None:
+    """hatchling carries a floor AND a ceiling that binds at the next minor.
+
+    The metadata version hatchling emits and the twine the publisher bundles
+    are one invariant across two files.  Left unpinned, this side moves on
+    hatchling's release schedule rather than on anyone's decision: 1.32
+    started emitting ``Metadata-Version: 2.5``, the pinned publisher's twine
+    refused it, and `publish-pypi` broke for every project at once, at
+    release time, stable and candidate alike (template#479).
+
+    The ceiling has to bind at the MINOR, because that is where the metadata
+    version moves — 1.27 took it to 2.4, 1.32 took it to 2.5.  A ``<2``
+    ceiling would have stopped neither; it reads like a guard and holds
+    nothing.  Patch releases stay open so bug fixes flow; crossing a minor
+    is a deliberate edit, paired with a publisher that accepts what the new
+    minor emits.
+    """
+    requirement = _hatchling_requirement()
+    floor = re.search(r">=\s*(\d+)\.(\d+)", requirement)
+    ceiling = re.search(r"<\s*(\d+)\.(\d+)", requirement)
+    assert floor is not None, (
+        f"hatchling needs a >= floor, got: {requirement!r} — an unbounded "
+        "backend picks up a new metadata version on its own schedule"
+    )
+    assert ceiling is not None, (
+        f"hatchling needs a < ceiling, got: {requirement!r} — without one, "
+        "the next metadata bump breaks publish-pypi in every project at once"
+    )
+    major, minor = int(floor.group(1)), int(floor.group(2))
+    expected = (major, minor + 1)
+    actual = (int(ceiling.group(1)), int(ceiling.group(2)))
+    assert actual == expected, (
+        f"hatchling ceiling must bind at the next minor "
+        f"(<{expected[0]}.{expected[1]}), got: {requirement!r}. "
+        "Metadata versions move on hatchling minors, so a looser ceiling "
+        "lets the next bump through unnoticed."
+    )
+
+
+def test_pypi_publisher_understands_current_metadata() -> None:
+    """The pinned publisher is new enough to accept what the backend emits.
+
+    gh-action-pypi-publish runs ``twine check`` on every file before upload,
+    using the twine it bundles.  Below v1.14.2 that is twine 6.1.0, which
+    rejects a 2.5 wheel with "'2.5' is not a valid metadata version" — the
+    upload never starts, so nothing reaches PyPI and no version is burned,
+    but no release publishes either.
+
+    Asserted on the version comment beside the SHA because that is what a
+    human reads when bumping.  Upstream states the floor in its own
+    requirements: "v7 is needed to support metadata v2.5 including PEP 794".
+    """
+    text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    pinned = re.search(
+        r"pypa/gh-action-pypi-publish@([0-9a-f]{40})\s*#\s*v(\d+)\.(\d+)\.(\d+)",
+        text,
+    )
+    assert pinned is not None, (
+        "release.yml must pin gh-action-pypi-publish to a 40-char SHA with a "
+        "trailing version comment — the comment is the only readable record "
+        "of which twine the publisher bundles"
+    )
+    version = (int(pinned.group(2)), int(pinned.group(3)), int(pinned.group(4)))
+    assert version >= _PUBLISHER_TWINE7_FLOOR, (
+        f"gh-action-pypi-publish v{version[0]}.{version[1]}.{version[2]} bundles "
+        "twine < 7, which rejects Metadata-Version 2.5; v1.14.2 or newer is "
+        "required or publish-pypi fails on every release"
     )
 
 

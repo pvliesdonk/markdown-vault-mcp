@@ -366,6 +366,15 @@ jobs:
           body+=$'\n\n'"This project tracks the template: the template is the single upstream source that keeps every downstream repo aligned. Resolve the diff — and any conflict markers — by **taking the template side**, except in downstream-owned regions:"
           body+=$'\n\n'"- content inside \`DOMAIN-*\` / \`PROJECT-*\` / \`CONFIG-*\` sentinel blocks;"
           body+=$'\n'"- files listed under \`_skip_if_exists\` in the template's \`copier.yml\`."
+          # A skip-listed file is absent from this diff entirely, and the line
+          # above tells the reviewer to leave it alone — correct for conflict
+          # resolution, and the reason a template *correction* to one of them
+          # can go unadopted for releases with nothing saying so. Point at the
+          # check rather than leaving the omission to be inferred.
+          # No `${upgrading_url}` here: it is set inside the TEMPLATE_REPO
+          # branch above, so it may be unset at this point and would render an
+          # empty link.
+          body+=$'\n\n'"A \`_skip_if_exists\` file is not in this diff at all — Copier never re-renders one that already exists. That also means a template *correction* to one never arrives on its own. See \"Before every upgrade\" in the template's \`UPGRADING.md\` for which of them the template still authors content for, and how to diff them against the target."
           body+=$'\n\n'"\"House style\", \"we already had this\", or \"otherwise something would be missing\" are not reasons to keep local drift. If the template's side seems wrong or incomplete, that is a template bug or a missing sentinel seam — file it upstream (see \`CONTRIBUTING.md\` routing) and fix it there, so the whole fleet gets the correction."
 
           # Conflicts — list the files (not just a count), and call out that
