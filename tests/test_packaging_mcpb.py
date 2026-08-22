@@ -100,7 +100,11 @@ def test_mcpb_pyproject_template_pins_versioned_package() -> None:
     assert "${VERSION}" in template, "template must use ${VERSION} placeholder"
     # The dep line should pin [all] extras to the same version.
     assert "markdown-vault-mcp[all]==${VERSION}" in template
-    assert 'requires-python = ">=3.10"' in template
+    # Must not undersell the floor: the wrapper resolves
+    # markdown-vault-mcp[all], whose own requires-python is >=3.11, so a
+    # lower floor here lets a 3.10 host install the bundle and fail at
+    # resolve time instead of at install time.
+    assert 'requires-python = ">=3.11"' in template
 
 
 def _load_plugin_json() -> dict:

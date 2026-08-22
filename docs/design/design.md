@@ -2981,7 +2981,7 @@ Evaluate at deploy time, not before.
 ```toml
 [project]
 name = "markdown-vault-mcp"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "python-frontmatter>=1.0",
 ]

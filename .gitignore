@@ -29,21 +29,35 @@ htmlcov/
 # MkDocs build output
 site/
 
+# Vale-synced style packages (downloaded by `vale sync`). Custom config
+# (vocabularies, ini overrides) under .vale/styles/config/ stays
+# versioned — sync never touches that subtree.
+.vale/styles/*
+!.vale/styles/config/
+
 # Local environment
 .env
 .env.local
 
 # --- Development / ecosystem ignores (don't ship)
 .mcpregistry_*
-.repowise/
 .worktrees/
+docs/superpowers/
 # Everything under .claude/ is local EXCEPT skills/ — that subtree ships the
-# repo's agent skills (authoring, release notes) and must stay tracked.
+# contributor-facing authoring skill(s), template-owned and re-rendered on
+# copier update (project additions live inside its DOMAIN-AUTHORING sentinel).
 .claude/*
 !.claude/skills/
-docs/superpowers/
+# No trailing slash: `.mcp.json/` would match a *directory* of that name and
+# leave the actual file tracked.
+.mcp.json
+.repowise/
 
-# Vale-synced style packages (downloaded by `vale sync`). Custom config
-# (vocabularies, ini overrides) under .vale/styles/config/ stays tracked.
-.vale/styles/*
-!.vale/styles/config/
+# Editor-local config. Deliberately just this one — a contributor's choice of
+# editor is theirs, and this list is not meant to grow into a catalogue of
+# every IDE. `.vscode/` earns its place because it is the common case and
+# because several tools (repowise among them) write into it unprompted, so it
+# reappears in `git status` for contributors who never opted in. A team that
+# does want to share workspace settings can track a specific file with
+# `git add -f .vscode/settings.json`.
+.vscode/

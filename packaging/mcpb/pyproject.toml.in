@@ -1,8 +1,12 @@
 # Rendered at build time by envsubst. ${VERSION} matches the package release.
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "markdown-vault-mcp-mcpb"
 version = "${VERSION}"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   "markdown-vault-mcp[all]==${VERSION}",
 ]

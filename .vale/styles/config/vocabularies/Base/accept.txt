@@ -44,10 +44,15 @@ namespace
 namespaced
 pytest
 ruff
+stdio
+venv's
 
 # --- Operational / config jargon ---
+ADRs
 backports
 config
+cron
+denylist
 deployer
 env
 hotfix
