@@ -99,6 +99,12 @@ dev = [
     "watchdog>=4.0",
     "jsonschema>=4.18",
     "copier>=9.4",  # template-conformance gate renders the template pristinely (#899)
+    # scripts/gen_config_surface.py imports yaml. It arrived transitively via
+    # mkdocs-material in the `docs` group, so a plain `uv sync` left it out
+    # and the generator fell back to its network bootstrap — slower, offline-
+    # hostile, and liable to resolve a different fastmcp-pvl-core than this
+    # project pins (#262). Declared here so the requirement is stated.
+    "pyyaml>=6",
 ]
 docs = [
     "mike>=2",

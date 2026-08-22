@@ -51,10 +51,23 @@ jobs:
             echo "no packaging/pre-release-checks.sh — skipping project-specific checks"
           fi
 
+      - name: Build and smoke-test plugin zip
+        id: plugin
+        uses: ./.github/actions/build-plugin-zip
+        with:
+          version: ${{ inputs.version }}
+
       - uses: actions/upload-artifact@v7
         with:
           name: mcpb-bundle
           path: dist/markdown-vault-mcp-*.mcpb
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: steps.plugin.outputs.present == 'true'
+        with:
+          name: plugin-zip
+          path: dist/markdown-vault-mcp-plugin-*.zip
           if-no-files-found: error
 
       - name: Attach to a deletable pre-release
@@ -71,5 +84,13 @@ jobs:
                  --notes "Disposable pre-release for manual install testing — safe to delete along with its tag." \
                  --target "${{ github.sha }}" \
                  --repo "${{ github.repository }}"
+          # Both installable artifacts, so a tester can exercise the
+          # Claude Desktop bundle and the Claude Code plugin from one
+          # throwaway release.  The plugin glob is separate because the
+          # mcpb glob deliberately does not match it.
           gh release upload "$tag" dist/markdown-vault-mcp-*.mcpb --clobber \
             --repo "${{ github.repository }}"
+          if compgen -G 'dist/markdown-vault-mcp-plugin-*.zip' > /dev/null; then
+            gh release upload "$tag" dist/markdown-vault-mcp-plugin-*.zip --clobber \
+              --repo "${{ github.repository }}"
+          fi

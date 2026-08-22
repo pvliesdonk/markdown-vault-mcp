@@ -20,6 +20,12 @@ uv tool install markdown-vault-mcp
 
 Or download the `.mcpb` bundle from the [GitHub Releases](https://github.com/pvliesdonk/markdown-vault-mcp/releases) page and double-click to install; Claude Desktop prompts for required env vars via a GUI wizard, no manual JSON editing needed.
 
+The bundle does not carry the code. It pins `markdown-vault-mcp[all]` at its own
+version and `uvx` fetches that from PyPI on first launch, so the machine
+needs network access the first time it starts. Release candidates publish to
+PyPI for exactly this reason, which makes a `vX.Y.Z-rc.N` bundle installable
+the same way a stable one is.
+
 ### 2. Configure Claude Desktop
 
 If you installed via `.mcpb`, skip this step. Claude Desktop was configured automatically by the wizard.

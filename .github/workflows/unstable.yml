@@ -112,3 +112,35 @@ jobs:
           name: mcpb-bundle-edge
           path: dist/markdown-vault-mcp-*.mcpb
           if-no-files-found: error
+
+  # The edge plugin zip is the one unstable artifact that is genuinely
+  # installable.  It vendors the merged commit's own wheel, so it does not
+  # depend on `0.0.0-dev` existing on an index — which it never can, since a
+  # constant version cannot be published on every merge.  Test a merge with:
+  #
+  #   claude --plugin-url <artifact-url>
+  #
+  # which loads it for one session and leaves no install record behind.
+  plugin-zip-edge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Build and smoke-test plugin zip
+        id: build
+        uses: ./.github/actions/build-plugin-zip
+        with:
+          # Same constant the mcpb bundle uses, for the same reasons: valid
+          # semver, sorts below every real release, no version identity to
+          # claim.  Here it costs nothing, because the zip carries its code
+          # rather than resolving that version from an index.
+          version: 0.0.0-dev
+
+      - name: Upload plugin zip artifact
+        if: steps.build.outputs.present == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-zip-edge
+          path: dist/markdown-vault-mcp-plugin-*.zip
+          if-no-files-found: error

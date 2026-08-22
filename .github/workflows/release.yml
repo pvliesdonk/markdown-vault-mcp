@@ -281,7 +281,18 @@ jobs:
           fi
           {
             if [ "$IS_PRERELEASE" = "true" ]; then
+              # PyPI knows the candidate by its PEP 440 canonical spelling,
+              # not the SemVer spelling the tag carries.  Print the command
+              # that actually works: a resolver ignores pre-releases unless
+              # the requirement pins one, so `pip install markdown-vault-mcp`
+              # will not find this build.
               echo "Release candidate ${ver}: a stabilisation build toward the upcoming v${minor} stable. Install it only to help test that release."
+              echo
+              echo '```bash'
+              echo "pip install markdown-vault-mcp==${ver/-rc./rc}"
+              echo '```'
+              echo
+              echo "The \`.mcpb\` bundle below installs in Claude Desktop the same way a stable one does — it fetches that same version from PyPI on first launch."
               echo
             fi
             if [ -n "$summary" ]; then
@@ -370,10 +381,28 @@ jobs:
 
   publish-pypi:
     needs: release
-    # Every stable, including a backport patch from an old release/X.Y: PyPI
-    # versions are immutable and unordered, and installers pinned below a
-    # newer major are exactly who a backport serves.
-    if: needs.release.outputs.released == 'true' && needs.release.outputs.is_prerelease == 'false'
+    # Every release, rc included.  PyPI versions are immutable and unordered,
+    # so a backport patch from an old release/X.Y publishes too: installers
+    # pinned below a newer major are exactly who a backport serves.
+    #
+    # rcs publish because the .mcpb bundle is a POINTER to PyPI, not a
+    # self-contained bundle.  packaging/mcpb/pyproject.toml.in pins
+    # `markdown-vault-mcp[all]==${VERSION}` and the manifest launches `uvx --from`
+    # the same spec, so a candidate whose wheel never reached PyPI packs,
+    # validates and uploads fine, then fails in front of the tester at install
+    # time with "no version of markdown-vault-mcp[all]==X.Y.ZrcN".  Same for the
+    # `uvx`/`pip` install lines a candidate's release notes hand out.  Holding
+    # rc wheels back made every rc bundle uninstallable, which defeats the
+    # point of cutting a candidate.
+    #
+    # This does not put candidates in front of ordinary installers.  A PEP 440
+    # resolver excludes pre-releases unless the requirement itself pins one —
+    # which the bundle's pin does — or `--pre` is passed, so `pip install
+    # markdown-vault-mcp` and `uv add markdown-vault-mcp` keep resolving to the newest
+    # stable.  The surfaces that would genuinely expose a candidate to
+    # everyone are the rolling ones — the marketplace and MCP registry entries,
+    # the `latest` Docker tag, the docs deploy — and those stay stable-gated.
+    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -702,6 +731,61 @@ jobs:
           gh release upload \
             "${{ needs.release.outputs.tag }}" \
             dist/markdown-vault-mcp-*.mcpb \
+            --clobber \
+            --repo "${{ github.repository }}"
+
+  # The plugin zip is the channel's thick artifact: it vendors the project's
+  # own wheel and launches it from ${CLAUDE_PLUGIN_ROOT}, so unlike the
+  # marketplace entry (a thin PyPI pointer) it installs at a version PyPI has
+  # never seen.  That is what makes an rc's plugin testable —
+  # `claude --plugin-url <asset>` loads it for one session with no
+  # marketplace entry and no install record, which is the only
+  # marketplace-free install path Claude Code offers.
+  #
+  # Runs for rcs: like the wheel, deb/rpm and mcpb assets, this attaches to
+  # the version's own GitHub release, a per-version immutable channel rather
+  # than an external publish surface.  The rolling marketplace entry stays
+  # stable-only in publish-claude-plugin below.
+  build-plugin-zip:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      present: ${{ steps.build.outputs.present }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+      - name: Build and smoke-test plugin zip
+        id: build
+        uses: ./.github/actions/build-plugin-zip
+        with:
+          version: ${{ needs.release.outputs.version }}
+      - uses: actions/upload-artifact@v7
+        if: steps.build.outputs.present == 'true'
+        with:
+          name: plugin-zip
+          path: dist/markdown-vault-mcp-plugin-*.zip
+          if-no-files-found: error
+
+  publish-plugin-zip:
+    needs: [release, build-plugin-zip]
+    if: needs.release.outputs.released == 'true' && needs.build-plugin-zip.outputs.present == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: plugin-zip
+          path: dist/
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload \
+            "${{ needs.release.outputs.tag }}" \
+            dist/markdown-vault-mcp-plugin-*.zip \
             --clobber \
             --repo "${{ github.repository }}"
 

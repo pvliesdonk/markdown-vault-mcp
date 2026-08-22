@@ -1866,27 +1866,78 @@ def _mcpb_field_type(var: Var, spec: Mapping[str, Any], rel_path: str) -> str:
     return _MCPB_TYPE_BY_PYTHON.get(_normalize_type_name(var.type_name), "string")
 
 
+def _json_scalar_default(value: Any, var: Var, rel_path: str) -> Any:
+    """A `var.default` narrowed to something `json.dumps` can encode.
+
+    The install screens are the only generated artifacts written as JSON
+    straight from a collected default; every other renderer formats through
+    `str()` on the way out and so never meets this.  `Path` is the case that
+    reaches here in practice, because it is the natural annotation for the
+    directory- and file-valued fields an install screen most wants to
+    expose, and `json.dumps` refuses it (#341).
+
+    Anything else non-encodable fails loudly rather than being coerced on a
+    guess: a silent `str()` of an unexpected type would put a Python repr on
+    an install screen, and the author would find out from the rendered
+    dialog rather than from the generator.
+    """
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    raise SystemExit(
+        f"ERROR: files[{rel_path!r}] field for {var.name!r} has default "
+        f"{value!r} of type {type(value).__name__}, which cannot be written "
+        f"to a JSON install screen. Declare an explicit `default:` in the "
+        f"field spec (or `default: null` to omit the key)."
+    )
+
+
 def _mcpb_user_config_entry(
-    var: Var, spec: Mapping[str, Any], rel_path: str
+    var: Var,
+    spec: Mapping[str, Any],
+    rel_path: str,
+    required_names: Collection[str] | None,
 ) -> dict[str, Any]:
     """One `user_config` object value, derived from the var + its field spec.
 
     Everything falls back to the var's own metadata (wizard-style label,
-    `_clean_help`-cleaned help text, declared default) so a field spec only
-    states what the install screen should present *differently* — an
-    override, not a second copy of the surface.
+    `_clean_help`-cleaned help text, declared default, and required-ness) so
+    a field spec only states what the install screen should present
+    *differently* — an override, not a second copy of the surface.
+
+    `required` resolves through `_is_required` like every other consumer of
+    that question.  Hardcoding `False` here made the install screen the one
+    surface that disagreed with the README table and any spliced region for
+    the same var, and let an installer click past a domain field the server
+    cannot start without (#471).
+
+    *required_names* is the run's `required_vars:` list, threaded in rather
+    than passed as `None`.  A screen always has that declaration in scope,
+    so this is case 1/2 of the resolution, not case 3 — and the difference
+    matters: case 3 keys a non-domain var on a plain `None` default, which
+    `_is_required`'s own docstring calls out as *not* evidence of being
+    required for those (several ship null-defaulted with a working
+    fallback).  Passing `None` here would flip every such var on the screen
+    to required.  Case 2 answers them `False` unless the template listed
+    them, and still keys a domain var on `_NO_DEFAULT`, which is the defect
+    #471 reported.
     """
     entry: dict[str, Any] = {
         "type": _mcpb_field_type(var, spec, rel_path),
         "title": str(spec.get("title") or _wizard_label(var)),
         "description": str(spec.get("description") or var.help),
-        "required": bool(spec.get("required", False)),
+        "required": bool(spec.get("required", _is_required(var, required_names))),
     }
     default = spec.get("default", var.default)
     if default is _NO_DEFAULT:
         default = None
     if default is not None:
-        entry["default"] = default
+        # Only the `var.default` fallback can be a non-JSON type; a spec's
+        # explicit `default:` came from YAML and is already a scalar. Both
+        # go through the check anyway, so the guard cannot be bypassed by
+        # a spec that happens to carry something exotic.
+        entry["default"] = _json_scalar_default(default, var, rel_path)
     if spec.get("sensitive"):
         entry["sensitive"] = True
     return entry
@@ -1915,6 +1966,7 @@ def _mcpb_screen_from_fields(
     fields: Mapping[str, Any],
     var_by_name: Mapping[str, Var],
     rel_path: str,
+    required_names: Collection[str] | None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """Build the (`user_config`, `mcp_config.env`) pair from a fields map.
 
@@ -1936,7 +1988,7 @@ def _mcpb_screen_from_fields(
             )
         id_owner[field_id] = name
         user_config[field_id] = _mcpb_user_config_entry(
-            var_by_name[name], spec, rel_path
+            var_by_name[name], spec, rel_path, required_names
         )
         env[name] = "${user_config." + field_id + "}"
     return user_config, env
@@ -1965,10 +2017,9 @@ def render_mcpb_user_config_file(
     add, override or remove fields via the domain files overlay (see
     `_merged_files`).
 
-    The unused *ctx* keeps this renderer call-compatible with the other
-    file kinds dispatched from `write_artifacts`.
+    *ctx* supplies the run's `required_vars:` list, which the screen's
+    `required` fallback resolves against (see `_mcpb_user_config_entry`).
     """
-    del ctx
     target = project_root / rel_path
     if not target.exists():
         raise SystemExit(
@@ -1999,7 +2050,9 @@ def render_mcpb_user_config_file(
             f"(check for a typo, or a var whose gate is off): {unknown!r}."
         )
 
-    user_config, env = _mcpb_screen_from_fields(fields, var_by_name, rel_path)
+    user_config, env = _mcpb_screen_from_fields(
+        fields, var_by_name, rel_path, ctx.required_names
+    )
 
     server = data.get("server")
     mcp_config = server.get("mcp_config") if isinstance(server, dict) else None
@@ -2045,6 +2098,7 @@ def _screen_fields_or_die(
     fields: Mapping[str, Any],
     vars_: Sequence[Var],
     rel_path: str,
+    required_names: Collection[str] | None,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """Validate a fields map against the collected vars and build the pair."""
     if not fields:
@@ -2059,7 +2113,7 @@ def _screen_fields_or_die(
             f"ERROR: files[{rel_path!r}] names config vars that do not exist "
             f"(check for a typo, or a var whose gate is off): {unknown!r}."
         )
-    return _mcpb_screen_from_fields(fields, var_by_name, rel_path)
+    return _mcpb_screen_from_fields(fields, var_by_name, rel_path, required_names)
 
 
 def _load_json_target(project_root: Path, rel_path: str, kind: str) -> Any:
@@ -2096,10 +2150,11 @@ def render_claude_plugin_user_config_file(
     sibling `kind: claude-plugin-env` entry, which references this entry's
     fields via `fields_from:`.
     """
-    del ctx
     data = _load_json_target(project_root, rel_path, _CLAUDE_PLUGIN_UC_KIND)
     fields: Mapping[str, Any] = file_spec.get("fields") or {}
-    user_config, _env = _screen_fields_or_die(fields, vars_, rel_path)
+    user_config, _env = _screen_fields_or_die(
+        fields, vars_, rel_path, ctx.required_names
+    )
     data["userConfig"] = user_config
     text = json.dumps(data, indent=2, ensure_ascii=False)
     return f"{text}\n"
@@ -2123,7 +2178,9 @@ def render_claude_plugin_env_file(
     survive untouched.
     """
     fields = _resolve_fields_from(file_spec, rel_path, ctx)
-    _user_config, env = _screen_fields_or_die(fields, vars_, rel_path)
+    _user_config, env = _screen_fields_or_die(
+        fields, vars_, rel_path, ctx.required_names
+    )
     data = _load_json_target(project_root, rel_path, _CLAUDE_PLUGIN_ENV_KIND)
     servers = [v for v in data.values() if isinstance(v, dict)]
     if not servers:
@@ -2698,7 +2755,23 @@ def _merged_files(
         fields = dict(base.get("fields") or {})
         for name, field_spec in (domain_spec.get("fields") or {}).items():
             if field_spec is None:
-                fields.pop(name, None)
+                # `<VAR>: null` drops a template baseline field from the
+                # screen. Naming a var that is not a baseline field of this
+                # entry is an authoring mistake — almost always a typo — and
+                # popping it silently leaves the field the author meant to
+                # remove sitting on the screen with nothing to say why. Fail
+                # the generation instead, like every neighbouring guard
+                # (unknown spec key, unknown mcpb type, a domain entry
+                # contributing more than `fields:`) already does.
+                if name not in fields:
+                    raise SystemExit(
+                        f"ERROR: files[{rel_path!r}] asks to remove field "
+                        f"{name!r}, which is not a baseline field of that "
+                        f"entry. Baseline fields are "
+                        f"{sorted(fields) or '(none)'}. Check the spelling, "
+                        f"or drop the removal if the field is already gone."
+                    )
+                fields.pop(name)
             else:
                 fields[name] = field_spec
         combined = dict(base)

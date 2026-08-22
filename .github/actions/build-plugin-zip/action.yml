@@ -1,0 +1,108 @@
+name: Build plugin zip
+description: >
+  Pack the Claude Code plugin directory into a self-contained .zip release
+  asset.  The project's own wheel is vendored into wheels/ and the plugin's
+  .mcp.json is repinned to launch it from ${CLAUDE_PLUGIN_ROOT}, so the zip
+  carries its own code instead of pointing at a PyPI version.  That is what
+  lets an rc or an edge build be installed and tested: `claude --plugin-url
+  <zip>` loads it for one session with no marketplace entry and no install
+  record.  Shared by release.yml, unstable.yml and pre-release-check.yml so
+  none of the three can drift from what a real release executes.
+
+  Only the wheel is vendored.  Its dependencies still resolve from PyPI at
+  launch, which keeps the zip small and platform-agnostic — the project's
+  own wheel is pure Python, while the dependency tree reaches compiled
+  wheels through pydantic-core and could not ship in one cross-platform
+  archive.
+
+inputs:
+  version:
+    description: Version stamped into plugin.json and the zip filename (no v prefix).
+    required: true
+
+outputs:
+  zip:
+    description: Path of the packed .zip, empty when the project has no plugin channel.
+    value: ${{ steps.pack.outputs.zip }}
+  present:
+    description: '"true" when the project ships a plugin directory, "false" otherwise.'
+    value: ${{ steps.detect.outputs.present }}
+
+runs:
+  using: composite
+  steps:
+    # The plugin channel is opt-in, and this directory is what turns it on —
+    # the same presence test release.yml's marketplace publish already keys
+    # on.  A project without it skips every step below rather than failing a
+    # release it never opted into.
+    #
+    # Deliberately a runtime test rather than a render-time conditional: the
+    # detach path (FORKING.md) leaves everything under .github/ in place and
+    # requires it to carry no scaffolding references, so a workflow that is
+    # identical for every project and decides at runtime is the shape that
+    # survives detaching.
+    - name: Detect the plugin channel
+      id: detect
+      shell: bash
+      run: |
+        if [ -f .claude-plugin/plugin/.claude-plugin/plugin.json ]; then
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "::warning::.claude-plugin/plugin missing — skipping the plugin zip"
+        fi
+
+    - name: Install uv
+      if: steps.detect.outputs.present == 'true'
+      uses: astral-sh/setup-uv@v8.2.0
+      with:
+        version: "0.6"
+
+    - name: Build the wheel to vendor
+      if: steps.detect.outputs.present == 'true'
+      shell: bash
+      run: uv build --wheel --out-dir build/plugin-wheel
+
+    - name: Stage the plugin and vendor the wheel
+      if: steps.detect.outputs.present == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        rm -rf build/plugin
+        mkdir -p build/plugin/wheels
+        # -a: the plugin directory is content, not a build input — copy it
+        # verbatim so a project that added skills/, agents/ or hooks/ inside
+        # it ships them too.
+        cp -a .claude-plugin/plugin/. build/plugin/
+        cp build/plugin-wheel/*.whl build/plugin/wheels/
+        python3 .github/actions/build-plugin-zip/vendor.py build/plugin "$VERSION"
+
+    - name: Pack
+      id: pack
+      if: steps.detect.outputs.present == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        mkdir -p dist
+        zip_path="dist/markdown-vault-mcp-plugin-${VERSION}.zip"
+        rm -f "$zip_path"
+        # Zipped from inside the staging directory so `.claude-plugin/` sits
+        # at the archive root, which is where Claude Code looks first.
+        (cd build/plugin && zip -qr "$OLDPWD/$zip_path" .)
+        echo "zip=$zip_path" >> "$GITHUB_OUTPUT"
+
+    - name: Smoke-test the zip
+      if: steps.detect.outputs.present == 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        ZIP: ${{ steps.pack.outputs.zip }}
+      run: |
+        test -f "$ZIP" || { echo "::error::zip missing: $ZIP"; exit 1; }
+        work=$(mktemp -d)
+        trap 'rm -rf "$work"' EXIT
+        unzip -q "$ZIP" -d "$work"
+        python3 .github/actions/build-plugin-zip/verify.py "$work" "$VERSION"
+        echo "packed $ZIP"

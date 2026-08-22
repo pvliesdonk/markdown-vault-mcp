@@ -146,6 +146,25 @@ commit them and push, and the `.github/rulesets/` path filter starts
     there is not. Verify on a pull request that touches nothing the check
     cares about: the context must still appear, and pass.
 
+### `codecov/patch`, if you require it
+
+`codecov/patch` is the one context this rule applies to that the template
+itself ships, and it is worth knowing how it reaches a pull request before
+you add it to `extra_required_checks`.
+
+Two workflows post it. `ci.yml` posts it directly for a pull request from a
+branch in this repository. A pull request from a fork gets a read-only token,
+so `ci.yml` cannot write the status there; `coverage-status.yml` posts it
+instead, from a `workflow_run` that executes in this repository's context
+after CI finishes.
+
+Both post under every outcome, including an `error` state when the coverage
+result is missing. That is deliberate: an `error` is recoverable, because a
+maintainer can re-run the workflow, while a missing status is not. If you
+require this context and a fork pull request stalls on it, check the **Post
+Coverage Status** workflow's runs rather than the CI run: the status comes
+from there.
+
 ## Applying by hand
 
 Without the bootstrap workflow (or when importing into another repository):

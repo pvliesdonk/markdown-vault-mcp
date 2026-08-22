@@ -21,9 +21,13 @@ Two stamping tiers:
   changes nothing.
 - The install-channel manifests are stable-only, per the per-surface
   resolvability rule (release-vision D12): ``server.json`` and the Claude
-  Code plugin pair pin artifacts that are published exclusively for stable
-  releases (PyPI, the MCP registry, the marketplace), so a pre-release
-  version leaves them at the last published stable.
+  Code plugin pair ARE the entries the MCP registry and the marketplace
+  publish, and both of those surfaces are rolling pointers cut for stable
+  releases alone, so a pre-release version leaves them at the last
+  published stable.  rc wheels do reach PyPI — that is what keeps a
+  candidate's .mcpb bundle installable — but a catalog entry pointing at a
+  candidate would hand one to everyone browsing, which is a different
+  question from whether the pin resolves.
 
 Fail-loud and atomic (the markdown-vault-mcp#1083 lesson): an expected pin
 that cannot be found and stamped exits non-zero naming the file and the
@@ -85,8 +89,8 @@ def _is_prerelease(version: str) -> bool:
 
     Deliberately conservative, exactly like the PSR-era bumper: anything that
     is not a plain three-component release keeps the published-manifest pins
-    at the last published stable instead of pinning a version that may never
-    exist on PyPI.
+    at the last published stable, so the rolling catalog entries never
+    advertise a candidate.
     """
     return re.fullmatch(r"\d+\.\d+\.\d+", version) is None
 
@@ -251,9 +255,9 @@ def main(argv: list[str]) -> int:
     stamped = _stamp_uv_lock(version)
 
     if _is_prerelease(version):
-        # Pre-releases never reach PyPI, the MCP registry, or the
-        # marketplace, so the manifests that pin published artifacts stay at
-        # the last published stable; the next stable release re-stamps them.
+        # The MCP registry and the marketplace publish for stable releases
+        # only, so the manifests that ARE those entries stay at the last
+        # published stable; the next stable release re-stamps them.
         print(
             f"stamp_manifests: {version} is a pre-release — "
             "server.json and the Claude plugin "
