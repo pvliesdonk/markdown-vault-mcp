@@ -1739,7 +1739,7 @@ wheels = [
 
 [[package]]
 name = "markdown-vault-mcp"
-version = "4.0.0rc7"
+version = "4.0.0rc8"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp-pvl-core" },

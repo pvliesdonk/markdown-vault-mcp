@@ -2,6 +2,77 @@
 
 <!-- version list -->
 
+## 4.0.0-rc.8 (2026-08-24)
+
+### Breaking Changes
+
+- replace anthropic summarizer with generic OpenAI-compatible backend (#917)
+- dual-mode background jobs via pvl-core 4.11.0 + template v3.3.0 (#1034)
+- make reindex and build_embeddings dual-mode background jobs (#1037)
+- adopt the branch-aware release model via copier update to template v4.0.0 (#1066)
+- follow redirects, report the final URL, and classify the change (#1118)
+- default READ_ONLY to false so the write surface ships enabled (#1119)
+
+### Features
+
+- add LLM-backed summarize tool gated on an API key (#869)
+- folder conventions — per-folder authoring policy for LLM clients (#877)
+- configurable title field, searchable frontmatter, and ranking weights (#867)
+- map-reduce summarization for inputs beyond one model request (#924)
+- per-call max_notes with in-result coverage hint for summarize (#926)
+- rebuild on INDEXED_FIELDS change; SEARCHABLE_FIELDS defaults to it (#928)
+- bound summarize latency with a timeout error and background jobs (#937) (#938)
+- detect OKF bundles and annotate read surfaces (#968)
+- OKF filter dimensions and graph node typing (#970)
+- okf_validate conformance audit tool (#971)
+- migration transforms (wikilink conversion, index/log generation) (#973)
+- adopt fastmcp-pvl-core transfer subsystem; retire local store (#981)
+- bundle export via an okf-bundle download ref (#982)
+- enforced write layer — provenance stamping, verification invalidation, okf_verify (#964) (#984)
+- enforced-write convention maintenance — log.md append + index.md refresh (#964) (#987)
+- ranking downweights for deprecated/stale/reserved files (#965) (#988)
+- configurable timeout (EMBED_TIMEOUT_S) + batch size (EMBEDDING_BATCH_SIZE) (#1000)
+- harden okf_verify against model self-attestation (#990) (#1004)
+- scope okf_seed_log's log.md content to the folder's subtree (#974) (#1005)
+- add append tool for end-of-note writes without a prior read (#1025)
+- ship client-side summarization recipe as summarize-subtree prompt (#1038)
+- adopt template v3.4.0 — generated mcpb screen, curated fields, pre-release checks (#1045)
+- adopt template v3.5.0 — plugin channel onto the template scaffold (#1046)
+- vault-summarize skill and vault-mapper agent for client-side summarization (#1047)
+- vault-setup skill and SessionStart doctor hook for in-session bootstrap (#1048)
+- generated userConfig configuration screen — no more shell-profile setup (#1049)
+
+### Bug Fixes
+
+- hybrid search vector channel misses folder normalization (#882)
+- recover keyword/hybrid search for hyphenated terms (#866) (#884)
+- stop reasoning models exhausting the summarize token budget (#920)
+- forbid assistant-style offers in summarize output (#923)
+- bump transitive mcp 1.28.0 → 1.28.1 (CVE-2026-59950) (#934)
+- make incremental reindex inline embedding resilient to provider timeouts (#930) (#932)
+- guard inline/converge vector mutation against dimension mismatch (#935) (#936)
+- resolve leading-slash markdown links against the vault root (#972)
+- skip malformed-frontmatter files in build_embeddings (#994)
+- retry failed deferred pushes on the periodic pull-loop tick (#997)
+- honour process umask for newly created files (#958) (#998)
+- single-agent reviewer; drop fan-out plugin + pin experiment
+- drop Task from @claude — #1499 background-subagent orphan footgun
+- allow-list Skill defensively (both claude workflows)
+- finalize pin-combo reviewer (restore CI gate, drop show_full_output)
+- close SSRF gaps by migrating to pvl-core's hardened fetch_url (#1029)
+- adopt template v3.2.2 — template-owned bump_manifests, non-mutating CI syncs (#1032)
+- drop track_progress from the notes drafting action (#1094)
+- make the notes drafting agent able to write — and safe to run (#1095)
+- rc releases get their full artifact set, and the 4.0 notes page passes its own evidence contract (#1096)
+- clear the v4.0 milestone's bug reports (#1109)
+- never send a blank string to the embedding provider (#1112)
+- raise the pvl-core floor to 4.11.2 and drop the removed read_only kwarg (#1117)
+- rebuild when the parse pipeline changes, and expose a force flag (#1125)
+- persist authoritative empty embedding rebuilds (#1115)
+- confirm FTS absence against the source tree before reclaiming vectors (#1132)
+- adopt template v5.3.1→v5.4.0, and de-fork README.md and ci.yml to pristine (#1138)
+- adopt template v5.6.2, and reconcile the seeded scaffolds copier update never rewrites (#1144)
+
 ## 4.0.0-rc.7 (2026-08-22)
 
 ### Breaking Changes
