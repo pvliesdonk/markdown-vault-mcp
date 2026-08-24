@@ -569,7 +569,7 @@ wheels = [
 
 [[package]]
 name = "copier"
-version = "9.17.1"
+version = "9.17.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama" },
@@ -586,9 +586,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "questionary" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/40/65/11c8635a27ce06ef525946bb02b1d5271b0f11e5acf9c5ab6d242512598e/copier-9.17.1.tar.gz", hash = "sha256:778e85f1c2de86824a72ddf4a34140744921d6354450c427c4c8a475371b1bda", size = 647338, upload-time = "2026-08-04T09:15:04.826Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2e/4c/2e593d85827c49f478ea4925d1008a144bb8ff2189c6e9f405c37bb56edb/copier-9.17.2.tar.gz", hash = "sha256:02e9c0d05281603c06d52f48350e48ffca0b4283d9f025664fbce4befabaa555", size = 650501, upload-time = "2026-08-19T13:49:17.456Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/bf/3adcb9b3091b36de729dad91c107179c8c7c51adb2b08c31177bb540bef1/copier-9.17.1-py3-none-any.whl", hash = "sha256:f6a48f296e2e536c635213e1000ea71099f9f58f3b464a60f2f0fd386e343628", size = 66364, upload-time = "2026-08-04T09:15:03.026Z" },
+    { url = "https://files.pythonhosted.org/packages/ec/ec/466bbf501af8e9f718b3f4875cb32fe75a1f17538c2fba507f64a32c2b0f/copier-9.17.2-py3-none-any.whl", hash = "sha256:24757d8875cdf4e076ff338e5ea984e85f5d5da9afcecea8a9dde0f151310b19", size = 67003, upload-time = "2026-08-19T13:49:15.987Z" },
 ]
 
 [[package]]
@@ -1322,7 +1322,7 @@ name = "importlib-metadata"
 version = "9.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp", marker = "python_full_version < '3.12'" },
+    { name = "zipp" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a9/01/15bb152d77b21318514a96f43af312635eb2500c96b55398d020c93d86ea/importlib_metadata-9.0.0.tar.gz", hash = "sha256:a4f57ab599e6a2e3016d7595cfd72eb4661a5106e787a95bcc90c7105b831efc", size = 56405, upload-time = "2026-03-20T06:42:56.999Z" }
 wheels = [
