@@ -1,5 +1,5 @@
 # Changes here will be overwritten by `copier update`.
-_commit: v5.6.2
+_commit: v5.6.3
 _src_path: https://github.com/pvliesdonk/fastmcp-server-template
 docker_registry: ghcr.io/pvliesdonk
 domain_description: Generic markdown vault MCP server with FTS5 + semantic search
