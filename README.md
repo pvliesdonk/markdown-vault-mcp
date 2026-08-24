@@ -1,3 +1,7 @@
+<!-- DOMAIN-START -->
+<!-- Add an optional project logo or project-specific header here. Kept across copier update. -->
+<!-- DOMAIN-END -->
+
 # Markdown Vault MCP
 
 <!-- mcp-name: io.github.pvliesdonk/markdown-vault-mcp -->
