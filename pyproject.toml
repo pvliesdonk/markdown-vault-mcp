@@ -111,7 +111,7 @@ docs = [
     "mkdocs-material>=9.7.6",
     "mkdocstrings[python]>=0.28",
     "mkdocs-llmstxt>=0.5",
-    "pygments>=2,<2.21",
+    "pygments>=2,<2.22",
     "mike>=2.1",
 ]
 browser = [
