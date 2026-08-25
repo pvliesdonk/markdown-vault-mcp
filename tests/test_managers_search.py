@@ -1705,3 +1705,70 @@ class TestFolderWeightsEndToEnd:
         results = mgr.search("magnetberry", mode="keyword")
         assert results[0].path == "sessions/log.md"
         assert results[0].score == pytest.approx(results[1].score * 3.0)
+
+
+# ---------------------------------------------------------------------------
+# blank-query guard (#1111)
+# ---------------------------------------------------------------------------
+
+
+class _RejectsBlankProvider:
+    """Provider that rejects blank input the way a real endpoint does.
+
+    Every OpenAI-compatible endpoint answers ``[""]`` with a hard HTTP 400
+    (#1087 on the index side, #1111 on the read side). The stub raises so a
+    query that reaches it fails the test loudly instead of silently
+    succeeding.
+    """
+
+    dimension = 4
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        for text in texts:
+            if not text.strip():
+                msg = "OpenAI API error 400: Input cannot contain empty strings"
+                raise RuntimeError(msg)
+        return [[1.0, 0.0, 0.0, 0.0] for _ in texts]
+
+
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
+@pytest.mark.parametrize("query", ["", "   ", "\t\n"])
+def test_blank_query_returns_empty_without_reaching_provider(
+    search_mgr_with_embeddings: SearchManager,
+    mode: str,
+    query: str,
+) -> None:
+    """A blank query resolves to [] without a provider round-trip (#1111).
+
+    The guard lives at the manager boundary so hybrid — which reaches the
+    provider through its own vector-channel call site — takes the same path
+    as semantic.
+    """
+    search_mgr_with_embeddings._vectors._provider = _RejectsBlankProvider()  # type: ignore[assignment]
+
+    assert search_mgr_with_embeddings.search(query, mode=mode) == []  # type: ignore[arg-type]
+
+
+def test_blank_query_still_raises_when_embeddings_unconfigured(
+    search_mgr: SearchManager,
+) -> None:
+    """The blank-query guard does not mask the unconfigured-provider error.
+
+    ``_require_vectors`` runs first, so a caller with no embedding provider
+    learns about the missing configuration rather than getting a silent ``[]``.
+    """
+    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+
+    with pytest.raises(EmbeddingsNotConfiguredError):
+        search_mgr.search("", mode="semantic")
+
+
+def test_vector_index_blank_query_returns_empty(
+    search_mgr_with_embeddings: SearchManager,
+) -> None:
+    """VectorIndex.search backstops a direct library consumer (#1111)."""
+    vectors = search_mgr_with_embeddings._vectors
+    assert vectors is not None
+    vectors._provider = _RejectsBlankProvider()  # type: ignore[assignment]
+
+    assert vectors.search("   ", limit=5) == []

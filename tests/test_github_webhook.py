@@ -435,3 +435,137 @@ def test_vault_wires_pause_writes_into_git_strategy(tmp_path: Path) -> None:
     mock_strategy.force_pull.assert_called_once_with()
 
     col.close()
+
+
+# ---------------------------------------------------------------------------
+# no managed remote (#1128)
+# ---------------------------------------------------------------------------
+
+
+def _post_push(client: TestClient) -> object:
+    """POST a correctly-signed push delivery."""
+    body = _push_body()
+    return client.post(
+        "/github-webhook",
+        content=body,
+        headers={
+            "X-Hub-Signature-256": _sign(body),
+            "X-GitHub-Event": "push",
+            "Content-Type": "application/json",
+        },
+    )
+
+
+def test_force_pull_is_inert_without_remote_sync(tmp_path: Path) -> None:
+    """An unmanaged strategy answers without running git at all (#1128).
+
+    Before the fix ``enable_pull`` gated only the periodic loop, so
+    ``force_pull`` ran ``git fetch origin`` on a remoteless checkout and
+    reported the retryable-looking ``fetch_failed``.
+    """
+    from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=repo,
+    )
+    try:
+        with patch("subprocess.run") as run:
+            result = strategy.force_pull()
+        run.assert_not_called()
+    finally:
+        strategy.close()
+
+    assert result.applied is False
+    assert result.reason == "pull_disabled"
+
+
+def test_force_pull_on_a_non_git_directory_does_not_raise(tmp_path: Path) -> None:
+    """The second reported shape: a plain directory, not a git repo (#1128).
+
+    ``_pull_pipeline``'s ``_head_sha`` raised ``CalledProcessError`` here,
+    which escaped the webhook handler as an unhandled 500.
+    """
+    from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    strategy = GitWriteStrategy(
+        token=None,
+        repo_url=None,
+        managed=False,
+        enable_pull=False,
+        enable_push=False,
+        repo_path=plain,
+    )
+    try:
+        result = strategy.force_pull()
+    finally:
+        strategy.close()
+
+    assert result.reason == "pull_disabled"
+
+
+def test_webhook_push_returns_200_when_pull_is_disabled() -> None:
+    """A delivery with no remote to pull from is recorded, not retried (#1128).
+
+    ``applied=False`` used to answer 503, so every push to the repository
+    burned GitHub's full retry budget and then failed.
+    """
+    col = _mock_vault()
+    col.force_pull.return_value = PullResult(
+        applied=False,
+        fast_forward=False,
+        commits_pulled=0,
+        from_sha="",
+        to_sha="",
+        reason="pull_disabled",
+    )
+    client = _make_client()
+    with patch(
+        "markdown_vault_mcp._github_webhook.get_vault_singleton", return_value=col
+    ):
+        resp = _post_push(client)
+
+    assert resp.status_code == 200
+    assert resp.json()["message"] == "pull disabled"
+    col.index.reindex.assert_not_called()
+
+
+def test_webhook_push_returns_503_when_force_pull_raises() -> None:
+    """An exception out of force_pull becomes a 503, never an unhandled 500."""
+    import subprocess
+
+    col = _mock_vault()
+    col.force_pull.side_effect = subprocess.CalledProcessError(128, ["git"])
+    client = _make_client()
+    with patch(
+        "markdown_vault_mcp._github_webhook.get_vault_singleton", return_value=col
+    ):
+        resp = _post_push(client)
+
+    assert resp.status_code == 503
+    col.index.reindex.assert_not_called()
+
+
+def test_webhook_still_returns_503_for_retryable_pull_failures() -> None:
+    """The #1128 carve-out is narrow: fetch_failed still asks for a retry."""
+    col = _mock_vault(
+        pull_result=_pull_result(from_sha="aaa", to_sha="aaa", applied=False)
+    )
+    client = _make_client()
+    with patch(
+        "markdown_vault_mcp._github_webhook.get_vault_singleton", return_value=col
+    ):
+        resp = _post_push(client)
+
+    assert resp.status_code == 503
+    assert resp.json()["reason"] == "fetch_failed"

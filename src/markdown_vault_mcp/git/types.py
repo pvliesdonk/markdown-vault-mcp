@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 # :class:`PushResult.reason`.  Defined as module-level constants so callers
 # (and tests) can refer to them by name rather than re-typing string literals.
 PULL_REASON_FETCH_FAILED = "fetch_failed"
+PULL_REASON_PULL_DISABLED = "pull_disabled"
 PULL_REASON_NO_REMOTE = "no_remote"
 PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS = "non_fast_forward_with_conflicts"
 PULL_REASON_REBASED = "rebased"
@@ -57,6 +58,10 @@ class PullResult:
 
             * ``"fetch_failed"`` — ``git fetch origin`` exited non-zero
               (network error, auth failure, etc.); HEAD did not move.
+            * ``"pull_disabled"`` — the strategy was built without remote
+              sync (unmanaged / commit-only mode), so no git command was
+              run at all. Terminal: a caller that retries will get the
+              same answer until the deployment is reconfigured (#1128).
             * ``"no_remote"`` — no remote-tracking ref
               (``origin/<branch>``, or ``origin/HEAD`` for a detached
               checkout) could be resolved on the local clone.

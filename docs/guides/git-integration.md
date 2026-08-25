@@ -73,6 +73,10 @@ Behavior:
   periodic tick. Divergent history is not a failure: it flows through the
   Syncthing-style sibling resolution described under
   [`git_sync`](#manual-sync-git_sync-tool) below.
+- A delivery to a server with no managed remote returns 200, not 503. There
+  is nothing to pull and a retry cannot change that, so the delivery is
+  recorded rather than retried. Each one logs a warning naming the
+  problem, and the server logs the same warning once at startup.
 - A delivery arriving while the initial index build is still running is
   handled, not dropped. The pull is a pure git operation and runs
   regardless of index state; only the reindex is skipped, and the boot
@@ -80,12 +84,17 @@ Behavior:
 
 !!! warning "Managed mode only"
     Set the secret only where the server owns the remote. Outside managed
-    mode a delivery is not a quiet no-op: the pull path ignores the sync
-    switch that unmanaged mode turns off and runs `git fetch origin`
-    anyway. A checkout with no reachable `origin` fails that fetch and
-    answers 503, burning GitHub's retries on every push; against a vault
-    that is not a git repository at all, the pull raises out of the
-    handler.
+    mode the endpoint is inert: it verifies signatures and answers 200, but
+    there is no remote to pull from, so every delivery is a no-op. The
+    server says so at startup and on each delivery, because a webhook that
+    is quietly doing nothing looks the same as one that is working.
+
+    This is a no-op rather than a failure as of 4.1. Before that the pull
+    path ignored the sync switch unmanaged mode turns off and ran
+    `git fetch origin` anyway: a checkout with no reachable `origin`
+    failed that fetch and answered 503, burning GitHub's retries on every
+    push, and against a vault that was not a git repository at all the
+    pull raised out of the handler.
 
 Keep `GIT_PULL_INTERVAL_S` enabled. The webhook narrows the staleness
 window; the loop is what catches the deliveries the webhook loses.

@@ -16,6 +16,7 @@ import mimetypes
 import sqlite3
 from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
+from markdown_vault_mcp.embed_text import is_embeddable
 from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 from markdown_vault_mcp.managers._ranking import (
     ChannelRow as _ChannelRow,
@@ -689,6 +690,8 @@ class SearchManager:
 
         if mode == "semantic":
             self._require_vectors()
+            if not is_embeddable(query):
+                return self._no_embeddable_query(mode)
             return self._semantic_search(
                 query,
                 limit=limit,
@@ -701,6 +704,8 @@ class SearchManager:
 
         # hybrid
         self._require_vectors()
+        if not is_embeddable(query):
+            return self._no_embeddable_query(mode)
         return self._hybrid_search(
             query,
             limit=limit,
@@ -710,6 +715,29 @@ class SearchManager:
             snippet_words=eff_snip,
             okf_filters=okf_filters,
         )
+
+    @staticmethod
+    def _no_embeddable_query(mode: str) -> builtins.list[GroupedResult]:
+        """Return the empty result for a query with nothing to embed.
+
+        An empty or whitespace-only query carries no signal, and every
+        OpenAI-compatible provider rejects ``[""]`` with a hard HTTP 400
+        (#1111) — the read-side twin of the indexing failure in #1087. The
+        guard sits here rather than only in :class:`VectorIndex` so the
+        hybrid channel, which would otherwise reach the provider through its
+        own call site, takes the same path.
+
+        Returning ``[]`` matches the posture of the adjacent ``limit <= 0``
+        guard in :meth:`VectorIndex.search`.
+
+        Args:
+            mode: The requested search mode, for the log line only.
+
+        Returns:
+            An empty result list.
+        """
+        logger.debug("search_blank_query mode=%s", mode)
+        return []
 
     def _adapt_semantic_rows(
         self, rows: builtins.list[dict[str, Any]]

@@ -5854,3 +5854,239 @@ class TestDrainBeforePull:
             assert calls == {"pause": 0, "drain": 0}
         finally:
             strategy.close()
+
+
+# ---------------------------------------------------------------------------
+# scoped rename staging (#894)
+# ---------------------------------------------------------------------------
+
+
+def _commit_files(repo: Path, ref: str = "HEAD") -> set[str]:
+    """Return the repo-relative paths touched by *ref*."""
+    import subprocess
+
+    out = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "show",
+            "--name-only",
+            "--no-renames",
+            "--format=",
+            ref,
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return {line for line in out.stdout.splitlines() if line.strip()}
+
+
+def _worktree_status(repo: Path) -> set[str]:
+    """Return ``git status --porcelain`` lines for *repo*."""
+    import subprocess
+
+    out = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return {line for line in out.stdout.splitlines() if line.strip()}
+
+
+class TestRenameStagingIsScoped:
+    """A rename auto-commit contains only the two paths it renamed (#894)."""
+
+    @staticmethod
+    def _seed(repo: Path) -> None:
+        """Commit a note and an unrelated bystander file."""
+        import subprocess
+
+        (repo / "note.md").write_text("# Note\n", encoding="utf-8")
+        (repo / "bystander.md").write_text("# Bystander\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "seed"],
+            capture_output=True,
+            check=True,
+        )
+
+    def test_unrelated_dirty_file_stays_out_of_the_rename_commit(
+        self, git_repo: Path
+    ) -> None:
+        """The reported failure: a concurrent edit must not be swept in.
+
+        A vault edited outside the server (Obsidian writing straight to disk)
+        leaves tracked modifications the server never touched. Before #894 the
+        rename path staged them with a pathspec-less ``git add -u``, pushing
+        content the user had not chosen to commit.
+        """
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        self._seed(git_repo)
+
+        # A concurrent, unrelated edit the server never saw.
+        (git_repo / "bystander.md").write_text("# Edited elsewhere\n", encoding="utf-8")
+
+        old_abs = git_repo / "note.md"
+        new_abs = git_repo / "renamed.md"
+        old_abs.rename(new_abs)
+
+        _stage_and_commit(git_repo, new_abs, "rename", old_path=old_abs)
+
+        assert _commit_files(git_repo) == {"note.md", "renamed.md"}
+        # The bystander's edit is still uncommitted, exactly as the user left it.
+        assert _worktree_status(git_repo) == {" M bystander.md"}
+
+    def test_never_committed_old_path_still_records_the_move(
+        self, git_repo: Path
+    ) -> None:
+        """``add -A`` covers an old path git never tracked.
+
+        ``git add -u`` recorded no deletion for a file written straight into
+        the vault by another tool, so the commit only added the new path.
+        """
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        self._seed(git_repo)
+
+        old_abs = git_repo / "untracked.md"
+        old_abs.write_text("# Never committed\n", encoding="utf-8")
+        new_abs = git_repo / "now-tracked.md"
+        old_abs.rename(new_abs)
+
+        _stage_and_commit(git_repo, new_abs, "rename", old_path=old_abs)
+
+        # Nothing to delete (the old path was never tracked), so the commit
+        # carries the new path — and the working tree is clean afterwards.
+        assert _commit_files(git_repo) == {"now-tracked.md"}
+        assert _worktree_status(git_repo) == set()
+
+    def test_rename_into_a_subfolder_is_scoped(self, git_repo: Path) -> None:
+        """Scoping holds when the destination is a new directory."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        self._seed(git_repo)
+        (git_repo / "bystander.md").write_text("# Dirty\n", encoding="utf-8")
+
+        old_abs = git_repo / "note.md"
+        new_abs = git_repo / "archive" / "note.md"
+        new_abs.parent.mkdir()
+        old_abs.rename(new_abs)
+
+        _stage_and_commit(git_repo, new_abs, "rename", old_path=old_abs)
+
+        assert _commit_files(git_repo) == {"note.md", "archive/note.md"}
+        assert _worktree_status(git_repo) == {" M bystander.md"}
+
+    def test_strategy_forwards_old_path(self, git_repo: Path) -> None:
+        """GitWriteStrategy threads ``old_path`` into the staging helper."""
+        from markdown_vault_mcp.git.strategy import GitWriteStrategy
+
+        self._seed(git_repo)
+        (git_repo / "bystander.md").write_text("# Dirty\n", encoding="utf-8")
+
+        old_abs = git_repo / "note.md"
+        new_abs = git_repo / "renamed.md"
+        old_abs.rename(new_abs)
+
+        strategy = GitWriteStrategy(
+            token=None,
+            repo_url=None,
+            managed=False,
+            enable_pull=False,
+            enable_push=False,
+            repo_path=git_repo,
+        )
+        try:
+            strategy(new_abs, "", "rename", old_path=old_abs)
+        finally:
+            strategy.close()
+
+        assert _commit_files(git_repo) == {"note.md", "renamed.md"}
+        assert _worktree_status(git_repo) == {" M bystander.md"}
+
+    def test_strategy_advertises_the_opt_in(self) -> None:
+        """The dispatcher's capability probe finds the strategy's opt-in."""
+        from markdown_vault_mcp.git.strategy import GitWriteStrategy
+        from markdown_vault_mcp.types import ACCEPTS_OLD_PATH_ATTR
+
+        assert getattr(GitWriteStrategy, ACCEPTS_OLD_PATH_ATTR) is True
+
+
+class TestRenameCommitEndToEnd:
+    """The scoped staging survives the full Vault → dispatcher → git path."""
+
+    @staticmethod
+    def _vault_repo(tmp_path: Path) -> Path:
+        """A git repo holding two committed notes."""
+        import subprocess
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        for cmd in (
+            ["git", "-C", str(vault), "init"],
+            ["git", "-C", str(vault), "config", "user.email", "t@t.com"],
+            ["git", "-C", str(vault), "config", "user.name", "T"],
+        ):
+            subprocess.run(cmd, capture_output=True, check=True)
+        (vault / "note.md").write_text("# Note\n", encoding="utf-8")
+        (vault / "bystander.md").write_text("# Bystander\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(vault), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(vault), "commit", "-m", "seed"],
+            capture_output=True,
+            check=True,
+        )
+        return vault
+
+    def test_vault_rename_does_not_commit_a_concurrent_edit(
+        self, tmp_path: Path
+    ) -> None:
+        """End-to-end shape of the #894 report.
+
+        An external tool edits one note while the server renames another.
+        The rename's auto-commit must carry only the renamed paths, and the
+        external edit must still be sitting uncommitted afterwards.
+        """
+        from markdown_vault_mcp.git.strategy import GitWriteStrategy
+        from markdown_vault_mcp.vault import Vault
+
+        vault = self._vault_repo(tmp_path)
+        strategy = GitWriteStrategy(
+            token=None,
+            repo_url=None,
+            managed=False,
+            enable_pull=False,
+            enable_push=False,
+            repo_path=vault,
+        )
+        col = Vault(
+            source_dir=vault,
+            git_strategy=strategy,
+            on_write=strategy,
+            read_only=False,
+        )
+        try:
+            col.index.build_index()
+            # The concurrent, server-invisible edit.
+            (vault / "bystander.md").write_text("# Edited in Obsidian\n", "utf-8")
+
+            col.writer.rename("note.md", "renamed.md")
+            col._write_callback.drain()
+        finally:
+            col.close()
+
+        assert _commit_files(vault) == {"note.md", "renamed.md"}
+        # The external edit is still uncommitted, and so is the index state
+        # directory the Vault created — neither was the server's to commit.
+        assert _worktree_status(vault) == {
+            " M bystander.md",
+            "?? .markdown_vault_mcp/",
+        }

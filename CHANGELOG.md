@@ -1,5 +1,25 @@
 # CHANGELOG
 
+Machine-generated audit trail. Sections from `4.0.0-rc.1` onward are written
+by knope into each release PR from `feat` / `fix` / `!` commit subjects —
+never hand-edit those, or the flag line below.
+
+Two things to know when reading further down:
+
+- **Sections at and below `3.2.0-rc.7` were reconstructed** from commit
+  subjects in #1067, replacing a hand-maintained Keep a Changelog file whose
+  entries all lived under a single `## [Unreleased]` heading. The
+  reconstruction emitted no `Breaking Changes` heading, so pre-4.0 `!`
+  markers were flattened; #1123 restored the `3.0.0` block by hand, and
+  #1077 tracks auditing the rest of the historical markers.
+- **A stable release section can be empty** when its whole range is the
+  promotion commit — the work sits in the `-rc` sections directly beneath
+  it. `3.2.0-rc.6`, `3.1.0`, `1.27.0`, `1.25.0`, and `1.23.1` are all this
+  shape.
+
+Narrative, rationale, and upgrade guidance live in
+[`docs/releases/`](docs/releases/), not here.
+
 <!-- version list -->
 
 ## 4.0.0 (2026-08-25)
@@ -1341,6 +1361,68 @@
 
 
 ## 3.0.0 (2026-06-17)
+
+### Breaking Changes
+
+Restored by hand in #1123. The 2026-08-16 reconstruction (#1067) generated
+this file's pre-4.0 sections from commit subjects using only Features / Bug
+Fixes / Chores headings, so every `!` marker in the 1.28.0 → 3.0.0 range was
+flattened away and the hand-written migration instructions that shipped in
+the tagged changelogs were lost with them. The entries below are the sixteen
+`!`-marked commits in that range, with the operator-facing detail recovered
+from `git show v3.2.0-rc.7:CHANGELOG.md`.
+
+**Readiness vocabulary (#538, #542, #554)**
+
+- `Collection.get_index_status` `status` value renamed from `"ready"` to
+  `"queryable"`. MCP clients pattern-matching on the old value silently
+  treat the new value as unknown until updated.
+- `Collection.get_index_status` priority order flipped: a built index with a
+  captured background error from a prior attempt now reports
+  `status="queryable"` (with the diagnostic in `error`), not
+  `status="failed"`. `"failed"` now means "preconditions do not hold AND a
+  captured error exists" — the index is not readable.
+- `Collection.is_index_ready()` renamed to `Collection.is_queryable()`.
+- `Collection.wait_for_index_ready()` renamed to
+  `Collection.wait_until_queryable()`.
+- `Collection._require_index_ready()` (private) renamed to
+  `Collection._require_built()`.
+- MCP decorator `needs_index_ready` renamed to `needs_queryable`; module
+  `_server_readiness.py` renamed to `_server_queryable.py`.
+- Public exception `IndexNotReadyError` renamed to `IndexUnavailableError`,
+  which gained a required `reason` field typed by a new
+  `IndexUnavailableReason` literal.
+- Environment variable `MARKDOWN_VAULT_MCP_READY_TIMEOUT_S` renamed to
+  `MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S`. **Running deployments that set the
+  old variable silently fall back to the 60-second default after upgrading;
+  update operator configs (compose files, systemd units, `.env` files)
+  accordingly.**
+
+External consumers that imported `IndexNotReadyError`, called
+`is_index_ready()` / `wait_for_index_ready()`, or set the old env var must
+rename their references. No deprecation shims ship.
+
+**`Collection` renamed to `Vault` (#629, #630)**
+
+- The public class is `Vault`. Downstream code importing `Collection` must
+  rename its references.
+
+**Field-collapsed search results (#469, #471)**
+
+- `search` returns one entry per file with up to `chunks_per_file` nested
+  sections (`GroupedResult`) instead of one entry per chunk. Callers reading
+  a flat chunk list must iterate `sections`.
+- `get_similar` and `get_context.similar` return `GroupedResult` as well;
+  the `SimilarItem` type is removed.
+- The MCP tool surface gained `chunks_per_file` and the `GroupedResult`
+  shape, and the Vault Explorer SPA was adapted to it.
+
+**Attachment size default (#442)**
+
+- `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` default lowered from `10` to
+  `1` — a 10 MB base64-encoded attachment blows up most LLM contexts. Any
+  deployment relying on the old ceiling must set
+  `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB=10` explicitly.
 
 
 ## 2.0.0-rc.5 (2026-06-17)

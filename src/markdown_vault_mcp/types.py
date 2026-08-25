@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 # The four deterministic, non-excluded skip categories surfaced via
 # get_index_status.skipped_files. A plain frozenset (not an enum) keeps the
@@ -799,6 +799,45 @@ class SummaryResult:
 WriteOperation = Literal["write", "edit", "delete", "rename"]
 
 WriteCallback = Callable[[Path, str, WriteOperation], None]
+
+#: Attribute name a :data:`WriteCallback` sets to ``True`` to opt into
+#: receiving the ``old_path=`` keyword on ``rename`` dispatches (#894).
+#:
+#: A rename has two sides — the vanished old path and the new one — but the
+#: callback signature carries a single path, which left the git strategy
+#: staging the old side with a pathspec-less ``git add -u`` that swept every
+#: unrelated tracked modification in the repository into the auto-commit.
+#: The extra argument is an opt-in rather than a signature change so a
+#: third-party three-argument callback keeps working untouched:
+#: :class:`~markdown_vault_mcp.write_callback.WriteCallbackDispatcher` reads
+#: this attribute once and passes ``old_path`` only to callbacks that
+#: advertise it.
+ACCEPTS_OLD_PATH_ATTR = "accepts_old_path"
+
+
+class RenameAwareWriteCallback(Protocol):
+    """A :data:`WriteCallback` that also accepts a rename's old path.
+
+    Structural type for the opt-in described at
+    :data:`ACCEPTS_OLD_PATH_ATTR`. It exists so the dispatcher can express
+    the widened call in the type system instead of reaching for ``Any``;
+    ``WriteCallback`` itself deliberately stays three-argument so an
+    existing third-party callback is neither a type error nor a runtime one.
+    """
+
+    accepts_old_path: bool
+
+    def __call__(
+        self,
+        path: Path,
+        content: str,
+        operation: WriteOperation,
+        *,
+        old_path: Path | None = None,
+    ) -> None:
+        """Handle one write, optionally told where a rename moved from."""
+        ...
+
 
 # Default set of allowed attachment extensions (without leading dot, lower-case).
 # .md is always excluded — it is always handled as a markdown note.

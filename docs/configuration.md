@@ -300,6 +300,8 @@ The endpoint is only available on HTTP/SSE transports. To set up:
 2. In your GitHub repository, add a webhook pointing at `https://<your-host>/github-webhook` with content type `application/json` and the same secret.
 3. Select the `push` event (other events are acknowledged with 200 and ignored).
 
+Set the secret only on a deployment that owns its remote (`GIT_REPO_URL`). Elsewhere the endpoint mounts but is inert. With no remote to pull from, every delivery is acknowledged with 200 and logged as a warning. The server logs the same warning once at startup.
+
 The periodic pull loop (`GIT_PULL_INTERVAL_S`) remains active as a belt-and-suspenders fallback for missed webhook deliveries. For the same setup in context, alongside the other sync mechanisms and what each delivery outcome means, see the [git integration guide](guides/git-integration.md#push-triggered-pull-github-webhook).
 
 ## File Watcher

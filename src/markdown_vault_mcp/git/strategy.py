@@ -42,6 +42,7 @@ from markdown_vault_mcp.git.types import (
     PULL_REASON_FETCH_FAILED,
     PULL_REASON_NO_REMOTE,
     PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS,
+    PULL_REASON_PULL_DISABLED,
     PULL_REASON_REBASED,
     PUSH_REASON_DRY_RUN_UNSUPPORTED,
     PUSH_REASON_NO_REMOTE,
@@ -355,13 +356,30 @@ class GitWriteStrategy:
                     self._cleanup_git_env(env)
             self._write_init_done = True
 
+    #: Opt into the dispatcher's ``old_path=`` keyword on renames (#894), so
+    #: the rename commit stages exactly the two paths the rename touched.
+    #: See :data:`~markdown_vault_mcp.types.ACCEPTS_OLD_PATH_ATTR`.
+    accepts_old_path: bool = True
+
     def __call__(
         self,
         path: Path,
         content: str,  # noqa: ARG002
         operation: WriteOperation,
+        *,
+        old_path: Path | None = None,
     ) -> None:
-        """WriteCallback interface: stage + commit, then schedule push."""
+        """WriteCallback interface: stage + commit, then schedule push.
+
+        Args:
+            path: Absolute path of the file the operation landed on. For a
+                rename this is the *new* path.
+            content: File content at write time; unused here, since staging
+                reads the working tree.
+            operation: The kind of write that occurred.
+            old_path: For a rename, the absolute path the file moved from,
+                so staging can be scoped to it and *path* (#894).
+        """
         if self._closed:
             return
 
@@ -398,6 +416,7 @@ class GitWriteStrategy:
                     self._git_root,
                     path,
                     operation,
+                    old_path=old_path,
                     commit_name=self._commit_name,
                     commit_email=self._commit_email,
                     author_name=effective_name
@@ -919,6 +938,16 @@ class GitWriteStrategy:
         new commits are materialised before the caller sees the working
         tree.
 
+        A strategy built without remote sync — unmanaged / commit-only
+        mode, where ``enable_pull`` is ``False`` — has no remote to pull
+        from, so this returns ``applied=False`` with reason
+        ``"pull_disabled"`` **before running any git command** (#1128).
+        Without that gate the pipeline ran ``git fetch origin`` on a
+        remoteless checkout (answering ``"fetch_failed"``, which reads as
+        retryable) and raised ``CalledProcessError`` out of ``_head_sha``
+        on a vault that is not a git repository at all. ``enable_pull``
+        gated only the periodic loop before; it now gates every pull.
+
         Args:
             dry_run: When ``True``, runs ``git fetch`` and computes the
                 would-be pull without modifying HEAD.  Returns
@@ -933,6 +962,19 @@ class GitWriteStrategy:
             RuntimeError: When the strategy was constructed without
                 ``repo_path``.
         """
+        if not self._enable_pull:
+            logger.info(
+                "Git force_pull: pull is disabled for this strategy "
+                "(no managed remote); skipping git entirely"
+            )
+            return PullResult(
+                applied=False,
+                fast_forward=False,
+                commits_pulled=0,
+                from_sha="",
+                to_sha="",
+                reason=PULL_REASON_PULL_DISABLED,
+            )
         git_root = self._resolve_force_repo()
         return self._pull_pipeline(git_root, dry_run=dry_run)
 
@@ -1786,10 +1828,86 @@ def _sanitize_git_identity(value: str) -> str:
     return _GIT_IDENTITY_UNSAFE.sub("", value)
 
 
+def _is_tracked(root: str, path: Path) -> bool:
+    """Return whether git tracks *path* in the repository at *root*.
+
+    ``git ls-files`` lists the index, so a file staged or committed earlier
+    answers ``True`` even once it has been removed from the working tree —
+    which is exactly the state the old side of a rename is in by the time
+    staging runs.
+
+    Args:
+        root: Git repository root, as a string.
+        path: Absolute path to probe.
+
+    Returns:
+        ``True`` when the path is in the index.
+    """
+    result = subprocess.run(
+        ["git", "-C", root, "ls-files", "--", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return bool(result.stdout.strip())
+
+
+def _stage_rename(root: str, path: Path, old_path: Path | None) -> None:
+    """Stage both sides of a rename without touching anything else (#894).
+
+    ``git add -A`` over an explicit pathspec records the old path's
+    disappearance and the new path's arrival while leaving every other
+    working-tree change alone, so a concurrent edit elsewhere in the vault is
+    not swept into this commit. ``-A`` rather than ``-u`` because ``-u``
+    would record no deletion for an old path git never tracked.
+
+    An untracked old path is omitted from the pathspec rather than passed and
+    tolerated: ``git add`` fails the *whole* invocation on a pathspec that
+    matches nothing, which would leave the new path unstaged too.
+
+    Args:
+        root: Git repository root, as a string.
+        path: Absolute path the file was renamed *to*.
+        old_path: Absolute path the file was renamed *from*, or ``None`` from
+            a caller predating #894 — which falls back to the historical
+            repository-wide staging, imprecise in exactly the two ways this
+            function fixes.
+    """
+    if old_path is None:
+        logger.debug("git_stage_rename_unscoped path=%s", path)
+        subprocess.run(
+            ["git", "-C", root, "add", "-u"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", root, "add", "--", str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return
+
+    pathspec = [str(path)]
+    if _is_tracked(root, old_path):
+        pathspec.insert(0, str(old_path))
+    else:
+        logger.debug("git_stage_rename_old_untracked old_path=%s", old_path)
+    subprocess.run(
+        ["git", "-C", root, "add", "-A", "--", *pathspec],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
 def _stage_and_commit(
     git_root: Path,
     path: Path,
     operation: WriteOperation,
+    *,
+    old_path: Path | None = None,
     commit_name: str = GitWriteStrategy.DEFAULT_COMMIT_NAME,
     commit_email: str = GitWriteStrategy.DEFAULT_COMMIT_EMAIL,
     author_name: str | None = None,
@@ -1799,8 +1917,14 @@ def _stage_and_commit(
 
     Args:
         git_root: Git repository root.
-        path: Absolute path to the changed file.
+        path: Absolute path to the changed file.  For a rename, the *new*
+            path.
         operation: The write operation type.
+        old_path: For a rename, the absolute path the file moved from.
+            Staging is then scoped to exactly *old_path* and *path* (#894).
+            ``None`` falls back to a repository-wide ``git add -u``, which
+            sweeps unrelated tracked modifications into the commit — see the
+            comment on that branch.
         commit_name: Git committer name (overrides git config).
         commit_email: Git committer email (overrides git config).
         author_name: Git author name override.  Falls back to *commit_name*
@@ -1824,30 +1948,7 @@ def _stage_and_commit(
             check=True,
         )
     elif operation == "rename":
-        # For rename, the old file has been moved on disk.  Stage tracked
-        # deletions (-u) to capture the old path removal, then add the new
-        # file explicitly.
-        # NOTE: ``git add -u`` without a pathspec stages ALL tracked
-        # modifications/deletions repo-wide.  In a vault with other
-        # uncommitted edits, this may sweep unrelated changes into the
-        # auto-commit.  Additionally, if the old file was never committed
-        # to git (e.g. written directly by Obsidian and not via this
-        # callback), ``git add -u`` will not record its deletion at all —
-        # the commit will only add the new path.
-        # A future improvement would extend the callback signature to
-        # pass both old and new paths, enabling scoped staging.
-        subprocess.run(
-            ["git", "-C", root, "add", "-u"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        subprocess.run(
-            ["git", "-C", root, "add", "--", str(path)],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        _stage_rename(root, path, old_path)
     else:
         subprocess.run(
             ["git", "-C", root, "add", "--", str(path)],

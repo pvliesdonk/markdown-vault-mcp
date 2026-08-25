@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from markdown_vault_mcp.embed_text import is_embeddable
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -379,6 +381,15 @@ class VectorIndex:
             # after appending, so a non-positive cap has to be refused here
             # or it would yield one row.
             logger.debug("VectorIndex.search: limit=%d, returning []", limit)
+            return []
+
+        if not is_embeddable(query):
+            # A blank or whitespace-only query would reach the provider as
+            # [""], which every OpenAI-compatible endpoint rejects with a
+            # hard HTTP 400 (#1111).  SearchManager guards its own channels
+            # so hybrid takes the same path; this backstops a library
+            # consumer calling VectorIndex directly.
+            logger.debug("VectorIndex.search: blank query, returning []")
             return []
 
         logger.debug(

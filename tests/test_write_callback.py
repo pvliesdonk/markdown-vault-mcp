@@ -274,3 +274,67 @@ class TestDrain:
             messages
         )
         dispatcher.close()
+
+
+# ---------------------------------------------------------------------------
+# old_path forwarding on renames (#894)
+# ---------------------------------------------------------------------------
+
+
+class TestOldPathForwarding:
+    """``old_path`` reaches opted-in callbacks and nothing else (#894)."""
+
+    def test_three_arg_callback_is_never_passed_old_path(self) -> None:
+        """A pre-#894 third-party callback keeps working untouched.
+
+        The widened argument is an opt-in precisely so a callback matching
+        the published ``WriteCallback`` signature does not start receiving a
+        keyword it cannot accept.
+        """
+        calls, cb = _recorder()
+        d = WriteCallbackDispatcher(cb)  # type: ignore[arg-type]
+        d.fire(Path("/new.md"), "x", "rename", old_path=Path("/old.md"))
+        d.close()
+
+        assert calls == [(Path("/new.md"), "x", "rename")]
+
+    def test_opted_in_callback_receives_old_path(self) -> None:
+        """A callback advertising the opt-in gets the keyword."""
+        from markdown_vault_mcp.types import ACCEPTS_OLD_PATH_ATTR
+
+        seen: list[Path | None] = []
+
+        def cb(
+            abs_path: Path,  # noqa: ARG001
+            content: str,  # noqa: ARG001
+            operation: str,  # noqa: ARG001
+            old_path: Path | None = None,
+        ) -> None:
+            seen.append(old_path)
+
+        setattr(cb, ACCEPTS_OLD_PATH_ATTR, True)
+
+        d = WriteCallbackDispatcher(cb)  # type: ignore[arg-type]
+        d.fire(Path("/new.md"), "x", "rename", old_path=Path("/old.md"))
+        d.fire(Path("/other.md"), "y", "write")
+        d.close()
+
+        # Only the rename carries an old path; the plain write does not.
+        assert seen == [Path("/old.md"), None]
+
+    def test_opt_in_is_read_once_at_construction(self) -> None:
+        """Flipping the attribute after construction does not take effect.
+
+        The probe is deliberately not re-read per dispatch — the callback is
+        fixed for the dispatcher's lifetime and the worker loop is on the
+        write path.
+        """
+        from markdown_vault_mcp.types import ACCEPTS_OLD_PATH_ATTR
+
+        calls, cb = _recorder()
+        d = WriteCallbackDispatcher(cb)  # type: ignore[arg-type]
+        setattr(cb, ACCEPTS_OLD_PATH_ATTR, True)
+        d.fire(Path("/new.md"), "x", "rename", old_path=Path("/old.md"))
+        d.close()
+
+        assert calls == [(Path("/new.md"), "x", "rename")]

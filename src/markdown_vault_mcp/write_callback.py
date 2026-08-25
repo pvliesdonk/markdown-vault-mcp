@@ -14,12 +14,18 @@ from __future__ import annotations
 import logging
 import queue
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+from markdown_vault_mcp.types import ACCEPTS_OLD_PATH_ATTR
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from markdown_vault_mcp.types import WriteCallback, WriteOperation
+    from markdown_vault_mcp.types import (
+        RenameAwareWriteCallback,
+        WriteCallback,
+        WriteOperation,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +59,18 @@ class WriteCallbackDispatcher:
         Args:
             on_write: Invoked as ``on_write(abs_path, content, operation)`` for
                 each fired write, or ``None`` to disable dispatch entirely.
+                A callback that sets the
+                :data:`~markdown_vault_mcp.types.ACCEPTS_OLD_PATH_ATTR`
+                attribute to ``True`` also receives ``old_path=`` on
+                ``rename`` dispatches (#894).
         """
         self._on_write = on_write
+        # Read the opt-in once, here, rather than per dispatch: the callback
+        # is fixed for the dispatcher's lifetime, and the worker loop is on
+        # the write path.
+        self._accepts_old_path = bool(getattr(on_write, ACCEPTS_OLD_PATH_ATTR, False))
         self._queue: queue.Queue[
-            tuple[Path, str, WriteOperation] | _DrainMarker | None
+            tuple[Path, str, WriteOperation, Path | None] | _DrainMarker | None
         ] = queue.Queue()
         self._worker: threading.Thread | None = None
         # Guards every read/write of ``_worker`` and ``_closed`` AND the
@@ -66,7 +80,13 @@ class WriteCallbackDispatcher:
         self._worker_lock = threading.Lock()
         self._closed = False
 
-    def fire(self, abs_path: Path, content: str, operation: WriteOperation) -> None:
+    def fire(
+        self,
+        abs_path: Path,
+        content: str,
+        operation: WriteOperation,
+        old_path: Path | None = None,
+    ) -> None:
         """Queue a callback invocation, starting the worker if needed.
 
         No-op when no callback is configured. After :meth:`close`, this is a
@@ -77,6 +97,12 @@ class WriteCallbackDispatcher:
             abs_path: Absolute path of the written file.
             content: File content at write time (empty for deletes).
             operation: The kind of write that occurred.
+            old_path: For ``rename``, the absolute path the file moved *from*,
+                so the callback can scope its staging to the two paths the
+                rename actually touched (#894). Forwarded only to a callback
+                that opted in via
+                :data:`~markdown_vault_mcp.types.ACCEPTS_OLD_PATH_ATTR`;
+                ignored otherwise, and unused for every other operation.
         """
         if self._on_write is None:
             return
@@ -91,7 +117,7 @@ class WriteCallbackDispatcher:
             self._ensure_worker_locked()
             # Enqueue under the lock so close() cannot slip the sentinel in
             # ahead of this item (which would leave it permanently undrained).
-            self._queue.put((abs_path, content, operation))
+            self._queue.put((abs_path, content, operation, old_path))
 
     def _ensure_worker_locked(self) -> None:
         """Start the background worker if it is not running.
@@ -120,9 +146,13 @@ class WriteCallbackDispatcher:
                 if isinstance(item, _DrainMarker):
                     item.event.set()
                     continue
-                abs_path, content, operation = item
+                abs_path, content, operation, old_path = item
                 try:
-                    on_write(abs_path, content, operation)
+                    if old_path is not None and self._accepts_old_path:
+                        rename_aware = cast("RenameAwareWriteCallback", on_write)
+                        rename_aware(abs_path, content, operation, old_path=old_path)
+                    else:
+                        on_write(abs_path, content, operation)
                 except Exception:
                     logger.error(
                         "Write callback failed for %s (%s)",
@@ -232,3 +262,11 @@ class WriteCallbackDispatcher:
                     timeout,
                     self._queue.qsize(),
                 )
+
+
+# ``fire`` takes ``old_path`` itself, so the probe works one seam further in:
+# DocumentManager is handed this bound method and asks the same question of it
+# that this dispatcher asks of the callback underneath (#894).  Set on the
+# function rather than the instance because a bound method proxies attribute
+# lookup to its underlying function.
+setattr(WriteCallbackDispatcher.fire, ACCEPTS_OLD_PATH_ATTR, True)

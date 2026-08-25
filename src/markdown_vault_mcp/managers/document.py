@@ -18,7 +18,7 @@ import threading
 from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import frontmatter as fm
 import yaml
@@ -37,6 +37,7 @@ from markdown_vault_mcp.scanner import (
     parse_note,
 )
 from markdown_vault_mcp.types import (
+    ACCEPTS_OLD_PATH_ATTR,
     AttachmentContent,
     DeleteResult,
     EditResult,
@@ -45,6 +46,7 @@ from markdown_vault_mcp.types import (
     RenameResult,
     SubtreeToc,
     TocEntry,
+    WriteCallback,
     WriteOperation,
     WriteResult,
 )
@@ -79,6 +81,28 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.scanner import ChunkStrategy
 
 logger = logging.getLogger(__name__)
+
+
+class _OnWriteCallback(Protocol):
+    """The write-callback shape DocumentManager dispatches to.
+
+    Widens :data:`~markdown_vault_mcp.types.WriteCallback` with the optional
+    ``old_path`` keyword the rename sites pass (#894).  The dispatcher this
+    is wired to — :meth:`WriteCallbackDispatcher.fire` — accepts it
+    unconditionally and forwards it only to callbacks that opted in, so a
+    three-argument ``on_write`` remains valid at the ``Vault`` boundary.
+    """
+
+    def __call__(
+        self,
+        path: Path,
+        content: str,
+        operation: WriteOperation,
+        /,
+        old_path: Path | None = None,
+    ) -> None:
+        """Record one completed write."""
+        ...
 
 
 _UMASK_LOCK = threading.Lock()
@@ -134,7 +158,10 @@ class DocumentManager:
         max_note_read_bytes: Maximum bytes returned by full-document reads.
             ``0`` disables the limit (default ``262144``, i.e. 256 KB).
         on_write_callback: Fires after a successful write to enqueue a
-            git commit.  Signature: ``(abs_path, content, operation)``.
+            git commit.  Signature:
+            ``(abs_path, content, operation, old_path=None)``, where
+            *old_path* is set only on ``rename`` and lets the commit stage
+            exactly the two paths the rename touched (#894).
         mark_paths_dirty: Routes FTS-affecting write operations through
             the single-owner :class:`IndexWriter` (#559).  Called with an
             iterable of vault-relative paths after each successful
@@ -158,7 +185,7 @@ class DocumentManager:
         exclude_patterns: list[str] | None = None,
         attachment_extensions: list[str] | None = None,
         max_note_read_bytes: int = 262144,
-        on_write_callback: Callable[[Path, str, WriteOperation], None] | None = None,
+        on_write_callback: _OnWriteCallback | WriteCallback | None = None,
         mark_paths_dirty: Callable[[Iterable[str]], None] | None = None,
         title_field: str = "title",
         okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
@@ -171,7 +198,15 @@ class DocumentManager:
         self._exclude_patterns = exclude_patterns
         self._attachment_extensions = attachment_extensions
         self._max_note_read_bytes = max_note_read_bytes
-        self._on_write_callback = on_write_callback or (lambda *_a: None)
+        self._on_write_callback = on_write_callback or (lambda *_a, **_kw: None)
+        # Same opt-in probe the dispatcher uses (#894): a callback wired
+        # straight into this manager — the isolation tests, and any consumer
+        # constructing DocumentManager directly — may still be the published
+        # three-argument shape, which must not be handed a keyword it cannot
+        # take.
+        self._callback_takes_old_path = bool(
+            getattr(on_write_callback, ACCEPTS_OLD_PATH_ATTR, False)
+        )
         self._mark_paths_dirty = mark_paths_dirty
         self._title_field = title_field
         # OKF enforced-write hook (#964): transforms the final note text
@@ -1253,7 +1288,7 @@ class DocumentManager:
 
                 callback_content = ""
 
-            self._on_write_callback(new_abs, callback_content, "rename")
+            self._fire_rename(new_abs, callback_content, old_abs)
             for src_abs, src_content in backlink_callbacks:
                 self._on_write_callback(src_abs, src_content, "edit")
 
@@ -1425,7 +1460,7 @@ class DocumentManager:
 
     def _plan_folder_move(
         self, old_abs: Path, old_dir: str, new_dir: str
-    ) -> tuple[list[tuple[Path, Path]], dict[str, str], list[tuple[Path, str]]]:
+    ) -> tuple[list[tuple[Path, Path]], dict[str, str], list[tuple[Path, str, Path]]]:
         """Enumerate the subtree under *old_abs* and gate on collisions.
 
         Pure planning: walks the filesystem (not the index — attachments and
@@ -1443,7 +1478,7 @@ class DocumentManager:
 
             * ``moves`` — ``(src_abs, dst_abs)`` for every file to move.
             * ``md_map`` — old→new vault-relative path map (``.md`` only).
-            * ``attachment_moves`` — ``(dst_abs, new_rel_path)`` for
+            * ``attachment_moves`` — ``(dst_abs, new_rel_path, src_abs)`` for
               allowlisted attachments.
 
         Raises:
@@ -1455,7 +1490,9 @@ class DocumentManager:
         attachment_exts = self._effective_attachment_extensions()
         moves: list[tuple[Path, Path]] = []  # (src_abs, dst_abs)
         md_map: dict[str, str] = {}  # old_rel_path -> new_rel_path (.md only)
-        attachment_moves: list[tuple[Path, str]] = []  # (dst_abs, new_rel)
+        # (dst_abs, new_rel, src_abs) — src_abs so the rename callback can
+        # scope its git staging to both sides of the move (#894).
+        attachment_moves: list[tuple[Path, str, Path]] = []
         for src_abs in sorted(old_abs.rglob("*")):
             if not src_abs.is_file():
                 continue
@@ -1469,7 +1506,7 @@ class DocumentManager:
             else:
                 suffix = src_abs.suffix.lstrip(".").lower()
                 if "*" in attachment_exts or suffix in attachment_exts:
-                    attachment_moves.append((dst_abs, new_path))
+                    attachment_moves.append((dst_abs, new_path, src_abs))
 
         if not moves:
             raise DocumentNotFoundError(f"Folder is empty: {old_dir}")
@@ -1482,10 +1519,26 @@ class DocumentManager:
 
         return moves, md_map, attachment_moves
 
+    def _fire_rename(self, new_abs: Path, content: str, old_abs: Path) -> None:
+        """Fire the write callback for a rename, passing both sides when it can.
+
+        Args:
+            new_abs: Absolute path the file now lives at.
+            content: File content at the new path (``""`` for attachments).
+            old_abs: Absolute path the file moved from, so a callback that
+                opted in can scope its git staging to the two paths the
+                rename touched instead of staging the whole repository (#894).
+        """
+        if self._callback_takes_old_path:
+            rename_aware = cast("_OnWriteCallback", self._on_write_callback)
+            rename_aware(new_abs, content, "rename", old_path=old_abs)
+        else:
+            self._on_write_callback(new_abs, content, "rename")
+
     def _dispatch_move_callbacks(
         self,
         md_map: dict[str, str],
-        attachment_moves: list[tuple[Path, str]],
+        attachment_moves: list[tuple[Path, str, Path]],
         pending_callbacks: list[tuple[Path, str]],
     ) -> None:
         """Fire write callbacks for a completed folder move.
@@ -1497,20 +1550,22 @@ class DocumentManager:
 
         Args:
             md_map: Old→new vault-relative path map for moved notes.
-            attachment_moves: ``(dst_abs, new_rel_path)`` for moved
+            attachment_moves: ``(dst_abs, new_rel_path, src_abs)`` for moved
                 allowlisted attachments.
             pending_callbacks: ``(abs_path, new_content)`` for rewritten
                 link sources.
         """
         moved_note_paths = set(md_map.values())
         source_root = self._source_dir.resolve()
-        for _old_path, new_path in md_map.items():
+        for old_path, new_path in md_map.items():
             new_note_abs = (self._source_dir / new_path).resolve()
-            self._on_write_callback(
-                new_note_abs, _read_text_utf8(new_note_abs), "rename"
+            self._fire_rename(
+                new_note_abs,
+                _read_text_utf8(new_note_abs),
+                (self._source_dir / old_path).resolve(),
             )
-        for dst_abs, _new_rel in attachment_moves:
-            self._on_write_callback(dst_abs, "", "rename")
+        for dst_abs, _new_rel, src_abs_moved in attachment_moves:
+            self._fire_rename(dst_abs, "", src_abs_moved)
         for src_abs, src_content in pending_callbacks:
             src_rel = src_abs.relative_to(source_root).as_posix()
             if src_rel in moved_note_paths:

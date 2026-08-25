@@ -848,6 +848,19 @@ enrichment behaviour is unchanged. A sidecar written by a provider that
 did accept empty inputs converges after one re-embed of the affected
 documents.
 
+The read side has the same hazard (#1111): `search(query, mode="semantic")`
+embeds the query verbatim, so a blank or whitespace-only query would reach
+the provider as `[""]` and return a vendor-shaped HTTP 400 rather than a
+statement about the caller's own input. `SearchManager.search()` applies
+`is_embeddable()` to the query on both the semantic and the hybrid channel
+— at the manager boundary rather than only inside `VectorIndex`, because
+hybrid reaches the provider through its own vector-channel call site — and
+returns `[]`, matching the posture of the adjacent `limit <= 0` guard.
+`VectorIndex.search()` carries the same guard as a backstop for a library
+consumer calling it directly. The guard runs *after* `_require_vectors()`,
+so a server with no embedding provider still raises
+`EmbeddingsNotConfiguredError` instead of silently answering `[]`.
+
 ### Error Handling
 
 Two-layer model:
@@ -2206,6 +2219,30 @@ unhandled exceptions are logged at `ERROR` but not propagated to the caller.
 Default: `None` (no callback). Built-in option: `GitWriteStrategy` (or the
 legacy factory `git_write_strategy(token=...)`) that auto-commits and pushes.
 
+**Per-operation staging guarantee (#894).** One MCP write operation produces
+one auto-commit containing *only* the paths that operation touched. A rename
+is the case where this is not free: it has two sides — the vanished old path
+and the new one — while the callback signature carries a single path, so the
+git strategy used to stage the old side with a pathspec-less `git add -u`.
+That stages every tracked modification in the repository, so a concurrent
+edit the server never saw (Obsidian writing straight into the vault) was
+swept into the rename's commit and pushed, and an old path git had never
+tracked had its deletion recorded not at all.
+
+The rename dispatch therefore carries the old path as well. Because
+`WriteCallback` is a public type a downstream consumer implements, the extra
+argument is an **opt-in rather than a signature change**: a callback sets the
+`accepts_old_path` attribute (`types.ACCEPTS_OLD_PATH_ATTR`) to `True`, and
+`WriteCallbackDispatcher` reads it once at construction and passes
+`old_path=` only to callbacks that advertise it. A three-argument
+third-party callback is unaffected, at type-check time and at run time.
+`GitWriteStrategy` opts in and stages with
+`git add -A -- <old_path> <new_path>`: `-A` (not `-u`) so an untracked old
+path is covered, and an explicit pathspec so nothing else in the working tree
+is. An old path git does not track is dropped from the pathspec rather than
+passed — `git add` fails the whole invocation on a pathspec matching nothing,
+which would leave the new path unstaged too.
+
 **Deprecation note**: `git_write_strategy()` factory function is preserved for
 backward compatibility. Prefer constructing `GitWriteStrategy` directly for
 access to `flush()` and `close()` methods.
@@ -3115,6 +3152,29 @@ contract. Unifying the two paths fixed the loop's diverged conflict handling:
 its post-abort upstream restore previously ran per-file `git checkout` with no
 failure handling, whereas the pipeline's `_restore_upstream_paths` drops paths
 whose restore failed instead of committing stale local content over them.
+
+**`enable_pull` gates every pull, not just the loop (#1128)**: the flag is
+`False` in unmanaged / commit-only mode, where the strategy exists only to
+auto-commit locally and there is no remote to reach. It gated `sync_once`
+alone, so `force_pull` ran the pipeline regardless — `git fetch origin`
+against a checkout with no `origin` (reporting the retryable-looking
+`fetch_failed`), and `CalledProcessError` out of `_head_sha` against a vault
+that is not a git repository at all. `force_pull` now returns
+`applied=False, reason="pull_disabled"` before running any git command. The
+reason is terminal by construction: retrying cannot change it without
+reconfiguring the deployment.
+
+The webhook handler treats it as such, answering 200 so GitHub records the
+delivery rather than spending its full retry budget on every push, and logs a
+warning naming the misconfiguration; `server.py` logs the same warning once at
+startup, when `GITHUB_WEBHOOK_SECRET` is set with neither `GIT_REPO_URL` nor
+`GIT_TOKEN`. The handler also wraps `force_pull` so no exception escapes as an
+unhandled 500 — its documented outcome set is 401 / 200 / 503. The
+`git_sync` tool cannot reach any of this: `_resolve_managed_strategy` refuses
+outside managed mode, and managed mode always has `enable_pull=True`. The
+handler's `pull_result is None` branch is likewise not dead code — a library
+consumer constructing `Vault(git_strategy=None)` reaches it, though a
+config-driven server never does.
 
 **Tracking-independent remote ref**: all sync operations (startup unpushed
 check, periodic `sync_once`, interactive `force_pull`/`force_push`, and the

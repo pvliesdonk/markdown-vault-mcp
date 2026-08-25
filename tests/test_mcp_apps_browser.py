@@ -195,6 +195,7 @@ class TestBrowserDataTools:
     async def test_vault_search_respects_limit(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_search"),
                 {"query": "document", "mode": "keyword", "limit": 2},

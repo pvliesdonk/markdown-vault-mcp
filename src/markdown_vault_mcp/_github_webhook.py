@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 from starlette.responses import JSONResponse
 
 from markdown_vault_mcp.domain import get_vault_singleton
+from markdown_vault_mcp.git.types import PULL_REASON_PULL_DISABLED
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -103,9 +104,15 @@ def make_webhook_handler(secret: str) -> Callable[[Request], Any]:
     - On ``push`` events: calls ``Vault.force_pull()`` unconditionally
       (it is a pure git operation with no FTS dependency), then reindexes when
       HEAD moved and the vault is queryable.
+    - Returns 200 when the deployment has no remote to pull from — no git
+      strategy at all, or a strategy built without remote sync (reason
+      ``"pull_disabled"``). Both are configuration states, not failures:
+      retrying cannot change the answer, so a 503 would only burn GitHub's
+      retry budget on every push (#1128).
     - Returns 503 when the server has not yet initialised (singleton not set),
-      or when ``force_pull`` fails (``applied=False``), so GitHub retries the
-      delivery rather than permanently marking it as delivered.
+      or when ``force_pull`` fails for a reason a retry might clear
+      (``applied=False``), so GitHub retries the delivery rather than
+      permanently marking it as delivered.
 
     Args:
         secret: HMAC secret configured via
@@ -159,14 +166,40 @@ def make_webhook_handler(secret: str) -> Callable[[Request], Any]:
             )
             return JSONResponse({"error": "vault not initialised"}, status_code=503)
 
-        pull_result = await asyncio.to_thread(vault.force_pull)
+        try:
+            pull_result = await asyncio.to_thread(vault.force_pull)
+        except Exception:
+            # The handler's contract is 401 / 200 / 503; an exception escaping
+            # here would surface as an unhandled 500 with a traceback (#1128).
+            # A retry may still succeed, so 503 rather than 200.
+            logger.error(
+                "github_webhook: force_pull raised delivery_id=%s",
+                delivery_id,
+                exc_info=True,
+            )
+            return JSONResponse({"error": "pull failed"}, status_code=503)
 
         if pull_result is None:
+            # Reachable for a library consumer that constructed Vault with
+            # git_strategy=None; a config-driven server always has one.
             logger.info(
                 "github_webhook: no git strategy configured delivery_id=%s",
                 delivery_id,
             )
             return JSONResponse({"ok": True, "message": "no git strategy"})
+
+        if pull_result.reason == PULL_REASON_PULL_DISABLED:
+            # A webhook secret set on a deployment with no managed remote
+            # (#1128). Nothing was fetched and nothing can be: answer 200 so
+            # GitHub records the delivery instead of retrying every push.
+            logger.warning(
+                "github_webhook: delivery received but this deployment has no "
+                "managed git remote, so there is nothing to pull — set "
+                "MARKDOWN_VAULT_MCP_GIT_REPO_URL (or unset "
+                "MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET) delivery_id=%s",
+                delivery_id,
+            )
+            return JSONResponse({"ok": True, "message": "pull disabled"})
 
         if not pull_result.applied:
             # Transient failures (network, expired token) benefit from retry.
