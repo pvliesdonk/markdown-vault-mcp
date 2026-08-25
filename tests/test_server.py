@@ -380,6 +380,42 @@ class TestGithubWebhookWiring:
         server = make_server(transport="http")
         assert "/github-webhook" not in self._route_paths(server)
 
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_webhook_without_a_remote_warns_at_startup(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A secret with no managed remote is announced, not silently inert.
+
+        The route still mounts and answers 200, but every delivery is a
+        no-op — there is nothing to pull (#1128). An operator should learn
+        that at startup rather than from per-delivery logs.
+        """
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "s3cret")
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_REPO_URL", raising=False)
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_TOKEN", raising=False)
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.server"):
+            server = make_server(transport="http")
+
+        assert "/github-webhook" in self._route_paths(server)
+        assert "github_webhook_inert" in caplog.text
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_webhook_with_a_managed_remote_does_not_warn(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The inert warning is scoped to deployments with no remote."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "s3cret")
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
+            "https://github.com/example/vault.git",
+        )
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.server"):
+            make_server(transport="http")
+
+        assert "github_webhook_inert" not in caplog.text
+
 
 class TestToolManifest:
     """Pin the exact set of tools register_tools() registers.
