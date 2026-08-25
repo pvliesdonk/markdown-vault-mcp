@@ -1,0 +1,2902 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Generic markdown vault MCP server with FTS5 + semantic search">
+      
+      
+      
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/4.0/guides/zettelkasten/">
+      
+      
+        <link rel="prev" href="../research-workflows/">
+      
+      
+        <link rel="next" href="../para/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Zettelkasten - markdown-vault-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/config-wizard.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#zettelkasten-with-markdown-vault-mcp" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="markdown-vault-mcp" class="md-header__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            markdown-vault-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Zettelkasten
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tools/" class="md-tabs__link">
+          
+  
+  
+  MCP Interface
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../deployment/" class="md-tabs__link">
+          
+  
+  
+  Deployment
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/vault/" class="md-tabs__link">
+          
+  
+  
+  Python API
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../releases/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Release Notes
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="markdown-vault-mcp" class="md-nav__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    markdown-vault-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration-generator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Generator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../git-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../embeddings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../oidc-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../obsidian-everywhere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Obsidian Everywhere
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../research-workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zettelkasten
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zettelkasten
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#vault-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vault Setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Vault Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recommended-folder-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended folder structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frontmatter-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontmatter schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#make-frontmatter-fields-searchable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Make frontmatter fields searchable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filename-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filename conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-capture-fleeting-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Capture (Fleeting Notes)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-develop-literature-permanent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Develop (Literature → Permanent)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-connect-build-the-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Connect (Build the Graph)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-review-maintain-the-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Review (Maintain the Graph)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maps-of-content-mocs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maps of Content (MOCs)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Templates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-the-zettelkasten-prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using the Zettelkasten Prompt
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips-and-best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips and Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tips and Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#start-with-statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Start with statistics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-get_context-before-every-edit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use get_context() before every edit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hybrid-search-beats-keyword-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hybrid search beats keyword-only
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#review-orphans-weekly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review orphans weekly
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-get_connection_path-for-cross-domain-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use get_connection_path() for cross-domain discovery
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#link-aggressively-prune-minimally" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link aggressively, prune minimally
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tag-for-grouping-not-taxonomy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tag for grouping, not taxonomy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#let-claude-split-or-merge-quick-capture-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let Claude split or merge quick-capture notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-zettelkasten-with-okf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Zettelkasten with OKF
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../para/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../okf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Knowledge Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mcp-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../transfer-links/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer Links
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../claude-code-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Interface
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MCP Interface
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/systemd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systemd
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/oidc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/facets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Facets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embedding Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#vault-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vault Setup
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Vault Setup">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#recommended-folder-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Recommended folder structure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#frontmatter-schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frontmatter schema
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#make-frontmatter-fields-searchable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Make frontmatter fields searchable
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filename-conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Filename conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Workflow">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-capture-fleeting-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Capture (Fleeting Notes)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-develop-literature-permanent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Develop (Literature → Permanent)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-connect-build-the-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Connect (Build the Graph)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-review-maintain-the-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Review (Maintain the Graph)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maps-of-content-mocs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maps of Content (MOCs)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Templates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-the-zettelkasten-prompt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using the Zettelkasten Prompt
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tips-and-best-practices" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tips and Best Practices
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Tips and Best Practices">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#start-with-statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Start with statistics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-get_context-before-every-edit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use get_context() before every edit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hybrid-search-beats-keyword-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hybrid search beats keyword-only
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#review-orphans-weekly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Review orphans weekly
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-get_connection_path-for-cross-domain-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use get_connection_path() for cross-domain discovery
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#link-aggressively-prune-minimally" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link aggressively, prune minimally
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tag-for-grouping-not-taxonomy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tag for grouping, not taxonomy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#let-claude-split-or-merge-quick-capture-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Let Claude split or merge quick-capture notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#using-zettelkasten-with-okf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Using Zettelkasten with OKF
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Next Steps
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="zettelkasten-with-markdown-vault-mcp">Zettelkasten with markdown-vault-mcp<a class="headerlink" href="#zettelkasten-with-markdown-vault-mcp" title="Permanent link">&para;</a></h1>
+<p>A Zettelkasten is a personal knowledge management system based on atomic notes, cross-linking, and emergent discovery. This guide shows how to use markdown-vault-mcp as your Zettelkasten backend, using its search, linking, and graph navigation tools to build a connected knowledge base.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown vault backend; Zettelkasten conventions are applied in this guide but not required or enforced by the server.</p>
+</div>
+<h2 id="vault-setup">Vault Setup<a class="headerlink" href="#vault-setup" title="Permanent link">&para;</a></h2>
+<h3 id="recommended-folder-structure">Recommended folder structure<a class="headerlink" href="#recommended-folder-structure" title="Permanent link">&para;</a></h3>
+<p>Two approaches work well with markdown-vault-mcp:</p>
+<p><strong>Flat structure</strong> (simplest):
+<div class="highlight"><pre><span></span><code>vault/
+  note1.md
+  note2.md
+  note3.md
+  _templates/
+    fleeting.md
+    literature.md
+    permanent.md
+    moc.md
+</code></pre></div></p>
+<p>All notes live in the root. Folders are only for attachments and metadata.</p>
+<p><strong>Minimal folders</strong>:
+<div class="highlight"><pre><span></span><code>vault/
+  Inbox/
+    fleeting-note.md
+  Notes/
+    permanent-note.md
+  Archive/
+    old-note.md
+  _templates/
+  assets/
+    diagram.pdf
+</code></pre></div></p>
+<p>Organize by workflow stage or topic, but <strong>rely on links, not folders, for knowledge structure.</strong> Folders are convenience; the graph is the system.</p>
+<h3 id="frontmatter-schema">Frontmatter schema<a class="headerlink" href="#frontmatter-schema" title="Permanent link">&para;</a></h3>
+<p>Recommend this structure for all notes:</p>
+<div class="highlight"><pre><span></span><code><span class="nn">---</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Note</span><span class="nv"> </span><span class="s">title&quot;</span>
+<span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleeting | literature | permanent | moc</span>
+<span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">tag1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">tag2</span><span class="p p-Indicator">]</span>
+<span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;URL</span><span class="nv"> </span><span class="s">or</span><span class="nv"> </span><span class="s">citation&quot;</span><span class="w">  </span><span class="c1"># for literature notes only</span>
+<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">YYYY-MM-DD</span>
+<span class="nn">---</span>
+</code></pre></div>
+<p><strong>Field meanings:</strong></p>
+<ul>
+<li><code>title</code>: The note's heading. Used for display in lists and searches.</li>
+<li><code>type</code>: Note category: <code>fleeting</code> (quick capture), <code>literature</code> (extracted from source), <code>permanent</code> (your own synthesis), <code>moc</code> (map of content / hub note). Helps you review notes by stage.</li>
+<li><code>tags</code>: List of keywords. Searchable via <code>filters={"tags": "value"}</code>.</li>
+<li><code>source</code>: Full URL or bibliographic citation. Used to credit the original source for literature notes.</li>
+<li><code>created</code>: ISO 8601 date when the note was written. Useful for reviewing note age.</li>
+</ul>
+<h3 id="make-frontmatter-fields-searchable">Make frontmatter fields searchable<a class="headerlink" href="#make-frontmatter-fields-searchable" title="Permanent link">&para;</a></h3>
+<p>Configure <code>MARKDOWN_VAULT_MCP_INDEXED_FIELDS</code> to make <code>type</code> and <code>tags</code> structured filters in search:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_INDEXED_FIELDS</span><span class="o">=</span>type,tags
+</code></pre></div>
+<p>Indexed fields are also keyword-searchable by default (<code>SEARCHABLE_FIELDS</code> inherits this value; set it to <code>none</code> to keep them filter-only).</p>
+<p>Then you can search by note type or tag using the Python API:</p>
+<div class="highlight"><pre><span></span><code><span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;permanent&quot;</span><span class="p">})</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;tags&quot;</span><span class="p">:</span> <span class="s2">&quot;system-design&quot;</span><span class="p">})</span>
+</code></pre></div>
+<p>Or restrict to a folder via the CLI:</p>
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">&quot;query&quot;</span><span class="w"> </span>--folder<span class="w"> </span>Notes
+</code></pre></div>
+<h3 id="filename-conventions">Filename conventions<a class="headerlink" href="#filename-conventions" title="Permanent link">&para;</a></h3>
+<p>The server uses file paths as note identity. Choose any naming scheme:</p>
+<ul>
+<li><strong>Timestamp-based:</strong> <code>YYYYMMDDHHMM-distributed-consensus.md</code> (sorts chronologically, no collisions)</li>
+<li><strong>Title-based:</strong> <code>distributed-consensus.md</code> (human-readable, easier to read in logs)</li>
+<li><strong>Luhmann-style IDs:</strong> <code>1a.2b.3c.md</code> (mimics paper ZK, encodes hierarchy; rarely needed)</li>
+</ul>
+<p>Pick one and stick to it. The server handles all three equally well.</p>
+<h2 id="workflow">Workflow<a class="headerlink" href="#workflow" title="Permanent link">&para;</a></h2>
+<p>Four-stage workflow for building your Zettelkasten:</p>
+<h3 id="1-capture-fleeting-notes">1. Capture (Fleeting Notes)<a class="headerlink" href="#1-capture-fleeting-notes" title="Permanent link">&para;</a></h3>
+<p>Write quick, unpolished notes as they occur. Use the <code>fleeting</code> template:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Create a new fleeting note interactively</span>
+markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span class="p">&amp;</span>
+<span class="c1"># Then in Claude, call: create_from_template(template_name=&#39;fleeting&#39;)</span>
+</code></pre></div>
+<p>Or programmatically:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+
+<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">)</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+    <span class="s2">&quot;Inbox/quick-idea.md&quot;</span><span class="p">,</span>
+    <span class="n">content</span><span class="o">=</span><span class="s2">&quot;Distributed systems are hard.&quot;</span><span class="p">,</span>
+    <span class="n">frontmatter</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;fleeting&quot;</span><span class="p">,</span> <span class="s2">&quot;tags&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;systems&quot;</span><span class="p">]}</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><strong>Goals for this stage:</strong>
+- Capture the idea without judgment
+- Don't polish or structure
+- One idea per note
+- Review daily or weekly</p>
+<p><strong>Review inbox:</strong></p>
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">&quot;*&quot;</span><span class="w"> </span>--folder<span class="w"> </span>Inbox
+</code></pre></div>
+<h3 id="2-develop-literature-permanent">2. Develop (Literature → Permanent)<a class="headerlink" href="#2-develop-literature-permanent" title="Permanent link">&para;</a></h3>
+<p>Expand inbox notes into permanent knowledge. Two paths:</p>
+<p><strong>From external sources (literature notes):</strong>
+1. Read an article, book section, or paper
+2. Create a <code>literature</code> note with key extracts and your interpretation
+3. Use the <code>discuss</code> MCP prompt to strengthen and clarify the writing
+4. Convert into a <code>permanent</code> note once synthesized</p>
+<p><strong>From existing notes:</strong>
+1. Use <code>get_context(path)</code> to see what already links to this note
+2. Use <code>search(query, mode='hybrid')</code> to find related notes
+3. Use <code>edit</code> to expand the note with new ideas and links
+4. Change <code>type: fleeting</code> to <code>type: permanent</code> once mature</p>
+<p><strong>Example workflow:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># See the note&#39;s current neighborhood</span>
+<span class="n">context</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_context</span><span class="p">(</span><span class="s2">&quot;Inbox/consensus-algorithms.md&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Backlinks: </span><span class="si">{</span><span class="n">context</span><span class="o">.</span><span class="n">backlinks</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Similar notes: </span><span class="si">{</span><span class="n">context</span><span class="o">.</span><span class="n">similar</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+<span class="c1"># Search for related notes</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;consensus&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hybrid&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+
+<span class="c1"># Once expanded, update the note</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">edit</span><span class="p">(</span>
+    <span class="s2">&quot;Inbox/consensus-algorithms.md&quot;</span><span class="p">,</span>
+    <span class="n">old_text</span><span class="o">=</span><span class="s2">&quot;type: fleeting&quot;</span><span class="p">,</span>
+    <span class="n">new_text</span><span class="o">=</span><span class="s2">&quot;type: permanent&quot;</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="3-connect-build-the-graph">3. Connect (Build the Graph)<a class="headerlink" href="#3-connect-build-the-graph" title="Permanent link">&para;</a></h3>
+<p>Linking transforms isolated notes into a knowledge network. Four tools support this:</p>
+<p><strong>Explore the neighborhood:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># See everything connected to this note</span>
+<span class="n">context</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_context</span><span class="p">(</span><span class="s2">&quot;Notes/consensus.md&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>Returns:
+- <code>backlinks</code>: notes that link here (who cites this idea?)
+- <code>outlinks</code>: notes this links to (what does this build on?)
+- <code>similar</code>: semantically related notes not yet linked
+- <code>folder_notes</code>: other notes in the same folder
+- <code>tags</code>: frontmatter tags for grouping
+- <code>modified_at</code>: last modification timestamp</p>
+<p><strong>Find related notes you haven't linked yet:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">similar</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_similar</span><span class="p">(</span><span class="s2">&quot;Notes/consensus.md&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">note</span> <span class="ow">in</span> <span class="n">similar</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Similar: </span><span class="si">{</span><span class="n">note</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">note</span><span class="o">.</span><span class="n">score</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Discover indirect connections:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Find the shortest path between two ideas</span>
+<span class="n">path</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_connection_path</span><span class="p">(</span>
+    <span class="n">source</span><span class="o">=</span><span class="s2">&quot;Notes/distributed-systems.md&quot;</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;Notes/fault-tolerance.md&quot;</span><span class="p">,</span>
+    <span class="n">max_depth</span><span class="o">=</span><span class="mi">5</span>
+<span class="p">)</span>
+<span class="k">if</span> <span class="n">path</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Connection: </span><span class="si">{</span><span class="s1">&#39; -&gt; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;No connection found within max_depth&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Add links to notes:</strong></p>
+<p>Edit the note and add <code>[[wikilink]]</code> or <code>[text](path.md)</code> references:</p>
+<div class="highlight"><pre><span></span><code><span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">edit</span><span class="p">(</span>
+    <span class="s2">&quot;Notes/consensus.md&quot;</span><span class="p">,</span>
+    <span class="n">old_text</span><span class="o">=</span><span class="s2">&quot;## Evidence&quot;</span><span class="p">,</span>
+    <span class="n">new_text</span><span class="o">=</span><span class="s2">&quot;## Evidence</span><span class="se">\n\n</span><span class="s2">See [[Byzantine Fault Tolerance]] for formal proofs.&quot;</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>All three link formats work:
+- <code>[[wikilinks]]</code>: shortest, preferred for internal links
+- <code>[Markdown links](path.md)</code>: standard markdown
+- <code>[Reference-style][1]\n\n[1]: path.md</code>: separates link text from destination</p>
+<p><strong>Rename safely with link updates:</strong></p>
+<p>When a note title changes, rename it and update all backlinks automatically:</p>
+<div class="highlight"><pre><span></span><code><span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
+    <span class="s2">&quot;Notes/old-title.md&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Notes/new-title.md&quot;</span><span class="p">,</span>
+    <span class="n">update_links</span><span class="o">=</span><span class="kc">True</span>  <span class="c1"># Rewrites [[old-title]] to [[new-title]] in all notes</span>
+<span class="p">)</span>
+</code></pre></div>
+<h3 id="4-review-maintain-the-graph">4. Review (Maintain the Graph)<a class="headerlink" href="#4-review-maintain-the-graph" title="Permanent link">&para;</a></h3>
+<p>Weekly reviews keep your vault healthy and connected:</p>
+<p><strong>Check vault statistics:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">stats</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">stats</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Documents: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">document_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Broken links: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">broken_link_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Orphan notes: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">orphan_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Find isolated notes:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">orphans</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_orphan_notes</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">note</span> <span class="ow">in</span> <span class="n">orphans</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Isolated: </span><span class="si">{</span><span class="n">note</span><span class="o">.</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="c1"># Either link it to the rest of the vault, or delete it</span>
+</code></pre></div>
+<p><strong>Find and fix broken links:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">broken</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_broken_links</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="n">broken</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Broken: </span><span class="si">{</span><span class="n">link</span><span class="o">.</span><span class="n">source_path</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">link</span><span class="o">.</span><span class="n">target_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="c1"># Fix the link or delete the file it points to</span>
+</code></pre></div>
+<p><strong>Identify hub notes (candidates for MOCs):</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">hubs</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_most_linked</span><span class="p">(</span><span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">hub</span> <span class="ow">in</span> <span class="n">hubs</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">hub</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">hub</span><span class="o">.</span><span class="n">backlink_count</span><span class="si">}</span><span class="s2"> inbound links&quot;</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="maps-of-content-mocs">Maps of Content (MOCs)<a class="headerlink" href="#maps-of-content-mocs" title="Permanent link">&para;</a></h2>
+<p>A <strong>MOC</strong> (Map of Content) is a curated hub note that aggregates links to related notes on a theme. MOCs surface the structure of your vault and guide exploration.</p>
+<p><strong>When to create a MOC:</strong></p>
+<ul>
+<li>You have 5+ related permanent notes on a theme</li>
+<li>You frequently search for the same topic</li>
+<li>You want to guide someone (or your future self) through a domain</li>
+</ul>
+<p><strong>How to build one:</strong></p>
+<ol>
+<li>Identify the theme (such as "Distributed Systems")</li>
+<li>Search for related notes:
+   <div class="highlight"><pre><span></span><code><span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;distributed systems&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hybrid&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+</code></pre></div></li>
+<li>Use <code>get_most_linked()</code> to find existing hubs:
+   <div class="highlight"><pre><span></span><code><span class="n">hubs</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_most_linked</span><span class="p">(</span><span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+</code></pre></div></li>
+<li>Create a new <code>moc</code> template note:
+   <div class="highlight"><pre><span></span><code><span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
+    <span class="s2">&quot;Notes/Distributed-Systems-MOC.md&quot;</span><span class="p">,</span>
+    <span class="n">content</span><span class="o">=</span><span class="s2">&quot;# Distributed Systems</span><span class="se">\n\n</span><span class="s2">## Core concepts</span><span class="se">\n</span><span class="s2">...&quot;</span><span class="p">,</span>
+    <span class="n">frontmatter</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;moc&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;tags&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;moc&quot;</span><span class="p">],</span>
+        <span class="s2">&quot;title&quot;</span><span class="p">:</span> <span class="s2">&quot;Distributed Systems (MOC)&quot;</span>
+    <span class="p">}</span>
+<span class="p">)</span>
+</code></pre></div></li>
+<li>Add <code>[[wikilinks]]</code> to permanent notes grouped by depth or topic</li>
+<li>Link the MOC back from related permanent notes:
+   <div class="highlight"><pre><span></span><code><span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">edit</span><span class="p">(</span>
+    <span class="s2">&quot;Notes/consensus.md&quot;</span><span class="p">,</span>
+    <span class="n">old_text</span><span class="o">=</span><span class="s2">&quot;## Related&quot;</span><span class="p">,</span>
+    <span class="n">new_text</span><span class="o">=</span><span class="s2">&quot;## Related</span><span class="se">\n\n</span><span class="s2">See [[Distributed-Systems-MOC]] for the full map.&quot;</span>
+<span class="p">)</span>
+</code></pre></div></li>
+</ol>
+<p><strong>MOC structure example:</strong></p>
+<div class="highlight"><pre><span></span><code>---
+title: &quot;Distributed Systems (MOC)&quot;
+type: moc
+tags: [moc, systems]
+<span class="gu">created: YYYY-MM-DD</span>
+<span class="gu">---</span>
+
+<span class="gh"># Distributed Systems</span>
+
+A map of the core concepts in distributed systems.
+
+<span class="gu">## Foundations</span>
+
+The basics: what makes systems distributed?
+
+<span class="k">-</span><span class="w"> </span>[[Time and Ordering]]
+<span class="k">-</span><span class="w"> </span>[[Consensus Algorithms]]
+<span class="k">-</span><span class="w"> </span>[[Fault Tolerance]]
+
+<span class="gu">## Architectures</span>
+
+How to build real systems:
+
+<span class="k">-</span><span class="w"> </span>[[Replication]]
+<span class="k">-</span><span class="w"> </span>[[Sharding]]
+<span class="k">-</span><span class="w"> </span>[[Load Balancing]]
+
+<span class="gu">## Challenges</span>
+
+Hard problems we keep solving:
+
+<span class="k">-</span><span class="w"> </span>[[Byzantine Fault Tolerance]]
+<span class="k">-</span><span class="w"> </span>[[Network Partitions]]
+<span class="k">-</span><span class="w"> </span>[[CAP Theorem]]
+
+<span class="gu">## See also</span>
+
+<span class="k">-</span><span class="w"> </span>[[Scalability]] — related but distinct topic
+</code></pre></div>
+<h2 id="using-templates">Using Templates<a class="headerlink" href="#using-templates" title="Permanent link">&para;</a></h2>
+<p>Templates accelerate note creation. The <code>fleeting</code>, <code>literature</code>, <code>permanent</code>, and <code>moc</code> templates are provided in <code>examples/zettelkasten/templates/</code>.</p>
+<p><strong>Configure the template folder:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER</span><span class="o">=</span>/path/to/examples/zettelkasten/templates
+markdown-vault-mcp<span class="w"> </span>serve
+</code></pre></div>
+<p><strong>Use in Claude via the <code>create_from_template</code> prompt:</strong></p>
+<p>The prompt will:
+1. List available templates
+2. Ask you to choose one
+3. Gather required values (title, source, etc.)
+4. Create the note with filled-in frontmatter</p>
+<p><strong>Invoke via MCP prompt:</strong></p>
+<p><code>create_from_template</code> is an MCP prompt, not a Python API method. Invoke it through your MCP client (such as Claude):</p>
+<div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name=&quot;literature&quot;
+</code></pre></div>
+<p>The prompt calls <code>list_documents(folder=&lt;templates_folder&gt;)</code> to enumerate templates, <code>read</code> to fetch the chosen one, and <code>write</code> to create the filled note. All operations go through vault tools.</p>
+<h2 id="using-the-zettelkasten-prompt">Using the Zettelkasten Prompt<a class="headerlink" href="#using-the-zettelkasten-prompt" title="Permanent link">&para;</a></h2>
+<p>The <code>examples/zettelkasten/prompts/zettelkasten.md</code> prompt guides you through connecting a note to your vault in five steps:</p>
+<ol>
+<li><strong>Read and understand</strong>: extract the central claim</li>
+<li><strong>Survey the neighborhood</strong>: see existing backlinks and similar notes</li>
+<li><strong>Discover broader connections</strong>: search for related permanent notes</li>
+<li><strong>Suggest links</strong>: present new connections with context</li>
+<li><strong>Check for MOC opportunity</strong>: flag if a new MOC would help</li>
+</ol>
+<p><strong>Configure prompt mounting:</strong></p>
+<p>If your MCP server supports <code>PROMPTS_FOLDER</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_PROMPTS_FOLDER</span><span class="o">=</span>/path/to/examples/zettelkasten/prompts
+markdown-vault-mcp<span class="w"> </span>serve
+</code></pre></div>
+<p>Then in Claude, the <code>zettelkasten</code> prompt is available for use.</p>
+<p><strong>Fire the prompt from Claude.ai's <code>+</code> menu.</strong> Once the server is added as a connector on Claude.ai, every MCP prompt (including <code>zettelkasten</code>) appears in the compose area's <code>+</code> menu. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick the prompt. Claude opens with the invocation scaffolded, so you don't need to remember the arguments. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a> for other clients.</p>
+<p><strong>Use the prompt:</strong></p>
+<div class="highlight"><pre><span></span><code>In Claude, call: zettelkasten(path=&#39;Notes/my-idea.md&#39;)
+</code></pre></div>
+<p>The prompt guides you through connecting the note to related ideas and flags when a new MOC would help.</p>
+<h2 id="tips-and-best-practices">Tips and Best Practices<a class="headerlink" href="#tips-and-best-practices" title="Permanent link">&para;</a></h2>
+<h3 id="start-with-statistics">Start with statistics<a class="headerlink" href="#start-with-statistics" title="Permanent link">&para;</a></h3>
+<p>Before writing your first note, run <code>stats()</code> to understand your vault's shape:</p>
+<div class="highlight"><pre><span></span><code><span class="n">stats</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">stats</span><span class="p">()</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Documents: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">document_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Broken links: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">broken_link_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Orphaned notes: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">orphan_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>Run it again each month to track how your vault grows.</p>
+<h3 id="use-get_context-before-every-edit">Use <code>get_context()</code> before every edit<a class="headerlink" href="#use-get_context-before-every-edit" title="Permanent link">&para;</a></h3>
+<p><code>get_context(path)</code> is your primary navigation tool. Before editing any note, call it to see:</p>
+<ul>
+<li>Who already links to this note (validation that it matters)</li>
+<li>What this note links to (avoid circular references)</li>
+<li>Semantically similar notes (discover missed connections)</li>
+<li>Folder notes (all other notes in the same folder, from <code>context.folder_notes</code>)</li>
+</ul>
+<h3 id="hybrid-search-beats-keyword-only">Hybrid search beats keyword-only<a class="headerlink" href="#hybrid-search-beats-keyword-only" title="Permanent link">&para;</a></h3>
+<p>Always prefer <code>mode='hybrid'</code> when searching:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Good</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;consensus&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hybrid&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+
+<span class="c1"># Weaker (keyword only)</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;consensus&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;keyword&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+</code></pre></div>
+<p>Hybrid search combines full-text ranking (exact matches, stemming) with semantic similarity (meaning), so you get both precision and discovery.</p>
+<h3 id="review-orphans-weekly">Review orphans weekly<a class="headerlink" href="#review-orphans-weekly" title="Permanent link">&para;</a></h3>
+<p>Orphaned notes (no inbound or outbound links) are knowledge dead zones. Schedule a weekly check:</p>
+<div class="highlight"><pre><span></span><code><span class="n">orphans</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_orphan_notes</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">note</span> <span class="ow">in</span> <span class="n">orphans</span><span class="p">:</span>
+    <span class="c1"># Either integrate it: add outlinks to existing notes</span>
+    <span class="c1"># Or delete it: it wasn&#39;t worth connecting</span>
+</code></pre></div>
+<p>This prevents accumulating notes you're not thinking about.</p>
+<h3 id="use-get_connection_path-for-cross-domain-discovery">Use <code>get_connection_path()</code> for cross-domain discovery<a class="headerlink" href="#use-get_connection_path-for-cross-domain-discovery" title="Permanent link">&para;</a></h3>
+<p>When you want to see how two seemingly distant topics relate, use <code>get_connection_path()</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="n">path</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_connection_path</span><span class="p">(</span>
+    <span class="n">source</span><span class="o">=</span><span class="s2">&quot;Notes/machine-learning.md&quot;</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;Notes/philosophy.md&quot;</span><span class="p">,</span>
+    <span class="n">max_depth</span><span class="o">=</span><span class="mi">6</span>
+<span class="p">)</span>
+<span class="c1"># Might return: [&quot;machine-learning&quot;, &quot;artificial-intelligence&quot;, &quot;consciousness&quot;, &quot;philosophy&quot;]</span>
+</code></pre></div>
+<p>This reveals unexpected bridges between domains.</p>
+<h3 id="link-aggressively-prune-minimally">Link aggressively, prune minimally<a class="headerlink" href="#link-aggressively-prune-minimally" title="Permanent link">&para;</a></h3>
+<p>Don't agonize over link relevance. If two notes touch on similar ideas, link them. The search tools and <code>get_context()</code> will help you rediscover connections. Over-linking is better than under-linking; the network gets richer as you explore.</p>
+<p>Exception: Delete broken links immediately. <code>get_broken_links()</code> makes this easy.</p>
+<h3 id="tag-for-grouping-not-taxonomy">Tag for grouping, not taxonomy<a class="headerlink" href="#tag-for-grouping-not-taxonomy" title="Permanent link">&para;</a></h3>
+<p>Tags are not a rigid classification system. Use them for grouping and quick filtering:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Good</span>
+<span class="n">tags</span><span class="p">:</span> <span class="p">[</span><span class="n">systems</span><span class="p">,</span> <span class="n">distributed</span><span class="p">,</span> <span class="n">algorithms</span><span class="p">]</span>
+
+<span class="c1"># Avoid (over-specific)</span>
+<span class="n">tags</span><span class="p">:</span> <span class="p">[</span><span class="n">system</span><span class="o">-</span><span class="nb">type</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="n">category</span><span class="o">-</span><span class="n">a</span><span class="o">-</span><span class="n">variant</span><span class="o">-</span><span class="n">b</span><span class="p">]</span>
+</code></pre></div>
+<p>Use search and links for discovery. Tags are just shortcuts.</p>
+<h3 id="let-claude-split-or-merge-quick-capture-notes">Let Claude split or merge quick-capture notes<a class="headerlink" href="#let-claude-split-or-merge-quick-capture-notes" title="Permanent link">&para;</a></h3>
+<p>Two shape operations that an LLM handles cleanly but manual workflows usually skip:</p>
+<ul>
+<li><strong>Split.</strong> When a quick-capture note contains two ideas (one literature reference and one early permanent claim), ask Claude to split it into two notes. Each is then developed independently.</li>
+<li><strong>Merge.</strong> When a quick-capture note restates or extends an existing permanent note, ask Claude to merge it (add as a new paragraph or <code>## Extension</code> section) rather than letting near-duplicates accumulate. The <a href="../../tools/#search"><code>search</code></a> + <code>read</code> + <code>write</code> + <code>delete</code> composition handles this in a single prompt turn.</li>
+</ul>
+<p>Resist pre-splitting or pre-merging before review. Claude does both in one pass.</p>
+<h2 id="using-zettelkasten-with-okf">Using Zettelkasten with OKF<a class="headerlink" href="#using-zettelkasten-with-okf" title="Permanent link">&para;</a></h2>
+<p>Zettelkasten and the <a href="../okf/">Open Knowledge Format</a> sit at different layers: the method governs how ideas connect and mature, while OKF describes what each note is and how much to trust it. A Zettelkasten vault becomes an OKF bundle the moment you add <code>okf_version: "0.2"</code> to the root <code>index.md</code>, and the fit is close because both are note-centric.</p>
+<p><strong>Types line up already.</strong> The one hard OKF rule is a non-empty <code>type</code>, and every Zettelkasten template sets one (<code>fleeting</code>, <code>literature</code>, <code>permanent</code>, <code>moc</code>), so a vault built from the examples passes <code>okf_validate</code> from the first note, with no placeholder of the kind PARA's inbox needs. A <code>fleeting</code> note already carries its type as the quick capture.</p>
+<p><strong>Status does not collide.</strong> Zettelkasten leans on links and tags rather than a lifecycle field, which leaves the OKF <code>status</code> field (<code>draft</code>, <code>stable</code>, <code>deprecated</code>) free to use as intended. Reach for it when a permanent note is provisional (<code>draft</code>) or has been superseded (<code>deprecated</code>); deprecated and stale notes rank lower in search on a detected bundle, which keeps a growing Zettelkasten navigable.</p>
+<p><strong>Add provenance where it helps.</strong> The OKF <code>sources</code> list is a natural home for the citations a literature note already tracks, and <code>verified</code> records a human review. Add them to literature and permanent notes to promote their trust tier, and leave quick-capture notes lean. Write <code>[[wikilinks]]</code> freely; <code>okf_convert_links</code> produces the OKF link style at export time.</p>
+<p>The <a href="../../examples/okf/"><code>examples/okf/</code></a> pack adds the declaration index, typed note templates, and a prompt pack (author, verify, triage-stale, migrate) that drops in alongside the Zettelkasten prompts.</p>
+<h2 id="next-steps">Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Read the design document</strong> for details on the linking system and search algorithms: <a href="../../design/design/"><code>docs/design/design.md</code></a></li>
+<li><strong>Explore the MCP tools</strong> to understand the full API: <a href="../../tools/"><code>tools/index.md</code></a></li>
+<li><strong>Review the examples</strong> for templates and prompts: <a href="../../examples/zettelkasten/"><code>examples/zettelkasten/</code></a></li>
+<li><strong>Run this vault as an OKF bundle?</strong> See the <a href="../okf/">OKF guide</a> and the <a href="../../examples/okf/"><code>examples/okf/</code></a> pack</li>
+<li><strong>Prefer an action-oriented workflow?</strong> Try the <a href="../para/">PARA guide</a>: Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts</li>
+<li><strong>Ambient patterns</strong>: <a href="../../prompts/#ambient-patterns-without-prompts"><code>docs/prompts.md</code></a>: flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)</li>
+<li><strong>Research workflows</strong>: <a href="../research-workflows/">research-workflows.md</a>: literature grounding, fact-checking, and writing papers from notes</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/config-wizard/wizard.js" type="module"></script>
+      
+    
+  </body>
+</html>
