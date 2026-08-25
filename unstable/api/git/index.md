@@ -75,9 +75,18 @@ strategy.close()  # final flush
 
 Validate startup git settings for token-authenticated workflows.
 
-### `__call__(path, content, operation)`
+### `__call__(path, content, operation, *, old_path=None)`
 
 WriteCallback interface: stage + commit, then schedule push.
+
+Parameters:
+
+| Name        | Type             | Description                                                                           | Default                                                                                              |
+| ----------- | ---------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `path`      | `Path`           | Absolute path of the file the operation landed on. For a rename this is the new path. | *required*                                                                                           |
+| `content`   | `str`            | File content at write time; unused here, since staging reads the working tree.        | *required*                                                                                           |
+| `operation` | `WriteOperation` | The kind of write that occurred.                                                      | *required*                                                                                           |
+| `old_path`  | \`Path           | None\`                                                                                | For a rename, the absolute path the file moved from, so staging can be scoped to it and path (#894). |
 
 ### `force_pull(*, dry_run=False)`
 
@@ -92,6 +101,8 @@ Before the merge it self-quiesces via :meth:`_quiesce_writes`: new writes are pa
 On `ff-only` failure (divergent history) the implementation falls through to the same rebase + Syncthing-style sibling write path used by :meth:`sync_once` (see :meth:`_resolve_rebase_conflicts` and :meth:`_write_conflict_files`). When the conflict-resolution path produces sibling files HEAD has advanced to the remote and :attr:`PullResult.applied` is `True` with :attr:`PullResult.reason` set to `"conflicts_resolved_with_siblings"`.
 
 After a successful HEAD advance — fast-forward or sibling resolution — :meth:`_lfs_pull` runs so any LFS pointers in the new commits are materialised before the caller sees the working tree.
+
+A strategy built without remote sync — unmanaged / commit-only mode, where `enable_pull` is `False` — has no remote to pull from, so this returns `applied=False` with reason `"pull_disabled"` **before running any git command** (#1128). Without that gate the pipeline ran `git fetch origin` on a remoteless checkout (answering `"fetch_failed"`, which reads as retryable) and raised `CalledProcessError` out of `_head_sha` on a vault that is not a git repository at all. `enable_pull` gated only the periodic loop before; it now gates every pull.
 
 Parameters:
 

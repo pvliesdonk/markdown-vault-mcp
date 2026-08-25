@@ -3447,6 +3447,7 @@
 <li>Check <code>stats</code> to see if <code>semantic_search_available</code> is true</li>
 </ul>
 <p>Keyword and hybrid modes accept FTS5 operators (<code>AND</code>, <code>OR</code>, <code>NEAR</code>, <code>"exact phrase"</code>, <code>prefix*</code>). A natural-language query whose terms contain characters FTS5 reserves (a hyphenated slug such as <code>vault-mcp</code>, or a colon) is matched literally rather than failing, so plain queries do not need escaping.</p>
+<p>An empty or whitespace-only <code>query</code> returns an empty list in <code>semantic</code> and <code>hybrid</code> modes. Such a query carries no signal, and answering it locally avoids a round-trip that embedding providers reject with a raw HTTP 400.</p>
 </div>
 <p><strong>Example usage:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>

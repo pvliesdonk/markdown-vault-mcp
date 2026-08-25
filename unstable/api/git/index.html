@@ -2550,7 +2550,7 @@ strategy.close()  # final flush
 
 
 <h3 id="markdown_vault_mcp.git.GitWriteStrategy.__call__" class="doc doc-heading">
-            <code class="highlight language-python"><span class="fm">__call__</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">operation</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="fm">__call__</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">operation</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">old_path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.git.GitWriteStrategy.__call__" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -2558,6 +2558,88 @@ strategy.close()  # final flush
     <div class="doc doc-contents ">
 
         <p>WriteCallback interface: stage + commit, then schedule push.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Absolute path of the file the operation landed on. For a
+rename this is the <em>new</em> path.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>content</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>File content at write time; unused here, since staging
+reads the working tree.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>operation</code>
+            </td>
+            <td>
+                  <code><span title="markdown_vault_mcp.types.WriteOperation">WriteOperation</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The kind of write that occurred.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>old_path</code>
+            </td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>For a rename, the absolute path the file moved from,
+so staging can be scoped to it and <em>path</em> (#894).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
@@ -2602,6 +2684,15 @@ path produces sibling files HEAD has advanced to the remote and
 resolution — :meth:<code>_lfs_pull</code> runs so any LFS pointers in the
 new commits are materialised before the caller sees the working
 tree.</p>
+<p>A strategy built without remote sync — unmanaged / commit-only
+mode, where <code>enable_pull</code> is <code>False</code> — has no remote to pull
+from, so this returns <code>applied=False</code> with reason
+<code>"pull_disabled"</code> <strong>before running any git command</strong> (#1128).
+Without that gate the pipeline ran <code>git fetch origin</code> on a
+remoteless checkout (answering <code>"fetch_failed"</code>, which reads as
+retryable) and raised <code>CalledProcessError</code> out of <code>_head_sha</code>
+on a vault that is not a git repository at all. <code>enable_pull</code>
+gated only the periodic loop before; it now gates every pull.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>

@@ -488,6 +488,8 @@ The endpoint is only available on HTTP/SSE transports. To set up:
 1. In your GitHub repository, add a webhook pointing at `https://<your-host>/github-webhook` with content type `application/json` and the same secret.
 1. Select the `push` event (other events are acknowledged with 200 and ignored).
 
+Set the secret only on a deployment that owns its remote (`GIT_REPO_URL`). Elsewhere the endpoint mounts but is inert. With no remote to pull from, every delivery is acknowledged with 200 and logged as a warning. The server logs the same warning once at startup.
+
 The periodic pull loop (`GIT_PULL_INTERVAL_S`) remains active as a belt-and-suspenders fallback for missed webhook deliveries. For the same setup in context, alongside the other sync mechanisms and what each delivery outcome means, see the [git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/git-integration/#push-triggered-pull-github-webhook).
 
 ## File Watcher
@@ -767,11 +769,14 @@ Behavior:
 - A `push` event pulls first, then reindexes only when HEAD actually moved. A push to a branch the vault does not track leaves HEAD where it was, so it costs a fetch and nothing more.
 - `ping`, GitHub's handshake delivery, answers `pong`; every other event returns 200 and does nothing.
 - A delivery whose pull did not apply returns 503, so GitHub retries it instead of marking it delivered. A pull that keeps failing, such as an unresolved conflict, exhausts the retries and waits for the next periodic tick. Divergent history is not a failure: it flows through the Syncthing-style sibling resolution described under [`git_sync`](#manual-sync-git_sync-tool) below.
+- A delivery to a server with no managed remote returns 200, not 503. There is nothing to pull and a retry cannot change that, so the delivery is recorded rather than retried. Each one logs a warning naming the problem, and the server logs the same warning once at startup.
 - A delivery arriving while the initial index build is still running is handled, not dropped. The pull is a pure git operation and runs regardless of index state; only the reindex is skipped, and the boot reconciliation pass that follows the build picks the pulled changes up.
 
 Managed mode only
 
-Set the secret only where the server owns the remote. Outside managed mode a delivery is not a quiet no-op: the pull path ignores the sync switch that unmanaged mode turns off and runs `git fetch origin` anyway. A checkout with no reachable `origin` fails that fetch and answers 503, burning GitHub's retries on every push; against a vault that is not a git repository at all, the pull raises out of the handler.
+Set the secret only where the server owns the remote. Outside managed mode the endpoint is inert: it verifies signatures and answers 200, but there is no remote to pull from, so every delivery is a no-op. The server says so at startup and on each delivery, because a webhook that is quietly doing nothing looks the same as one that is working.
+
+This is a no-op rather than a failure as of 4.1. Before that the pull path ignored the sync switch unmanaged mode turns off and ran `git fetch origin` anyway: a checkout with no reachable `origin` failed that fetch and answered 503, burning GitHub's retries on every push, and against a vault that was not a git repository at all the pull raised out of the handler.
 
 Keep `GIT_PULL_INTERVAL_S` enabled. The webhook narrows the staleness window; the loop is what catches the deliveries the webhook loses.
 
@@ -4574,6 +4579,8 @@ Choosing a search mode
 - Check `stats` to see if `semantic_search_available` is true
 
 Keyword and hybrid modes accept FTS5 operators (`AND`, `OR`, `NEAR`, `"exact phrase"`, `prefix*`). A natural-language query whose terms contain characters FTS5 reserves (a hyphenated slug such as `vault-mcp`, or a colon) is matched literally rather than failing, so plain queries do not need escaping.
+
+An empty or whitespace-only `query` returns an empty list in `semantic` and `hybrid` modes. Such a query carries no signal, and answering it locally avoids a round-trip that embedding providers reject with a raw HTTP 400.
 
 **Example usage:**
 
@@ -8600,9 +8607,18 @@ strategy.close()  # final flush
 
 Validate startup git settings for token-authenticated workflows.
 
-### `__call__(path, content, operation)`
+### `__call__(path, content, operation, *, old_path=None)`
 
 WriteCallback interface: stage + commit, then schedule push.
+
+Parameters:
+
+| Name        | Type             | Description                                                                           | Default                                                                                              |
+| ----------- | ---------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `path`      | `Path`           | Absolute path of the file the operation landed on. For a rename this is the new path. | *required*                                                                                           |
+| `content`   | `str`            | File content at write time; unused here, since staging reads the working tree.        | *required*                                                                                           |
+| `operation` | `WriteOperation` | The kind of write that occurred.                                                      | *required*                                                                                           |
+| `old_path`  | \`Path           | None\`                                                                                | For a rename, the absolute path the file moved from, so staging can be scoped to it and path (#894). |
 
 ### `force_pull(*, dry_run=False)`
 
@@ -8617,6 +8633,8 @@ Before the merge it self-quiesces via :meth:`_quiesce_writes`: new writes are pa
 On `ff-only` failure (divergent history) the implementation falls through to the same rebase + Syncthing-style sibling write path used by :meth:`sync_once` (see :meth:`_resolve_rebase_conflicts` and :meth:`_write_conflict_files`). When the conflict-resolution path produces sibling files HEAD has advanced to the remote and :attr:`PullResult.applied` is `True` with :attr:`PullResult.reason` set to `"conflicts_resolved_with_siblings"`.
 
 After a successful HEAD advance — fast-forward or sibling resolution — :meth:`_lfs_pull` runs so any LFS pointers in the new commits are materialised before the caller sees the working tree.
+
+A strategy built without remote sync — unmanaged / commit-only mode, where `enable_pull` is `False` — has no remote to pull from, so this returns `applied=False` with reason `"pull_disabled"` **before running any git command** (#1128). Without that gate the pipeline ran `git fetch origin` on a remoteless checkout (answering `"fetch_failed"`, which reads as retryable) and raised `CalledProcessError` out of `_head_sha` on a vault that is not a git repository at all. `enable_pull` gated only the periodic loop before; it now gates every pull.
 
 Parameters:
 

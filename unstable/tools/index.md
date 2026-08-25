@@ -96,6 +96,8 @@ Choosing a search mode
 
 Keyword and hybrid modes accept FTS5 operators (`AND`, `OR`, `NEAR`, `"exact phrase"`, `prefix*`). A natural-language query whose terms contain characters FTS5 reserves (a hyphenated slug such as `vault-mcp`, or a colon) is matched literally rather than failing, so plain queries do not need escaping.
 
+An empty or whitespace-only `query` returns an empty list in `semantic` and `hybrid` modes. Such a query carries no signal, and answering it locally avoids a round-trip that embedding providers reject with a raw HTTP 400.
+
 **Example usage:**
 
 ```
