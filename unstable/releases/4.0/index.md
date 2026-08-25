@@ -111,4 +111,4 @@ No patch releases yet.
 
 ## All changes
 
-See [CHANGELOG.md](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md) for the full commit-level list, or the [v3.1.0 to 4.0.0 comparison](https://github.com/pvliesdonk/markdown-vault-mcp/compare/v3.1.0...b9b433f9c237be17eb78de8b288c3b246eab71dc).
+See [CHANGELOG.md](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md) for the full commit-level list, or the [v3.1.0 to 4.0.0 comparison](https://github.com/pvliesdonk/markdown-vault-mcp/compare/v3.1.0...2945134c8589e0ea6263d37b88b2029b5172692e).
