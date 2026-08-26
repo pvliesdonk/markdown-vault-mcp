@@ -2850,6 +2850,7 @@ For MCP server deployment:
 | Variable | Description | Default |
 |-|-|-|
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | MCP server name shown to clients | `markdown-vault-mcp` |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | Operator context appended to the composed MCP instructions | unset |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | Legacy full replacement of the composed MCP instructions (deprecated; prefer `_EXTRA`) | generic description |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files | required |
