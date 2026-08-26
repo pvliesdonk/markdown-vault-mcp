@@ -74,8 +74,20 @@ volumes:
 
 All `/data/*` directories are pre-created and owned by the runtime user in the image. For managed repo mode (where the server clones a git repo on first start), `/data/vault` must be writable (this works automatically with named volumes or when UID/GID match the bind-mount owner). The first startup triggers a full index build; subsequent starts only reindex changed files.
 
-!!! warning "Upgrading from v1.8.x"
-    Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddings-data`, `fastembed-data`). These have been consolidated into a single `state-data` volume mounted at `/data/state`. Existing state is **not automatically migrated**: the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large vaults). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into `state-data` before starting the new container.
+## Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MARKDOWN_VAULT_MCP_BEARER_TOKEN` | n/a | Enable bearer token auth |
+| `FASTMCP_LOG_LEVEL` | `INFO` | Log level (`DEBUG` / `INFO` / `WARNING` / `ERROR`) |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | n/a | Operator context appended to the generated MCP instructions |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | (computed at startup) | Legacy full replacement of the generated instructions (deprecated) |
+| `MARKDOWN_VAULT_MCP_DEBUG_PORT` | n/a | Remote-debugger TCP port (see [Remote debugging](#remote-debugging); requires `--build-arg DEBUG=true` image) |
+| `MARKDOWN_VAULT_MCP_DEBUG_WAIT` | `false` | Block startup until IDE attaches (see [Remote debugging](#remote-debugging)) |
+
+For OIDC auth variables, see [Authentication](../guides/authentication.md).
+
+Running behind a reverse proxy on a path prefix (`https://mcp.example.com/myservice/mcp`) rather than its own hostname needs two routing rules, one of which sits outside the prefix: see [Subpath Deployments](oidc.md#subpath-deployments).
 
 ## Traefik Reverse Proxy
 
@@ -303,4 +315,6 @@ Production images ship without `debugpy` to keep the image lean. To attach a rem
 When the helper is invoked but `debugpy` isn't installed (such as when `DEBUG_PORT` is set on a non-debug image), it logs a WARNING and continues: safe failure mode.
 
 <!-- DOMAIN-DOCKER-EXTRA-START -->
+!!! warning "Upgrading from v1.8.x"
+    Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddings-data`, `fastembed-data`). These have been consolidated into a single `state-data` volume mounted at `/data/state`. Existing state is **not automatically migrated**: the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large vaults). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into `state-data` before starting the new container.
 <!-- DOMAIN-DOCKER-EXTRA-END -->

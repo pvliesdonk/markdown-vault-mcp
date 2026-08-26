@@ -12,9 +12,6 @@ variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`,
     Use the [Configuration Generator](configuration-generator.md) to answer a few
     questions and copy a ready-made `.env`, Docker, or Claude config.
 
-!!! note "Configuration is validated at startup"
-    Numeric variables are validated against the **Type** column below (such as `int ≥ 1`). A non-numeric or out-of-range value makes the server **fail fast** at startup with a `ConfigurationError` naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.
-
 ## Server identity
 
 These two let an operator rename an instance or override its
@@ -66,6 +63,9 @@ backend through `MARKDOWN_VAULT_MCP_TASKS_URL` rather than
 about the disagreement.
 
 <!-- DOMAIN-CONFIG-VARS-START -->
+!!! note "Configuration is validated at startup"
+    Numeric variables are validated against the **Type** column below (such as `int ≥ 1`). A non-numeric or out-of-range value makes the server **fail fast** at startup with a `ConfigurationError` naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.
+
 ## Core
 
 | Variable | Type | Default | Required | Description |

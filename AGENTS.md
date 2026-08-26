@@ -5,8 +5,6 @@ Generic markdown vault MCP server with FTS5 + semantic search
 ## Design
 <!-- DOMAIN-START -->
 The authoritative design specification lives at [`docs/design/design.md`](docs/design/design.md). All implementation must conform to this spec. When in doubt, the design doc wins.
-
-This project is extracted from [`pvliesdonk/if-craft-corpus`](https://github.com/pvliesdonk/if-craft-corpus). See the design doc's Reference Code section for the mapping between source files.
 <!-- DOMAIN-END -->
 
 ## Project Structure
