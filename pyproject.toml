@@ -111,7 +111,6 @@ docs = [
     "mkdocs-material>=9.7.6",
     "mkdocstrings[python]>=0.28",
     "mkdocs-llmstxt>=0.5",
-    "pygments>=2,<2.21",
     "mike>=2.1",
 ]
 browser = [
@@ -144,9 +143,6 @@ requires = ["hatchling>=1.32,<1.33"]
 build-backend = "hatchling.build"
 
 [tool.uv]
-# Pygments 2.20.0 crashes on filename=None in HtmlFormatter (introduced in 2.20.0,
-# tracked upstream as Pygments PR #3078). Pin globally until the fix ships.
-override-dependencies = ["pygments>=2,<2.21"]
 # numpy 2.5.0's stubs use PEP 695 `type` aliases; mypy run with python_version=3.11
 # rejects them as 3.12-only syntax and aborts the type-check. Our dev/CI interpreter
 # is 3.12+, which would otherwise pull numpy 2.5.0, so cap <2.5.0 to keep the 2.4.x
