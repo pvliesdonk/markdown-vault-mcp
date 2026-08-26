@@ -4,6 +4,7 @@ _src_path: https://github.com/pvliesdonk/fastmcp-server-template
 docker_registry: ghcr.io/pvliesdonk
 domain_description: Generic markdown vault MCP server with FTS5 + semantic search
 enable_authorization: false
+enable_automatic_claude_review: true
 enable_structural_gate: true
 env_prefix: MARKDOWN_VAULT_MCP
 extra_required_checks:
