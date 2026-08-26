@@ -1059,6 +1059,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#openai-compatible-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI-compatible endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OpenAI-compatible endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The recipe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A worked example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-server-sends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the server sends
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#caveats-worth-knowing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caveats worth knowing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-an-endpoint-deserves-its-own-provider-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When an endpoint deserves its own provider name
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#auto-detection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2339,6 +2411,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#openai-compatible-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OpenAI-compatible endpoints
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OpenAI-compatible endpoints">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The recipe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-worked-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A worked example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-the-server-sends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the server sends
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#caveats-worth-knowing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Caveats worth knowing
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-an-endpoint-deserves-its-own-provider-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When an endpoint deserves its own provider name
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#auto-detection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2583,13 +2727,15 @@ curl<span class="w"> </span>http://localhost:11434/api/embeddings<span class="w"
 <span class="nv">OPENAI_API_KEY</span><span class="o">=</span>sk-your-api-key-here
 <span class="nv">MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</span><span class="o">=</span>/path/to/store/embeddings
 </code></pre></div>
-<p>For OpenAI-compatible providers, override the base URL and model:</p>
+<p>For any other OpenAI-compatible endpoint, override the base URL and model:</p>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</span><span class="o">=</span>openai
 <span class="nv">OPENAI_API_KEY</span><span class="o">=</span>your-provider-api-key
 <span class="nv">OPENAI_BASE_URL</span><span class="o">=</span>https://api.siliconflow.cn/v1
 <span class="nv">OPENAI_EMBEDDING_MODEL</span><span class="o">=</span>BAAI/bge-m3
 <span class="nv">MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</span><span class="o">=</span>/path/to/store/embeddings
 </code></pre></div>
+<p>See <a href="#openai-compatible-endpoints">OpenAI-compatible endpoints</a> for the caveats
+that come with pointing this provider at a third-party service.</p>
 <div class="admonition warning">
 <p class="admonition-title">Privacy</p>
 <p>Document content (titles, headings, body text) is sent to the configured OpenAI-compatible provider for embedding. Do not use this provider if your vault contains sensitive data you don't want to share with that provider. Use Ollama or FastEmbed for fully local, private embeddings.</p>
@@ -2653,6 +2799,93 @@ curl<span class="w"> </span>https://api.voyageai.com/v1/embeddings<span class="w
 <span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"input": "test", "model": "voyage-4"}'</span>
 </code></pre></div>
 <p>You should get a JSON response with an embedding array.</p>
+<hr />
+<h2 id="openai-compatible-endpoints">OpenAI-compatible endpoints<a class="headerlink" href="#openai-compatible-endpoints" title="Permanent link">&para;</a></h2>
+<p><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai</code> is a generic client, not a
+binding to OpenAI the company. Any service that serves <code>POST /v1/embeddings</code> in
+the OpenAI request and response shape works by pointing <code>OPENAI_BASE_URL</code> at it.
+Jina, Mistral, SiliconFlow, LiteLLM, vLLM, and Text Embeddings Inference all
+serve that shape, as do self-hosted gateways in front of another model.</p>
+<h3 id="the-recipe">The recipe<a class="headerlink" href="#the-recipe" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</span><span class="o">=</span>openai
+<span class="nv">OPENAI_API_KEY</span><span class="o">=</span>your-provider-api-key
+<span class="nv">OPENAI_BASE_URL</span><span class="o">=</span>https://api.example-vendor.com/v1
+<span class="nv">OPENAI_EMBEDDING_MODEL</span><span class="o">=</span>the-vendor-model-name
+<span class="nv">MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</span><span class="o">=</span>/path/to/store/embeddings
+</code></pre></div>
+<p>The base URL includes the version prefix and omits the trailing <code>/embeddings</code>:
+the SDK appends the path. Both <code>OPENAI_BASE_URL</code> and <code>OPENAI_EMBEDDING_MODEL</code>
+also accept the <code>MARKDOWN_VAULT_MCP_</code>-prefixed spelling, which wins over the
+bare one when both are set.</p>
+<p>Confirm the endpoint answers before starting the server:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">"</span><span class="nv">$OPENAI_BASE_URL</span><span class="s2">/embeddings"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$OPENAI_API_KEY</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s2">"{\"input\": \"test\", \"model\": \"</span><span class="nv">$OPENAI_EMBEDDING_MODEL</span><span class="s2">\"}"</span>
+</code></pre></div>
+<p>A JSON response carrying an embedding array means the configuration will work.</p>
+<h3 id="a-worked-example">A worked example<a class="headerlink" href="#a-worked-example" title="Permanent link">&para;</a></h3>
+<p>Voyage AI is the endpoint this pattern was verified against end to end
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/949">#949</a>):</p>
+<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</span><span class="o">=</span>openai
+<span class="nv">OPENAI_API_KEY</span><span class="o">=</span>pa-your-voyage-key<span class="w">     </span><span class="c1"># a Voyage key in the OpenAI variable</span>
+<span class="nv">OPENAI_BASE_URL</span><span class="o">=</span>https://api.voyageai.com/v1
+<span class="nv">OPENAI_EMBEDDING_MODEL</span><span class="o">=</span>voyage-4
+</code></pre></div>
+<p>That still works, and it is what the <a href="#voyage-ai"><code>voyage</code></a> provider does
+internally. Prefer the named provider for Voyage: it pins the base URL, gives
+the key its own variable, supplies a model default, and records <code>voyage</code> as the
+index identity. The example is here because it shows the shape for vendors that
+have no named provider.</p>
+<h3 id="what-the-server-sends">What the server sends<a class="headerlink" href="#what-the-server-sends" title="Permanent link">&para;</a></h3>
+<p>Each request carries only <code>model</code> and <code>input</code>. The server never sends
+<code>dimensions</code> or <code>user</code>, and it leaves <code>encoding_format</code> to the <code>openai</code> SDK,
+whose base64 default is widely accepted. This narrow request shape is why
+strict endpoints work: Voyage answers HTTP 400 to <code>dimensions</code>, to <code>user</code>,
+and to <code>encoding_format="float"</code>. An endpoint that requires a
+field outside <code>model</code> and <code>input</code> cannot be driven this way.</p>
+<h3 id="caveats-worth-knowing">Caveats worth knowing<a class="headerlink" href="#caveats-worth-knowing" title="Permanent link">&para;</a></h3>
+<div class="admonition warning">
+<p class="admonition-title">Changing only the base URL is invisible to the index</p>
+<p>The vector sidecar records the provider name and the model name, and a
+mismatch on startup re-embeds the vault automatically. Both values stay
+<code>openai</code> and your configured model string no matter which vendor serves
+them, so aiming <code>OPENAI_BASE_URL</code> at a different vendor while keeping
+the same model name goes undetected: vectors from two different models
+end up in one index, and search quality degrades quietly. Force the rebuild
+yourself by deleting the two sidecar files beside <code>EMBEDDINGS_PATH</code>
+(the <code>.npy</code> matrix and the <code>.json</code> metadata) and restarting.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Unknown context length falls back to a 1500-character chunk cap</p>
+<p>The chunk cap derives from the model's context length. That is known only
+for the models the server ships a table for, so a third-party model falls
+back to 1500 characters. If your model's context is smaller than roughly
+536 tokens, set <code>MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS</code> explicitly, or the
+endpoint will reject or truncate oversize chunks. See
+<a href="../../configuration/"><code>MAX_CHUNK_CHARS</code></a>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Auto-detection reacts to the key alone</p>
+<p>With <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> unset, an <code>OPENAI_API_KEY</code> in
+the environment selects the <code>openai</code> provider, including a key you
+exported for something else. Set the provider explicitly when a vault's
+backend matters.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Privacy</p>
+<p>Document content (titles, headings, body text) is sent to whichever
+endpoint you configure. Use Ollama or FastEmbed for fully local embeddings.</p>
+</div>
+<h3 id="when-an-endpoint-deserves-its-own-provider-name">When an endpoint deserves its own provider name<a class="headerlink" href="#when-an-endpoint-deserves-its-own-provider-name" title="Permanent link">&para;</a></h3>
+<p>Named presets are reserved for vendors whose API has behavior the generic
+transport cannot express. Voyage qualifies on its strict request-shape
+rejections and its query/document asymmetry, Ollama on being a local runtime
+with no key.
+For every other OpenAI-compatible endpoint the recipe above is the supported
+answer, and it costs nothing to run. If you think an endpoint clears that
+bar, open an issue describing the specific behavior the generic client cannot
+reach.</p>
 <hr />
 <h2 id="auto-detection">Auto-detection<a class="headerlink" href="#auto-detection" title="Permanent link">&para;</a></h2>
 <p>If you don't set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code>, the server tries providers in this order:</p>
