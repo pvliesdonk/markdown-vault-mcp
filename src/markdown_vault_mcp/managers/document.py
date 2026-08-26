@@ -153,8 +153,6 @@ class DocumentManager:
             ``True`` for the same reason ``Vault``'s does: it is the
             library-tier fail-safe, not the operator default the server
             flipped in #1113.
-        read_only: When ``True``, write operations raise
-            :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
         write_protect_existing: When ``True``, :meth:`write` and
             :meth:`write_attachment` refuse to overwrite an existing file
             unless the caller supplies an ``if_match`` etag.
