@@ -212,12 +212,14 @@ ignore = ["E501"]
 "scripts/promote_release_notes.py" = ["S603", "S607"]
 "scripts/check_pins.py" = ["S310"]  # urlopen on a validated api.github.com URL
 "scripts/report_seeded_changes.py" = ["S603", "S606", "S607"]
-# The CLAUDE.md → AGENTS.md migrator reads `git show HEAD:CLAUDE.md` with a
-# fixed argv and no shell — the same subprocess and partial-path exceptions as
-# the template scripts above (missing upstream: fastmcp-server-template).
-"scripts/migrate_agent_instructions.py" = ["S603", "S607"]
 
 # PROJECT-RUFF-IGNORES-START — replace, extend, or override the entries below
+# The CLAUDE.md → AGENTS.md migrator reads `git show HEAD:CLAUDE.md` with a
+# fixed argv and no shell — the same subprocess/partial-path exceptions the
+# template-owned block above grants its sibling scripts. Project-side entry:
+# the upstream addition (fastmcp-server-template#524, PR #527) was declined,
+# so this override lives in the project sentinel.
+"scripts/migrate_agent_instructions.py" = ["S603", "S607"]
 # config.py needs Sequence importable at runtime: the config-surface
 # generator resolves ProjectConfig's field annotations via get_type_hints,
 # which fails if the name only exists under TYPE_CHECKING (matches the
