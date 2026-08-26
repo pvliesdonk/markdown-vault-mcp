@@ -43,8 +43,6 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
-hooks:
-  - docs/hooks.py
 
 extra:
   version:
