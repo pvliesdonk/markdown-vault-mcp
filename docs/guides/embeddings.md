@@ -323,8 +323,8 @@ have no named provider.
 Each request carries only `model` and `input`. The server never sends
 `dimensions` or `user`, and it leaves `encoding_format` to the `openai` SDK,
 whose base64 default is widely accepted. This narrow request shape is why
-strict endpoints work: Voyage, for instance, answers HTTP 400 to `dimensions`,
-to `user`, and to `encoding_format="float"`. An endpoint that *requires* a
+strict endpoints work: Voyage answers HTTP 400 to `dimensions`, to `user`,
+and to `encoding_format="float"`. An endpoint that requires a
 field outside `model` and `input` cannot be driven this way.
 
 ### Caveats worth knowing
@@ -333,8 +333,8 @@ field outside `model` and `input` cannot be driven this way.
     The vector sidecar records the provider name and the model name, and a
     mismatch on startup re-embeds the vault automatically. Both values stay
     `openai` and your configured model string no matter which vendor serves
-    them, so repointing `OPENAI_BASE_URL` at a different vendor while keeping
-    the same model name is **not** detected: vectors from two different models
+    them, so aiming `OPENAI_BASE_URL` at a different vendor while keeping
+    the same model name goes undetected: vectors from two different models
     end up in one index, and search quality degrades quietly. Force the rebuild
     yourself by deleting the two sidecar files beside `EMBEDDINGS_PATH`
     (the `.npy` matrix and the `.json` metadata) and restarting.
@@ -349,7 +349,7 @@ field outside `model` and `input` cannot be driven this way.
 
 !!! note "Auto-detection reacts to the key alone"
     With `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` unset, an `OPENAI_API_KEY` in
-    the environment selects the `openai` provider — including a key you
+    the environment selects the `openai` provider, including a key you
     exported for something else. Set the provider explicitly when a vault's
     backend matters.
 
@@ -360,8 +360,9 @@ field outside `model` and `input` cannot be driven this way.
 ### When an endpoint deserves its own provider name
 
 Named presets are reserved for vendors whose API has behavior the generic
-transport cannot express — Voyage for its strict request-shape rejections and
-its query/document asymmetry, Ollama for being a local runtime with no key.
+transport cannot express. Voyage qualifies on its strict request-shape
+rejections and its query/document asymmetry, Ollama on being a local runtime
+with no key.
 For every other OpenAI-compatible endpoint the recipe above is the supported
 answer, and it costs nothing to run. If you think an endpoint clears that
 bar, open an issue describing the specific behavior the generic client cannot
