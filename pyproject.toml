@@ -93,7 +93,7 @@ dev = [
     "pytest-cov>=4.0",
     "diff-cover>=9.0",
     "ruff>=0.1",
-    "mypy>=1.0,<2",  # mypy 2.x migration deferred — see #727
+    "mypy>=1.0,<3",
     "pre-commit>=3.0",
     "pip-audit>=2.7",
     "watchdog>=4.0",
@@ -141,13 +141,6 @@ Changelog = "https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELO
 # with a publisher that accepts whatever the new minor emits.
 requires = ["hatchling>=1.32,<1.33"]
 build-backend = "hatchling.build"
-
-[tool.uv]
-# numpy 2.5.0's stubs use PEP 695 `type` aliases; mypy run with python_version=3.11
-# rejects them as 3.12-only syntax and aborts the type-check. Our dev/CI interpreter
-# is 3.12+, which would otherwise pull numpy 2.5.0, so cap <2.5.0 to keep the 2.4.x
-# stubs that mypy@3.11 accepts. Lift once mypy/numpy resolve it — see #727.
-constraint-dependencies = ["numpy<2.5.0"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/markdown_vault_mcp"]
@@ -314,6 +307,15 @@ exclude_lines = [
 ]
 
 [tool.mypy]
+# Keep this in lockstep with the floor of `requires-python` above (nothing
+# enforces it mechanically).  Raising `requires-python` without raising this
+# re-creates the trap #727 spent two rounds diagnosing:
+# a dependency that drops the old floor ships stubs in newer syntax, and mypy
+# aborts parsing them while still targeting the lower version.  numpy did
+# exactly that — 2.5.0 requires >=3.12 and its stubs use PEP 695 `type`
+# aliases, which mypy rejects at python_version=3.11 on every mypy version.
+# It is a non-issue only because `requires-python = ">=3.11"` makes numpy 2.5
+# ineligible for the whole supported range, so uv resolves 2.4.x for everyone.
 python_version = "3.11"
 strict = true
 warn_return_any = true
