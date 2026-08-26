@@ -2732,7 +2732,7 @@
 
 
 <h2 id="markdown_vault_mcp.types.NoteInfo" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">NoteInfo</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">folder</span><span class="p">,</span> <span class="n">frontmatter</span><span class="p">,</span> <span class="n">modified_at</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s1">'note'</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">NoteInfo</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">folder</span><span class="p">,</span> <span class="n">frontmatter</span><span class="p">,</span> <span class="n">modified_at</span><span class="p">,</span> <span class="n">kind</span><span class="o">=</span><span class="s1">'note'</span><span class="p">,</span> <span class="n">content_chars</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -2824,6 +2824,20 @@
               </div>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.NoteInfo.content_chars">content_chars</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Character count of the note body, frontmatter excluded,
+so a caller can budget batches without reading the note (#1039).
+<code>0</code> for a row indexed before this field existed, and for rows
+from queries that select a narrower column set.</p>
+              </div>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -2861,7 +2875,7 @@
 
 
 <h2 id="markdown_vault_mcp.types.ParsedNote" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ParsedNote</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">frontmatter</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">,</span> <span class="n">modified_at</span><span class="p">,</span> <span class="n">links</span><span class="o">=</span><span class="nb">list</span><span class="p">())</span></code>
+              <code class="highlight language-python"><span class="n">ParsedNote</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">frontmatter</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="n">chunks</span><span class="p">,</span> <span class="n">content_hash</span><span class="p">,</span> <span class="n">modified_at</span><span class="p">,</span> <span class="n">links</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">content_chars</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -2969,6 +2983,21 @@
             <td>
               <div class="doc-md-description">
                 <p>All links extracted from the document body.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.ParsedNote.content_chars">content_chars</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Character count of the document body as parsed:
+frontmatter removed and surrounding whitespace normalised by the
+frontmatter parser. Measured before chunking, because
+<code>chunk_overlap_words</code> duplicates text across chunks and would
+inflate any count summed from :attr:<code>chunks</code>.</p>
               </div>
             </td>
           </tr>

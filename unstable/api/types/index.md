@@ -24,36 +24,38 @@ Attributes:
 | `modified_at` | `float`          | Last-modified time as a Unix timestamp float.                 |
 | `etag`        | \`str            | None\`                                                        |
 
-## `NoteInfo(path, title, folder, frontmatter, modified_at, kind='note')`
+## `NoteInfo(path, title, folder, frontmatter, modified_at, kind='note', content_chars=0)`
 
 Summary info for a document, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.list_documents`.
 
 Attributes:
 
-| Name          | Type             | Description                                                                     |
-| ------------- | ---------------- | ------------------------------------------------------------------------------- |
-| `path`        | `str`            | Relative path from the vault root.                                              |
-| `title`       | `str`            | Document title.                                                                 |
-| `folder`      | `str`            | Parent folder path.                                                             |
-| `frontmatter` | `dict[str, Any]` | Parsed YAML frontmatter.                                                        |
-| `modified_at` | `float`          | Last-modified time as a Unix timestamp float.                                   |
-| `kind`        | `str`            | Always "note" for markdown documents; distinguishes from :class:AttachmentInfo. |
+| Name            | Type             | Description                                                                                                                                                                                                                          |
+| --------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`          | `str`            | Relative path from the vault root.                                                                                                                                                                                                   |
+| `title`         | `str`            | Document title.                                                                                                                                                                                                                      |
+| `folder`        | `str`            | Parent folder path.                                                                                                                                                                                                                  |
+| `frontmatter`   | `dict[str, Any]` | Parsed YAML frontmatter.                                                                                                                                                                                                             |
+| `modified_at`   | `float`          | Last-modified time as a Unix timestamp float.                                                                                                                                                                                        |
+| `kind`          | `str`            | Always "note" for markdown documents; distinguishes from :class:AttachmentInfo.                                                                                                                                                      |
+| `content_chars` | `int`            | Character count of the note body, frontmatter excluded, so a caller can budget batches without reading the note (#1039). 0 for a row indexed before this field existed, and for rows from queries that select a narrower column set. |
 
-## `ParsedNote(path, frontmatter, title, chunks, content_hash, modified_at, links=list())`
+## `ParsedNote(path, frontmatter, title, chunks, content_hash, modified_at, links=list(), content_chars=0)`
 
 A parsed markdown document with extracted structure.
 
 Attributes:
 
-| Name           | Type             | Description                                                   |
-| -------------- | ---------------- | ------------------------------------------------------------- |
-| `path`         | `str`            | Relative path from the vault root.                            |
-| `frontmatter`  | `dict[str, Any]` | Parsed YAML frontmatter as a dict.                            |
-| `title`        | `str`            | Document title derived from the first H1 heading or filename. |
-| `chunks`       | `list[Chunk]`    | Ordered list of content chunks split by heading.              |
-| `content_hash` | `str`            | SHA-256 hash of the raw file content for change detection.    |
-| `modified_at`  | `float`          | Last-modified time as a Unix timestamp float.                 |
-| `links`        | `list[LinkInfo]` | All links extracted from the document body.                   |
+| Name            | Type             | Description                                                                                                                                                                                                                                                                    |
+| --------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`          | `str`            | Relative path from the vault root.                                                                                                                                                                                                                                             |
+| `frontmatter`   | `dict[str, Any]` | Parsed YAML frontmatter as a dict.                                                                                                                                                                                                                                             |
+| `title`         | `str`            | Document title derived from the first H1 heading or filename.                                                                                                                                                                                                                  |
+| `chunks`        | `list[Chunk]`    | Ordered list of content chunks split by heading.                                                                                                                                                                                                                               |
+| `content_hash`  | `str`            | SHA-256 hash of the raw file content for change detection.                                                                                                                                                                                                                     |
+| `modified_at`   | `float`          | Last-modified time as a Unix timestamp float.                                                                                                                                                                                                                                  |
+| `links`         | `list[LinkInfo]` | All links extracted from the document body.                                                                                                                                                                                                                                    |
+| `content_chars` | `int`            | Character count of the document body as parsed: frontmatter removed and surrounding whitespace normalised by the frontmatter parser. Measured before chunking, because chunk_overlap_words duplicates text across chunks and would inflate any count summed from :attr:chunks. |
 
 ## `Chunk(heading, heading_level, content, start_line)`
 

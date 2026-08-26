@@ -51,7 +51,7 @@ For operators deciding whether to configure a backend: the tool is the most effi
 
 **Workflow:**
 
-1. **Plan**: expand folder prefixes via `get_toc`, de-duplicate, and pack the note paths into batches (delegated to a subagent when available; the toc carries paths, titles, and headings, never bodies).
+1. **Plan**: expand folder prefixes via `get_toc`, de-duplicate, and pack the note paths into batches against a size budget, using the `content_chars` each note carries (delegated to a subagent when available; the toc carries paths, titles, headings, and sizes, never bodies).
 1. **Map**: one detailed partial summary per batch, preserving concrete specifics and referencing every note by path. Parallel subagents fan out one mapper each; sequential subagents run one at a time; without subagents the client reads one batch at a time, keeping only each batch's partial summary.
 1. **Reduce**: partial summaries are combined into one cohesive summary, by a reducer subagent or inline.
 1. **Deliver**: the final summary plus a coverage note (notes summarized, notes skipped).

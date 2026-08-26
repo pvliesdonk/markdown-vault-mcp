@@ -3563,7 +3563,7 @@ partial markdown reads (see the tip above).</p>
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> List of info dicts. Every entry has a <code>kind</code> field (<code>"note"</code> or <code>"attachment"</code>). Body content is not included; call <code>read</code> for full text.</p>
+<p><strong>Returns:</strong> List of info dicts. Every entry has a <code>kind</code> field (<code>"note"</code> or <code>"attachment"</code>). Notes also carry <code>content_chars</code>, the character count of the note body with frontmatter excluded, so a caller can size work before fetching anything. Body content is not included; call <code>read</code> for full text.</p>
 <h3 id="list_folders"><code>list_folders</code><a class="headerlink" href="#list_folders" title="Permanent link">&para;</a></h3>
 <p>List all folder paths that contain documents. Use this to discover valid folder names for filtering <code>search</code> or <code>list_documents</code>. The root folder (top-level documents) is represented as the empty string <code>""</code>.</p>
 <p><strong>Returns:</strong> Sorted list of folder paths, such as <code>["", "Journal", "Projects"]</code>.</p>
@@ -4569,7 +4569,10 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <p><strong>Returns:</strong></p>
 <ul>
 <li><strong>Note mode</strong> (<code>path</code> ends in <code>.md</code>): flat ordered <code>list</code> of <code>{heading (str), level (int)}</code>. The document title is included as a synthetic H1 entry.</li>
-<li><strong>Folder mode</strong> (<code>path</code> is a folder prefix): <code>{path (str), notes (list), truncated (bool)}</code> where each entry in <code>notes</code> is <code>{path, title, headings}</code> and <code>headings</code> is a list of <code>{heading, level}</code> for that note. An empty or nonexistent folder returns an empty <code>notes</code> list with <code>truncated: false</code>.</li>
+<li>
+<p><strong>Folder mode</strong> (<code>path</code> is a folder prefix): <code>{path (str), notes (list), truncated (bool)}</code> where each entry in <code>notes</code> is <code>{path, title, headings, content_chars}</code> and <code>headings</code> is a list of <code>{heading, level}</code> for that note. An empty or nonexistent folder returns an empty <code>notes</code> list with <code>truncated: false</code>.</p>
+<p><code>content_chars</code> is the character count of that note's body, frontmatter excluded. It lets a client pack batches against a size budget instead of a note count, which is what the <a href="../prompts/"><code>summarize-subtree</code></a> recipe uses. A note indexed before the field existed reports <code>0</code>; a vault upgrading to this release rebuilds its index once on first startup, after which the real value is served.</p>
+</li>
 </ul>
 <p>Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
 <h3 id="get_recent"><code>get_recent</code><a class="headerlink" href="#get_recent" title="Permanent link">&para;</a></h3>
