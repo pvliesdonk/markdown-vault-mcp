@@ -32,7 +32,12 @@ import json
 import re
 from pathlib import Path
 
-from fastmcp_pvl_core import JobsConfig, ServerConfig, TransferConfig
+from fastmcp_pvl_core import (
+    JobsConfig,
+    ServerConfig,
+    TransferConfig,
+    finalize_instructions,
+)
 
 import markdown_vault_mcp
 
@@ -109,6 +114,19 @@ def _transfer_config_source_file() -> Path:
     """
     src = inspect.getsourcefile(TransferConfig)
     assert src is not None, "TransferConfig source file not found"
+    return Path(src)
+
+
+def _instructions_source_file() -> Path:
+    """Resolve pvl-core's instructions module (server tier).
+
+    ``finalize_instructions`` reads ``{PREFIX}_INSTRUCTIONS`` /
+    ``{PREFIX}_INSTRUCTIONS_EXTRA`` itself at compose time (pvl-core 5,
+    #1162); no config code in this package reads them any more, so its
+    source joins the scanned server tier the way ``ServerConfig``'s does.
+    """
+    src = inspect.getsourcefile(finalize_instructions)
+    assert src is not None, "finalize_instructions source file not found"
     return Path(src)
 
 
@@ -239,12 +257,18 @@ def jobs_inventory() -> set[str]:
     return _filter_config_vars(extract_env_vars_from_source(src))
 
 
+def instructions_inventory() -> set[str]:
+    src = _instructions_source_file().read_text(encoding="utf-8")
+    return _filter_config_vars(extract_env_vars_from_source(src))
+
+
 def full_inventory() -> set[str]:
     return (
         domain_inventory()
         | server_inventory()
         | transfer_inventory()
         | jobs_inventory()
+        | instructions_inventory()
         | FRAMEWORK_VARS
         | EXTRA_KNOWN_VARS
     )

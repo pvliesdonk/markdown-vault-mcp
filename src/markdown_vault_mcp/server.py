@@ -119,9 +119,7 @@ def make_server(
     # WORKFLOWS < INSTANCE < OPERATOR`` anchors pvl-core exports — never
     # ``priority=0``, which is ``IDENTITY`` and must stay unique), and
     # ``finalize_instructions`` renders them once, after tool visibility.
-    instructions_for(mcp).identity(
-        "Generic markdown vault MCP server with FTS5 + semantic search"
-    )
+    instructions_for(mcp).identity("Generic markdown vault MCP server with FTS5 + semantic search")
     # The docs site publishes llms.txt per version (mkdocs-llmstxt, mike);
     # `/latest/` resolves once the first release has published the site.
     instructions_for(mcp).documentation(
@@ -188,9 +186,8 @@ def make_server(
     # Domain instructions: contribute the vault guidance to the composed
     # builder from THIS config, not a second env read. The operator override
     # contract (MARKDOWN_VAULT_MCP_INSTRUCTIONS full-replace, _EXTRA append)
-    # is owned by finalize_instructions in the skeleton body; a caller-supplied
-    # config.instructions is no longer a full replace — pvl-core 5 renders the
-    # composed text exactly once, after tool visibility.
+    # is owned by finalize_instructions in the skeleton body — ProjectConfig
+    # carries no instructions field any more (#1162).
     contribute_instructions(
         mcp,
         read_only=is_read_only,
@@ -201,7 +198,7 @@ def make_server(
         okf_mode=config.content.okf_mode,
     )
 
-    # Honor the passed config's server name the same way as instructions/icons.
+    # Honor the passed config's server name the same way as the icon.
     # The skeleton body sources the client-facing name from the SERVER_NAME env
     # var, which config.server_name mirrors for from_env configs; a
     # programmatically-built config can diverge. Act only when they differ (a

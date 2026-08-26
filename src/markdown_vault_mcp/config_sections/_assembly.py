@@ -321,20 +321,6 @@ def read_server_name(prefix: str) -> str:
     return (_env(prefix, "SERVER_NAME") or "").strip() or "markdown-vault-mcp"
 
 
-def read_instructions(prefix: str) -> str | None:
-    """Read ``{prefix}_INSTRUCTIONS`` (template provenance — see above).
-
-    Args:
-        prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.
-
-    Returns:
-        The custom MCP instructions text, or ``None`` when unset.
-    """
-    from fastmcp_pvl_core import env as _env
-
-    return (_env(prefix, "INSTRUCTIONS") or "").strip() or None
-
-
 def resolve_git_repo_url(raw: str | None, token: str | None, prefix: str) -> str | None:
     """Resolve ``GIT_REPO_URL``, warning when a token is set without it.
 
