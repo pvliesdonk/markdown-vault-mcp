@@ -624,6 +624,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#write-protection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Write protection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#index-build-timeout" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2121,6 +2132,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#write-protection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Write protection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#index-build-timeout" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2414,6 +2436,13 @@ about the disagreement.</p>
 <td>Set to <code>true</code> to hide the write tools and serve a search-only vault. See the upgrade note below</td>
 </tr>
 <tr>
+<td><code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>No</td>
+<td>Set to <code>true</code> to refuse a <code>write</code> that would overwrite an existing file when no <code>if_match</code> etag is supplied. A deliberate replacement (read the file first, pass its etag as <code>if_match</code>) still succeeds, and <code>edit</code>, <code>append</code>, <code>delete</code>, and <code>rename</code> are unaffected. Uploads through a <code>create_upload_link</code> capability URL are subject to the same guard. Planned to default to <code>true</code> in 5.0. See <a href="#write-protection">Write protection</a></td>
+</tr>
+<tr>
 <td><code>MARKDOWN_VAULT_MCP_INDEX_PATH</code></td>
 <td>path</td>
 <td>in-memory</td>
@@ -2543,6 +2572,39 @@ required discovering a flag first.</p>
 while indexing do not trigger it again. If you place one of these paths inside a
 content directory, that whole top-level directory stops being watched, so keep
 them at the vault root or outside the vault to keep sibling content watched live.</p>
+<h2 id="write-protection">Write protection<a class="headerlink" href="#write-protection" title="Permanent link">&para;</a></h2>
+<p><code>write</code> replaces the whole file, frontmatter included. On a writable vault, an
+LLM client that reaches for <code>write</code> where <code>edit</code> was meant drops everything the
+note held. <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code> turns that case
+into an error instead:</p>
+<ul>
+<li>A <code>write</code> to a path that does not exist yet: unchanged.</li>
+<li>A <code>write</code> to an existing path <strong>without</strong> <code>if_match</code>: rejected with
+  <code>DocumentExistsError</code>, and the file on disk stays untouched.</li>
+<li>A <code>write</code> to an existing path <strong>with</strong> a matching <code>if_match</code> etag: allowed.
+  The caller has read the file, so the replacement is deliberate rather than
+  blind.</li>
+</ul>
+<p><code>edit</code>, <code>append</code>, <code>delete</code>, and <code>rename</code> never clobber unread content and are
+left alone. Uploads through a <code>create_upload_link</code> capability URL land through
+the same attachment-write path, so they are guarded too: mint the link for a
+fresh path, or remove the old attachment first.</p>
+<p>The server's own upkeep of the generated OKF files (the <code>log.md</code> bullet after
+an enforced write, and <code>index.md</code> regeneration) is exempt: those flows read the
+file and rewrite it in the same breath, which is what the guard exists to
+distinguish from a blind replacement.</p>
+<p>The default is <code>false</code>, which keeps the historical overwrite behavior.</p>
+<div class="admonition warning">
+<p class="admonition-title">This guard defaults to <code>true</code> from 5.0</p>
+<p>A default-off guard only protects operators who already know the failure
+exists, which is the population least likely to hit it. From 5.0 the
+default flips, so <code>write</code> over an existing note refuses unless <code>if_match</code>
+proves the caller read it first
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1136">#1136</a>).
+Set <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false</code> explicitly to keep
+blind overwrites after that upgrade, or set it to <code>true</code> now to adopt the
+5.0 behavior early.</p>
+</div>
 <h2 id="index-build-timeout">Index Build Timeout<a class="headerlink" href="#index-build-timeout" title="Permanent link">&para;</a></h2>
 <h3 id="markdown_vault_mcp_build_timeout_s"><code>MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S</code><a class="headerlink" href="#markdown_vault_mcp_build_timeout_s" title="Permanent link">&para;</a></h3>
 <p>Default: <code>60</code> (seconds).</p>
@@ -2714,7 +2776,7 @@ chronic backlog.</p>
 <td><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code></td>
 <td>string</td>
 <td>auto-detect</td>
-<td>Embedding provider: <code>openai</code>, <code>ollama</code>, or <code>fastembed</code>. <strong>Breaking change</strong> from <code>EMBEDDING_PROVIDER</code> in older versions</td>
+<td>Embedding provider: <code>openai</code>, <code>voyage</code>, <code>ollama</code>, or <code>fastembed</code>. <code>voyage</code> must be selected explicitly (it is not auto-detected). <strong>Breaking change</strong> from <code>EMBEDDING_PROVIDER</code> in older versions</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_EMBED_CONTEXT</code></td>
@@ -2759,6 +2821,18 @@ chronic backlog.</p>
 <td>OpenAI-compatible embedding model name</td>
 </tr>
 <tr>
+<td><code>VOYAGE_API_KEY</code></td>
+<td>string</td>
+<td>(none)</td>
+<td>Voyage AI API key for the <code>voyage</code> embedding provider. <strong>Not</strong> <code>MARKDOWN_VAULT_MCP_</code>-prefixed</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_VOYAGE_MODEL</code></td>
+<td>string</td>
+<td><code>voyage-4</code></td>
+<td>Voyage AI embedding model name. <code>voyage-4-large</code> for quality, <code>voyage-4-lite</code> for cost</td>
+</tr>
+<tr>
 <td><code>MARKDOWN_VAULT_MCP_OLLAMA_MODEL</code></td>
 <td>string</td>
 <td><code>nomic-embed-text</code></td>
@@ -2792,7 +2866,8 @@ chronic backlog.</p>
 <li><strong>Ollama</strong>, if <code>OLLAMA_HOST</code> is reachable</li>
 <li><strong>FastEmbed</strong>, if the <code>fastembed</code> package is installed</li>
 </ol>
-<p>Both API providers speak the OpenAI-compatible embeddings protocol through the official <code>openai</code> SDK: the <code>ollama</code> provider is a preset that targets <code>{OLLAMA_HOST}/v1</code> with no key required. The <code>OLLAMA_*</code> settings and their behavior are unchanged; <code>OLLAMA_CPU_ONLY</code> uses Ollama's native API, which is the only way to request CPU-only inference.</p>
+<p>All three API providers speak the OpenAI-compatible embeddings protocol through the official <code>openai</code> SDK: the <code>ollama</code> provider is a preset that targets <code>{OLLAMA_HOST}/v1</code> with no key required, and <code>voyage</code> is a preset that targets <code>https://api.voyageai.com/v1</code>. The <code>OLLAMA_*</code> settings and their behavior are unchanged; <code>OLLAMA_CPU_ONLY</code> uses Ollama's native API, which is the only way to request CPU-only inference.</p>
+<p><code>voyage</code> is not in the auto-detect chain: a <code>VOYAGE_API_KEY</code> exported for another tool must not silently take over an existing index, so set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage</code> to use it.</p>
 <p><strong>Explicit vs. auto-detect failure handling:</strong> when you set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> to a specific backend and it cannot be constructed at startup — a missing dependency, missing/empty credentials, or an unrecognised value — the server <strong>fails fast</strong> with a <code>ConfigurationError</code> rather than silently falling back to keyword-only search. (An unreachable Ollama/OpenAI <em>service</em> does not prevent startup — the provider still loads; the failure surfaces later as an embedding error during index build.) When the variable is <em>unset</em> (auto-detect) and no backend is available, the server logs a warning and continues with semantic search disabled. Set the variable explicitly if you want a missing provider to be a hard startup error.</p>
 </div>
 <h2 id="summarization">Summarization<a class="headerlink" href="#summarization" title="Permanent link">&para;</a></h2>

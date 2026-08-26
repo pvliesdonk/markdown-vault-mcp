@@ -3763,6 +3763,13 @@ if it does not.</p>
 <p class="admonition-title">Warning</p>
 <p><code>write</code> replaces the entire file. Use <code>edit</code> for targeted changes to existing documents.</p>
 </div>
+<div class="admonition note">
+<p class="admonition-title">Overwrite protection</p>
+<p>With <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code>, a <code>write</code> to a path
+that already exists fails unless the call carries a matching <code>if_match</code>
+etag. The flag defaults to <code>false</code> in 4.x and to <code>true</code> from 5.0. See
+<a href="../configuration/#write-protection">Write protection</a>.</p>
+</div>
 <h3 id="edit"><code>edit</code><a class="headerlink" href="#edit" title="Permanent link">&para;</a></h3>
 <p>Make a targeted text replacement in an existing document. Supports three modes:</p>
 <ul>
@@ -4130,6 +4137,13 @@ the saved file by <code>path</code> for downstream tools rather than <code>read(
 back into context.</p>
 <p><strong>Returns:</strong> <code>{"path": "notes/report.md", "created": true, "content_length": 4096, "content_type": "text/markdown", "final_url": "https://example.com/report.md"}</code></p>
 <p>For <code>.md</code> destinations, the response may also include a <code>conventions</code> list; see <a href="#write"><code>write</code></a>.</p>
+<div class="admonition note">
+<p class="admonition-title">Overwrite protection</p>
+<p><code>fetch</code> saves through the same guarded path as <code>write</code>, so with
+<code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code> a fetch to a path that
+already exists fails unless the call carries a matching <code>if_match</code> etag.
+See <a href="../configuration/#write-protection">Write protection</a>.</p>
+</div>
 <p>The download itself runs through <code>fastmcp-pvl-core</code>'s hardened <code>fetch_url</code>
 primitive, so the SSRF protections above are shared, audited code rather
 than a local copy.</p>

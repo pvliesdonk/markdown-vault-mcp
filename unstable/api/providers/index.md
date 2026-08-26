@@ -1,6 +1,6 @@
 # Embedding Providers
 
-The `providers` module defines an abstract base class for embedding providers and three concrete implementations for OpenAI, Ollama, and FastEmbed.
+The `providers` module defines an abstract base class for embedding providers and four concrete implementations for OpenAI, Voyage AI, Ollama, and FastEmbed.
 
 ## Quick Start
 
@@ -23,7 +23,9 @@ The `get_embedding_provider()` function auto-detects the best available provider
 1. **Ollama** (if `OLLAMA_HOST` is reachable)
 1. **FastEmbed** (if the package is installed)
 
-Override with `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai|ollama|fastembed`. For OpenAI-compatible APIs, set `OPENAI_BASE_URL` and `OPENAI_EMBEDDING_MODEL`, or the prefixed equivalents `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` and `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL`.
+Override with `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai|voyage|ollama|fastembed`. For OpenAI-compatible APIs, set `OPENAI_BASE_URL` and `OPENAI_EMBEDDING_MODEL`, or the prefixed equivalents `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL` and `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL`.
+
+`voyage` is a preset over the same OpenAI-compatible transport, pinned to `https://api.voyageai.com/v1` and configured with `VOYAGE_API_KEY` and `MARKDOWN_VAULT_MCP_VOYAGE_MODEL`. It is never auto-detected: select it explicitly.
 
 ## API Reference
 
@@ -222,6 +224,81 @@ Raises:
 | -------------- | -------------------------------- |
 | `RuntimeError` | If the embeddings request fails. |
 
+## `VoyageProvider(api_key, *, model=_MODEL, timeout=30.0)`
+
+Bases: `EmbeddingProvider`
+
+Embedding provider backed by Voyage AI's Embeddings API.
+
+Voyage serves `/v1/embeddings` in the OpenAI request/response shape, so this is a preset over the shared :class:`_OpenAICompatEmbeddings` transport with the base URL pinned to Voyage's endpoint — the same relationship :class:`OllamaProvider` has to it (#916). Pointing :class:`OpenAIProvider` at `https://api.voyageai.com/v1` by hand keeps working; the dedicated provider name exists so the endpoint, the key variable and the model default are discoverable rather than folklore.
+
+Voyage rejects OpenAI request fields it does not implement: `dimensions` and `user` are answered with HTTP 400, and `encoding_format="float"` with "accepted values are 'base64'". The shared transport sends only `model` and `input` and leaves `encoding_format` to the `openai` SDK, whose base64 default Voyage accepts — so no request shaping is needed here, but none of those three fields may start being sent either.
+
+Parameters:
+
+| Name      | Type    | Description                                              | Default    |
+| --------- | ------- | -------------------------------------------------------- | ---------- |
+| `api_key` | `str`   | Voyage API key for authentication.                       | *required* |
+| `model`   | `str`   | Embedding model name.                                    | `_MODEL`   |
+| `timeout` | `float` | Per-request timeout in seconds for HTTP calls to Voyage. | `30.0`     |
+
+Initialise VoyageProvider with an explicit API key.
+
+Parameters:
+
+| Name      | Type    | Description                                              | Default    |
+| --------- | ------- | -------------------------------------------------------- | ---------- |
+| `api_key` | `str`   | Voyage API key for authentication.                       | *required* |
+| `model`   | `str`   | Embedding model name.                                    | `_MODEL`   |
+| `timeout` | `float` | Per-request timeout in seconds for HTTP calls to Voyage. | `30.0`     |
+
+Raises:
+
+| Type           | Description                         |
+| -------------- | ----------------------------------- |
+| `ImportError`  | If the openai SDK is not installed. |
+| `RuntimeError` | If api_key is empty.                |
+
+### `dimension`
+
+Embedding dimension size.
+
+Embeds a test string on first access to determine the dimension.
+
+Returns:
+
+| Type  | Description                                 |
+| ----- | ------------------------------------------- |
+| `int` | Integer dimension of each embedding vector. |
+
+### `context_length`
+
+Return the model's context length from the known-model table.
+
+Returns None for models absent from the table; callers fall back to a conservative chunk cap.
+
+### `embed(texts)`
+
+Embed a batch of texts via Voyage's Embeddings API.
+
+Parameters:
+
+| Name    | Type        | Description               | Default    |
+| ------- | ----------- | ------------------------- | ---------- |
+| `texts` | `list[str]` | List of strings to embed. | *required* |
+
+Returns:
+
+| Type                | Description                               |
+| ------------------- | ----------------------------------------- |
+| `list[list[float]]` | List of embedding vectors in input order. |
+
+Raises:
+
+| Type           | Description                      |
+| -------------- | -------------------------------- |
+| `RuntimeError` | If the embeddings request fails. |
+
 ## `FastEmbedProvider(model_name='BAAI/bge-small-en-v1.5', cache_dir=None)`
 
 Bases: `EmbeddingProvider`
@@ -287,6 +364,8 @@ Checks `config.embeddings.provider` for an explicit selection. When that field i
 1. If Ollama is reachable at `config.embeddings.ollama_host` → :class:`OllamaProvider`.
 1. If `fastembed` can be imported → :class:`FastEmbedProvider`.
 1. Raises :class:`RuntimeError` with installation instructions.
+
+:class:`VoyageProvider` is deliberately absent from that probe: a `VOYAGE_API_KEY` exported for some other tool must not silently take over an existing index. Select it explicitly with `EMBEDDING_PROVIDER=voyage`.
 
 Parameters:
 

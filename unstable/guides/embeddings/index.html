@@ -1009,6 +1009,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#voyage-ai" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Voyage AI
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Voyage AI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-an-api-key_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Get an API key
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configure_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verify_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#auto-detection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2239,6 +2289,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#voyage-ai" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Voyage AI
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Voyage AI">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get-an-api-key_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Get an API key
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configure_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configure
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#verify_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#auto-detection" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2357,9 +2457,17 @@
 <td>Minimal</td>
 <td>Negligible</td>
 </tr>
+<tr>
+<td><a href="#voyage-ai">Voyage AI</a></td>
+<td>No (API call)</td>
+<td>N/A</td>
+<td>Yes</td>
+<td>Minimal</td>
+<td>Negligible</td>
+</tr>
 </tbody>
 </table>
-<p>All three providers produce embeddings that enable the <code>semantic</code> and <code>hybrid</code> search modes in the <code>search</code> tool.</p>
+<p>All four providers produce embeddings that enable the <code>semantic</code> and <code>hybrid</code> search modes in the <code>search</code> tool.</p>
 <h2 id="ollama">Ollama<a class="headerlink" href="#ollama" title="Permanent link">&para;</a></h2>
 <p><a href="https://ollama.com">Ollama</a> runs embedding models locally. It's the recommended option for local, private embeddings: easy to set up and works well on CPU.</p>
 <h3 id="install-ollama">Install Ollama<a class="headerlink" href="#install-ollama" title="Permanent link">&para;</a></h3>
@@ -2508,6 +2616,44 @@ curl<span class="w"> </span>https://api.openai.com/v1/embeddings<span class="w">
 <p>Search for "project ideas" using hybrid mode</p>
 </blockquote>
 <hr />
+<h2 id="voyage-ai">Voyage AI<a class="headerlink" href="#voyage-ai" title="Permanent link">&para;</a></h2>
+<p>Uses <a href="https://www.voyageai.com/">Voyage AI</a> embeddings (<code>voyage-4</code> by default). Voyage serves its Embeddings API in the OpenAI request/response shape, so this provider is the <code>openai</code> one with the base URL pinned to <code>https://api.voyageai.com/v1</code> and its own key and model variables.</p>
+<h3 id="get-an-api-key_1">Get an API key<a class="headerlink" href="#get-an-api-key_1" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Go to the <a href="https://dashboard.voyageai.com/">Voyage dashboard</a></li>
+<li>Create an API key</li>
+<li>Copy it</li>
+</ol>
+<h3 id="configure_3">Configure<a class="headerlink" href="#configure_3" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</span><span class="o">=</span>voyage
+<span class="nv">VOYAGE_API_KEY</span><span class="o">=</span>pa-your-api-key-here
+<span class="nv">MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</span><span class="o">=</span>/path/to/store/embeddings
+</code></pre></div>
+<p>To pick a different model:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_VOYAGE_MODEL</span><span class="o">=</span>voyage-4-large
+</code></pre></div>
+<p>The default is <code>voyage-4</code>, the balanced member of the family; <code>voyage-4-large</code> trades cost for retrieval quality and <code>voyage-4-lite</code> trades quality for cost. The voyage-4 and voyage-3.5 families take 32,000 tokens of input and return 1024-dimensional vectors by default. Changing the model re-embeds the vault once on the next startup.</p>
+<div class="admonition note">
+<p class="admonition-title">Voyage must be selected explicitly</p>
+<p>Unlike the other three, <code>voyage</code> is not in the auto-detection chain. A <code>VOYAGE_API_KEY</code> exported for some other tool would otherwise take over an existing index and force a full re-embed.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Privacy</p>
+<p>Document content (titles, headings, body text) is sent to Voyage AI for embedding. Use Ollama or FastEmbed for fully local, private embeddings.</p>
+</div>
+<div class="admonition info">
+<p class="admonition-title">You could always do this by hand</p>
+<p>Setting <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai</code> with <code>OPENAI_BASE_URL=https://api.voyageai.com/v1</code> still works and is wire-identical. The <code>voyage</code> name exists so the endpoint, the key variable, and a sensible model default are discoverable, and so the vector sidecar records <code>voyage</code> as the provider rather than <code>openai</code>.</p>
+</div>
+<h3 id="verify_3">Verify<a class="headerlink" href="#verify_3" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Test your API key (replace $VOYAGE_API_KEY with your key, or export it first)</span>
+curl<span class="w"> </span>https://api.voyageai.com/v1/embeddings<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$VOYAGE_API_KEY</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"input": "test", "model": "voyage-4"}'</span>
+</code></pre></div>
+<p>You should get a JSON response with an embedding array.</p>
+<hr />
 <h2 id="auto-detection">Auto-detection<a class="headerlink" href="#auto-detection" title="Permanent link">&para;</a></h2>
 <p>If you don't set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code>, the server tries providers in this order:</p>
 <ol>
@@ -2515,6 +2661,7 @@ curl<span class="w"> </span>https://api.openai.com/v1/embeddings<span class="w">
 <li><strong>Ollama:</strong> if <code>OLLAMA_HOST</code> is reachable</li>
 <li><strong>FastEmbed:</strong> if the package is installed</li>
 </ol>
+<p><code>voyage</code> is never auto-detected; select it explicitly.</p>
 <p>Set <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> explicitly to avoid surprises when your environment changes (setting <code>OPENAI_API_KEY</code> for another tool will cause the server to switch from Ollama to OpenAI).</p>
 <h2 id="common-to-all-providers">Common to all providers<a class="headerlink" href="#common-to-all-providers" title="Permanent link">&para;</a></h2>
 <p>Regardless of which provider you choose:</p>

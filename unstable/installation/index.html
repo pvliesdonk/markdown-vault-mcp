@@ -2066,7 +2066,7 @@ Adds FastMCP for running as an MCP server.</p>
 <div class="tabbed-block">
 <p><div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>embeddings-api<span class="o">]</span>
 </code></pre></div>
-Adds the openai SDK + httpx + numpy for Ollama/OpenAI embeddings via API.</p>
+Adds the openai SDK + httpx + numpy for Ollama/OpenAI/Voyage embeddings via API.</p>
 </div>
 <div class="tabbed-block">
 <p><div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>embeddings<span class="o">]</span>
@@ -2091,7 +2091,7 @@ uv<span class="w"> </span>sync<span class="w"> </span>--all-extras<span class="w
 <h2 id="docker">Docker<a class="headerlink" href="#docker" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>pull<span class="w"> </span>ghcr.io/pvliesdonk/markdown-vault-mcp:latest
 </code></pre></div>
-<p>The Docker image uses <code>[all]</code> (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI when configured.</p>
+<p>The Docker image uses <code>[all]</code> (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI/Voyage when configured.</p>
 <p>The <code>latest</code> tag is the newest stable release. For early adopters who want to test unreleased changes, the rolling <code>edge</code> tag tracks every merge to <code>main</code> and carries no version identity; see <a href="../deployment/docker/#image-tags">Image tags</a> for the full list. The floating <code>:latest</code>, <code>:vN</code>, and <code>:vN.M</code> tags only move on stable releases.</p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>pull<span class="w"> </span>ghcr.io/pvliesdonk/markdown-vault-mcp:edge
 </code></pre></div>

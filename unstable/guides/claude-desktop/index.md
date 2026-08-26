@@ -266,7 +266,7 @@ Update your config:
 **Key env vars:**
 
 - `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`: where to persist embedding vectors on disk (required to enable semantic search)
-- `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER`: `fastembed`, `ollama`, or `openai`
+- `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER`: `fastembed`, `ollama`, `openai`, or `voyage`
 - `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL` / `MARKDOWN_VAULT_MCP_OLLAMA_MODEL`: which model to use
 
 ### Pre-build embeddings before first launch

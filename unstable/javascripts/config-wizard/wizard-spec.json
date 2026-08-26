@@ -10,6 +10,7 @@
     "MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET",
     "MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY",
     "OPENAI_API_KEY",
+    "VOYAGE_API_KEY",
     "MARKDOWN_VAULT_MCP_GIT_TOKEN",
     "MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET",
     "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY"
@@ -425,6 +426,14 @@
       "advancedGroup": "Embeddings"
     },
     {
+      "id": "voyage_api_key",
+      "label": "Voyage Api Key",
+      "type": "text",
+      "var": "VOYAGE_API_KEY",
+      "help": "Voyage AI API key for the voyage embedding provider. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the OPENAI_API_KEY / OLLAMA_HOST convention. Setting it never auto-selects the provider; choose it explicitly with MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage.",
+      "advancedGroup": "Embeddings"
+    },
+    {
       "id": "build_timeout_s",
       "label": "Build Timeout S",
       "type": "number",
@@ -453,6 +462,13 @@
       "type": "bool",
       "var": "MARKDOWN_VAULT_MCP_READ_ONLY",
       "help": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport."
+    },
+    {
+      "id": "write_protect_existing",
+      "label": "Write Protect Existing",
+      "type": "bool",
+      "var": "MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING",
+      "help": "Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement (read first, pass if_match) still works, and edit / append / delete / rename are unaffected."
     },
     {
       "id": "disable_apps_ui",
@@ -667,7 +683,7 @@
       "label": "Embedding Provider",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER",
-      "help": "Embedding provider: openai, ollama, or fastembed. Unset auto-detects from the environment.",
+      "help": "Embedding provider: openai, voyage, ollama, or fastembed. Unset auto-detects from the environment (never voyage).",
       "advancedGroup": "Embeddings"
     },
     {
@@ -684,6 +700,14 @@
       "type": "bool",
       "var": "MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY",
       "help": "Force Ollama to embed on CPU only.",
+      "advancedGroup": "Embeddings"
+    },
+    {
+      "id": "voyage_model",
+      "label": "Voyage Model",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_VOYAGE_MODEL",
+      "help": "Voyage AI embedding model name.",
       "advancedGroup": "Embeddings"
     },
     {

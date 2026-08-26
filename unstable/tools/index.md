@@ -323,6 +323,10 @@ Warning
 
 `write` replaces the entire file. Use `edit` for targeted changes to existing documents.
 
+Overwrite protection
+
+With `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`, a `write` to a path that already exists fails unless the call carries a matching `if_match` etag. The flag defaults to `false` in 4.x and to `true` from 5.0. See [Write protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/#write-protection).
+
 ### `edit`
 
 Make a targeted text replacement in an existing document. Supports three modes:
@@ -510,6 +514,10 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 **Returns:** `{"path": "notes/report.md", "created": true, "content_length": 4096, "content_type": "text/markdown", "final_url": "https://example.com/report.md"}`
 
 For `.md` destinations, the response may also include a `conventions` list; see [`write`](#write).
+
+Overwrite protection
+
+`fetch` saves through the same guarded path as `write`, so with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` a fetch to a path that already exists fails unless the call carries a matching `if_match` etag. See [Write protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/#write-protection).
 
 The download itself runs through `fastmcp-pvl-core`'s hardened `fetch_url` primitive, so the SSRF protections above are shared, audited code rather than a local copy.
 

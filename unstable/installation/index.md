@@ -18,7 +18,7 @@ Adds FastMCP for running as an MCP server.
 pip install markdown-vault-mcp[embeddings-api]
 ```
 
-Adds the openai SDK + httpx + numpy for Ollama/OpenAI embeddings via API.
+Adds the openai SDK + httpx + numpy for Ollama/OpenAI/Voyage embeddings via API.
 
 ```
 pip install markdown-vault-mcp[embeddings]
@@ -52,7 +52,7 @@ uv sync --all-extras --all-groups
 docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
 ```
 
-The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI when configured.
+The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI/Voyage when configured.
 
 The `latest` tag is the newest stable release. For early adopters who want to test unreleased changes, the rolling `edge` tag tracks every merge to `main` and carries no version identity; see [Image tags](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/#image-tags) for the full list. The floating `:latest`, `:vN`, and `:vN.M` tags only move on stable releases.
 

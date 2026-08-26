@@ -2126,7 +2126,7 @@
 <tr>
 <td>Embedding provider</td>
 <td><em>(empty)</em></td>
-<td><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> (<code>fastembed</code>, <code>ollama</code>, <code>openai</code>); empty means keyword-only search</td>
+<td><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> (<code>fastembed</code>, <code>ollama</code>, <code>openai</code>, <code>voyage</code>); empty means keyword-only search</td>
 </tr>
 <tr>
 <td>Ollama host</td>
@@ -2157,6 +2157,16 @@
 <td>OpenAI embedding model</td>
 <td><code>text-embedding-3-small</code></td>
 <td><code>OPENAI_EMBEDDING_MODEL</code></td>
+</tr>
+<tr>
+<td>Voyage API key</td>
+<td><em>(empty, masked)</em></td>
+<td><code>VOYAGE_API_KEY</code>; used only with the <code>voyage</code> provider</td>
+</tr>
+<tr>
+<td>Voyage embedding model</td>
+<td><code>voyage-4</code></td>
+<td><code>MARKDOWN_VAULT_MCP_VOYAGE_MODEL</code></td>
 </tr>
 <tr>
 <td>Git sync repository URL</td>

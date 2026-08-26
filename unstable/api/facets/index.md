@@ -487,6 +487,7 @@ Raises:
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `ReadOnlyError`               | If the vault is read-only.                                                                                                    |
 | `ConcurrentModificationError` | If if_match is provided and does not match the current file hash, or if_match is supplied for a file that does not yet exist. |
+| `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
 | `ValueError`                  | If path escapes the source directory.                                                                                         |
 
 ### `edit(path, old_text=None, new_text='', if_match=None, line_start=None, line_end=None)`
@@ -659,6 +660,7 @@ Raises:
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `ReadOnlyError`               | If the vault is read-only.                                                                                                    |
 | `ConcurrentModificationError` | If if_match is provided and does not match the current file hash, or if_match is supplied for a file that does not yet exist. |
+| `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
 | `ValueError`                  | If the path escapes the source directory or has an extension not in the allowlist.                                            |
 
 ## GraphFacet
