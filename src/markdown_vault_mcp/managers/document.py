@@ -726,11 +726,12 @@ class DocumentManager:
             return
         if abs_path.is_file():
             raise DocumentExistsError(
-                f"Refusing to overwrite existing file: {path}. "
-                "Write protection is enabled "
-                "(MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING). Use 'edit' or "
-                "'append' for changes, pass if_match to replace the file "
-                "deliberately, or delete it first."
+                f"{path} exists; overwriting requires proof of read: call "
+                "'read', then retry with if_match=<etag> — or use 'edit' for "
+                "targeted changes, or 'append' to add to the end. Do not "
+                "delete and recreate: that destroys the note first and "
+                "proves nothing. (Write protection is enabled by the "
+                "operator: MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING.)"
             )
 
     def _atomic_write(self, abs_path: Path, data: str | bytes) -> None:

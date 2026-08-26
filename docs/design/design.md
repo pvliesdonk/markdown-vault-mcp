@@ -2113,7 +2113,9 @@ stays allowed and keeps its regular concurrency semantics; `edit()`,
 `append()`, `delete()`, and `rename()` are untouched. The guard runs before the
 `if_match` check, so a stale etag on an existing file still reports
 `ConcurrentModificationError` rather than the protection error. Default
-`False`, which preserves unconditional overwrite.
+`False`, which preserves unconditional overwrite; the operator default flips
+to `true` in 5.0 (#1136), which is an operator-surface breaking change and so
+waits for the major.
 
 The server's own read-modify-write maintenance of generated OKF files
 (`_okf_convention`'s `log.md` bullet, `OkfMigrationManager`'s `index.md`
@@ -2803,12 +2805,8 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | System-level instructions for LLM context | generic description |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files | required |
-<<<<<<< HEAD
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Hide the write tools | `false` |
-=======
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | Disable write tools | `true` |
-| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied | `false` |
->>>>>>> 258ac6d (feat(config): WRITE_PROTECT_EXISTING guard against blind overwrites)
+| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied (defaults to `true` from 5.0) | `false` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | Embeddings directory | disabled |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | Comma-separated frontmatter fields to index into `document_tags` | none |

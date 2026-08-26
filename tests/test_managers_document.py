@@ -277,6 +277,22 @@ class TestWriteProtectExisting:
             protected_doc_mgr.write("alpha.md", "# Replaced\n")
         assert (doc_vault / "alpha.md").read_text(encoding="utf-8") == before
 
+    def test_refusal_steers_to_read_then_if_match_not_delete(
+        self, protected_doc_mgr: DocumentManager
+    ) -> None:
+        """The message must point the agent at the sanctioned recovery path.
+
+        Delete-then-recreate destroys the note first and proves nothing about
+        having read it, so the refusal must not read as an invitation to it.
+        """
+        with pytest.raises(DocumentExistsError) as excinfo:
+            protected_doc_mgr.write("alpha.md", "# Replaced\n")
+        message = str(excinfo.value)
+        assert "if_match" in message
+        assert "'read'" in message
+        assert "'edit'" in message
+        assert "Do not delete and recreate" in message
+
     def test_overwrite_with_valid_if_match_succeeds(
         self, protected_doc_mgr: DocumentManager, doc_vault: Path
     ) -> None:

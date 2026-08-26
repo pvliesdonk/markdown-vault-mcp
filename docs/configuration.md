@@ -57,12 +57,8 @@ about the disagreement.
 | Variable | Type | Default | Required | Description |
 |----------|------|---------|----------|-------------|
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | path | (none) | **Yes** | Path to the markdown vault directory. Symbolic links inside the vault are followed on Python 3.13+ (3.11/3.12 do not follow symlinks); cyclic links hang the scan, so symlink-farm layouts must be acyclic |
-<<<<<<< HEAD
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | bool | `false` | No | Set to `true` to hide the write tools and serve a search-only vault. See the upgrade note below |
-=======
-| `MARKDOWN_VAULT_MCP_READ_ONLY` | bool | `true` | No | Set to `false` to enable write operations |
-| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | bool | `false` | No | Set to `true` to refuse a `write` that would overwrite an existing file when no `if_match` etag is supplied. A deliberate replacement (read the file first, pass its etag as `if_match`) still succeeds, and `edit`, `append`, `delete`, and `rename` are unaffected. Uploads through a `create_upload_link` capability URL are subject to the same guard. See [Write protection](#write-protection) |
->>>>>>> 258ac6d (feat(config): WRITE_PROTECT_EXISTING guard against blind overwrites)
+| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | bool | `false` | No | Set to `true` to refuse a `write` that would overwrite an existing file when no `if_match` etag is supplied. A deliberate replacement (read the file first, pass its etag as `if_match`) still succeeds, and `edit`, `append`, `delete`, and `rename` are unaffected. Uploads through a `create_upload_link` capability URL are subject to the same guard. Planned to default to `true` in 5.0. See [Write protection](#write-protection) |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | path | in-memory | No | Path to the SQLite FTS5 index file; set for persistence across restarts |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | path | disabled | No | Path to the numpy embeddings file; required to enable semantic search |
 | `MARKDOWN_VAULT_MCP_STATE_PATH` | path | `{SOURCE_DIR}/.markdown_vault_mcp/state.json` | No | Path to the change-tracking state file |
@@ -139,6 +135,17 @@ file and rewrite it in the same breath, which is what the guard exists to
 distinguish from a blind replacement.
 
 The default is `false`, which keeps the historical overwrite behavior.
+
+!!! warning "This guard defaults to `true` from 5.0"
+
+    A default-off guard only protects operators who already know the failure
+    exists, which is the population least likely to hit it. From 5.0 the
+    default flips, so `write` over an existing note refuses unless `if_match`
+    proves the caller read it first
+    ([#1136](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1136)).
+    Set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly to keep
+    blind overwrites after that upgrade, or set it to `true` now to adopt the
+    5.0 behavior early.
 
 ## Index Build Timeout
 

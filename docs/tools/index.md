@@ -353,7 +353,8 @@ if it does not.
 !!! note "Overwrite protection"
     With `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`, a `write` to a path
     that already exists fails unless the call carries a matching `if_match`
-    etag. See [Write protection](../configuration.md#write-protection).
+    etag. The flag defaults to `false` in 4.x and to `true` from 5.0. See
+    [Write protection](../configuration.md#write-protection).
 
 ### `edit`
 
