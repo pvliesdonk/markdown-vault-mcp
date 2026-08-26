@@ -31,7 +31,15 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    # >=4.11.3 for ServerConfig.oidc_advertised_scopes, which
+    # >=5.0.0 for the InstructionsBuilder (instructions_for /
+    # finalize_instructions): 5.0.0 removes build_instructions, which
+    # server.py imported, so the floor and the wiring move in one change
+    # (#502).  The same major keeps {PREFIX}_INSTRUCTIONS as a deprecated
+    # full-replace and adds {PREFIX}_INSTRUCTIONS_EXTRA as the additive
+    # operator path; add_transfer_workflow contributes the capability-link
+    # prose for path-2 transfer tools.
+    #
+    # 4.11.3 was the floor before that, for ServerConfig.oidc_advertised_scopes, which
     # config-presentation.yml names: the config-surface generator rejects a
     # presentation entry for a var core does not declare, so generation fails
     # outright wherever an older core is resolved.  The field is the operator
@@ -59,7 +67,7 @@ dependencies = [
     # this whole constraint rather than the floor alone (#335), but a floor
     # naming a release nobody can install is still a trap for anyone pinning
     # to it.
-    "fastmcp-pvl-core>=4.11.3,<5",
+    "fastmcp-pvl-core>=5.0.0,<6",
     "typer>=0.12",
 
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
@@ -198,6 +206,16 @@ ignore = ["E501"]
 # safe here and would otherwise trip every adopter's structural diff-gate
 # the first time an update touches the template-owned parts of the script.
 "scripts/stamp_manifests.py" = ["S603", "S607"]
+# The release-notes promoter stages only its computed repository-relative paths
+# from an explicit repository root. Its `git add -A --` uses fixed argv with no
+# shell interpolation, so the same subprocess and partial-path exceptions apply.
+"scripts/promote_release_notes.py" = ["S603", "S607"]
+"scripts/check_pins.py" = ["S310"]  # urlopen on a validated api.github.com URL
+"scripts/report_seeded_changes.py" = ["S603", "S606", "S607"]
+# The CLAUDE.md → AGENTS.md migrator reads `git show HEAD:CLAUDE.md` with a
+# fixed argv and no shell — the same subprocess and partial-path exceptions as
+# the template scripts above (missing upstream: fastmcp-server-template).
+"scripts/migrate_agent_instructions.py" = ["S603", "S607"]
 
 # PROJECT-RUFF-IGNORES-START — replace, extend, or override the entries below
 # config.py needs Sequence importable at runtime: the config-surface

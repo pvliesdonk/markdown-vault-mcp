@@ -2,7 +2,7 @@
 
 These run inside the rendered project's suite (and any downstream's suite that
 keeps the structural gate enabled), continuously verifying that this project's
-own rendered gate artifacts (pre-commit hook, CI job, pyproject, CLAUDE.md) are
+own rendered gate artifacts (pre-commit hook, CI job, pyproject, AGENTS.md) are
 wired correctly. Only rendered when ``enable_structural_gate`` is true.
 """
 
@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 # Canonical structural ruff selection — MUST stay byte-identical to the string
-# in .pre-commit-config.yaml, .github/workflows/ci.yml, and CLAUDE.md. The
+# in .pre-commit-config.yaml, .github/workflows/ci.yml, and AGENTS.md. The
 # anti-drift test in this module enforces that.
 STRUCTURAL = "C901,PLR0911,PLR0912,PLR0913,PLR0915,S"
 
@@ -221,7 +221,7 @@ def test_ci_has_structure_job() -> None:
 
 
 def test_claudemd_documents_the_gate_command() -> None:
-    text = (REPO_ROOT / "CLAUDE.md").read_text()
+    text = (REPO_ROOT / "AGENTS.md").read_text()
     assert "diff-quality" in text
     assert f"--extend-select={STRUCTURAL}" in text
     # Advisory audit + eyes content present. Split, not `and`-joined, so a
@@ -233,14 +233,14 @@ def test_claudemd_documents_the_gate_command() -> None:
 
 def test_structural_select_string_is_identical_across_surfaces() -> None:
     """The select string lives in the shared script (which the pre-commit hook
-    and the CI job both execute) and in CLAUDE.md's documented command; drift
+    and the CI job both execute) and in AGENTS.md's documented command; drift
     between them is a silent gate weakening. Assert both carry the canonical
     string verbatim.
     """
     needle = f"--extend-select={STRUCTURAL}"
     script = (REPO_ROOT / "scripts" / "structural_gate.sh").read_text()
-    claudemd = (REPO_ROOT / "CLAUDE.md").read_text()
-    for name, text in [("structural_gate.sh", script), ("CLAUDE.md", claudemd)]:
+    claudemd = (REPO_ROOT / "AGENTS.md").read_text()
+    for name, text in [("structural_gate.sh", script), ("AGENTS.md", claudemd)]:
         assert needle in text, f"{name} missing canonical structural select"
 
 

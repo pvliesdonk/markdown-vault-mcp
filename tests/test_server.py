@@ -131,11 +131,12 @@ class TestServerIdentity:
         assert "relative" in server.instructions
         assert "'search'" in server.instructions
         assert "'stats'" in server.instructions
-        # Core's build_instructions appends an operator-override hint
-        # (by design — tells anyone reading the instructions that the
-        # env var exists to customise them).
-        assert "MARKDOWN_VAULT_MCP_INSTRUCTIONS" in server.instructions
-        assert "Operators:" in server.instructions
+        # pvl-core 5 composes the text: the template-owned identity line
+        # opens it, and the domain guidance snippet follows. The pre-5
+        # operator-override hint is gone from the composed text.
+        assert server.instructions.startswith(
+            "Generic markdown vault MCP server with FTS5 + semantic search"
+        )
 
     def test_mode_line_is_composed_domain_side(self) -> None:
         """The READ-ONLY/READ-WRITE line is ours, not pvl-core's (#1114).
@@ -143,24 +144,18 @@ class TestServerIdentity:
         pvl-core 4.11.2 dropped the announcement (and the ``read_only``
         keyword that selected it) because nothing in the library enforced
         it. This server does enforce it, so the sentence is composed in
-        ``build_default_instructions`` — after the domain prose and before
-        the operator-override hint the core still appends.
+        ``build_default_instructions`` — as the last sentence of the domain
+        guidance snippet.
         """
-        import inspect
-
-        from fastmcp_pvl_core import build_instructions as core_build_instructions
-
         from markdown_vault_mcp._instructions import build_default_instructions
-
-        assert "read_only" not in inspect.signature(core_build_instructions).parameters
 
         text = build_default_instructions(read_only=True)
         assert "READ-ONLY" in text
-        assert text.index("READ-ONLY") < text.index("Operators:")
+        assert text.rstrip().endswith("write tools are not available.")
 
         text = build_default_instructions(read_only=False)
         assert "READ-WRITE" in text
-        assert text.index("READ-WRITE") < text.index("Operators:")
+        assert text.rstrip().endswith("write tools are available.")
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_custom_server_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -313,20 +308,25 @@ class TestConfigDrivenPrompts:
         assert "greet" in names
 
     @pytest.mark.usefixtures("_mcp_env")
-    def test_instructions_resolved_from_provided_config_not_env(
+    def test_instructions_composed_from_provided_config_not_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """The domain guidance snippet is built from the provided config.
+
+        pvl-core 5 owns the operator override (the INSTRUCTIONS env var read
+        inside ``finalize_instructions``); a caller-supplied
+        ``config.instructions`` is no longer a full replace. What DOMAIN-WIRING
+        still guarantees is that the guidance snippet reflects THIS config —
+        here the read-only flag — not a second env read.
+        """
         from markdown_vault_mcp.config import ProjectConfig
 
-        # env carries NO instructions override ...
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", raising=False)
-        # ... while the provided config sets one. It must win over both the
-        # generic env-baseline and the domain default (DOMAIN-WIRING is gated on
-        # config.instructions, not the env var).
-        config = ProjectConfig(source_dir=tmp_path, instructions="Custom vault brief.")
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
+        config = ProjectConfig(source_dir=tmp_path, read_only=True)
 
         server = make_server(config=config)
-        assert server.instructions == "Custom vault brief."
+        assert "READ-ONLY" in (server.instructions or "")
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_server_name_resolved_from_provided_config_not_env(

@@ -54,7 +54,7 @@ jobs:
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "latest"
 
@@ -386,6 +386,25 @@ jobs:
             while IFS= read -r f; do
               [ -n "${f}" ] && body+=$'\n'"- \`${f}\`"
             done <<< "${CONFLICT_FILES}"
+          fi
+
+          # Seeded-file change report — written by the template's
+          # report_seeded_changes.py migration at the end of the update (#519).
+          # After the conflict list (which must survive the tail truncation
+          # below) and bounded: the committed file is the full record.
+          if [ -s .copier-seeded-changes.md ]; then
+            body+=$'\n\n'"### Seeded files the template changed"
+            body+=$'\n\n'"Files under \`_skip_if_exists\` are never re-rendered; \`.copier-seeded-changes.md\` on this branch holds what the template changed in them."
+            body+=$'\n\n'"<details><summary>.copier-seeded-changes.md</summary>"
+            body+=$'\n\n'"$(head -c 15000 .copier-seeded-changes.md)"
+            if [ "$(wc -c < .copier-seeded-changes.md)" -gt 15000 ]; then
+              # A byte cut can land inside one of the report's four-backtick
+              # diff fences; an unclosed fence would swallow the rest of the
+              # body.  Always close one: a stray fence line is inert.
+              body+=$'\n''````'
+              body+=$'\n\n'"> **Truncated at 15000 characters** — read the committed file for the rest."
+            fi
+            body+=$'\n\n'"</details>"
           fi
 
           # Diff stat — always collapsed; even a handful of files is noisy.

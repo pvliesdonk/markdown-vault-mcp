@@ -15,6 +15,20 @@ variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`,
 !!! note "Configuration is validated at startup"
     Numeric variables are validated against the **Type** column below (such as `int ≥ 1`). A non-numeric or out-of-range value makes the server **fail fast** at startup with a `ConfigurationError` naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.
 
+## Server identity
+
+These two let an operator rename an instance or override its
+instructions, with no configuration beyond the variable itself:
+
+- `MARKDOWN_VAULT_MCP_SERVER_NAME`: the server name reported to clients and
+  by `get_server_info`. Defaults to `markdown-vault-mcp`.
+- `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`: operator context appended to the
+  generated MCP instructions (deployment notes, house rules). The generated
+  text (identity, tool workflows, documentation pointer) stays intact.
+- `MARKDOWN_VAULT_MCP_INSTRUCTIONS`: legacy. Replaces the entire generated
+  instructions text and logs a deprecation warning at startup; when both are
+  set, `_EXTRA` is ignored. Move operator context to `_EXTRA`.
+
 ## Tool visibility
 
 Operators can trim which tools this instance exposes. Each variable takes a
@@ -180,7 +194,8 @@ chronic backlog.
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | string | `markdown-vault-mcp` | MCP server name shown to clients; useful for multi-instance setups |
-| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | string | (auto) | System-level instructions injected into LLM context; defaults to a description that reflects read-only vs read-write state |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | string | (none) | Operator context appended to the generated MCP instructions; the generated text (identity, vault guidance, documentation pointer) stays intact |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | string | (auto) | Legacy: replaces the entire generated instructions text (which reflects read-only vs read-write state) and logs a deprecation warning; prefer `_EXTRA` |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | bool | `false` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the tool listing for clients that do not render MCP Apps panels (saves a few listing tokens) |
 | `MARKDOWN_VAULT_MCP_HTTP_PATH` | path | `/mcp` | HTTP endpoint path for streamable HTTP transport (`serve --transport http`) |
 | `MARKDOWN_VAULT_MCP_BASE_URL` | url | (none) | Public base URL of the server (such as `https://mcp.example.com`). Required for OIDC auth, MCP Apps domain computation, and the one-time transfer link tools |

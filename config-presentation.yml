@@ -16,11 +16,19 @@ vars:
     tags: [server]
     wizard: {group: Server, when: server}
 
+  - name: "{PREFIX}_INSTRUCTIONS_EXTRA"
+    provenance: template
+    type_name: "str"
+    default: null
+    help: "Operator context appended to the generated MCP instructions."
+    tags: [server]
+    wizard: {group: Server, when: server}
+
   - name: "{PREFIX}_INSTRUCTIONS"
     provenance: template
     type_name: "str"
     default: null
-    help: "Replaces the default MCP instructions text sent to clients."
+    help: "Legacy: replaces the entire generated MCP instructions text (deprecated; prefer the _EXTRA variant)."
     tags: [server]
     wizard: {group: Server, when: server}
 
@@ -216,6 +224,7 @@ packaging:
   FASTMCP_LOG_LEVEL: [pypi, oci]
   FASTMCP_ENABLE_RICH_LOGGING: [pypi, oci]
   "{PREFIX}_SERVER_NAME": [pypi, oci]
+  "{PREFIX}_INSTRUCTIONS_EXTRA": [pypi, oci]
   "{PREFIX}_INSTRUCTIONS": [pypi, oci]
   "{PREFIX}_HTTP_PATH": [oci]
   # Not HTTP-specific: apply_tool_visibility runs in make_server regardless
@@ -247,10 +256,11 @@ packaging:
   PGID: [oci]
 
 # Term-replacement map applied to help text on the Vale-linted markdown
-# table splice path only (`_clean_help_for_markdown_table`). Can't live in
-# `.vale.ini`/`accept.txt` instead: that file is `_skip_if_exists`, so a term
-# added there never reaches an existing downstream, while a generated table
-# arrives on every `copier update` — this file is the only lever that does.
+# table splice path only (`_clean_help_for_markdown_table`). Since #366 the
+# template's accepted vocabulary (`vocabularies/Template/accept.txt`) is
+# re-rendered on every update, so a spelling hit can also be accepted there;
+# this map is for wording the template prefers spelled out in reader-facing
+# tables (`JWTs` → `JSON Web Tokens`) rather than merely accepted.
 markdown_vocabulary:
   JWTs: "JSON Web Tokens"
 

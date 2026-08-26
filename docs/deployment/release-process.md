@@ -8,6 +8,47 @@ and merges it. The merge is what tags and publishes. This page describes
 that flow, what each kind of release publishes, and where releases come
 from.
 
+## Cutting a release, step by step
+
+The checklist a maintainer follows; each step links the section that
+explains it.
+
+1. **Draft the release notes.** Invoke the `writing-release-notes` skill
+   with your coding agent (it lives at
+   `.agents/skills/writing-release-notes/SKILL.md`). It researches the
+   range through the GitHub API, writes `docs/releases/next.md`, runs
+   Vale and a strict MkDocs build, and opens an ordinary pull request.
+   Review and merge that pull request first; Release Prepare refuses to
+   run when reviewed notes are missing. When user-visible behaviour lands
+   after a first release candidate, invoke the skill's
+   `refresh-known-target` mode and merge its pull request before the next
+   dispatch. See [How the notes pages are produced](#how-the-notes-pages-are-produced).
+2. **Dispatch Release Prepare.** In the Actions tab, run **Release
+   Prepare** on `main` (or on a `release/X.Y` branch for a stabilisation
+   release). Leave `channel` on `auto` unless you are promoting a
+   candidate to stable. See [The release pull request](#the-release-pull-request).
+3. **Review the release pull request.** Check the computed version against
+   the breaking-change policy in `AGENTS.md`, read the changelog section,
+   confirm the promoted notes page is the one you merged in step 1, and
+   compare its `notes-range-end` with the release delta so the notes cover
+   every commit being released. Never press GitHub's "Update branch" on
+   it; dispatch Release Prepare again instead.
+4. **Merge it.** The merge is the release: the **Release** workflow tags
+   the commit, creates the GitHub release and publishes every channel.
+5. **Verify the fan-out.** Each publish runs as its own job in the Release
+   workflow: `publish-pypi`, `publish-docker`, `publish-linux-packages` and
+   `publish-mcpb` on every release; `publish-plugin-zip` when the project
+   ships the Claude Code plugin channel; `publish-claude-plugin` and
+   `publish-registry` only for a stable release that is the newest one
+   (a release candidate, or a patch to an older series, skips both by
+   design). The documentation site deploys for the new version. A failed
+   publish job can be re-run from the workflow run; the tag and release
+   already exist, and every job derives from the reviewed version string,
+   so a re-run publishes the same artefacts.
+6. **If the release was cut from a `release/X.Y` branch**, expect the
+   automated pull request that ports the changelog section back to
+   `main`, and merge it. See [Stabilisation branches](#stabilisation-branches).
+
 ## Channels
 
 | Channel | Version identity | What it promises |
@@ -149,6 +190,14 @@ Release branches carry shipped releases, so they get the same protection
 as `main`: pull requests plus green CI, applied by the shipped rulesets.
 See [Repository Protection](repository-protection.md).
 
+<!-- TEMPLATE-TRACKING-START -->
+## Template updates
+
+Releases of this project and updates from its template are separate
+events; the weekly template update pull request is covered in
+[Working Through a Template Update](template-updates.md).
+<!-- TEMPLATE-TRACKING-END -->
+
 ## Where to read about a release
 
 Each release is described in three places with distinct jobs:
@@ -164,36 +213,20 @@ Each release is described in three places with distinct jobs:
 
 ### How the notes pages are produced
 
-The pages under [Release Notes](../releases/index.md) cover one minor
-series each; a patch release adds a dated section to its series page.
-The page is part of every release pull request, exactly like the
-changelog. The Release Prepare workflow's notes job drafts or refreshes
-it. The drafting agent reads the release range through the GitHub API,
-working from the linked issues and pull requests rather than commit
-subjects, and the finished page is committed onto the release pull
-request's branch. Reviewing the release pull request covers the notes. Merging it lands the page in
-the release's own tag, and the published docs and the release body's
-summary and deep link all read the page from there. Release candidates carry their notes
-draft the same way, so a candidate is the full release artifact,
-narrative included. Every causal claim in a page must cite a linked
-issue or pull request, and the drafting agent runs the same prose lint
-as the rest of this site.
+The pages under [Release Notes](../releases/index.md) cover one minor series
+each; patch releases add undated version headings to their series page. Humans
+prepare the narrative before release automation starts, as steps 1 to 4 of
+[Cutting a release, step by step](#cutting-a-release-step-by-step) describe.
 
-The release pull request stays a draft until the notes job lands its
-page, so a release without its notes can never merge by accident. A
-drafting failure fails the prepare run visibly and leaves the pull
-request in draft; re-run the notes job, or re-dispatch Release Prepare
-with `skip_notes` to release without a notes refresh. For a release shipped that way, the **Release Notes**
-workflow's manual dispatch drafts a standalone notes pull request as a
-backfill. Later hand edits to a released page redeploy that minor's
-versioned docs through the **Release Notes Publish** workflow.
+The first release candidate for a stable identity consumes `next.md` into the
+canonical minor page. Later candidates and stable promotion reuse the same
+`vX.Y.Z` entry. When user-visible behavior lands after the first candidate,
+invoke `refresh-known-target` and merge the normal notes pull request before
+re-dispatching Release Prepare. Corrections and redrafts use the same ordinary
+pull-request path for shipped pages.
 
-A notes refresh is incremental by default: the drafting agent
-researches only the commits since the page's last accepted draft and
-leaves accepted prose alone. To rewrite a page from scratch under the
-current drafting rules, dispatch Release Prepare with `full_redraft`;
-the rewrite lands inside the release pull request like any other
-draft. The **Release Notes** workflow's manual dispatch accepts the
-same flag in both of its modes: a target version re-drafts against an
-open release pull request without re-running the whole prepare, and a
-tag produces a standalone backfill pull request for a shipped release.
+No notes bypass exists. Missing or ambiguous staging makes deterministic
+promotion refuse the prepare. Every causal claim must cite a linked issue or
+pull request, and the skill runs Vale and strict MkDocs before opening its pull
+request. Later canonical-page edits redeploy that minor through the
+deterministic **Release Notes Publish** workflow.

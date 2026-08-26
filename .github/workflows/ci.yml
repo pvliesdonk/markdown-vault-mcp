@@ -28,6 +28,12 @@ jobs:
       - name: Verify generated config artifacts are up-to-date
         run: uv run python scripts/gen_config_surface.py --check
 
+      - name: Verify [tool.uv] pins carry a live exit condition
+        # A pin's `# until:` issue being closed fails this step: lift the pin.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: uv run python scripts/check_pins.py
+
       - name: Run ruff check
         run: uv run ruff check src/ tests/
 

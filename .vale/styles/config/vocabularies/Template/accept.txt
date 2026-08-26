@@ -1,0 +1,52 @@
+# Template vocabulary — accepted terms that the template's own prose (the
+# rendered docs/** pages and README sections) needs Vale's spell-check to
+# know. Template-owned: re-rendered on every `copier update`, so a term
+# the template adds alongside new prose arrives with that prose (#366).
+# Do not edit here; project terms go in ../Base/accept.txt. One term per
+# line, matched case-insensitively. See https://docs.vale.sh/keys/vocabularies.
+#
+# Kept alphabetical within each category. A term listed here must occur in
+# template prose; scripts/tests/test_vale_vocabulary.py checks that.
+
+# --- Identity providers and auth-stack tooling ---
+Authelia
+Keycloak
+OAuth
+OIDC
+Traefik
+
+# --- HTTP / URL terminology ---
+hostname
+subpath
+
+# --- OAuth / OIDC token fields ---
+access_token
+id_token
+
+# --- Python / runtime ecosystem ---
+debugpy
+lockfile
+namespace
+scaffolded
+stdio
+uv
+venv
+venv's
+virtualenv
+
+# --- Operational / config jargon ---
+ADRs
+allowlist
+backports
+codecov
+config
+dev
+env
+hotfix
+knope
+repo
+ruleset
+rulesets
+systemd
+truthy
+upserts

@@ -63,7 +63,7 @@ async def _get_branch_name(strategy: GitWriteStrategy, git_root: Path) -> str:
     try:
         return await asyncio.to_thread(_read_branch)
     except (subprocess.CalledProcessError, FileNotFoundError):
-        # Narrow the catch per CLAUDE.md's logging standard so a real bug
+        # Narrow the catch per the logging-standard skill so a real bug
         # (e.g. AttributeError) still propagates.
         logger.warning(
             "git_sync: failed to read branch name, using 'HEAD' fallback",

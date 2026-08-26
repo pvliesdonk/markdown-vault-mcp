@@ -30,14 +30,6 @@ on:
         description: 'Optional explicit version (X.Y.Z or X.Y.Z-rc.N). Overrides BOTH commit analysis and the channel input — the version is used exactly as given, so include any -rc.N suffix yourself. The remedy for ranges knope counts nothing in (perf/chore-only) and for a version collision after a branch-only release.'
         type: string
         default: ''
-      skip_notes:
-        description: 'Escape hatch: prepare the release PR WITHOUT drafting/refreshing its release-notes page (e.g. the drafting agent is down, or the page was just hand-edited). The release PR then ships whatever docs/releases/ state its base carries.'
-        type: boolean
-        default: false
-      full_redraft:
-        description: 'Force rewrite of the release-notes page (template#452): the notes job ignores the page''s notes-range-end watermark, researches the full range the page covers, and re-derives its prose under the current skill contract. Off = the normal incremental refresh. Mutually exclusive with skip_notes.'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -48,8 +40,6 @@ jobs:
     outputs:
       version: ${{ steps.reserve.outputs.version }}
       prep_branch: ${{ steps.prep.outputs.branch }}
-      source_sha: ${{ steps.prep.outputs.source_sha }}
-      prep_head: ${{ steps.head.outputs.sha }}
     permissions:
       contents: read
       # For the advisory quiescence step's issue/milestone reads.
@@ -102,15 +92,6 @@ jobs:
             exit 1
           fi
           echo "interlock: no [tool.semantic_release] block — knope flow is armed"
-
-      # The two notes inputs contradict each other: one skips drafting,
-      # the other forces a full rewrite.  Refuse the pair before any
-      # heavy work runs.
-      - name: Refuse contradictory notes inputs
-        if: ${{ inputs.skip_notes && inputs.full_redraft }}
-        run: |
-          echo "::error::skip_notes and full_redraft are mutually exclusive — skip_notes ships the base's page state untouched, full_redraft forces a rewrite. Re-dispatch with at most one of them set."
-          exit 1
 
       # Only the default branch and release/X.Y stabilisation branches
       # release (the PSR-era branch groups' refusal, carried over as an
@@ -254,9 +235,6 @@ jobs:
           git switch --force-create "$branch"
           {
             echo "branch=${branch}"
-            # The base commit this prepare was cut from — the end of the
-            # notes job's research range (the tag does not exist yet).
-            echo "source_sha=$(git rev-parse HEAD)"
           } >> "$GITHUB_OUTPUT"
 
       # The version knope is about to prepare must not already carry a tag
@@ -319,14 +297,15 @@ jobs:
             done <<< "$reserved"
           fi
           echo "computed version ${version} is untaken and unreserved — proceeding"
-          # For the draft-notes job: the notes page targets this version.
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       # knope's prepare-release workflow (knope.toml): PrepareRelease bumps
       # pyproject.toml and writes the changelog section, the stamp Command
       # rewrites uv.lock's self-version entry (every release, PEP 440
       # canonical spelling) and the install-channel manifests (stable only),
-      # the commit Command creates the prep commit, the promotion guard then
+      # the notes promotion Command deterministically moves staging into the
+      # canonical page, the commit Command creates the prep commit, and the
+      # promotion guard then
       # gates a stable promotion at PREPARE time (release-vision D10's early
       # layer: a drifted promotion refuses HERE, before the push and
       # CreatePullRequest Commands ever run, so it never becomes a mergeable
@@ -339,82 +318,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           KNOPE_PREP_BRANCH: ${{ steps.prep.outputs.branch }}
         run: knope prepare-release --verbose ${{ steps.channel.outputs.flags }}
-
-      # The pushed stamp head — the lease anchor for the draft-notes job's
-      # commit, so a stale draft can never clobber a newer re-dispatch's
-      # recreated prep branch.
-      - name: Record the prep head
-        id: head
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      # Merge gate for the notes (template#421): the release PR opens
-      # before the potentially hour-long draft-notes job runs, and the
-      # ruleset's required CI could go green on the stamped head first —
-      # leaving a notes-less release PR mergeable and taggable, with the
-      # late notes push orphaned after the immutable tag.  Hold the PR as
-      # DRAFT until the notes land; the draft-notes job lifts the hold
-      # after its commit (or after confirming the page is already
-      # current).  A failed draft leaves the PR visibly draft and
-      # unmergeable — exactly the incomplete state it is in.  The step
-      # sets the state in BOTH directions: with skip_notes the operator
-      # chose to ship the base's page state, and a refreshed PR that a
-      # previous run's failed notes job left draft must be lifted
-      # explicitly here — the skipped draft-notes job cannot do it.
-      - name: Set the release PR draft hold
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-          PREP_BRANCH: ${{ steps.prep.outputs.branch }}
-          SKIP_NOTES: ${{ inputs.skip_notes }}
-        run: |
-          pr="$(gh pr list --state open --head "$PREP_BRANCH" \
-            --json number --jq '.[0].number')"
-          if [ -z "$pr" ]; then
-            echo "::error::no open release PR found for ${PREP_BRANCH} — CreatePullRequest reported success but the PR is not listed"
-            exit 1
-          fi
-          if [ "$SKIP_NOTES" = "true" ]; then
-            if [ "$(gh pr view "$pr" --json isDraft --jq .isDraft)" = "true" ]; then
-              gh pr ready "$pr"
-            fi
-            echo "skip_notes: release PR #${pr} ready without a notes hold"
-          else
-            gh pr ready --undo "$pr"
-            echo "release PR #${pr} held as draft until draft-notes lands"
-          fi
-
-  # Release notes are release content with exactly the changelog's
-  # lifecycle (template#419): drafted here, into the release PR's diff,
-  # reviewed as part of the release decision, landed on the base by the
-  # merge — and therefore in every tag by construction.  The drafting
-  # agent, research contract, and quality gates live in release-notes.yml
-  # (called, not duplicated); it commits the page onto the prep branch
-  # with a lease on the stamp head above.  skip_notes is the escape
-  # hatch: a drafting outage may delay a release only by choice, so with
-  # skip_notes=true the release PR ships whatever docs/releases/ state
-  # its base carries.
-  draft-notes:
-    needs: prepare
-    if: ${{ !inputs.skip_notes }}
-    # The notes lock, taken HERE because this is call mode (template#448):
-    # a workflow-level concurrency key belongs to the triggered run, which
-    # for a reusable workflow is the CALLER's run — the group declared at
-    # the top of release-notes.yml governs only its own dispatch-triggered
-    # runs.  Same group and semantics as there: one notes run at a time,
-    # end to end, never cancelling (a cancelled landing strands a
-    # finished draft).
-    concurrency:
-      group: release-notes-draft
-      cancel-in-progress: false
-    uses: ./.github/workflows/release-notes.yml
-    with:
-      target_version: ${{ needs.prepare.outputs.version }}
-      source_ref: ${{ needs.prepare.outputs.source_sha }}
-      prep_branch: ${{ needs.prepare.outputs.prep_branch }}
-      expected_head: ${{ needs.prepare.outputs.prep_head }}
-      full_redraft: ${{ inputs.full_redraft }}
-    secrets: inherit
-    permissions:
-      contents: read
-      issues: read
-      pull-requests: read
-      id-token: write

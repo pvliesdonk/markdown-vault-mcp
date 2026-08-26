@@ -97,7 +97,7 @@
       "label": "Public base URL",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_BASE_URL",
-      "help": "Public base URL of the deployed server, e.g. `https://mcp.example.com`. Required for OIDC. Also the fallback source of the MCP Apps domain when `app_domain` is unset.",
+      "help": "Public base URL of the deployed server, for example `https://mcp.example.com`. Required for OIDC. Also the fallback source of the MCP Apps domain when `app_domain` is unset.",
       "showIf": {
         "deployment": [
           "server"
@@ -125,7 +125,7 @@
       "label": "OIDC discovery URL",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL",
-      "help": "OIDC discovery document URL, e.g. `https://auth.example.com/.well-known/openid-configuration`.",
+      "help": "OIDC discovery document URL, for example `https://auth.example.com/.well-known/openid-configuration`.",
       "showIf": {
         "deployment": [
           "server"
@@ -207,7 +207,7 @@
       "label": "OIDC advertised scopes (CSV)",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES",
-      "help": "Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (e.g. `groups`) without also requiring them in every token.",
+      "help": "Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (such as `groups`) without also requiring them in every token.",
       "advancedGroup": "Auth",
       "showIf": {
         "deployment": [
@@ -270,7 +270,7 @@
       "label": "Event store URL (HTTP resumability)",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_EVENT_STORE_URL",
-      "help": "Legacy state-backend override, honoured by `build_event_store` and `build_kv_store` only when `kv_store_url` is unset — it then backs every namespace, not just HTTP resumability. Prefer `kv_store_url` for new deployments.",
+      "help": "Legacy state-backend override, used by `build_event_store` and `build_kv_store` only when `kv_store_url` is unset. It then backs every namespace, not just HTTP resumability. Prefer `kv_store_url` for new deployments.",
       "advancedGroup": "Persistence",
       "showIf": {
         "deployment": [
@@ -368,11 +368,24 @@
       }
     },
     {
+      "id": "instructions_extra",
+      "label": "Instructions Extra",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA",
+      "help": "Operator context appended to the generated MCP instructions.",
+      "advancedGroup": "Server",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
+    },
+    {
       "id": "instructions",
       "label": "Instructions",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
-      "help": "Replaces the default MCP instructions text sent to clients.",
+      "help": "Legacy: replaces the entire generated MCP instructions text (deprecated; prefer the _EXTRA variant).",
       "advancedGroup": "Server",
       "showIf": {
         "deployment": [

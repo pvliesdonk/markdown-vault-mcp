@@ -48,6 +48,10 @@ docs/superpowers/
 # copier update (project additions live inside its DOMAIN-AUTHORING sentinel).
 .claude/*
 !.claude/skills/
+# Same shape for .agents/: the provider-neutral skills subtree ships; the
+# rest is local.
+.agents/*
+!.agents/skills/
 # No trailing slash: `.mcp.json/` would match a *directory* of that name and
 # leave the actual file tracked.
 .mcp.json
