@@ -17,7 +17,7 @@ Generic markdown vault MCP server with FTS5 + semantic search
 ## Features
 
 <!-- DOMAIN-START -->
-- **Hybrid search**: SQLite FTS5 keyword search (BM25, porter stemming) and semantic search (FastEmbed, Ollama, or OpenAI embeddings), fused with Reciprocal Rank Fusion; diversity-aware ranking returns sentence-scale snippets with full-section recovery via `read(path, section=heading)`. See the [Embeddings guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/embeddings/).
+- **Hybrid search**: SQLite FTS5 keyword search (BM25, porter stemming) and semantic search (FastEmbed, Ollama, OpenAI, or Voyage AI embeddings, plus any OpenAI-compatible endpoint via `OPENAI_BASE_URL`), fused with Reciprocal Rank Fusion; diversity-aware ranking returns sentence-scale snippets with full-section recovery via `read(path, section=heading)`. See the [Embeddings guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/embeddings/), including the [recipe for OpenAI-compatible endpoints](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/embeddings/#openai-compatible-endpoints).
 - **Frontmatter-aware indexing**: YAML frontmatter fields become filterable and searchable, with optional required-field enforcement and adaptive heading-level chunking for long documents.
 - **Write operations**: the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are registered by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`; writes update the index automatically, per-folder `_conventions.md` authoring rules are surfaced to LLM clients at write time, and attachments (PDFs, images, and other non-markdown files) are read/write too.
 - **Incremental reindexing**: hash-based change detection with boot-time reconciliation; the vector index converges to the reconciled chunk set, and parse-pipeline upgrades rebuild the index once automatically.
@@ -269,7 +269,7 @@ Domain environment variables use the `MARKDOWN_VAULT_MCP_` prefix:
 | `MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS` | `40` | No | Words of overlap between adjacent budget-split fragments of the same heading section (0 disables). A reindex applies a new value. |
 | `MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS` | (none) | No | Folder-prefix score multipliers (`prefix:weight` pairs, comma-separated, weights > 0) applied to all search modes; the deepest matching prefix wins (sessions:0.5 demotes sessions/**). |
 | `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` | (none) | No | Per-column BM25 weights (`column:weight` pairs, comma-separated, weights >= 0) for keyword ranking. Columns: path, title, folder, heading, content, summary. |
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | (none) | No | Embedding provider: openai, voyage, ollama, or fastembed. Unset auto-detects from the environment (never voyage). |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | (none) | No | Embedding provider: openai, voyage, ollama, or fastembed. Unset auto-detects from the environment (never voyage). Any OpenAI-compatible endpoint works with openai plus OPENAI_BASE_URL; see the embeddings guide. |
 | `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | `nomic-embed-text` | No | Ollama embedding model name. |
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | `false` | No | Force Ollama to embed on CPU only. |
 | `MARKDOWN_VAULT_MCP_VOYAGE_MODEL` | `voyage-4` | No | Voyage AI embedding model name. |

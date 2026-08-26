@@ -683,7 +683,7 @@
       "label": "Embedding Provider",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER",
-      "help": "Embedding provider: openai, voyage, ollama, or fastembed. Unset auto-detects from the environment (never voyage).",
+      "help": "Embedding provider: openai, voyage, ollama, or fastembed. Unset auto-detects from the environment (never voyage). Any OpenAI-compatible endpoint works with openai plus OPENAI_BASE_URL; see the embeddings guide.",
       "advancedGroup": "Embeddings"
     },
     {

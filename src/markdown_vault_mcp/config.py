@@ -441,7 +441,9 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Embedding provider: openai, voyage, ollama, or fastembed. "
-                "Unset auto-detects from the environment (never voyage)."
+                "Unset auto-detects from the environment (never voyage). Any "
+                "OpenAI-compatible endpoint works with openai plus "
+                "OPENAI_BASE_URL; see the embeddings guide."
             ),
             "tags": ("embeddings",),
             "wizard": {"group": "Embeddings"},

@@ -2393,6 +2393,26 @@ sidecar records ``voyage`` as its provider identity. Unlike the other three,
 for an unrelated tool must not silently take over an index and force a
 re-embed.
 
+**Acceptance bar for named provider presets (#1134)**: a named
+``EMBEDDING_PROVIDER`` value is reserved for a vendor whose API has behavior the
+generic OpenAI-compatible transport cannot express. Voyage clears it on two
+counts — the strict request-shape rejections above, and the query/document
+``input_type`` asymmetry that needs a per-call ABC parameter (#1135); Ollama
+clears it as a local runtime with no API key, a CPU-only mode, and native
+context-length and reachability probes. Every other OpenAI-compatible endpoint
+(Jina, Mistral, SiliconFlow, LiteLLM, vLLM, Text Embeddings Inference, gateway
+proxies) is served by ``EMBEDDING_PROVIDER=openai`` plus ``OPENAI_BASE_URL``,
+documented as a recipe in the embeddings guide, and adding a preset for one buys
+only discoverability at the cost of another config surface to maintain. The bar
+is written down here so each "add provider X" proposal is measured against it
+rather than against precedent.
+
+A preset that does clear the bar stays a preset: a thin subclass over
+``_OpenAICompatEmbeddings`` with a pinned base URL, its own key and model
+variables, and a distinct ``provider_name`` for the sidecar identity — not a new
+HTTP client. A new transport needs a vendor whose wire protocol is not
+OpenAI-shaped at all.
+
 ### `tracker.py`: Change Detection
 
 ```python

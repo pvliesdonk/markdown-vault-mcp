@@ -173,7 +173,7 @@ OPENAI_API_KEY=sk-your-api-key-here
 MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/path/to/store/embeddings
 ```
 
-For OpenAI-compatible providers, override the base URL and model:
+For any other OpenAI-compatible endpoint, override the base URL and model:
 
 ```bash
 MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai
@@ -182,6 +182,9 @@ OPENAI_BASE_URL=https://api.siliconflow.cn/v1
 OPENAI_EMBEDDING_MODEL=BAAI/bge-m3
 MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/path/to/store/embeddings
 ```
+
+See [OpenAI-compatible endpoints](#openai-compatible-endpoints) for the caveats
+that come with pointing this provider at a third-party service.
 
 !!! warning "Privacy"
     Document content (titles, headings, body text) is sent to the configured OpenAI-compatible provider for embedding. Do not use this provider if your vault contains sensitive data you don't want to share with that provider. Use Ollama or FastEmbed for fully local, private embeddings.
@@ -260,6 +263,109 @@ curl https://api.voyageai.com/v1/embeddings \
 ```
 
 You should get a JSON response with an embedding array.
+
+---
+
+## OpenAI-compatible endpoints
+
+`MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai` is a generic client, not a
+binding to OpenAI the company. Any service that serves `POST /v1/embeddings` in
+the OpenAI request and response shape works by pointing `OPENAI_BASE_URL` at it.
+Jina, Mistral, SiliconFlow, LiteLLM, vLLM, and Text Embeddings Inference all
+serve that shape, as do self-hosted gateways in front of another model.
+
+### The recipe
+
+```bash
+MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=your-provider-api-key
+OPENAI_BASE_URL=https://api.example-vendor.com/v1
+OPENAI_EMBEDDING_MODEL=the-vendor-model-name
+MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/path/to/store/embeddings
+```
+
+The base URL includes the version prefix and omits the trailing `/embeddings`:
+the SDK appends the path. Both `OPENAI_BASE_URL` and `OPENAI_EMBEDDING_MODEL`
+also accept the `MARKDOWN_VAULT_MCP_`-prefixed spelling, which wins over the
+bare one when both are set.
+
+Confirm the endpoint answers before starting the server:
+
+```bash
+curl "$OPENAI_BASE_URL/embeddings" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"input\": \"test\", \"model\": \"$OPENAI_EMBEDDING_MODEL\"}"
+```
+
+A JSON response carrying an embedding array means the configuration will work.
+
+### A worked example
+
+Voyage AI is the endpoint this pattern was verified against end to end
+([#949](https://github.com/pvliesdonk/markdown-vault-mcp/issues/949)):
+
+```bash
+MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=pa-your-voyage-key     # a Voyage key in the OpenAI variable
+OPENAI_BASE_URL=https://api.voyageai.com/v1
+OPENAI_EMBEDDING_MODEL=voyage-4
+```
+
+That still works, and it is what the [`voyage`](#voyage-ai) provider does
+internally. Prefer the named provider for Voyage: it pins the base URL, gives
+the key its own variable, supplies a model default, and records `voyage` as the
+index identity. The example is here because it shows the shape for vendors that
+have no named provider.
+
+### What the server sends
+
+Each request carries only `model` and `input`. The server never sends
+`dimensions` or `user`, and it leaves `encoding_format` to the `openai` SDK,
+whose base64 default is widely accepted. This narrow request shape is why
+strict endpoints work: Voyage, for instance, answers HTTP 400 to `dimensions`,
+to `user`, and to `encoding_format="float"`. An endpoint that *requires* a
+field outside `model` and `input` cannot be driven this way.
+
+### Caveats worth knowing
+
+!!! warning "Changing only the base URL is invisible to the index"
+    The vector sidecar records the provider name and the model name, and a
+    mismatch on startup re-embeds the vault automatically. Both values stay
+    `openai` and your configured model string no matter which vendor serves
+    them, so repointing `OPENAI_BASE_URL` at a different vendor while keeping
+    the same model name is **not** detected: vectors from two different models
+    end up in one index, and search quality degrades quietly. Force the rebuild
+    yourself by deleting the two sidecar files beside `EMBEDDINGS_PATH`
+    (the `.npy` matrix and the `.json` metadata) and restarting.
+
+!!! note "Unknown context length falls back to a 1500-character chunk cap"
+    The chunk cap derives from the model's context length. That is known only
+    for the models the server ships a table for, so a third-party model falls
+    back to 1500 characters. If your model's context is smaller than roughly
+    536 tokens, set `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` explicitly, or the
+    endpoint will reject or truncate oversize chunks. See
+    [`MAX_CHUNK_CHARS`](../configuration.md).
+
+!!! note "Auto-detection reacts to the key alone"
+    With `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` unset, an `OPENAI_API_KEY` in
+    the environment selects the `openai` provider — including a key you
+    exported for something else. Set the provider explicitly when a vault's
+    backend matters.
+
+!!! warning "Privacy"
+    Document content (titles, headings, body text) is sent to whichever
+    endpoint you configure. Use Ollama or FastEmbed for fully local embeddings.
+
+### When an endpoint deserves its own provider name
+
+Named presets are reserved for vendors whose API has behavior the generic
+transport cannot express — Voyage for its strict request-shape rejections and
+its query/document asymmetry, Ollama for being a local runtime with no key.
+For every other OpenAI-compatible endpoint the recipe above is the supported
+answer, and it costs nothing to run. If you think an endpoint clears that
+bar, open an issue describing the specific behavior the generic client cannot
+reach.
 
 ---
 
