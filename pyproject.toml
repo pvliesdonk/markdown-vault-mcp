@@ -164,9 +164,6 @@ src = ["src", "tests"]
 # comment columns and non-Python fences it mangles, and CI only format-
 # checks src/ and tests/ anyway.
 extend-exclude = ["*.md"]
-# Make excludes bind even when files are passed explicitly (pre-commit's
-# pass_filenames hooks) so the format exemption below cannot be bypassed.
-force-exclude = true
 
 [tool.ruff.lint]
 select = [
@@ -288,13 +285,6 @@ known-first-party = ["markdown_vault_mcp"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
-# server.py is template-owned and conformance-gated line-for-line against the
-# pristine copier render (tests/test_template_conformance.py). The v6.0.0
-# template interpolates domain_description into a single identity(...) line
-# that overflows 88 chars for this project's blurb, so the formatter would
-# wrap it into a fork. Exempt the file until the template renders it wrapped
-# (template bug; see the adoption PR).
-exclude = ["src/markdown_vault_mcp/server.py"]
 
 
 # Structural-gate thresholds. These rules are NOT in the whole-repo `select`
