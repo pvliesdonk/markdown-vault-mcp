@@ -2476,10 +2476,10 @@
 <h3 id="frontmatter-schema">Frontmatter schema<a class="headerlink" href="#frontmatter-schema" title="Permanent link">&para;</a></h3>
 <p>Recommend this structure for all notes:</p>
 <div class="highlight"><pre><span></span><code><span class="nn">---</span>
-<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;Note</span><span class="nv"> </span><span class="s">title&quot;</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">"Note</span><span class="nv"> </span><span class="s">title"</span>
 <span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">fleeting | literature | permanent | moc</span>
 <span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">tag1</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">tag2</span><span class="p p-Indicator">]</span>
-<span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;URL</span><span class="nv"> </span><span class="s">or</span><span class="nv"> </span><span class="s">citation&quot;</span><span class="w">  </span><span class="c1"># for literature notes only</span>
+<span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="s">"URL</span><span class="nv"> </span><span class="s">or</span><span class="nv"> </span><span class="s">citation"</span><span class="w">  </span><span class="c1"># for literature notes only</span>
 <span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">YYYY-MM-DD</span>
 <span class="nn">---</span>
 </code></pre></div>
@@ -2497,11 +2497,11 @@
 </code></pre></div>
 <p>Indexed fields are also keyword-searchable by default (<code>SEARCHABLE_FIELDS</code> inherits this value; set it to <code>none</code> to keep them filter-only).</p>
 <p>Then you can search by note type or tag using the Python API:</p>
-<div class="highlight"><pre><span></span><code><span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;permanent&quot;</span><span class="p">})</span>
-<span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;query&quot;</span><span class="p">,</span> <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;tags&quot;</span><span class="p">:</span> <span class="s2">&quot;system-design&quot;</span><span class="p">})</span>
+<div class="highlight"><pre><span></span><code><span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"query"</span><span class="p">,</span> <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"permanent"</span><span class="p">})</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"query"</span><span class="p">,</span> <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">"tags"</span><span class="p">:</span> <span class="s2">"system-design"</span><span class="p">})</span>
 </code></pre></div>
 <p>Or restrict to a folder via the CLI:</p>
-<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">&quot;query&quot;</span><span class="w"> </span>--folder<span class="w"> </span>Notes
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">"query"</span><span class="w"> </span>--folder<span class="w"> </span>Notes
 </code></pre></div>
 <h3 id="filename-conventions">Filename conventions<a class="headerlink" href="#filename-conventions" title="Permanent link">&para;</a></h3>
 <p>The server uses file paths as note identity. Choose any naming scheme:</p>
@@ -2517,16 +2517,16 @@
 <p>Write quick, unpolished notes as they occur. Use the <code>fleeting</code> template:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Create a new fleeting note interactively</span>
 markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span class="p">&amp;</span>
-<span class="c1"># Then in Claude, call: create_from_template(template_name=&#39;fleeting&#39;)</span>
+<span class="c1"># Then in Claude, call: create_from_template(template_name='fleeting')</span>
 </code></pre></div>
 <p>Or programmatically:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
 
-<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">)</span>
+<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">"/path/to/vault"</span><span class="p">)</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
-    <span class="s2">&quot;Inbox/quick-idea.md&quot;</span><span class="p">,</span>
-    <span class="n">content</span><span class="o">=</span><span class="s2">&quot;Distributed systems are hard.&quot;</span><span class="p">,</span>
-    <span class="n">frontmatter</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;fleeting&quot;</span><span class="p">,</span> <span class="s2">&quot;tags&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;systems&quot;</span><span class="p">]}</span>
+    <span class="s2">"Inbox/quick-idea.md"</span><span class="p">,</span>
+    <span class="n">content</span><span class="o">=</span><span class="s2">"Distributed systems are hard."</span><span class="p">,</span>
+    <span class="n">frontmatter</span><span class="o">=</span><span class="p">{</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"fleeting"</span><span class="p">,</span> <span class="s2">"tags"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"systems"</span><span class="p">]}</span>
 <span class="p">)</span>
 </code></pre></div>
 <p><strong>Goals for this stage:</strong>
@@ -2535,7 +2535,7 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 - One idea per note
 - Review daily or weekly</p>
 <p><strong>Review inbox:</strong></p>
-<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">&quot;*&quot;</span><span class="w"> </span>--folder<span class="w"> </span>Inbox
+<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">"*"</span><span class="w"> </span>--folder<span class="w"> </span>Inbox
 </code></pre></div>
 <h3 id="2-develop-literature-permanent">2. Develop (Literature → Permanent)<a class="headerlink" href="#2-develop-literature-permanent" title="Permanent link">&para;</a></h3>
 <p>Expand inbox notes into permanent knowledge. Two paths:</p>
@@ -2550,26 +2550,26 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 3. Use <code>edit</code> to expand the note with new ideas and links
 4. Change <code>type: fleeting</code> to <code>type: permanent</code> once mature</p>
 <p><strong>Example workflow:</strong></p>
-<div class="highlight"><pre><span></span><code><span class="c1"># See the note&#39;s current neighborhood</span>
-<span class="n">context</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_context</span><span class="p">(</span><span class="s2">&quot;Inbox/consensus-algorithms.md&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Backlinks: </span><span class="si">{</span><span class="n">context</span><span class="o">.</span><span class="n">backlinks</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Similar notes: </span><span class="si">{</span><span class="n">context</span><span class="o">.</span><span class="n">similar</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><span class="c1"># See the note's current neighborhood</span>
+<span class="n">context</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_context</span><span class="p">(</span><span class="s2">"Inbox/consensus-algorithms.md"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Backlinks: </span><span class="si">{</span><span class="n">context</span><span class="o">.</span><span class="n">backlinks</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Similar notes: </span><span class="si">{</span><span class="n">context</span><span class="o">.</span><span class="n">similar</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 
 <span class="c1"># Search for related notes</span>
-<span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;consensus&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hybrid&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"consensus"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"hybrid"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
 
 <span class="c1"># Once expanded, update the note</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">edit</span><span class="p">(</span>
-    <span class="s2">&quot;Inbox/consensus-algorithms.md&quot;</span><span class="p">,</span>
-    <span class="n">old_text</span><span class="o">=</span><span class="s2">&quot;type: fleeting&quot;</span><span class="p">,</span>
-    <span class="n">new_text</span><span class="o">=</span><span class="s2">&quot;type: permanent&quot;</span>
+    <span class="s2">"Inbox/consensus-algorithms.md"</span><span class="p">,</span>
+    <span class="n">old_text</span><span class="o">=</span><span class="s2">"type: fleeting"</span><span class="p">,</span>
+    <span class="n">new_text</span><span class="o">=</span><span class="s2">"type: permanent"</span>
 <span class="p">)</span>
 </code></pre></div>
 <h3 id="3-connect-build-the-graph">3. Connect (Build the Graph)<a class="headerlink" href="#3-connect-build-the-graph" title="Permanent link">&para;</a></h3>
 <p>Linking transforms isolated notes into a knowledge network. Four tools support this:</p>
 <p><strong>Explore the neighborhood:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># See everything connected to this note</span>
-<span class="n">context</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_context</span><span class="p">(</span><span class="s2">&quot;Notes/consensus.md&quot;</span><span class="p">)</span>
+<span class="n">context</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_context</span><span class="p">(</span><span class="s2">"Notes/consensus.md"</span><span class="p">)</span>
 </code></pre></div>
 <p>Returns:
 - <code>backlinks</code>: notes that link here (who cites this idea?)
@@ -2579,28 +2579,28 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 - <code>tags</code>: frontmatter tags for grouping
 - <code>modified_at</code>: last modification timestamp</p>
 <p><strong>Find related notes you haven't linked yet:</strong></p>
-<div class="highlight"><pre><span></span><code><span class="n">similar</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_similar</span><span class="p">(</span><span class="s2">&quot;Notes/consensus.md&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><span class="n">similar</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">get_similar</span><span class="p">(</span><span class="s2">"Notes/consensus.md"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 <span class="k">for</span> <span class="n">note</span> <span class="ow">in</span> <span class="n">similar</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Similar: </span><span class="si">{</span><span class="n">note</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">note</span><span class="o">.</span><span class="n">score</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Similar: </span><span class="si">{</span><span class="n">note</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">note</span><span class="o">.</span><span class="n">score</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">)"</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>Discover indirect connections:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Find the shortest path between two ideas</span>
 <span class="n">path</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_connection_path</span><span class="p">(</span>
-    <span class="n">source</span><span class="o">=</span><span class="s2">&quot;Notes/distributed-systems.md&quot;</span><span class="p">,</span>
-    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;Notes/fault-tolerance.md&quot;</span><span class="p">,</span>
+    <span class="n">source</span><span class="o">=</span><span class="s2">"Notes/distributed-systems.md"</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">"Notes/fault-tolerance.md"</span><span class="p">,</span>
     <span class="n">max_depth</span><span class="o">=</span><span class="mi">5</span>
 <span class="p">)</span>
 <span class="k">if</span> <span class="n">path</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Connection: </span><span class="si">{</span><span class="s1">&#39; -&gt; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Connection: </span><span class="si">{</span><span class="s1">' -&gt; '</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 <span class="k">else</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;No connection found within max_depth&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">"No connection found within max_depth"</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>Add links to notes:</strong></p>
 <p>Edit the note and add <code>[[wikilink]]</code> or <code>[text](path.md)</code> references:</p>
 <div class="highlight"><pre><span></span><code><span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">edit</span><span class="p">(</span>
-    <span class="s2">&quot;Notes/consensus.md&quot;</span><span class="p">,</span>
-    <span class="n">old_text</span><span class="o">=</span><span class="s2">&quot;## Evidence&quot;</span><span class="p">,</span>
-    <span class="n">new_text</span><span class="o">=</span><span class="s2">&quot;## Evidence</span><span class="se">\n\n</span><span class="s2">See [[Byzantine Fault Tolerance]] for formal proofs.&quot;</span>
+    <span class="s2">"Notes/consensus.md"</span><span class="p">,</span>
+    <span class="n">old_text</span><span class="o">=</span><span class="s2">"## Evidence"</span><span class="p">,</span>
+    <span class="n">new_text</span><span class="o">=</span><span class="s2">"## Evidence</span><span class="se">\n\n</span><span class="s2">See [[Byzantine Fault Tolerance]] for formal proofs."</span>
 <span class="p">)</span>
 </code></pre></div>
 <p>All three link formats work:
@@ -2610,8 +2610,8 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 <p><strong>Rename safely with link updates:</strong></p>
 <p>When a note title changes, rename it and update all backlinks automatically:</p>
 <div class="highlight"><pre><span></span><code><span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
-    <span class="s2">&quot;Notes/old-title.md&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;Notes/new-title.md&quot;</span><span class="p">,</span>
+    <span class="s2">"Notes/old-title.md"</span><span class="p">,</span>
+    <span class="s2">"Notes/new-title.md"</span><span class="p">,</span>
     <span class="n">update_links</span><span class="o">=</span><span class="kc">True</span>  <span class="c1"># Rewrites [[old-title]] to [[new-title]] in all notes</span>
 <span class="p">)</span>
 </code></pre></div>
@@ -2619,26 +2619,26 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 <p>Weekly reviews keep your vault healthy and connected:</p>
 <p><strong>Check vault statistics:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="n">stats</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">stats</span><span class="p">()</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Documents: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">document_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Broken links: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">broken_link_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Orphan notes: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">orphan_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Documents: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">document_count</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Broken links: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">broken_link_count</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Orphan notes: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">orphan_count</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </code></pre></div>
 <p><strong>Find isolated notes:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="n">orphans</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_orphan_notes</span><span class="p">()</span>
 <span class="k">for</span> <span class="n">note</span> <span class="ow">in</span> <span class="n">orphans</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Isolated: </span><span class="si">{</span><span class="n">note</span><span class="o">.</span><span class="n">path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Isolated: </span><span class="si">{</span><span class="n">note</span><span class="o">.</span><span class="n">path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
     <span class="c1"># Either link it to the rest of the vault, or delete it</span>
 </code></pre></div>
 <p><strong>Find and fix broken links:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="n">broken</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_broken_links</span><span class="p">()</span>
 <span class="k">for</span> <span class="n">link</span> <span class="ow">in</span> <span class="n">broken</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Broken: </span><span class="si">{</span><span class="n">link</span><span class="o">.</span><span class="n">source_path</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">link</span><span class="o">.</span><span class="n">target_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Broken: </span><span class="si">{</span><span class="n">link</span><span class="o">.</span><span class="n">source_path</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">link</span><span class="o">.</span><span class="n">target_path</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
     <span class="c1"># Fix the link or delete the file it points to</span>
 </code></pre></div>
 <p><strong>Identify hub notes (candidates for MOCs):</strong></p>
 <div class="highlight"><pre><span></span><code><span class="n">hubs</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_most_linked</span><span class="p">(</span><span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 <span class="k">for</span> <span class="n">hub</span> <span class="ow">in</span> <span class="n">hubs</span><span class="p">:</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">hub</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">hub</span><span class="o">.</span><span class="n">backlink_count</span><span class="si">}</span><span class="s2"> inbound links&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">hub</span><span class="o">.</span><span class="n">title</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">hub</span><span class="o">.</span><span class="n">backlink_count</span><span class="si">}</span><span class="s2"> inbound links"</span><span class="p">)</span>
 </code></pre></div>
 <h2 id="maps-of-content-mocs">Maps of Content (MOCs)<a class="headerlink" href="#maps-of-content-mocs" title="Permanent link">&para;</a></h2>
 <p>A <strong>MOC</strong> (Map of Content) is a curated hub note that aggregates links to related notes on a theme. MOCs surface the structure of your vault and guide exploration.</p>
@@ -2652,34 +2652,34 @@ markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span><span cla
 <ol>
 <li>Identify the theme (such as "Distributed Systems")</li>
 <li>Search for related notes:
-   <div class="highlight"><pre><span></span><code><span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;distributed systems&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hybrid&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
+   <div class="highlight"><pre><span></span><code><span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"distributed systems"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"hybrid"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">30</span><span class="p">)</span>
 </code></pre></div></li>
 <li>Use <code>get_most_linked()</code> to find existing hubs:
    <div class="highlight"><pre><span></span><code><span class="n">hubs</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_most_linked</span><span class="p">(</span><span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 </code></pre></div></li>
 <li>Create a new <code>moc</code> template note:
    <div class="highlight"><pre><span></span><code><span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
-    <span class="s2">&quot;Notes/Distributed-Systems-MOC.md&quot;</span><span class="p">,</span>
-    <span class="n">content</span><span class="o">=</span><span class="s2">&quot;# Distributed Systems</span><span class="se">\n\n</span><span class="s2">## Core concepts</span><span class="se">\n</span><span class="s2">...&quot;</span><span class="p">,</span>
+    <span class="s2">"Notes/Distributed-Systems-MOC.md"</span><span class="p">,</span>
+    <span class="n">content</span><span class="o">=</span><span class="s2">"# Distributed Systems</span><span class="se">\n\n</span><span class="s2">## Core concepts</span><span class="se">\n</span><span class="s2">..."</span><span class="p">,</span>
     <span class="n">frontmatter</span><span class="o">=</span><span class="p">{</span>
-        <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;moc&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;tags&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;moc&quot;</span><span class="p">],</span>
-        <span class="s2">&quot;title&quot;</span><span class="p">:</span> <span class="s2">&quot;Distributed Systems (MOC)&quot;</span>
+        <span class="s2">"type"</span><span class="p">:</span> <span class="s2">"moc"</span><span class="p">,</span>
+        <span class="s2">"tags"</span><span class="p">:</span> <span class="p">[</span><span class="s2">"moc"</span><span class="p">],</span>
+        <span class="s2">"title"</span><span class="p">:</span> <span class="s2">"Distributed Systems (MOC)"</span>
     <span class="p">}</span>
 <span class="p">)</span>
 </code></pre></div></li>
 <li>Add <code>[[wikilinks]]</code> to permanent notes grouped by depth or topic</li>
 <li>Link the MOC back from related permanent notes:
    <div class="highlight"><pre><span></span><code><span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">edit</span><span class="p">(</span>
-    <span class="s2">&quot;Notes/consensus.md&quot;</span><span class="p">,</span>
-    <span class="n">old_text</span><span class="o">=</span><span class="s2">&quot;## Related&quot;</span><span class="p">,</span>
-    <span class="n">new_text</span><span class="o">=</span><span class="s2">&quot;## Related</span><span class="se">\n\n</span><span class="s2">See [[Distributed-Systems-MOC]] for the full map.&quot;</span>
+    <span class="s2">"Notes/consensus.md"</span><span class="p">,</span>
+    <span class="n">old_text</span><span class="o">=</span><span class="s2">"## Related"</span><span class="p">,</span>
+    <span class="n">new_text</span><span class="o">=</span><span class="s2">"## Related</span><span class="se">\n\n</span><span class="s2">See [[Distributed-Systems-MOC]] for the full map."</span>
 <span class="p">)</span>
 </code></pre></div></li>
 </ol>
 <p><strong>MOC structure example:</strong></p>
 <div class="highlight"><pre><span></span><code>---
-title: &quot;Distributed Systems (MOC)&quot;
+title: "Distributed Systems (MOC)"
 type: moc
 tags: [moc, systems]
 <span class="gu">created: YYYY-MM-DD</span>
@@ -2731,7 +2731,7 @@ markdown-vault-mcp<span class="w"> </span>serve
 4. Create the note with filled-in frontmatter</p>
 <p><strong>Invoke via MCP prompt:</strong></p>
 <p><code>create_from_template</code> is an MCP prompt, not a Python API method. Invoke it through your MCP client (such as Claude):</p>
-<div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name=&quot;literature&quot;
+<div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name="literature"
 </code></pre></div>
 <p>The prompt calls <code>list_documents(folder=&lt;templates_folder&gt;)</code> to enumerate templates, <code>read</code> to fetch the chosen one, and <code>write</code> to create the filled note. All operations go through vault tools.</p>
 <h2 id="using-the-zettelkasten-prompt">Using the Zettelkasten Prompt<a class="headerlink" href="#using-the-zettelkasten-prompt" title="Permanent link">&para;</a></h2>
@@ -2751,16 +2751,16 @@ markdown-vault-mcp<span class="w"> </span>serve
 <p>Then in Claude, the <code>zettelkasten</code> prompt is available for use.</p>
 <p><strong>Fire the prompt from Claude.ai's <code>+</code> menu.</strong> Once the server is added as a connector on Claude.ai, every MCP prompt (including <code>zettelkasten</code>) appears in the compose area's <code>+</code> menu. Click <code>+</code>, select <strong>connectors</strong>, pick the server, pick the prompt. Claude opens with the invocation scaffolded, so you don't need to remember the arguments. See <a href="../../prompts/#how-to-invoke-prompts">How to invoke prompts</a> for other clients.</p>
 <p><strong>Use the prompt:</strong></p>
-<div class="highlight"><pre><span></span><code>In Claude, call: zettelkasten(path=&#39;Notes/my-idea.md&#39;)
+<div class="highlight"><pre><span></span><code>In Claude, call: zettelkasten(path='Notes/my-idea.md')
 </code></pre></div>
 <p>The prompt guides you through connecting the note to related ideas and flags when a new MOC would help.</p>
 <h2 id="tips-and-best-practices">Tips and Best Practices<a class="headerlink" href="#tips-and-best-practices" title="Permanent link">&para;</a></h2>
 <h3 id="start-with-statistics">Start with statistics<a class="headerlink" href="#start-with-statistics" title="Permanent link">&para;</a></h3>
 <p>Before writing your first note, run <code>stats()</code> to understand your vault's shape:</p>
 <div class="highlight"><pre><span></span><code><span class="n">stats</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">stats</span><span class="p">()</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Documents: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">document_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Broken links: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">broken_link_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Orphaned notes: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">orphan_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Documents: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">document_count</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Broken links: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">broken_link_count</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Orphaned notes: </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">orphan_count</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
 </code></pre></div>
 <p>Run it again each month to track how your vault grows.</p>
 <h3 id="use-get_context-before-every-edit">Use <code>get_context()</code> before every edit<a class="headerlink" href="#use-get_context-before-every-edit" title="Permanent link">&para;</a></h3>
@@ -2774,10 +2774,10 @@ markdown-vault-mcp<span class="w"> </span>serve
 <h3 id="hybrid-search-beats-keyword-only">Hybrid search beats keyword-only<a class="headerlink" href="#hybrid-search-beats-keyword-only" title="Permanent link">&para;</a></h3>
 <p>Always prefer <code>mode='hybrid'</code> when searching:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Good</span>
-<span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;consensus&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;hybrid&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"consensus"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"hybrid"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
 
 <span class="c1"># Weaker (keyword only)</span>
-<span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">&quot;consensus&quot;</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">&quot;keyword&quot;</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"consensus"</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s2">"keyword"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">20</span><span class="p">)</span>
 </code></pre></div>
 <p>Hybrid search combines full-text ranking (exact matches, stemming) with semantic similarity (meaning), so you get both precision and discovery.</p>
 <h3 id="review-orphans-weekly">Review orphans weekly<a class="headerlink" href="#review-orphans-weekly" title="Permanent link">&para;</a></h3>
@@ -2785,17 +2785,17 @@ markdown-vault-mcp<span class="w"> </span>serve
 <div class="highlight"><pre><span></span><code><span class="n">orphans</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_orphan_notes</span><span class="p">()</span>
 <span class="k">for</span> <span class="n">note</span> <span class="ow">in</span> <span class="n">orphans</span><span class="p">:</span>
     <span class="c1"># Either integrate it: add outlinks to existing notes</span>
-    <span class="c1"># Or delete it: it wasn&#39;t worth connecting</span>
+    <span class="c1"># Or delete it: it wasn't worth connecting</span>
 </code></pre></div>
 <p>This prevents accumulating notes you're not thinking about.</p>
 <h3 id="use-get_connection_path-for-cross-domain-discovery">Use <code>get_connection_path()</code> for cross-domain discovery<a class="headerlink" href="#use-get_connection_path-for-cross-domain-discovery" title="Permanent link">&para;</a></h3>
 <p>When you want to see how two seemingly distant topics relate, use <code>get_connection_path()</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="n">path</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">graph</span><span class="o">.</span><span class="n">get_connection_path</span><span class="p">(</span>
-    <span class="n">source</span><span class="o">=</span><span class="s2">&quot;Notes/machine-learning.md&quot;</span><span class="p">,</span>
-    <span class="n">target</span><span class="o">=</span><span class="s2">&quot;Notes/philosophy.md&quot;</span><span class="p">,</span>
+    <span class="n">source</span><span class="o">=</span><span class="s2">"Notes/machine-learning.md"</span><span class="p">,</span>
+    <span class="n">target</span><span class="o">=</span><span class="s2">"Notes/philosophy.md"</span><span class="p">,</span>
     <span class="n">max_depth</span><span class="o">=</span><span class="mi">6</span>
 <span class="p">)</span>
-<span class="c1"># Might return: [&quot;machine-learning&quot;, &quot;artificial-intelligence&quot;, &quot;consciousness&quot;, &quot;philosophy&quot;]</span>
+<span class="c1"># Might return: ["machine-learning", "artificial-intelligence", "consciousness", "philosophy"]</span>
 </code></pre></div>
 <p>This reveals unexpected bridges between domains.</p>
 <h3 id="link-aggressively-prune-minimally">Link aggressively, prune minimally<a class="headerlink" href="#link-aggressively-prune-minimally" title="Permanent link">&para;</a></h3>

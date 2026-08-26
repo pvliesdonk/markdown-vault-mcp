@@ -2280,20 +2280,20 @@
 <h2 id="download-walkthrough">Download walkthrough<a class="headerlink" href="#download-walkthrough" title="Permanent link">&para;</a></h2>
 <h3 id="step-1-mint-a-download-link">Step 1: mint a download link<a class="headerlink" href="#step-1-mint-a-download-link" title="Permanent link">&para;</a></h3>
 <p>Ask the LLM (or call the tool directly):</p>
-<div class="highlight"><pre><span></span><code>create_download_link(path=&quot;reports/q1.pdf&quot;, ttl_seconds=600)
+<div class="highlight"><pre><span></span><code>create_download_link(path="reports/q1.pdf", ttl_seconds=600)
 </code></pre></div>
 <p>The tool returns:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://mcp.example.com/transfer/AbCdEfGhIjKlMnOpQrStUvWxYz01234567890ab&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;reports/q1.pdf&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;expires_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-06-05T14:10:00+00:00&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;expires_in_seconds&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">600</span>
+<span class="w">  </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://mcp.example.com/transfer/AbCdEfGhIjKlMnOpQrStUvWxYz01234567890ab"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"reports/q1.pdf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expires_at"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-06-05T14:10:00+00:00"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expires_in_seconds"</span><span class="p">:</span><span class="w"> </span><span class="mi">600</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>The URL is a one-time capability URL. No authentication header is required to fetch it.</p>
 <h3 id="step-2-fetch-the-file">Step 2: fetch the file<a class="headerlink" href="#step-2-fetch-the-file" title="Permanent link">&para;</a></h3>
 <p>On any machine that can reach the server:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;https://mcp.example.com/transfer/AbCdEfGhIjKlMnOpQrStUvWxYz01234567890ab&quot;</span><span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">"https://mcp.example.com/transfer/AbCdEfGhIjKlMnOpQrStUvWxYz01234567890ab"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">     </span>-o<span class="w"> </span>q1.pdf
 </code></pre></div>
 <p>Or open the URL in a browser; the server sets <code>Content-Disposition: attachment</code> so the browser downloads rather than renders.</p>
@@ -2304,14 +2304,14 @@
 </div>
 <h2 id="upload-walkthrough">Upload walkthrough<a class="headerlink" href="#upload-walkthrough" title="Permanent link">&para;</a></h2>
 <h3 id="step-1-mint-an-upload-link">Step 1: mint an upload link<a class="headerlink" href="#step-1-mint-an-upload-link" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>create_upload_link(path=&quot;assets/new-diagram.png&quot;)
+<div class="highlight"><pre><span></span><code>create_upload_link(path="assets/new-diagram.png")
 </code></pre></div>
 <p>The tool returns:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://mcp.example.com/transfer/ZyXwVuTsRqPoNmLkJiHgFeDcBa98765432109zy&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assets/new-diagram.png&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;expires_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-06-05T15:00:00+00:00&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;expires_in_seconds&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span>
+<span class="w">  </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://mcp.example.com/transfer/ZyXwVuTsRqPoNmLkJiHgFeDcBa98765432109zy"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assets/new-diagram.png"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expires_at"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-06-05T15:00:00+00:00"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expires_in_seconds"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>The destination path in the vault is fixed at link-creation time; the uploader cannot change it.</p>
@@ -2319,7 +2319,7 @@
 <p>Send the raw file bytes as the request body using <code>POST</code>:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="se">\</span>
 <span class="w">     </span>--data-binary<span class="w"> </span>@new-diagram.png<span class="w"> </span><span class="se">\</span>
-<span class="w">     </span><span class="s2">&quot;https://mcp.example.com/transfer/ZyXwVuTsRqPoNmLkJiHgFeDcBa98765432109zy&quot;</span>
+<span class="w">     </span><span class="s2">"https://mcp.example.com/transfer/ZyXwVuTsRqPoNmLkJiHgFeDcBa98765432109zy"</span>
 </code></pre></div>
 <p><code>PUT</code> is also accepted as an alias for <code>POST</code>. Both behave identically.</p>
 <p>After a successful upload the file is available in the vault, and the link is grace-settled in the same way as a download. The FTS index is updated and the git-commit callback fires (when git integration is configured).</p>

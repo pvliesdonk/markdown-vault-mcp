@@ -2406,7 +2406,7 @@
 <div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">markdown-vault-mcp</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">extra_hosts</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;host.docker.internal:host-gateway&quot;</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"host.docker.internal:host-gateway"</span>
 </code></pre></div>
 <p>Then use:</p>
 <div class="highlight"><pre><span></span><code><span class="nv">OLLAMA_HOST</span><span class="o">=</span>http://host.docker.internal:11434
@@ -2419,10 +2419,10 @@
 curl<span class="w"> </span>http://localhost:11434/api/tags
 
 <span class="c1"># Test embedding generation</span>
-curl<span class="w"> </span>http://localhost:11434/api/embeddings<span class="w"> </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">  &quot;model&quot;: &quot;nomic-embed-text&quot;,</span>
-<span class="s1">  &quot;prompt&quot;: &quot;test embedding&quot;</span>
-<span class="s1">}&#39;</span>
+curl<span class="w"> </span>http://localhost:11434/api/embeddings<span class="w"> </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">  "model": "nomic-embed-text",</span>
+<span class="s1">  "prompt": "test embedding"</span>
+<span class="s1">}'</span>
 </code></pre></div>
 <p>You should get a JSON response with an <code>embedding</code> array. After starting the vault server, use hybrid search:</p>
 <blockquote>
@@ -2493,15 +2493,15 @@ curl<span class="w"> </span>http://localhost:11434/api/embeddings<span class="w"
 <h3 id="verify_2">Verify<a class="headerlink" href="#verify_2" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="c1"># Test your API key (replace $OPENAI_API_KEY with your key, or export it first)</span>
 curl<span class="w"> </span>https://api.openai.com/v1/embeddings<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$OPENAI_API_KEY</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;input&quot;: &quot;test&quot;, &quot;model&quot;: &quot;text-embedding-3-small&quot;}&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$OPENAI_API_KEY</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"input": "test", "model": "text-embedding-3-small"}'</span>
 </code></pre></div>
 <p>For OpenAI-compatible providers:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$OPENAI_BASE_URL</span><span class="s2">/embeddings&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer </span><span class="nv">$OPENAI_API_KEY</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s2">&quot;{\&quot;input\&quot;: \&quot;test\&quot;, \&quot;model\&quot;: \&quot;</span><span class="nv">$OPENAI_EMBEDDING_MODEL</span><span class="s2">\&quot;}&quot;</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">"</span><span class="nv">$OPENAI_BASE_URL</span><span class="s2">/embeddings"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer </span><span class="nv">$OPENAI_API_KEY</span><span class="s2">"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s2">"{\"input\": \"test\", \"model\": \"</span><span class="nv">$OPENAI_EMBEDDING_MODEL</span><span class="s2">\"}"</span>
 </code></pre></div>
 <p>You should get a JSON response with an embedding array. After starting the server, test hybrid search:</p>
 <blockquote>

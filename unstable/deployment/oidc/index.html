@@ -2592,15 +2592,15 @@ openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> 
 <span class="w">  </span><span class="nt">oidc</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">clients</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">client_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">markdown-vault-mcp</span>
-<span class="w">        </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;$pbkdf2-sha512$...&#39;</span><span class="w">   </span><span class="c1"># authelia crypto hash generate</span>
+<span class="w">        </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="s">'$pbkdf2-sha512$...'</span><span class="w">   </span><span class="c1"># authelia crypto hash generate</span>
 <span class="w">        </span><span class="nt">redirect_uris</span><span class="p">:</span>
 <span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://mcp.example.com/callback</span>
 <span class="w">        </span><span class="nt">grant_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">authorization_code</span><span class="p p-Indicator">]</span>
 <span class="w">        </span><span class="nt">response_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">code</span><span class="p p-Indicator">]</span>
 <span class="w">        </span><span class="nt">pkce_challenge_method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">S256</span>
 <span class="w">        </span><span class="nt">scopes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">openid</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">profile</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">email</span><span class="p p-Indicator">]</span>
-<span class="w">        </span><span class="nt">access_token_signed_response_alg</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;RS256&#39;</span>
-<span class="w">        </span><span class="nt">token_endpoint_auth_method</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;client_secret_post&#39;</span>
+<span class="w">        </span><span class="nt">access_token_signed_response_alg</span><span class="p">:</span><span class="w"> </span><span class="s">'RS256'</span>
+<span class="w">        </span><span class="nt">token_endpoint_auth_method</span><span class="p">:</span><span class="w"> </span><span class="s">'client_secret_post'</span>
 </code></pre></div>
 <h4 id="2-set-environment-variables">2. Set environment variables<a class="headerlink" href="#2-set-environment-variables" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_BASE_URL</span><span class="o">=</span>https://mcp.example.com
@@ -2620,7 +2620,7 @@ openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> 
 <span class="w">  </span><span class="nt">oidc</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">clients</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">client_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">markdown-vault-mcp</span>
-<span class="w">        </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;$pbkdf2-sha512$...&#39;</span><span class="w">   </span><span class="c1"># authelia crypto hash generate</span>
+<span class="w">        </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="s">'$pbkdf2-sha512$...'</span><span class="w">   </span><span class="c1"># authelia crypto hash generate</span>
 <span class="w">        </span><span class="nt">redirect_uris</span><span class="p">:</span>
 <span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://mcp.example.com/auth/callback</span>
 <span class="w">        </span><span class="nt">grant_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">authorization_code</span><span class="p p-Indicator">]</span>
@@ -2679,10 +2679,10 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <span class="w">      </span><span class="nt">FASTMCP_HOME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/state/fastmcp</span>
 <span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unless-stopped</span>
 <span class="w">    </span><span class="nt">labels</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.enable=true&quot;</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)&quot;</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.markdown-vault-mcp.tls.certresolver=letsencrypt&quot;</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000&quot;</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.enable=true"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.markdown-vault-mcp.tls.certresolver=letsencrypt"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"</span>
 <span class="w">    </span><span class="nt">networks</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">traefik</span>
 
@@ -2784,13 +2784,13 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 </ol>
 <div class="highlight"><pre><span></span><code><span class="nt">labels</span><span class="p">:</span>
 <span class="w">  </span><span class="c1"># Operational routes: strip the /myservice prefix before forwarding</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.mcp-app.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">PathPrefix(`/myservice`)&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.middlewares.strip-myservice.stripprefix.prefixes=/myservice&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.mcp-app.middlewares=strip-myservice&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.services.mcp-app.loadbalancer.server.port=8000&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.mcp-app.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">PathPrefix(`/myservice`)"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.middlewares.strip-myservice.stripprefix.prefixes=/myservice"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.mcp-app.middlewares=strip-myservice"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.services.mcp-app.loadbalancer.server.port=8000"</span>
 <span class="w">  </span><span class="c1"># Discovery routes: same service, no strip middleware</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.mcp-wellknown.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">(PathPrefix(`/.well-known/oauth-protected-resource/myservice/mcp`)</span><span class="nv"> </span><span class="s">||</span><span class="nv"> </span><span class="s">PathPrefix(`/.well-known/oauth-authorization-server`))&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.mcp-wellknown.service=mcp-app&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.mcp-wellknown.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">(PathPrefix(`/.well-known/oauth-protected-resource/myservice/mcp`)</span><span class="nv"> </span><span class="s">||</span><span class="nv"> </span><span class="s">PathPrefix(`/.well-known/oauth-authorization-server`))"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.mcp-wellknown.service=mcp-app"</span>
 </code></pre></div>
 <p>Drop the <code>oauth-authorization-server</code> clause when the server holds no client ID and secret. That path returns 404 in such a configuration, and claiming it on a shared hostname takes the document away from whichever service does answer.</p>
 <p>Two routers rather than one is deliberate. A single router carrying the strip rule would apply it to the discovery request as well. Nothing here relies on how a given proxy treats a strip prefix that fails to match: separate routers state the untouched route outright, in any proxy that has the concept.</p>
@@ -2806,14 +2806,14 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 </div>
 <h3 id="verifying-the-routing">Verifying the routing<a class="headerlink" href="#verifying-the-routing" title="Permanent link">&para;</a></h3>
 <p>Probe the container first, to separate what the server serves from what the proxy does with it. The image ships no HTTP client, so borrow one. Passing <code>--network container:</code> puts the throwaway container inside the server's network namespace, which makes <code>localhost:8000</code> the server itself:</p>
-<div class="highlight"><pre><span></span><code><span class="nv">NS</span><span class="o">=</span><span class="s2">&quot;container:</span><span class="k">$(</span>docker<span class="w"> </span>compose<span class="w"> </span>ps<span class="w"> </span>-q<span class="w"> </span>markdown-vault-mcp<span class="k">)</span><span class="s2">&quot;</span>
-docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--network<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$NS</span><span class="s2">&quot;</span><span class="w"> </span>curlimages/curl<span class="w"> </span>-s<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-w<span class="w"> </span><span class="s1">&#39;%{http_code}\n&#39;</span><span class="w"> </span>localhost:8000/mcp
-docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--network<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$NS</span><span class="s2">&quot;</span><span class="w"> </span>curlimages/curl<span class="w"> </span>-s<span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code><span class="nv">NS</span><span class="o">=</span><span class="s2">"container:</span><span class="k">$(</span>docker<span class="w"> </span>compose<span class="w"> </span>ps<span class="w"> </span>-q<span class="w"> </span>markdown-vault-mcp<span class="k">)</span><span class="s2">"</span>
+docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--network<span class="w"> </span><span class="s2">"</span><span class="nv">$NS</span><span class="s2">"</span><span class="w"> </span>curlimages/curl<span class="w"> </span>-s<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-w<span class="w"> </span><span class="s1">'%{http_code}\n'</span><span class="w"> </span>localhost:8000/mcp
+docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--network<span class="w"> </span><span class="s2">"</span><span class="nv">$NS</span><span class="s2">"</span><span class="w"> </span>curlimages/curl<span class="w"> </span>-s<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>localhost:8000/.well-known/oauth-protected-resource/myservice/mcp
 </code></pre></div>
 <p>Expect <code>401</code> for the first, meaning the endpoint is there and authentication is on, and the metadata JSON for the second. A <code>404</code> instead of the <code>401</code> means <code>HTTP_PATH</code> carries the prefix it should not. Then repeat from outside, through the proxy:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-s<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">&#39;%{http_code}\n&#39;</span><span class="w"> </span>https://mcp.example.com/myservice/mcp
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-s<span class="w"> </span>-o<span class="w"> </span>/dev/null<span class="w"> </span>-w<span class="w"> </span><span class="s1">'%{http_code}\n'</span><span class="w"> </span>https://mcp.example.com/myservice/mcp
 curl<span class="w"> </span>-s<span class="w"> </span>https://mcp.example.com/.well-known/oauth-protected-resource/myservice/mcp
 </code></pre></div>
 <p>Both must reach this server, and the <code>resource</code> field in the JSON must read <code>https://mcp.example.com/myservice/mcp</code>. A <code>resource</code> naming a different service is the shared-hostname problem above, not an incorrect <code>BASE_URL</code>.</p>

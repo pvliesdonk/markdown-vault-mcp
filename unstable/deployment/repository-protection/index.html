@@ -2206,7 +2206,7 @@ Coverage Status</strong> workflow's runs rather than the CI run: the status come
 from there.</p>
 <h2 id="applying-by-hand">Applying by hand<a class="headerlink" href="#applying-by-hand" title="Permanent link">&para;</a></h2>
 <p>Without the bootstrap workflow (or when importing into another repository):</p>
-<div class="highlight"><pre><span></span><code>gh<span class="w"> </span>api<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;repos/OWNER/REPO/rulesets&quot;</span><span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>gh<span class="w"> </span>api<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"repos/OWNER/REPO/rulesets"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--input<span class="w"> </span>.github/rulesets/protect-main.json
 </code></pre></div>
 <p>or import each file in the UI under <strong>Settings → Rules → Rulesets →

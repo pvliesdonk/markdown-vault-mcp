@@ -3451,10 +3451,10 @@
 </div>
 <p><strong>Example usage:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;query&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;character development techniques&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;mode&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;hybrid&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;limit&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;filters&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;tags&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;craft&quot;</span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"character development techniques"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"mode"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hybrid"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"filters"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"tags"</span><span class="p">:</span><span class="w"> </span><span class="s2">"craft"</span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="read"><code>read</code><a class="headerlink" href="#read" title="Permanent link">&para;</a></h3>
@@ -3502,23 +3502,23 @@ partial markdown reads (see the tip above).</p>
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Journal/note.md&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Note&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;folder&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Journal&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body...&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;frontmatter&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Note&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;tags&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;journal&quot;</span><span class="p">]},</span>
-<span class="w">  </span><span class="nt">&quot;modified_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1741564800.0</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Journal/note.md"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"My Note"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"folder"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Journal"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"frontmatter"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"My Note"</span><span class="p">,</span><span class="w"> </span><span class="nt">"tags"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"journal"</span><span class="p">]},</span>
+<span class="w">  </span><span class="nt">"modified_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1741564800.0</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>On an OKF bundle, whole-document reads also carry an <code>okf</code> dict (<code>type</code>, <code>status</code>, <code>stale</code>, <code>trust_tier</code>, and the note's full <code>sources</code> list). Section reads omit it — they carry no frontmatter to derive it from.</p>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assets/diagram.pdf&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;mime_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;application/pdf&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;size_bytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">12345</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;content_base64&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;base64 string&gt;&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;modified_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1741564800.0</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assets/diagram.pdf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"mime_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"application/pdf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"size_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">12345</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"content_base64"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;base64 string&gt;"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"modified_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1741564800.0</span>
 <span class="p">}</span>
 </code></pre></div>
 </div>
@@ -3593,12 +3593,12 @@ partial markdown reads (see the tip above).</p>
 <p>Get an overview of the vault's size, capabilities, and configuration. Call this at the start of a session to understand what the vault contains and what search modes are available.</p>
 <p><strong>Returns:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;document_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;chunk_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">156</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;folder_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;semantic_search_available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;indexed_frontmatter_fields&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;tags&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;cluster&quot;</span><span class="p">],</span>
-<span class="w">  </span><span class="nt">&quot;attachment_extensions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;pdf&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;png&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;jpg&quot;</span><span class="p">]</span>
+<span class="w">  </span><span class="nt">"document_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"chunk_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">156</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"folder_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"semantic_search_available"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"indexed_frontmatter_fields"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"tags"</span><span class="p">,</span><span class="w"> </span><span class="s2">"cluster"</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"attachment_extensions"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"pdf"</span><span class="p">,</span><span class="w"> </span><span class="s2">"png"</span><span class="p">,</span><span class="w"> </span><span class="s2">"jpg"</span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>On an OKF bundle (see <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> in <a href="../configuration/">Configuration</a>), the response also carries an <code>okf</code> section: the configured mode, the declared spec version, a per-<code>type</code> histogram plus an untyped count, <code>status</code> and trust-tier breakdowns, and the stale-note count.</p>
@@ -3606,10 +3606,10 @@ partial markdown reads (see the tip above).</p>
 <p>Check the embedding provider configuration and vector index status. Use this to diagnose why semantic search is unavailable.</p>
 <p><strong>Returns:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;provider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;OllamaProvider&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;chunk_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">156</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;/data/state/embeddings/embeddings&quot;</span>
+<span class="w">  </span><span class="nt">"available"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"provider"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OllamaProvider"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"chunk_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">156</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/data/state/embeddings/embeddings"</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="get_index_status"><code>get_index_status</code><a class="headerlink" href="#get_index_status" title="Permanent link">&para;</a></h3>
@@ -4202,40 +4202,40 @@ history before continuing the conversation.</p>
 <p><strong>Examples:</strong></p>
 <p>Successful both-direction sync (clean fast-forward + clean push):</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;direction&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;both&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;head_sha&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc1234&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;branch&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;main&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;pull&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;applied&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;fast_forward&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;commits_pulled&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;from_sha&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;9999999&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;to_sha&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc1234&quot;</span>
+<span class="w">  </span><span class="nt">"direction"</span><span class="p">:</span><span class="w"> </span><span class="s2">"both"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"head_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"branch"</span><span class="p">:</span><span class="w"> </span><span class="s2">"main"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"pull"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"applied"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"fast_forward"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"commits_pulled"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"from_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9999999"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"to_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span>
 <span class="w">  </span><span class="p">},</span>
-<span class="w">  </span><span class="nt">&quot;push&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;applied&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;commits_pushed&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;remote_sha_before&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;8888888&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;remote_sha_after&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc1234&quot;</span>
+<span class="w">  </span><span class="nt">"push"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"applied"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"commits_pushed"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"remote_sha_before"</span><span class="p">:</span><span class="w"> </span><span class="s2">"8888888"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"remote_sha_after"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>Pull with conflict (Syncthing-style sibling resolution per
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/232">#232</a>):</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;direction&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pull&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;head_sha&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc1234&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;branch&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;main&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;pull&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;applied&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;fast_forward&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;commits_pulled&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;from_sha&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;9999999&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;to_sha&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc1234&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;conflicts_resolved_with_siblings&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;conflict_files&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Notes/2026-05-09.conflict-mcp-20260511-114203.md&quot;</span><span class="p">]</span>
+<span class="w">  </span><span class="nt">"direction"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pull"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"head_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"branch"</span><span class="p">:</span><span class="w"> </span><span class="s2">"main"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"pull"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"applied"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"fast_forward"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"commits_pulled"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"from_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9999999"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"to_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"conflicts_resolved_with_siblings"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"conflict_files"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"Notes/2026-05-09.conflict-mcp-20260511-114203.md"</span><span class="p">]</span>
 <span class="w">  </span><span class="p">},</span>
-<span class="w">  </span><span class="nt">&quot;push&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="w">  </span><span class="nt">"push"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>The pull <em>succeeded</em> (<code>applied=true</code>): HEAD now points at the remote tip
@@ -4248,16 +4248,16 @@ commits <em>on top of</em> the remote (the remote commits are reconciled, not
 "pulled forward" in the linear-history sense).</p>
 <p>Push rejected as non-fast-forward:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;direction&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;push&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;head_sha&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc1234&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;branch&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;main&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;push&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;applied&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;commits_pushed&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;remote_sha_before&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;9999999&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;remote_sha_after&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;9999999&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;non_fast_forward&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;hint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Remote has commits the local clone has not seen.  Run git_sync(direction=&#39;pull&#39;) to reconcile (fast-forward when possible, Syncthing-style siblings on real conflict), then retry git_sync(direction=&#39;push&#39;).&quot;</span>
+<span class="w">  </span><span class="nt">"direction"</span><span class="p">:</span><span class="w"> </span><span class="s2">"push"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"head_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"branch"</span><span class="p">:</span><span class="w"> </span><span class="s2">"main"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"push"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"applied"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"commits_pushed"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"remote_sha_before"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9999999"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"remote_sha_after"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9999999"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"non_fast_forward"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"hint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Remote has commits the local clone has not seen.  Run git_sync(direction='pull') to reconcile (fast-forward when possible, Syncthing-style siblings on real conflict), then retry git_sync(direction='push')."</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -5010,15 +5010,15 @@ front.</p>
 </table>
 <p><strong>Returns:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://mcp.example.com/transfer/...&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;expires_in_s&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span>
+<span class="w">  </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://mcp.example.com/transfer/..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expires_in_s"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span>
 <span class="p">}</span>
 </code></pre></div>
 <p><strong>Example usage:</strong></p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;ref&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assets/diagram.pdf&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;ttl_s&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">600</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"ref"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assets/diagram.pdf"</span><span class="p">,</span><span class="w"> </span><span class="nt">"ttl_s"</span><span class="p">:</span><span class="w"> </span><span class="mi">600</span><span class="p">}</span>
 </code></pre></div>
 <p>Then in a terminal:</p>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">&quot;https://mcp.example.com/transfer/&lt;token&gt;&quot;</span><span class="w"> </span>-o<span class="w"> </span>diagram.pdf
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">"https://mcp.example.com/transfer/&lt;token&gt;"</span><span class="w"> </span>-o<span class="w"> </span>diagram.pdf
 </code></pre></div>
 <p><strong>OKF bundle export.</strong> Pass an OKF-bundle reference as <code>ref</code> to download a conformant bundle archive of the vault (or a folder subtree) instead of a single file:</p>
 <table>
@@ -5073,16 +5073,16 @@ front.</p>
 </table>
 <p><strong>Returns:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://mcp.example.com/transfer/...&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;expires_in_s&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span>
+<span class="w">  </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://mcp.example.com/transfer/..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expires_in_s"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span>
 <span class="p">}</span>
 </code></pre></div>
 <p><strong>Example usage:</strong></p>
-<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">&quot;ref&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assets/uploaded-diagram.pdf&quot;</span><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"ref"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assets/uploaded-diagram.pdf"</span><span class="p">}</span>
 </code></pre></div>
 <p>Then in a terminal:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>--data-binary<span class="w"> </span>@local-diagram.pdf<span class="w"> </span><span class="se">\</span>
-<span class="w">     </span><span class="s2">&quot;https://mcp.example.com/transfer/&lt;token&gt;&quot;</span>
+<span class="w">     </span><span class="s2">"https://mcp.example.com/transfer/&lt;token&gt;"</span>
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Raw body, not multipart</p>

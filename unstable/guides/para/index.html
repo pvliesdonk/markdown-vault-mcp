@@ -2585,41 +2585,41 @@
 <p>PARA has four note shapes. Each uses a distinct frontmatter block. The templates in <code>examples/para/templates/</code> provide these exactly:</p>
 <p><strong>Inbox:</strong> untyped quick capture. Triage assigns the <code>type</code> later.</p>
 <div class="highlight"><pre><span></span><code><span class="nn">---</span>
-<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{title}}&quot;</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">"{{title}}"</span>
 <span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
-<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{date}}&quot;</span>
+<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">"{{date}}"</span>
 <span class="nn">---</span>
 </code></pre></div>
 <p><strong>Project:</strong> a concrete outcome with a deadline.</p>
 <div class="highlight"><pre><span></span><code><span class="nn">---</span>
-<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{title}}&quot;</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">"{{title}}"</span>
 <span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">project</span>
 <span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">active</span>
-<span class="nt">outcome</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;one-sentence</span><span class="nv"> </span><span class="s">definition</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">done&gt;&quot;</span>
+<span class="nt">outcome</span><span class="p">:</span><span class="w"> </span><span class="s">"&lt;one-sentence</span><span class="nv"> </span><span class="s">definition</span><span class="nv"> </span><span class="s">of</span><span class="nv"> </span><span class="s">done&gt;"</span>
 <span class="nt">deadline</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">YYYY-MM-DD</span>
-<span class="nt">area</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;parent</span><span class="nv"> </span><span class="s">area</span><span class="nv"> </span><span class="s">name,</span><span class="nv"> </span><span class="s">or</span><span class="nv"> </span><span class="s">empty&gt;&quot;</span>
+<span class="nt">area</span><span class="p">:</span><span class="w"> </span><span class="s">"&lt;parent</span><span class="nv"> </span><span class="s">area</span><span class="nv"> </span><span class="s">name,</span><span class="nv"> </span><span class="s">or</span><span class="nv"> </span><span class="s">empty&gt;"</span>
 <span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
-<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{date}}&quot;</span>
+<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">"{{date}}"</span>
 <span class="nn">---</span>
 </code></pre></div>
 <p><strong>Area:</strong> an ongoing responsibility with no end state.</p>
 <div class="highlight"><pre><span></span><code><span class="nn">---</span>
-<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{title}}&quot;</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">"{{title}}"</span>
 <span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">area</span>
 <span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">active</span>
-<span class="nt">standard</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;what</span><span class="nv"> </span><span class="s">&#39;healthy&#39;</span><span class="nv"> </span><span class="s">looks</span><span class="nv"> </span><span class="s">like</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">this</span><span class="nv"> </span><span class="s">area&gt;&quot;</span>
-<span class="nt">review_cadence</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&lt;weekly</span><span class="nv"> </span><span class="s">|</span><span class="nv"> </span><span class="s">monthly</span><span class="nv"> </span><span class="s">|</span><span class="nv"> </span><span class="s">quarterly&gt;&quot;</span>
+<span class="nt">standard</span><span class="p">:</span><span class="w"> </span><span class="s">"&lt;what</span><span class="nv"> </span><span class="s">'healthy'</span><span class="nv"> </span><span class="s">looks</span><span class="nv"> </span><span class="s">like</span><span class="nv"> </span><span class="s">for</span><span class="nv"> </span><span class="s">this</span><span class="nv"> </span><span class="s">area&gt;"</span>
+<span class="nt">review_cadence</span><span class="p">:</span><span class="w"> </span><span class="s">"&lt;weekly</span><span class="nv"> </span><span class="s">|</span><span class="nv"> </span><span class="s">monthly</span><span class="nv"> </span><span class="s">|</span><span class="nv"> </span><span class="s">quarterly&gt;"</span>
 <span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
-<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{date}}&quot;</span>
+<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">"{{date}}"</span>
 <span class="nn">---</span>
 </code></pre></div>
 <p><strong>Resource:</strong> reference material, not requiring action.</p>
 <div class="highlight"><pre><span></span><code><span class="nn">---</span>
-<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{title}}&quot;</span>
+<span class="nt">title</span><span class="p">:</span><span class="w"> </span><span class="s">"{{title}}"</span>
 <span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">resource</span>
 <span class="nt">status</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">active</span>
 <span class="nt">tags</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span>
-<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;{{date}}&quot;</span>
+<span class="nt">created</span><span class="p">:</span><span class="w"> </span><span class="s">"{{date}}"</span>
 <span class="nn">---</span>
 </code></pre></div>
 <p><strong>Field meanings:</strong></p>
@@ -2647,15 +2647,15 @@
 <p>Then you can run targeted queries via the Python API:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># All active projects</span>
 <span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
-    <span class="s2">&quot;project&quot;</span><span class="p">,</span>
-    <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;project&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;active&quot;</span><span class="p">},</span>
+    <span class="s2">"project"</span><span class="p">,</span>
+    <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"project"</span><span class="p">,</span> <span class="s2">"status"</span><span class="p">:</span> <span class="s2">"active"</span><span class="p">},</span>
     <span class="n">limit</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="c1"># All active projects in the Health area</span>
 <span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span>
-    <span class="s2">&quot;project&quot;</span><span class="p">,</span>
-    <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;project&quot;</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;active&quot;</span><span class="p">,</span> <span class="s2">&quot;area&quot;</span><span class="p">:</span> <span class="s2">&quot;Health&quot;</span><span class="p">},</span>
+    <span class="s2">"project"</span><span class="p">,</span>
+    <span class="n">filters</span><span class="o">=</span><span class="p">{</span><span class="s2">"type"</span><span class="p">:</span> <span class="s2">"project"</span><span class="p">,</span> <span class="s2">"status"</span><span class="p">:</span> <span class="s2">"active"</span><span class="p">,</span> <span class="s2">"area"</span><span class="p">:</span> <span class="s2">"Health"</span><span class="p">},</span>
     <span class="n">limit</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
@@ -2681,7 +2681,7 @@ The files are excluded from search results but stay readable.</p>
 <p><code>3-Resources/_conventions.md</code>:</p>
 <div class="highlight"><pre><span></span><code>Reference material. Notes here are self-contained and timeless:
 
-<span class="k">-</span><span class="w"> </span>No &quot;relates to project X&quot; or &quot;from yesterday&#39;s meeting&quot; prose.
+<span class="k">-</span><span class="w"> </span>No "relates to project X" or "from yesterday's meeting" prose.
 <span class="k">-</span><span class="w"> </span>Do not link out to 1-Projects, 2-Areas, or Journal notes.
 <span class="k">-</span><span class="w"> </span>Projects and areas link <span class="ge">*to*</span> resources — never the reverse.
 <span class="k">-</span><span class="w"> </span>Structure: summary first, then detail. External sources under
@@ -2705,16 +2705,16 @@ these conventions and skips or reverses link proposals they forbid.</p>
 <p>Capture whatever's in your head into <code>0-Inbox/</code> without worrying about classification. The <code>inbox.md</code> template exists for this: Claude can create notes from it on request ("create an inbox note titled X with content Y"), or you can drop files directly into the folder via Obsidian or the CLI. Review the inbox daily or every few days by invoking the triage prompt; Claude reads each note and proposes a target path.</p>
 <p>Capture doesn't have to be something you type. If your MCP client exposes chat-history tools (Claude.ai has <code>conversation_search</code> and <code>recent_chats</code>), the vault can ingest ideas you've already discussed. The <code>para-capture-chats</code> prompt does this in one pass: it distills recent conversations into topic-scoped Inbox notes ready for triage. On Claude.ai you can fire it directly from the compose area's <code>+</code> menu once the MCP server is added as a connector (no typing required).</p>
 <p><strong>Via Claude:</strong></p>
-<div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name=&quot;inbox&quot;
+<div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name="inbox"
 </code></pre></div>
 <p><strong>Programmatically (scripting escape hatch):</strong></p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
 
-<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">)</span>
+<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">"/path/to/vault"</span><span class="p">)</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span>
-    <span class="s2">&quot;0-Inbox/migrate-postgres.md&quot;</span><span class="p">,</span>
-    <span class="n">content</span><span class="o">=</span><span class="s2">&quot;We should look into migrating to Postgres 16.&quot;</span><span class="p">,</span>
-    <span class="n">frontmatter</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;tags&quot;</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">&quot;created&quot;</span><span class="p">:</span> <span class="s2">&quot;2026-04-19&quot;</span><span class="p">},</span>
+    <span class="s2">"0-Inbox/migrate-postgres.md"</span><span class="p">,</span>
+    <span class="n">content</span><span class="o">=</span><span class="s2">"We should look into migrating to Postgres 16."</span><span class="p">,</span>
+    <span class="n">frontmatter</span><span class="o">=</span><span class="p">{</span><span class="s2">"tags"</span><span class="p">:</span> <span class="p">[],</span> <span class="s2">"created"</span><span class="p">:</span> <span class="s2">"2026-04-19"</span><span class="p">},</span>
 <span class="p">)</span>
 </code></pre></div>
 <p><strong>Goals for this stage:</strong></p>
@@ -2797,21 +2797,21 @@ these conventions and skips or reverses link proposals they forbid.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
 
-<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">)</span>
+<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="s2">"/path/to/vault"</span><span class="p">)</span>
 
 <span class="n">today</span> <span class="o">=</span> <span class="n">date</span><span class="o">.</span><span class="n">today</span><span class="p">()</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
 
 <span class="c1"># Flip status and add archived_at. One targeted replacement each.</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">edit</span><span class="p">(</span>
-    <span class="s2">&quot;1-Projects/ship-v2.md&quot;</span><span class="p">,</span>
-    <span class="n">old_text</span><span class="o">=</span><span class="s2">&quot;status: active&quot;</span><span class="p">,</span>
-    <span class="n">new_text</span><span class="o">=</span><span class="sa">f</span><span class="s2">&quot;status: archived</span><span class="se">\n</span><span class="s2">archived_at: </span><span class="si">{</span><span class="n">today</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+    <span class="s2">"1-Projects/ship-v2.md"</span><span class="p">,</span>
+    <span class="n">old_text</span><span class="o">=</span><span class="s2">"status: active"</span><span class="p">,</span>
+    <span class="n">new_text</span><span class="o">=</span><span class="sa">f</span><span class="s2">"status: archived</span><span class="se">\n</span><span class="s2">archived_at: </span><span class="si">{</span><span class="n">today</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="c1"># Move to the archive folder, preserving backlinks.</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span>
-    <span class="s2">&quot;1-Projects/ship-v2.md&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;4-Archive/ship-v2.md&quot;</span><span class="p">,</span>
+    <span class="s2">"1-Projects/ship-v2.md"</span><span class="p">,</span>
+    <span class="s2">"4-Archive/ship-v2.md"</span><span class="p">,</span>
     <span class="n">update_links</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
@@ -2832,7 +2832,7 @@ markdown-vault-mcp<span class="w"> </span>serve
 </ol>
 <p><strong>Invoke via MCP prompt:</strong></p>
 <p><code>create_from_template</code> is an MCP prompt, not a Python API method. Invoke it through your MCP client (such as Claude):</p>
-<div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name=&quot;project&quot;
+<div class="highlight"><pre><span></span><code>Use the create_from_template prompt with template_name="project"
 </code></pre></div>
 <p>The prompt calls <code>list_documents</code> on the templates folder to enumerate choices, <code>read</code>s the chosen template, substitutes placeholders, and <code>write</code>s the filled note, all through vault tools.</p>
 <h2 id="using-the-para-prompts">Using the PARA Prompts<a class="headerlink" href="#using-the-para-prompts" title="Permanent link">&para;</a></h2>
@@ -2846,20 +2846,20 @@ markdown-vault-mcp<span class="w"> </span>serve
 <div class="highlight"><pre><span></span><code>In Claude, call: para-capture-chats()
 </code></pre></div>
 <p>Or with an explicit window:</p>
-<div class="highlight"><pre><span></span><code>In Claude, call: para-capture-chats(window=&#39;this week&#39;)
+<div class="highlight"><pre><span></span><code>In Claude, call: para-capture-chats(window='this week')
 </code></pre></div>
 <p>The prompt gathers relevant conversations and distills them topic by topic into one proposed Inbox note per topic. After you confirm, it suggests running <code>para-triage</code> on the fresh Inbox entries.</p>
 <h3 id="para-triage"><code>para-triage</code><a class="headerlink" href="#para-triage" title="Permanent link">&para;</a></h3>
 <p><strong>When to use:</strong> after capturing one or more notes in <code>0-Inbox/</code>, or any time you want to classify an untyped note into Project, Area, or Resource. Run it as part of a daily or weekly inbox sweep.</p>
-<div class="highlight"><pre><span></span><code>In Claude, call: para-triage(path=&#39;0-Inbox/&#39;)
+<div class="highlight"><pre><span></span><code>In Claude, call: para-triage(path='0-Inbox/')
 </code></pre></div>
 <p>Or for a single note:</p>
-<div class="highlight"><pre><span></span><code>In Claude, call: para-triage(path=&#39;0-Inbox/migrate-postgres.md&#39;)
+<div class="highlight"><pre><span></span><code>In Claude, call: para-triage(path='0-Inbox/migrate-postgres.md')
 </code></pre></div>
 <p>The prompt iterates over the folder (or acts on the single note) and proposes a classification and target path for each note. On confirmation, it moves them.</p>
 <h3 id="para-project-kickoff"><code>para-project-kickoff</code><a class="headerlink" href="#para-project-kickoff" title="Permanent link">&para;</a></h3>
 <p><strong>When to use:</strong> right after creating a new Project note, or any time you want to define the outcome and pull in related context before starting work. Run it once per project: it's the onboarding step for the project itself.</p>
-<div class="highlight"><pre><span></span><code>In Claude, call: para-project-kickoff(path=&#39;1-Projects/ship-v2.md&#39;)
+<div class="highlight"><pre><span></span><code>In Claude, call: para-project-kickoff(path='1-Projects/ship-v2.md')
 </code></pre></div>
 <p>The prompt verifies the outcome and deadline are real, resurfaces related Resources and past archived Projects, and on confirmation adds a <code>## Related</code> section.</p>
 <h3 id="para-weekly-review"><code>para-weekly-review</code><a class="headerlink" href="#para-weekly-review" title="Permanent link">&para;</a></h3>
@@ -2867,7 +2867,7 @@ markdown-vault-mcp<span class="w"> </span>serve
 <div class="highlight"><pre><span></span><code>In Claude, call: para-weekly-review()
 </code></pre></div>
 <p>Or with an explicit path:</p>
-<div class="highlight"><pre><span></span><code>In Claude, call: para-weekly-review(review_path=&#39;3-Resources/reviews/2026-W17.md&#39;)
+<div class="highlight"><pre><span></span><code>In Claude, call: para-weekly-review(review_path='3-Resources/reviews/2026-W17.md')
 </code></pre></div>
 <p>The review note is written as a Resource under <code>3-Resources/reviews/</code>, so it is searchable and linkable from other notes. Past reviews form a trail of how the vault has evolved.</p>
 <h2 id="tips-and-best-practices">Tips and Best Practices<a class="headerlink" href="#tips-and-best-practices" title="Permanent link">&para;</a></h2>

@@ -2178,7 +2178,7 @@ loop. See <a href="../../configuration/#file-watcher">File Watcher</a>.</p>
 are now on the remote" before telling the user to check another device,
 or wants to pull in remote edits <em>right now</em> before continuing the
 conversation, call <code>git_sync</code> directly:</p>
-<div class="highlight"><pre><span></span><code>git_sync(direction=&quot;both&quot;)
+<div class="highlight"><pre><span></span><code>git_sync(direction="both")
 </code></pre></div>
 <p>Use <code>direction="pull"</code> or <code>direction="push"</code> to skip a leg. In
 <code>direction="both"</code> mode the push leg only runs when the pull leg
