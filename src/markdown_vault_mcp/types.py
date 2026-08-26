@@ -84,6 +84,11 @@ class ParsedNote:
         content_hash: SHA-256 hash of the raw file content for change detection.
         modified_at: Last-modified time as a Unix timestamp float.
         links: All links extracted from the document body.
+        content_chars: Character count of the document body as parsed:
+            frontmatter removed and surrounding whitespace normalised by the
+            frontmatter parser. Measured before chunking, because
+            ``chunk_overlap_words`` duplicates text across chunks and would
+            inflate any count summed from :attr:`chunks`.
     """
 
     path: str
@@ -93,6 +98,7 @@ class ParsedNote:
     content_hash: str
     modified_at: float
     links: list[LinkInfo] = field(default_factory=list)
+    content_chars: int = 0
 
 
 @dataclass
@@ -266,6 +272,10 @@ class NoteInfo:
         frontmatter: Parsed YAML frontmatter.
         modified_at: Last-modified time as a Unix timestamp float.
         kind: Always ``"note"`` for markdown documents; distinguishes from :class:`AttachmentInfo`.
+        content_chars: Character count of the note body, frontmatter excluded,
+            so a caller can budget batches without reading the note (#1039).
+            ``0`` for a row indexed before this field existed, and for rows
+            from queries that select a narrower column set.
     """
 
     path: str
@@ -274,6 +284,7 @@ class NoteInfo:
     frontmatter: dict[str, Any]
     modified_at: float
     kind: str = "note"
+    content_chars: int = 0
 
 
 @dataclass
@@ -721,11 +732,15 @@ class SubtreeNote:
             ``DocumentManager.get_toc`` / ``ReaderFacet.get_toc`` the first
             entry is the synthetic H1 title; the raw ``FTSIndex.get_subtree_toc``
             result omits it (the manager layer prepends it).
+        content_chars: Character count of the note body, frontmatter excluded,
+            so a caller can budget batches without reading the note (#1039).
+            ``0`` for a row indexed before this field existed.
     """
 
     path: str
     title: str
     headings: list[TocEntry]
+    content_chars: int = 0
 
 
 @dataclass

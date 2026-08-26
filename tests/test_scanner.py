@@ -977,3 +977,69 @@ class TestParseNoteCategorized:
         assert isinstance(outcome, CategorizedSkip)
         assert outcome.skip.category == "encoding_error"
         assert outcome.content_hash is None
+
+
+class TestContentChars:
+    """Body-size measurement backing the enumeration signal (#1039)."""
+
+    def test_excludes_frontmatter(self, tmp_path: Path) -> None:
+        """The same body measures the same with or without a frontmatter block."""
+        body = "# Title\n\nSome body text.\n"
+        (tmp_path / "bare.md").write_text(body, encoding="utf-8")
+        (tmp_path / "fm.md").write_text(
+            f"---\ntitle: T\ncluster: fiction\n---\n{body}", encoding="utf-8"
+        )
+
+        bare = parse_note(tmp_path / "bare.md", tmp_path)
+        with_fm = parse_note(tmp_path / "fm.md", tmp_path)
+
+        assert with_fm.content_chars == bare.content_chars
+        assert with_fm.content_chars > 0
+
+    def test_tracks_body_length(self, tmp_path: Path) -> None:
+        short = "short body"
+        long = "a much longer body " * 20
+        (tmp_path / "s.md").write_text(short, encoding="utf-8")
+        (tmp_path / "l.md").write_text(long, encoding="utf-8")
+
+        s_note = parse_note(tmp_path / "s.md", tmp_path)
+        l_note = parse_note(tmp_path / "l.md", tmp_path)
+
+        assert s_note.content_chars == len(short)
+        assert l_note.content_chars == len(long.rstrip())
+        assert l_note.content_chars > s_note.content_chars
+
+    def test_is_not_inflated_by_chunk_overlap(self, tmp_path: Path) -> None:
+        """Overlap duplicates text across chunks; the count must not follow.
+
+        Summing the stored chunks is the tempting shortcut and is wrong for
+        exactly this reason, so the property is pinned rather than assumed.
+        """
+        body = " ".join(f"word{i}" for i in range(400))
+        (tmp_path / "n.md").write_text(body, encoding="utf-8")
+
+        overlapped = parse_note(
+            tmp_path / "n.md",
+            tmp_path,
+            chunk_strategy=HeadingChunker(
+                short_doc_lines=0, max_chunk_words=50, chunk_overlap_words=20
+            ),
+        )
+        unoverlapped = parse_note(
+            tmp_path / "n.md",
+            tmp_path,
+            chunk_strategy=HeadingChunker(
+                short_doc_lines=0, max_chunk_words=50, chunk_overlap_words=0
+            ),
+        )
+
+        assert len(overlapped.chunks) > 1
+        summed = sum(len(c.content) for c in overlapped.chunks)
+        assert summed > len(body)  # the shortcut would over-count
+        assert overlapped.content_chars == len(body)
+        assert overlapped.content_chars == unoverlapped.content_chars
+
+    def test_empty_body_is_zero(self, tmp_path: Path) -> None:
+        (tmp_path / "n.md").write_text("---\ntitle: T\n---\n", encoding="utf-8")
+
+        assert parse_note(tmp_path / "n.md", tmp_path).content_chars == 0

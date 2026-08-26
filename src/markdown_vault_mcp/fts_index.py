@@ -88,7 +88,8 @@ CREATE TABLE IF NOT EXISTS documents (
     frontmatter_json TEXT,
     content_hash TEXT NOT NULL,
     modified_at REAL NOT NULL,
-    chunk_count INTEGER NOT NULL DEFAULT 1
+    chunk_count INTEGER NOT NULL DEFAULT 1,
+    content_chars INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS sections (
@@ -210,7 +211,7 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: short-circuit is rejected and every file is re-parsed once. Changes that
 #: only affect how stored rows are *queried* or *rendered* (ranking, snippets,
 #: response shaping) need no bump — nothing on disk went stale.
-INDEX_SEMANTICS_VERSION = 1
+INDEX_SEMANTICS_VERSION = 2
 
 
 class ChunkingMeta(NamedTuple):
@@ -447,6 +448,21 @@ class FTSIndex:
                 logger.debug(
                     "fts_index: chunk_count column already added by concurrent process"
                 )
+        if "content_chars" not in cols:
+            try:
+                conn.execute(
+                    "ALTER TABLE documents ADD COLUMN content_chars INTEGER NOT NULL DEFAULT 0"
+                )
+                conn.commit()
+                logger.info(
+                    "fts_index: migrated documents table — added content_chars column"
+                )
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
+                logger.debug(
+                    "fts_index: content_chars column already added by concurrent process"
+                )
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sections_docid ON sections(document_id)"
         )
@@ -623,8 +639,9 @@ class FTSIndex:
         cur.execute(
             """
             INSERT INTO documents (path, title, folder, frontmatter_json,
-                                   content_hash, modified_at, chunk_count)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                                   content_hash, modified_at, chunk_count,
+                                   content_chars)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 note.path,
@@ -634,6 +651,7 @@ class FTSIndex:
                 note.content_hash,
                 note.modified_at,
                 len(note.chunks),
+                note.content_chars,
             ),
         )
         if cur.lastrowid is None:
@@ -1365,7 +1383,7 @@ class FTSIndex:
         cur = self._conn().execute(
             """
             SELECT path, title, folder, frontmatter_json,
-                   content_hash, modified_at
+                   content_hash, modified_at, content_chars
             FROM documents
             WHERE path = ?
             """,
@@ -1394,7 +1412,7 @@ class FTSIndex:
             cur = self._conn().execute(
                 """
                 SELECT path, title, folder, frontmatter_json,
-                       content_hash, modified_at
+                       content_hash, modified_at, content_chars
                 FROM documents
                 WHERE folder = ? OR folder LIKE ? ESCAPE '\\'
                 ORDER BY path
@@ -1405,7 +1423,7 @@ class FTSIndex:
             cur = self._conn().execute(
                 """
                 SELECT path, title, folder, frontmatter_json,
-                       content_hash, modified_at
+                       content_hash, modified_at, content_chars
                 FROM documents
                 ORDER BY path
                 """
@@ -1565,7 +1583,7 @@ class FTSIndex:
             self._conn()
             .execute(
                 """
-            SELECT id, path, title
+            SELECT id, path, title, content_chars
             FROM documents
             WHERE (folder = ? OR folder LIKE ? ESCAPE '\\')
             ORDER BY path ASC
@@ -1614,6 +1632,7 @@ class FTSIndex:
                 path=row["path"],
                 title=row["title"],
                 headings=by_doc.get(row["id"], []),
+                content_chars=int(row["content_chars"] or 0),
             )
             for row in doc_rows
         ]
@@ -1865,7 +1884,7 @@ class FTSIndex:
             cur = self._conn().execute(
                 """
                 SELECT path, title, folder, frontmatter_json,
-                       modified_at
+                       modified_at, content_chars
                 FROM documents
                 WHERE folder = ? OR folder LIKE ? ESCAPE '\\'
                 ORDER BY modified_at DESC
@@ -1877,7 +1896,7 @@ class FTSIndex:
             cur = self._conn().execute(
                 """
                 SELECT path, title, folder, frontmatter_json,
-                       modified_at
+                       modified_at, content_chars
                 FROM documents
                 ORDER BY modified_at DESC
                 LIMIT ?
@@ -1900,7 +1919,7 @@ class FTSIndex:
         """
         cur = self._conn().execute(
             """
-            SELECT path, title, folder, frontmatter_json, modified_at
+            SELECT path, title, folder, frontmatter_json, modified_at, content_chars
             FROM documents d
             WHERE NOT EXISTS (SELECT 1 FROM links WHERE source_id = d.id)
               AND NOT EXISTS (SELECT 1 FROM links WHERE target_path = d.path)

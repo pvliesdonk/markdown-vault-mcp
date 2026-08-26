@@ -28,6 +28,7 @@ def make_note(
     chunks: list[Chunk] | None = None,
     content_hash: str = "abc123",
     modified_at: float = 1000.0,
+    content_chars: int = 0,
 ) -> ParsedNote:
     """Create a ParsedNote for testing.
 
@@ -38,6 +39,7 @@ def make_note(
         chunks: List of chunks. Defaults to a single generic chunk.
         content_hash: Hash string stored in the note.
         modified_at: Modification timestamp.
+        content_chars: Body character count stored on the document row.
 
     Returns:
         A fully-populated :class:`ParsedNote` suitable for indexing.
@@ -53,6 +55,7 @@ def make_note(
         chunks=chunks,
         content_hash=content_hash,
         modified_at=modified_at,
+        content_chars=content_chars,
     )
 
 
@@ -1569,3 +1572,74 @@ class TestPersistedRankConfig:
         default_idx.close()
 
         assert reset_scores == default_scores
+
+
+class TestContentChars:
+    """The note-size signal on the enumeration surfaces (#1039)."""
+
+    def test_list_notes_carries_content_chars(self) -> None:
+        index = FTSIndex(":memory:")
+        index.build_from_notes([make_note(path="a.md", content_chars=1234)])
+
+        rows = index.list_notes()
+
+        assert rows[0]["content_chars"] == 1234
+
+    def test_subtree_toc_carries_content_chars(self) -> None:
+        index = FTSIndex(":memory:")
+        index.build_from_notes(
+            [make_note(path="Projects/a.md", title="A", content_chars=99)]
+        )
+
+        notes, _ = index.get_subtree_toc("Projects")
+
+        assert notes[0].content_chars == 99
+
+    def test_distinguishes_notes_sharing_a_chunk_count(self) -> None:
+        """The signal must separate notes chunk_count cannot.
+
+        A stub and a nearly-cap-sized note are both one chunk, which is the
+        under-fill / overflow case #1039 reports; only a character count
+        tells a batch planner they differ.
+        """
+        index = FTSIndex(":memory:")
+        one_chunk = [Chunk(heading="H", heading_level=1, content="x", start_line=0)]
+        index.build_from_notes(
+            [
+                make_note(path="stub.md", chunks=one_chunk, content_chars=40),
+                make_note(path="long.md", chunks=one_chunk, content_chars=1400),
+            ]
+        )
+
+        sizes = {r["path"]: r["content_chars"] for r in index.list_notes()}
+
+        assert index.get_chunk_count("stub.md") == index.get_chunk_count("long.md")
+        assert sizes == {"stub.md": 40, "long.md": 1400}
+
+    def test_defaults_to_zero_for_a_row_indexed_without_it(self) -> None:
+        """A pre-existing row reads 0 rather than raising."""
+        index = FTSIndex(":memory:")
+        index.build_from_notes([make_note(path="a.md")])
+
+        assert index.list_notes()[0]["content_chars"] == 0
+
+    def test_migrates_an_index_built_before_the_column(self, tmp_path: Path) -> None:
+        """The in-place ALTER TABLE path, mirroring the chunk_count precedent."""
+        db = tmp_path / "index.db"
+        index = FTSIndex(str(db))
+        index.build_from_notes([make_note(path="a.md", content_chars=7)])
+        index.close()
+
+        conn = sqlite3.connect(db)
+        conn.execute("ALTER TABLE documents DROP COLUMN content_chars")
+        conn.commit()
+        conn.close()
+
+        reopened = FTSIndex(str(db))
+        cols = {
+            r[1]
+            for r in reopened._conn().execute("PRAGMA table_info(documents)").fetchall()
+        }
+
+        assert "content_chars" in cols
+        assert reopened.list_notes()[0]["content_chars"] == 0

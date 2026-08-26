@@ -172,7 +172,7 @@ List documents (and optionally attachments) in the vault.
 | `include_attachments` | bool | `false` | When true, also returns non-`.md` files that match the configured allowlist |
 | `filters` | object | `null` | Frontmatter equality filters, ANDed (any key; list fields match by membership). On an OKF bundle, `status` / `stale` / `trust_tier` carry OKF semantics: `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. Any filter excludes attachments |
 
-**Returns:** List of info dicts. Every entry has a `kind` field (`"note"` or `"attachment"`). Body content is not included; call `read` for full text.
+**Returns:** List of info dicts. Every entry has a `kind` field (`"note"` or `"attachment"`). Notes also carry `content_chars`, the character count of the note body with frontmatter excluded, so a caller can size work before fetching anything. Body content is not included; call `read` for full text.
 
 ### `list_folders`
 
@@ -804,7 +804,9 @@ Heading outline for a single note or an entire folder subtree. Mirrors the [`toc
 **Returns:**
 
 - **Note mode** (`path` ends in `.md`): flat ordered `list` of `{heading (str), level (int)}`. The document title is included as a synthetic H1 entry.
-- **Folder mode** (`path` is a folder prefix): `{path (str), notes (list), truncated (bool)}` where each entry in `notes` is `{path, title, headings}` and `headings` is a list of `{heading, level}` for that note. An empty or nonexistent folder returns an empty `notes` list with `truncated: false`.
+- **Folder mode** (`path` is a folder prefix): `{path (str), notes (list), truncated (bool)}` where each entry in `notes` is `{path, title, headings, content_chars}` and `headings` is a list of `{heading, level}` for that note. An empty or nonexistent folder returns an empty `notes` list with `truncated: false`.
+
+    `content_chars` is the character count of that note's body, frontmatter excluded. It lets a client pack batches against a size budget instead of a note count, which is what the [`summarize-subtree`](../prompts.md) recipe uses. A note indexed before the field existed reports `0`; a vault upgrading to this release rebuilds its index once on first startup, after which the real value is served.
 
 Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 

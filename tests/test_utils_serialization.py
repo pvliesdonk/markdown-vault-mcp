@@ -36,6 +36,7 @@ def test_toc_payload_subtree_nested() -> None:
                     {"heading": "A", "level": 1},
                     {"heading": "Goals", "level": 2},
                 ],
+                "content_chars": 0,
             }
         ],
         "truncated": False,

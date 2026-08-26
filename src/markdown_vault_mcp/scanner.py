@@ -1116,6 +1116,9 @@ def parse_note(
 
     chunks = chunk_strategy.chunk(body, metadata)
     links = extract_links(body, rel_str)
+    # Measured here rather than summed from `chunks`: overlap duplicates text
+    # across chunk boundaries, so a sum would over-count multi-chunk notes.
+    content_chars = len(body)
 
     note = ParsedNote(
         path=rel_str,
@@ -1125,6 +1128,7 @@ def parse_note(
         content_hash=content_hash,
         modified_at=modified_at,
         links=links,
+        content_chars=content_chars,
     )
     logger.debug(
         "parse_note: %s — title=%r chunks=%d links=%d",

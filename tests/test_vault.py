@@ -4594,3 +4594,45 @@ class TestMaxChunkCharsWiring:
             assert col._chunk_strategy.max_chunk_chars == round(512 * 2.8)
         finally:
             col.close()
+
+
+class TestContentCharsSurfaces:
+    """content_chars reaches both enumeration surfaces end to end (#1039)."""
+
+    def test_list_documents_and_get_toc_agree(self, tmp_path: Path) -> None:
+        body = "# Note\n\n" + ("filler sentence. " * 40)
+        (tmp_path / "Projects").mkdir()
+        (tmp_path / "Projects" / "big.md").write_text(body, encoding="utf-8")
+        (tmp_path / "Projects" / "stub.md").write_text("# Stub\n", encoding="utf-8")
+
+        col = _make_vault(tmp_path)
+        try:
+            col.index.build_index()
+
+            listed = {n.path: n.content_chars for n in col.reader.list_documents()}
+            toc = col.reader.get_toc("Projects")
+            from_toc = {n.path: n.content_chars for n in toc.notes}
+
+            assert listed["Projects/big.md"] > listed["Projects/stub.md"] > 0
+            # Both surfaces read the same stored column, so they must agree.
+            assert from_toc == listed
+        finally:
+            col.close()
+
+    def test_survives_a_rewrite(self, tmp_path: Path) -> None:
+        """A note that grows reports its new size after the write reindexes it."""
+        path = tmp_path / "n.md"
+        path.write_text("# N\n\nshort\n", encoding="utf-8")
+        col = _make_vault(tmp_path, read_only=False)
+        try:
+            col.index.build_index()
+            before = col.reader.list_documents()[0].content_chars
+
+            col.writer.write("n.md", "# N\n\n" + ("much longer body. " * 30))
+            # The index writer is a background thread; read after it drains.
+            wait_for_writer_drain(col)
+            after = col.reader.list_documents()[0].content_chars
+
+            assert after > before
+        finally:
+            col.close()

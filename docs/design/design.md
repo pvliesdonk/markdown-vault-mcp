@@ -2570,8 +2570,8 @@ to a truncated result.
 **Client-side summarization route (#1035).** The server-side tool is one of
 two routes. The ``summarize-subtree`` prompt ships the same
 partition/map/reduce recipe as prose for MCP clients: plan batches from the
-``get_toc`` listing (batching by note count with heading counts as a size
-proxy — the toc carries no sizes), produce one detailed partial summary per
+``get_toc`` listing (packing batches against a ``content_chars`` budget,
+see the note-size signal below), produce one detailed partial summary per
 batch with per-note path attribution, and reduce the partials into one
 summary. The recipe is subagent-optional: with parallel subagents the
 mappers fan out from the primary conversation (subagents cannot spawn
@@ -2732,11 +2732,33 @@ queries the existing ``sections`` table (no file I/O).
 **TOC surface** (``get_toc`` tool and ``toc://vault/{path}`` resource): dispatch is by suffix. Paths ending in ``.md`` are note mode; all other paths are folder-prefix mode.
 
 - **Note mode** returns a flat ordered ``list[{heading, level}]``. The document title is included as a synthetic H1 entry.
-- **Folder mode** returns ``{path, notes, truncated}`` where ``notes`` is an ordered ``list[{path, title, headings}]`` aggregating every note under the subtree (sorted by path). ``max_notes`` (default 200) caps the note count; when more notes match, the first ``max_notes`` by path are returned and ``truncated`` is ``True``.
+- **Folder mode** returns ``{path, notes, truncated}`` where ``notes`` is an ordered ``list[{path, title, headings, content_chars}]`` aggregating every note under the subtree (sorted by path). ``max_notes`` (default 200) caps the note count; when more notes match, the first ``max_notes`` by path are returned and ``truncated`` is ``True``.
 - **``max_level``** (tool only, default ``None``) filters out headings deeper than the given level. The synthetic H1 title always survives regardless of ``max_level``.
 - The resource (``toc://vault/{path}``) exposes no ``max_level`` or ``max_notes`` controls; use the ``get_toc`` tool when those controls are needed.
 
 The library layer returns typed structs (``TocEntry``, ``SubtreeNote``, ``SubtreeToc``, defined in ``types.py``); the MCP boundary serializes them to the JSON shapes above via ``utils/serialization.toc_payload``, keeping the wire format unchanged.
+
+**Note-size signal (#1039)**: ``SubtreeNote`` and ``NoteInfo`` both carry
+``content_chars``, so a client that only enumerates can pack batches against a
+size budget the way ``SummarizeManager._pack_batches`` does server-side,
+instead of batching by note count. It is stored on ``documents`` and measured
+in ``parse_note`` as the length of the parsed body (frontmatter removed),
+deliberately **not** summed from the stored chunks: ``chunk_overlap_words``
+duplicates text across chunk boundaries, so a sum over ``sections.content``
+over-counts every multi-chunk note. ``chunk_count``, already on the row, is
+not a substitute — every note below the chunk cap is one chunk whether it
+holds 50 characters or 1400, which is precisely the under-fill / overflow case
+the signal exists to fix.
+
+The column is added to an existing database in place (``ALTER TABLE`` with the
+same concurrent-process handling as ``chunk_count``), but because indexing is
+hash-based an unchanged note is never re-parsed, so a migrated row would keep
+reporting the ``0`` default forever. ``INDEX_SEMANTICS_VERSION`` is therefore
+bumped to 2, which cold-rebuilds the FTS index once on the next startup. That
+rebuild does not re-embed: the vector sidecar's identity check keys on
+provider, model and embed-text format, none of which change here, and the
+chunking itself is untouched, so existing vectors stay valid and no embedding
+API is called.
 
 **Prompts**: 8 built-in prompt templates, plus optional user-defined prompts:
 

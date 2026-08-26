@@ -37,4 +37,7 @@ def fts_row_to_note_info(row: dict[str, Any]) -> NoteInfo:
         folder=row["folder"],
         frontmatter=frontmatter,
         modified_at=row["modified_at"],
+        # Absent from rows produced by callers that select a narrower column
+        # set, and 0 on an index built before the column existed.
+        content_chars=int(row.get("content_chars") or 0),
     )
