@@ -1377,8 +1377,8 @@ class FTSIndex:
 
         Returns:
             A dict with keys ``path``, ``title``, ``folder``,
-            ``frontmatter_json``, ``content_hash``, ``modified_at``, or
-            ``None`` if the document is not indexed.
+            ``frontmatter_json``, ``content_hash``, ``modified_at``,
+            ``content_chars``, or ``None`` if the document is not indexed.
         """
         cur = self._conn().execute(
             """
@@ -1915,7 +1915,8 @@ class FTSIndex:
 
         Returns:
             List of dicts with keys ``path``, ``title``, ``folder``,
-            ``frontmatter_json``, and ``modified_at``, ordered by path.
+            ``frontmatter_json``, ``modified_at``, and ``content_chars``,
+            ordered by path.
         """
         cur = self._conn().execute(
             """
