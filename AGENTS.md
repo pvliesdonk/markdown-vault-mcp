@@ -153,9 +153,6 @@ against each other by `tests/test_commit_conventions.py`, so no one of the
 three can drift alone.
 
 
-The automated Claude review runs **only after CI passes** — if CI is red, no
-review is posted. Fix CI and push; the review runs on the next green run.
-
 
 ## Skills
 
@@ -258,8 +255,8 @@ Request Claude selectively on a pull request or issue with an explicit `@claude`
 mention.
 
 
-Automatic Claude review runs after deterministic CI passes. It is advisory and
-is not a required ruleset check.
+Automatic agent review is disabled. Request Claude selectively with an
+`@claude` mention; deterministic CI remains the merge gate.
 
 <!-- TEMPLATE-TRACKING-END -->
 
