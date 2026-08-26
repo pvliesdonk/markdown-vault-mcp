@@ -145,6 +145,7 @@ ifcraftcorpus
 int
 invalid_client
 IPs
+Jina
 jpg
 keyless
 keyspace
@@ -152,12 +153,14 @@ lfs
 lifespan
 linux
 litellm
+LiteLLM
 LLM
 LLMs
 lockfile
 MCP
 mcpb
 middleware
+Mistral
 Mitigations
 MOCs
 most_linked
@@ -207,6 +210,7 @@ sdist
 SELinux
 SHAs
 show_context
+SiliconFlow
 stderr
 streamable
 subfolder
