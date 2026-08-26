@@ -135,7 +135,7 @@ class TestServerIdentity:
         # opens it, and the domain guidance snippet follows. The pre-5
         # operator-override hint is gone from the composed text.
         assert server.instructions.startswith(
-            "Generic markdown vault MCP server with FTS5 + semantic search"
+            "Markdown vault MCP with FTS5 + semantic search"
         )
 
     def test_mode_line_is_composed_domain_side(self) -> None:

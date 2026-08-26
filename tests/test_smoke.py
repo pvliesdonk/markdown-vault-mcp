@@ -127,7 +127,7 @@ def test_instructions_compose_identity_and_operator_extra(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA", "House rule: be brief.")
     text = make_server().instructions or ""
     assert text.startswith(
-        "Generic markdown vault MCP server with FTS5 + semantic search",
+        "Markdown vault MCP with FTS5 + semantic search",
     )
     assert "https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt" in text
     assert text.rstrip().endswith("House rule: be brief.")
@@ -145,7 +145,7 @@ def test_blank_overrides_fall_back_to_defaults(
     # the composed default, not the whitespace that was set (which would leak
     # if the strip-blank-to-default logic regressed)
     assert (server.instructions or "").startswith(
-        "Generic markdown vault MCP server with FTS5 + semantic search",
+        "Markdown vault MCP with FTS5 + semantic search",
     )
 
 

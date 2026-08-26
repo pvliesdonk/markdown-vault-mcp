@@ -119,7 +119,7 @@ def make_server(
     # WORKFLOWS < INSTANCE < OPERATOR`` anchors pvl-core exports — never
     # ``priority=0``, which is ``IDENTITY`` and must stay unique), and
     # ``finalize_instructions`` renders them once, after tool visibility.
-    instructions_for(mcp).identity("Generic markdown vault MCP server with FTS5 + semantic search")
+    instructions_for(mcp).identity("Markdown vault MCP with FTS5 + semantic search")
     # The docs site publishes llms.txt per version (mkdocs-llmstxt, mike);
     # `/latest/` resolves once the first release has published the site.
     instructions_for(mcp).documentation(

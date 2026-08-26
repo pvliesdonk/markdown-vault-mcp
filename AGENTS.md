@@ -1,6 +1,6 @@
 # Markdown Vault MCP
 
-Generic markdown vault MCP server with FTS5 + semantic search
+Markdown vault MCP with FTS5 + semantic search
 
 ## Design
 <!-- DOMAIN-START -->
