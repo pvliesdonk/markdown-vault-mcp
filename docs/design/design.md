@@ -70,7 +70,7 @@ markdown-vault-mcp (new package)
 +-- config_sections/  -- domain-grouped sub-config VIEWS (git/indexing/embeddings/search/sync/content), assembled by ProjectConfig properties; no from_env of their own (#952)
 |   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
 +-- server.py         -- template-owned skeleton; domain wiring in DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
-+-- _instructions.py  -- build_default_instructions: domain server-instructions prose (#901)
++-- _instructions.py  -- contribute_instructions: domain guidance snippets for pvl-core's InstructionsBuilder (#901, #1162)
 +-- domain.py         -- Service: owns Vault lifecycle + get_vault/set_pending_config singleton (#902)
 +-- _server_apps.py   -- template-owned MCP Apps scaffold; domain apps in DOMAIN-APP-* sentinels (#905)
 +-- _vault_apps.py    -- domain helpers behind _server_apps sentinels: sandbox-domain + CSP + GraphView serializer (#905)
@@ -1237,8 +1237,9 @@ ones).
    sentence pointing at `get_conventions` and the write-result key. The
    sentence is emitted unconditionally-when-configured (not gated on files
    existing) because instructions are composed before the managed-git clone
-   runs; an operator-set `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the
-   default string entirely, including this sentence.
+   runs; an operator-set `MARKDOWN_VAULT_MCP_INSTRUCTIONS` (legacy full
+   replace) drops it, and an operator hiding `get_conventions` via
+   `TOOLS_DENY` prunes it (#1162).
 5. `config://vault` reports `conventions_file` and `convention_folders`.
 
 ### OKF Read Semantics (phase 1, #960)
@@ -2661,11 +2662,16 @@ contain this, both operator-tunable:
 **Dynamic instructions**: the server's MCP `instructions` string varies with
 `read_only` mode. When `read_only=True`, the instructions state this is a
 read-only instance; when `read_only=False`, they describe write tool semantics.
-This signals capability status to clients and reduces irrelevant prompting. The
-default text is built by `build_default_instructions()` in `_instructions.py`
-(kept out of the template-owned `server.py`, #901) and applied in the
-`DOMAIN-WIRING` block; an operator-set `MARKDOWN_VAULT_MCP_INSTRUCTIONS`
-overrides it.
+This signals capability status to clients and reduces irrelevant prompting.
+Since pvl-core 5 the text is composed by an `InstructionsBuilder`: the
+template-owned skeleton contributes the identity line and documentation
+pointer, `contribute_instructions()` in `_instructions.py` (kept out of the
+template-owned `server.py`, #901) adds the domain guidance as tool-annotated
+snippets from the `DOMAIN-WIRING` block, and `finalize_instructions` renders
+the result once after tool visibility (#1162). An operator-set
+`MARKDOWN_VAULT_MCP_INSTRUCTIONS` still replaces the whole text (deprecated,
+with a startup warning); `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` appends
+operator context instead.
 
 **Tool semantics**:
 - `read(path)` returns full file content + frontmatter metadata
@@ -2844,7 +2850,7 @@ For MCP server deployment:
 | Variable | Description | Default |
 |-|-|-|
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | MCP server name shown to clients | `markdown-vault-mcp` |
-| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | System-level instructions for LLM context | generic description |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | Legacy full replacement of the composed MCP instructions (deprecated; prefer `_EXTRA`) | generic description |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files | required |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Hide the write tools | `false` |
