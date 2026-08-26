@@ -540,6 +540,12 @@ back into context.
 
 For `.md` destinations, the response may also include a `conventions` list; see [`write`](#write).
 
+!!! note "Overwrite protection"
+    `fetch` saves through the same guarded path as `write`, so with
+    `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` a fetch to a path that
+    already exists fails unless the call carries a matching `if_match` etag.
+    See [Write protection](../configuration.md#write-protection).
+
 The download itself runs through `fastmcp-pvl-core`'s hardened `fetch_url`
 primitive, so the SSRF protections above are shared, audited code rather
 than a local copy.

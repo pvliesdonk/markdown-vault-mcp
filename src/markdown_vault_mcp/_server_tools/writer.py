@@ -631,6 +631,13 @@ def register(mcp: FastMCP) -> None:
         as a new note.
 
         Raises:
+            DocumentExistsError: If the server runs with
+                ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`` and *path*
+                already exists while no *if_match* is supplied. The save
+                routes through the same guarded ``write`` /
+                ``write_attachment`` path as the write tools, so read the
+                existing note first and pass its etag as *if_match* to
+                replace it deliberately, or fetch to a fresh path.
             ValueError: If the URL scheme is not http/https, the host is
                 blocked or cannot be resolved (on the supplied URL or on any
                 redirect hop), the download exceeds the size limit, or the
