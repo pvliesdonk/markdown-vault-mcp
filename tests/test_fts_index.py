@@ -1574,6 +1574,41 @@ class TestPersistedRankConfig:
         assert reset_scores == default_scores
 
 
+def _index_without_content_chars(tmp_path: Path) -> Path:
+    """Build an index file, then drop the column to emulate an older database."""
+    db = tmp_path / "index.db"
+    index = FTSIndex(str(db))
+    index.build_from_notes([make_note(path="a.md", content_chars=7)])
+    index.close()
+    conn = sqlite3.connect(db)
+    conn.execute("ALTER TABLE documents DROP COLUMN content_chars")
+    conn.commit()
+    conn.close()
+    return db
+
+
+def _alter_raises(message: str):
+    """A sqlite3.connect replacement whose content_chars ALTER always fails.
+
+    sqlite3.Connection is immutable, so the failure is injected through a
+    Connection subclass supplied as the connection factory rather than by
+    patching the method.
+    """
+    real_connect = sqlite3.connect
+
+    class _FailingConnection(sqlite3.Connection):
+        def execute(self, sql, *args, **kwargs):  # type: ignore[no-untyped-def]
+            if "ADD COLUMN content_chars" in sql:
+                raise sqlite3.OperationalError(message)
+            return super().execute(sql, *args, **kwargs)
+
+    def _connect(*args, **kwargs):  # type: ignore[no-untyped-def]
+        kwargs["factory"] = _FailingConnection
+        return real_connect(*args, **kwargs)
+
+    return _connect
+
+
 class TestContentChars:
     """The note-size signal on the enumeration surfaces (#1039)."""
 
@@ -1643,3 +1678,32 @@ class TestContentChars:
 
         assert "content_chars" in cols
         assert reopened.list_notes()[0]["content_chars"] == 0
+
+    def test_tolerates_a_concurrent_migration(self, tmp_path: Path) -> None:
+        """Another process adding the column first is not an error."""
+        db = _index_without_content_chars(tmp_path)
+
+        with patch(
+            "markdown_vault_mcp._fts_connection.sqlite3.connect",
+            _alter_raises("duplicate column name: content_chars"),
+        ):
+            index = FTSIndex(str(db))
+
+        # The duplicate-column error is swallowed, so construction completes.
+        # (The column is absent here only because the fake never really added
+        # it; a genuine racing process would have.)
+        assert index is not None
+        index.close()
+
+    def test_reraises_an_unrelated_migration_failure(self, tmp_path: Path) -> None:
+        """Only the duplicate-column race is swallowed."""
+        db = _index_without_content_chars(tmp_path)
+
+        with (
+            patch(
+                "markdown_vault_mcp._fts_connection.sqlite3.connect",
+                _alter_raises("disk I/O error"),
+            ),
+            pytest.raises(sqlite3.OperationalError, match="disk I/O error"),
+        ):
+            FTSIndex(str(db))
