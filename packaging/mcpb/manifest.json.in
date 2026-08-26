@@ -1,10 +1,10 @@
 {
   "manifest_version": "0.4",
   "name": "markdown-vault-mcp",
-  "display_name": "Markdown Vault",
+  "display_name": "Markdown Vault MCP",
   "version": "${VERSION}",
-  "description": "FTS5 + semantic search over a markdown vault. Read, edit, link, and analyze notes.",
-  "long_description": "Generic markdown-vault MCP server with SQLite FTS5 full-text search, optional embedding-based semantic search, frontmatter-aware indexing, link-graph tools (backlinks, outlinks, similar notes, orphans), git write strategy, and MCP Apps views (Context Card, Graph Explorer, Vault Browser).",
+  "description": "Markdown vault MCP with FTS5 + semantic search",
+  "long_description": "Markdown vault MCP with FTS5 + semantic search",
   "author": {
     "name": "Peter van Liesdonk",
     "url": "https://github.com/pvliesdonk"
