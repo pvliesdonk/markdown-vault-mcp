@@ -107,11 +107,6 @@ src/markdown_vault_mcp/
 ```
 <!-- DOMAIN-END -->
 
-## Reference
-<!-- DOMAIN-START -->
-This project is extracted from [`pvliesdonk/if-craft-corpus`](https://github.com/pvliesdonk/if-craft-corpus). See the design doc's Reference Code section for the mapping between source files.
-<!-- DOMAIN-END -->
-
 <!-- ===== TEMPLATE-OWNED SECTIONS BELOW — DO NOT EDIT; CHANGES WILL BE OVERWRITTEN ON COPIER UPDATE ===== -->
 
 ## Conventions
