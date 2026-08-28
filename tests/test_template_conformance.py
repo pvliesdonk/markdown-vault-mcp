@@ -259,16 +259,40 @@ def _answers() -> dict:
     return yaml.safe_load(ANSWERS.read_text())
 
 
+def _is_partial_clone(repo: Path) -> bool:
+    """Whether *repo* is a partial (blobless/treeless) clone.
+
+    Such a checkout cannot serve the blobs copier needs — see
+    :func:`_template_git_dir` — so it is skipped in favour of a full clone.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "config", "--get", "remote.origin.promisor"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.stdout.strip() == "true"
+
+
 def _template_git_dir(tmp_path_factory: pytest.TempPathFactory, src_url: str) -> Path:
     """A local git checkout of the template — the sibling checkout if present
-    (offline-friendly), else a blobless clone of ``_src_path``.
+    (offline-friendly), else a full clone of ``_src_path``.
 
-    When no sibling checkout exists the clone needs network. Probe the remote
+    The clone must carry blobs. copier is pointed at whatever this returns and
+    clones *from* it before checking out the ref; cloning from a blobless
+    partial clone yields a repo with no blobs and no promisor remote to fetch
+    them from, so the checkout half-succeeds — tree entries appear, file
+    contents do not — and every watched file reads as missing (#1190). The
+    whole template is a few MB, so filtering saved nothing to begin with. For
+    the same reason a sibling checkout that is itself partial is unusable, and
+    is passed over in favour of the clone below.
+
+    When no sibling checkout is used the clone needs network. Probe the remote
     first with a short timeout so an offline environment skips in seconds
     (loudly) instead of stalling on the multi-minute clone/fetch timeouts.
     """
     local = REPO_ROOT.parent / "fastmcp-server-template"
-    if (local / ".git").is_dir():
+    if (local / ".git").is_dir() and not _is_partial_clone(local):
         return local
     dest = tmp_path_factory.mktemp("template")
     try:
@@ -280,7 +304,7 @@ def _template_git_dir(tmp_path_factory: pytest.TempPathFactory, src_url: str) ->
             timeout=15,
         )
         subprocess.run(
-            ["git", "clone", "--filter=blob:none", src_url, str(dest)],
+            ["git", "clone", src_url, str(dest)],
             check=True,
             capture_output=True,
             text=True,
