@@ -165,6 +165,40 @@ class TestServerIdentity:
             assert snippets[-1] is mode[0], "the mode line is composed last"
 
     @pytest.mark.usefixtures("_mcp_env")
+    def test_no_domain_snippet_is_silently_pruned(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Every domain fragment survives into the composed instructions.
+
+        pvl-core drops a snippet whose declared ``tools`` are not all
+        exposed, and logs the drop at DEBUG rather than raising — so a tool
+        renamed without updating a declaration would silently delete
+        guidance from every server. The write half is pinned at import time
+        through ``gated_tool``; this covers the rest by turning on the
+        features that gate each fragment and asserting all of them land.
+        """
+        from markdown_vault_mcp._instructions import _domain_snippets
+        from markdown_vault_mcp.config import ProjectConfig
+
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY", "sk-test")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+        config = ProjectConfig.from_env()
+        assert config.summarize.has_provider(), "fixture must enable the summarize tool"
+
+        text = make_server().instructions or ""
+        for snippet in _domain_snippets(
+            read_only=False,
+            conventions_file=config.content.conventions_file,
+            summarize_note_limit=config.summarize.max_notes,
+            okf_mode="on",
+        ):
+            assert snippet.text in text, (
+                f"the snippet at priority {snippet.priority} never reached the "
+                f"composed text; a name in tools={snippet.tools} is most likely "
+                "not a registered tool any more"
+            )
+
+    @pytest.mark.usefixtures("_mcp_env")
     def test_custom_server_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "my-vault")
         server = make_server()

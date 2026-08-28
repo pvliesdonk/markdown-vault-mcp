@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING
 
 from fastmcp_pvl_core import IDENTITY, INSTANCE, WORKFLOWS, instructions_for
 
+from markdown_vault_mcp._write_tools import gated_tool
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastmcp import FastMCP
 
@@ -32,6 +34,16 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 #: that priority and raises ``ConfigurationError`` on a second, whichever
 #: method added it.
 PRELUDE = IDENTITY + 10
+
+#: Tools the write-guidance fragment tells the model to call. Resolved
+#: through :func:`~markdown_vault_mcp._write_tools.gated_tool` at import
+#: time so a rename that updates ``WRITE_TOOL_NAMES`` fails loudly here
+#: instead of leaving a stale name that silently prunes the fragment away
+#: on every server.
+_WRITE_SNIPPET_TOOLS = tuple(
+    gated_tool(name)
+    for name in ("write", "edit", "append", "rename", "delete", "move_folder")
+)
 
 
 @dataclass(frozen=True)
@@ -131,7 +143,7 @@ def _domain_snippets(
                 "search index immediately — never call 'reindex' after write, edit, "
                 "append, delete, or rename.",
                 WORKFLOWS,
-                ("write", "edit", "append", "rename", "delete", "move_folder"),
+                _WRITE_SNIPPET_TOOLS,
             )
         )
     snippets.append(
