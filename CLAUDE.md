@@ -1,6 +1,6 @@
 # markdown-vault-mcp
 
-Generic markdown vault MCP server with FTS5 + semantic search, frontmatter-aware indexing, and incremental reindexing.
+Generic markdown vault MCP with hybrid search.
 
 ## Design
 <!-- DOMAIN-START -->

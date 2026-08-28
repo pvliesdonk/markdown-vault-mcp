@@ -1,7 +1,7 @@
 [project]
 name = "markdown-vault-mcp"
 version = "4.0.0"
-description = "Generic markdown vault MCP server with FTS5 + semantic search"
+description = "Generic markdown vault MCP with hybrid search"
 readme = "README.md"
 license = "MIT"  # project-owned — keep across copier updates
 requires-python = ">=3.11"

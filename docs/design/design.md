@@ -1,8 +1,6 @@
 # markdown-vault-mcp: Design Specification v2
 
-> Generic markdown vault MCP server with FTS5 + semantic search,
-> frontmatter-aware indexing, and incremental reindexing. Extracted from
-> and replacing the search layer in `pvliesdonk/if-craft-corpus`.
+> Generic markdown vault MCP with hybrid search.
 
 ## Terminology
 

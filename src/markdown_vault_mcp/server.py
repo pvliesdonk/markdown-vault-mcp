@@ -81,7 +81,7 @@ def make_server(
     server_name = env(_ENV_PREFIX, "SERVER_NAME", "markdown-vault-mcp")
     instructions = env(_ENV_PREFIX, "INSTRUCTIONS") or build_instructions(
         env_prefix=_ENV_PREFIX,
-        domain_line="Generic markdown vault MCP server with FTS5 + semantic search",
+        domain_line="Generic markdown vault MCP with hybrid search",
     )
 
     auth = build_auth(config.server)

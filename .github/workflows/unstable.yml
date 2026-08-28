@@ -70,7 +70,7 @@ jobs:
             type=raw,value=edge
           labels: |
             org.opencontainers.image.title=markdown-vault-mcp
-            org.opencontainers.image.description=Generic markdown vault MCP server with FTS5 + semantic search
+            org.opencontainers.image.description=Generic markdown vault MCP with hybrid search
             org.opencontainers.image.vendor=pvliesdonk
             io.modelcontextprotocol.server.name=io.github.pvliesdonk/markdown-vault-mcp
 

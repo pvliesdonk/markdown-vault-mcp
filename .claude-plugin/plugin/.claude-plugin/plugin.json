@@ -1,6 +1,6 @@
 {
   "name": "markdown-vault-mcp",
-  "description": "MCP server for markdown vaults: FTS5 + semantic search, link graph, write/edit/git.",
+  "description": "Generic markdown vault MCP with hybrid search",
   "version": "4.0.0",
   "author": {
     "name": "Peter van Liesdonk"

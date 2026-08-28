@@ -603,7 +603,7 @@ jobs:
             type=raw,value=v${{ steps.version.outputs.major }},enable=${{ steps.recheck.outputs.is_latest_major == 'true' }}
           labels: |
             org.opencontainers.image.title=markdown-vault-mcp
-            org.opencontainers.image.description=Generic markdown vault MCP server with FTS5 + semantic search
+            org.opencontainers.image.description=Generic markdown vault MCP with hybrid search
             org.opencontainers.image.vendor=pvliesdonk
             io.modelcontextprotocol.server.name=io.github.pvliesdonk/markdown-vault-mcp
 
@@ -884,7 +884,7 @@ jobs:
           # Through env, not interpolated into the script: the blurb is
           # free-form prose and a quote in it would otherwise break the
           # shell rather than the entry.
-          PLUGIN_DESC: "Generic markdown vault MCP server with FTS5 + semantic search"
+          PLUGIN_DESC: "Generic markdown vault MCP with hybrid search"
           PLUGIN_HOME: "https://pvliesdonk.github.io/markdown-vault-mcp/"
         run: |
           cd catalog

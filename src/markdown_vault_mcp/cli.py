@@ -17,7 +17,7 @@ from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig, to_vault_kwarg
 
 app = typer.Typer(
     name="markdown-vault-mcp",
-    help="Generic markdown vault MCP server with FTS5 + semantic search",
+    help="Generic markdown vault MCP with hybrid search",
     no_args_is_help=True,
     add_completion=False,
 )

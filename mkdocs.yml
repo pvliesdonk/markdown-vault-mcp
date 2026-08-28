@@ -1,6 +1,6 @@
 site_name: markdown-vault-mcp
 site_url: https://pvliesdonk.github.io/markdown-vault-mcp/
-site_description: Generic markdown vault MCP server with FTS5 + semantic search
+site_description: Generic markdown vault MCP with hybrid search
 repo_url: https://github.com/pvliesdonk/markdown-vault-mcp
 repo_name: pvliesdonk/markdown-vault-mcp
 edit_uri: edit/main/docs/
