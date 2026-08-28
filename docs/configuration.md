@@ -189,7 +189,7 @@ chronic backlog.
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | string | `markdown-vault-mcp` | MCP server name shown to clients; useful for multi-instance setups |
-| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | string | (none) | Operator context appended to the generated instructions (deployment notes, house rules). The generated text — identity, documentation pointer, tool workflows, and the read-only/read-write announcement — stays intact. Prefer this over `INSTRUCTIONS` |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | string | (none) | Operator context appended to the generated instructions (deployment notes, house rules). The generated text (identity, documentation pointer, tool workflows, and the read-only/read-write announcement) stays intact. Prefer this over `INSTRUCTIONS` |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | string | (auto) | **Deprecated.** Replaces the entire generated instructions text and logs a startup warning; when both are set, `INSTRUCTIONS_EXTRA` is ignored. A server set this way advertises no tool workflows the model has not been told about by hand |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | bool | `false` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the tool listing for clients that do not render MCP Apps panels (saves a few listing tokens) |
 | `MARKDOWN_VAULT_MCP_HTTP_PATH` | path | `/mcp` | HTTP endpoint path for streamable HTTP transport (`serve --transport http`) |

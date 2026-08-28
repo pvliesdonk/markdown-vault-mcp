@@ -273,6 +273,17 @@ ignore = ["E501"]
 "tests/test_summarize.py" = ["PLR0913"]
 "tests/test_smoke.py" = ["TC002", "TC003"]
 "tests/test_server.py" = ["TC003"]
+# The v6.0.0 copier migration script runs `git show HEAD:CLAUDE.md` with a
+# fixed argv and no shell, the same call its sibling template-owned scripts
+# make. The template exempts those three (stamp_manifests,
+# promote_release_notes, report_seeded_changes) from S603/S607 but not this
+# one, so its single S607 reddens the structural diff-gate on the adoption
+# diff, where every line of the new file counts as changed. Carried here
+# rather than upstream because the template declined the fix
+# (fastmcp-server-template#524, closed not_planned; its PR #527 closed
+# unmerged), naming this local entry as the downstream resolution — so no
+# future template entry will collide with this key.
+"scripts/migrate_agent_instructions.py" = ["S603", "S607"]
 # PROJECT-RUFF-IGNORES-END
 
 [tool.ruff.lint.isort]
