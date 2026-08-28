@@ -2,7 +2,8 @@
 
 Holds :func:`build_default_instructions`, the markdown-vault guidance that
 :func:`~markdown_vault_mcp.server.make_server` applies to the FastMCP instance
-after construction (in its ``DOMAIN-WIRING`` block). Lives outside the
+after construction (in its ``DOMAIN-WIRING`` block), and
+:func:`_domain_snippets`, the selection step it renders. Lives outside the
 template-owned ``server.py`` so the domain prose never re-conflicts on a
 ``copier update``.
 """
@@ -14,18 +15,19 @@ from fastmcp_pvl_core import build_instructions as _core_build_instructions
 from markdown_vault_mcp.config import _ENV_PREFIX
 
 
-def build_default_instructions(
+def _domain_snippets(
     *,
     read_only: bool,
     conventions_file: str | None = None,
     summarize_note_limit: int | None = None,
     okf_mode: str = "off",
-) -> str:
-    """Build the default instructions string based on read-only state.
+) -> list[str]:
+    """Select the domain guidance fragments that apply, in composition order.
 
-    Composes MV's domain-specific guidance into a ``domain_line`` and
-    delegates to :func:`fastmcp_pvl_core.build_instructions` for the
-    operator override hint.
+    Only fragments that apply to this configuration are returned; a fragment
+    that does not apply is absent from the list rather than present as an
+    empty string. Fragments carry no leading or trailing whitespace — the
+    caller supplies the separator.
 
     The read-only/read-write announcement is composed here rather than by
     pvl-core, which dropped it in 4.11.2 (pvl-core #222) because nothing in
@@ -62,17 +64,15 @@ def build_default_instructions(
             conditionally.
 
     Returns:
-        The composed instructions string.
+        The applicable guidance fragments, in the order they are composed.
     """
-    prelude = (
+    snippets = [
         "A searchable markdown document vault. "
         "Paths are always relative (e.g. 'Journal/note.md')."
-    )
-    write_guidance = (
-        ""
-        if read_only
-        else (
-            " Write tools: use 'write' to create, 'edit' for targeted changes "
+    ]
+    if not read_only:
+        snippets.append(
+            "Write tools: use 'write' to create, 'edit' for targeted changes "
             "(read first), 'append' to add to the end of a note (no read "
             "needed), 'rename' to move (pass update_links=True to fix links "
             "in other notes), 'delete' to remove. Use 'move_folder(old_dir, new_dir)' "
@@ -81,44 +81,36 @@ def build_default_instructions(
             "search index immediately — never call 'reindex' after write, edit, "
             "append, delete, or rename."
         )
-    )
-    search_guidance = (
-        " Use 'search' (mode='hybrid' preferred when available) to find documents, "
+    snippets.append(
+        "Use 'search' (mode='hybrid' preferred when available) to find documents, "
         "'read' for full content, 'list_documents' to enumerate, 'stats' to check "
         "capabilities. 'browse_vault' and 'show_context' open a visual UI for the "
         "user — do not call them to retrieve vault content; use 'search', 'read', "
         "'list_documents', or 'get_context' instead."
     )
-    conventions_guidance = (
-        ""
-        if conventions_file is None
-        else (
-            f" Folders may carry authoring conventions in '{conventions_file}' "
-            "files; call 'get_conventions(path)' before creating or "
-            "restructuring notes, and follow any 'conventions' returned by "
-            "write/edit results."
-        )
-    )
-    summarize_guidance = (
-        (
-            " No summarization backend is configured, so there is no "
-            "'summarize' tool; for multi-note or folder summaries use the "
-            "'summarize-subtree' prompt, which summarizes in batches "
-            "(delegated to subagents when available) instead of pulling "
-            "every note into your context."
-        )
+    snippets.append(
+        "No summarization backend is configured, so there is no "
+        "'summarize' tool; for multi-note or folder summaries use the "
+        "'summarize-subtree' prompt, which summarizes in batches "
+        "(delegated to subagents when available) instead of pulling "
+        "every note into your context."
         if summarize_note_limit is None
         else (
-            f" The 'summarize' tool reads at most {summarize_note_limit} "
+            f"The 'summarize' tool reads at most {summarize_note_limit} "
             "notes per call; for a folder larger than that (check with "
             "'get_toc'), call it once per subfolder and combine the results."
         )
     )
-    okf_guidance = (
-        ""
-        if okf_mode == "off"
-        else (
-            " When the vault is an OKF bundle (Open Knowledge Format — "
+    if conventions_file is not None:
+        snippets.append(
+            f"Folders may carry authoring conventions in '{conventions_file}' "
+            "files; call 'get_conventions(path)' before creating or "
+            "restructuring notes, and follow any 'conventions' returned by "
+            "write/edit results."
+        )
+    if okf_mode != "off":
+        snippets.append(
+            "When the vault is an OKF bundle (Open Knowledge Format — "
             "'okf_version' declared in the root 'index.md'; check the 'okf' "
             "section of 'stats'), search/read results carry an 'okf' key with "
             "each note's type, lifecycle status, staleness, and trust tier "
@@ -128,21 +120,50 @@ def build_default_instructions(
             "keep 'index.md' listings current, and prefer root-relative "
             "markdown links for new cross-references."
         )
-    )
-    # Enforced here, so announced here — see the docstring. Placed last in
-    # ``domain_line`` so the composed text keeps the word order pvl-core
-    # produced before 4.11.2: domain prose, then the mode line, then the
-    # operator hint the core still appends.
-    write_line = (
-        " This instance is READ-ONLY — write tools are not available."
+    # Enforced here, so announced here — see above. Placed last so the composed
+    # text keeps the word order pvl-core produced before 4.11.2: domain prose,
+    # then the mode line, then the operator hint the core still appends.
+    snippets.append(
+        "This instance is READ-ONLY — write tools are not available."
         if read_only
-        else " This instance is READ-WRITE — write tools are available."
+        else "This instance is READ-WRITE — write tools are available."
     )
-    domain_line = (
-        f"{prelude}{write_guidance}{search_guidance}"
-        f"{summarize_guidance}{conventions_guidance}{okf_guidance}{write_line}"
-    )
+    return snippets
+
+
+def build_default_instructions(
+    *,
+    read_only: bool,
+    conventions_file: str | None = None,
+    summarize_note_limit: int | None = None,
+    okf_mode: str = "off",
+) -> str:
+    """Build the default instructions string based on read-only state.
+
+    Joins the fragments :func:`_domain_snippets` selects into a
+    ``domain_line`` and delegates to
+    :func:`fastmcp_pvl_core.build_instructions` for the operator override
+    hint. See :func:`_domain_snippets` for which fragments apply when.
+
+    Args:
+        read_only: Whether write tools are disabled.
+        conventions_file: The configured per-folder conventions filename, or
+            ``None`` when conventions are not configured.
+        summarize_note_limit: The configured summarize note limit, or ``None``
+            when the summarize tool is not configured.
+        okf_mode: The configured OKF mode (``"auto"`` / ``"off"`` / ``"on"``).
+
+    Returns:
+        The composed instructions string.
+    """
     return _core_build_instructions(
         env_prefix=_ENV_PREFIX,
-        domain_line=domain_line,
+        domain_line=" ".join(
+            _domain_snippets(
+                read_only=read_only,
+                conventions_file=conventions_file,
+                summarize_note_limit=summarize_note_limit,
+                okf_mode=okf_mode,
+            )
+        ),
     )
