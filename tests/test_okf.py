@@ -267,26 +267,31 @@ class TestOkfConfig:
         assert ProjectConfig.from_env().content.okf_mode == "auto"
 
 
+def _guidance(**kwargs: object) -> str:
+    """Render the domain snippets the way pvl-core's builder serialises them.
+
+    ``finalize_instructions`` joins snippets with a blank line, so this is the
+    domain half of the text the server actually emits — minus the identity,
+    documentation and job-polling snippets other contributors add.
+    """
+    from markdown_vault_mcp._instructions import _domain_snippets
+
+    return "\n\n".join(s.text for s in _domain_snippets(**kwargs))  # type: ignore[arg-type]
+
+
 class TestOkfInstructions:
     def test_off_omits_okf_guidance(self) -> None:
-        from markdown_vault_mcp._instructions import build_default_instructions
-
-        text = build_default_instructions(read_only=True, okf_mode="off")
-        assert "OKF" not in text
+        assert "OKF" not in _guidance(read_only=True, okf_mode="off")
 
     @pytest.mark.parametrize("mode", ["auto", "on"])
     def test_permitting_modes_emit_okf_guidance(self, mode: str) -> None:
-        from markdown_vault_mcp._instructions import build_default_instructions
-
-        text = build_default_instructions(read_only=True, okf_mode=mode)
+        text = _guidance(read_only=True, okf_mode=mode)
         assert "OKF" in text
         assert "okf_version" in text
         assert "trust tier" in text
 
     def test_default_omits_okf_guidance(self) -> None:
-        from markdown_vault_mcp._instructions import build_default_instructions
-
-        assert "OKF" not in build_default_instructions(read_only=True)
+        assert "OKF" not in _guidance(read_only=True)
 
 
 @pytest.mark.parametrize(

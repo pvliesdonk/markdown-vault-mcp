@@ -75,7 +75,7 @@ body:
 
         Forms cannot create sub-issue links or assign milestones, so finish
         the epic setup after submitting. The `authoring-issues-prs` skill
-        (`.claude/skills/authoring-issues-prs/SKILL.md`) performs these
+        (`.agents/skills/authoring-issues-prs/SKILL.md`) performs these
         steps mechanically.
 
         1. **Link the children as native sub-issues** — issue sidebar

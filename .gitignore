@@ -43,9 +43,11 @@ site/
 .mcpregistry_*
 .worktrees/
 docs/superpowers/
-# Everything under .claude/ is local EXCEPT skills/ — that subtree ships the
-# contributor-facing authoring skill(s), template-owned and re-rendered on
-# copier update (project additions live inside its DOMAIN-AUTHORING sentinel).
+# Provider-neutral contributor skills are tracked under .agents/.
+.agents/*
+!.agents/skills/
+# Everything under .claude/ is local EXCEPT skills/ — that subtree holds
+# symlinks into .agents/skills/, template-owned on copier update.
 .claude/*
 !.claude/skills/
 # No trailing slash: `.mcp.json/` would match a *directory* of that name and

@@ -1,14 +1,14 @@
 # Versioned-docs refresh for release-notes pages edited AFTER their
 # release shipped (template#347 → #419).  The primary notes flow needs no
-# publish step at all any more: the page travels inside the release PR
-# (release-prepare.yml's draft-notes job), lands in the tagged tree on
-# merge, is deployed with the release's own docs, and release.yml composes
+# publish step at all any more: the promoted page travels inside the release
+# PR, lands in the tagged tree on merge, is deployed with the release's own
+# docs, and release.yml composes
 # the release body — summary block, deep link — from the tagged tree at
 # publish time.  What remains here is the one case that path cannot cover:
 # a page on the default branch changing after its release's docs deployed
-# (a hand edit, a backfill notes PR for a skip_notes release, a port PR
-# from a branch cut).  The touched minor is then redeployed from its
-# newest tag with the default branch's docs/releases/ overlaid, so the
+# (a hand edit, a backfill notes PR, or a port PR from a branch cut). The
+# touched minor is then redeployed from its newest tag with the default
+# branch's docs/releases/ overlaid, so the
 # published /X.Y/ docs match the accumulated pages.
 #
 # Deterministic by design: nothing here generates content, and release
@@ -92,19 +92,20 @@ jobs:
           else
             range="HEAD^..HEAD"
           fi
+          # next\.md is staging, not a canonical release page.
           git diff --name-only --diff-filter=AM "$range" -- 'docs/releases/*.md' \
-            | grep -vE '/index\.md$' > changed-pages.txt || true
+            | grep -vE '/(index|next)\.md$' > changed-pages.txt || true
           if [ -s changed-pages.txt ]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
             cat changed-pages.txt
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "only the index changed — nothing to publish"
+            echo "only index or staging files changed — nothing to publish"
           fi
 
       - name: Install uv
         if: steps.pages.outputs.found == 'true'
-        uses: astral-sh/setup-uv@v8.2.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "latest"
 

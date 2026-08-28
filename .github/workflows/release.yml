@@ -137,7 +137,7 @@ jobs:
       # RELEASE_TOKEN (release-vision section 4.3): a tag or release created
       # with the workflow's own GITHUB_TOKEN triggers NO downstream
       # workflows (verified 0-for-10 in the live spike), which would silence
-      # docs.yml's `release: published` deploy and the notes flow.  The PAT
+      # docs.yml's `release: published` deploy.  The PAT
       # keeps every event consumer firing.  Guard-before-Release ordering
       # lives in knope.toml's tag-release workflow.
       - name: Guard, then tag and create the GitHub release
@@ -238,14 +238,11 @@ jobs:
       # Release-body contract (template#350 → #419): knope's Release step
       # already set the body to the release's machine changelog section;
       # this step prepends the notes summary and appends the pointers.  The
-      # notes page is part of the release PR's diff (drafted by
-      # release-prepare.yml's draft-notes job), so the TAGGED TREE — checked
-      # out right here — is the source of truth: the summary block for this
-      # tag is read from the local page, and the deep link is emitted
-      # whenever the page exists in the tree.  No default-branch API check,
-      # no pending-marker deferral — a release prepared with skip_notes just
-      # ships without the summary/link, and a backfill notes PR plus
-      # `gh release edit` is the manual remedy.  rc docs never deploy, so
+      # notes page is part of the release PR's diff, so the TAGGED TREE —
+      # checked out right here — is the source of truth: the summary block
+      # for this tag is read from the local page, and the deep link is emitted
+      # whenever the page exists in the tree.  No default-branch API check
+      # or pending-marker deferral.  rc docs never deploy, so
       # rc bodies link the page at the tag on GitHub instead of the site.
       - name: Compose the release body (summary, docs, compare, changelog)
         env:
@@ -336,7 +333,7 @@ jobs:
         run: gh release edit ${{ steps.release.outputs.tag }} --latest=false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
+        uses: astral-sh/setup-uv@v10.0.1
         with:
           version: "0.6"
 

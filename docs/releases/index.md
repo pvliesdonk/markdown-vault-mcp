@@ -24,7 +24,7 @@ for the minor (`3.1`, `3.2`, and so on). This matches how the documentation site
 deployed: each minor is published as its own site version, so the notes for a
 release always travel with the documentation that describes it.
 
-**Patch releases append to the minor's page.** A patch release adds a dated
+**Patch releases append to the minor's page.** A patch release adds a versioned
 section to its minor's page rather than getting a page of its own, so the full
 story of a minor stays in one linkable document.
 

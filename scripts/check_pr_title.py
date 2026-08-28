@@ -11,7 +11,7 @@ An unrecognised type is exactly that silent-drop class, so this gate keeps
 the history parseable and the accepted set deliberate.  The release audit
 trail is only as complete as the subjects feeding it.
 
-The type list below, the knope-counted subset, and ``CLAUDE.md``'s
+The type list below, the knope-counted subset, and ``AGENTS.md``'s
 Conventions prose are three legs of one contract.
 ``tests/test_commit_conventions.py`` fails when they disagree, so no leg can
 drift alone.
@@ -33,7 +33,7 @@ import sys
 #: Commit types this project accepts.  Only ``feat``, ``fix``, and the ``!``
 #: marker drive releases (knope ignores the rest for both version and
 #: changelog); the wider set keeps history classifiable and is documented in
-#: ``CLAUDE.md``, with ``tests/test_commit_conventions.py`` holding all
+#: ``AGENTS.md``, with ``tests/test_commit_conventions.py`` holding all
 #: three in lockstep.
 ALLOWED_TYPES: tuple[str, ...] = (
     "build",

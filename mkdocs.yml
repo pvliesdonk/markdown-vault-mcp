@@ -1,6 +1,6 @@
 site_name: markdown-vault-mcp
 site_url: https://pvliesdonk.github.io/markdown-vault-mcp/
-site_description: Generic markdown vault MCP with hybrid search
+site_description: "Generic markdown vault MCP with hybrid search"
 repo_url: https://github.com/pvliesdonk/markdown-vault-mcp
 repo_name: pvliesdonk/markdown-vault-mcp
 edit_uri: edit/main/docs/
@@ -8,10 +8,11 @@ edit_uri: edit/main/docs/
 # Internal dev docs live under docs/ but are NOT part of the published site.
 # Keep this set in lockstep with the Vale exclusion (ci.yml vale_flags glob +
 # the pre-commit `- id: vale` exclude); see the Documentation Conventions
-# section in CLAUDE.md. superpowers/ is also gitignored.
+# section in AGENTS.md. superpowers/ is also gitignored.
 exclude_docs: |
   design/**
   decisions/**
+  releases/next.md
   superpowers/**
 
 theme:
@@ -99,6 +100,7 @@ plugins:
           - deployment/oidc.md: OIDC authentication setup with Authelia
           - deployment/release-process.md: Branch-aware release model — channels, release branches, merge-back
           - deployment/repository-protection.md: Repository rulesets — per-branch posture and bypass model
+          - deployment/template-updates.md: Working through a copier template update pull request
         Python API:
           - api/vault.md: Vault class API reference
           - api/facets.md: Reader/Writer/Graph/Index facet API reference
@@ -107,8 +109,10 @@ plugins:
           - api/providers.md: Embedding provider API reference
           - api/types.md: All data types returned by the Vault API
           - api/exceptions.md: All exceptions raised by the library
+        # Character-class prefix excludes the unversioned staging page while
+        # auto-indexing each canonical minor page.
         Release Notes:
-          - releases/*.md
+          - releases/[0-9]*.[0-9]*.md
         # PROJECT-LLMSTXT-SECTIONS-END
   - mkdocstrings:
       handlers:
@@ -185,6 +189,7 @@ nav:
       - Claude Desktop: deployment/claude-desktop.md
       - OIDC Authentication: deployment/oidc.md
       - Release Process: deployment/release-process.md
+      - Template Updates: deployment/template-updates.md
       - Repository Protection: deployment/repository-protection.md
   - Python API:
       - Vault: api/vault.md

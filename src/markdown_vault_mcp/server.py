@@ -18,11 +18,12 @@ from fastmcp_pvl_core import (
     apply_tool_visibility,
     build_auth,
     build_event_store,  # noqa: F401  — re-exported for downstream projects' convenience
-    build_instructions,
     build_kv_store,  # noqa: F401  — re-exported for downstream projects' convenience
     configure_logging_from_env,
     configure_task_backend,
     env,
+    finalize_instructions,
+    instructions_for,
     register_server_info_tool,
     resolve_auth_mode,
     wire_middleware_stack,
@@ -75,14 +76,10 @@ def make_server(
     # prefix, so two servers sharing one Redis do not share a queue.
     configure_task_backend(_ENV_PREFIX, config.server)
 
-    # Operator overrides: SERVER_NAME renames this instance; INSTRUCTIONS
-    # replaces the default instructions text (the latter is the override that
-    # build_instructions' hint advertises). Both fall back when unset/empty.
+    # Operator override: SERVER_NAME renames this instance (falls back when
+    # unset/empty).  Instructions are composed by pvl-core's InstructionsBuilder
+    # below and finalised last; see finalize_instructions() at the end.
     server_name = env(_ENV_PREFIX, "SERVER_NAME", "markdown-vault-mcp")
-    instructions = env(_ENV_PREFIX, "INSTRUCTIONS") or build_instructions(
-        env_prefix=_ENV_PREFIX,
-        domain_line="Generic markdown vault MCP with hybrid search",
-    )
 
     auth = build_auth(config.server)
     auth_mode = resolve_auth_mode(config.server) if auth is not None else "none"
@@ -108,12 +105,26 @@ def make_server(
 
     mcp = FastMCP(
         name=server_name,
-        instructions=instructions,
         lifespan=server_lifespan,
         auth=auth,
     )
 
     wire_middleware_stack(mcp)
+
+    # Server instructions are composed, not templated: every contributor adds
+    # a snippet to the builder (identity here; core register_* helpers add
+    # their workflow prose; domain code adds its own via
+    # ``instructions_for(mcp).add(text, priority=WORKFLOWS, tools=(...))`` in
+    # the DOMAIN-WIRING block, using the ``IDENTITY < DOCS < CAPABILITIES <
+    # WORKFLOWS < INSTANCE < OPERATOR`` anchors pvl-core exports — never
+    # ``priority=0``, which is ``IDENTITY`` and must stay unique), and
+    # ``finalize_instructions`` renders them once, after tool visibility.
+    instructions_for(mcp).identity("Generic markdown vault MCP with hybrid search")
+    # The docs site publishes llms.txt per version (mkdocs-llmstxt, mike);
+    # `/latest/` resolves once the first release has published the site.
+    instructions_for(mcp).documentation(
+        "https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt"
+    )
 
     register_tools(mcp)
     register_resources(mcp)
@@ -144,7 +155,7 @@ def make_server(
     # make_server() beyond the standard scaffold.
     from markdown_vault_mcp._http_logging import quiet_http_loggers
     from markdown_vault_mcp._icons import _SERVER_ICON
-    from markdown_vault_mcp._instructions import build_default_instructions
+    from markdown_vault_mcp._instructions import contribute_instructions
     from markdown_vault_mcp._server_prompts import register_domain_prompts
     from markdown_vault_mcp.domain import set_pending_config
 
@@ -168,19 +179,23 @@ def make_server(
     # index/search/reindex commands do the same before their own vault builds.
     quiet_http_loggers()
 
-    # Domain server identity: attach the vault icon and resolve instructions from
-    # THIS config — the operator's config.instructions when set, else the
-    # read-only-aware, conventions-aware domain default. Set unconditionally
-    # (not gated on config.instructions is None) so a caller-supplied
-    # config.instructions is honored even when the MARKDOWN_VAULT_MCP_INSTRUCTIONS
-    # env var the skeleton body reads is unset; config.instructions is populated
-    # from that same env var, so the from_env path is unchanged. Applied
-    # post-construction so make_server()'s body stays byte-identical to the
-    # template skeleton. FastMCP's ``icons`` property is read-only (only the
-    # constructor accepts icons, which the skeleton body does not), so write the
-    # low-level server field it reads.
+    # Domain server identity: attach the vault icon. Applied post-construction
+    # so make_server()'s body stays byte-identical to the template skeleton.
+    # FastMCP's ``icons`` property is read-only (only the constructor accepts
+    # icons, which the skeleton body does not), so write the low-level server
+    # field it reads.
     mcp._mcp_server.icons = _SERVER_ICON
-    mcp.instructions = config.instructions or build_default_instructions(
+
+    # Contribute the read-only-aware, conventions-aware domain guidance to
+    # pvl-core's instructions builder. Nothing is rendered here: the skeleton
+    # body's finalize_instructions() call, after apply_tool_visibility(), is
+    # the single point that serialises every contributor's snippets, prunes
+    # those naming a tool the operator hid, appends
+    # MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA, and honours the legacy
+    # MARKDOWN_VAULT_MCP_INSTRUCTIONS full replacement. Assigning
+    # mcp.instructions here instead would be dead: finalize overwrites it.
+    contribute_instructions(
+        mcp,
         read_only=is_read_only,
         conventions_file=config.content.conventions_file,
         summarize_note_limit=(
@@ -353,5 +368,12 @@ def make_server(
     # visibility calls in the wiring above, and pvl-core's zero-tools-exposed
     # diagnostic judges the full registered tool set.
     apply_tool_visibility(mcp, config.server)
+
+    # Render the composed instructions exactly once, after visibility: a
+    # snippet whose tools are hidden is dropped, MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA
+    # is appended, and the legacy MARKDOWN_VAULT_MCP_INSTRUCTIONS full-replace
+    # still wins (with a deprecation warning).  Must stay the last call that
+    # touches tools or instructions.
+    finalize_instructions(mcp, config.server, env_prefix=_ENV_PREFIX)
 
     return mcp

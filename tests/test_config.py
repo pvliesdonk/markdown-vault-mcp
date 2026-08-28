@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -930,10 +931,9 @@ class TestProjectConfigDefaults:
     """Verify all new fields on ProjectConfig have correct defaults."""
 
     def test_server_identity_defaults(self) -> None:
-        """Server name defaults to 'markdown-vault-mcp', instructions to None."""
+        """Server name defaults to 'markdown-vault-mcp'."""
         config = ProjectConfig(source_dir=Path("/tmp/vault"))
         assert config.server_name == "markdown-vault-mcp"
-        assert config.instructions is None
 
     def test_embedding_provider_defaults(self) -> None:
         """Embedding fields have correct defaults."""
@@ -953,7 +953,6 @@ class TestProjectConfigDefaults:
         config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             server_name="my-server",
-            instructions="Be helpful",
             embedding_provider="ollama",
             ollama_host="http://gpu-server:11434",
             ollama_model="mxbai-embed-large",
@@ -965,7 +964,6 @@ class TestProjectConfigDefaults:
             fastembed_cache_dir="/tmp/cache",
         )
         assert config.server_name == "my-server"
-        assert config.instructions == "Be helpful"
         assert config.embeddings.provider == "ollama"
         assert config.embeddings.ollama_host == "http://gpu-server:11434"
         assert config.embeddings.ollama_model == "mxbai-embed-large"
@@ -1013,17 +1011,21 @@ class TestLoadConfigServerIdentityFields:
         config = ProjectConfig.from_env()
         assert config.server_name == "markdown-vault-mcp"
 
-    def test_instructions_default_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """ProjectConfig.from_env() defaults instructions to None."""
-        monkeypatch.delenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", raising=False)
-        config = ProjectConfig.from_env()
-        assert config.instructions is None
+    def test_instructions_env_never_reaches_project_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``INSTRUCTIONS`` is pvl-core's to read, not this config's.
 
-    def test_instructions_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """ProjectConfig.from_env() reads MARKDOWN_VAULT_MCP_INSTRUCTIONS."""
+        pvl-core 5 composes instructions from builder snippets and reads both
+        ``INSTRUCTIONS`` (legacy full replacement) and ``INSTRUCTIONS_EXTRA``
+        inside ``finalize_instructions``. A ``ProjectConfig.instructions``
+        field would be a second, silently-diverging reader of the same var,
+        so the field was removed; this pins that it stays removed.
+        """
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", "Be concise")
         config = ProjectConfig.from_env()
-        assert config.instructions == "Be concise"
+        assert not hasattr(config, "instructions")
+        assert "instructions" not in {f.name for f in dataclasses.fields(config)}
 
 
 class TestEmbeddingsConfigNormalization:

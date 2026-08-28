@@ -12,8 +12,14 @@ variables (`MARKDOWN_VAULT_MCP_TRANSPORT`, `MARKDOWN_VAULT_MCP_HOST`,
     Use the [Configuration Generator](configuration-generator.md) to answer a few
     questions and copy a ready-made `.env`, Docker, or Claude config.
 
-!!! note "Configuration is validated at startup"
-    Numeric variables are validated against the **Type** column below (such as `int ≥ 1`). A non-numeric or out-of-range value makes the server **fail fast** at startup with a `ConfigurationError` naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.
+- `MARKDOWN_VAULT_MCP_SERVER_NAME`: the server name reported to clients and
+  by `get_server_info`. Defaults to `markdown-vault-mcp`.
+- `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`: operator context appended to the
+  generated MCP instructions (deployment notes, house rules). The generated
+  text (identity, tool workflows, documentation pointer) stays intact.
+- `MARKDOWN_VAULT_MCP_INSTRUCTIONS`: legacy. Replaces the entire generated
+  instructions text and logs a deprecation warning at startup; when both are
+  set, `_EXTRA` is ignored. Move operator context to `_EXTRA`.
 
 ## Tool visibility
 
@@ -52,6 +58,9 @@ backend through `MARKDOWN_VAULT_MCP_TASKS_URL` rather than
 about the disagreement.
 
 <!-- DOMAIN-CONFIG-VARS-START -->
+
+!!! note "Configuration is validated at startup"
+    Numeric variables are validated against the **Type** column below (such as `int ≥ 1`). A non-numeric or out-of-range value makes the server **fail fast** at startup with a `ConfigurationError` naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.
 ## Core
 
 | Variable | Type | Default | Required | Description |
@@ -69,8 +78,8 @@ about the disagreement.
 | `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | csv | defaults to `INDEXED_FIELDS` | No | Comma-separated frontmatter fields whose scalar values are indexed into the FTS `summary` column (chunk-0 row of each document), making them keyword-searchable (including `summary:term` column filters). They are also prefixed to first-chunk embedding text (format v2), independent of `EMBED_CONTEXT`. When unset, defaults to `INDEXED_FIELDS`; set explicitly to a different field list to diverge from that default, or to the sentinel `none` for no searchable fields at all ("filterable but not searchable"). An empty string is treated the same as unset, matching every other list-valued config var. Recorded as a warm-restart key, so setting or changing it cold-rebuilds the index and re-embeds the vault once on next startup |
 | `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` | string | `_templates` | No | Relative folder path used by the `create_from_template` prompt to discover/read template files |
 | `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` | path | (none) | No | Path to a directory of `.md` prompt files that extend or override built-in prompts. Each declared argument name must be a plain Python identifier (letters, digits, underscore; not a keyword); a prompt with a non-conforming argument name is skipped with a logged warning. |
-| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | string | `_conventions.md` | No | Filename of the per-folder [conventions files](tools/index.md#get_conventions) surfaced to clients at write time. Must be a bare `.md` filename without glob characters (`*?[]`). Set to `none` to disable folder conventions. Convention files are excluded from the search index but stay readable; existing notes matching the name are removed from the index on the next boot reconcile. Note: setting `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the default server instructions entirely, including the sentence that points clients at `get_conventions`; mention conventions in your custom instructions if you rely on them. |
-| `MARKDOWN_VAULT_MCP_OKF_MODE` | string | `auto` | No | [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) read semantics. With `auto` (the default), read-side annotations (note type, lifecycle status, staleness, trust tier) switch on in `search`, `read`, `get_context`, and `stats` when the vault declares an `okf_version` field in its root `index.md` frontmatter. Use `off` to disable OKF semantics entirely, or `on` to force them for an undeclared vault. Annotations are read-only either way: this setting never changes write behavior. Note: setting `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the default server instructions entirely, including the OKF guidance sentence. |
+| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE` | string | `_conventions.md` | No | Filename of the per-folder [conventions files](tools/index.md#get_conventions) surfaced to clients at write time. Must be a bare `.md` filename without glob characters (`*?[]`). Set to `none` to disable folder conventions. Convention files are excluded from the search index but stay readable; existing notes matching the name are removed from the index on the next boot reconcile. Note: the legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the generated server instructions entirely, including the sentence that points clients at `get_conventions`; mention conventions yourself if you use it. `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` appends instead and keeps the sentence. |
+| `MARKDOWN_VAULT_MCP_OKF_MODE` | string | `auto` | No | [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) read semantics. With `auto` (the default), read-side annotations (note type, lifecycle status, staleness, trust tier) switch on in `search`, `read`, `get_context`, and `stats` when the vault declares an `okf_version` field in its root `index.md` frontmatter. Use `off` to disable OKF semantics entirely, or `on` to force them for an undeclared vault. Annotations are read-only either way: this setting never changes write behavior. Note: the legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the generated server instructions entirely, including the OKF guidance sentence; `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` appends instead and keeps it. |
 | `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | No | OKF enforced write layer. When `true` on an OKF-active vault, every `write` and `edit` stamps `generated: {by, at}` provenance and clears any `verified` attestation (a content change invalidates prior review); `rename` does not. The actor is `human:<subject>` when the caller is authenticated, otherwise a tool actor. On a content write it also keeps the affected folder's `log.md` and `index.md` current as secondary writes (failures are logged and skipped, never rolling back the note write). Enabling it also exposes the [`okf_verify`](tools/index.md#okf_verify) tool. Requires `OKF_MODE` to be `auto` or `on`; a `true` value with `OKF_MODE=off` is a configuration error. See the [OKF guide](guides/okf.md#the-enforced-write-layer). |
 | `MARKDOWN_VAULT_MCP_OKF_VERIFY` | string | `elicit` | No | How the [`okf_verify`](tools/index.md#okf_verify) tool confirms a human review. This applies only when `OKF_WRITE` is on, which gates the tool. With `elicit` (the default), the tool issues an MCP elicitation asking the human to confirm the review, and writes the `verified` entry only on an affirmative reply. It fails closed (a tool error, nothing written) when the client cannot elicit or the human declines, so a model that holds the human's token cannot self-attest a note as `human-reviewed`. Use `trust-auth` to attribute to the authenticated caller with no confirmation (refuses under auth mode `none`; safe only when the sole caller is a human-driven UI, not an agent), or `off` to hide the tool so `verified` is set only by external tooling. A non-default value with `OKF_WRITE` off is a configuration error. See the [OKF guide](guides/okf.md#recording-a-human-review). |
 
@@ -180,7 +189,8 @@ chronic backlog.
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | string | `markdown-vault-mcp` | MCP server name shown to clients; useful for multi-instance setups |
-| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | string | (auto) | System-level instructions injected into LLM context; defaults to a description that reflects read-only vs read-write state |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | string | (none) | Operator context appended to the generated instructions (deployment notes, house rules). The generated text — identity, documentation pointer, tool workflows, and the read-only/read-write announcement — stays intact. Prefer this over `INSTRUCTIONS` |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | string | (auto) | **Deprecated.** Replaces the entire generated instructions text and logs a startup warning; when both are set, `INSTRUCTIONS_EXTRA` is ignored. A server set this way advertises no tool workflows the model has not been told about by hand |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | bool | `false` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the tool listing for clients that do not render MCP Apps panels (saves a few listing tokens) |
 | `MARKDOWN_VAULT_MCP_HTTP_PATH` | path | `/mcp` | HTTP endpoint path for streamable HTTP transport (`serve --transport http`) |
 | `MARKDOWN_VAULT_MCP_BASE_URL` | url | (none) | Public base URL of the server (such as `https://mcp.example.com`). Required for OIDC auth, MCP Apps domain computation, and the one-time transfer link tools |

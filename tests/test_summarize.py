@@ -38,6 +38,7 @@ _CLEAR_VARS = (
     "MARKDOWN_VAULT_MCP_GIT_TOKEN",
     "MARKDOWN_VAULT_MCP_SERVER_NAME",
     "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
+    "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA",
     "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
     "MARKDOWN_VAULT_MCP_AUTH_MODE",
 )
@@ -956,18 +957,43 @@ def test_apply_summarize_limits_tolerates_missing_description() -> None:
 
 
 def test_instructions_carry_live_note_limit() -> None:
-    from markdown_vault_mcp._instructions import build_default_instructions
+    from markdown_vault_mcp._instructions import _domain_snippets
 
-    with_limit = build_default_instructions(read_only=True, summarize_note_limit=7)
+    def guidance(**kwargs: object) -> str:
+        return "\n\n".join(
+            s.text
+            for s in _domain_snippets(read_only=True, **kwargs)  # type: ignore[arg-type]
+        )
+
+    with_limit = guidance(summarize_note_limit=7)
     assert "at most 7 notes per call" in with_limit
     # With a backend configured the tool is the route; route trade-offs are
     # operator-facing and stay out of the instructions (#1035).
     assert "summarize-subtree" not in with_limit
-    without = build_default_instructions(read_only=True)
+    without = guidance()
     assert "notes per call" not in without
     # No backend does not mean no summarization: the instructions point
     # clients at the client-side prompt route (#1035).
     assert "summarize-subtree" in without
+
+
+def test_summarize_snippet_declares_the_tools_it_directs_calls_to() -> None:
+    """The live-limit snippet is pruned when its tools are not exposed.
+
+    pvl-core drops a snippet whose declared tools are missing from the
+    exposed set, so an operator who denies ``summarize`` (or ``get_toc``,
+    which the snippet tells the model to size folders with) no longer gets
+    guidance pointing at a tool that is not there.
+    """
+    from markdown_vault_mcp._instructions import _domain_snippets
+
+    limit_snippets = [
+        s
+        for s in _domain_snippets(read_only=True, summarize_note_limit=7)
+        if "notes per call" in s.text
+    ]
+    assert len(limit_snippets) == 1
+    assert set(limit_snippets[0].tools) == {"summarize", "get_toc"}
 
 
 async def test_summarize_visible_with_base_url_only(

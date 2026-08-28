@@ -177,7 +177,8 @@ frontmatter blob; not persisted):
    what the tiers mean, that `log.md`/`index.md` conventions apply, and —
    advisory write guidance — "maintain `log.md`, keep `index.md` current,
    prefer bundle-root-absolute links." Same caveat as conventions: an
-   operator-set `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces this entirely.
+   legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces this entirely, while
+   `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` appends and keeps it.
    Because instructions are composed before a managed-git clone runs,
    the paragraph is emitted when *mode permits* detection, phrased
    conditionally, rather than gated on the marker file existing.

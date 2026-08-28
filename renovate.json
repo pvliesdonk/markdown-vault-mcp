@@ -1,18 +1,18 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":dependencyDashboard"],
+  "extends": ["config:recommended", ":dependencyDashboard", "group:allNonMajor"],
   "labels": ["dependencies"],
   "enabledManagers": ["pep621"],
   "semanticCommits": "enabled",
   "rangeStrategy": "update-lockfile",
   "lockFileMaintenance": {
     "enabled": true,
-    "schedule": ["before 6am on monday"],
+    "schedule": ["before 4am on monday"],
     "automerge": true
   },
   "packageRules": [
     {
-      "description": "Routine bumps self-merge once CI is green; majors wait for a human.",
+      "description": "Routine bumps ride one grouped PR (group:allNonMajor) that self-merges once CI is green, so a merge rebases at most the lockfile and major PRs instead of one branch per dependency; majors wait for a human.",
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": true
     },

@@ -54,7 +54,7 @@ runs:
 
     - name: Install uv
       if: steps.detect.outputs.present == 'true'
-      uses: astral-sh/setup-uv@v8.2.0
+      uses: astral-sh/setup-uv@v10.0.1
       with:
         version: "0.6"
 

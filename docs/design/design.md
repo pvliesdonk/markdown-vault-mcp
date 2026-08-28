@@ -68,7 +68,7 @@ markdown-vault-mcp (new package)
 +-- config_sections/  -- domain-grouped sub-config VIEWS (git/indexing/embeddings/search/sync/content), assembled by ProjectConfig properties; no from_env of their own (#952)
 |   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
 +-- server.py         -- template-owned skeleton; domain wiring in DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
-+-- _instructions.py  -- build_default_instructions: domain server-instructions prose (#901)
++-- _instructions.py  -- contribute_instructions: domain snippets for pvl-core's instructions builder (#901)
 +-- domain.py         -- Service: owns Vault lifecycle + get_vault/set_pending_config singleton (#902)
 +-- _server_apps.py   -- template-owned MCP Apps scaffold; domain apps in DOMAIN-APP-* sentinels (#905)
 +-- _vault_apps.py    -- domain helpers behind _server_apps sentinels: sandbox-domain + CSP + GraphView serializer (#905)
@@ -1235,8 +1235,9 @@ ones).
    sentence pointing at `get_conventions` and the write-result key. The
    sentence is emitted unconditionally-when-configured (not gated on files
    existing) because instructions are composed before the managed-git clone
-   runs; an operator-set `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the
-   default string entirely, including this sentence.
+   runs; the legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the generated
+   text entirely, including this sentence, while
+   `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` appends and keeps it.
 5. `config://vault` reports `conventions_file` and `convention_folders`.
 
 ### OKF Read Semantics (phase 1, #960)
@@ -2561,7 +2562,7 @@ limit is also substituted into the tool description at startup (a
 ``{max_notes}`` placeholder in the docstring, rewritten by
 ``apply_summarize_limits`` from the DOMAIN-WIRING block, which owns the
 loaded config) and surfaced in the server instructions via
-``build_default_instructions(summarize_note_limit=...)``, so a calling
+``contribute_instructions(summarize_note_limit=...)``, so a calling
 model can plan folder splits before its first call rather than reacting
 to a truncated result.
 
@@ -2588,7 +2589,7 @@ registration time from ``config.summarize.has_provider()``: with a backend
 configured the slot becomes a note preferring the single-call ``summarize``
 tool, and without one the slot is removed so the prompt never names a tool
 the server does not have. The complementary surfaces are likewise
-asymmetric: ``build_default_instructions`` points at the prompt only in the
+asymmetric: the domain snippets point at the prompt only in the
 no-backend case, and the tool docstring does not mention the prompt at all.
 Route choice is an operator decision (configure a backend or not), so
 trade-off prose (context overhead, cost accounting, data recipients,
@@ -2656,14 +2657,53 @@ contain this, both operator-tunable:
   observability tools — they also report boot-time builds and
   file-watcher reindexes that no client call initiated.
 
-**Dynamic instructions**: the server's MCP `instructions` string varies with
-`read_only` mode. When `read_only=True`, the instructions state this is a
-read-only instance; when `read_only=False`, they describe write tool semantics.
-This signals capability status to clients and reduces irrelevant prompting. The
-default text is built by `build_default_instructions()` in `_instructions.py`
-(kept out of the template-owned `server.py`, #901) and applied in the
-`DOMAIN-WIRING` block; an operator-set `MARKDOWN_VAULT_MCP_INSTRUCTIONS`
-overrides it.
+**Composed instructions**: from fastmcp-pvl-core 5 the server's MCP
+`instructions` string is not a single templated value but a collection of
+snippets, each added with a priority and the tool names it directs calls to.
+Every contributor — the template-owned scaffold (identity, documentation
+pointer), pvl-core's own `register_*` helpers (job polling, transfer links),
+and this domain — adds to one builder obtained via `instructions_for(mcp)`.
+`finalize_instructions(mcp, config.server, env_prefix=...)` renders it once,
+as the last call in `make_server()`, after `apply_tool_visibility()`.
+
+The domain half lives in `_instructions.py` (kept out of the template-owned
+`server.py`, #901): `_domain_snippets()` selects the fragments that apply to
+a configuration and `contribute_instructions()` hands them to the builder
+from the `DOMAIN-WIRING` block. The guidance still varies with `read_only`
+mode — when `read_only=True` the text states this is a read-only instance,
+otherwise it describes write tool semantics — which signals capability
+status to clients and reduces irrelevant prompting.
+
+Two mechanisms decide what a client actually sees, and they are not
+interchangeable:
+
+- **Python conditionals in `_domain_snippets()`** gate on configuration
+  (`read_only`, a configured conventions file, an OKF mode, a summarize
+  backend). These are the only gate that works for this server's
+  `mcp.disable(tags=...)` calls, which pvl-core deliberately does not model:
+  a disabled-but-registered tool still counts as exposed at finalize.
+- **The `tools` declaration on a snippet** gates on the operator's
+  `TOOLS_ALLOW` / `TOOLS_DENY` lists. pvl-core drops a snippet whose declared
+  tools are not all exposed, so workflow prose can never point the model at a
+  tool an operator removed. A name belongs in that declaration only when its
+  absence makes the snippet actively wrong — not when the snippet merely
+  mentions it or offers it as an alternative.
+
+Ordering comes from the priority anchors pvl-core exports
+(`IDENTITY < DOCS < CAPABILITIES < WORKFLOWS < INSTANCE < OPERATOR`), with
+ties broken by insertion order. The vault prelude sits at `IDENTITY + 10`,
+deliberately not at `IDENTITY`: exactly one snippet may hold that priority
+and a second raises `ConfigurationError` at finalize. Workflow fragments sit
+at `WORKFLOWS` in selection order, and the READ-ONLY/READ-WRITE announcement
+at `INSTANCE`, which places it after every workflow fragment and before the
+operator's own text at `OPERATOR`.
+
+Operators shape the result with two env vars, both read inside
+`finalize_instructions`: `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` is appended
+at `OPERATOR`, and the legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the
+whole text and logs a deprecation warning (when both are set, `_EXTRA` is
+ignored). Neither reaches `ProjectConfig`: a domain field mirroring them
+would be a second, silently-diverging reader of the same variables.
 
 **Tool semantics**:
 - `read(path)` returns full file content + frontmatter metadata
@@ -2842,7 +2882,8 @@ For MCP server deployment:
 | Variable | Description | Default |
 |-|-|-|
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | MCP server name shown to clients | `markdown-vault-mcp` |
-| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | System-level instructions for LLM context | generic description |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | Operator context appended to the composed instructions | (none) |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | Deprecated: replaces the composed instructions entirely | composed text |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files | required |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Hide the write tools | `false` |

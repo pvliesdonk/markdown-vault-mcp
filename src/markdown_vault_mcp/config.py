@@ -34,7 +34,6 @@ from markdown_vault_mcp.config_sections._assembly import (
 )
 from markdown_vault_mcp.config_sections._assembly import (
     normalize_templates_folder,
-    read_instructions,
     read_server_name,
     require_source_dir,
     resolve_attachment_extensions,
@@ -110,12 +109,13 @@ class ProjectConfig:
             "tags": ("vault",),
         },
     )
-    # server_name / instructions are declared by the template-owned
-    # config-presentation.yml (template provenance), so they carry no
-    # metadata here and are read outside from_env (read_server_identity)
-    # to keep the AST scan from double-declaring them.
+    # server_name is declared by the template-owned
+    # config-presentation.yml (template provenance), so it carries no
+    # metadata here and is read outside from_env (read_server_identity)
+    # to keep the AST scan from double-declaring it. INSTRUCTIONS and
+    # INSTRUCTIONS_EXTRA are read by pvl-core's finalize_instructions()
+    # directly and never reach this config.
     server_name: str = "markdown-vault-mcp"
-    instructions: str | None = None
     disable_apps_ui: bool = field(
         default=False,
         metadata={
@@ -1023,7 +1023,6 @@ class ProjectConfig:
                 env(_ENV_PREFIX, "WRITE_PROTECT_EXISTING"), default=False
             ),
             server_name=read_server_name(_ENV_PREFIX),
-            instructions=read_instructions(_ENV_PREFIX),
             disable_apps_ui=to_bool(env(_ENV_PREFIX, "DISABLE_APPS_UI"), default=False),
             index_path=opt_path(env(_ENV_PREFIX, "INDEX_PATH")),
             state_path=opt_path(env(_ENV_PREFIX, "STATE_PATH")),

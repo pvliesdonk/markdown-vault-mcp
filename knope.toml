@@ -69,6 +69,11 @@ shell = true
 
 [[workflows.steps]]
 type = "Command"
+command = "python3 scripts/promote_release_notes.py $version"
+shell = true
+
+[[workflows.steps]]
+type = "Command"
 command = "git commit -m \"chore: prepare release $version\""
 
 # PREPARE-TIME half of the two-layer same-source guard (release-vision D10:
@@ -113,12 +118,11 @@ the GitHub release, and runs the publish fan-out; for a stable promotion the sam
 (`scripts/promotion_guard.sh`) runs first, so drifted source refuses with no
 tag created.
 
-This PR also carries the release-notes page under `docs/releases/`,
-drafted by the prepare run's notes job — review it as part of the release
-(an evidence check: every causal claim must trace to its linked issue or
-PR).  The PR is held as a DRAFT until the notes land; the notes job marks
-it ready.  Still draft means the notes job is running or failed — check
-the prepare run.
+The deterministic promotion step checked that this PR carries release notes
+under `docs/releases/`. Reviewers must compare the page's `notes-range-end`
+with the release delta and verify that every meaningful behavior change is
+covered. If meaningful behavior is missing, merge a normal notes PR into the
+base branch and re-dispatch Release Prepare.
 
 Do NOT use GitHub's "Update branch" button on this PR — the only valid
 refresh is re-dispatching the Release Prepare workflow, which recreates this

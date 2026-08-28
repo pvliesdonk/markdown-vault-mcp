@@ -44,7 +44,7 @@ No `CLIENT_ID` or `CLIENT_SECRET` needed. Tokens are validated locally via JWKS.
 | `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE` | (none) | Expected `aud` claim; tokens issued for another audience are rejected. |
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | `openid` | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode. |
 | `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES` | `openid offline_access` | Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (such as `groups`) without also requiring them in every token. |
-| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | `derived` | Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`. |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` | `derived` | Signing key for issued tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret then invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`. |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false` | Validate the access token instead of the id token. |
 <!-- GENERATED-ENV-TABLE-OIDC-OPTIONAL-END -->
 

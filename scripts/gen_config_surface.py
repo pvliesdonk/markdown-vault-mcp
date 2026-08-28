@@ -2238,6 +2238,14 @@ _EG_CLAUSE_RE = re.compile(r",\s*e\.g\.,?\s+(.+?)(\.(?=\s|$)|;)", re.IGNORECASE)
 # is handled first so it can take a capitalised replacement.
 _EG_SENTENCE_INITIAL_RE = re.compile(r"(?:^|(?<=\.\s))E\.g\.,?\s+(\w)", re.IGNORECASE)
 _EG_RESIDUAL_RE = re.compile(r"\be\.g\.,?\s+", re.IGNORECASE)
+# pvl-core 5.0 (#285) spells the abbreviation out as `for example` to satisfy
+# Google.Latin — which trips `ai-tells.FormalTransitions` instead, in every
+# position.  Fold it back onto the `e.g.` pipeline above so both spellings
+# get the same mid-clause parenthetical / sentence-initial treatment.
+_FOR_EXAMPLE_RE = re.compile(
+    r"(?:(?<=,)\s*for example[,:]?\s+|(?:^|(?<=\.\s))for example[,:]?\s+)",
+    re.IGNORECASE,
+)
 _IE_RE = re.compile(r"\bi\.e\.,?\s+", re.IGNORECASE)
 
 
@@ -2289,6 +2297,12 @@ def _clean_help_for_markdown_table(
       `ai-tells.FormalTransitions`. Measured, not assumed — an earlier
       version of this function emitted `For example, ` and would have hard-
       failed every downstream the first time core shipped that shape.
+    - **`for example`** (pvl-core >=5.0 spells `e.g.` out) in the two
+      transitional shapes — after a comma, or sentence-initial, optionally
+      followed by `,` or `:` — is folded back onto the `e.g.` rules first so
+      it lands in the same shapes; a non-transitional use ("example
+      deployments") is left alone.  Left as is, the transition trips
+      `ai-tells.FormalTransitions` wherever it appears.
     - **`i.e. `** becomes `that is, `, with no `ai-tells` conflict.
 
     A vocabulary map handles words Vale's spell-check rejects; see
@@ -2304,6 +2318,13 @@ def _clean_help_for_markdown_table(
     text = " ".join(text.split())
     text = _EM_DASH_CONJUNCTION_RE.sub(_dedash_for_markdown_table, text)
     text = _RESIDUAL_EM_DASH_RE.sub("; ", text)
+    # Keep the leading comma (a lookbehind, so not consumed) for the clause
+    # rule; the sentence-initial shape (match at 0 or after ". ") needs no
+    # leading space.  `m.start() > 0` guards the index, not an off-by-one.
+    text = _FOR_EXAMPLE_RE.sub(
+        lambda m: " e.g. " if m.start() > 0 and text[m.start() - 1] == "," else "e.g. ",
+        text,
+    )
     text = _EG_CLAUSE_RE.sub(lambda m: f" ({m.group(1)}){m.group(2)}", text)
     text = _EG_SENTENCE_INITIAL_RE.sub(lambda m: m.group(1).upper(), text)
     text = _EG_RESIDUAL_RE.sub("such as ", text)

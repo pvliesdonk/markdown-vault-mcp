@@ -1,9 +1,10 @@
 # Changes here will be overwritten by `copier update`.
-_commit: v5.6.3
+_commit: v6.0.0
 _src_path: https://github.com/pvliesdonk/fastmcp-server-template
 docker_registry: ghcr.io/pvliesdonk
 domain_description: Generic markdown vault MCP with hybrid search
 enable_authorization: false
+enable_automatic_claude_review: false
 enable_structural_gate: true
 env_prefix: MARKDOWN_VAULT_MCP
 extra_required_checks:

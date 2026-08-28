@@ -32,7 +32,12 @@ import json
 import re
 from pathlib import Path
 
-from fastmcp_pvl_core import JobsConfig, ServerConfig, TransferConfig
+from fastmcp_pvl_core import (
+    JobsConfig,
+    ServerConfig,
+    TransferConfig,
+    finalize_instructions,
+)
 
 import markdown_vault_mcp
 
@@ -229,6 +234,25 @@ def server_inventory() -> set[str]:
     return _filter_config_vars(extract_env_vars_from_source(src))
 
 
+def _instructions_source_file() -> Path:
+    """Resolve pvl-core's instructions module (server tier).
+
+    ``INSTRUCTIONS`` and ``INSTRUCTIONS_EXTRA`` are read by
+    :func:`fastmcp_pvl_core.finalize_instructions`, which lives outside
+    ``ServerConfig``'s own module — so scanning ``ServerConfig`` alone misses
+    them. Scanning the module that actually reads them keeps the inventory
+    true if pvl-core renames either var, which a hardcoded allowlist would not.
+    """
+    src = inspect.getsourcefile(finalize_instructions)
+    assert src is not None, "finalize_instructions source file not found"
+    return Path(src)
+
+
+def instructions_inventory() -> set[str]:
+    src = _instructions_source_file().read_text(encoding="utf-8")
+    return _filter_config_vars(extract_env_vars_from_source(src))
+
+
 def transfer_inventory() -> set[str]:
     src = _transfer_config_source_file().read_text(encoding="utf-8")
     return _filter_config_vars(extract_env_vars_from_source(src))
@@ -243,6 +267,7 @@ def full_inventory() -> set[str]:
     return (
         domain_inventory()
         | server_inventory()
+        | instructions_inventory()
         | transfer_inventory()
         | jobs_inventory()
         | FRAMEWORK_VARS

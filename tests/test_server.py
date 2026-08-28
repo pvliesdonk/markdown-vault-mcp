@@ -35,6 +35,7 @@ _CLEAR_VARS = (
     "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
     "MARKDOWN_VAULT_MCP_SERVER_NAME",
     "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
+    "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA",
     # Auth vars — ensure non-auth tests run unauthenticated
     "MARKDOWN_VAULT_MCP_BEARER_TOKEN",
     "MARKDOWN_VAULT_MCP_AUTH_MODE",
@@ -131,36 +132,37 @@ class TestServerIdentity:
         assert "relative" in server.instructions
         assert "'search'" in server.instructions
         assert "'stats'" in server.instructions
-        # Core's build_instructions appends an operator-override hint
-        # (by design — tells anyone reading the instructions that the
-        # env var exists to customise them).
-        assert "MARKDOWN_VAULT_MCP_INSTRUCTIONS" in server.instructions
-        assert "Operators:" in server.instructions
+        # The composed text opens with the identity line the template-owned
+        # scaffold contributes, then the domain prelude.
+        assert server.instructions.startswith(
+            "Generic markdown vault MCP with hybrid search"
+        )
+        # pvl-core 5 no longer appends an operator-override hint: the
+        # instructions are model-facing prose, and the env vars that shape
+        # them are documented for operators rather than advertised to the
+        # model. Pinned so a regression re-adding it is caught.
+        assert "Operators:" not in server.instructions
 
     def test_mode_line_is_composed_domain_side(self) -> None:
         """The READ-ONLY/READ-WRITE line is ours, not pvl-core's (#1114).
 
-        pvl-core 4.11.2 dropped the announcement (and the ``read_only``
-        keyword that selected it) because nothing in the library enforced
-        it. This server does enforce it, so the sentence is composed in
-        ``build_default_instructions`` — after the domain prose and before
-        the operator-override hint the core still appends.
+        pvl-core 4.11.2 dropped the announcement because nothing in the
+        library enforced it. This server does enforce it, so the sentence is
+        a domain snippet — added at ``INSTANCE``, which places it after every
+        ``WORKFLOWS`` fragment and before the operator's
+        ``INSTRUCTIONS_EXTRA`` at ``OPERATOR``.
         """
-        import inspect
+        from fastmcp_pvl_core import INSTANCE, OPERATOR, WORKFLOWS
 
-        from fastmcp_pvl_core import build_instructions as core_build_instructions
+        from markdown_vault_mcp._instructions import _domain_snippets
 
-        from markdown_vault_mcp._instructions import build_default_instructions
-
-        assert "read_only" not in inspect.signature(core_build_instructions).parameters
-
-        text = build_default_instructions(read_only=True)
-        assert "READ-ONLY" in text
-        assert text.index("READ-ONLY") < text.index("Operators:")
-
-        text = build_default_instructions(read_only=False)
-        assert "READ-WRITE" in text
-        assert text.index("READ-WRITE") < text.index("Operators:")
+        for read_only, expected in ((True, "READ-ONLY"), (False, "READ-WRITE")):
+            snippets = _domain_snippets(read_only=read_only)
+            mode = [s for s in snippets if expected in s.text]
+            assert len(mode) == 1, f"expected exactly one {expected} snippet"
+            assert mode[0].priority == INSTANCE
+            assert WORKFLOWS < mode[0].priority < OPERATOR
+            assert snippets[-1] is mode[0], "the mode line is composed last"
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_custom_server_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -313,20 +315,26 @@ class TestConfigDrivenPrompts:
         assert "greet" in names
 
     @pytest.mark.usefixtures("_mcp_env")
-    def test_instructions_resolved_from_provided_config_not_env(
+    def test_instructions_composed_from_provided_config(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """A passed config shapes the composed guidance, not a stored string.
+
+        pvl-core 5 owns the ``INSTRUCTIONS`` / ``INSTRUCTIONS_EXTRA`` env
+        contract inside ``finalize_instructions``, so ``ProjectConfig`` no
+        longer carries an ``instructions`` field to override. What a passed
+        config still decides is which domain snippets apply — here
+        ``read_only``, which selects the mode line and drops the write
+        guidance.
+        """
         from markdown_vault_mcp.config import ProjectConfig
 
-        # env carries NO instructions override ...
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", raising=False)
-        # ... while the provided config sets one. It must win over both the
-        # generic env-baseline and the domain default (DOMAIN-WIRING is gated on
-        # config.instructions, not the env var).
-        config = ProjectConfig(source_dir=tmp_path, instructions="Custom vault brief.")
+        config = ProjectConfig(source_dir=tmp_path, read_only=True)
 
         server = make_server(config=config)
-        assert server.instructions == "Custom vault brief."
+        assert "READ-ONLY" in server.instructions
+        assert "'move_folder(" not in server.instructions
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_server_name_resolved_from_provided_config_not_env(
