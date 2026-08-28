@@ -599,6 +599,7 @@ class TestAppOnlyTools:
     async def test_vault_read(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_read"), {"path": "simple.md"}
             )
@@ -610,6 +611,7 @@ class TestAppOnlyTools:
     async def test_vault_read_missing(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_read"), {"path": "does-not-exist.md"}
             )
@@ -619,6 +621,11 @@ class TestAppOnlyTools:
     async def test_vault_search(self) -> None:
         server = make_server()
         async with Client(server) as client:
+            # Every sibling in this class waits for the boot index build to
+            # drain; without it this test races the writer thread and
+            # intermittently hits `vtable constructor failed: notes_fts`
+            # querying a half-built in-memory FTS index.
+            await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
                 _hashed("vault_search"), {"query": "hello", "mode": "keyword"}
             )
