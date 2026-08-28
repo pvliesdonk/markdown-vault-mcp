@@ -36,11 +36,31 @@ jobs:
         with:
           fetch-depth: 1
 
+      # LOCAL WORKAROUND (#1193, upstream fastmcp-server-template#535) — see the
+      # claude_args comment below for why. Mirrors the pin the removed
+      # claude-code-review.yml carried: Claude Code >= 2.1.198 dispatches
+      # subagents as background tasks and claude-code-action breaks its query()
+      # loop on the first result, so a granted Task would be orphaned and the
+      # run would still finish green with nothing posted
+      # (claude-code-action#1499). 2.1.197 is the last synchronous-subagent
+      # release. Remove this step, path_to_claude_code_executable, and the
+      # extra grants below once a template release carries the upstream fix.
+      - name: Install pinned Claude Code (2.1.197, pre-background-subagents)
+        run: |
+          set -euo pipefail
+          curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.197
+          BIN="$HOME/.local/bin/claude"
+          test -x "$BIN"
+          "$BIN" --version
+          echo "CLAUDE_BIN=$BIN" >> "$GITHUB_ENV"
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Use the pinned 2.1.197 CLI installed above (skips the action's own).
+          path_to_claude_code_executable: ${{ env.CLAUDE_BIN }}
 
           # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
@@ -58,13 +78,33 @@ jobs:
           # ADD to the action's defaults (Edit/Write/git stay available), but
           # `contents: read` above is what keeps this workflow from committing.
           #
-          # Task/Agent is deliberately NOT granted: under claude-code-action,
-          # Claude Code >= 2.1.198 runs subagents as background tasks and the
-          # action breaks its query() loop on the first result, so a subagent
-          # still running when @claude finishes is silently orphaned — its work
-          # is lost with no error (claude-code-action#1499, intermittent per
-          # #1515). Keeping @claude single-agent avoids that footgun. Restore
-          # Task once #1499 is fixed upstream.
+          # LOCAL WORKAROUND (#1193, upstream fastmcp-server-template#535).
+          # Everything after `Bash(gh api *)` on the grant line, and the CLI pin
+          # step above, is local — the template's rendered claude.yml has
+          # neither, and `copier update` will overwrite both. Remove them once a
+          # template release carries the upstream fix.
+          #
+          # Upstream dropped Task here in template#320 to keep @claude
+          # single-agent, on the reasoning that the heavy /code-review fan-out
+          # lived in claude-code-review.yml. Since template v6.0.0 that workflow
+          # renders only when automatic review is enabled, and it is not here —
+          # so this file is the only review path, while `Skill` (still granted)
+          # lets it launch the code-review skill whose fan-out Task denial then
+          # stalls the run: 51 denials in 6 turns, green, nothing posted.
+          #
+          # Restored to match what the removed review workflow proved:
+          #   Task ................ dispatch the skill's review subagents
+          #                         (template#312 / #313)
+          #   gh pr diff/view ..... establish the review range; the skill's
+          #   gh run view/list      first step needs a diff and no `git` read
+          #                         command is granted here
+          #   uv run pytest/mypy/ruff
+          #                       . targeted verification of a single finding
+          #                         (REVIEW.md: never the full gate). No venv
+          #                         setup step: `uv run` provisions on demand,
+          #                         so ordinary @claude mentions pay nothing.
+          # Subagents inherit this same curated set under `contents: read`, so
+          # Task grants delegation, not new capability.
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           claude_args: |
-            --allowedTools "Skill,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *)"
+            --allowedTools "Skill,Task,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh run list:*),Bash(uv run pytest:*),Bash(uv run mypy:*),Bash(uv run ruff:*)"
