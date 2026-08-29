@@ -411,6 +411,43 @@ not ongoing enforcement) but are write tools and respect read-only mode. Each is
 registered per the Tool Registration Checklist, with `destructiveHint` /
 `idempotentHint` reflecting that they mutate the vault.
 
+### Generated reserved files and the index gate
+
+The generated `index.md` / `log.md` are subject to the same
+`required_frontmatter` gate as any other note, so a body-only reserved file is
+a deterministic `missing_frontmatter` skip on a vault that configures one — the
+server generating a file its own indexer then rejects (#1174, #1175). Two
+second-order effects follow: the bundle's change history disappears from
+`search` and `list_documents` while staying readable from disk, and a folder
+whose only indexed file would have been its generated `index.md` loses its
+pointer in the parent listing, because `generate_index` synthesises sub-folder
+pointers from index entries.
+
+`ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files
+carry. Both generators and the `OKF_WRITE` maintainer write through it:
+
+- **Conditional, not unconditional.** With no required fields configured a
+  reserved file needs no frontmatter to be indexed, and the policy returns
+  `None` so the generators keep emitting the body-only files existing bundles
+  already have on disk. Closing the defect costs an unaffected vault no churn
+  — and, on a git vault, no commits.
+- **Existing keys win.** A hand-authored title and the root `index.md`'s
+  `okf_version` declaration survive regeneration; only genuinely absent
+  required fields are added.
+- **`title_field` gets the derived title** (the same H1 the body builders
+  emit); any other required field is seeded as `null`, since the gate tests
+  presence rather than value and the server has nothing truthful to put there.
+- **`okf_version` is never synthesized.** The audit flags it on any file but
+  the bundle root as `misplaced`, so seeding it into a folder's index would
+  trade one defect for another.
+
+The `OKF_WRITE` maintainer needs this for a second reason: `_append_log` is a
+read-modify-write and `DocumentManager.read` returns the body without
+frontmatter, so the log's frontmatter has to be carried across the rewrite
+explicitly. Since the maintainer runs after *every* content write, the
+alternative is not a one-time gap but frontmatter stripped again after each
+save — including frontmatter an operator seeded by hand.
+
 ### Export
 
 Export ships **not as a bespoke tool but as an overloaded download ref** on

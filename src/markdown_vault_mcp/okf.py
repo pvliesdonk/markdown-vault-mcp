@@ -29,6 +29,7 @@ import frontmatter as fm
 import yaml
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,15 @@ _HUMAN_ACTOR_PREFIX = "human:"
 #: phase 1 — staged for the conformance audit (#962: reserved files are
 #: exempt from the ``type`` rule) and ranking downweights (#965).
 OKF_RESERVED_FILENAMES: tuple[str, ...] = ("index.md", "log.md")
+
+#: H1 heading, and title, of a generated ``log.md``. Shared by the two body
+#: builders and the reserved-frontmatter policy so the heading a reader sees
+#: and the title the index resolves cannot drift apart.
+OKF_LOG_TITLE = "Log"
+
+#: H1 heading, and title, of a generated bundle-root ``index.md``. A folder's
+#: index uses the folder name instead.
+OKF_ROOT_INDEX_TITLE = "Index"
 
 #: Ranking downweight factors (design §5, #965), applied only under detection.
 #: Multiplicative on a hit's score and composed so the ordering
@@ -625,7 +635,16 @@ class OkfConvertResult:
 
 @dataclass(frozen=True)
 class OkfIndexResult:
-    """Result of generating a reserved ``index.md`` listing (#963)."""
+    """Result of generating a reserved ``index.md`` listing (#963).
+
+    Attributes:
+        path: Vault-relative path of the generated listing.
+        entries: Notes and sub-folder pointers listed.
+        frontmatter_preserved: Whether frontmatter already on the file was
+            carried over. Not "the file has frontmatter": a file that had
+            none is still written with the vault's required fields seeded
+            (#1175), which reports ``False`` here.
+    """
 
     path: str
     entries: int
@@ -697,6 +716,69 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
     return content, converted, skipped
 
 
+@dataclass(frozen=True)
+class ReservedFrontmatterPolicy:
+    """Frontmatter the server's own generated reserved files must carry.
+
+    ``index.md`` and ``log.md`` are written by the server, but the index gate
+    is configured by the operator: with ``required_frontmatter`` set, a
+    generated file carrying no frontmatter is a deterministic
+    ``missing_frontmatter`` skip, so the bundle's own navigation and change
+    history disappear from ``search`` and ``list_documents`` while staying
+    readable from disk (#1174, #1175). The generators consult this policy so
+    what they write satisfies the gate the same server enforces.
+
+    The policy is deliberately *conditional*. With no required fields
+    configured a reserved file needs no frontmatter to be indexed, and
+    :meth:`build` returns ``None`` so the generators keep emitting the
+    body-only files every existing vault already has on disk — closing the
+    defect costs an unconfigured vault no churn.
+
+    Attributes:
+        title_field: The frontmatter key the indexer resolves titles from.
+            The one required field given a derived value rather than a
+            placeholder, since the server knows the title it just wrote.
+        required_fields: The vault's configured ``required_frontmatter``.
+    """
+
+    title_field: str = "title"
+    required_fields: tuple[str, ...] = ()
+
+    def build(
+        self, existing: Mapping[str, Any] | None, *, title: str
+    ) -> dict[str, Any] | None:
+        """Build the frontmatter for a generated reserved file.
+
+        Existing keys always win, so a hand-authored title and the root
+        ``index.md``'s ``okf_version`` declaration survive regeneration
+        untouched and only genuinely absent required fields are added. A
+        required field other than *title_field* is seeded as ``None``: the
+        gate tests presence rather than value
+        (:func:`~markdown_vault_mcp.scanner.parse_note_categorized`), and the
+        server has nothing truthful to put there.
+
+        ``okf_version`` is never synthesized. The conformance audit flags it
+        on any file but the bundle root as ``misplaced``, so seeding it into
+        a folder's generated index would trade one defect for another.
+
+        Args:
+            existing: The file's current frontmatter, or ``None`` when the
+                file does not exist yet or carries none.
+            title: Title for *title_field*, matching the H1 heading the body
+                builders emit for the same file.
+
+        Returns:
+            The frontmatter mapping to write, or ``None`` when the file needs
+            no frontmatter at all.
+        """
+        merged: dict[str, Any] = dict(existing or {})
+        for field in self.required_fields:
+            if field in merged:
+                continue
+            merged[field] = title if field == self.title_field else None
+        return merged or None
+
+
 def build_index_markdown(
     heading: str, entries: list[tuple[str, str, str | None]]
 ) -> str:
@@ -743,7 +825,8 @@ def build_log_markdown(entries: Any) -> tuple[str, int, int]:
         block = [f"## {date}", ""]
         block.extend(f"- **{c.message}** ({c.short_sha})" for c in by_date[date])
         sections.append("\n".join(block))
-    body = "# Log\n\n" + "\n\n".join(sections) + "\n" if sections else "# Log\n"
+    header = f"# {OKF_LOG_TITLE}"
+    body = f"{header}\n\n" + "\n\n".join(sections) + "\n" if sections else f"{header}\n"
     return body, sum(len(v) for v in by_date.values()), len(order)
 
 
@@ -776,7 +859,7 @@ def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
     heading = f"## {date}"
     bullet = f"- {summary}"
     if not text or not text.strip():
-        return f"# Log\n\n{heading}\n\n{bullet}\n"
+        return f"# {OKF_LOG_TITLE}\n\n{heading}\n\n{bullet}\n"
     lines = text.splitlines()
     first = next((i for i, line in enumerate(lines) if line.startswith("## ")), None)
     if first is not None and lines[first].strip() == heading:

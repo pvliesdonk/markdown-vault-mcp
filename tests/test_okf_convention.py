@@ -20,6 +20,7 @@ import pytest
 
 from markdown_vault_mcp._okf_convention import ConventionMaintainer
 from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.okf import ReservedFrontmatterPolicy
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_writer_drain
 
@@ -57,19 +58,28 @@ class _FakeMigrate:
 class _FakeDoc:
     def __init__(self) -> None:
         self.writes: list[tuple[str, str]] = []
+        self.write_kwargs: list[dict[str, object]] = []
         self.raise_on_write = False
+        #: Stands in for an existing log.md: ``(body, frontmatter)`` or None.
+        self.existing: tuple[str, dict[str, Any]] | None = None
 
-    def read(self, _path: str) -> None:
-        return None
+    def read(self, _path: str) -> Any:
+        if self.existing is None:
+            return None
+        body, metadata = self.existing
+        return type("N", (), {"content": body, "frontmatter": metadata})()
 
-    def write(self, path: str, content: str, **_kw: object) -> None:
+    def write(self, path: str, content: str, **kw: object) -> None:
         if self.raise_on_write:
             raise RuntimeError("disk full")
         self.writes.append((path, content))
+        self.write_kwargs.append(kw)
 
 
 def _maintainer(
-    *, active: bool = True
+    *,
+    active: bool = True,
+    reserved_frontmatter: ReservedFrontmatterPolicy | None = None,
 ) -> tuple[ConventionMaintainer, _FakeDoc, _FakeMigrate]:
     doc, migrate = _FakeDoc(), _FakeMigrate()
     m = ConventionMaintainer(
@@ -78,6 +88,7 @@ def _maintainer(
         detector=_FakeDetector(active),  # type: ignore[arg-type]
         sync_index=lambda: None,
         today=lambda: _FIXED,
+        reserved_frontmatter=reserved_frontmatter,
     )
     return m, doc, migrate
 
@@ -141,6 +152,37 @@ class TestMaintainerFailureIsolation:
         assert migrate.index_calls == [""]
 
 
+class TestMaintainedLogFrontmatter:
+    """The maintained ``log.md`` keeps satisfying the vault's index gate (#1174).
+
+    ``_append_log`` is a read-modify-write and ``read()`` returns the body
+    without frontmatter, so the log's frontmatter has to be carried across
+    the rewrite explicitly — the maintainer runs on *every* enforced write,
+    so getting this wrong strips it again after each save.
+    """
+
+    def test_unconfigured_vault_writes_no_frontmatter(self) -> None:
+        m, doc, _ = _maintainer()
+        m.maintain("note.md", "write")
+        assert doc.write_kwargs[0]["frontmatter"] is None
+
+    def test_hand_authored_frontmatter_survives_the_rewrite(self) -> None:
+        m, doc, _ = _maintainer()
+        doc.existing = ("# Log\n", {"title": "Change history", "type": "log"})
+        m.maintain("note.md", "write")
+        assert doc.write_kwargs[0]["frontmatter"] == {
+            "title": "Change history",
+            "type": "log",
+        }
+
+    def test_required_field_is_seeded_on_a_fresh_log(self) -> None:
+        m, doc, _ = _maintainer(
+            reserved_frontmatter=ReservedFrontmatterPolicy(required_fields=("title",))
+        )
+        m.maintain("note.md", "write")
+        assert doc.write_kwargs[0]["frontmatter"] == {"title": "Log"}
+
+
 # ---------------------------------------------------------------------------
 # Integration through a writable, OKF-active vault
 # ---------------------------------------------------------------------------
@@ -148,9 +190,19 @@ class TestMaintainerFailureIsolation:
 _ROOT_INDEX = '---\nokf_version: "0.2"\ntitle: Root\n---\n# Root\n'
 
 
-def _build_vault(source: Path, *, okf_write: bool, okf_mode: str = "on") -> Vault:
+def _build_vault(
+    source: Path,
+    *,
+    okf_write: bool,
+    okf_mode: str = "on",
+    required_frontmatter: list[str] | None = None,
+) -> Vault:
     col = Vault(
-        source_dir=source, read_only=False, okf_mode=okf_mode, okf_write=okf_write
+        source_dir=source,
+        read_only=False,
+        okf_mode=okf_mode,
+        okf_write=okf_write,
+        required_frontmatter=required_frontmatter,
     )
     col.index.build_index()
     return col
@@ -290,5 +342,55 @@ class TestConventionMaintenanceIntegration:
             col.writer.write("guides/note.md", "# N\n")
             wait_for_writer_drain(col)
             assert col.reader.read("guides/log.md") is None
+        finally:
+            col.close()
+
+
+class TestUpkeepUnderRequiredFrontmatter:
+    """End-to-end for #1174 on the path that runs on every save.
+
+    The one-shot ``okf_seed_log`` is not the only generator of a reserved
+    ``log.md``: with ``OKF_WRITE`` on, the maintainer creates and rewrites it
+    after every content write. Under a required-field gate that made the
+    bundle's own history and navigation permanently unlistable, and repairing
+    the files by hand did not survive the next save.
+    """
+
+    def test_maintained_reserved_files_are_indexed(self, tmp_path: Path) -> None:
+        root = tmp_path / "gated_vault"
+        (root / "guides").mkdir(parents=True)
+        (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
+        col = _build_vault(root, okf_write=True, required_frontmatter=["title"])
+        try:
+            col.writer.write("guides/playbook.md", "---\ntitle: P\n---\n# P\n")
+            wait_for_writer_drain(col)
+
+            assert col.reader.read("guides/log.md").frontmatter["title"] == "Log"
+            indexed = {note.path for note in col.reader.list_documents()}
+            assert {"guides/log.md", "guides/index.md"} <= indexed
+        finally:
+            col.close()
+
+    def test_a_second_write_does_not_strip_the_log_frontmatter(
+        self, tmp_path: Path
+    ) -> None:
+        """The rewrite is the regression: one save seeded it, the next dropped it."""
+        root = tmp_path / "gated_vault_twice"
+        (root / "guides").mkdir(parents=True)
+        (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
+        col = _build_vault(root, okf_write=True, required_frontmatter=["title"])
+        try:
+            col.writer.write("guides/a.md", "---\ntitle: A\n---\n# A\n")
+            wait_for_writer_drain(col)
+            col.writer.write("guides/b.md", "---\ntitle: B\n---\n# B\n")
+            wait_for_writer_drain(col)
+
+            log = col.reader.read("guides/log.md")
+            assert log.frontmatter["title"] == "Log"
+            # Both bullets are still there — carrying frontmatter across the
+            # rewrite must not cost the append its accumulated body.
+            assert "wrote `guides/a.md`" in log.content
+            assert "wrote `guides/b.md`" in log.content
+            assert "guides/log.md" in {n.path for n in col.reader.list_documents()}
         finally:
             col.close()

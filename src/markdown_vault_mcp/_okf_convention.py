@@ -24,7 +24,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
-from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES, append_okf_log_entry
+from markdown_vault_mcp.okf import (
+    OKF_LOG_TITLE,
+    OKF_RESERVED_FILENAMES,
+    ReservedFrontmatterPolicy,
+    append_okf_log_entry,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -53,6 +58,7 @@ class ConventionMaintainer:
         sync_index: Callable[[], object],
         write_lock: AbstractContextManager[object] | None = None,
         today: Callable[[], date] = date.today,
+        reserved_frontmatter: ReservedFrontmatterPolicy | None = None,
     ) -> None:
         """Hold the collaborators the secondary writes delegate to.
 
@@ -73,6 +79,10 @@ class ConventionMaintainer:
                 ``None`` (tests) serialises nothing.
             today: Date provider (injectable for tests); defaults to
                 :meth:`datetime.date.today`.
+            reserved_frontmatter: Frontmatter policy for the maintained
+                ``log.md``, so the log this maintainer rewrites on every
+                enforced write satisfies the vault's own index gate (#1174).
+                Defaults to the no-required-fields policy.
         """
         self._doc_mgr = doc_mgr
         self._okf_migrate = okf_migrate
@@ -82,6 +92,7 @@ class ConventionMaintainer:
             write_lock if write_lock is not None else nullcontext()
         )
         self._today = today
+        self._reserved_frontmatter = reserved_frontmatter or ReservedFrontmatterPolicy()
 
     def maintain(self, path: str, operation: WriteOperation) -> None:
         """Refresh the written note's folder ``log.md`` and ``index.md``.
@@ -119,7 +130,13 @@ class ConventionMaintainer:
         return "" if parent == "." else parent
 
     def _append_log(self, folder: str, path: str, operation: WriteOperation) -> None:
-        """Append a dated ``**Update**`` bullet to the folder's ``log.md``."""
+        """Append a dated ``**Update**`` bullet to the folder's ``log.md``.
+
+        The read-modify-write splits frontmatter from body: ``read()`` hands
+        back the body alone, so the log's frontmatter has to be carried over
+        explicitly or the rewrite would strip it — including frontmatter an
+        operator seeded by hand to satisfy ``required_frontmatter`` (#1174).
+        """
         log_path = f"{folder}/log.md" if folder else "log.md"
         verb = _OPERATION_VERB.get(operation, operation)
         summary = f"**Update**: {verb} `{path}`"
@@ -134,7 +151,15 @@ class ConventionMaintainer:
                 new_text = append_okf_log_entry(
                     text, date=self._today().isoformat(), summary=summary
                 )
-                self._doc_mgr.write(log_path, new_text, allow_overwrite=True)
+                self._doc_mgr.write(
+                    log_path,
+                    new_text,
+                    frontmatter=self._reserved_frontmatter.build(
+                        existing.frontmatter if existing is not None else None,
+                        title=OKF_LOG_TITLE,
+                    ),
+                    allow_overwrite=True,
+                )
         except Exception:
             logger.warning("okf_convention_log_failed path=%s", log_path, exc_info=True)
 

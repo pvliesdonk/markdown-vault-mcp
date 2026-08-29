@@ -85,6 +85,12 @@ Three tools handle the changes you should not make by hand. They are write tools
 - **`okf_generate_index`** writes a folder's `index.md` as a listing of the notes directly in that folder, plus a pointer into each subfolder's own `index.md`. It draws the description from each note's frontmatter and lists one level at a time, so a nested bundle stays navigable rather than flattening into one long page. It preserves existing frontmatter, so regenerating the root `index.md` keeps your `okf_version` declaration.
 - **`okf_seed_log`** creates a `log.md` change history from the vault's git commits, newest first. The `folder` argument both places the log and scopes its content: seeding a folder includes only the commits that touched that subtree, while seeding the bundle root includes the whole vault's history. It refuses to overwrite an existing `log.md`, so a hand-maintained history is safe.
 
+### Reserved files on a vault with required fields
+
+If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, documents missing any listed field are excluded from the index. The generated `index.md` and `log.md` are ordinary documents to the indexer, so the generators give them the fields your vault requires. Your title field is filled in from the file's heading; any other required field is written empty, for you to complete. Without this the bundle's own listing and change history would be absent from `search` and `list_documents` while still opening through `read`.
+
+Anything already in the file wins, so a title you wrote yourself and the root `index.md`'s `okf_version` declaration are left alone. On a vault that sets no required fields nothing changes: the reserved files carry no frontmatter, exactly as before.
+
 ## The enforced write layer
 
 The steps above keep a bundle conformant by convention. The enforced write layer makes the server keep two of those fields correct on its own. Turn it on by setting `MARKDOWN_VAULT_MCP_OKF_WRITE=true`. It requires `OKF_MODE` to be `auto` or `on`; pairing it with `OKF_MODE=off` is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before.

@@ -26,6 +26,7 @@ from markdown_vault_mcp.okf import (
     OKF_INDEXED_FIELDS,
     OkfAuditReport,
     OkfDetector,
+    ReservedFrontmatterPolicy,
     audit_bundle,
 )
 from markdown_vault_mcp.scanner import (
@@ -531,12 +532,20 @@ class Vault:
             require_built=self._require_built,
             okf_audit=self._okf_audit,
         )
+        # The reserved files the OKF generators write are subject to this
+        # vault's own required-frontmatter gate, so the generators need the
+        # gate's terms to produce files that survive it (#1174, #1175).
+        reserved_frontmatter = ReservedFrontmatterPolicy(
+            title_field=self._title_field,
+            required_fields=tuple(self._required_frontmatter or ()),
+        )
         self._okf_migrate = OkfMigrationManager(
             doc_mgr=self._doc_mgr,
             link_mgr=self._link_mgr,
             search_mgr=self._search_mgr,
             git_query_mgr=self._git_query_mgr,
             require_built=self._require_built,
+            reserved_frontmatter=reserved_frontmatter,
         )
         # OKF enforced-write convention maintenance (#964, phase 5b): built only
         # under OKF_WRITE (mirroring the enricher gating). On a successful
@@ -554,6 +563,7 @@ class Vault:
                     timeout=_CONVENTION_DRAIN_TIMEOUT
                 ),
                 write_lock=self._file_write_lock,
+                reserved_frontmatter=reserved_frontmatter,
             )
         self._writer_facet = WriterFacet(
             self._doc_mgr,

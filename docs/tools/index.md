@@ -482,17 +482,17 @@ Rewrite `[[wikilinks]]` as the bundle-root-absolute markdown links OKF recommend
 
 #### `okf_generate_index`
 
-Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing: `- [title](/path.md) - description` for each note directly in the folder, plus a pointer into each immediate subfolder's own `index.md`. Descriptions are drawn from frontmatter. The listing is one level deep (it does not flatten the subtree). Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted.
+Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing: `- [title](/path.md) - description` for each note directly in the folder, plus a pointer into each immediate subfolder's own `index.md`. Descriptions are drawn from frontmatter. The listing is one level deep (it does not flatten the subtree). Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted. When the vault sets `REQUIRED_FIELDS`, any required field the file lacks is added, so the generated listing is not itself excluded from the index.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `folder` | string | Folder to index; omit for the bundle root |
 
-**Returns:** `path` (string), `entries` (integer), `frontmatter_preserved` (bool).
+**Returns:** `path` (string), `entries` (integer), `frontmatter_preserved` (bool). `frontmatter_preserved` reports whether frontmatter already on the file was carried over. A file that had none can still be written with required fields added.
 
 #### `okf_seed_log`
 
-Seed a folder's reserved `log.md` change history from the vault's git commit history, newest-first `## YYYY-MM-DD` sections, one bullet per commit. The `folder` argument both places the log and scopes its content: a folder seeds only the commits that touched that subtree, while the bundle root seeds the whole vault's history. Refuses to overwrite an existing `log.md` (a change history is hand-maintained after seeding).
+Seed a folder's reserved `log.md` change history from the vault's git commit history, newest-first `## YYYY-MM-DD` sections, one bullet per commit. The `folder` argument both places the log and scopes its content: a folder seeds only the commits that touched that subtree, while the bundle root seeds the whole vault's history. Refuses to overwrite an existing `log.md` (a change history is hand-maintained after seeding). When the vault sets `REQUIRED_FIELDS`, the seeded log carries those fields, so the bundle's own history is not excluded from the index.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|

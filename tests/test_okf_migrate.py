@@ -316,3 +316,94 @@ def test_facet_without_migration_manager_raises(vault: Vault) -> None:
         facet.okf_generate_index()
     with pytest.raises(RuntimeError, match="migration manager"):
         facet.okf_seed_log()
+
+
+@pytest.fixture
+def gated_vault(source_dir: Path) -> Iterator[Vault]:
+    """A vault whose index gate excludes notes without a ``title`` (#1174)."""
+    col = Vault(source_dir=source_dir, read_only=False, required_frontmatter=["title"])
+    try:
+        col.index.build_index()
+        yield col
+    finally:
+        col.close()
+
+
+def _indexed_paths(vault: Vault) -> set[str]:
+    return {note.path for note in vault.reader.list_documents()}
+
+
+class TestReservedFilesUnderRequiredFrontmatter:
+    """The generators' output survives the vault's own index gate.
+
+    Each of these fails before #1174 / #1175: the generated file carries no
+    frontmatter, so the scanner classifies it as a ``missing_frontmatter``
+    skip and the bundle's own navigation and history vanish from the
+    enumeration surfaces while staying readable from disk.
+    """
+
+    def test_seeded_log_is_indexed(self, gated_vault: Vault) -> None:
+        gated_vault.writer.okf_seed_log()
+        wait_for_writer_drain(gated_vault)
+
+        assert gated_vault.reader.read("log.md").frontmatter["title"] == "Log"
+        assert "log.md" in _indexed_paths(gated_vault)
+
+    def test_generated_index_is_indexed(self, gated_vault: Vault) -> None:
+        _write(gated_vault, "note.md", "---\ntitle: A Note\n---\n# A Note\n")
+
+        gated_vault.writer.okf_generate_index()
+        wait_for_writer_drain(gated_vault)
+
+        assert gated_vault.reader.read("index.md").frontmatter["title"] == "Index"
+        assert "index.md" in _indexed_paths(gated_vault)
+
+    def test_folder_index_takes_the_folder_name_as_its_title(
+        self, gated_vault: Vault
+    ) -> None:
+        _write(gated_vault, "guides/one.md", "---\ntitle: One\n---\n# One\n")
+
+        result = gated_vault.writer.okf_generate_index(folder="guides")
+        wait_for_writer_drain(gated_vault)
+
+        index = gated_vault.reader.read("guides/index.md")
+        assert result.frontmatter_preserved is False
+        assert index.frontmatter["title"] == "guides"
+        # Only the bundle root may declare okf_version; a folder index
+        # carrying it audits as misplaced.
+        assert "okf_version" not in index.frontmatter
+
+    def test_root_declaration_survives_regeneration(self, gated_vault: Vault) -> None:
+        _write(gated_vault, "index.md", '---\nokf_version: "0.2"\n---\n# Old\n')
+
+        result = gated_vault.writer.okf_generate_index()
+        wait_for_writer_drain(gated_vault)
+
+        index = gated_vault.reader.read("index.md")
+        assert result.frontmatter_preserved is True
+        assert index.frontmatter["okf_version"] == "0.2"
+        assert index.frontmatter["title"] == "Index"
+
+    def test_subfolder_stays_reachable_from_the_parent_listing(
+        self, gated_vault: Vault
+    ) -> None:
+        """The second-order effect in #1175: a folder falling out of navigation.
+
+        The parent's listing synthesises a sub-folder pointer only from
+        entries the *index* returns. A folder whose notes are all skipped by
+        the gate contributes nothing, so before the fix its generated
+        ``index.md`` was skipped too and the folder became unreachable by
+        navigation from the bundle root.
+        """
+        # Skipped by the gate: no title, so nothing under archive/ is indexed.
+        _write(gated_vault, "archive/draft.md", "# Draft\n")
+        gated_vault.writer.okf_generate_index(folder="archive")
+        wait_for_writer_drain(gated_vault)
+
+        gated_vault.writer.okf_generate_index()
+        wait_for_writer_drain(gated_vault)
+
+        assert (
+            "- [archive/](/archive/index.md)"
+            in gated_vault.reader.read("index.md").content
+        )

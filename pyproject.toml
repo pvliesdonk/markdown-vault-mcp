@@ -265,6 +265,10 @@ ignore = ["E501"]
 # logic. Same gate-only mechanism as scanner.py above (PLR0913 isn't in the
 # base select, so an inline `# noqa` would be stripped as unused, RUF100).
 "src/markdown_vault_mcp/_okf_convention.py" = ["PLR0913"]
+# OkfMigrationManager is the same shape: six injected collaborators (doc/link/
+# search/git-query managers + the readiness gate + the reserved-frontmatter
+# policy), no logic. Same gate-only mechanism as _okf_convention.py above.
+"src/markdown_vault_mcp/managers/okf_migrate.py" = ["PLR0913"]
 # Test fixtures import vault/protocol types only used in annotations.
 "tests/conftest.py" = ["TC002", "TC003"]
 # _install_fake_openai's keyword-only scenario toggles (content/refusal/

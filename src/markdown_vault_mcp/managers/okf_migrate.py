@@ -13,6 +13,11 @@ dirtying, and the git-commit callback all come for free):
   frontmatter (notably the root ``okf_version`` declaration).
 - :meth:`seed_log` seeds a reserved ``log.md`` change history from git.
 
+Both generators write through the vault's
+:class:`~markdown_vault_mcp.okf.ReservedFrontmatterPolicy`, so the reserved
+files they produce carry the frontmatter the vault's own index gate requires
+(#1174, #1175).
+
 These are write tools gated on read-only mode only, not on a future
 ``OKF_WRITE`` flag (design §7): they are deliberate migrations, not ongoing
 enforcement.
@@ -24,10 +29,13 @@ import logging
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.okf import (
+    OKF_LOG_TITLE,
     OKF_RESERVED_FILENAMES,
+    OKF_ROOT_INDEX_TITLE,
     OkfConvertResult,
     OkfIndexResult,
     OkfLogResult,
+    ReservedFrontmatterPolicy,
     build_index_markdown,
     build_log_markdown,
     convert_wikilinks_to_markdown,
@@ -56,6 +64,7 @@ class OkfMigrationManager:
         search_mgr: SearchManager,
         git_query_mgr: GitQueryManager,
         require_built: Callable[[], None],
+        reserved_frontmatter: ReservedFrontmatterPolicy | None = None,
     ) -> None:
         """Hold the collaborators the transforms delegate to.
 
@@ -68,12 +77,17 @@ class OkfMigrationManager:
             git_query_mgr: Vault-wide history for the log seeder.
             require_built: Index-readiness gate; the link/TOC-dependent
                 transforms call it first.
+            reserved_frontmatter: Frontmatter policy for the generated
+                reserved files, so they satisfy the vault's own index gate
+                (#1174, #1175). Defaults to the no-required-fields policy,
+                which writes frontmatter only where one already exists.
         """
         self._doc_mgr = doc_mgr
         self._link_mgr = link_mgr
         self._search_mgr = search_mgr
         self._git_query_mgr = git_query_mgr
         self._require_built = require_built
+        self._reserved_frontmatter = reserved_frontmatter or ReservedFrontmatterPolicy()
 
     def convert_links(self, *, folder: str | None = None) -> OkfConvertResult:
         """Rewrite resolvable wikilinks as root-absolute markdown links.
@@ -128,7 +142,9 @@ class OkfMigrationManager:
         subfolder's own ``index.md`` — it does not flatten the whole
         subtree, so each level defers depth to the level below. Existing
         frontmatter is preserved (the root ``index.md``'s ``okf_version``
-        declaration must survive regeneration).
+        declaration must survive regeneration), and any field the vault
+        requires but the file lacks is seeded, so a freshly generated index
+        is not itself excluded from the index that produced it (#1175).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
@@ -179,12 +195,14 @@ class OkfMigrationManager:
         existing = self._doc_mgr.read(index_path)
         existing_fm = existing.frontmatter if existing is not None else None
         preserved = bool(existing_fm)
-        heading = folder.rsplit("/", 1)[-1] if folder else "Index"
+        heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         body = build_index_markdown(heading, entries)
         self._doc_mgr.write(
             index_path,
             body,
-            frontmatter=existing_fm if preserved else None,
+            frontmatter=self._reserved_frontmatter.build(
+                existing_fm if preserved else None, title=heading
+            ),
             allow_overwrite=True,
         )
         return OkfIndexResult(
@@ -202,6 +220,10 @@ class OkfMigrationManager:
         content: a folder seeds only the commits that touched that subtree,
         while the bundle root (``folder=""``) seeds the whole bundle's history
         (#974).
+
+        The seeded file carries whatever frontmatter the vault requires, so
+        the bundle's own change history is not excluded from ``search`` and
+        ``list_documents`` by the gate this server enforces (#1174).
 
         Args:
             folder: Vault-relative folder (``""`` for the bundle root).
@@ -228,5 +250,9 @@ class OkfMigrationManager:
         # falls back to whole-vault history via path=None.
         history = self._git_query_mgr.get_history(path=folder or None, limit=limit)
         body, commits, dates = build_log_markdown(history)
-        self._doc_mgr.write(log_path, body)
+        self._doc_mgr.write(
+            log_path,
+            body,
+            frontmatter=self._reserved_frontmatter.build(None, title=OKF_LOG_TITLE),
+        )
         return OkfLogResult(path=log_path, commits=commits, dates=dates)
