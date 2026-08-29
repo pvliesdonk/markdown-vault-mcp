@@ -294,3 +294,9 @@ regexes
 severities
 umask
 unnormalized
+
+# --- 4.1 release notes vocabulary ---
+indexable
+pathspec
+remoteless
+templated
