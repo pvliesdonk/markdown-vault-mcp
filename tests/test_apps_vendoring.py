@@ -130,7 +130,10 @@ def _spa_external_resource_origins(html: str) -> set[str]:
         re.IGNORECASE,
     )
     refs += re.findall(r"""url\(\s*["']?(https?://[^)"']+)""", html, re.IGNORECASE)
-    return {match.group(0) for r in refs if (match := re.match(r"https?://[^/]+", r))}
+    # Stop the origin at the first "/", "?" or "#": a URL whose query or
+    # fragment follows the host with no path ("https://host?x=y") would
+    # otherwise carry it into the origin and never match the declaration.
+    return {match.group(0) for r in refs if (match := re.match(r"https?://[^/?#]+", r))}
 
 
 def test_declared_csp_origins_match_what_the_spa_actually_loads() -> None:
