@@ -87,7 +87,7 @@ Three tools handle the changes you should not make by hand. They are write tools
 
 ### Reserved files on a vault with required fields
 
-If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, documents missing any listed field are excluded from the index. The generated `index.md` and `log.md` are ordinary documents to the indexer, so the generators give them the fields your vault requires. Your title field is filled in from the file's heading; any other required field is written empty, for you to complete. Without this the bundle's own listing and change history would be absent from `search` and `list_documents` while still opening through `read`.
+If you set `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, documents missing any listed field are excluded from the index. The generated `index.md` and `log.md` are ordinary documents to the indexer, so the generators give them the fields your vault requires. Your title field is filled in from the file's heading; any other required field is written as `null`, for you to fill in. Without this the bundle's own listing and change history would be absent from `search` and `list_documents` while still opening through `read`.
 
 Anything already in the file wins, so a title you wrote yourself and the root `index.md`'s `okf_version` declaration are left alone. On a vault that sets no required fields nothing changes: the reserved files carry no frontmatter, exactly as before.
 
