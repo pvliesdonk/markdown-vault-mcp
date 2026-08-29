@@ -1132,6 +1132,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#reserved-files-on-a-vault-with-required-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reserved files on a vault with required fields
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2127,6 +2138,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#reserved-files-on-a-vault-with-required-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reserved files on a vault with required fields
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2295,6 +2317,9 @@
 <li><strong><code>okf_generate_index</code></strong> writes a folder's <code>index.md</code> as a listing of the notes directly in that folder, plus a pointer into each subfolder's own <code>index.md</code>. It draws the description from each note's frontmatter and lists one level at a time, so a nested bundle stays navigable rather than flattening into one long page. It preserves existing frontmatter, so regenerating the root <code>index.md</code> keeps your <code>okf_version</code> declaration.</li>
 <li><strong><code>okf_seed_log</code></strong> creates a <code>log.md</code> change history from the vault's git commits, newest first. The <code>folder</code> argument both places the log and scopes its content: seeding a folder includes only the commits that touched that subtree, while seeding the bundle root includes the whole vault's history. It refuses to overwrite an existing <code>log.md</code>, so a hand-maintained history is safe.</li>
 </ul>
+<h3 id="reserved-files-on-a-vault-with-required-fields">Reserved files on a vault with required fields<a class="headerlink" href="#reserved-files-on-a-vault-with-required-fields" title="Permanent link">&para;</a></h3>
+<p>If you set <code>MARKDOWN_VAULT_MCP_REQUIRED_FIELDS</code>, documents missing any listed field are excluded from the index. The generated <code>index.md</code> and <code>log.md</code> are ordinary documents to the indexer, so the generators give them the fields your vault requires. Your title field is filled in from the file's heading; any other required field is written empty, for you to complete. Without this the bundle's own listing and change history would be absent from <code>search</code> and <code>list_documents</code> while still opening through <code>read</code>.</p>
+<p>Anything already in the file wins, so a title you wrote yourself and the root <code>index.md</code>'s <code>okf_version</code> declaration are left alone. On a vault that sets no required fields nothing changes: the reserved files carry no frontmatter, exactly as before.</p>
 <h2 id="the-enforced-write-layer">The enforced write layer<a class="headerlink" href="#the-enforced-write-layer" title="Permanent link">&para;</a></h2>
 <p>The steps above keep a bundle conformant by convention. The enforced write layer makes the server keep two of those fields correct on its own. Turn it on by setting <code>MARKDOWN_VAULT_MCP_OKF_WRITE=true</code>. It requires <code>OKF_MODE</code> to be <code>auto</code> or <code>on</code>; pairing it with <code>OKF_MODE=off</code> is a configuration error, since there is nothing to enforce. When the flag is off the write path is untouched, so an ordinary vault behaves exactly as before.</p>
 <p>With the layer on, and only while the vault is an active OKF bundle, every <code>write</code> and <code>edit</code> does two things to the note that lands:</p>

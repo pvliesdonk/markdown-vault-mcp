@@ -4052,7 +4052,7 @@ etag. The flag defaults to <code>false</code> in 4.x and to <code>true</code> fr
 </table>
 <p><strong>Returns:</strong> <code>files_changed</code>, <code>links_converted</code>, <code>links_skipped</code>, <code>notes_scanned</code> (all integers).</p>
 <h4 id="okf_generate_index"><code>okf_generate_index</code><a class="headerlink" href="#okf_generate_index" title="Permanent link">&para;</a></h4>
-<p>Generate (or overwrite) a folder's reserved <code>index.md</code> as a progressive-disclosure listing: <code>- [title](/path.md) - description</code> for each note directly in the folder, plus a pointer into each immediate subfolder's own <code>index.md</code>. Descriptions are drawn from frontmatter. The listing is one level deep (it does not flatten the subtree). Existing frontmatter is preserved, so regenerating the bundle-root <code>index.md</code> keeps its <code>okf_version</code> declaration. Reserved files are omitted.</p>
+<p>Generate (or overwrite) a folder's reserved <code>index.md</code> as a progressive-disclosure listing: <code>- [title](/path.md) - description</code> for each note directly in the folder, plus a pointer into each immediate subfolder's own <code>index.md</code>. Descriptions are drawn from frontmatter. The listing is one level deep (it does not flatten the subtree). Existing frontmatter is preserved, so regenerating the bundle-root <code>index.md</code> keeps its <code>okf_version</code> declaration. Reserved files are omitted. When the vault sets <code>REQUIRED_FIELDS</code>, any required field the file lacks is added, so the generated listing is not itself excluded from the index.</p>
 <table>
 <thead>
 <tr>
@@ -4069,9 +4069,9 @@ etag. The flag defaults to <code>false</code> in 4.x and to <code>true</code> fr
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> <code>path</code> (string), <code>entries</code> (integer), <code>frontmatter_preserved</code> (bool).</p>
+<p><strong>Returns:</strong> <code>path</code> (string), <code>entries</code> (integer), <code>frontmatter_preserved</code> (bool). <code>frontmatter_preserved</code> reports whether frontmatter already on the file was carried over. A file that had none can still be written with required fields added.</p>
 <h4 id="okf_seed_log"><code>okf_seed_log</code><a class="headerlink" href="#okf_seed_log" title="Permanent link">&para;</a></h4>
-<p>Seed a folder's reserved <code>log.md</code> change history from the vault's git commit history, newest-first <code>## YYYY-MM-DD</code> sections, one bullet per commit. The <code>folder</code> argument both places the log and scopes its content: a folder seeds only the commits that touched that subtree, while the bundle root seeds the whole vault's history. Refuses to overwrite an existing <code>log.md</code> (a change history is hand-maintained after seeding).</p>
+<p>Seed a folder's reserved <code>log.md</code> change history from the vault's git commit history, newest-first <code>## YYYY-MM-DD</code> sections, one bullet per commit. The <code>folder</code> argument both places the log and scopes its content: a folder seeds only the commits that touched that subtree, while the bundle root seeds the whole vault's history. Refuses to overwrite an existing <code>log.md</code> (a change history is hand-maintained after seeding). When the vault sets <code>REQUIRED_FIELDS</code>, the seeded log carries those fields, so the bundle's own history is not excluded from the index.</p>
 <table>
 <thead>
 <tr>
