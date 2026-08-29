@@ -18,6 +18,20 @@ SKIP_CATEGORIES: frozenset[str] = frozenset(
 )
 
 
+#: The modes ``search`` dispatches on. Every result carries one of these as
+#: its ``search_type``.
+SEARCH_MODES: tuple[str, ...] = ("keyword", "semantic", "hybrid")
+
+#: Values accepted for a vault's *configured* default mode: the dispatchable
+#: modes plus ``"auto"``, which resolves per-vault at search time rather than
+#: naming a channel. Shared so the configuration boundary
+#: (:class:`~markdown_vault_mcp.config_sections.SearchConfig`) and the
+#: constructor boundary (``SearchManager``) accept exactly the same set — the
+#: env route validated while the library route did not, and an unrecognised
+#: value reached the dispatch's final branch and ran hybrid silently (#1205).
+DEFAULT_SEARCH_MODES: tuple[str, ...] = ("auto", *SEARCH_MODES)
+
+
 @dataclass(frozen=True)
 class SkippedFile:
     """A file deliberately dropped from the index for a surfaced reason.

@@ -224,6 +224,41 @@ independently. Merged score: `1 / (k + rank)` where `k` is a constant
 
 This produces sensible merged rankings regardless of the raw score scales.
 
+**Which mode an unqualified search gets.** `mode` is optional. When the caller
+omits it, `SearchManager._resolve_mode` consults the vault's configured
+`default_mode` (`MARKDOWN_VAULT_MCP_DEFAULT_SEARCH_MODE`, shipped as `auto`):
+
+| configured default | vectors available | resolves to |
+|---|---|---|
+| `auto` | yes / no | `hybrid` / `keyword` |
+| `keyword` | either | `keyword` |
+| `hybrid` | yes / no | `hybrid` / `keyword` |
+| `semantic` | yes / no | `semantic` / `keyword` |
+
+Availability is binary: FTS is always present, so there is no semantic-only
+vault to resolve to. A vault that paid to build a vector index searches it
+without every call site having to ask, and an operator on a metered embedding
+provider pins `keyword` so unqualified searches never embed a query.
+
+Four properties hold the resolution together:
+
+- **A configured default degrades, never fails.** A pinned `semantic` or
+  `hybrid` falls back to `keyword` on a vault without embeddings, so no
+  setting can make a vault unsearchable.
+- **An explicit mode is never degraded.** `semantic` and `hybrid` passed by
+  the caller still reach `_require_vectors` and raise
+  `EmbeddingsNotConfiguredError`. Handing back keyword results under a
+  semantic label would hide the misconfiguration at the wrong layer.
+- **One predicate feeds both paths.** `_vectors_available` backs
+  `_require_vectors` and `_resolve_mode` alike, so what an unqualified search
+  lands on cannot disagree with what an explicit request may ask for.
+- **One accepted set feeds both boundaries.** `types.DEFAULT_SEARCH_MODES` is
+  validated by `SearchConfig.__post_init__` on the environment route and by
+  `SearchManager.__init__` on the library route. They diverged once (#1205):
+  the constructor stored an unrecognised value, `_resolve_mode` returned it
+  verbatim, and `search`'s dispatch — keyword, then semantic, then hybrid as
+  the fallthrough — ran hybrid under a name nobody had asked for.
+
 ### Search Ranking and Snippet Truncation
 
 Four complementary mechanisms improve result diversity and bound LLM context cost:

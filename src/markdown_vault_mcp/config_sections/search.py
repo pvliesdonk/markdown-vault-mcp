@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from markdown_vault_mcp.exceptions import ConfigurationError
+from markdown_vault_mcp.types import DEFAULT_SEARCH_MODES
 
 # FTS5 column names accepted as fts_weights keys, in notes_fts column order.
 _FTS_COLUMNS = ("path", "title", "folder", "heading", "content", "summary")
@@ -14,9 +15,9 @@ _FTS_COLUMNS = ("path", "title", "folder", "heading", "content", "summary")
 # parse_weight_map) or an already-frozen tuple of (key, weight) pairs.
 _WeightMap = Mapping[str, float] | Sequence[tuple[str, float]]
 
-# Modes accepted for default_mode: the search tool's Literal plus "auto",
-# which is resolved per-vault at search time rather than named by the caller.
-_SEARCH_MODES = frozenset({"auto", "keyword", "semantic", "hybrid"})
+# Modes accepted for default_mode, shared with the SearchManager constructor
+# so the two boundaries cannot drift (#1205).
+_SEARCH_MODES = frozenset(DEFAULT_SEARCH_MODES)
 
 
 @dataclass(frozen=True)

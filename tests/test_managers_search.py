@@ -1890,3 +1890,47 @@ class TestDefaultModeResolution:
         """An explicit keyword request runs keyword search."""
         results = search_mgr.search("alpha", mode="keyword")
         assert "alpha.md" in [r.path for r in results]
+
+
+class TestDefaultModeValidation:
+    """The accepted set is the same at both boundaries (#1205).
+
+    ``SearchConfig`` rejected an unknown ``default_mode`` while
+    ``SearchManager`` — reachable through ``Vault`` without touching the
+    environment — stored it unchecked. ``_resolve_mode`` returned it verbatim
+    through its cast, and ``search`` dispatches keyword → semantic → else
+    hybrid, so an unrecognised mode ran hybrid rather than failing.
+    """
+
+    @pytest.mark.parametrize("mode", ["auto", "keyword", "semantic", "hybrid"])
+    def test_every_configurable_mode_constructs(
+        self, search_vault: Path, mode: str
+    ) -> None:
+        assert _mgr(search_vault, default_mode=mode)._default_mode == mode
+
+    @pytest.mark.parametrize("mode", ["fuzzy", "Hybrid", "", "auto "])
+    def test_an_unknown_mode_raises_at_construction(
+        self, search_vault: Path, mode: str
+    ) -> None:
+        """Fails where the value enters, not at the first search."""
+        from markdown_vault_mcp.exceptions import ConfigurationError
+
+        with pytest.raises(ConfigurationError, match="default_mode"):
+            _mgr(search_vault, default_mode=mode)
+
+    def test_the_vault_constructor_rejects_it_too(self, tmp_path: Path) -> None:
+        """The path a library consumer actually takes."""
+        from markdown_vault_mcp.exceptions import ConfigurationError
+        from markdown_vault_mcp.vault import Vault
+
+        source = tmp_path / "vault"
+        source.mkdir()
+        with pytest.raises(ConfigurationError, match="default_mode"):
+            Vault(source_dir=source, default_search_mode="fuzzy")
+
+    def test_both_boundaries_accept_the_same_set(self) -> None:
+        """One constant, so the env route and the constructor cannot drift."""
+        from markdown_vault_mcp.config_sections.search import _SEARCH_MODES
+        from markdown_vault_mcp.types import DEFAULT_SEARCH_MODES
+
+        assert frozenset(DEFAULT_SEARCH_MODES) == _SEARCH_MODES

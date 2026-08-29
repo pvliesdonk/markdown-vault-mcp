@@ -17,7 +17,10 @@ import sqlite3
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from markdown_vault_mcp.embed_text import is_embeddable
-from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+from markdown_vault_mcp.exceptions import (
+    ConfigurationError,
+    EmbeddingsNotConfiguredError,
+)
 from markdown_vault_mcp.managers._ranking import (
     ChannelRow as _ChannelRow,
 )
@@ -54,6 +57,7 @@ from markdown_vault_mcp.okf import (
     parse_stale_filter,
 )
 from markdown_vault_mcp.types import (
+    DEFAULT_SEARCH_MODES,
     AttachmentInfo,
     BacklinkInfo,
     DocumentMeta,
@@ -203,6 +207,16 @@ class SearchManager:
         self._chunks_per_file = chunks_per_file
         self._snippet_words = snippet_words
         self._length_downweight_alpha = length_downweight_alpha
+        if default_mode not in DEFAULT_SEARCH_MODES:
+            # The configuration boundary already rejects this, but a library
+            # consumer reaches Vault/SearchManager without passing through it.
+            # Unvalidated, an unrecognised mode survives _resolve_mode's cast
+            # and lands in search()'s final dispatch branch, running hybrid
+            # under a name nobody asked for (#1205).
+            raise ConfigurationError(
+                "default_mode must be one of "
+                f"{', '.join(sorted(DEFAULT_SEARCH_MODES))}; got {default_mode!r}"
+            )
         self._default_mode = default_mode
         self._folder_weights = folder_weights
         self._embed_text_format = embed_text_format
