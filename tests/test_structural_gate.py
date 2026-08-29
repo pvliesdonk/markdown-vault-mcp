@@ -14,8 +14,9 @@ import sys
 from pathlib import Path
 
 # Canonical structural ruff selection — MUST stay byte-identical to the string
-# in .pre-commit-config.yaml, .github/workflows/ci.yml, and AGENTS.md. The
-# anti-drift test in this module enforces that.
+# in .pre-commit-config.yaml, AGENTS.md, and the CI gate (the template
+# repository's reusable-ci.yml, which the ci.yml stub calls — template#538).
+# The anti-drift test in this module enforces the surfaces this repo carries.
 STRUCTURAL = "C901,PLR0911,PLR0912,PLR0913,PLR0915,S"
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -209,15 +210,17 @@ def test_precommit_config_wires_pre_push_hook() -> None:
     assert "entry: bash scripts/structural_gate.sh" in block
 
 
-def test_ci_has_structure_job() -> None:
+def test_ci_enables_the_structure_gate() -> None:
+    """The rendered ci.yml stub switches the CI structure job on.
+
+    The job body lives in the template repository's reusable-ci.yml
+    (template#538): it runs the same shared scripts/structural_gate.sh as
+    the pre-push hook, pins the compare branch via STRUCTURAL_GATE_BASE,
+    and is PR-only — all asserted template-side. What this repository
+    controls, and therefore asserts, is the input that turns it on.
+    """
     text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
-    assert "structure:" in text
-    # CI runs the same shared script as the pre-push hook, pinning the compare
-    # branch to the PR's real base via the script's env override.
-    assert "scripts/structural_gate.sh" in text
-    assert "STRUCTURAL_GATE_BASE" in text
-    # PR-only, like the diff-cover patch-coverage steps.
-    assert "github.event_name == 'pull_request'" in text
+    assert "enable-structural-gate: true" in text
 
 
 def test_claudemd_documents_the_gate_command() -> None:

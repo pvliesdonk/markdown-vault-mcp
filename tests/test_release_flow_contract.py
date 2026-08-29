@@ -63,7 +63,6 @@ NOTES_PUBLISH_WORKFLOW = (
 )
 DOCS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "docs.yml"
 UNSTABLE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "unstable.yml"
-CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 COVERAGE_STATUS_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "coverage-status.yml"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 PLUGIN_JSON = Path(".claude-plugin/plugin/.claude-plugin/plugin.json")
@@ -1461,7 +1460,6 @@ def test_committed_pins_name_the_last_stable_or_the_prepared_version() -> None:
 @pytest.mark.parametrize(
     ("workflow", "label"),
     [
-        (CI_WORKFLOW, "ci.yml (own-branch path)"),
         (COVERAGE_STATUS_WORKFLOW, "coverage-status.yml (fork-PR fallback)"),
     ],
 )
