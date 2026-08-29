@@ -1,0 +1,106 @@
+# 4.1
+
+This release is mostly about the server making better choices on its own. A `search` call that omits `mode` now runs the best mode the vault can actually serve, so a vault with embeddings built stops answering conversational questions with keyword-only results. `list_documents` and `get_toc` report how big each note is, so a client can plan batched work without reading every file first. Voyage joins the embedding providers, and an optional guard refuses a `write` that would silently replace a note the caller never read. Two things change on upgrade with no configuration edit on your part: search results move on any vault with embeddings, and the server rebuilds its text index once on first start. A downstream library consumer that read `ProjectConfig.instructions` needs a change; operators do not.
+
+This is the first release since [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.0/index.md). Its through-line is defaults: several places where the server knew enough to do the right thing but waited to be told. Alongside that sit two contributor features brought current, a size signal for planning, and a correctness pass on the OKF reserved files 4.0 introduced.
+
+## Upgrade notes
+
+Three things change without a configuration edit. Read the first two before upgrading a vault you depend on.
+
+### Search results change on any vault with embeddings
+
+A `search` that omits `mode` used to run keyword-only BM25 on every vault, including one with a vector index built and current. It now resolves to `hybrid` where embeddings are configured and `keyword` where they are not ([#1200](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1200), [#1189](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1189)).
+
+Result quality improves, which is the point. But an operator who tuned prompts against BM25 ranking, or who snapshot-tests search output, gets different results without acting. Hybrid is also not strictly better in every case: reciprocal rank fusion can dilute a crisp keyword hit by fusing in chunks that are semantically near and factually wrong, so `mode="keyword"` remains the right answer for filenames and FTS5 operators.
+
+A per-deployment opt-out exists. Set `MARKDOWN_VAULT_MCP_DEFAULT_SEARCH_MODE=keyword` to keep unqualified searches on BM25. That variable exists for a second reason worth knowing: every hybrid or semantic search embeds the query, which costs an API call on a metered provider.
+
+### The text index rebuilds once on first start
+
+Adding note size to the stored rows changed how a note's row is derived from its bytes, so `INDEX_SEMANTICS_VERSION` moved from 1 to 2 ([#1039](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1039), [#1171](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1171)). Indexing is hash-based, so an unchanged note is never re-parsed; without the bump, a migrated row would report a size of `0` forever.
+
+The rebuild costs CPU and local IO, and it does not re-embed. The vector sidecar's identity check keys on the provider, the model and the embed-text format. None of those change here, so existing vectors stay valid and no embedding API is called. Until the rebuild finishes, a note indexed by an older version reports `content_chars: 0`, and the shipped planning prompt has a documented fallback for that state.
+
+### `ProjectConfig.instructions` and `read_instructions()` are gone
+
+Server instructions are now composed from snippets rather than templated into one string, and the two variables are read during composition instead ([#1162](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1162), [#1192](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1192)). A downstream consumer that read `config.instructions` in code needs a change.
+
+Operators need none. `MARKDOWN_VAULT_MCP_INSTRUCTIONS` still full-replaces the instructions, now with a deprecation warning, and the new `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` appends instead of replacing.
+
+## Search picks its own mode
+
+The server's own instructions already recommended hybrid search where it was available. A recommendation only reaches callers that read and follow it, and agent callers routinely omit `mode`, so the recommendation and the default disagreed.
+
+Measured by [@mikebronner](https://github.com/mikebronner) on a 3,548-document vault with embeddings configured, counting results returned per query ([#1189](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1189)):
+
+| Query                                                                    | keyword | hybrid |
+| ------------------------------------------------------------------------ | ------- | ------ |
+| `what did we decide about the tru-data KPI snapshot performance problem` | 1       | 5      |
+| `why do vault searches return nothing`                                   | 1       | 5      |
+| `how should agents handle a fork of someone else's repo`                 | **0**   | 5      |
+| `what is the rule about committing without approval`                     | **0**   | 5      |
+| `memory-lint orphan` (term query)                                        | 5       | 5      |
+
+Term queries are unaffected, because BM25 handles those well. Conversational queries, which is what an agent actually sends, returned nothing at all in two of four cases.
+
+The cost was measured too, on the same vault with a local `fastembed` provider, warm model and warm sidecar: keyword 9.2 ms against hybrid 47.7 ms, a median increase of 38.6 ms, against an LLM turn measured in seconds. That figure does not transfer to a metered provider, where each unqualified search buys a network round trip and an API call.
+
+`MARKDOWN_VAULT_MCP_DEFAULT_SEARCH_MODE` carries the setting and ships as `auto`. Three properties hold the behaviour together:
+
+- **A configured default degrades, never fails.** Pinning `hybrid` or `semantic` on a vault without embeddings resolves to `keyword` rather than raising, so no setting can make a vault unsearchable.
+- **An explicit mode is never silently downgraded.** `mode="semantic"` and `mode="hybrid"` still raise when the vault has no vectors. A caller who asked for semantic results is never handed keyword results under a semantic label.
+- **An unusable value is rejected at construction**, from the environment and from the library constructors alike ([#1205](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1205)).
+
+## Note size on the enumeration surfaces
+
+A client planning batched work could not see how big a note is without reading it. `get_toc` folder mode returned path, title and heading count, and `list_documents` carried no size at all, so the shipped `summarize-subtree` recipe batched by note count and used heading counts as a size proxy. Eight stubs under-filled a mapper while eight long notes overflowed it ([#1039](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1039)).
+
+Both surfaces now carry `content_chars`, and the prompt packs against a character budget. The measurement is taken from the parsed body rather than summed from stored chunks, because `chunk_overlap_words` prepends overlap to each split fragment and a naive sum over-counts every multi-chunk note. It is also not `chunk_count`, which the row already carried: every note below the chunk cap is one chunk whether it holds 50 characters or 1400, which was the reported failure.
+
+No new tool and no new parameter. The field rides the existing result shapes.
+
+## Voyage embeddings, and a guard against silent overwrites
+
+Two accepted contributor features, brought current from forks that had gone stale against `main` ([#1169](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1169)).
+
+**Voyage** joins `fastembed`, `openai` and `ollama` as an `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` value, contributed by [@salmonumbrella](https://github.com/salmonumbrella) ([#950](https://github.com/pvliesdonk/markdown-vault-mcp/pull/950), [#949](https://github.com/pvliesdonk/markdown-vault-mcp/issues/949)). It reads `VOYAGE_API_KEY` and `MARKDOWN_VAULT_MCP_VOYAGE_MODEL`, which defaults to `voyage-4`. Setting the key never auto-selects the provider, because a stray key must not silently take over an index. Pointing the `openai` provider at Voyage by hand keeps working; the named preset exists so the endpoint, key and model default are discoverable, and so the vector sidecar records the real provider identity. See the [embeddings guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/embeddings/index.md).
+
+**Write protection** is a new opt-in guard contributed by [@Finomosec](https://github.com/Finomosec) ([#1064](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1064), [#1063](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1063)). With `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`, `write` and `write_attachment` refuse a target that already exists unless the caller supplies `if_match`, which proves it read the file first. Deliberate replacement still works, and `edit`, `append`, `delete` and `rename` are untouched. The refusal message steers to `read` plus `if_match` and says outright not to delete and recreate, because that path destroys the note and proves nothing.
+
+The guard defaults to `false` in this release. Flipping that default is proposed for 5.0 ([#1136](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1136)).
+
+## OKF reserved files stay in the index
+
+4.0 shipped generators for the OKF reserved files. On a vault that sets `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`, they wrote files the server's own indexer then rejected: a body-only `log.md` or `index.md` is a deterministic missing-frontmatter skip, so the bundle's navigation and change history disappeared from `search` and `list_documents` while staying readable through `read` ([#1174](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1174), [#1175](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1175)).
+
+Two effects followed. The change history was invisible, and a folder whose only indexable file would have been its own skipped `index.md` lost its pointer in the parent listing, because the generator builds sub-folder pointers from index entries.
+
+The generators now write the frontmatter the vault requires. Existing keys always win, so a hand-authored title and the root `index.md`'s `okf_version` declaration survive regeneration. On a vault that configures no required fields, nothing changes: the reserved files carry no frontmatter, exactly as before.
+
+This also reached further than the one-shot migration tools. With `MARKDOWN_VAULT_MCP_OKF_WRITE` on, the convention layer rewrites `log.md` after every content write, and that path both failed to add frontmatter and stripped frontmatter an operator had added by hand. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/index.md).
+
+**Existing bundles are not migrated.** A vault keeps its body-only `log.md` and `index.md` until something rewrites them. With `OKF_WRITE` on, the next write into a folder fixes that folder; otherwise re-run `okf_generate_index` and re-seed `log.md`.
+
+## Server instructions are composed, not templated
+
+Adopting pvl-core 5 and template v6.0.0 changed how the server describes itself to a client ([#1192](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1192)). Instructions are assembled from prioritised snippets contributed by the library, the template and this server, rather than rendered from one string. The mechanism is pvl-core's `InstructionsBuilder`, new in [v5.0.0](https://github.com/pvliesdonk/fastmcp-pvl-core/releases/tag/v5.0.0).
+
+One consequence is user-visible. A snippet can declare the tools it talks about, and a snippet naming a tool the operator removed through `MARKDOWN_VAULT_MCP_TOOLS_ALLOW` or `TOOLS_DENY` is now dropped. Workflow prose no longer points a model at a tool that is not there.
+
+`MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` is new and appends to the composed text. `MARKDOWN_VAULT_MCP_INSTRUCTIONS` still replaces it wholesale and now warns that it is deprecated.
+
+## Fixes
+
+A sweep of the bug reports that had accumulated against 4.0 ([#1163](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1163)):
+
+- **A rename swept unrelated edits into its commit.** The rename branch of the git auto-commit staged without a pathspec, so every tracked modification in the repository landed in that commit, including a concurrent editor change the server never saw ([#894](https://github.com/pvliesdonk/markdown-vault-mcp/issues/894)).
+- **A push webhook outside managed git mode ran git anyway**, fetching against a remoteless checkout and burning the retry budget ([#1128](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1128)).
+- **A blank semantic query reached the embedding provider** and came back as a raw HTTP 400 rather than an empty result ([#1111](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1111)).
+- **The changelog had lost every breaking-change block** below 4.0, flattening sixteen markers and dropping the operator migration instructions that had shipped in the tagged changelogs ([#1123](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1123)).
+
+The Vault Explorer app declared an empty content-security policy while its page loaded fonts over HTTPS, so a host that built its iframe policy from that declaration had no origin permitting the request. A blocked font produces no error, only fallback type, so the mismatch was invisible from both sides ([#1181](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1181)).
+
+On a deployment using OIDC authentication, a failure during OIDC discovery now raises `ConfigurationError` rather than surfacing whichever error the discovery path produced. The normalisation is upstream, in pvl-core [v5.0.0](https://github.com/pvliesdonk/fastmcp-pvl-core/releases/tag/v5.0.0), and reaches this server through the floor moving from 4.11.3 to 5.0.0. A deployment that catches `ConfigurationError` around startup already covers every OIDC mode.
+
+The `pygments` pins that held the lock on a broken release are gone ([#1166](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1166)), and the project moved to mypy 2.x ([#1168](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1168)).
