@@ -54,8 +54,23 @@ def _mcp_env(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Set minimal env vars for make_server, leaving READ_ONLY at its default.
 
     That default is ``false`` since #1113, so a server built on this fixture
-    is read-write. Tests that need the write surface hidden use
-    ``_mcp_env_readonly``.
+    is read-write — the same server ``_mcp_env_writable`` produces. **The two
+    differ in what they claim, not in what they build**, and the claim is the
+    point (#1121):
+
+    - Use **this** fixture when the test is indifferent to the write surface:
+      it exercises read tools and asserts nothing about whether write tools
+      exist. Such a test keeps passing whatever ``READ_ONLY`` defaults to.
+    - Use **``_mcp_env_writable``** when the test needs the write surface —
+      it calls a tool in ``WRITE_TOOL_NAMES`` (note that ``fetch`` is one), or
+      asserts over a listing, annotation, or prompt set that only contains
+      write entries on a writable server. Naming the mode keeps those tests
+      honest if the default ever moves again.
+    - Use **``_mcp_env_readonly``** to assert the write surface is hidden.
+
+    The default itself is pinned by ``test_config.py`` (search for
+    ``read_only is False``), so a future flip fails there by name rather than
+    silently changing what every fixture here builds.
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_READ_ONLY", raising=False)
@@ -78,7 +93,12 @@ def _mcp_env_readonly(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 @pytest.fixture
 def _mcp_env_writable(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Set env vars with read_only=false."""
+    """Set env vars with an explicit read_only=false.
+
+    Names the mode rather than inheriting it. Reserved for tests whose
+    subject *is* the write surface — see ``_mcp_env`` for how to choose
+    between the two, which produce identical servers today (#1121).
+    """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
     for var in _CLEAR_VARS:
@@ -2227,7 +2247,7 @@ class TestSimilarTool:
 class TestGetTocTool:
     """Integration tests for get_toc tool."""
 
-    @pytest.mark.usefixtures("_mcp_env_writable")
+    @pytest.mark.usefixtures("_mcp_env")
     async def test_get_toc_tool_note(self) -> None:
         async with Client(make_server()) as client:
             result = await client.call_tool("get_toc", {"path": "simple.md"})
@@ -2236,7 +2256,7 @@ class TestGetTocTool:
         assert data[0]["level"] == 1
         assert result.structured_content == {"result": data}
 
-    @pytest.mark.usefixtures("_mcp_env_writable")
+    @pytest.mark.usefixtures("_mcp_env")
     async def test_get_toc_tool_folder(self) -> None:
         async with Client(make_server()) as client:
             result = await client.call_tool("get_toc", {"path": "subfolder"})
