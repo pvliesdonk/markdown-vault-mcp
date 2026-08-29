@@ -62,6 +62,10 @@ sees — never "since my last push".
    git diff --stat "$BASE..$HEAD_SHA"
    ```
 
+   If `git`/`gh` access is denied, a GitHub MCP server's pull-request-diff
+   or pull-request-files call is usually an already-granted equivalent —
+   see the tool-denial rule below before falling back to "stop and say so".
+
    If either value is empty, or the stat output does not look like the
    change you are reviewing, stop and say so. A review of the wrong range
    that reports "clean" is worse than no review — never let a failed step
@@ -69,6 +73,12 @@ sees — never "since my last push".
 
 ## Ground rules
 
+- **A tool denial ends that step, not the review.** A caller that withheld
+  a tool (no `Task`, no `git`/`gh` `Bash`, no network) did so on purpose.
+  On denial, look for an already-granted equivalent (an MCP call in place
+  of a shell command, a sequential pass in place of a subagent fan-out);
+  if none exists, skip that step or charter, name the gap in the report's
+  coverage line, and move on — never retry the same denied call.
 - **Read-only.** The review changes nothing: no checkouts, no stashes, no
   fixing-while-reviewing. Unrelated working-tree changes stay untouched.
   Read committed content at its revision (`git show <rev>:<path>`), not
@@ -95,7 +105,10 @@ body of prior commitment. Work them **one at a time, completing each
 before starting the next** — a charter's judgment should come from its own
 evidence, not from momentum built in the previous one. If your agent can
 dispatch isolated subagents, you may instead run one charter per subagent
-in parallel; that buys independence of judgment, not just speed.
+in parallel; that buys independence of judgment, not just speed. If
+dispatch is denied or unavailable, fall back to the one-at-a-time sequence
+above per the tool-denial ground rule — this invocation just runs
+single-agent.
 
 **1. Written rules.** Load every rules file applicable to the changed
 files: `AGENTS.md` (and any nested ones on the changed paths),

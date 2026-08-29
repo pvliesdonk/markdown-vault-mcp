@@ -133,6 +133,7 @@ def cached_status(root: Path, *, detect_renames: bool = True) -> list[str]:
         ("2.4.0", "v2.4.0", "2.4"),
         ("v2.4.0", "v2.4.0", "2.4"),
         ("2.4.0-rc.3", "v2.4.0", "2.4"),
+        ("2.4.0-rc.0", "v2.4.0", "2.4"),
     ],
 )
 def test_normalize_target(version: str, tag: str, minor: str) -> None:
@@ -174,7 +175,7 @@ def test_target_and_next_together_refuse(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "version",
-    ["", "2.4", "02.4.0", "2.04.0", "2.4.00", "2.4.0-rc.0", "2.4.0-beta.1"],
+    ["", "2.4", "02.4.0", "2.04.0", "2.4.00", "2.4.0-rc.01", "2.4.0-beta.1"],
 )
 def test_invalid_release_version_refuses(version: str) -> None:
     with pytest.raises(PromotionError, match="invalid release version"):

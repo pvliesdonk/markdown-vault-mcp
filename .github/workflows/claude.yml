@@ -12,21 +12,30 @@ on:
 
 jobs:
   claude:
-    # Trigger only on @claude mentions, AND on the two PR-context events
-    # (`pull_request_review*`) only when the PR head is in this repo. Those
-    # events run in PR context for fork PRs, where GitHub withholds repository
-    # secrets (incl. CLAUDE_CODE_OAUTH_TOKEN) and the action would auth-fail.
-    # `issues` and `issue_comment` always run in base-repo context, so secrets
-    # are available — no fork check needed there.
+    # Trigger only on @claude mentions FROM the repository's own people:
+    # every branch requires the acting user's author_association to be
+    # OWNER, MEMBER, or COLLABORATOR. This job carries write capability
+    # (contents: write, Task, gh pr create below), so the mention itself is
+    # an instruction channel — on a public repo, without this gate ANY
+    # GitHub user's issue or comment could drive a write-capable agent
+    # holding repository secrets. Note the same-repo head guard on the two
+    # PR-context events bounds only the PR branch's ORIGIN, not who
+    # commented — a non-collaborator can comment on a collaborator's PR —
+    # so the association gate is needed on all four branches.
+    # The head guard stays for its original reason: `pull_request_review*`
+    # events run in PR context for fork PRs, where GitHub withholds
+    # repository secrets (incl. CLAUDE_CODE_OAUTH_TOKEN) and the action
+    # would auth-fail. `issues` and `issue_comment` always run in base-repo
+    # context, so secrets are available — no fork check needed there.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && github.event.pull_request.head.repo.full_name == github.repository)
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association)) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association) && github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association) && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
-      contents: read         # Read-only: @claude answers and comments, never commits
-      pull-requests: write   # Post inline review comments
+      contents: write        # @claude may commit and push a fix branch when asked ("@claude please fix this")
+      pull-requests: write   # Post inline review comments; open the PR for a pushed fix
       issues: write          # Update issue/PR comments
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
@@ -34,17 +43,39 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 1
+          # Full history: the code-review skill computes a three-dot range via
+          # `git merge-base`, which does not exist in a depth-1 clone — the
+          # reviewer then silently falls back to a two-dot diff that includes
+          # base-branch drift (template#536). Full depth also serves the fix
+          # path's `git log --follow` / `git blame` use.
+          fetch-depth: 0
 
-      # LOCAL WORKAROUND (#1193, upstream fastmcp-server-template#535) — see the
-      # claude_args comment below for why. Mirrors the pin the removed
-      # claude-code-review.yml carried: Claude Code >= 2.1.198 dispatches
-      # subagents as background tasks and claude-code-action breaks its query()
-      # loop on the first result, so a granted Task would be orphaned and the
-      # run would still finish green with nothing posted
-      # (claude-code-action#1499). 2.1.197 is the last synchronous-subagent
-      # release. Remove this step, path_to_claude_code_executable, and the
-      # extra grants below once a template release carries the upstream fix.
+      - name: Set up project environment
+        # Gives @claude a working venv so targeted `uv run` checks — verifying
+        # a fix, or a review's single-finding investigation — actually execute.
+        #
+        # `--frozen` in place of the composite's default `--locked` because
+        # this sync must leave the workspace byte-clean: the action switches
+        # branches internally, and an unfrozen sync against a lockfile that is
+        # stale relative to `pyproject.toml` re-locks `uv.lock` in place, so
+        # that checkout aborts ("Your local changes ... would be overwritten")
+        # for every PR whose lockfile differs from the base branch's (#326).
+        # `--frozen` installs from the lockfile as committed and never
+        # rewrites it; unlike `--locked` it also does not fail on drift,
+        # which is right here — a stale lockfile is CI's finding to report,
+        # not a reason to fail the responder.
+        uses: ./.github/actions/setup-project-env
+        with:
+          sync-args: "--all-extras --all-groups --frozen"
+
+      # The /code-review skill fans out into parallel review agents. On Claude
+      # Code >= 2.1.198 those dispatch as background tasks that claude-code-action
+      # drops before they finish — runClaudeWithSdk breaks the query() loop on the
+      # first result (claude-code-action#1499), so the review completes green and
+      # posts nothing (also #1087 / #1523, claude-code#85275 — all silent). Pin
+      # the last synchronous-subagent release (2.1.197, verified with action@v1 in
+      # claude-code#73453) so the fan-out completes in-turn. Remove this step and
+      # the path_to_claude_code_executable input once #1499 is fixed upstream.
       - name: Install pinned Claude Code (2.1.197, pre-background-subagents)
         run: |
           set -euo pipefail
@@ -73,38 +104,19 @@ jobs:
           display_report: true
           include_fix_links: false
 
-          # Grant the built-in GitHub MCP servers' read/search/CI tools, the
-          # inline-comment tool, and `gh api` for read-only GitHub access. These
-          # ADD to the action's defaults (Edit/Write/git stay available), but
-          # `contents: read` above is what keeps this workflow from committing.
+          # This responder deliberately mirrors claude-code-review.yml's grant
+          # set (template#279 keeps the two aligned; template#535 is what a
+          # divergence costs): the GitHub read/search/CI MCP tools, the
+          # inline-comment tool, `gh api`, gh pr/run read commands, scoped
+          # `uv run` for targeted verification, plus Skill (launch the
+          # /code-review skill on "@claude review") and Task (dispatch its
+          # review subagents — synchronous under the pinned 2.1.197; unpin and
+          # re-evaluate when claude-code-action#1499 is fixed upstream).
           #
-          # LOCAL WORKAROUND (#1193, upstream fastmcp-server-template#535).
-          # Everything after `Bash(gh api *)` on the grant line, and the CLI pin
-          # step above, is local — the template's rendered claude.yml has
-          # neither, and `copier update` will overwrite both. Remove them once a
-          # template release carries the upstream fix.
-          #
-          # Upstream dropped Task here in template#320 to keep @claude
-          # single-agent, on the reasoning that the heavy /code-review fan-out
-          # lived in claude-code-review.yml. Since template v6.0.0 that workflow
-          # renders only when automatic review is enabled, and it is not here —
-          # so this file is the only review path, while `Skill` (still granted)
-          # lets it launch the code-review skill whose fan-out Task denial then
-          # stalls the run: 51 denials in 6 turns, green, nothing posted.
-          #
-          # Restored to match what the removed review workflow proved:
-          #   Task ................ dispatch the skill's review subagents
-          #                         (template#312 / #313)
-          #   gh pr diff/view ..... establish the review range; the skill's
-          #   gh run view/list      first step needs a diff and no `git` read
-          #                         command is granted here
-          #   uv run pytest/mypy/ruff
-          #                       . targeted verification of a single finding
-          #                         (REVIEW.md: never the full gate). No venv
-          #                         setup step: `uv run` provisions on demand,
-          #                         so ordinary @claude mentions pay nothing.
-          # Subagents inherit this same curated set under `contents: read`, so
-          # Task grants delegation, not new capability.
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
+          # On top of the review set: `gh pr create`, because @claude is also
+          # the fix path — "@claude please fix this" on an issue should end in
+          # a pushed branch AND an opened PR. `contents: write` above is what
+          # lets the action's default Edit/Write/git tools actually push.
           claude_args: |
-            --allowedTools "Skill,Task,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh run view:*),Bash(gh run list:*),Bash(uv run pytest:*),Bash(uv run mypy:*),Bash(uv run ruff:*)"
+            --allowedTools "Skill,Task,mcp__github__get_*,mcp__github__list_*,mcp__github__search_*,mcp__github_ci__*,mcp__github_inline_comment__*,Bash(gh api *),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr create:*),Bash(gh run view:*),Bash(gh run list:*),Bash(uv run pytest:*),Bash(uv run mypy:*),Bash(uv run ruff:*)"
+          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md

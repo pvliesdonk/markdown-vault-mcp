@@ -18,7 +18,7 @@ VERSION_RE = re.compile(
     r"^v?(?P<major>0|[1-9][0-9]*)\."
     r"(?P<minor>0|[1-9][0-9]*)\."
     r"(?P<patch>0|[1-9][0-9]*)"
-    r"(?:-rc\.(?P<rc>[1-9][0-9]*))?$"
+    r"(?:-rc\.(?P<rc>0|[1-9][0-9]*))?$"
 )
 WATERMARK_RE = re.compile(r"^<!-- notes-range-end: ([0-9a-f]{40}) -->$", re.MULTILINE)
 INDEX_START_RE = re.compile(r"<!-- RELEASE-PAGES-START:[\s\S]*?-->")
