@@ -1805,6 +1805,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../template-updates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../repository-protection/" class="md-nav__link">
         
   
@@ -2560,7 +2588,7 @@
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY</code></td>
 <td><code>derived</code></td>
-<td>Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from <code>oidc_client_secret</code>, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with <code>openssl rand -hex 32</code>.</td>
+<td>Signing key for issued tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from <code>oidc_client_secret</code>, so tokens survive a restart. Rotating that secret then invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with <code>openssl rand -hex 32</code>.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN</code></td>

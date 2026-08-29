@@ -264,9 +264,9 @@ Prefer a guided setup?
 
 Use the [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration-generator/index.md) to answer a few questions and copy a ready-made `.env`, Docker, or Claude config.
 
-Configuration is validated at startup
-
-Numeric variables are validated against the **Type** column below (such as `int ≥ 1`). A non-numeric or out-of-range value makes the server **fail fast** at startup with a `ConfigurationError` naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.
+- `MARKDOWN_VAULT_MCP_SERVER_NAME`: the server name reported to clients and by `get_server_info`. Defaults to `markdown-vault-mcp`.
+- `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`: operator context appended to the generated MCP instructions (deployment notes, house rules). The generated text (identity, tool workflows, documentation pointer) stays intact.
+- `MARKDOWN_VAULT_MCP_INSTRUCTIONS`: legacy. Replaces the entire generated instructions text and logs a deprecation warning at startup; when both are set, `_EXTRA` is ignored. Move operator context to `_EXTRA`.
 
 ## Tool visibility
 
@@ -287,6 +287,10 @@ Unset, a `redis://` `MARKDOWN_VAULT_MCP_KV_STORE_URL` is reused for tasks as wel
 
 Worker tuning stays on the native `FASTMCP_DOCKET_*` variables (`FASTMCP_DOCKET_CONCURRENCY` and friends, listed in `.env.example`). Set the backend through `MARKDOWN_VAULT_MCP_TASKS_URL` rather than `FASTMCP_DOCKET_URL`: the former wins when both are set, and the server warns about the disagreement.
 
+Configuration is validated at startup
+
+Numeric variables are validated against the **Type** column below (such as `int ≥ 1`). A non-numeric or out-of-range value makes the server **fail fast** at startup with a `ConfigurationError` naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.
+
 ## Core
 
 | Variable                                    | Type   | Default                                       | Required | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -304,8 +308,8 @@ Worker tuning stays on the native `FASTMCP_DOCKET_*` variables (`FASTMCP_DOCKET_
 | `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS`      | csv    | defaults to `INDEXED_FIELDS`                  | No       | Comma-separated frontmatter fields whose scalar values are indexed into the FTS `summary` column (chunk-0 row of each document), making them keyword-searchable (including `summary:term` column filters). They are also prefixed to first-chunk embedding text (format v2), independent of `EMBED_CONTEXT`. When unset, defaults to `INDEXED_FIELDS`; set explicitly to a different field list to diverge from that default, or to the sentinel `none` for no searchable fields at all ("filterable but not searchable"). An empty string is treated the same as unset, matching every other list-valued config var. Recorded as a warm-restart key, so setting or changing it cold-rebuilds the index and re-embeds the vault once on next startup                                                                                                                                                                                                                                                                   |
 | `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER`       | string | `_templates`                                  | No       | Relative folder path used by the `create_from_template` prompt to discover/read template files                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`         | path   | (none)                                        | No       | Path to a directory of `.md` prompt files that extend or override built-in prompts. Each declared argument name must be a plain Python identifier (letters, digits, underscore; not a keyword); a prompt with a non-conforming argument name is skipped with a logged warning.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`       | string | `_conventions.md`                             | No       | Filename of the per-folder [conventions files](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#get_conventions) surfaced to clients at write time. Must be a bare `.md` filename without glob characters (`*?[]`). Set to `none` to disable folder conventions. Convention files are excluded from the search index but stay readable; existing notes matching the name are removed from the index on the next boot reconcile. Note: setting `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the default server instructions entirely, including the sentence that points clients at `get_conventions`; mention conventions in your custom instructions if you rely on them.                                                                                                                                                                                                                                                                                                                                |
-| `MARKDOWN_VAULT_MCP_OKF_MODE`               | string | `auto`                                        | No       | [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) read semantics. With `auto` (the default), read-side annotations (note type, lifecycle status, staleness, trust tier) switch on in `search`, `read`, `get_context`, and `stats` when the vault declares an `okf_version` field in its root `index.md` frontmatter. Use `off` to disable OKF semantics entirely, or `on` to force them for an undeclared vault. Annotations are read-only either way: this setting never changes write behavior. Note: setting `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the default server instructions entirely, including the OKF guidance sentence.                                                                                                                                                                                                                                                                                                                                        |
+| `MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`       | string | `_conventions.md`                             | No       | Filename of the per-folder [conventions files](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#get_conventions) surfaced to clients at write time. Must be a bare `.md` filename without glob characters (`*?[]`). Set to `none` to disable folder conventions. Convention files are excluded from the search index but stay readable; existing notes matching the name are removed from the index on the next boot reconcile. Note: the legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the generated server instructions entirely, including the sentence that points clients at `get_conventions`; mention conventions yourself if you use it. `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` appends instead and keeps the sentence.                                                                                                                                                                                                                                                                    |
+| `MARKDOWN_VAULT_MCP_OKF_MODE`               | string | `auto`                                        | No       | [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog) read semantics. With `auto` (the default), read-side annotations (note type, lifecycle status, staleness, trust tier) switch on in `search`, `read`, `get_context`, and `stats` when the vault declares an `okf_version` field in its root `index.md` frontmatter. Use `off` to disable OKF semantics entirely, or `on` to force them for an undeclared vault. Annotations are read-only either way: this setting never changes write behavior. Note: the legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the generated server instructions entirely, including the OKF guidance sentence; `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` appends instead and keeps it.                                                                                                                                                                                                                                                             |
 | `MARKDOWN_VAULT_MCP_OKF_WRITE`              | bool   | `false`                                       | No       | OKF enforced write layer. When `true` on an OKF-active vault, every `write` and `edit` stamps `generated: {by, at}` provenance and clears any `verified` attestation (a content change invalidates prior review); `rename` does not. The actor is `human:<subject>` when the caller is authenticated, otherwise a tool actor. On a content write it also keeps the affected folder's `log.md` and `index.md` current as secondary writes (failures are logged and skipped, never rolling back the note write). Enabling it also exposes the [`okf_verify`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#okf_verify) tool. Requires `OKF_MODE` to be `auto` or `on`; a `true` value with `OKF_MODE=off` is a configuration error. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/#the-enforced-write-layer).                                                                                                                                                |
 | `MARKDOWN_VAULT_MCP_OKF_VERIFY`             | string | `elicit`                                      | No       | How the [`okf_verify`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#okf_verify) tool confirms a human review. This applies only when `OKF_WRITE` is on, which gates the tool. With `elicit` (the default), the tool issues an MCP elicitation asking the human to confirm the review, and writes the `verified` entry only on an affirmative reply. It fails closed (a tool error, nothing written) when the client cannot elicit or the human declines, so a model that holds the human's token cannot self-attest a note as `human-reviewed`. Use `trust-auth` to attribute to the authenticated caller with no confirmation (refuses under auth mode `none`; safe only when the sole caller is a human-driven UI, not an agent), or `off` to hide the tool so `verified` is set only by external tooling. A non-default value with `OKF_WRITE` off is a configuration error. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/#recording-a-human-review). |
 
@@ -359,18 +363,19 @@ Maximum time an index-querying read tool (`search`, `list_documents`, `list_fold
 
 ## Server Identity
 
-| Variable                             | Type   | Default              | Description                                                                                                                                                                                                                   |
-| ------------------------------------ | ------ | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_SERVER_NAME`     | string | `markdown-vault-mcp` | MCP server name shown to clients; useful for multi-instance setups                                                                                                                                                            |
-| `MARKDOWN_VAULT_MCP_INSTRUCTIONS`    | string | (auto)               | System-level instructions injected into LLM context; defaults to a description that reflects read-only vs read-write state                                                                                                    |
-| `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | bool   | `false`              | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the tool listing for clients that do not render MCP Apps panels (saves a few listing tokens)                                                                     |
-| `MARKDOWN_VAULT_MCP_HTTP_PATH`       | path   | `/mcp`               | HTTP endpoint path for streamable HTTP transport (`serve --transport http`)                                                                                                                                                   |
-| `MARKDOWN_VAULT_MCP_BASE_URL`        | url    | (none)               | Public base URL of the server (such as `https://mcp.example.com`). Required for OIDC auth, MCP Apps domain computation, and the one-time transfer link tools                                                                  |
-| `MARKDOWN_VAULT_MCP_KV_STORE_URL`    | url    | `file:///data/state` | Unified key-value backend for HTTP session persistence (the `events` keyspace is namespaced inside the directory). `file:///path` survives restarts; `memory://` for dev (lost on restart). Preferred over `EVENT_STORE_URL`. |
-| `MARKDOWN_VAULT_MCP_EVENT_STORE_URL` | url    | (unset)              | Legacy alias for `KV_STORE_URL`; honoured only when `KV_STORE_URL` is unset, and logs a one-shot deprecation warning. Prefer `KV_STORE_URL`.                                                                                  |
-| `MARKDOWN_VAULT_MCP_APP_DOMAIN`      | string | (auto)               | Override the Claude app domain used for MCP Apps iframe sandboxing. Auto-computed from `BASE_URL` when not set                                                                                                                |
-| `FASTMCP_LOG_LEVEL`                  | string | `INFO`               | Log level for FastMCP internals (`DEBUG`, `INFO`, `WARNING`, `ERROR`). `-v` CLI flag overrides both app and FastMCP loggers to `DEBUG`                                                                                        |
-| `FASTMCP_ENABLE_RICH_LOGGING`        | bool   | `true`               | Rich `key=value` text by default. Set to `false` for one-JSON-object-per-record output, recommended for production / log-aggregator deployments                                                                               |
+| Variable                                | Type   | Default              | Description                                                                                                                                                                                                                                            |
+| --------------------------------------- | ------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MARKDOWN_VAULT_MCP_SERVER_NAME`        | string | `markdown-vault-mcp` | MCP server name shown to clients; useful for multi-instance setups                                                                                                                                                                                     |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | string | (none)               | Operator context appended to the generated instructions (deployment notes, house rules). The generated text (identity, documentation pointer, tool workflows, and the read-only/read-write announcement) stays intact. Prefer this over `INSTRUCTIONS` |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS`       | string | (auto)               | **Deprecated.** Replaces the entire generated instructions text and logs a startup warning; when both are set, `INSTRUCTIONS_EXTRA` is ignored. A server set this way advertises no tool workflows the model has not been told about by hand           |
+| `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI`    | bool   | `false`              | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the tool listing for clients that do not render MCP Apps panels (saves a few listing tokens)                                                                                              |
+| `MARKDOWN_VAULT_MCP_HTTP_PATH`          | path   | `/mcp`               | HTTP endpoint path for streamable HTTP transport (`serve --transport http`)                                                                                                                                                                            |
+| `MARKDOWN_VAULT_MCP_BASE_URL`           | url    | (none)               | Public base URL of the server (such as `https://mcp.example.com`). Required for OIDC auth, MCP Apps domain computation, and the one-time transfer link tools                                                                                           |
+| `MARKDOWN_VAULT_MCP_KV_STORE_URL`       | url    | `file:///data/state` | Unified key-value backend for HTTP session persistence (the `events` keyspace is namespaced inside the directory). `file:///path` survives restarts; `memory://` for dev (lost on restart). Preferred over `EVENT_STORE_URL`.                          |
+| `MARKDOWN_VAULT_MCP_EVENT_STORE_URL`    | url    | (unset)              | Legacy alias for `KV_STORE_URL`; honoured only when `KV_STORE_URL` is unset, and logs a one-shot deprecation warning. Prefer `KV_STORE_URL`.                                                                                                           |
+| `MARKDOWN_VAULT_MCP_APP_DOMAIN`         | string | (auto)               | Override the Claude app domain used for MCP Apps iframe sandboxing. Auto-computed from `BASE_URL` when not set                                                                                                                                         |
+| `FASTMCP_LOG_LEVEL`                     | string | `INFO`               | Log level for FastMCP internals (`DEBUG`, `INFO`, `WARNING`, `ERROR`). `-v` CLI flag overrides both app and FastMCP loggers to `DEBUG`                                                                                                                 |
+| `FASTMCP_ENABLE_RICH_LOGGING`           | bool   | `true`               | Rich `key=value` text by default. Set to `false` for one-JSON-object-per-record output, recommended for production / log-aggregator deployments                                                                                                        |
 
 ## Search Ranking and Snippet Truncation
 
@@ -2053,7 +2058,7 @@ Client → markdown-vault-mcp → OIDC Provider
 | `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE`            | (none)                  | Expected `aud` claim; tokens issued for another audience are rejected.                                                                                                                                                                                                                                                                                                        |
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES`     | `openid`                | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode.                                                                                                                                                                                                                                                                             |
 | `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`   | `openid offline_access` | Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (such as `groups`) without also requiring them in every token. |
-| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | `derived`               | Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`.                                |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | `derived`               | Signing key for issued tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret then invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`.                                    |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false`                 | Validate the access token instead of the id token.                                                                                                                                                                                                                                                                                                                            |
 
 JWT signing key and secret rotation
@@ -7033,7 +7038,7 @@ No `CLIENT_ID` or `CLIENT_SECRET` needed. Tokens are validated locally via JWKS.
 | `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE`            | (none)                  | Expected `aud` claim; tokens issued for another audience are rejected.                                                                                                                                                                                                                                                                                                        |
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES`     | `openid`                | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode.                                                                                                                                                                                                                                                                             |
 | `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`   | `openid offline_access` | Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (such as `groups`) without also requiring them in every token. |
-| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | `derived`               | Signing key for issued JSON Web Tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`.                                |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | `derived`               | Signing key for issued tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret then invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`.                                    |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false`                 | Validate the access token instead of the id token.                                                                                                                                                                                                                                                                                                                            |
 
 ## JWT Signing Key
@@ -7321,6 +7326,17 @@ Both must reach this server, and the `resource` field in the JSON must read `htt
 
 `main` is trunk: every change merges there, and merging a feature is not releasing. A merge feeds the rolling `edge` channel and nothing else. A release is a separate, deliberate event: a maintainer dispatches the **Release Prepare** workflow, reviews the release pull request it opens, and merges it. The merge is what tags and publishes. This page describes that flow, what each kind of release publishes, and where releases come from.
 
+## Cutting a release, step by step
+
+The checklist a maintainer follows; each step links the section that explains it.
+
+1. **Draft the release notes.** Invoke the `writing-release-notes` skill with your coding agent (it lives at `.agents/skills/writing-release-notes/SKILL.md`). It researches the range through the GitHub API, writes `docs/releases/next.md`, runs Vale and a strict MkDocs build, and opens an ordinary pull request. Review and merge that pull request first; Release Prepare refuses to run when reviewed notes are missing. When user-visible behaviour lands after a first release candidate, invoke the skill's `refresh-known-target` mode and merge its pull request before the next dispatch. See [How the notes pages are produced](#how-the-notes-pages-are-produced).
+1. **Dispatch Release Prepare.** In the Actions tab, run **Release Prepare** on `main` (or on a `release/X.Y` branch for a stabilisation release). Leave `channel` on `auto` unless you are promoting a candidate to stable. See [The release pull request](#the-release-pull-request).
+1. **Review the release pull request.** Check the computed version against the breaking-change policy in `AGENTS.md`, read the changelog section, confirm the promoted notes page is the one you merged in step 1, and compare its `notes-range-end` with the release delta so the notes cover every commit being released. Never press GitHub's "Update branch" on it; dispatch Release Prepare again instead.
+1. **Merge it.** The merge is the release: the **Release** workflow tags the commit, creates the GitHub release and publishes every channel.
+1. **Verify the fan-out.** Each publish runs as its own job in the Release workflow: `publish-pypi`, `publish-docker`, `publish-linux-packages` and `publish-mcpb` on every release; `publish-plugin-zip` when the project ships the Claude Code plugin channel; `publish-claude-plugin` and `publish-registry` only for a stable release that is the newest one (a release candidate, or a patch to an older series, skips both by design). The documentation site deploys for the new version. A failed publish job can be re-run from the workflow run; the tag and release already exist, and every job derives from the reviewed version string, so a re-run publishes the same artefacts.
+1. **If the release was cut from a `release/X.Y` branch**, expect the automated pull request that ports the changelog section back to `main`, and merge it. See [Stabilisation branches](#stabilisation-branches).
+
 ## Channels
 
 | Channel     | Version identity                                                 | What it promises                                                                                                                                                                                                                                                                                                                                                                           |
@@ -7385,6 +7401,10 @@ Fixes flow from trunk to the branch: they land on `main` first and are cherry-pi
 
 Release branches carry shipped releases, so they get the same protection as `main`: pull requests plus green CI, applied by the shipped rulesets. See [Repository Protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/repository-protection/index.md).
 
+## Template updates
+
+Releases of this project and updates from its template are separate events; the weekly template update pull request is covered in [Working Through a Template Update](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/template-updates/index.md).
+
 ## Where to read about a release
 
 Each release is described in three places with distinct jobs:
@@ -7395,11 +7415,11 @@ Each release is described in three places with distinct jobs:
 
 ### How the notes pages are produced
 
-The pages under [Release Notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md) cover one minor series each; a patch release adds a dated section to its series page. The page is part of every release pull request, exactly like the changelog. The Release Prepare workflow's notes job drafts or refreshes it. The drafting agent reads the release range through the GitHub API, working from the linked issues and pull requests rather than commit subjects, and the finished page is committed onto the release pull request's branch. Reviewing the release pull request covers the notes. Merging it lands the page in the release's own tag, and the published docs and the release body's summary and deep link all read the page from there. Release candidates carry their notes draft the same way, so a candidate is the full release artifact, narrative included. Every causal claim in a page must cite a linked issue or pull request, and the drafting agent runs the same prose lint as the rest of this site.
+The pages under [Release Notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md) cover one minor series each; patch releases add undated version headings to their series page. Humans prepare the narrative before release automation starts, as steps 1 to 4 of [Cutting a release, step by step](#cutting-a-release-step-by-step) describe.
 
-The release pull request stays a draft until the notes job lands its page, so a release without its notes can never merge by accident. A drafting failure fails the prepare run visibly and leaves the pull request in draft; re-run the notes job, or re-dispatch Release Prepare with `skip_notes` to release without a notes refresh. For a release shipped that way, the **Release Notes** workflow's manual dispatch drafts a standalone notes pull request as a backfill. Later hand edits to a released page redeploy that minor's versioned docs through the **Release Notes Publish** workflow.
+The first release candidate for a stable identity consumes `next.md` into the canonical minor page. Later candidates and stable promotion reuse the same `vX.Y.Z` entry. When user-visible behavior lands after the first candidate, invoke `refresh-known-target` and merge the normal notes pull request before re-dispatching Release Prepare. Corrections and redrafts use the same ordinary pull-request path for shipped pages.
 
-A notes refresh is incremental by default: the drafting agent researches only the commits since the page's last accepted draft and leaves accepted prose alone. To rewrite a page from scratch under the current drafting rules, dispatch Release Prepare with `full_redraft`; the rewrite lands inside the release pull request like any other draft. The **Release Notes** workflow's manual dispatch accepts the same flag in both of its modes: a target version re-drafts against an open release pull request without re-running the whole prepare, and a tag produces a standalone backfill pull request for a shipped release.
+No notes bypass exists. Missing or ambiguous staging makes deterministic promotion refuse the prepare. Every causal claim must cite a linked issue or pull request, and the skill runs Vale and strict MkDocs before opening its pull request. Later canonical-page edits redeploy that minor through the deterministic **Release Notes Publish** workflow.
 
 # Repository Protection
 
@@ -7494,6 +7514,54 @@ or import each file in the UI under **Settings → Rules → Rulesets → New ru
 ## Plan limits
 
 GitHub enforces rulesets on public repositories on every plan; private repositories need a paid plan. On a Free-plan private repository the ruleset API rejects the apply and the `settings` job fails; the labels job still runs, and the rulesets take effect once the repository is public or the plan allows enforcement.
+
+# Working Through a Template Update
+
+This project is generated from [fastmcp-server-template](https://github.com/pvliesdonk/fastmcp-server-template) and tracks it. Once a week the `copier-update` workflow runs `copier update --trust` and opens a pull request on the `copier/update` branch. Automated runs advance one template major at a time, so a project several majors behind sees one pull request per major, each with its own upgrade notes; a manual dispatch with an explicit `vcs_ref` jumps straight to a chosen release. This page is the procedure for that pull request, whether you work through it yourself or hand it to a coding agent (the `applying-template-updates` skill under `.agents/skills/` is the same procedure in agent-invocable form).
+
+## What the pull request carries
+
+- The version delta (`vA.B.C` → `vX.Y.Z`) and a compare link on the template repository.
+- The template's release notes for the target version, collapsed.
+- The `UPGRADING.md` sections that apply to the jump, collapsed, with a link to the full file at the target ref. This is the template's record of the work `copier update` cannot do.
+- The list of files that carry conflict markers, if any.
+- The resolution policy: the template side wins everywhere outside the regions this project owns.
+
+## The order of work
+
+1. **Read the upgrade notes first.** Every `UPGRADING.md` section in the body names something a person must do: rename a variable, add a secret, rewrite a seeded test, add a `.gitignore` line. Do those steps on the `copier/update` branch before touching anything else; a note that is skipped now is a failure later, on a run nobody connects to this update.
+1. **Resolve conflict markers.** `copier update` runs a three-way merge and leaves diff3-style markers where a template change and a local change collide: `<<<<<<< before updating` (the local side), `||||||| last update` (the common base), `=======`, and `>>>>>>> after updating` (the template side). Resolving a hunk means keeping one side and deleting all four marker lines and the base block between `|||||||` and `=======`. Outside the `DOMAIN-*`, `CONFIG-*` and `PROJECT-*` sentinel blocks the template side is correct by policy: a local edit to a template-owned region is drift, and the fix is to move that content into a sentinel block or upstream it. Inside a sentinel block the local side is yours and stays.
+1. **Check the seeded-once files.** Copier's `_skip_if_exists` list names files that are written on the first `copier copy` and never touched again by `copier update`. They are absent from the diff even when the template changed them. The update writes `.copier-seeded-changes.md` at the repository root (the pull request body embeds it): a diff of every seeded path between the previous and target template versions, or an explicit statement that no seeded file changed. Work through that file and apply what applies by hand, keeping your local content. When the report says it could not be computed, fall back to the compare link and the "Before every upgrade" recipe in the template's `UPGRADING.md`. The seeded paths, for reference:
+
+`.claude-plugin/**`, `src/markdown_vault_mcp/tools.py`, `src/markdown_vault_mcp/resources.py`, `src/markdown_vault_mcp/prompts.py`, `src/markdown_vault_mcp/domain.py`, `tests/conftest.py`, `tests/test_smoke.py`, `tests/test_cli.py`, `tests/public_import_surface.txt`, `CHANGELOG.md`, `docs/releases/**`, `LICENSE`, `packaging/mcpb/manifest.json.in`, `packaging/mcpb/pyproject.toml.in`, `packaging/mcpb/src/server.py`, `packaging/mcpb/build.sh`, `.gitignore`, `.vale.ini`, `.vale/styles/config/vocabularies/Base/accept.txt`, `config-presentation.domain.yml`, `tests/test_config_wizard_domain.py`, `src/markdown_vault_mcp/static/app.src.html`.
+
+Four more skip-listed paths are generated, not seeded: `.env.example`, `packaging/env.example`, `examples/*.env` and `docs/javascripts/config-wizard/wizard-spec.json`. The update regenerates them from the config surface at its end, so never edit them by hand; `scripts/gen_config_surface.py --check` in CI catches a stale copy.
+
+The list above is a snapshot; the authoritative one is `_skip_if_exists` in the template's `copier.yml` at the target ref. Treat a template change to a seeded file as a change to apply, never as noise to ignore: the template ships these files as complete starting points, and corrections to them reach this project only this way. 4. **Refresh the lock file.** `uv lock` after any floor change (the upgrade notes say when), then `uv sync --all-extras --all-groups --locked`. 5. **Run the update gate.** This is wider than the everyday gate, because an update can leave drift that only these checks see:
+
+```
+git diff --check
+git grep -nE '^(<<<<<<<|=======|>>>>>>>)'
+uv lock --check
+uv sync --all-extras --all-groups --locked
+uv run python scripts/gen_config_surface.py --check
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src/ tests/
+uv run pytest -x -q
+uv run mkdocs build --strict
+uv run pre-commit run --all-files
+```
+
+An MCP Apps project also runs `uv run python scripts/vendor_spa.py --check`. CI runs the same checks on the pull request. 6. **Merge.** The branch is recreated on the next weekly run, so leave nothing uncommitted on it.
+
+## Working with a coding agent
+
+Give the agent the pull request number and ask it to invoke the `applying-template-updates` skill. The skill walks the six steps above and stops where a decision is yours: a conflict inside a sentinel block, an upgrade note it cannot perform (a secret to add, a repository setting), and any seeded-file change it is not certain applies to this project. It reports what it applied, what it skipped and why. Review that report against the pull request body before merging.
+
+## When the update is not wanted
+
+A template change can be wrong for this project. Do not resolve that by editing a template-owned region; the next update reverts it. Either move the divergence into a sentinel block the template preserves, or open an issue on the template repository so the change gains a switch or a sentinel. `FORKING.md` covers the last resort of detaching from the template altogether.
 # Python API
 
 # Vault
@@ -8991,7 +9059,7 @@ vault = Vault(**to_vault_kwargs(config))
 
 ## API Reference
 
-## `ProjectConfig(server=ServerConfig(), source_dir=Path('/data/vault'), read_only=False, write_protect_existing=False, server_name='markdown-vault-mcp', instructions=None, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, github_webhook_secret=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
+## `ProjectConfig(server=ServerConfig(), source_dir=Path('/data/vault'), read_only=False, write_protect_existing=False, server_name='markdown-vault-mcp', disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, github_webhook_secret=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
 
 Domain config for Markdown Vault MCP. Compose — don't inherit.
 
@@ -9925,134 +9993,6 @@ Raised when a write operation is attempted on a read-only vault.
 
 `markdown_vault_mcp.exceptions.ConfigurationError` is re-exported from [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core), the shared base library across the `*-mcp` server series, so the whole ecosystem raises one canonical config error. It is raised for invalid or out-of-range configuration at startup (such as a non-numeric env var, a value outside its documented range, or a missing required variable). Unlike the other exceptions on this page it is not a subclass of `MarkdownMCPError`.
 # Release Notes
-
-# Release notes
-
-Human-readable notes for each minor release: what changed, who is affected, and what to do about it, with every claim linked to the issue or pull request behind it.
-
-## Available pages
-
-- [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.0/index.md).
-- [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/index.md) (released July 8, 2026). Backfilled.
-- [3.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/index.md) (released June 17, 2026, with patch releases through v3.0.4). Backfilled.
-- [1.x](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/1.x/index.md) (March 9 to May 3, 2026; the whole 1.x line on one page). Backfilled, and closed: the 1.x line receives no further releases, so that page is final. The pages above it stay open and gain a section whenever their minor gets a patch release.
-
-## How these pages work
-
-**One page per minor version.** Each minor release gets a single page, named for the minor (`3.1`, `3.2`, and so on). This matches how the documentation site is deployed: each minor is published as its own site version, so the notes for a release always travel with the documentation that describes it.
-
-**Patch releases append to the minor's page.** A patch release adds a dated section to its minor's page rather than getting a page of its own, so the full story of a minor stays in one linkable document.
-
-**The GitHub release links here.** The release body on GitHub carries a short summary and a link to the matching page on this site. These pages are the canonical narrative; the release body is the pointer.
-
-**`CHANGELOG.md` stays machine-generated.** The [commit-level audit trail](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md) records what landed, commit by commit; these pages explain whether to upgrade and what to check first. The two are generated separately and neither replaces the other.
-
-## Coverage
-
-Pages marked **backfilled** were reconstructed after the fact from commit history and whatever issues existed at the time ([#1058](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058)), and each carries a banner saying so. They are weaker evidence than a page written at release time, especially for upgrade guidance. The 1.x line is deliberately one page rather than 27: the record behind it is too thin to support 27, and the value of per-release detail decays with age.
-
-Pages for future releases are drafted by a generation workflow maintained upstream in the project template ([fastmcp-server-template#347](https://github.com/pvliesdonk/fastmcp-server-template/issues/347)), reviewed as an ordinary pull request before publication.
-
-# 1.x
-
-March 9 to May 3, 2026, from the first tagged release to v1.28.0.
-
-Reconstructed after the fact, and thinner than the pages after it
-
-This page is a best-effort backfill written in August 2026 ([#1058](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058)). It is not contemporaneous, and the record it was reconstructed from is thin: most of this period predates the pull-request discipline that links every change to an issue. Where the evidence supports only a factual statement, this page makes only a factual statement. Where it supports nothing, the page says so rather than guessing. Do not use it as upgrade guidance for a specific 1.x version.
-
-## What this page covers
-
-One page for the whole 1.x line: 42 stable releases across 27 minor versions, 801 commits, in eight weeks. Writing 27 separate pages would have produced 27 thin ones, and nobody upgrades from v1.7.0 today. What is useful now is the shape of the arc: the server's capabilities at the start of the line, its capabilities at the end, and the places where the version numbers skip.
-
-Individual releases in this range have no page of their own and will not get one.
-
-This page is final. The 1.x line closed at v1.28.0 and will receive no further releases, so no patch section will ever be appended below.
-
-## Evidence, and its limits
-
-The measurable gap between this page and the ones after it is how often a commit in the range carries a link to an issue explaining it. Counted per stable-to-stable range and recorded in [#1058](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058):
-
-| Range             | Ranges counted | Commits with a linked issue          |
-| ----------------- | -------------- | ------------------------------------ |
-| v1.0.0 to v1.28.0 | 41             | mostly 0% to 40%, seven ranges at 0% |
-| v1.28.0 to v3.0.0 | 1              | 78%                                  |
-| v3.0.0 to v3.1.0  | 5              | 50% to 100%                          |
-
-Those percentages are the ones recorded in the issue, counted by its own rule. Recounting the v1.28.0 to v3.0.0 range against one rule stated in full, that the commit message carries a closing keyword (`closes`, `fixes`, `resolves`, `refs`) next to an issue number, gives 76%: 199 of the 261 commits. Two rules, one body of evidence. The figures differ because they count different things, and either one leaves the 1.x ranges far behind.
-
-Seven ranges in this period contain no linked issue at all: `v1.8.0..v1.8.1` (5 commits), `v1.18.0..v1.18.1` (9), `v1.19.0..v1.19.1` (4), `v1.19.1..v1.20.0` (8), `v1.23.1..v1.25.0` (10), `v1.25.0..v1.27.0` (8) and `v1.27.0..v1.27.1` (42). The largest of them, `v1.27.0..v1.27.1`, is accounted for in [the April section](#edit-reliability-git-history-and-the-move-to-shared-machinery-april) below, where the maintainer names what it was. For the other six, nothing beyond the code itself records what the change was for.
-
-The narrative below is anchored on artifacts that can be checked rather than on inferred motives: the published tool reference at each tag, the configuration reference at each tag, and the issues that do exist. Each claim links what it rests on.
-
-## The arc
-
-### A working server, then a deployable one (March 9 to 13)
-
-The first tagged release exposed 13 tools: `search`, `read`, `write`, `edit`, `delete`, `rename`, the three `list_*` calls, `reindex`, `stats`, `build_embeddings` and `embeddings_status`. Hybrid full-text and semantic search, frontmatter-aware indexing and git-backed writes were all there on day one.
-
-The next four days were about running it somewhere other than a laptop. Git writes moved behind a `GitWriteStrategy` with deferred push ([PR #64](https://github.com/pvliesdonk/markdown-vault-mcp/pull/64)), a streamable HTTP transport arrived for container deployments ([PR #70](https://github.com/pvliesdonk/markdown-vault-mcp/pull/70)), and the server moved to FastMCP 3 ([PR #72](https://github.com/pvliesdonk/markdown-vault-mcp/pull/72)). Authentication came in two forms, OIDC through a proxy ([PR #76](https://github.com/pvliesdonk/markdown-vault-mcp/pull/76)) and a simple bearer token ([PR #167](https://github.com/pvliesdonk/markdown-vault-mcp/pull/167)), with a multi-auth mode accepting either ([PR #237](https://github.com/pvliesdonk/markdown-vault-mcp/pull/237)) shortly after.
-
-Two changes from this stretch still shape how the server behaves. Optimistic concurrency landed: reads return an etag and writes accept `if_match` ([PR #125](https://github.com/pvliesdonk/markdown-vault-mcp/pull/125), [PR #126](https://github.com/pvliesdonk/markdown-vault-mcp/pull/126)). And the default embedding backend changed twice for the same reason. First from `sentence-transformers` to `fastembed` ([PR #144](https://github.com/pvliesdonk/markdown-vault-mcp/pull/144)), then to a smaller default model, in both cases to stop the container running out of memory ([#306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/306)).
-
-The project also became findable in this window: GitHub topics, PyPI metadata and a `server.json` manifest for the official MCP registry, which the issue behind it calls "the single highest-leverage action" because downstream aggregators consume it automatically ([#112](https://github.com/pvliesdonk/markdown-vault-mcp/issues/112)).
-
-### The vault became a graph (March 14 to 16)
-
-The largest single capability jump in 1.x. Links were extracted and stored in the index ([PR #194](https://github.com/pvliesdonk/markdown-vault-mcp/pull/194)), and on top of that came `get_backlinks`, `get_outlinks` and `get_broken_links` ([PR #195](https://github.com/pvliesdonk/markdown-vault-mcp/pull/195)), `get_similar` ([PR #196](https://github.com/pvliesdonk/markdown-vault-mcp/pull/196)), `get_recent` ([PR #197](https://github.com/pvliesdonk/markdown-vault-mcp/pull/197)), the `get_context` dossier ([PR #200](https://github.com/pvliesdonk/markdown-vault-mcp/pull/200)), `get_orphan_notes` and `get_most_linked` ([PR #205](https://github.com/pvliesdonk/markdown-vault-mcp/pull/205)), and `get_connection_path`, a breadth-first shortest path between two notes ([PR #227](https://github.com/pvliesdonk/markdown-vault-mcp/pull/227)).
-
-Because links were now first-class, renaming a note started rewriting the links pointing at it ([PR #206](https://github.com/pvliesdonk/markdown-vault-mcp/pull/206)).
-
-The same days brought the two extension points the workflow guides later build on: MCP resources and prompts ([PR #97](https://github.com/pvliesdonk/markdown-vault-mcp/pull/97)) and user-defined prompts loaded from a mounted directory, overriding the built-in ones ([PR #226](https://github.com/pvliesdonk/markdown-vault-mcp/pull/226)).
-
-### Visual views, packaging and Obsidian semantics (March 18 to 31)
-
-The published tool reference goes from 13 tools at v1.6.0 to 26 at v1.18.0. Nine of the thirteen new entries are the graph work above; the rest arrived here.
-
-MCP Apps support was built as a single-page application with tab routing rather than a resource per view. That was an explicit architecture decision, chosen for a single sidebar panel with tabbed navigation, at the cost of a more complex page ([#273](https://github.com/pvliesdonk/markdown-vault-mcp/issues/273)). Three views followed on the same shell: the Note Context Card ([#274](https://github.com/pvliesdonk/markdown-vault-mcp/issues/274)), the Graph Explorer ([#275](https://github.com/pvliesdonk/markdown-vault-mcp/issues/275)) and the Vault Browser ([#276](https://github.com/pvliesdonk/markdown-vault-mcp/issues/276)), with cross-view navigation and send-to-conversation standardised across them ([#277](https://github.com/pvliesdonk/markdown-vault-mcp/issues/277)).
-
-Two tools for getting bytes in and out arrived alongside: `fetch`, which downloads a URL into the vault ([PR #259](https://github.com/pvliesdonk/markdown-vault-mcp/pull/259)), and `create_download_link`, a one-time HTTP endpoint for an artifact ([PR #261](https://github.com/pvliesdonk/markdown-vault-mcp/pull/261)).
-
-Deployment surfaces multiplied: systemd units ([PR #250](https://github.com/pvliesdonk/markdown-vault-mcp/pull/250)), `.deb` and `.rpm` packages built with nfpm ([PR #251](https://github.com/pvliesdonk/markdown-vault-mcp/pull/251)), and a persistent event store so HTTP sessions survive a restart ([PR #279](https://github.com/pvliesdonk/markdown-vault-mcp/pull/279)).
-
-Obsidian compatibility was sharpened twice: wikilinks resolve vault-wide rather than relative to the containing folder ([PR #234](https://github.com/pvliesdonk/markdown-vault-mcp/pull/234)), and frontmatter aliases resolve as link targets ([PR #319](https://github.com/pvliesdonk/markdown-vault-mcp/pull/319)). Pull conflicts stopped being fatal: a failed fast-forward rebases ([PR #230](https://github.com/pvliesdonk/markdown-vault-mcp/pull/230)) and an unresolvable conflict is written out as a sibling file, the way Syncthing handles one ([PR #232](https://github.com/pvliesdonk/markdown-vault-mcp/pull/232)).
-
-### Edit reliability, git history, and the move to shared machinery (April)
-
-The `edit` tool was rebuilt around a failure mode specific to LLM callers. Its issue describes the round trip precisely: file to MCP response to context window to model output to MCP request to string comparison, where "any transformation anywhere in that chain breaks the match" ([#325](https://github.com/pvliesdonk/markdown-vault-mcp/issues/325)). Three changes followed. An optional line-range mode covers large block replacements. A normalised-matching fallback survives smart quotes and dash substitution while preserving the original bytes everywhere except the replaced span. Diagnostics name the diverging line and character offset, so the model can correct itself instead of retrying blindly.
-
-Git history became readable through the tools: `get_history` and `get_diff` ([PR #337](https://github.com/pvliesdonk/markdown-vault-mcp/pull/337)) took the published tool count to 28, where it stayed for the rest of 1.x. Distribution widened again with a Claude Code plugin and an mcpb bundle ([PR #350](https://github.com/pvliesdonk/markdown-vault-mcp/pull/350)).
-
-The last three weeks were mostly structural, and they are the reason later releases look the way they do. `Collection` was split into managers with dependency injection ([PR #378](https://github.com/pvliesdonk/markdown-vault-mcp/pull/378)), then seven consecutive refactors moved configuration, authentication, the middleware stack, logging, the event store, the artifact store and the command line onto a shared library, `fastmcp-pvl-core` ([PR #396](https://github.com/pvliesdonk/markdown-vault-mcp/pull/396) through [PR #402](https://github.com/pvliesdonk/markdown-vault-mcp/pull/402)), and the project was re-based on a copier template that owns the release and CI machinery ([PR #405](https://github.com/pvliesdonk/markdown-vault-mcp/pull/405)).
-
-`[per the maintainer]` the 42 commits between `v1.27.0` and `v1.27.1`, the largest block in 1.x with no linked issue behind it, are the rest of that same separation: the split of shared infrastructure out of this repository into two upstreams, the `fastmcp-server-template` copier template and the `fastmcp-pvl-core` library. It ran as many small ports back and forth between the repositories rather than as one tracked feature, so the issue record for it is thin. Per-change detail for this stretch lives in the pull request bodies, not in issues.
-
-The pull requests in the range show the shape of that work. Sentinel markers were carved into `config.py` and `CLAUDE.md` so template updates and project-owned content stop overwriting each other ([PR #417](https://github.com/pvliesdonk/markdown-vault-mcp/pull/417), [PR #419](https://github.com/pvliesdonk/markdown-vault-mcp/pull/419)), the server module was renamed to the template's `server.py` and `make_server` spelling ([PR #416](https://github.com/pvliesdonk/markdown-vault-mcp/pull/416)), template-owned files that had drifted were converged back ([PR #421](https://github.com/pvliesdonk/markdown-vault-mcp/pull/421)), and the weekly `copier update` workflow that keeps them converging was bootstrapped ([PR #415](https://github.com/pvliesdonk/markdown-vault-mcp/pull/415)). That last body records why the backfill had to be done by hand: a literal update from the template flipped the license and replaced the command line, so the repository had to be reshaped before the automation could be trusted.
-
-The line closes with the search work that the 3.0 release then had to correct. v1.28.0 introduced four ranking knobs at once: a per-document cap on result slots, a length downweight, snippet truncation, and an adaptive chunker that descends heading levels when a chunk runs over budget ([PR #433](https://github.com/pvliesdonk/markdown-vault-mcp/pull/433), closing [#432](https://github.com/pvliesdonk/markdown-vault-mcp/issues/432)). The adaptive chunker is what later caused several chunks of one document to crowd the top of a result list, which [3.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/#search-returns-files-not-chunks) fixed by collapsing results per file.
-
-## Version numbers that were never released
-
-`[verified: git tag]` The stable line skips 1.24 and 1.26 entirely, and never reaches 2.x: `v1.23.2`, `v1.24.0`, `v1.26.0` and `v2.0.0` exist only as pre-release tags. v1.25.0 and v1.27.0 are stable tags carrying nothing but their own release commit, because everything they contain was already tagged on the release candidate immediately before them.
-
-`[per the maintainer]` these are unintended bumps from two release-workflow defects, both since fixed upstream, and not abandoned feature work. Nothing was being built under those numbers, so there is no story to reconstruct:
-
-- [fastmcp-server-template#154](https://github.com/pvliesdonk/fastmcp-server-template/issues/154) reports that a forced version bump compounded on the pre-release's series target instead of naming the release kind. Dispatching a major bump at `v2.0.0-rc.5` produced `v3.0.0`, and 2.0.0 was never cut. Fixed by template#165.
-- [fastmcp-server-template#235](https://github.com/pvliesdonk/fastmcp-server-template/issues/235) reports that release-candidate detection matched an abandoned series and cut an `-rc.1` from a stable base, which is where `v1.23.2-rc.1`, `v1.24.0-rc.1` and `v1.26.0-rc.1` come from. Fixed by template#236 and adopted here in [#854](https://github.com/pvliesdonk/markdown-vault-mcp/issues/854).
-
-Both fixes are in this repository. The framing above is recorded on [#1054](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1054); from the tags alone the obvious reading is an abandoned release series, and that reading is wrong.
-
-## What could not be reconstructed
-
-Stated plainly, because a gap left unmarked reads as an absence of change:
-
-- Six of the seven zero-density ranges listed above have no recoverable rationale. The seventh and largest, `v1.27.0..v1.27.1` at 42 commits, is the upstream split described in the April section; even there the account is a shape rather than a change-by-change record, because the detail sits in pull request bodies rather than in issues.
-- Patch releases in this line are not individually described. Several exist only because a release-workflow run produced them, and separating those from real fixes is not possible from the record.
-- No upgrade or breaking-change analysis is offered for any step inside 1.x. The import surface guard that makes such an analysis mechanical ([template#352](https://github.com/pvliesdonk/fastmcp-server-template/issues/352)) did not exist yet, and reconstructing one release-by-release from source would be inference presented as fact.
-
-## All changes
-
-See [CHANGELOG.md](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md) for the full commit-level list, or the [v1.0.0 to v1.28.0 comparison](https://github.com/pvliesdonk/markdown-vault-mcp/compare/v1.0.0...v1.28.0).
 
 # 3.0
 

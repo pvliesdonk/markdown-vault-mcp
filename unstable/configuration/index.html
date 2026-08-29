@@ -1760,6 +1760,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../deployment/template-updates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../deployment/repository-protection/" class="md-nav__link">
         
   
@@ -2373,10 +2401,16 @@ variables (<code>MARKDOWN_VAULT_MCP_TRANSPORT</code>, <code>MARKDOWN_VAULT_MCP_H
 <p>Use the <a href="../configuration-generator/">Configuration Generator</a> to answer a few
 questions and copy a ready-made <code>.env</code>, Docker, or Claude config.</p>
 </div>
-<div class="admonition note">
-<p class="admonition-title">Configuration is validated at startup</p>
-<p>Numeric variables are validated against the <strong>Type</strong> column below (such as <code>int ≥ 1</code>). A non-numeric or out-of-range value makes the server <strong>fail fast</strong> at startup with a <code>ConfigurationError</code> naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.</p>
-</div>
+<ul>
+<li><code>MARKDOWN_VAULT_MCP_SERVER_NAME</code>: the server name reported to clients and
+  by <code>get_server_info</code>. Defaults to <code>markdown-vault-mcp</code>.</li>
+<li><code>MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA</code>: operator context appended to the
+  generated MCP instructions (deployment notes, house rules). The generated
+  text (identity, tool workflows, documentation pointer) stays intact.</li>
+<li><code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code>: legacy. Replaces the entire generated
+  instructions text and logs a deprecation warning at startup; when both are
+  set, <code>_EXTRA</code> is ignored. Move operator context to <code>_EXTRA</code>.</li>
+</ul>
 <h2 id="tool-visibility">Tool visibility<a class="headerlink" href="#tool-visibility" title="Permanent link">&para;</a></h2>
 <p>Operators can trim which tools this instance exposes. Each variable takes a
 comma-separated list of explicit tool names:</p>
@@ -2409,6 +2443,11 @@ backend through <code>MARKDOWN_VAULT_MCP_TASKS_URL</code> rather than
 <code>FASTMCP_DOCKET_URL</code>: the former wins when both are set, and the server warns
 about the disagreement.</p>
 <!-- DOMAIN-CONFIG-VARS-START -->
+
+<div class="admonition note">
+<p class="admonition-title">Configuration is validated at startup</p>
+<p>Numeric variables are validated against the <strong>Type</strong> column below (such as <code>int ≥ 1</code>). A non-numeric or out-of-range value makes the server <strong>fail fast</strong> at startup with a <code>ConfigurationError</code> naming the offending setting, rather than silently falling back to a default. A typo in an env var surfaces immediately instead of producing surprising behavior later.</p>
+</div>
 <h2 id="core">Core<a class="headerlink" href="#core" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2517,14 +2556,14 @@ about the disagreement.</p>
 <td>string</td>
 <td><code>_conventions.md</code></td>
 <td>No</td>
-<td>Filename of the per-folder <a href="../tools/#get_conventions">conventions files</a> surfaced to clients at write time. Must be a bare <code>.md</code> filename without glob characters (<code>*?[]</code>). Set to <code>none</code> to disable folder conventions. Convention files are excluded from the search index but stay readable; existing notes matching the name are removed from the index on the next boot reconcile. Note: setting <code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code> replaces the default server instructions entirely, including the sentence that points clients at <code>get_conventions</code>; mention conventions in your custom instructions if you rely on them.</td>
+<td>Filename of the per-folder <a href="../tools/#get_conventions">conventions files</a> surfaced to clients at write time. Must be a bare <code>.md</code> filename without glob characters (<code>*?[]</code>). Set to <code>none</code> to disable folder conventions. Convention files are excluded from the search index but stay readable; existing notes matching the name are removed from the index on the next boot reconcile. Note: the legacy <code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code> replaces the generated server instructions entirely, including the sentence that points clients at <code>get_conventions</code>; mention conventions yourself if you use it. <code>MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA</code> appends instead and keeps the sentence.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OKF_MODE</code></td>
 <td>string</td>
 <td><code>auto</code></td>
 <td>No</td>
-<td><a href="https://github.com/GoogleCloudPlatform/knowledge-catalog">OKF (Open Knowledge Format)</a> read semantics. With <code>auto</code> (the default), read-side annotations (note type, lifecycle status, staleness, trust tier) switch on in <code>search</code>, <code>read</code>, <code>get_context</code>, and <code>stats</code> when the vault declares an <code>okf_version</code> field in its root <code>index.md</code> frontmatter. Use <code>off</code> to disable OKF semantics entirely, or <code>on</code> to force them for an undeclared vault. Annotations are read-only either way: this setting never changes write behavior. Note: setting <code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code> replaces the default server instructions entirely, including the OKF guidance sentence.</td>
+<td><a href="https://github.com/GoogleCloudPlatform/knowledge-catalog">OKF (Open Knowledge Format)</a> read semantics. With <code>auto</code> (the default), read-side annotations (note type, lifecycle status, staleness, trust tier) switch on in <code>search</code>, <code>read</code>, <code>get_context</code>, and <code>stats</code> when the vault declares an <code>okf_version</code> field in its root <code>index.md</code> frontmatter. Use <code>off</code> to disable OKF semantics entirely, or <code>on</code> to force them for an undeclared vault. Annotations are read-only either way: this setting never changes write behavior. Note: the legacy <code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code> replaces the generated server instructions entirely, including the OKF guidance sentence; <code>MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA</code> appends instead and keeps it.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_OKF_WRITE</code></td>
@@ -2644,10 +2683,16 @@ chronic backlog.</p>
 <td>MCP server name shown to clients; useful for multi-instance setups</td>
 </tr>
 <tr>
+<td><code>MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA</code></td>
+<td>string</td>
+<td>(none)</td>
+<td>Operator context appended to the generated instructions (deployment notes, house rules). The generated text (identity, documentation pointer, tool workflows, and the read-only/read-write announcement) stays intact. Prefer this over <code>INSTRUCTIONS</code></td>
+</tr>
+<tr>
 <td><code>MARKDOWN_VAULT_MCP_INSTRUCTIONS</code></td>
 <td>string</td>
 <td>(auto)</td>
-<td>System-level instructions injected into LLM context; defaults to a description that reflects read-only vs read-write state</td>
+<td><strong>Deprecated.</strong> Replaces the entire generated instructions text and logs a startup warning; when both are set, <code>INSTRUCTIONS_EXTRA</code> is ignored. A server set this way advertises no tool workflows the model has not been told about by hand</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_DISABLE_APPS_UI</code></td>

@@ -16,7 +16,7 @@
         <link rel="prev" href="../oidc/">
       
       
-        <link rel="next" href="../repository-protection/">
+        <link rel="next" href="../template-updates/">
       
       
         
@@ -1502,6 +1502,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#cutting-a-release-step-by-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cutting a release, step by step
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#channels" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1557,6 +1568,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#template-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Template updates
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#where-to-read-about-a-release" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1588,6 +1610,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../template-updates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1939,6 +1989,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#cutting-a-release-step-by-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cutting a release, step by step
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#channels" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1987,6 +2048,17 @@
     <span class="md-ellipsis">
       
         Stabilisation branches
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#template-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Template updates
       
     </span>
   </a>
@@ -2049,6 +2121,46 @@ release is a separate, deliberate event: a maintainer dispatches the
 and merges it. The merge is what tags and publishes. This page describes
 that flow, what each kind of release publishes, and where releases come
 from.</p>
+<h2 id="cutting-a-release-step-by-step">Cutting a release, step by step<a class="headerlink" href="#cutting-a-release-step-by-step" title="Permanent link">&para;</a></h2>
+<p>The checklist a maintainer follows; each step links the section that
+explains it.</p>
+<ol>
+<li><strong>Draft the release notes.</strong> Invoke the <code>writing-release-notes</code> skill
+   with your coding agent (it lives at
+   <code>.agents/skills/writing-release-notes/SKILL.md</code>). It researches the
+   range through the GitHub API, writes <code>docs/releases/next.md</code>, runs
+   Vale and a strict MkDocs build, and opens an ordinary pull request.
+   Review and merge that pull request first; Release Prepare refuses to
+   run when reviewed notes are missing. When user-visible behaviour lands
+   after a first release candidate, invoke the skill's
+   <code>refresh-known-target</code> mode and merge its pull request before the next
+   dispatch. See <a href="#how-the-notes-pages-are-produced">How the notes pages are produced</a>.</li>
+<li><strong>Dispatch Release Prepare.</strong> In the Actions tab, run <strong>Release
+   Prepare</strong> on <code>main</code> (or on a <code>release/X.Y</code> branch for a stabilisation
+   release). Leave <code>channel</code> on <code>auto</code> unless you are promoting a
+   candidate to stable. See <a href="#the-release-pull-request">The release pull request</a>.</li>
+<li><strong>Review the release pull request.</strong> Check the computed version against
+   the breaking-change policy in <code>AGENTS.md</code>, read the changelog section,
+   confirm the promoted notes page is the one you merged in step 1, and
+   compare its <code>notes-range-end</code> with the release delta so the notes cover
+   every commit being released. Never press GitHub's "Update branch" on
+   it; dispatch Release Prepare again instead.</li>
+<li><strong>Merge it.</strong> The merge is the release: the <strong>Release</strong> workflow tags
+   the commit, creates the GitHub release and publishes every channel.</li>
+<li><strong>Verify the fan-out.</strong> Each publish runs as its own job in the Release
+   workflow: <code>publish-pypi</code>, <code>publish-docker</code>, <code>publish-linux-packages</code> and
+   <code>publish-mcpb</code> on every release; <code>publish-plugin-zip</code> when the project
+   ships the Claude Code plugin channel; <code>publish-claude-plugin</code> and
+   <code>publish-registry</code> only for a stable release that is the newest one
+   (a release candidate, or a patch to an older series, skips both by
+   design). The documentation site deploys for the new version. A failed
+   publish job can be re-run from the workflow run; the tag and release
+   already exist, and every job derives from the reviewed version string,
+   so a re-run publishes the same artefacts.</li>
+<li><strong>If the release was cut from a <code>release/X.Y</code> branch</strong>, expect the
+   automated pull request that ports the changelog section back to
+   <code>main</code>, and merge it. See <a href="#stabilisation-branches">Stabilisation branches</a>.</li>
+</ol>
 <h2 id="channels">Channels<a class="headerlink" href="#channels" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2186,6 +2298,13 @@ cycle.</p>
 <p>Release branches carry shipped releases, so they get the same protection
 as <code>main</code>: pull requests plus green CI, applied by the shipped rulesets.
 See <a href="../repository-protection/">Repository Protection</a>.</p>
+<!-- TEMPLATE-TRACKING-START -->
+<h2 id="template-updates">Template updates<a class="headerlink" href="#template-updates" title="Permanent link">&para;</a></h2>
+<p>Releases of this project and updates from its template are separate
+events; the weekly template update pull request is covered in
+<a href="../template-updates/">Working Through a Template Update</a>.</p>
+<!-- TEMPLATE-TRACKING-END -->
+
 <h2 id="where-to-read-about-a-release">Where to read about a release<a class="headerlink" href="#where-to-read-about-a-release" title="Permanent link">&para;</a></h2>
 <p>Each release is described in three places with distinct jobs:</p>
 <ul>
@@ -2199,37 +2318,21 @@ See <a href="../repository-protection/">Repository Protection</a>.</p>
   request.</li>
 </ul>
 <h3 id="how-the-notes-pages-are-produced">How the notes pages are produced<a class="headerlink" href="#how-the-notes-pages-are-produced" title="Permanent link">&para;</a></h3>
-<p>The pages under <a href="../../releases/">Release Notes</a> cover one minor
-series each; a patch release adds a dated section to its series page.
-The page is part of every release pull request, exactly like the
-changelog. The Release Prepare workflow's notes job drafts or refreshes
-it. The drafting agent reads the release range through the GitHub API,
-working from the linked issues and pull requests rather than commit
-subjects, and the finished page is committed onto the release pull
-request's branch. Reviewing the release pull request covers the notes. Merging it lands the page in
-the release's own tag, and the published docs and the release body's
-summary and deep link all read the page from there. Release candidates carry their notes
-draft the same way, so a candidate is the full release artifact,
-narrative included. Every causal claim in a page must cite a linked
-issue or pull request, and the drafting agent runs the same prose lint
-as the rest of this site.</p>
-<p>The release pull request stays a draft until the notes job lands its
-page, so a release without its notes can never merge by accident. A
-drafting failure fails the prepare run visibly and leaves the pull
-request in draft; re-run the notes job, or re-dispatch Release Prepare
-with <code>skip_notes</code> to release without a notes refresh. For a release shipped that way, the <strong>Release Notes</strong>
-workflow's manual dispatch drafts a standalone notes pull request as a
-backfill. Later hand edits to a released page redeploy that minor's
-versioned docs through the <strong>Release Notes Publish</strong> workflow.</p>
-<p>A notes refresh is incremental by default: the drafting agent
-researches only the commits since the page's last accepted draft and
-leaves accepted prose alone. To rewrite a page from scratch under the
-current drafting rules, dispatch Release Prepare with <code>full_redraft</code>;
-the rewrite lands inside the release pull request like any other
-draft. The <strong>Release Notes</strong> workflow's manual dispatch accepts the
-same flag in both of its modes: a target version re-drafts against an
-open release pull request without re-running the whole prepare, and a
-tag produces a standalone backfill pull request for a shipped release.</p>
+<p>The pages under <a href="../../releases/">Release Notes</a> cover one minor series
+each; patch releases add undated version headings to their series page. Humans
+prepare the narrative before release automation starts, as steps 1 to 4 of
+<a href="#cutting-a-release-step-by-step">Cutting a release, step by step</a> describe.</p>
+<p>The first release candidate for a stable identity consumes <code>next.md</code> into the
+canonical minor page. Later candidates and stable promotion reuse the same
+<code>vX.Y.Z</code> entry. When user-visible behavior lands after the first candidate,
+invoke <code>refresh-known-target</code> and merge the normal notes pull request before
+re-dispatching Release Prepare. Corrections and redrafts use the same ordinary
+pull-request path for shipped pages.</p>
+<p>No notes bypass exists. Missing or ambiguous staging makes deterministic
+promotion refuse the prepare. Every causal claim must cite a linked issue or
+pull request, and the skill runs Vale and strict MkDocs before opening its pull
+request. Later canonical-page edits redeploy that minor through the
+deterministic <strong>Release Notes Publish</strong> workflow.</p>
 
 
 

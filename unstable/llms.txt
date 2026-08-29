@@ -46,6 +46,7 @@ markdown-vault-mcp is a generic markdown vault MCP server with FTS5 full-text se
 - [OIDC Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/index.md): OIDC authentication setup with Authelia
 - [Release Process](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/release-process/index.md): Branch-aware release model — channels, release branches, merge-back
 - [Repository Protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/repository-protection/index.md): Repository rulesets — per-branch posture and bypass model
+- [Template Updates](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/template-updates/index.md): Working through a copier template update pull request
 
 ## Python API
 
@@ -59,8 +60,6 @@ markdown-vault-mcp is a generic markdown vault MCP server with FTS5 full-text se
 
 ## Release Notes
 
-- [Release Notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md)
-- [1.x](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/1.x/index.md)
 - [3.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/index.md)
 - [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/index.md)
 - [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.0/index.md)
