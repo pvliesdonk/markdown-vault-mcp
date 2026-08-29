@@ -83,7 +83,8 @@ def _domain_snippets(
     ``tools`` declarations: pvl-core's pruning models the operator
     allow/deny rule and registration, and explicitly *not* the
     ``mcp.disable(tags=...)`` transforms this server uses for read-only
-    mode, managed-git mode, the apps UI, and the summarize backend. A
+    mode, managed-git mode, the summarize backend, the apps UI, and the
+    two OKF layers (``okf`` and ``okf-enforce``) — all six of them. A
     disabled-but-registered tool still counts as exposed, so only the
     conditionals below can keep its guidance out.
 
