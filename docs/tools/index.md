@@ -72,7 +72,7 @@ Find documents matching a query using full-text or semantic search.
 |-----------|------|---------|-------------|
 | `query` | string | required | Natural language or keyword query string |
 | `limit` | int | `10` | Maximum results to return |
-| `mode` | string | `"keyword"` | `"keyword"` (FTS5/BM25), `"semantic"` (vector similarity), or `"hybrid"` (reciprocal rank fusion) |
+| `mode` | string | auto | Omit to let the server choose: `"hybrid"` where embeddings are configured, `"keyword"` where they are not. Set explicitly to override: `"keyword"` (FTS5/BM25), `"semantic"` (vector similarity), or `"hybrid"` (reciprocal rank fusion). An explicit `"semantic"` or `"hybrid"` errors on a vault without embeddings rather than falling back |
 | `folder` | string | `null` | Restrict to documents under this folder path |
 | `filters` | object | `null` | Filter by indexed frontmatter field values (such as `{"tags": "pacing"}`), ANDed. On an OKF bundle, `status` (`stable` also matches notes without one), `stale` (`true`/`false`), and `trust_tier` carry OKF semantics; `type` filters normally |
 | `chunks_per_file` | int | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected. |

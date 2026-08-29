@@ -1772,3 +1772,87 @@ def test_vector_index_blank_query_returns_empty(
     vectors._provider = _RejectsBlankProvider()  # type: ignore[assignment]
 
     assert vectors.search("   ", limit=5) == []
+
+
+class TestDefaultModeResolution:
+    """An unqualified search picks the best mode the vault can serve (#1200).
+
+    Before this, ``mode`` defaulted to the literal ``"keyword"`` on the
+    signature, so a vault with embeddings built and current still answered
+    unqualified searches with BM25 — while the server's own instructions told
+    callers to prefer hybrid. Agent callers routinely omit ``mode``.
+    """
+
+    def test_resolves_to_keyword_without_embeddings(
+        self, search_mgr: SearchManager
+    ) -> None:
+        assert search_mgr._resolve_mode(None) == "keyword"
+
+    def test_resolves_to_hybrid_with_embeddings(
+        self, search_mgr_with_embeddings: SearchManager
+    ) -> None:
+        assert search_mgr_with_embeddings._resolve_mode(None) == "hybrid"
+
+    @pytest.mark.parametrize("mode", ["keyword", "semantic", "hybrid"])
+    def test_an_explicit_mode_is_returned_untouched(
+        self, search_mgr_with_embeddings: SearchManager, mode: str
+    ) -> None:
+        """Resolution only fills a gap; it never overrides the caller."""
+        assert search_mgr_with_embeddings._resolve_mode(mode) == mode  # type: ignore[arg-type]
+
+    def test_explicit_keyword_still_reaches_the_keyword_path(
+        self, search_mgr_with_embeddings: SearchManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The old default stays reachable, which is why this is not breaking."""
+        called: list[str] = []
+
+        def _spy(*_args: object, **_kwargs: object) -> list[GroupedResult]:
+            called.append("keyword")
+            return []
+
+        monkeypatch.setattr(search_mgr_with_embeddings, "_keyword_search", _spy)
+        search_mgr_with_embeddings.search("foo", mode="keyword")
+        assert called == ["keyword"]
+
+    def test_an_unqualified_search_reaches_the_hybrid_path(
+        self, search_mgr_with_embeddings: SearchManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The point of the fix, asserted end to end through ``search``."""
+        called: list[str] = []
+
+        def _spy(*_args: object, **_kwargs: object) -> list[GroupedResult]:
+            called.append("hybrid")
+            return []
+
+        monkeypatch.setattr(search_mgr_with_embeddings, "_hybrid_search", _spy)
+        search_mgr_with_embeddings.search("foo")
+        assert called == ["hybrid"]
+
+    def test_an_unqualified_search_never_raises_without_embeddings(
+        self, search_mgr: SearchManager
+    ) -> None:
+        """Degrade, never fail: enabling this cannot make a vault unsearchable."""
+        assert isinstance(search_mgr.search("foo"), list)
+
+    @pytest.mark.parametrize("mode", ["semantic", "hybrid"])
+    def test_an_explicit_vector_mode_still_raises_without_embeddings(
+        self, search_mgr: SearchManager, mode: str
+    ) -> None:
+        """A caller who asked for semantic results is never handed keyword ones."""
+        from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+
+        with pytest.raises(EmbeddingsNotConfiguredError):
+            search_mgr.search("foo", mode=mode)  # type: ignore[arg-type]
+
+    def test_the_raise_and_resolve_paths_share_one_predicate(
+        self, search_mgr_with_embeddings: SearchManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """They cannot drift: flipping availability moves both together."""
+        monkeypatch.setattr(
+            search_mgr_with_embeddings, "_vectors_available", lambda: False
+        )
+        from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+
+        assert search_mgr_with_embeddings._resolve_mode(None) == "keyword"
+        with pytest.raises(EmbeddingsNotConfiguredError):
+            search_mgr_with_embeddings._require_vectors()

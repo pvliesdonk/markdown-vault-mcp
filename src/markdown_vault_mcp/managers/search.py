@@ -237,13 +237,57 @@ class SearchManager:
         """
         validate_path(path, self._source_dir)
 
+    def _vectors_available(self) -> bool:
+        """Whether this vault can serve semantic and hybrid search.
+
+        The single availability predicate: :meth:`_require_vectors` raises on
+        it and :meth:`_resolve_mode` resolves on it, so the mode an
+        unqualified search lands on can never disagree with the mode an
+        explicit request is allowed to ask for (#1200).
+        """
+        return (
+            self._embedding_provider is not None and self._embeddings_path is not None
+        )
+
     def _require_vectors(self) -> None:
         """Raise :class:`EmbeddingsNotConfiguredError` if semantic search is unconfigured."""
-        if self._embedding_provider is None or self._embeddings_path is None:
+        if not self._vectors_available():
             raise EmbeddingsNotConfiguredError(
                 "Semantic search requires both 'embedding_provider' and "
                 "'embeddings_path' to be configured."
             )
+
+    def _resolve_mode(
+        self, mode: Literal["keyword", "semantic", "hybrid"] | None
+    ) -> Literal["keyword", "semantic", "hybrid"]:
+        """Resolve the search mode when the caller did not name one.
+
+        An unqualified search gets the best mode this vault can actually
+        serve: ``"hybrid"`` where vectors are configured, ``"keyword"``
+        where they are not. Configuring an embedding provider and keeping
+        the sidecar current should be enough to get fused results — before
+        #1200 it also required every call site to pass ``mode`` explicitly,
+        which agent callers routinely do not, so conversational queries fell
+        to BM25 and often returned nothing.
+
+        Availability is binary: FTS is always present, so there is no
+        semantic-only vault to resolve to.
+
+        An explicit *mode* is returned untouched and is **never** degraded
+        here — ``"semantic"`` and ``"hybrid"`` still reach
+        :meth:`_require_vectors` and raise on an unconfigured vault, so a
+        caller that asked for semantic results is never handed keyword
+        results under a semantic label.
+
+        Args:
+            mode: The caller's mode, or ``None`` to resolve one.
+
+        Returns:
+            The mode to dispatch on.
+        """
+        if mode is not None:
+            return mode
+        return "hybrid" if self._vectors_available() else "keyword"
 
     def _load_vectors(self) -> VectorIndex:
         """Load or return the cached VectorIndex, self-healing corrupt sidecars.
@@ -633,7 +677,7 @@ class SearchManager:
         query: str,
         *,
         limit: int = 10,
-        mode: Literal["keyword", "semantic", "hybrid"] = "keyword",
+        mode: Literal["keyword", "semantic", "hybrid"] | None = None,
         filters: dict[str, str] | None = None,
         folder: str | None = None,
         chunks_per_file: int | None = None,
@@ -646,7 +690,9 @@ class SearchManager:
             limit: Maximum number of files (not chunks) to return.
             mode: ``"keyword"`` for BM25 FTS5, ``"semantic"`` for cosine
                 similarity, or ``"hybrid"`` for Reciprocal Rank Fusion of
-                both.
+                both. ``None`` (the default) resolves to ``"hybrid"`` when
+                this vault has embeddings configured and ``"keyword"`` when
+                it does not (:meth:`_resolve_mode`, #1200).
             filters: Dict of ``{frontmatter_key: value}`` pairs (AND
                 semantics).  Only works for fields in
                 ``indexed_frontmatter_fields``.
@@ -670,6 +716,7 @@ class SearchManager:
                 ``"hybrid"`` but no embedding provider or embeddings path is
                 configured (a ``ValueError`` subclass).
         """
+        mode = self._resolve_mode(mode)
         eff_cap = (
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
         )

@@ -90,7 +90,7 @@ class ReaderFacet:
         query: str,
         *,
         limit: int = 10,
-        mode: Literal["keyword", "semantic", "hybrid"] = "keyword",
+        mode: Literal["keyword", "semantic", "hybrid"] | None = None,
         filters: dict[str, str] | None = None,
         folder: str | None = None,
         chunks_per_file: int | None = None,

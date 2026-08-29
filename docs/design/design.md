@@ -224,6 +224,28 @@ independently. Merged score: `1 / (k + rank)` where `k` is a constant
 
 This produces sensible merged rankings regardless of the raw score scales.
 
+**Which mode an unqualified search gets.** `mode` is optional; when the caller
+omits it, `SearchManager._resolve_mode` picks the best mode this vault can
+serve — `hybrid` where embeddings are configured, `keyword` where they are not
+(#1200). Availability is binary: FTS is always present, so there is no
+semantic-only vault to resolve to.
+
+Two properties keep the resolution honest:
+
+- **Resolution never degrades an explicit mode.** `semantic` and `hybrid` still
+  reach `_require_vectors` and raise `EmbeddingsNotConfiguredError` on an
+  unconfigured vault. A caller that asked for semantic results is never handed
+  keyword results under a semantic label; that failure belongs at the call
+  site, not buried in a resolver.
+- **One predicate feeds both paths.** `_vectors_available` backs both
+  `_require_vectors` and `_resolve_mode`, so the mode an unqualified search
+  lands on cannot disagree with the mode an explicit request may ask for.
+
+The previous default was the literal `"keyword"` on the signature, which meant
+a vault with embeddings built and current still answered unqualified searches
+with BM25 — while the server instructions told callers to prefer hybrid. The
+old behaviour stays reachable as an explicit `mode="keyword"`.
+
 ### Search Ranking and Snippet Truncation
 
 Four complementary mechanisms improve result diversity and bound LLM context cost:

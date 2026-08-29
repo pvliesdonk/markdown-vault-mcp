@@ -149,7 +149,8 @@ def _domain_snippets(
         )
     snippets.append(
         Snippet(
-            "Use 'search' (mode='hybrid' preferred when available) to find documents, "
+            "Use 'search' to find documents — it picks hybrid automatically "
+            "where embeddings are configured — "
             "'read' for full content, 'list_documents' to enumerate, 'stats' to check "
             "capabilities. 'browse_vault' and 'show_context' open a visual UI for the "
             "user — do not call them to retrieve vault content; use 'search', 'read', "

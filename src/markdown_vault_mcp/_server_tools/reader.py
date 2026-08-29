@@ -37,7 +37,7 @@ def register(mcp: FastMCP) -> None:
     async def search(
         query: str,
         limit: int = 10,
-        mode: Literal["keyword", "semantic", "hybrid"] = "keyword",
+        mode: Literal["keyword", "semantic", "hybrid"] | None = None,
         folder: str | None = None,
         filters: dict[str, str] | None = None,
         chunks_per_file: int | None = None,
@@ -47,10 +47,10 @@ def register(mcp: FastMCP) -> None:
     ) -> list[dict[str, Any]]:
         """Find documents matching a query using full-text or semantic search.
 
-        Search the vault. Default mode is "keyword" (FTS5/BM25). Pass
-        mode="hybrid" when 'stats' shows semantic_search_available=True —
-        hybrid fuses keyword and vector results for best quality. Use
-        mode="semantic" for pure vector similarity.
+        Search the vault. Omitting mode picks the best mode this vault can
+        serve: "hybrid" where embeddings are configured, "keyword" where they
+        are not. Pass mode explicitly only to override that — "keyword" to
+        force FTS5/BM25 term matching, "semantic" for pure vector similarity.
 
         The 'content' field in each result is a snippet by default, not the
         full document. Use read(path, section=heading) to retrieve the full
@@ -59,9 +59,12 @@ def register(mcp: FastMCP) -> None:
         Args:
             query: Natural language or keyword query string.
             limit: Maximum results to return (default 10).
-            mode: "keyword" uses FTS5/BM25 for exact terms. "semantic" uses
-                vector similarity (requires embeddings). "hybrid" fuses both
-                via reciprocal rank fusion — best quality when available.
+            mode: Omit to let the server choose (hybrid where embeddings
+                exist, keyword otherwise). "keyword" uses FTS5/BM25 for exact
+                terms. "semantic" uses vector similarity (requires
+                embeddings). "hybrid" fuses both via reciprocal rank fusion.
+                An explicit "semantic" or "hybrid" errors on a vault without
+                embeddings rather than falling back.
             folder: Restrict to documents under this folder path (e.g.
                 "Journal"). Must match a value from 'list_folders'.
                 Use folder="" for root-level (top-level) documents only.
