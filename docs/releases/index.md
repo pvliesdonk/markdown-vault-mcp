@@ -9,6 +9,7 @@ behind it.
 <!-- RELEASE-PAGES-START: newest series first; one list entry per page.
      Release Prepare inserts the new series entry directly below this
      comment when it promotes the staged notes. -->
+- [4.1](4.1.md)
 - [4.0](4.0.md).
 - [3.1](3.1.md) (released July 8, 2026). Backfilled.
 - [3.0](3.0.md) (released June 17, 2026, with patch releases through v3.0.4).
