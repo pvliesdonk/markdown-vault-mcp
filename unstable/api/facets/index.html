@@ -3486,7 +3486,7 @@ construction without the composition root).</p>
 
 
 <h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.search" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">search</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="s1">'keyword'</span><span class="p">,</span> <span class="n">filters</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">folder</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">search</span><span class="p">(</span><span class="n">query</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">filters</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">folder</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.search" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -3544,7 +3544,7 @@ construction without the composition root).</p>
                 <code>mode</code>
             </td>
             <td>
-                  <code><span title="typing.Literal">Literal</span>[&#39;keyword&#39;, &#39;semantic&#39;, &#39;hybrid&#39;]</code>
+                  <code><span title="typing.Literal">Literal</span>[&#39;keyword&#39;, &#39;semantic&#39;, &#39;hybrid&#39;] | None</code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -3553,7 +3553,7 @@ similarity, or <code>"hybrid"</code> for Reciprocal Rank Fusion of both.</p>
               </div>
             </td>
             <td>
-                  <code>&#39;keyword&#39;</code>
+                  <code>None</code>
             </td>
           </tr>
           <tr class="doc-section-item">

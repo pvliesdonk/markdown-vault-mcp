@@ -628,6 +628,14 @@
       "advancedGroup": "Content"
     },
     {
+      "id": "default_search_mode",
+      "label": "Default Search Mode",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_DEFAULT_SEARCH_MODE",
+      "help": "Mode used when a search call omits 'mode': auto, keyword, semantic, or hybrid. The default 'auto' picks hybrid when embeddings are configured and keyword when they are not. Pin 'keyword' to keep unqualified searches off the embedding provider (each hybrid or semantic search embeds the query, which costs an API call on a metered provider). A configured semantic/hybrid default also degrades to keyword without embeddings, so no setting can make a vault unsearchable; an explicit mode= argument is never downgraded.",
+      "advancedGroup": "Search tuning"
+    },
+    {
       "id": "chunks_per_file",
       "label": "Chunks Per File",
       "type": "number",

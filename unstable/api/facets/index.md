@@ -61,21 +61,21 @@ Raises:
 | -------------- | ---------------------------------------------------------------------------------------- |
 | `RuntimeError` | If no audit callable was wired (direct facet construction without the composition root). |
 
-### `search(query, *, limit=10, mode='keyword', filters=None, folder=None, chunks_per_file=None, snippet_words=None)`
+### `search(query, *, limit=10, mode=None, filters=None, folder=None, chunks_per_file=None, snippet_words=None)`
 
 Search the vault.
 
 Parameters:
 
-| Name              | Type                                       | Description                                                                                                | Default                                                                                                      |
-| ----------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `query`           | `str`                                      | Search string.                                                                                             | *required*                                                                                                   |
-| `limit`           | `int`                                      | Maximum number of files (not chunks) to return.                                                            | `10`                                                                                                         |
-| `mode`            | `Literal['keyword', 'semantic', 'hybrid']` | "keyword" for BM25 FTS5, "semantic" for cosine similarity, or "hybrid" for Reciprocal Rank Fusion of both. | `'keyword'`                                                                                                  |
-| `filters`         | \`dict[str, str]                           | None\`                                                                                                     | Dict of {frontmatter_key: value} pairs (AND semantics). Only works for fields in indexed_frontmatter_fields. |
-| `folder`          | \`str                                      | None\`                                                                                                     | If provided, restrict results to documents in this folder (and its sub-folders).                             |
-| `chunks_per_file` | \`int                                      | None\`                                                                                                     | Maximum number of sections returned per file. None uses the server default configured at startup.            |
-| `snippet_words`   | \`int                                      | None\`                                                                                                     | Width of the snippet window in words. 0 returns the full chunk. None uses the server default.                |
+| Name              | Type                                       | Description                                     | Default                                                                                                      |
+| ----------------- | ------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `query`           | `str`                                      | Search string.                                  | *required*                                                                                                   |
+| `limit`           | `int`                                      | Maximum number of files (not chunks) to return. | `10`                                                                                                         |
+| `mode`            | \`Literal['keyword', 'semantic', 'hybrid'] | None\`                                          | "keyword" for BM25 FTS5, "semantic" for cosine similarity, or "hybrid" for Reciprocal Rank Fusion of both.   |
+| `filters`         | \`dict[str, str]                           | None\`                                          | Dict of {frontmatter_key: value} pairs (AND semantics). Only works for fields in indexed_frontmatter_fields. |
+| `folder`          | \`str                                      | None\`                                          | If provided, restrict results to documents in this folder (and its sub-folders).                             |
+| `chunks_per_file` | \`int                                      | None\`                                          | Maximum number of sections returned per file. None uses the server default configured at startup.            |
+| `snippet_words`   | \`int                                      | None\`                                          | Width of the snippet window in words. 0 returns the full chunk. None uses the server default.                |
 
 Returns:
 
