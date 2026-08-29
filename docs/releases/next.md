@@ -209,6 +209,8 @@ Adopting pvl-core 5 and template v6.0.0 changed how the server describes itself
 to a client ([#1192](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1192)).
 Instructions are assembled from prioritised snippets contributed by the
 library, the template and this server, rather than rendered from one string.
+The mechanism is pvl-core's `InstructionsBuilder`, new in
+[v5.0.0](https://github.com/pvliesdonk/fastmcp-pvl-core/releases/tag/v5.0.0).
 
 One consequence is user-visible. A snippet can declare the tools it talks
 about, and a snippet naming a tool the operator removed through
@@ -245,6 +247,14 @@ loaded fonts over HTTPS, so a host that built its iframe policy from that
 declaration had no origin permitting the request. A blocked font produces no
 error, only fallback type, so the mismatch was invisible from both sides
 ([#1181](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1181)).
+
+On a deployment using OIDC authentication, a failure during OIDC discovery now
+raises `ConfigurationError` rather than surfacing whichever error the discovery
+path produced. The normalisation is upstream, in pvl-core
+[v5.0.0](https://github.com/pvliesdonk/fastmcp-pvl-core/releases/tag/v5.0.0),
+and reaches this server through the floor moving from 4.11.3 to 5.0.0. A
+deployment that catches `ConfigurationError` around startup already covers
+every OIDC mode.
 
 The `pygments` pins that held the lock on a broken release are gone
 ([#1166](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1166)), and the
