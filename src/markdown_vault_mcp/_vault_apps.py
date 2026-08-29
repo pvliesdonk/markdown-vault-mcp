@@ -22,9 +22,18 @@ from markdown_vault_mcp.config import _ENV_PREFIX
 if TYPE_CHECKING:
     from markdown_vault_mcp.types import GraphView
 
-# All SPA dependencies are vendored inline (see scripts/vendor_spa.py).
-# No external CDN domains needed at runtime.
-_CDN_RESOURCE_DOMAINS: list[str] = []
+#: Origins the served SPA loads sub-resources from, declared so a host that
+#: builds its iframe CSP from ``resourceDomains`` permits them (#1181). Every
+#: script dependency is vendored inline (see scripts/vendor_spa.py), but the
+#: three typefaces are still fetched: the stylesheet from ``fonts.googleapis``
+#: and the font files it references from ``fonts.gstatic``. Keep this list and
+#: what ``static/app.html`` actually requests in step — a declaration that
+#: omits an origin fails silently, with the host simply dropping the request.
+#: ``tests/test_apps_vendoring.py`` asserts the two agree in both directions.
+_CDN_RESOURCE_DOMAINS: list[str] = [
+    "https://fonts.googleapis.com",
+    "https://fonts.gstatic.com",
+]
 
 
 def _compute_claude_app_domain() -> str | None:

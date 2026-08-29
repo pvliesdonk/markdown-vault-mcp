@@ -109,7 +109,10 @@ code, property keys, and tags. (As each view is restyled, these families also
 reach the remaining mono metadata such as paths and scores.) The fonts are the
 one runtime network dependency the app keeps (the vendored libraries are embedded);
 if they fail to load, the app falls back to system fonts with no loss of
-function.
+function. Because a host may build the app frame's Content Security Policy from
+the origins the resource declares, `fonts.googleapis.com` and `fonts.gstatic.com`
+are named in that declaration. A host that enforces the policy strictly would
+otherwise drop the request silently and show the fallback fonts.
 
 ### Source layout and build
 

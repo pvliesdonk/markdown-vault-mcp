@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import markdown_vault_mcp._server_apps as apps
+import markdown_vault_mcp._vault_apps as vault_apps
 
 
 def test_app_html_is_served_with_tools_rewritten() -> None:
@@ -111,3 +113,46 @@ def test_vendor_check_detects_drift(tmp_path: Path) -> None:
     assert "<!-- drift -->" not in (static_src / "app.src.html").read_text(
         encoding="utf-8"
     )
+
+
+def _spa_external_resource_origins(html: str) -> set[str]:
+    """Origins the served HTML loads sub-resources from.
+
+    Only resource-loading attributes count: ``href`` / ``src`` on ``link``,
+    ``script`` and ``img``, plus CSS ``url()`` references. Bare URLs in
+    vendored-library comments and attribution banners are not requests and
+    need no CSP grant, so matching them would make the assertion below
+    demand grants for origins the page never contacts.
+    """
+    refs = re.findall(
+        r"""<(?:link|script|img)\b[^>]*?\b(?:href|src)\s*=\s*["'](https?://[^"']+)""",
+        html,
+        re.IGNORECASE,
+    )
+    refs += re.findall(r"""url\(\s*["']?(https?://[^)"']+)""", html, re.IGNORECASE)
+    return {match.group(0) for r in refs if (match := re.match(r"https?://[^/]+", r))}
+
+
+def test_declared_csp_origins_match_what_the_spa_actually_loads() -> None:
+    """The declared ``resourceDomains`` and the served HTML cannot drift (#1181).
+
+    The defect this guards was a silent one in both directions: the SPA
+    fetched Google Fonts while the declaration was empty, so a host building
+    its iframe policy from ``resourceDomains`` had no origin permitting the
+    stylesheet — and a blocked font request produces no error, just fallback
+    type. Asserting equality rather than containment also catches the reverse,
+    a stale grant left behind after an asset is vendored away.
+    """
+    requested = _spa_external_resource_origins(apps._SPA_SHELL_HTML)
+    declared = set(vault_apps._CDN_RESOURCE_DOMAINS)
+
+    assert requested == declared, (
+        f"SPA requests {sorted(requested - declared)} without a CSP grant; "
+        f"declares {sorted(declared - requested)} it never requests"
+    )
+
+
+def test_declared_csp_origins_reach_the_app_resource() -> None:
+    """The constant is what register_apps actually hands to the host."""
+    assert apps._CDN_RESOURCE_DOMAINS is vault_apps._CDN_RESOURCE_DOMAINS
+    assert "https://fonts.googleapis.com" in apps._CDN_RESOURCE_DOMAINS
