@@ -23,7 +23,8 @@ src/markdown_vault_mcp/
     __init__.py        -- package aggregator: re-exports DocumentManager/IndexManager/LinkManager/SearchManager
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
     search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats
-    index.py           -- IndexManager: build_index, reindex, embeddings, flush
+    index.py           -- IndexManager: build_index, reindex, dirty-path FTS refresh; delegates embeddings to the composed EmbeddingsManager (#1157)
+    embeddings.py      -- EmbeddingsManager: vector lifecycle — cold build, convergence, inline embed, deferred flush, status (#1157); internal collaborator, not re-exported
     document.py        -- DocumentManager: CRUD, attachments, backlinks; path checks delegate to utils.validate_path
     git_query.py       -- GitQueryManager: git history/diff reads (#610)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)

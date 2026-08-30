@@ -1,10 +1,11 @@
 """Shared load-or-self-heal routine for the vector sidecar (#736).
 
-Both :class:`~markdown_vault_mcp.managers.index.IndexManager` and
-:class:`~markdown_vault_mcp.managers.search.SearchManager` load the same shared
-:class:`~markdown_vault_mcp.vector_index.VectorIndex` from disk and self-heal a
-corrupt or incompatible sidecar by rebuilding. This module holds that one
-routine so the logic lives in a single place.
+Both :class:`~markdown_vault_mcp.managers.embeddings.EmbeddingsManager`
+(composed into :class:`~markdown_vault_mcp.managers.index.IndexManager`,
+#1157) and :class:`~markdown_vault_mcp.managers.search.SearchManager` load the
+same shared :class:`~markdown_vault_mcp.vector_index.VectorIndex` from disk and
+self-heal a corrupt or incompatible sidecar by rebuilding. This module holds
+that one routine so the logic lives in a single place.
 """
 
 from __future__ import annotations

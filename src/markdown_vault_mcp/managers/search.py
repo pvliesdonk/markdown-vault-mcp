@@ -225,7 +225,7 @@ class SearchManager:
         self._vectors: VectorIndex | None = None
 
     # ------------------------------------------------------------------
-    # Vector index property (shared with IndexManager)
+    # Vector index property (shared with IndexManager's EmbeddingsManager)
     # ------------------------------------------------------------------
 
     @property

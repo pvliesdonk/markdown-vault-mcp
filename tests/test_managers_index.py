@@ -683,7 +683,7 @@ class TestSkipStateMemory:
         def _boom(_texts: list[str]) -> list[list[float]]:
             raise RuntimeError("OllamaProvider embeddings request failed: timed out")
 
-        mgr._embedding_provider.embed = _boom  # type: ignore[method-assign,union-attr]
+        mgr._embeddings._embedding_provider.embed = _boom  # type: ignore[method-assign,union-attr]
 
         (index_vault / "alpha.md").write_text(
             "---\ntitle: Alpha\nstatus: active\n---\n# Alpha\n\nEdited body.\n",
@@ -761,7 +761,7 @@ class TestSkipStateMemory:
         assert vectors is not None
         assert "alpha.md" in vectors.chunks_by_path()
 
-        mgr._embedding_provider = None
+        mgr._embeddings._embedding_provider = None
         note = ParsedNote(
             path="alpha.md",
             frontmatter={},
@@ -804,7 +804,7 @@ class TestSkipStateMemory:
         def _wrong_dim(texts: list[str]) -> list[list[float]]:
             return [[0.1] * 16 for _ in texts]
 
-        mgr._embedding_provider.embed = _wrong_dim  # type: ignore[method-assign,union-attr]
+        mgr._embeddings._embedding_provider.embed = _wrong_dim  # type: ignore[method-assign,union-attr]
 
         (index_vault / "alpha.md").write_text(
             "---\ntitle: Alpha\nstatus: active\n---\n# Alpha\n\nEdited body.\n",
@@ -951,7 +951,9 @@ class TestBuildEmbeddings:
             set_vectors=lambda v: holder.__setitem__("vectors", v),
         )
         mgr.build_index()
-        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.managers.index"):
+        with caplog.at_level(
+            logging.DEBUG, logger="markdown_vault_mcp.managers.embeddings"
+        ):
             total = mgr.build_embeddings()
         assert total >= 40  # many chunks => many batches
 
@@ -1370,7 +1372,7 @@ class TestConvergeStaleConfirmation:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A possibly-transient read failure confirms nothing."""
-        from markdown_vault_mcp.managers import index as index_module
+        from markdown_vault_mcp.managers import embeddings as embeddings_module
 
         vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
 
@@ -1379,7 +1381,7 @@ class TestConvergeStaleConfirmation:
         )
         mgr.build_index(force=True)
         monkeypatch.setattr(
-            index_module, "parse_note_categorized", lambda *_a, **_kw: None
+            embeddings_module, "parse_note_categorized", lambda *_a, **_kw: None
         )
         mgr.build_embeddings()
         assert self._sidecar_paths(embeddings_path, provider) == {
@@ -1575,13 +1577,15 @@ class TestLoadVectorsSelfHeal:
 
         monkeypatch.setattr(VectorIndex, "load", boom)
         rebuild_calls: list[bool] = []
-        original_build = mgr.build_embeddings
+        original_build = mgr._embeddings.build_embeddings
 
         def tracking_build(*args: object, **kwargs: object) -> int:
             rebuild_calls.append(True)
             return original_build(*args, **kwargs)  # type: ignore[arg-type]
 
-        monkeypatch.setattr(mgr, "build_embeddings", tracking_build)
+        # The self-heal rebuild is issued by the composed EmbeddingsManager
+        # (#1157), so track the call on the collaborator instance.
+        monkeypatch.setattr(mgr._embeddings, "build_embeddings", tracking_build)
 
         with pytest.raises(PermissionError, match="read denied"):
             mgr._load_vectors()
@@ -1613,13 +1617,15 @@ class TestLoadVectorsSelfHeal:
         assert not embeddings_path.with_suffix(".npy").exists()
 
         rebuild_calls: list[bool] = []
-        original_build = mgr.build_embeddings
+        original_build = mgr._embeddings.build_embeddings
 
         def tracking_build(*args: object, **kwargs: object) -> int:
             rebuild_calls.append(True)
             return original_build(*args, **kwargs)  # type: ignore[arg-type]
 
-        monkeypatch.setattr(mgr, "build_embeddings", tracking_build)
+        # The self-heal rebuild is issued by the composed EmbeddingsManager
+        # (#1157), so track the call on the collaborator instance.
+        monkeypatch.setattr(mgr._embeddings, "build_embeddings", tracking_build)
         result = mgr._load_vectors()
 
         assert isinstance(result, VectorIndex)
@@ -1927,13 +1933,13 @@ class TestFlushDirtyEmbeddingsWithSnapshot:
 
         # Now monkeypatch parse_note to raise for any path so the next flush
         # encounters a parse failure for alpha.md.
-        from markdown_vault_mcp.managers import index as _idx_mod
+        from markdown_vault_mcp.managers import embeddings as _emb_mod
 
         def _boom(*_a, **_kw):
             msg = "synthetic parse failure"
             raise OSError(msg)
 
-        monkeypatch.setattr(_idx_mod, "parse_note", _boom)
+        monkeypatch.setattr(_emb_mod, "parse_note", _boom)
         mgr.flush_dirty_embeddings({"alpha.md"})
 
         # Vectors for alpha.md must still be present.

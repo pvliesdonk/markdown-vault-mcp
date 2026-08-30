@@ -289,6 +289,11 @@ ignore = ["E501"]
 # search/git-query managers + the readiness gate + the reserved-frontmatter
 # policy), no logic. Same gate-only mechanism as _okf_convention.py above.
 "src/markdown_vault_mcp/managers/okf_migrate.py" = ["PLR0913"]
+# EmbeddingsManager is the same shape: a DI collaborator whose constructor
+# takes the injected vector-lifecycle dependencies extracted from
+# IndexManager (#1157; callable injection per the #736 precedent). Same
+# gate-only mechanism as okf_migrate.py above.
+"src/markdown_vault_mcp/managers/embeddings.py" = ["PLR0913"]
 # Test fixtures import vault/protocol types only used in annotations.
 "tests/conftest.py" = ["TC002", "TC003"]
 # _install_fake_openai's keyword-only scenario toggles (content/refusal/

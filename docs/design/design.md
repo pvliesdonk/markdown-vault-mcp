@@ -79,7 +79,8 @@ markdown-vault-mcp (new package)
 +-- managers/
 |   +-- link.py       -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
 |   +-- search.py     -- SearchManager: keyword/semantic/hybrid search, list, context, stats
-|   +-- index.py      -- IndexManager: build_index, reindex, embeddings, flush
+|   +-- index.py      -- IndexManager: build_index, reindex, dirty-path FTS refresh
+|   +-- embeddings.py -- EmbeddingsManager: vector lifecycle (composed into IndexManager, #1157)
 |   +-- document.py   -- DocumentManager: CRUD, attachments, path validation
 |   +-- git_query.py  -- GitQueryManager: git history/diff reads (#610)
 +-- indexing/
@@ -774,6 +775,18 @@ at load time and forces the rebuild automatically).
 
 ### Embedding Convergence (#665)
 
+Since #1157 the whole embedding lifecycle — the cold build, this
+convergence pass, inline reindex embedding, the deferred flush, and
+`embeddings_status` — is implemented by `managers/embeddings.py`'s
+`EmbeddingsManager`, a collaborator composed into `IndexManager`.
+`IndexManager` keeps thin delegations (`build_embeddings`,
+`embeddings_status`, `flush_dirty_embeddings`, plus the internal
+`_load_vectors` / `_embed_note_inline` its FTS pipeline uses), so
+everything below still holds when read against the `IndexManager`
+surface; the shared `_is_path_excluded` / `_discover_indexable_candidates`
+helpers stay on `IndexManager` and are injected into the collaborator as
+callables (the #736 `_vector_loader` pattern).
+
 `build_embeddings(force=False)` over a **non-empty** vector index does not
 skip and does not rebuild: it diffs the FTS `sections` table (the
 canonical chunk set, via `FTSIndex.list_chunks()`) against the stored
@@ -862,7 +875,7 @@ takes up to `_EMBEDDING_BATCH_SIZE` unrelated chunks down with it.
 provider" (non-whitespace text), and every embedding site filters through
 it:
 
-- `IndexManager._embed_inputs()` — the shared builder for the cold build,
+- `EmbeddingsManager._embed_inputs()` — the shared builder for the cold build,
   the inline reindex, and the deferred flush — drops blank entries from
   both the `texts` and `metadata` lists. Callers already treat an empty
   result as "no vectors for this path", so a wholly body-less note reaches
@@ -2036,7 +2049,8 @@ operations to them. No manager holds a back-reference to Vault.
 |-|-|-|
 | ``LinkManager`` | Backlinks, outlinks, broken links, orphans, hubs, connection paths | ``FTSIndex``, ``source_dir`` |
 | ``SearchManager`` | Keyword/semantic/hybrid search, list, folders, tags, recent, similar, context, stats, get_metadata | ``FTSIndex``, ``source_dir``, embedding config, ``LinkManager`` |
-| ``IndexManager`` | build_index, reindex, build_embeddings, process_dirty_paths, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy (no lock; driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
+| ``IndexManager`` | build_index, reindex, process_dirty_paths; thin delegations for build_embeddings, embeddings_status, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy, composed ``EmbeddingsManager`` (no lock; driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
+| ``EmbeddingsManager`` | Vector lifecycle: cold build, boot convergence, inline reindex embedding, deferred flush, embeddings_status (#1157) | ``FTSIndex``, ``source_dir``, embedding config, get/set-vectors callables, injected ``_is_path_excluded`` / ``_discover_indexable_candidates`` callables (#736 precedent); constructed by ``IndexManager``, not wired from ``Vault`` |
 | ``DocumentManager`` | read, write, edit, append, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only; see #559), ``mark_paths_dirty`` hook, callbacks |
 | ``GitQueryManager`` | Git history / diff reads (read-only, #610) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir`` |
 

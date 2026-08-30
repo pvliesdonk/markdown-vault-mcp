@@ -105,6 +105,7 @@ class TestWarmBootReconciliation:
         nothing — including files skipped for missing required frontmatter."""
         from unittest.mock import patch
 
+        import markdown_vault_mcp.managers.embeddings as embeddings_module
         import markdown_vault_mcp.managers.index as index_module
         from markdown_vault_mcp.fts_index import FTSIndex
         from markdown_vault_mcp.server import make_server
@@ -156,6 +157,9 @@ class TestWarmBootReconciliation:
         with (
             patch.object(FTSIndex, "upsert_note", tracking_upsert),
             patch.object(index_module, "parse_note", tracking_parse),
+            # The embeddings lifecycle parses through its own module since
+            # the #1157 split; cover that path with the same tracker.
+            patch.object(embeddings_module, "parse_note", tracking_parse),
         ):
             status = asyncio.run(_run())
 
