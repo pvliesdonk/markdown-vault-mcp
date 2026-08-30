@@ -98,7 +98,7 @@ Acquires :attr:`_lock` for the duration so the periodic pull loop and the per-wr
 
 Before the merge it self-quiesces via :meth:`_quiesce_writes`: new writes are paused and the deferred-commit queue is drained (best-effort, time-bounded) so a write that landed just before the pull is committed first and the merge runs on a clean tree (#571). Skipped under `dry_run` (which only fetches and never touches the working tree).
 
-On `ff-only` failure (divergent history) the implementation falls through to the same rebase + Syncthing-style sibling write path used by :meth:`sync_once` (see :meth:`_resolve_rebase_conflicts` and :meth:`_write_conflict_files`). When the conflict-resolution path produces sibling files HEAD has advanced to the remote and :attr:`PullResult.applied` is `True` with :attr:`PullResult.reason` set to `"conflicts_resolved_with_siblings"`.
+On `ff-only` failure (divergent history) the implementation falls through to the same rebase + Syncthing-style sibling write path used by :meth:`sync_once` (see :func:`~markdown_vault_mcp.git.conflict.resolve_rebase_conflicts` and :func:`~markdown_vault_mcp.git.conflict.write_conflict_files`). When the conflict-resolution path produces sibling files HEAD has advanced to the remote and :attr:`PullResult.applied` is `True` with :attr:`PullResult.reason` set to `"conflicts_resolved_with_siblings"`.
 
 After a successful HEAD advance — fast-forward or sibling resolution — :meth:`_lfs_pull` runs so any LFS pointers in the new commits are materialised before the caller sees the working tree.
 
@@ -185,11 +185,13 @@ Stop the pull loop thread if it is running.
 
 Block until any pending push completes.
 
-Cancels the idle timer and pushes immediately if there are pending local commits.
+Cancels the idle timer and pushes immediately if there are pending local commits. Thin delegation to :meth:`PushScheduler.flush`, which owns the timer/pending-flag mechanics (#893).
 
 ### `close()`
 
 Cancel timer, flush pending push, mark strategy as closed.
+
+Sequencing: mark closed first (new writes become no-ops), stop the periodic pull thread, then flush the push scheduler so the final push happens with no pull tick racing it.
 
 ### `get_file_history(repo_path, path, since, limit, until=None, *, is_dir=False)`
 
