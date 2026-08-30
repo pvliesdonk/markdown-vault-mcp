@@ -3298,8 +3298,9 @@ with `***`).
 
 **Git LFS support**: when `MARKDOWN_VAULT_MCP_GIT_LFS=true` (default),
 `GitWriteStrategy` calls `_lfs_pull()` once during lazy initialisation, after
-startup recovery (`PushScheduler.push_if_unpushed()`) and outside the init
-lock, to resolve LFS pointer files before the first write is committed.
+startup recovery (`PushScheduler.push_if_unpushed()`) and under the strategy
+lock (the one-time write init holds it, so no other git operation overlaps),
+to resolve LFS pointer files before the first write is committed.
 `_lfs_pull()` runs
 `git lfs pull` in the vault root; failures (including `git lfs` not installed
 or any non-zero exit) are logged at ERROR and never propagated to the caller.
