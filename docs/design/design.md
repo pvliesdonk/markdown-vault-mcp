@@ -2582,7 +2582,7 @@ built is not part of what consumers ask of it.
 
 ### `interfaces.py`: Storage Protocols (#1230)
 
-Three protocols for what the managers depend on, mirroring the move already
+Three concepts, four protocols, mirroring the move already
 made for `EmbeddingProvider` and applying it to the storage that provider
 feeds:
 
@@ -3587,7 +3587,7 @@ whose restore failed instead of committing stale local content over them.
 auto-commit locally and there is no remote to reach. It gated `sync_once`
 alone, so `force_pull` ran the pipeline regardless — `git fetch origin`
 against a checkout with no `origin` (reporting the retryable-looking
-`fetch_failed`), and `CalledProcessError` out of `_head_sha` against a vault
+`fetch_failed`), and `CalledProcessError` out of `head_sha` against a vault
 that is not a git repository at all. `force_pull` now returns
 `applied=False, reason="pull_disabled"` before running any git command. The
 reason is terminal by construction: retrying cannot change it without
