@@ -13,7 +13,7 @@ The authoritative design specification lives at [`docs/design/design.md`](docs/d
 src/markdown_vault_mcp/
   __init__.py        -- minimal template-skeleton root (docstring + __version__); import from submodules, not the root (#665, #903)
   utils/
-    __init__.py        -- path-traversal guard (validate_path) + attachment/exclusion helpers re-exported for managers and facets
+    __init__.py        -- shared path-traversal guard (resolve_inside + validate_path variants) + attachment/exclusion helpers re-exported for managers and facets (#876)
     text.py            -- text normalization, position mapping, fuzzy matching
     links.py           -- link target computation and replacement
     serialization.py   -- toc_payload: TocEntry/SubtreeToc → JSON-able dicts

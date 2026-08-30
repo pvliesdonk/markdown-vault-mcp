@@ -53,6 +53,7 @@ from markdown_vault_mcp.types import (
 from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
     is_path_excluded,
+    resolve_inside,
     validate_path,
 )
 from markdown_vault_mcp.utils.links import (
@@ -323,10 +324,7 @@ class DocumentManager:
                 "Set MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS=* to allow "
                 "all non-.md files."
             )
-        abs_path = (self._source_dir / path).resolve()
-        if not abs_path.is_relative_to(self._source_dir.resolve()):
-            raise ValueError(f"Path traversal detected: {path}")
-        return abs_path
+        return resolve_inside(path, self._source_dir)
 
     def _validate_dir_path(self, path: str) -> Path:
         """Resolve a relative folder path and validate it is inside the vault.
@@ -346,9 +344,9 @@ class DocumentManager:
         """
         if not path or path in (".", "/"):
             raise ValueError(f"Invalid folder path: {path!r}")
-        abs_path = (self._source_dir / path).resolve()
-        source_root = self._source_dir.resolve()
-        if abs_path == source_root or not abs_path.is_relative_to(source_root):
+        abs_path = resolve_inside(path, self._source_dir)
+        if abs_path == self._source_dir.resolve():
+            # A folder scope must be a strict subtree, never the vault root.
             raise ValueError(f"Path traversal detected: {path}")
         return abs_path
 

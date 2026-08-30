@@ -33,7 +33,11 @@ from fastmcp_pvl_core import (
 
 from markdown_vault_mcp.domain import get_vault_singleton
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
-from markdown_vault_mcp.utils import effective_attachment_extensions, validate_path
+from markdown_vault_mcp.utils import (
+    effective_attachment_extensions,
+    resolve_inside,
+    validate_path,
+)
 from markdown_vault_mcp.utils.text import decode_utf8
 
 logger = logging.getLogger(__name__)
@@ -89,9 +93,7 @@ def _validate_destination(
     if path.endswith(".md"):
         validate_path(path, source_dir)
         return
-    resolved = (source_dir / path).resolve()
-    if not resolved.is_relative_to(source_dir.resolve()):
-        raise ValueError(f"Path traversal detected: {path}")
+    resolved = resolve_inside(path, source_dir)
     exts = effective_attachment_extensions(attachment_extensions)
     ext = resolved.suffix.lstrip(".").lower()
     if "*" not in exts and ext not in exts:
@@ -121,9 +123,7 @@ def _validate_source(
     if not is_attachment:
         resolved = validate_path(path, source_dir)
     else:
-        resolved = (source_dir / path).resolve()
-        if not resolved.is_relative_to(source_dir.resolve()):
-            raise ValueError(f"Path traversal detected: {path}")
+        resolved = resolve_inside(path, source_dir)
     try:
         exists = resolved.is_file()
     except OSError as exc:  # pragma: no cover - defensive: stat fault on is_file()
@@ -211,9 +211,7 @@ class VaultTransferSink:
         if not scope:
             return
         source_dir = self._config.source_dir
-        folder = (source_dir / scope).resolve()
-        if not folder.is_relative_to(source_dir.resolve()):
-            raise ValueError(f"Path traversal detected: {scope}")
+        folder = resolve_inside(scope, source_dir)
         if not folder.is_dir():
             raise ValueError(f"Bundle folder not found: {scope}")
 

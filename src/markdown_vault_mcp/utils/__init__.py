@@ -103,6 +103,36 @@ def effective_attachment_extensions(
     return frozenset(attachment_extensions)
 
 
+def resolve_inside(path: str, base: Path, *, original: str | None = None) -> Path:
+    """Resolve *path* against *base* and verify the result stays inside it.
+
+    The single path-traversal guard shared by every validator: resolve the
+    joined path, then reject it unless it is *base* itself or one of its
+    descendants. Callers that must also reject *base* itself (e.g. a folder
+    scope that may not be the vault root) add that check locally.
+
+    Args:
+        path: Relative path to resolve (may contain ``..`` segments —
+            that is exactly what the guard catches).
+        base: Absolute base directory the result must stay inside.
+        original: Spelling of the path to name in the error message, for
+            callers that normalized *path* before resolving. Defaults to
+            *path* itself.
+
+    Returns:
+        The resolved absolute path.
+
+    Raises:
+        ValueError: If the resolved path escapes *base*.
+    """
+    abs_path = (base / path).resolve()
+    if not abs_path.is_relative_to(base.resolve()):
+        raise ValueError(
+            f"Path traversal detected: {path if original is None else original}"
+        )
+    return abs_path
+
+
 def validate_path(path: str, source_dir: Path) -> Path:
     """Resolve a relative path and validate it is inside *source_dir*.
 
@@ -119,10 +149,7 @@ def validate_path(path: str, source_dir: Path) -> Path:
     """
     if not path.endswith(".md"):
         raise ValueError(f"Path must end with '.md': {path}")
-    abs_path = (source_dir / path).resolve()
-    if not abs_path.is_relative_to(source_dir.resolve()):
-        raise ValueError(f"Path traversal detected: {path}")
-    return abs_path
+    return resolve_inside(path, source_dir)
 
 
 def validate_history_path(
@@ -160,10 +187,7 @@ def validate_history_path(
         raise ValueError(
             f"Path must be a .md note or a configured attachment type: {path}"
         )
-    abs_path = (source_dir / path).resolve()
-    if not abs_path.is_relative_to(source_dir.resolve()):
-        raise ValueError(f"Path traversal detected: {path}")
-    return abs_path
+    return resolve_inside(path, source_dir)
 
 
 def validate_history_dir(path: str, source_dir: Path) -> Path:
@@ -192,10 +216,7 @@ def validate_history_dir(path: str, source_dir: Path) -> Path:
             "A directory history scope must name a folder; pass None for "
             "whole-vault history."
         )
-    abs_path = (source_dir / path).resolve()
-    if not abs_path.is_relative_to(source_dir.resolve()):
-        raise ValueError(f"Path traversal detected: {path}")
-    return abs_path
+    return resolve_inside(path, source_dir)
 
 
 __all__ = [
@@ -208,6 +229,7 @@ __all__ = [
     "fts_row_to_note_info",
     "is_path_excluded",
     "normalize_text",
+    "resolve_inside",
     "validate_history_dir",
     "validate_history_path",
     "validate_path",

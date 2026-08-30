@@ -725,6 +725,13 @@ class TestValidation:
         with pytest.raises(ValueError, match="Invalid folder path"):
             doc_mgr.get_toc(".")
 
+    def test_get_toc_folder_resolving_to_root_raises(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        """A folder path that resolves to the vault root itself is rejected."""
+        with pytest.raises(ValueError, match="Path traversal"):
+            doc_mgr.get_toc("sub/..")
+
     def test_is_path_excluded(self, doc_vault: Path) -> None:
         fts = FTSIndex(db_path=":memory:")
         mgr = DocumentManager(

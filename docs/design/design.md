@@ -1407,6 +1407,15 @@ All public **write** methods accepting a `path` parameter call
 This applies to `write()`, `edit()`, `delete()`, `rename()`, and all
 attachment write operations.
 
+The resolve-then-contain-then-raise sequence itself lives in one shared
+helper, `utils.resolve_inside(path, base)` (#876): every raising validator —
+`validate_path`, `validate_history_path`, `validate_history_dir`, the
+attachment/folder validators in `DocumentManager`, the conventions folder
+normalizer, and the transfer-sink upload/download/bundle checks — delegates
+containment to it. Site-specific policy stays local: extension allowlists,
+`_validate_dir_path` additionally rejecting the vault root, and read paths
+that return `None` instead of raising.
+
 `read()` validates the path inline rather than via `_validate_path()`: if the
 resolved path escapes `source_dir`, it returns `None` instead of raising.
 

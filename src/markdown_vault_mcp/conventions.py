@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 import frontmatter as fm
 import yaml
 
-from markdown_vault_mcp.utils import is_path_excluded
+from markdown_vault_mcp.utils import is_path_excluded, resolve_inside
 from markdown_vault_mcp.utils.fs import iter_markdown_files
 
 if TYPE_CHECKING:
@@ -172,9 +172,7 @@ class ConventionsResolver:
             cleaned = cleaned.rsplit("/", 1)[0] if "/" in cleaned else ""
         if not cleaned:
             return ""
-        abs_path = (self._source_dir / cleaned).resolve()
-        if not abs_path.is_relative_to(self._source_dir.resolve()):
-            raise ValueError(f"Path traversal detected: {path}")
+        abs_path = resolve_inside(cleaned, self._source_dir, original=path)
         return abs_path.relative_to(self._source_dir.resolve()).as_posix()
 
     def _load(self, folder: str) -> ConventionEntry | None:
