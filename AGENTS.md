@@ -17,6 +17,7 @@ src/markdown_vault_mcp/
     text.py            -- text normalization, position mapping, fuzzy matching
     links.py           -- link target computation and replacement
     serialization.py   -- toc_payload: TocEntry/SubtreeToc → JSON-able dicts
+    content_kind.py    -- is_note/is_allowed_artifact/is_attachment: single owner of the note-vs-artifact boundary + the registry of the three '.md' axes (#1235)
     fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
     fts.py             -- fts_row_to_note_info: FTS row → NoteInfo conversion shared across managers
   managers/
@@ -25,7 +26,10 @@ src/markdown_vault_mcp/
     search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats
     index.py           -- IndexManager: build_index, reindex, dirty-path FTS refresh; delegates embeddings to the composed EmbeddingsManager (#1157)
     embeddings.py      -- EmbeddingsManager: vector lifecycle — cold build, convergence, inline embed, deferred flush, status (#1157); internal collaborator, not re-exported
-    document.py        -- DocumentManager: CRUD, attachments, backlinks; path checks delegate to utils.validate_path
+    document.py        -- DocumentManager: note CRUD, backlinks, delete/rename/move orchestration; artifact CRUD delegated to ArtifactStore (#1235)
+    artifacts.py       -- ArtifactStore: validate/size/read/write/unlink/move for non-.md artifacts over the manager's shared lock + notifier (#1235); internal collaborator, not re-exported
+    _write_notifier.py -- WriteNotifier: single owner of write-callback dispatch shape incl. the old_path opt-in probe (#894, #1235)
+    _write_kernel.py   -- atomic_write / check_if_match / umask cache: the pure write primitives both the note and artifact paths use (#1235)
     git_query.py       -- GitQueryManager: git history/diff reads (#610)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation, log seeding (#963)

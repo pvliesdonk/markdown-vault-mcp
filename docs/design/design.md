@@ -1484,9 +1484,10 @@ attachment write operations.
 
 The resolve-then-contain-then-raise sequence itself lives in one shared
 helper, `utils.resolve_inside(path, base)` (#876): every raising validator —
-`validate_path`, `validate_history_path`, `validate_history_dir`, the
-attachment/folder validators in `DocumentManager`, the conventions folder
-normalizer, and the transfer-sink upload/download/bundle checks — delegates
+`validate_path`, `validate_history_path`, `validate_history_dir`,
+`ArtifactStore.validate_path` and `DocumentManager._validate_dir_path`, the
+conventions folder normalizer, and the transfer-sink upload/download/bundle
+checks — delegates
 containment to it. Site-specific policy stays local: extension allowlists,
 `_validate_dir_path` additionally rejecting the vault root, and read paths
 that return `None` instead of raising.
@@ -2604,6 +2605,16 @@ This is the seam the standing "if tens of thousands, evaluate Qdrant" risk
 note needs: substituting a backend is now a matter of satisfying a protocol
 rather than editing six manager constructors.
 
+**When not to add one.** `ArtifactStore` (#1235) deliberately is *not* a
+protocol, and the reasoning is the membership rule above read backwards: it has
+one implementation, one consumer, and no substitution need, so an interface
+would be a one-implementation abstraction — the thing this module warns
+against. The caller that looks like it would motivate one, `VaultTransferSink`,
+structurally cannot hold a vault-owned object; it is served by the pure
+predicates in `utils/content_kind.py`. Check both — several consumers wanting
+different subsets, and a real backend-swap need — before adding a protocol
+here.
+
 ### `providers.py`: Embedding Providers
 
 Copied from ifcraftcorpus, adapted:
@@ -3293,6 +3304,58 @@ identity_providers:
 The server supports reading and writing non-markdown binary files (PDFs, images, and so on) by overloading the existing MCP tools, with no new tool registrations.
 
 **Extension-based dispatch**: `.md` files always follow the markdown path. All other extensions are treated as attachments if they appear in the configured allowlist.
+
+That decision has a single owner, `utils/content_kind.py` (#1235). It was
+previously re-derived from the path string at roughly fifteen call sites whose
+answers disagreed — some consulted the allowlist, others tested only the
+suffix, and three different case policies were in use.
+
+**Three axes** ride on the `.md` extension. All ask the same question and share
+`is_note()`; what differs is what a *non-note* means, so they are documented
+rather than collapsed into one tri-state:
+
+| Axis | Meaning of non-note | Where |
+|---|---|---|
+| Artifact | an attachment | `ArtifactStore`, `DocumentManager` delete/rename/move, the transfer sink, the `read`/`write`/`fetch` tools |
+| Folder | a directory scope | `DocumentManager.get_toc`, `SummarizeManager._expand_path` |
+| Indexability | not a candidate for the index | `IndexManager`, `EmbeddingsManager`, `utils.fs.iter_markdown_files` |
+
+Routing the indexability axis through the same predicate is what makes a
+future non-markdown format a single edit rather than a hunt.
+
+**Two divergences are deliberate and preserved**, recorded in that module:
+
+- *Case.* Routing is case-sensitive. `SearchManager._attachment_info` is
+  case-insensitive (`has_md_suffix`). `DocumentManager.read`'s note-size cap
+  uses a third spelling and stays inline, because that method validates no
+  extension at all — a file named `NOTE.MD` really does reach it.
+- *Resolution.* Some callers take the extension from the raw caller string
+  (before the traversal guard), others from the resolved path (after). Symlinks
+  make those differ, so nothing in `content_kind` resolves; each caller passes
+  the object whose extension it means.
+
+`is_attachment()` is **not** the routing test: the tool layer routes on
+`not is_note(path)` alone, so a non-allowlisted file still reaches the
+attachment branch and is rejected there with the error naming
+`MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS`.
+
+**Storage**: `ArtifactStore` (`managers/artifacts.py`) owns artifact
+validate/size/read/write/unlink/move. It is composed into `DocumentManager`
+and shares that manager's write lock and `WriteNotifier` — the same objects,
+following the #893 collaborator precedent — so artifact writes serialise
+against note writes and `Vault.pause_writes` holds both still. `unlink` and
+`move` return paths and fire no callback: `delete` and `rename` fire one after
+their branch closes, for notes and artifacts alike.
+
+It is a plain class, not a protocol, under the membership rule in
+`interfaces.py`: one implementation, one consumer, no substitution need. The
+one caller that might motivate an interface, `VaultTransferSink`, cannot hold a
+vault-owned object at all — it validates from a `ProjectConfig` at link-mint
+time, before any vault is resolved — and is served by the pure predicates
+instead. Artifacts also get no facet and no `vault.artifacts` accessor:
+`read_attachment`/`write_attachment` are already reachable through
+`vault.reader`/`vault.writer`, and a second public route would recreate exactly
+the duplication this removed.
 
 **Default allowlist**: `pdf png jpg jpeg gif webp svg bmp tiff docx xlsx pptx odt ods odp zip tar gz mp3 mp4 wav ogg txt csv tsv json yaml toml xml html css js ts`. The `.md` extension is always excluded regardless of configuration.
 
