@@ -395,17 +395,27 @@ class TestLifespanEmbeddingConvergence:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", str(tmp_path / "fts.db"))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
 
-        # Inject the mock provider into to_vault_kwargs so the lifespan
-        # submits the boot BuildEmbeddings job without a real provider.
-        original_to_kwargs = deps_mod.to_vault_kwargs
+        # Inject the mock provider into the resolved instances so the
+        # lifespan submits the boot BuildEmbeddings job without a real
+        # provider (domain.Service.start resolves via to_vault_instances /
+        # to_vault_settings since #1158).
+        import dataclasses
 
-        def patched_to_kwargs(config: Any) -> dict[str, Any]:
-            kw = original_to_kwargs(config)
-            kw["embedding_provider"] = MockEmbeddingProvider()
-            kw["embeddings_path"] = tmp_path / "vectors"
-            return kw
+        original_to_instances = deps_mod.to_vault_instances
+        original_to_settings = deps_mod.to_vault_settings
 
-        monkeypatch.setattr(deps_mod, "to_vault_kwargs", patched_to_kwargs)
+        def patched_to_instances(config: Any) -> Any:
+            return dataclasses.replace(
+                original_to_instances(config),
+                embedding_provider=MockEmbeddingProvider(),
+            )
+
+        def patched_to_settings(config: Any, *, instances: Any = None) -> Any:
+            settings = original_to_settings(config, instances=instances)
+            return dataclasses.replace(settings, embeddings_path=tmp_path / "vectors")
+
+        monkeypatch.setattr(deps_mod, "to_vault_instances", patched_to_instances)
+        monkeypatch.setattr(deps_mod, "to_vault_settings", patched_to_settings)
         server = make_server()
 
         async def _run() -> tuple[dict[str, Any], dict[str, Any], list[str]]:

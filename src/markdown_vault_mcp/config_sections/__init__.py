@@ -9,6 +9,7 @@ from markdown_vault_mcp.config_sections.indexing import IndexingConfig
 from markdown_vault_mcp.config_sections.search import SearchConfig
 from markdown_vault_mcp.config_sections.summarize import SummarizeConfig
 from markdown_vault_mcp.config_sections.sync import SyncConfig
+from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 
 __all__ = [
     "ContentConfig",
@@ -18,4 +19,5 @@ __all__ = [
     "SearchConfig",
     "SummarizeConfig",
     "SyncConfig",
+    "VaultSettings",
 ]

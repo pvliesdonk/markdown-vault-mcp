@@ -183,7 +183,7 @@ class SearchManager:
         embedding_provider: EmbeddingProvider | None = None,
         indexed_frontmatter_fields: list[str] | None = None,
         exclude_patterns: list[str] | None = None,
-        attachment_extensions: list[str] | None = None,
+        attachment_extensions: Sequence[str] | None = None,
         link_manager: LinkManager | None = None,
         okf_detector: OkfDetector | None = None,
         rebuild_embeddings: Callable[[], None] | None = None,

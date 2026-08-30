@@ -3,9 +3,11 @@
 ``config.py`` is a copier-template-owned file: it must stay at the skeleton shape
 (module docstring, ``ProjectConfig`` dataclass, ``from_env`` scaffold) with domain
 content confined to the ``CONFIG-FIELDS`` / ``CONFIG-FROM-ENV`` sentinels. All the
-domain assembly logic that used to live in its body — the ``Vault(**kwargs)``
-builder, the git-strategy construction, the chunk-cap heuristic, and the
-``from_env`` field validators — lives here instead (#900, epic #898).
+domain assembly logic that used to live in its body — the settings-first vault
+assembly (``to_vault_settings`` / ``to_vault_instances``, #1158) with its
+deprecated ``Vault(**kwargs)`` bridge, the git-strategy construction, the
+chunk-cap heuristic, and the ``from_env`` field validators — lives here instead
+(#900, epic #898).
 
 Imports only fastmcp_pvl_core, stdlib, and sibling domain modules (never
 ``config`` at runtime) so ``config.py`` can import these without a cycle.
@@ -13,17 +15,22 @@ Imports only fastmcp_pvl_core, stdlib, and sibling domain modules (never
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from fastmcp_pvl_core import parse_bool as _parse_bool
 
+from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git import GitWriteStrategy
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.providers import EmbeddingProvider
+    from markdown_vault_mcp.summarizer import Summarizer
+    from markdown_vault_mcp.types import WriteCallback
 
 logger = logging.getLogger(__name__)
 
@@ -137,11 +144,244 @@ def _build_git_strategy(
     )
 
 
+@dataclasses.dataclass(frozen=True)
+class VaultInstances:
+    """The never-config-derived ``Vault`` collaborators, resolved from config.
+
+    Carries the constructed instances that stay explicit ``Vault`` keywords
+    in settings-first construction (#1158), plus the *resolved* pull
+    interval, which is a property of the git assembly (only sync-enabled
+    modes run the pull loop) rather than a raw config read — the config
+    default is 600 even on non-git vaults.
+
+    Attributes:
+        embedding_provider: Resolved embedding provider, or ``None`` when
+            semantic search is unconfigured or auto-detection failed.
+        summarizer: Resolved summarization backend, or ``None`` when
+            unconfigured or auto-detection failed.
+        git_strategy: The git write strategy (always constructed; commit-only
+            mode when no remote is configured).
+        on_write: Write callback for the vault — the git strategy, so writes
+            auto-commit.
+        git_pull_interval_s: Resolved periodic-pull interval; ``0`` when no
+            remote is configured.
+    """
+
+    embedding_provider: EmbeddingProvider | None
+    summarizer: Summarizer | None
+    git_strategy: GitWriteStrategy
+    on_write: WriteCallback | None
+    git_pull_interval_s: int
+
+
+def _resolve_embedding_provider(config: ProjectConfig) -> EmbeddingProvider | None:
+    """Resolve the embedding provider, honouring the explicit-vs-auto posture.
+
+    Semantic search is gated by the storage path in ``config.indexing``,
+    while the provider lives in ``config.embeddings`` (cross-section
+    coupling).  An unrecognised provider name raises ConfigurationError from
+    the resolver and propagates unchanged.
+
+    Args:
+        config: The served project configuration.
+
+    Returns:
+        The provider, or ``None`` (unconfigured, or auto-detection failed).
+
+    Raises:
+        ConfigurationError: If an explicitly configured provider fails to
+            load.
+    """
+    if config.indexing.embeddings_path is None:
+        return None
+    explicit_provider = (config.embeddings.provider or "").strip()
+    try:
+        from markdown_vault_mcp import providers as _providers
+
+        return _providers.get_embedding_provider(config)
+    except (ImportError, RuntimeError) as exc:
+        if explicit_provider:
+            # The operator explicitly chose a backend; a load failure is
+            # a configuration error that must surface, not silently fall
+            # back to keyword-only search.
+            raise ConfigurationError(
+                f"Embedding provider {explicit_provider!r} was explicitly "
+                "configured (MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER) but "
+                f"could not be loaded: {exc}. Fix the configuration, or "
+                "unset the variable to fall back to auto-detection."
+            ) from exc
+        logger.warning(
+            "Could not auto-detect an embedding provider; semantic "
+            "search disabled. Set MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER "
+            "to require a specific backend.",
+            exc_info=True,
+        )
+        return None
+
+
+def _resolve_summarizer(config: ProjectConfig) -> Summarizer | None:
+    """Resolve the summarization backend when one is configured.
+
+    LLM summarization is gated on a backend being configured (an API key or
+    an explicit OpenAI-compatible base URL).  Same posture as embeddings: an
+    explicit provider that fails to load is a configuration error;
+    auto-detect failure warns and disables.
+
+    Args:
+        config: The served project configuration.
+
+    Returns:
+        The backend, or ``None`` (unconfigured, or auto-detection failed).
+
+    Raises:
+        ConfigurationError: If an explicitly configured backend fails to
+            load.
+    """
+    if not config.summarize.has_provider():
+        return None
+    explicit_summarizer = (config.summarize.provider or "").strip()
+    try:
+        from markdown_vault_mcp import summarizer as _summarizer
+
+        return _summarizer.get_summarizer(config)
+    except (ImportError, RuntimeError) as exc:
+        if explicit_summarizer:
+            raise ConfigurationError(
+                f"Summarize provider {explicit_summarizer!r} was "
+                "explicitly configured "
+                "(MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER) but could not "
+                f"be loaded: {exc}. Fix the configuration, or unset the "
+                "variable to fall back to auto-detection."
+            ) from exc
+        logger.warning(
+            "Could not load a summarization backend; the summarize "
+            "tool is disabled. Install the SDK with "
+            "pip install 'markdown-vault-mcp[summarize]'.",
+            exc_info=True,
+        )
+        return None
+
+
+def _resolve_git(config: ProjectConfig) -> tuple[GitWriteStrategy, int]:
+    """Build the git strategy for the configured mode, with the pull interval.
+
+    Args:
+        config: The served project configuration.
+
+    Returns:
+        ``(strategy, pull_interval_s)`` — the interval is ``0`` in
+        commit-only mode (no remote configured).
+    """
+    if config.git.repo_url is not None:
+        strategy = _build_git_strategy(
+            config,
+            token=config.git.token,
+            repo_url=config.git.repo_url,
+            managed=True,
+            enable_sync=True,
+        )
+        return strategy, config.git.pull_interval_s
+
+    # Backward compatibility mode: token without explicit repo URL keeps
+    # pull+push semantics, using the existing local checkout's origin.
+    if config.git.token is not None:
+        strategy = _build_git_strategy(
+            config,
+            token=config.git.token,
+            managed=False,
+            enable_sync=True,
+        )
+        return strategy, config.git.pull_interval_s
+
+    # Unmanaged / commit-only mode: commit locally if repo exists, never pull/push.
+    strategy = _build_git_strategy(
+        config,
+        token=None,
+        managed=False,
+        enable_sync=False,
+    )
+    return strategy, 0
+
+
+def to_vault_instances(config: ProjectConfig) -> VaultInstances:
+    """Resolve the constructed ``Vault`` collaborators from config.
+
+    Absorbs the three conditional builds that historically lived in
+    ``to_vault_kwargs``: embedding-provider resolution, summarizer
+    resolution, and the three-mode git-strategy construction.
+
+    Args:
+        config: The :class:`~markdown_vault_mcp.config.ProjectConfig` to
+            build from.
+
+    Returns:
+        The resolved :class:`VaultInstances`.
+
+    Raises:
+        ConfigurationError: If an explicitly configured embedding or
+            summarize provider fails to load.
+    """
+    provider = _resolve_embedding_provider(config)
+    summarizer = _resolve_summarizer(config)
+    git_strategy, git_pull_interval_s = _resolve_git(config)
+    return VaultInstances(
+        embedding_provider=provider,
+        summarizer=summarizer,
+        git_strategy=git_strategy,
+        on_write=git_strategy,
+        git_pull_interval_s=git_pull_interval_s,
+    )
+
+
+def to_vault_settings(
+    config: ProjectConfig, *, instances: VaultInstances | None = None
+) -> VaultSettings:
+    """Map config onto :class:`VaultSettings` for settings-first construction.
+
+    Thin composition over
+    :meth:`~markdown_vault_mcp.config_sections.vault_settings.VaultSettings.from_project_config`
+    that threads the resolved embedding provider's token context into the
+    ``max_chunk_chars`` derivation (a token-dense chunk that fits
+    ``max_chunk_words`` can still exceed the model context; a positive
+    override wins verbatim, ``-1`` opts into unbounded context-scaling
+    (#790), otherwise the cap is bounded by the ceiling, which is also the
+    fallback when the context is unknown).
+
+    Args:
+        config: The :class:`~markdown_vault_mcp.config.ProjectConfig` to
+            build from.
+        instances: Already-resolved collaborators from
+            :func:`to_vault_instances`; pass them to avoid resolving the
+            embedding provider a second time.  ``None`` resolves a throwaway
+            set internally.
+
+    Returns:
+        The mapped :class:`VaultSettings`.
+    """
+    if instances is None:
+        instances = to_vault_instances(config)
+    provider = instances.embedding_provider
+    return VaultSettings.from_project_config(
+        config,
+        embedding_context_length=(
+            provider.context_length if provider is not None else None
+        ),
+    )
+
+
 def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
     """Return keyword arguments suitable for ``Vault(**kwargs)``.
 
     Resolves the embedding provider (when ``indexing.embeddings_path``
     is set) and creates a :class:`~markdown_vault_mcp.git.GitWriteStrategy`.
+
+    .. deprecated::
+        Kwargs-explosion construction is superseded by settings-first
+        construction (#1158): build a :class:`VaultSettings` via
+        :func:`to_vault_settings` and the collaborators via
+        :func:`to_vault_instances`, then pass both to ``Vault(...)``.  This
+        bridge delegates to those two and keeps the historical dict shape
+        for existing callers; removal is scheduled for the next major.
 
     Args:
         config: The :class:`~markdown_vault_mcp.config.ProjectConfig` to build from.
@@ -150,155 +390,27 @@ def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
         Dict of keyword arguments accepted by
         :class:`~markdown_vault_mcp.vault.Vault.__init__`.
     """
-    kwargs: dict[str, Any] = {
-        "source_dir": config.source_dir,
-        "read_only": config.read_only,
-        "write_protect_existing": config.write_protect_existing,
-        "index_path": config.indexing.index_path,
-        "embeddings_path": config.indexing.embeddings_path,
-        "state_path": config.indexing.state_path,
-        "indexed_frontmatter_fields": config.indexing.indexed_frontmatter_fields,
-        "required_frontmatter": config.indexing.required_frontmatter,
-        "exclude_patterns": config.indexing.exclude_patterns,
-        "title_field": config.indexing.title_field,
-        "searchable_frontmatter_fields": config.indexing.searchable_frontmatter,
-        "embed_context": config.embeddings.embed_context,
-        "embedding_batch_size": config.embeddings.embedding_batch_size,
-        "conventions_file": config.content.conventions_file,
-        "okf_mode": config.content.okf_mode,
-        "okf_write": config.content.okf_write,
-        "attachment_extensions": config.content.attachment_extensions,
-        "max_attachment_size_mb": config.content.max_attachment_size_mb,
-        "max_note_read_bytes": config.content.max_note_read_bytes,
-        "git_pull_interval_s": 0,
-        "default_search_mode": config.search.default_mode,
-        "chunks_per_file": config.search.chunks_per_file,
-        "snippet_words": config.search.snippet_words,
-        "length_downweight_alpha": config.search.length_downweight_alpha,
-        "max_chunk_words": config.search.max_chunk_words,
-        "chunk_overlap_words": config.search.chunk_overlap_words,
-        # Weight maps are stored as frozen sorted tuples on the config
-        # (#639); the Vault API takes plain dicts.
-        "folder_weights": (
-            dict(config.search.folder_weights)
-            if config.search.folder_weights is not None
-            else None
-        ),
-        "fts_weights": (
-            dict(config.search.fts_weights)
-            if config.search.fts_weights is not None
-            else None
-        ),
-    }
-
-    # Semantic search is gated by the storage path in config.indexing,
-    # while the provider lives in config.embeddings (cross-section coupling).
-    # An unrecognised provider name raises ConfigurationError from the
-    # resolver and propagates here unchanged.
-    provider = None
-    if config.indexing.embeddings_path is not None:
-        explicit_provider = (config.embeddings.provider or "").strip()
-        try:
-            from markdown_vault_mcp import providers as _providers
-
-            provider = _providers.get_embedding_provider(config)
-            kwargs["embedding_provider"] = provider
-        except (ImportError, RuntimeError) as exc:
-            if explicit_provider:
-                # The operator explicitly chose a backend; a load failure is
-                # a configuration error that must surface, not silently fall
-                # back to keyword-only search.
-                raise ConfigurationError(
-                    f"Embedding provider {explicit_provider!r} was explicitly "
-                    "configured (MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER) but "
-                    f"could not be loaded: {exc}. Fix the configuration, or "
-                    "unset the variable to fall back to auto-detection."
-                ) from exc
-            logger.warning(
-                "Could not auto-detect an embedding provider; semantic "
-                "search disabled. Set MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER "
-                "to require a specific backend.",
-                exc_info=True,
-            )
-
-    # Derive the chunker char cap from the embedding model's token context
-    # (a token-dense chunk that fits max_chunk_words can still exceed the
-    # model context). A positive override wins verbatim; -1 opts into
-    # unbounded context-scaling (#790); otherwise the default is bounded by
-    # the ceiling, which is also the fallback when the context is unknown.
-    kwargs["max_chunk_chars"] = derive_max_chunk_chars(
-        context_length=(provider.context_length if provider is not None else None),
-        override=config.search.max_chunk_chars_override,
+    instances = to_vault_instances(config)
+    settings = to_vault_settings(config, instances=instances)
+    kwargs: dict[str, Any] = {"source_dir": config.source_dir}
+    kwargs.update(
+        (field.name, getattr(settings, field.name))
+        for field in dataclasses.fields(VaultSettings)
     )
-    # The explicit override is also threaded straight through as the stable
-    # warm-restart key (#649): the coordinator compares it (not the derived
-    # cap) so a transient model-context read cannot trigger a rebuild.
-    kwargs["max_chunk_chars_override"] = config.search.max_chunk_chars_override
-
-    # LLM summarization is gated on a backend being configured (an API key
-    # or an explicit OpenAI-compatible base URL).
-    # Same posture as embeddings: an explicit provider that fails to load is
-    # a configuration error; auto-detect failure warns and disables.
-    if config.summarize.has_provider():
-        explicit_summarizer = (config.summarize.provider or "").strip()
-        try:
-            from markdown_vault_mcp import summarizer as _summarizer
-
-            kwargs["summarizer"] = _summarizer.get_summarizer(config)
-            kwargs["summarize_max_notes"] = config.summarize.max_notes
-            kwargs["summarize_max_input_chars"] = config.summarize.max_input_chars
-        except (ImportError, RuntimeError) as exc:
-            if explicit_summarizer:
-                raise ConfigurationError(
-                    f"Summarize provider {explicit_summarizer!r} was "
-                    "explicitly configured "
-                    "(MARKDOWN_VAULT_MCP_SUMMARIZE_PROVIDER) but could not "
-                    f"be loaded: {exc}. Fix the configuration, or unset the "
-                    "variable to fall back to auto-detection."
-                ) from exc
-            logger.warning(
-                "Could not load a summarization backend; the summarize "
-                "tool is disabled. Install the SDK with "
-                "pip install 'markdown-vault-mcp[summarize]'.",
-                exc_info=True,
-            )
-
-    if config.git.repo_url is not None:
-        git_strategy = _build_git_strategy(
-            config,
-            token=config.git.token,
-            repo_url=config.git.repo_url,
-            managed=True,
-            enable_sync=True,
-        )
-        kwargs["git_pull_interval_s"] = config.git.pull_interval_s
-        kwargs["git_strategy"] = git_strategy
-        kwargs["on_write"] = git_strategy
-        return kwargs
-
-    # Backward compatibility mode: token without explicit repo URL keeps
-    # pull+push semantics, using the existing local checkout's origin.
-    if config.git.token is not None:
-        git_strategy = _build_git_strategy(
-            config,
-            token=config.git.token,
-            managed=False,
-            enable_sync=True,
-        )
-        kwargs["git_pull_interval_s"] = config.git.pull_interval_s
-        kwargs["git_strategy"] = git_strategy
-        kwargs["on_write"] = git_strategy
-        return kwargs
-
-    # Unmanaged / commit-only mode: commit locally if repo exists, never pull/push.
-    git_strategy = _build_git_strategy(
-        config,
-        token=None,
-        managed=False,
-        enable_sync=False,
-    )
-    kwargs["git_strategy"] = git_strategy
-    kwargs["on_write"] = git_strategy
+    if instances.embedding_provider is not None:
+        kwargs["embedding_provider"] = instances.embedding_provider
+    if instances.summarizer is not None:
+        kwargs["summarizer"] = instances.summarizer
+    else:
+        # Historical dict shape: the summarize caps ride along only when a
+        # backend actually resolved.
+        del kwargs["summarize_max_notes"]
+        del kwargs["summarize_max_input_chars"]
+    kwargs["git_strategy"] = instances.git_strategy
+    kwargs["on_write"] = instances.on_write
+    # The git assembly is authoritative for the resolved interval (settings
+    # carries the same value; the equivalence is test-pinned).
+    kwargs["git_pull_interval_s"] = instances.git_pull_interval_s
     return kwargs
 
 
