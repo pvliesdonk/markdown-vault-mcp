@@ -257,7 +257,7 @@ Calls to `reindex` and `build_embeddings` during a cold-start background FTS bui
 
 ### `reindex`
 
-Incrementally update the full-text search index to reflect file changes made outside this server. Only changed files are processed; unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665).
+Incrementally update the full-text search index to reflect file changes made outside this server. Only changed files are processed; unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665). A previously indexed note that becomes unparseable is dropped from search and read results in the same pass (it no longer serves its last-good content) and shows up in `skipped_files` until it is fixed or deleted (#1129).
 
 If semantic search is configured, the reindex job re-embeds the changed documents on the writer thread. Poll `get_index_status` and watch the `dirty_embeddings` counter to observe embedding convergence.
 
