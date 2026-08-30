@@ -24,6 +24,7 @@ from markdown_vault_mcp.exceptions import (
     EditConflictError,
 )
 from markdown_vault_mcp.okf import _HUMAN_ACTOR_PREFIX, append_okf_verification
+from markdown_vault_mcp.utils import is_note
 from markdown_vault_mcp.utils.text import decode_utf8
 from markdown_vault_mcp.vault import Vault
 
@@ -218,7 +219,7 @@ def register(mcp: FastMCP) -> None:
                 (DocumentExistsError) — use 'edit' or 'append' instead, or
                 read the file first and pass its etag as if_match.
         """
-        if not path.endswith(".md"):
+        if not is_note(path):
             if not content_base64:
                 raise ValueError(
                     f"content_base64 is required for non-.md attachments: {path}"
@@ -706,7 +707,7 @@ def register(mcp: FastMCP) -> None:
         # positive setting (which floors to 0 bytes) counts as "no cap" —
         # matching the pre-#862 guard — rather than tripping fetch_url's
         # positive-max_bytes validation on every attachment fetch.
-        is_markdown = path.endswith(".md")
+        is_markdown = is_note(path)
         cap_bytes = (
             0
             if is_markdown or vault.max_attachment_size_mb <= 0

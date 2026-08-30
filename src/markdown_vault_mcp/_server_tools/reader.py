@@ -7,6 +7,7 @@ from typing import Any, Literal
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 
+from markdown_vault_mcp.utils import is_note
 from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
@@ -232,7 +233,7 @@ def register(mcp: FastMCP) -> None:
                 ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB``, or the requested
                 section heading is not found.
         """
-        if not path.endswith(".md"):
+        if not is_note(path):
             cap_mb = vault.max_attachment_size_mb
             if cap_mb > 0:
                 size = await asyncio.to_thread(vault.reader.attachment_size, path)

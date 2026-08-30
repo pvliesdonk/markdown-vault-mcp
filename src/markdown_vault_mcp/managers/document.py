@@ -51,7 +51,11 @@ from markdown_vault_mcp.types import (
     WriteResult,
 )
 from markdown_vault_mcp.utils import (
+    artifact_suffix,
     effective_attachment_extensions,
+    is_allowed_artifact,
+    is_allowed_artifact_suffix,
+    is_note,
     is_path_excluded,
     resolve_inside,
     validate_path,
@@ -309,14 +313,14 @@ class DocumentManager:
             ValueError: If the path escapes the source directory, ends with
                 ``.md``, or has an extension not in the attachment allowlist.
         """
-        if path.endswith(".md"):
+        if is_note(path):
             raise ValueError(
                 f"Path ends with '.md' — use the note read/write methods "
                 f"instead: {path}"
             )
         exts = self._effective_attachment_extensions()
-        suffix = Path(path).suffix.lstrip(".").lower()
-        if "*" not in exts and suffix not in exts:
+        suffix = artifact_suffix(path)
+        if not is_allowed_artifact_suffix(suffix, exts):
             allowed_str = ", ".join(f".{e}" for e in sorted(exts))
             raise ValueError(
                 f"Extension '.{suffix}' is not in the attachment allowlist. "
@@ -1217,7 +1221,7 @@ class DocumentManager:
         """
         self._check_writable()
         with self._file_write_lock:
-            if path.endswith(".md"):
+            if is_note(path):
                 abs_path = self._validate_path(path)
                 if not abs_path.is_file():
                     raise DocumentNotFoundError(f"Document not found: {path}")
@@ -1285,7 +1289,7 @@ class DocumentManager:
         backlink_callbacks: list[tuple[Path, str]] = []
 
         with self._file_write_lock:
-            if old_path.endswith(".md"):
+            if is_note(old_path):
                 old_abs = self._validate_path(old_path)
                 new_abs = self._validate_path(new_path)
 
@@ -1546,11 +1550,10 @@ class DocumentManager:
             new_path = f"{new_rel}/{rel_within}"
             dst_abs = (self._source_dir / new_path).resolve()
             moves.append((src_abs, dst_abs))
-            if old_path.endswith(".md"):
+            if is_note(old_path):
                 md_map[old_path] = new_path
             else:
-                suffix = src_abs.suffix.lstrip(".").lower()
-                if "*" in attachment_exts or suffix in attachment_exts:
+                if is_allowed_artifact(src_abs, attachment_exts):
                     attachment_moves.append((dst_abs, new_path, src_abs))
 
         if not moves:

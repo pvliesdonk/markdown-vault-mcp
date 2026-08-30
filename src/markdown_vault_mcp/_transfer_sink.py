@@ -34,7 +34,10 @@ from fastmcp_pvl_core import (
 from markdown_vault_mcp.domain import get_vault_singleton
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
 from markdown_vault_mcp.utils import (
+    artifact_suffix,
     effective_attachment_extensions,
+    is_allowed_artifact_suffix,
+    is_note,
     resolve_inside,
     validate_path,
 )
@@ -90,13 +93,13 @@ def _validate_destination(
     Raises:
         ValueError: On path traversal or a disallowed attachment extension.
     """
-    if path.endswith(".md"):
+    if is_note(path):
         validate_path(path, source_dir)
         return
     resolved = resolve_inside(path, source_dir)
     exts = effective_attachment_extensions(attachment_extensions)
-    ext = resolved.suffix.lstrip(".").lower()
-    if "*" not in exts and ext not in exts:
+    ext = artifact_suffix(resolved)
+    if not is_allowed_artifact_suffix(ext, exts):
         raise ValueError(f"Attachment extension not allowed: .{ext}")
 
 
@@ -119,8 +122,8 @@ def _validate_source(
         ValueError: On path traversal, a missing file, or a disallowed
             attachment extension.
     """
-    is_attachment = not path.endswith(".md")
-    if not is_attachment:
+    is_artifact = not is_note(path)
+    if not is_artifact:
         resolved = validate_path(path, source_dir)
     else:
         resolved = resolve_inside(path, source_dir)
@@ -129,12 +132,12 @@ def _validate_source(
     except OSError as exc:  # pragma: no cover - defensive: stat fault on is_file()
         raise ValueError(f"File not accessible: {path}") from exc
     if not exists:
-        kind = "Attachment" if is_attachment else "Note"
+        kind = "Attachment" if is_artifact else "Note"
         raise ValueError(f"{kind} not found: {path}")
-    if is_attachment:
+    if is_artifact:
         exts = effective_attachment_extensions(attachment_extensions)
-        ext = resolved.suffix.lstrip(".").lower()
-        if "*" not in exts and ext not in exts:
+        ext = artifact_suffix(resolved)
+        if not is_allowed_artifact_suffix(ext, exts):
             raise ValueError(f"Attachment extension not allowed: .{ext}")
 
 
@@ -257,7 +260,7 @@ class VaultTransferSink:
             return await self._read_bundle(scope)
         vault = self._resolve_vault()
         filename = Path(handle).name
-        if handle.endswith(".md"):
+        if is_note(handle):
             note = await asyncio.to_thread(vault.reader.read, handle)
             if note is None:
                 logger.warning("transfer_download_note_gone path=%s", handle)
@@ -332,7 +335,7 @@ class VaultTransferSink:
             UnicodeDecodeError: A note upload whose body is not valid UTF-8.
         """
         vault = self._resolve_vault()
-        if handle.endswith(".md"):
+        if is_note(handle):
             text = decode_utf8(body)  # strips a leading BOM (#681); raises on bad UTF-8
             await asyncio.to_thread(vault.writer.write, handle, text)
         else:

@@ -69,9 +69,12 @@ from markdown_vault_mcp.types import (
     VaultStats,
 )
 from markdown_vault_mcp.utils import (
+    artifact_suffix,
     effective_attachment_extensions,
     folder_matches,
     fts_row_to_note_info,
+    has_md_suffix,
+    is_allowed_artifact_suffix,
     is_path_excluded,
     normalize_folder,
     validate_path,
@@ -1353,11 +1356,11 @@ class SearchManager:
             An :class:`~markdown_vault_mcp.types.AttachmentInfo`, or
             ``None`` when the entry is filtered out or unreadable.
         """
-        suffix = abs_path.suffix.lstrip(".").lower()
+        suffix = artifact_suffix(abs_path)
         if (
             not abs_path.is_file()
-            or abs_path.suffix.lower() == ".md"
-            or ("*" not in exts and suffix not in exts)
+            or has_md_suffix(abs_path)
+            or not is_allowed_artifact_suffix(suffix, exts)
         ):
             return None
         rel = self._attachment_rel_path(abs_path)

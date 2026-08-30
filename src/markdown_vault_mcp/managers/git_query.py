@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
+    is_note,
     validate_history_dir,
     validate_history_path,
 )
@@ -206,5 +207,5 @@ class GitQueryManager:
             since_timestamp=since_timestamp,
             limit=limit if per_commit else None,
             # True for any non-.md path; get_file_diff only emits --stat if git also reports it binary — text attachments fall through to a full diff.
-            summarize_binary=not path.endswith(".md"),
+            summarize_binary=not is_note(path),
         )
