@@ -3179,9 +3179,11 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = ["fastmcp>=3.0,<4"]
-embeddings-api = ["httpx>=0.25", "numpy>=1.20"]
-embeddings = ["fastembed>=0.3", "numpy>=1.20"]
-all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy>=1.20"]
+# numpy <2.5 while requires-python floors at 3.11: numpy 2.5.x is 3.12-only
+# and its PEP 695 stubs abort mypy at python_version=3.11 (#727, #1214).
+embeddings-api = ["httpx>=0.25", "numpy>=1.20,<2.5"]
+embeddings = ["fastembed>=0.3", "numpy>=1.20,<2.5"]
+all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy>=1.20,<2.5"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1", "mypy>=1.0"]
 
 [project.scripts]

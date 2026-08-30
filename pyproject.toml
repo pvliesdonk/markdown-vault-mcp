@@ -79,13 +79,16 @@ dependencies = [
 [project.optional-dependencies]
 # PROJECT-EXTRAS-START — add domain-specific optional-dependency groups below; kept across copier update
 mcp = ["fastmcp>=3.0,<4"]
-embeddings-api = ["httpx>=0.25", "numpy>=1.20", "openai>=1.45"]
-embeddings = ["fastembed>=0.3", "numpy>=1.20"]
+# numpy <2.5: 2.5.x is 3.12-only and its stubs abort mypy at
+# python_version=3.11 — see the [tool.mypy] comment below and #1214.  Lift
+# together with `requires-python`/`python_version` moving to 3.12.
+embeddings-api = ["httpx>=0.25", "numpy>=1.20,<2.5", "openai>=1.45"]
+embeddings = ["fastembed>=0.3", "numpy>=1.20,<2.5"]
 file-watcher = ["watchdog>=4.0"]
 # LLM-backed summarize tool (OpenAI-compatible chat-completions backend:
 # OpenAI, Ollama, Anthropic's compat endpoint, vLLM, ...).
 summarize = ["openai>=1.45"]
-all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy>=1.20", "watchdog>=4.0", "openai>=1.45"]
+all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy>=1.20,<2.5", "watchdog>=4.0", "openai>=1.45"]
 # Pulls debugpy transitively via fastmcp-pvl-core's [debug] extra.  The
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.
@@ -343,8 +346,14 @@ exclude_lines = [
 # aborts parsing them while still targeting the lower version.  numpy did
 # exactly that — 2.5.0 requires >=3.12 and its stubs use PEP 695 `type`
 # aliases, which mypy rejects at python_version=3.11 on every mypy version.
-# It is a non-issue only because `requires-python = ">=3.11"` makes numpy 2.5
-# ineligible for the whole supported range, so uv resolves 2.4.x for everyone.
+# The `requires-python = ">=3.11"` floor alone does NOT keep numpy 2.5 out:
+# uv forks the resolution on `python_full_version` markers, so a plain
+# `uv lock --upgrade` locks 2.5.x for 3.12+ interpreters — the ones CI
+# type-checks on (#1214).  The `numpy<2.5` caps in the extras above are what
+# hold the single 2.4.x resolution; lift them when this moves to "3.12".
+# Beware when re-verifying: an incremental `uv lock` (no --upgrade) keeps the
+# already-locked 2.4.x and hides the fork — that masking is how #1168 judged
+# the previous cap redundant and removed it.  Test with --upgrade.
 python_version = "3.11"
 strict = true
 warn_return_any = true
