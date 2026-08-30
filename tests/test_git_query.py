@@ -225,3 +225,55 @@ class TestAttachmentExtensions:
         )
         with pytest.raises(ValueError, match=r"\.md note or a configured attachment"):
             mgr.get_history("image.png")
+
+
+class TestHistoryQueryHelpers:
+    """Unit tests for the module-level helpers behind get_file_history (#1159)."""
+
+    def test_parse_history_block_rejects_malformed_blocks(self) -> None:
+        """Empty, whitespace-only, and short-header blocks parse to None."""
+        from markdown_vault_mcp.git.query import _parse_history_block
+
+        assert _parse_history_block("", "", collect_paths=False) is None
+        assert _parse_history_block("   \n  ", "", collect_paths=False) is None
+        # Header with fewer than five NUL-separated fields is malformed.
+        assert (
+            _parse_history_block(
+                "sha\x00short\x00ts\x00author", "", collect_paths=False
+            )
+            is None
+        )
+
+    def test_parse_history_block_strips_vault_prefix(self) -> None:
+        """collect_paths=True normalises path lines to vault-relative form."""
+        from markdown_vault_mcp.git.query import _parse_history_block
+
+        block = (
+            "sha\x00short\x00ts\x00An Author <a@b>\x00msg\nvault/note.md\n\nother.md"
+        )
+        entry = _parse_history_block(block, "vault/", collect_paths=True)
+        assert entry is not None
+        assert entry.sha == "sha"
+        assert entry.author == "An Author <a@b>"
+        assert entry.paths_changed == ["note.md", "other.md"]
+
+        no_paths = _parse_history_block(block, "vault/", collect_paths=False)
+        assert no_paths is not None
+        assert no_paths.paths_changed == []
+
+    def test_vault_prefix_outside_git_root_is_empty(self, tmp_path: Path) -> None:
+        """A repo_path not under git_root yields no prefix to strip."""
+        from markdown_vault_mcp.git.query import _vault_prefix
+
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        assert _vault_prefix(tmp_path / "root", outside) == ""
+
+    def test_vault_prefix_for_nested_vault(self, tmp_path: Path) -> None:
+        """A vault nested under the git root yields its posix prefix."""
+        from markdown_vault_mcp.git.query import _vault_prefix
+
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        assert _vault_prefix(tmp_path, vault) == "vault/"
+        assert _vault_prefix(tmp_path, tmp_path) == ""

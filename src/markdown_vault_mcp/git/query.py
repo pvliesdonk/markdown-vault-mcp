@@ -33,6 +33,11 @@ _EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 # Diff payloads larger than this are truncated with a byte-count marker.
 _DIFF_MAX_BYTES = 50 * 1024  # 50 KB
 
+# \x1e (ASCII Record Separator) is the sentinel used to split commit
+# blocks in ``git log`` output — it cannot appear in filenames or commit
+# messages.
+_HISTORY_SENTINEL = "\x1e"
+
 
 def _truncate_diff(diff: str) -> str:
     """Cap *diff* at :data:`_DIFF_MAX_BYTES`, appending an omission marker.
@@ -146,6 +151,158 @@ def _diff_is_binary(
     return first.startswith("-\t-")
 
 
+def _vault_prefix(git_root: Path, repo_path: Path) -> str:
+    """Return the prefix to strip from ``--name-only`` output paths.
+
+    When the git root is a parent of *repo_path*, git reports paths relative
+    to the git root (e.g. ``"vault/note.md"``); the returned prefix (e.g.
+    ``"vault/"``) is stripped so callers always receive vault-relative paths.
+    *repo_path* is resolved to handle symlinks: ``git rev-parse
+    --show-toplevel`` always returns the real (resolved) path, so it must be
+    matched.
+
+    Returns:
+        The vault prefix ending in ``"/"``, or ``""`` when the git root is
+        the vault root itself (or *repo_path* is not under *git_root*).
+    """
+    try:
+        vault_rel = repo_path.resolve().relative_to(git_root)
+    except ValueError:
+        return ""
+    return "" if vault_rel == Path() else vault_rel.as_posix() + "/"
+
+
+def _history_log_cmd(
+    git_root: Path,
+    repo_path: Path,
+    path: Path | None,
+    since: str | None,
+    until: str | None,
+    limit: int,
+    *,
+    is_dir: bool,
+) -> list[str]:
+    """Assemble the ``git log`` argv for a history query.
+
+    Args:
+        git_root: Pre-resolved git repository root.
+        repo_path: Absolute path of the vault root (the vault-wide pathspec).
+        path: Absolute path of the file (or directory, when *is_dir*) to
+            filter on, or ``None`` for the entire vault.
+        since: ``--since`` filter, or ``None`` to disable it.
+        until: ``--until`` filter, or ``None`` to disable it.
+        limit: Maximum number of commits (already clamped by the caller).
+        is_dir: When ``True``, *path* is a directory subtree.
+
+    Returns:
+        The full ``git log`` argv, formatted with :data:`_HISTORY_SENTINEL`
+        block markers and NUL-separated header fields.
+    """
+    cmd = [
+        "git",
+        "-C",
+        str(git_root),
+        "log",
+        f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
+        f"-n{limit}",
+    ]
+    if since:
+        cmd.append(f"--since={since}")
+    if until:
+        cmd.append(f"--until={until}")
+    if path is None:
+        # vault-wide: scope to the resolved real path so symlinked SOURCE_DIR
+        # values work correctly (git compares against the real toplevel).
+        cmd += ["--name-only", "--", str(repo_path.resolve())]
+    elif is_dir:
+        # directory scope: no --follow (git rejects it for anything but a
+        # single file); --name-only so paths_changed carries the subtree files
+        # each commit touched. git already filters the name-only output to the
+        # <dir> pathspec, so no sibling paths leak in and no extra filtering is
+        # needed here.
+        cmd += ["--name-only", "--", str(path)]
+    else:
+        cmd += ["--follow", "--", str(path)]
+    return cmd
+
+
+def _history_log_output(cmd: list[str], env: dict[str, str] | None) -> str:
+    """Run the assembled ``git log`` command and return its raw stdout.
+
+    Raises:
+        ValueError: If ``git log`` exits non-zero (e.g. an invalid
+            ``--since`` / ``--until`` expression).
+    """
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(f"git log failed: {(exc.stderr or '').strip()}") from exc
+    return result.stdout
+
+
+def _vault_relative_paths(lines: list[str], vault_prefix: str) -> list[str]:
+    """Normalise ``--name-only`` path lines to vault-relative paths.
+
+    Blank lines are dropped; *vault_prefix* (when non-empty) is stripped from
+    each remaining line so callers always receive vault-relative paths.
+    """
+    paths: list[str] = []
+    for ln in lines:
+        ln = ln.strip()
+        if not ln:
+            continue
+        if vault_prefix and ln.startswith(vault_prefix):
+            ln = ln[len(vault_prefix) :]
+        paths.append(ln)
+    return paths
+
+
+def _parse_history_block(
+    block: str, vault_prefix: str, *, collect_paths: bool
+) -> HistoryEntry | None:
+    """Parse one sentinel-delimited ``git log`` block into a history entry.
+
+    Args:
+        block: One commit block: ``header_line\\nfile1\\nfile2\\n`` where the
+            header carries five NUL-separated fields.
+        vault_prefix: Prefix stripped from path lines (see
+            :func:`_vault_prefix`).
+        collect_paths: When ``True`` (vault-wide or directory queries),
+            populate ``paths_changed`` from the block's ``--name-only``
+            lines; when ``False`` (single-file queries) leave it empty.
+
+    Returns:
+        The parsed :class:`HistoryEntry`, or ``None`` for an empty or
+        malformed block.
+    """
+    block = block.strip()
+    if not block:
+        return None
+    # A stripped non-empty block always has a first line.
+    lines = block.splitlines()
+    parts = lines[0].split("\x00")
+    if len(parts) < 5:
+        return None
+    sha, short_sha, timestamp, author, message = parts[:5]
+    paths_changed: list[str] = []
+    if collect_paths:
+        paths_changed = _vault_relative_paths(lines[1:], vault_prefix)
+    return HistoryEntry(
+        sha=sha,
+        short_sha=short_sha,
+        timestamp=timestamp,
+        author=author,
+        message=message,
+        paths_changed=paths_changed,
+    )
+
+
 def get_file_history(
     git_root: Path | None,
     repo_path: Path,
@@ -197,104 +354,31 @@ def get_file_history(
         return []
 
     limit = min(max(1, limit), 100)
-
-    # Compute vault-relative prefix for normalising --name-only output.
-    # When the git root is a parent of repo_path, git reports paths
-    # relative to the git root (e.g. "vault/note.md").  We strip the
-    # leading prefix so callers always receive vault-relative paths.
-    # Resolve repo_path to handle symlinks: git rev-parse --show-toplevel
-    # always returns the real (resolved) path, so we must match it.
-    try:
-        vault_rel = repo_path.resolve().relative_to(git_root)
-    except ValueError:
-        vault_rel = Path()
-    vault_prefix = "" if vault_rel == Path() else vault_rel.as_posix() + "/"
-
-    # \x1e (ASCII Record Separator) is the sentinel used to split commit
-    # blocks in the output — it cannot appear in filenames or commit messages.
-    _SENTINEL = "\x1e"
-    cmd = [
-        "git",
-        "-C",
-        str(git_root),
-        "log",
-        f"--format={_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
-        f"-n{limit}",
-    ]
-    if since:
-        cmd.append(f"--since={since}")
-    if until:
-        cmd.append(f"--until={until}")
-    if path is None:
-        # vault-wide: scope to the resolved real path so symlinked SOURCE_DIR
-        # values work correctly (git compares against the real toplevel).
-        cmd += ["--name-only", "--", str(repo_path.resolve())]
-    elif is_dir:
-        # directory scope: no --follow (git rejects it for anything but a
-        # single file); --name-only so paths_changed carries the subtree files
-        # each commit touched. git already filters the name-only output to the
-        # <dir> pathspec, so no sibling paths leak in and no extra filtering is
-        # needed here.
-        cmd += ["--name-only", "--", str(path)]
-    else:
-        cmd += ["--follow", "--", str(path)]
+    cmd = _history_log_cmd(
+        git_root, repo_path, path, since, until, limit, is_dir=is_dir
+    )
 
     env = git_env(token, username)
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env,
-        )
-    except subprocess.CalledProcessError as exc:
-        raise ValueError(f"git log failed: {(exc.stderr or '').strip()}") from exc
+        raw = _history_log_output(cmd, env)
     finally:
         cleanup_git_env(env)
 
-    entries: list[HistoryEntry] = []
-    raw = result.stdout
     if not raw.strip():
         return []
-    # Split on the sentinel we embedded at the start of each format line.
-    # The first element will be empty (output starts with sentinel), so we
-    # skip it.  Each remaining block is: header_line\nfile1\nfile2\n
-    blocks = raw.split(_SENTINEL)
-    for block in blocks:
-        block = block.strip()
-        if not block:
-            continue
-        lines = block.splitlines()
-        if not lines:
-            continue
-        header = lines[0]
-        parts = header.split("\x00")
-        if len(parts) < 5:
-            continue
-        sha, short_sha, timestamp, author, message = parts[:5]
-        paths_changed: list[str] = []
-        if (path is None or is_dir) and len(lines) > 1:
-            # vault-wide or directory query: strip the vault prefix to get
-            # vault-relative paths. git already scoped a directory query's
-            # --name-only output to the folder pathspec.
-            for ln in lines[1:]:
-                ln = ln.strip()
-                if not ln:
-                    continue
-                if vault_prefix and ln.startswith(vault_prefix):
-                    ln = ln[len(vault_prefix) :]
-                paths_changed.append(ln)
-        entries.append(
-            HistoryEntry(
-                sha=sha,
-                short_sha=short_sha,
-                timestamp=timestamp,
-                author=author,
-                message=message,
-                paths_changed=paths_changed,
-            )
-        )
+
+    vault_prefix = _vault_prefix(git_root, repo_path)
+    # paths_changed is populated for vault-wide and directory queries only;
+    # single-file queries (--follow) leave it empty.
+    collect_paths = path is None or is_dir
+    # Split on the sentinel embedded at the start of each format line.  The
+    # first element will be empty (output starts with the sentinel); the
+    # parser rejects it along with any other empty/malformed block.
+    entries: list[HistoryEntry] = []
+    for block in raw.split(_HISTORY_SENTINEL):
+        entry = _parse_history_block(block, vault_prefix, collect_paths=collect_paths)
+        if entry is not None:
+            entries.append(entry)
     return entries
 
 
