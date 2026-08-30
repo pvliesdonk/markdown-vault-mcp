@@ -169,7 +169,7 @@ class TestEffectiveAttachmentExtensions:
         Only the *path* side is lower-cased and dot-stripped, so an operator
         who writes ``PDF`` or ``.pdf`` in the allowlist matches nothing. Pinning
         it here makes the eventual fix a visible one-line flip in this test
-        rather than a silent semantic drift.
+        rather than a silent semantic drift. Tracked as #1239.
         """
         assert (
             is_allowed_artifact("report.pdf", effective_attachment_extensions(["PDF"]))

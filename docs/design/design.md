@@ -3323,7 +3323,7 @@ rather than collapsed into one tri-state:
 Routing the indexability axis through the same predicate is what makes a
 future non-markdown format a single edit rather than a hunt.
 
-**Two divergences are deliberate and preserved**, recorded in that module:
+**Two divergences are deliberate and preserved** (#1240), recorded in that module:
 
 - *Case.* Routing is case-sensitive. `SearchManager._attachment_info` is
   case-insensitive (`has_md_suffix`). `DocumentManager.read`'s note-size cap

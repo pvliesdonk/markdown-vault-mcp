@@ -19,7 +19,7 @@ Collapsing those three into one tri-state would make the folder sites claim a
 path is "an artifact" when they mean "a folder", so the distinction is kept in
 prose rather than in the type.
 
-**Two divergences are deliberate and PRESERVED here, not unified:**
+**Two divergences are deliberate and PRESERVED here, not unified** (#1240):
 
 * **Case.**  Routing is case-sensitive (:func:`is_note`).
   ``SearchManager._attachment_info`` is case-*insensitive* and uses
@@ -167,7 +167,7 @@ def effective_attachment_extensions(
     Note the configured values are used verbatim: unlike the path side, they
     are not lower-cased or dot-stripped, so a config of ``["PDF"]`` or
     ``[".pdf"]`` matches nothing. That asymmetry is pre-existing and pinned by
-    a test rather than fixed here.
+    a test rather than fixed here (#1239).
 
     Args:
         attachment_extensions: User-configured extension list, or ``None``
