@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import logging
 from dataclasses import asdict
 from datetime import date
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 from fastmcp import Context, FastMCP
 from fastmcp.dependencies import CurrentContext, Depends
@@ -24,18 +28,47 @@ from markdown_vault_mcp.utils.text import decode_utf8
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
+from .._identity import bound_principal, resolve_mcp_principal
 from .._okf_write import (
     OkfWriteIntent,
     okf_write_intent,
     okf_write_suppressed,
+    package_version,
     resolve_human_subject,
     resolve_verify_subject,
-    resolve_write_actor,
 )
 from ..domain import get_config, get_vault
 from ._common import attach_conventions
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def write_identity_scope(*, okf_intent: bool = True) -> Iterator[None]:
+    """Resolve the caller's identity once and bind it for a write (#1160).
+
+    Resolves a :class:`~markdown_vault_mcp._identity.Principal` from the MCP
+    request context and binds it on the identity contextvar, so the write
+    path — and the write-callback dispatcher's ``fire()`` snapshot, which is
+    what carries it onto the commit thread (#1218) — sees it. Enter this
+    **before** the ``asyncio.to_thread`` call so the copied worker context
+    carries the binding.
+
+    Args:
+        okf_intent: Also bind an :class:`~markdown_vault_mcp._okf_write.
+            OkfWriteIntent` whose actor derives from the same principal —
+            for the content writes the OKF enforced-write enricher stamps
+            (``write``/``edit`` operations). ``False`` for operations the
+            enricher never stamps (delete, rename, move_folder, attachments),
+            which bind only the principal for git-commit attribution.
+    """
+    principal = resolve_mcp_principal()
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(bound_principal(principal))
+        if okf_intent:
+            actor = principal.okf_actor(package_version())
+            stack.enter_context(okf_write_intent(OkfWriteIntent(actor=actor)))
+        yield
 
 
 # ``fetch_url`` requires a positive size cap. Markdown fetches and
@@ -203,14 +236,19 @@ def register(mcp: FastMCP) -> None:
                     f"Increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB if "
                     f"you need the bytes in context."
                 )
-            result = await asyncio.to_thread(
-                vault.writer.write_attachment, path, raw_bytes, if_match=if_match
-            )
+            # Attachments carry no OKF frontmatter; bind only the principal
+            # so the git commit is attributed to the caller (#1218).
+            with write_identity_scope(okf_intent=False):
+                result = await asyncio.to_thread(
+                    vault.writer.write_attachment, path, raw_bytes, if_match=if_match
+                )
             return asdict(result)
-        # Bind the OKF provenance actor for the enforced-write layer (#964).
-        # A no-op unless OKF_WRITE is on; the intent rides the contextvar into
-        # the to_thread worker where the enricher runs.
-        with okf_write_intent(OkfWriteIntent(actor=resolve_write_actor())):
+        # Bind the caller's Principal plus the OKF provenance actor for the
+        # enforced-write layer (#964, #1160). The OKF intent is a no-op unless
+        # OKF_WRITE is on; both values ride contextvars into the to_thread
+        # worker, where the enricher runs and the dispatcher snapshots the
+        # principal for the git commit.
+        with write_identity_scope():
             result = await asyncio.to_thread(
                 vault.writer.write,
                 path,
@@ -292,7 +330,7 @@ def register(mcp: FastMCP) -> None:
                 (ConcurrentModificationError).
         """
         try:
-            with okf_write_intent(OkfWriteIntent(actor=resolve_write_actor())):
+            with write_identity_scope():
                 result = await asyncio.to_thread(
                     vault.writer.edit,
                     path,
@@ -376,7 +414,7 @@ def register(mcp: FastMCP) -> None:
             McpError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
-        with okf_write_intent(OkfWriteIntent(actor=resolve_write_actor())):
+        with write_identity_scope():
             result = await asyncio.to_thread(
                 vault.writer.append,
                 path,
@@ -427,7 +465,12 @@ def register(mcp: FastMCP) -> None:
             McpError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
-        result = await asyncio.to_thread(vault.writer.delete, path, if_match=if_match)
+        # Bind the caller's Principal so the delete commit is attributed
+        # (#1218); the OKF enricher never runs for deletes, so no intent.
+        with write_identity_scope(okf_intent=False):
+            result = await asyncio.to_thread(
+                vault.writer.delete, path, if_match=if_match
+            )
         return asdict(result)
 
     @mcp.tool(
@@ -482,13 +525,17 @@ def register(mcp: FastMCP) -> None:
             McpError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
-        result = await asyncio.to_thread(
-            vault.writer.rename,
-            old_path,
-            new_path,
-            if_match=if_match,
-            update_links=update_links,
-        )
+        # Bind the caller's Principal so the rename commit (and any link-
+        # rewrite commits) are attributed (#1218); no OKF intent — the
+        # enricher's actor for link rewrites stays the tool actor, as before.
+        with write_identity_scope(okf_intent=False):
+            result = await asyncio.to_thread(
+                vault.writer.rename,
+                old_path,
+                new_path,
+                if_match=if_match,
+                update_links=update_links,
+            )
         return asdict(result)
 
     @mcp.tool(
@@ -543,7 +590,11 @@ def register(mcp: FastMCP) -> None:
             ValueError: If a path fails traversal validation or the two paths
                 are nested.
         """
-        result = await asyncio.to_thread(vault.writer.move_folder, old_dir, new_dir)
+        # Bind the caller's Principal so every per-file commit of the move is
+        # attributed (#1218); no OKF intent — the enricher's actor for the
+        # link-rewrite edits stays the tool actor, as before.
+        with write_identity_scope(okf_intent=False):
+            result = await asyncio.to_thread(vault.writer.move_folder, old_dir, new_dir)
         return asdict(result)
 
     @mcp.tool(
@@ -712,11 +763,12 @@ def register(mcp: FastMCP) -> None:
                     f"Response body is not valid UTF-8 (content-type: {ct}). "
                     "Only UTF-8 encoded responses can be saved as .md notes."
                 ) from exc
-            # Bind the OKF provenance actor (#964): fetch writes .md notes
-            # through the same DocumentManager.write path as the write/edit
-            # tools, so the enricher fires on an OKF-active vault. Attribute the
-            # save to the authenticated caller, not the default tool actor.
-            with okf_write_intent(OkfWriteIntent(actor=resolve_write_actor())):
+            # Bind the caller's Principal + OKF provenance actor (#964,
+            # #1160): fetch writes .md notes through the same
+            # DocumentManager.write path as the write/edit tools, so the
+            # enricher fires on an OKF-active vault. Attribute the save to
+            # the authenticated caller, not the default tool actor.
+            with write_identity_scope():
                 result = await asyncio.to_thread(
                     vault.writer.write,
                     path,
@@ -726,13 +778,15 @@ def register(mcp: FastMCP) -> None:
                 )
         else:
             # Attachments never carry OKF frontmatter and go through
-            # write_attachment, which the enricher does not touch — no intent.
-            result = await asyncio.to_thread(
-                vault.writer.write_attachment,
-                path,
-                raw_bytes,
-                if_match=if_match,
-            )
+            # write_attachment, which the enricher does not touch — bind only
+            # the principal for git-commit attribution (#1218).
+            with write_identity_scope(okf_intent=False):
+                result = await asyncio.to_thread(
+                    vault.writer.write_attachment,
+                    path,
+                    raw_bytes,
+                    if_match=if_match,
+                )
 
         # fetch_url already logged the (redacted) source URL; record the vault
         # destination only after the write actually landed.
