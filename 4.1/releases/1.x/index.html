@@ -1,0 +1,2315 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Generic markdown vault MCP with hybrid search">
+      
+      
+      
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/4.1/releases/1.x/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>1.x - markdown-vault-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/config-wizard.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#1x" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="markdown-vault-mcp" class="md-header__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            markdown-vault-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              1.x
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tools/" class="md-tabs__link">
+          
+  
+  
+  MCP Interface
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../deployment/" class="md-tabs__link">
+          
+  
+  
+  Deployment
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/vault/" class="md-tabs__link">
+          
+  
+  
+  Python API
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Release Notes
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="markdown-vault-mcp" class="md-nav__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    markdown-vault-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration-generator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Generator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/git-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/embeddings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/oidc-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/obsidian-everywhere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Obsidian Everywhere
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/research-workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/zettelkasten/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zettelkasten
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/para/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/okf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Knowledge Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/mcp-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/transfer-links/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer Links
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claude-code-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Interface
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MCP Interface
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/systemd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systemd
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/oidc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/template-updates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/facets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Facets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embedding Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-this-page-covers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this page covers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#evidence-and-its-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Evidence, and its limits
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-arc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The arc
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The arc">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-working-server-then-a-deployable-one-march-9-to-13" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A working server, then a deployable one (March 9 to 13)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-vault-became-a-graph-march-14-to-16" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The vault became a graph (March 14 to 16)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#visual-views-packaging-and-obsidian-semantics-march-18-to-31" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visual views, packaging and Obsidian semantics (March 18 to 31)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edit-reliability-git-history-and-the-move-to-shared-machinery-april" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Edit reliability, git history, and the move to shared machinery (April)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#version-numbers-that-were-never-released" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version numbers that were never released
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-could-not-be-reconstructed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What could not be reconstructed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#all-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        All changes
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="1x">1.x<a class="headerlink" href="#1x" title="Permanent link">&para;</a></h1>
+<p>March 9 to May 3, 2026, from the first tagged release to v1.28.0.</p>
+<div class="admonition note">
+<p class="admonition-title">Reconstructed after the fact, and thinner than the pages after it</p>
+<p>This page is a best-effort backfill written in August 2026
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058">#1058</a>). It
+is not contemporaneous, and the record it was reconstructed from is thin:
+most of this period predates the pull-request discipline that links every
+change to an issue. Where the evidence supports only a factual statement,
+this page makes only a factual statement. Where it supports nothing, the
+page says so rather than guessing. Do not use it as upgrade guidance for a
+specific 1.x version.</p>
+</div>
+<h2 id="what-this-page-covers">What this page covers<a class="headerlink" href="#what-this-page-covers" title="Permanent link">&para;</a></h2>
+<p>One page for the whole 1.x line: 42 stable releases across 27 minor versions,
+801 commits, in eight weeks. Writing 27 separate pages would have produced 27
+thin ones, and nobody upgrades from v1.7.0 today. What is useful now is the
+shape of the arc: the server's capabilities at the start of the line, its
+capabilities at the end, and the places where the version numbers skip.</p>
+<p>Individual releases in this range have no page of their own and will not get
+one.</p>
+<p>This page is final. The 1.x line closed at v1.28.0 and will receive no further
+releases, so no patch section will ever be appended below.</p>
+<h2 id="evidence-and-its-limits">Evidence, and its limits<a class="headerlink" href="#evidence-and-its-limits" title="Permanent link">&para;</a></h2>
+<p>The measurable gap between this page and the ones after it is how often a
+commit in the range carries a link to an issue explaining it. Counted per
+stable-to-stable range and recorded in
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058">#1058</a>:</p>
+<table>
+<thead>
+<tr>
+<th>Range</th>
+<th>Ranges counted</th>
+<th>Commits with a linked issue</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>v1.0.0 to v1.28.0</td>
+<td>41</td>
+<td>mostly 0% to 40%, seven ranges at 0%</td>
+</tr>
+<tr>
+<td>v1.28.0 to v3.0.0</td>
+<td>1</td>
+<td>78%</td>
+</tr>
+<tr>
+<td>v3.0.0 to v3.1.0</td>
+<td>5</td>
+<td>50% to 100%</td>
+</tr>
+</tbody>
+</table>
+<p>Those percentages are the ones recorded in the issue, counted by its own rule.
+Recounting the v1.28.0 to v3.0.0 range against one rule stated in full, that
+the commit message carries a closing keyword (<code>closes</code>, <code>fixes</code>, <code>resolves</code>,
+<code>refs</code>) next to an issue number, gives 76%: 199 of the 261 commits. Two rules,
+one body of evidence. The figures differ because they count different things,
+and either one leaves the 1.x ranges far behind.</p>
+<p>Seven ranges in this period contain no linked issue at all:
+<code>v1.8.0..v1.8.1</code> (5 commits), <code>v1.18.0..v1.18.1</code> (9), <code>v1.19.0..v1.19.1</code> (4),
+<code>v1.19.1..v1.20.0</code> (8), <code>v1.23.1..v1.25.0</code> (10), <code>v1.25.0..v1.27.0</code> (8) and
+<code>v1.27.0..v1.27.1</code> (42). The largest of them, <code>v1.27.0..v1.27.1</code>, is accounted
+for in
+<a href="#edit-reliability-git-history-and-the-move-to-shared-machinery-april">the April section</a>
+below, where the maintainer names what it was. For the other six, nothing
+beyond the code itself records what the change was for.</p>
+<p>The narrative below is anchored on artifacts that can be checked rather than
+on inferred motives: the published tool reference at each tag, the
+configuration reference at each tag, and the issues that do exist. Each claim
+links what it rests on.</p>
+<h2 id="the-arc">The arc<a class="headerlink" href="#the-arc" title="Permanent link">&para;</a></h2>
+<h3 id="a-working-server-then-a-deployable-one-march-9-to-13">A working server, then a deployable one (March 9 to 13)<a class="headerlink" href="#a-working-server-then-a-deployable-one-march-9-to-13" title="Permanent link">&para;</a></h3>
+<p>The first tagged release exposed 13 tools: <code>search</code>, <code>read</code>, <code>write</code>, <code>edit</code>,
+<code>delete</code>, <code>rename</code>, the three <code>list_*</code> calls, <code>reindex</code>, <code>stats</code>,
+<code>build_embeddings</code> and <code>embeddings_status</code>. Hybrid full-text and semantic
+search, frontmatter-aware indexing and git-backed writes were all there on day
+one.</p>
+<p>The next four days were about running it somewhere other than a laptop. Git
+writes moved behind a <code>GitWriteStrategy</code> with deferred push
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/64">PR #64</a>), a
+streamable HTTP transport arrived for container deployments
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/70">PR #70</a>), and the
+server moved to FastMCP 3
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/72">PR #72</a>).
+Authentication came in two forms, OIDC through a proxy
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/76">PR #76</a>) and a
+simple bearer token
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/167">PR #167</a>), with a
+multi-auth mode accepting either
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/237">PR #237</a>) shortly
+after.</p>
+<p>Two changes from this stretch still shape how the server behaves. Optimistic
+concurrency landed: reads return an etag and writes accept <code>if_match</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/125">PR #125</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/126">PR #126</a>). And the
+default embedding backend changed twice for the same reason. First from
+<code>sentence-transformers</code> to <code>fastembed</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/144">PR #144</a>), then to
+a smaller default model, in both cases to stop the container running out of
+memory
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/306">#306</a>).</p>
+<p>The project also became findable in this window: GitHub topics, PyPI metadata
+and a <code>server.json</code> manifest for the official MCP registry, which the issue
+behind it calls "the single highest-leverage action" because downstream
+aggregators consume it automatically
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/112">#112</a>).</p>
+<h3 id="the-vault-became-a-graph-march-14-to-16">The vault became a graph (March 14 to 16)<a class="headerlink" href="#the-vault-became-a-graph-march-14-to-16" title="Permanent link">&para;</a></h3>
+<p>The largest single capability jump in 1.x. Links were extracted and stored in
+the index
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/194">PR #194</a>), and on
+top of that came <code>get_backlinks</code>, <code>get_outlinks</code> and <code>get_broken_links</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/195">PR #195</a>),
+<code>get_similar</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/196">PR #196</a>),
+<code>get_recent</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/197">PR #197</a>), the
+<code>get_context</code> dossier
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/200">PR #200</a>),
+<code>get_orphan_notes</code> and <code>get_most_linked</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/205">PR #205</a>), and
+<code>get_connection_path</code>, a breadth-first shortest path between two notes
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/227">PR #227</a>).</p>
+<p>Because links were now first-class, renaming a note started rewriting the
+links pointing at it
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/206">PR #206</a>).</p>
+<p>The same days brought the two extension points the workflow guides later build
+on: MCP resources and prompts
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/97">PR #97</a>) and
+user-defined prompts loaded from a mounted directory, overriding the built-in
+ones
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/226">PR #226</a>).</p>
+<h3 id="visual-views-packaging-and-obsidian-semantics-march-18-to-31">Visual views, packaging and Obsidian semantics (March 18 to 31)<a class="headerlink" href="#visual-views-packaging-and-obsidian-semantics-march-18-to-31" title="Permanent link">&para;</a></h3>
+<p>The published tool reference goes from 13 tools at v1.6.0 to 26 at v1.18.0.
+Nine of the thirteen new entries are the graph work above; the rest arrived
+here.</p>
+<p>MCP Apps support was built as a single-page application with tab routing
+rather than a resource per view. That was an explicit architecture decision,
+chosen for a single sidebar panel with tabbed navigation, at the cost of a
+more complex page
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/273">#273</a>). Three
+views followed on the same shell: the Note Context Card
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/274">#274</a>), the
+Graph Explorer
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/275">#275</a>) and the
+Vault Browser
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/276">#276</a>), with
+cross-view navigation and send-to-conversation standardised across them
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/277">#277</a>).</p>
+<p>Two tools for getting bytes in and out arrived alongside: <code>fetch</code>, which
+downloads a URL into the vault
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/259">PR #259</a>), and
+<code>create_download_link</code>, a one-time HTTP endpoint for an artifact
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/261">PR #261</a>).</p>
+<p>Deployment surfaces multiplied: systemd units
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/250">PR #250</a>), <code>.deb</code>
+and <code>.rpm</code> packages built with nfpm
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/251">PR #251</a>), and a
+persistent event store so HTTP sessions survive a restart
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/279">PR #279</a>).</p>
+<p>Obsidian compatibility was sharpened twice: wikilinks resolve vault-wide
+rather than relative to the containing folder
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/234">PR #234</a>), and
+frontmatter aliases resolve as link targets
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/319">PR #319</a>). Pull
+conflicts stopped being fatal: a failed fast-forward rebases
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/230">PR #230</a>) and an
+unresolvable conflict is written out as a sibling file, the way Syncthing
+handles one
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/232">PR #232</a>).</p>
+<h3 id="edit-reliability-git-history-and-the-move-to-shared-machinery-april">Edit reliability, git history, and the move to shared machinery (April)<a class="headerlink" href="#edit-reliability-git-history-and-the-move-to-shared-machinery-april" title="Permanent link">&para;</a></h3>
+<p>The <code>edit</code> tool was rebuilt around a failure mode specific to LLM callers. Its
+issue describes the round trip precisely: file to MCP response to context
+window to model output to MCP request to string comparison, where "any
+transformation anywhere in that chain breaks the match"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/325">#325</a>). Three
+changes followed. An optional line-range mode covers large block
+replacements. A normalised-matching fallback survives smart quotes and dash
+substitution while preserving the original bytes everywhere except the
+replaced span. Diagnostics name the diverging line and character offset, so
+the model can correct itself instead of retrying blindly.</p>
+<p>Git history became readable through the tools: <code>get_history</code> and <code>get_diff</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/337">PR #337</a>) took the
+published tool count to 28, where it stayed for the rest of 1.x.
+Distribution widened again with a Claude Code plugin and an mcpb bundle
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/350">PR #350</a>).</p>
+<p>The last three weeks were mostly structural, and they are the reason later
+releases look the way they do. <code>Collection</code> was split into managers with
+dependency injection
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/378">PR #378</a>), then
+seven consecutive refactors moved configuration, authentication, the
+middleware stack, logging, the event store, the artifact store and the command
+line onto a shared library, <code>fastmcp-pvl-core</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/396">PR #396</a> through
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/402">PR #402</a>), and the
+project was re-based on a copier template that owns the release and CI
+machinery
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/405">PR #405</a>).</p>
+<p><code>[per the maintainer]</code> the 42 commits between <code>v1.27.0</code> and <code>v1.27.1</code>, the
+largest block in 1.x with no linked issue behind it, are the rest of that same
+separation: the split of shared infrastructure out of this repository into two
+upstreams, the <code>fastmcp-server-template</code> copier template and the
+<code>fastmcp-pvl-core</code> library. It ran as many small ports back and forth between
+the repositories rather than as one tracked feature, so the issue record for it
+is thin. Per-change detail for this stretch lives in the pull request bodies,
+not in issues.</p>
+<p>The pull requests in the range show the shape of that work. Sentinel markers
+were carved into <code>config.py</code> and <code>CLAUDE.md</code> so template updates and
+project-owned content stop overwriting each other
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/417">PR #417</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/419">PR #419</a>), the
+server module was renamed to the template's <code>server.py</code> and <code>make_server</code>
+spelling
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/416">PR #416</a>),
+template-owned files that had drifted were converged back
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/421">PR #421</a>), and
+the weekly <code>copier update</code> workflow that keeps them converging was bootstrapped
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/415">PR #415</a>). That
+last body records why the backfill had to be done by hand: a literal update
+from the template flipped the license and replaced the command line, so the
+repository had to be reshaped before the automation could be trusted.</p>
+<p>The line closes with the search work that the 3.0 release then had to correct.
+v1.28.0 introduced four ranking knobs at once: a per-document cap on result
+slots, a length downweight, snippet truncation, and an adaptive chunker that
+descends heading levels when a chunk runs over budget
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/433">PR #433</a>, closing
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/432">#432</a>). The
+adaptive chunker is what later caused several chunks of one document to crowd
+the top of a result list, which
+<a href="../3.0/#search-returns-files-not-chunks">3.0</a> fixed by collapsing results per
+file.</p>
+<h2 id="version-numbers-that-were-never-released">Version numbers that were never released<a class="headerlink" href="#version-numbers-that-were-never-released" title="Permanent link">&para;</a></h2>
+<p><code>[verified: git tag]</code> The stable line skips 1.24 and 1.26 entirely, and never
+reaches 2.x: <code>v1.23.2</code>, <code>v1.24.0</code>, <code>v1.26.0</code> and <code>v2.0.0</code> exist only as
+pre-release tags. v1.25.0 and v1.27.0 are stable tags carrying nothing but
+their own release commit, because everything they contain was already tagged
+on the release candidate immediately before them.</p>
+<p><code>[per the maintainer]</code> these are unintended bumps from two release-workflow
+defects, both since fixed upstream, and not abandoned feature work. Nothing
+was being built under those numbers, so there is no story to reconstruct:</p>
+<ul>
+<li><a href="https://github.com/pvliesdonk/fastmcp-server-template/issues/154">fastmcp-server-template#154</a>
+  reports that a forced version bump compounded on the pre-release's series
+  target instead of naming the release kind. Dispatching a major bump at
+  <code>v2.0.0-rc.5</code> produced <code>v3.0.0</code>, and 2.0.0 was never cut. Fixed by
+  template#165.</li>
+<li><a href="https://github.com/pvliesdonk/fastmcp-server-template/issues/235">fastmcp-server-template#235</a>
+  reports that release-candidate detection matched an abandoned series and cut
+  an <code>-rc.1</code> from a stable base, which is where <code>v1.23.2-rc.1</code>, <code>v1.24.0-rc.1</code> and
+  <code>v1.26.0-rc.1</code> come from. Fixed by template#236 and adopted here in
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/854">#854</a>.</li>
+</ul>
+<p>Both fixes are in this repository. The framing above is recorded on
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1054">#1054</a>; from the
+tags alone the obvious reading is an abandoned release series, and that reading
+is wrong.</p>
+<h2 id="what-could-not-be-reconstructed">What could not be reconstructed<a class="headerlink" href="#what-could-not-be-reconstructed" title="Permanent link">&para;</a></h2>
+<p>Stated plainly, because a gap left unmarked reads as an absence of change:</p>
+<ul>
+<li>Six of the seven zero-density ranges listed above have no recoverable
+  rationale. The seventh and largest, <code>v1.27.0..v1.27.1</code> at 42 commits, is the
+  upstream split described in the April section; even there the account is a
+  shape rather than a change-by-change record, because the detail sits in pull
+  request bodies rather than in issues.</li>
+<li>Patch releases in this line are not individually described. Several exist
+  only because a release-workflow run produced them, and separating those from
+  real fixes is not possible from the record.</li>
+<li>No upgrade or breaking-change analysis is offered for any step inside 1.x.
+  The import surface guard that makes such an analysis mechanical
+  (<a href="https://github.com/pvliesdonk/fastmcp-server-template/issues/352">template#352</a>)
+  did not exist yet, and reconstructing one release-by-release from source
+  would be inference presented as fact.</li>
+</ul>
+<h2 id="all-changes">All changes<a class="headerlink" href="#all-changes" title="Permanent link">&para;</a></h2>
+<p>See <a href="https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md">CHANGELOG.md</a>
+for the full commit-level list, or the
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/compare/v1.0.0...v1.28.0">v1.0.0 to v1.28.0 comparison</a>.</p>
+<!-- RELEASE-PAGE-CLOSED: the 1.x line is closed and will receive no further
+     releases, so this page is final. It deliberately carries no
+     PATCH-RELEASES-START / PATCH-RELEASES-END sentinels and no
+     RELEASE-SUMMARY block: it spans 42 tags, and no single tag maps to it.
+     Do not append patch sections to this page. -->
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/config-wizard/wizard.js" type="module"></script>
+      
+    
+  </body>
+</html>

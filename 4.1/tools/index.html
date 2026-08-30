@@ -1,0 +1,5260 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Generic markdown vault MCP with hybrid search">
+      
+      
+      
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/4.1/tools/">
+      
+      
+        <link rel="prev" href="../guides/claude-code-plugin/">
+      
+      
+        <link rel="next" href="../resources/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Tools - markdown-vault-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/config-wizard.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#mcp-tools" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="markdown-vault-mcp" class="md-header__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            markdown-vault-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Tools
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../guides/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  MCP Interface
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../deployment/" class="md-tabs__link">
+          
+  
+  
+  Deployment
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../api/vault/" class="md-tabs__link">
+          
+  
+  
+  Python API
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../releases/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Release Notes
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="markdown-vault-mcp" class="md-nav__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    markdown-vault-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration-generator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Generator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/git-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/embeddings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/oidc-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/obsidian-everywhere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Obsidian Everywhere
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/research-workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/zettelkasten/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zettelkasten
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/para/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/okf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Knowledge Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/mcp-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/transfer-links/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer Links
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/claude-code-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Interface
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MCP Interface
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#search-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Search &amp; Discovery
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Search &amp; Discovery">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        search
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#list_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#list_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_folders
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#list_tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_tags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#embeddings_status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        embeddings_status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_index_status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_index_status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf_validate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_validate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#index-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Index Management
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Index Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reindex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reindex
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_embeddings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        build_embeddings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#write-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Write Operations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Write Operations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#write" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        write
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        edit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#append" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        delete
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rename" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rename
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#move_folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        move_folder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf-migration-transforms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OKF migration transforms
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OKF migration transforms">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#okf_convert_links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_convert_links
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf_generate_index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_generate_index
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf_seed_log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_seed_log
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf_verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fetch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fetch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#git_sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        git_sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#link-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link Graph
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Link Graph">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get_backlinks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_backlinks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_outlinks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_outlinks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_broken_links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_broken_links
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_similar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_similar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_toc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_toc
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_recent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_recent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_context
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_orphan_notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_orphan_notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_most_linked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_most_linked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_connection_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_connection_path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_history
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_diff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_diff
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ai-summarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI Summarization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AI Summarization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#summarize" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        summarize
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_job_result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_job_result
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-time-transfer-links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-Time Transfer Links
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="One-Time Transfer Links">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#create_download_link" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        create_download_link
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#create_upload_link" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        create_upload_link
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-apps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP Apps
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MCP Apps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#browse_vault" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        browse_vault
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#show_context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        show_context
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/systemd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systemd
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/oidc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/template-updates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template Updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deployment/repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository Protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/facets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Facets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embedding Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#search-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Search &amp; Discovery
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Search &amp; Discovery">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        search
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#list_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#list_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_folders
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#list_tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_tags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#embeddings_status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        embeddings_status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_index_status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_index_status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf_validate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_validate
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#index-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Index Management
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Index Management">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reindex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reindex
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#build_embeddings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        build_embeddings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#write-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Write Operations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Write Operations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#write" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        write
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        edit
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#append" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#delete" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        delete
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rename" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rename
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#move_folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        move_folder
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf-migration-transforms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OKF migration transforms
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OKF migration transforms">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#okf_convert_links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_convert_links
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf_generate_index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_generate_index
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf_seed_log" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_seed_log
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#okf_verify" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_verify
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fetch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        fetch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#git_sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        git_sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#link-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link Graph
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Link Graph">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#get_backlinks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_backlinks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_outlinks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_outlinks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_broken_links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_broken_links
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_similar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_similar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_toc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_toc
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_recent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_recent
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_context
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_conventions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_orphan_notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_orphan_notes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_most_linked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_most_linked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_connection_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_connection_path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_history
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_diff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_diff
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ai-summarization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI Summarization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="AI Summarization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#summarize" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        summarize
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#get_job_result" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_job_result
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#one-time-transfer-links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One-Time Transfer Links
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="One-Time Transfer Links">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#create_download_link" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        create_download_link
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#create_upload_link" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        create_upload_link
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mcp-apps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MCP Apps
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MCP Apps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#browse_vault" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        browse_vault
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#show_context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        show_context
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="mcp-tools">MCP Tools<a class="headerlink" href="#mcp-tools" title="Permanent link">&para;</a></h1>
+<p>markdown-vault-mcp exposes MCP tools across several categories. Write tools are available unless <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code>.</p>
+<div class="admonition note">
+<p class="admonition-title">Index freshness on read tools (<code>wait_for_pending_writes</code> + <code>_meta.index_stale</code>)</p>
+<p>Every read tool that queries the FTS index (<code>search</code>, <code>list_documents</code>, <code>list_folders</code>, <code>list_tags</code>, <code>stats</code>, <code>get_recent</code>, <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_broken_links</code>, <code>get_similar</code>, <code>get_toc</code>, <code>get_context</code>, <code>get_orphan_notes</code>, <code>get_most_linked</code>, and <code>get_connection_path</code>) accepts an optional <strong><code>wait_for_pending_writes</code></strong> (<code>bool</code>, default <code>false</code>) parameter and reports index freshness <strong>out-of-band in the MCP response's <code>_meta.index_stale</code> field</strong> rather than wrapping the payload in a <code>{stale, data}</code> envelope. The data payload is a <strong>bare list/dict, identical whether the index is fresh or stale</strong>; clients that do not care about drift ignore <code>_meta</code> entirely. Clients that need a fresh-read guarantee either inspect <code>result._meta.index_stale</code>, or pass <code>wait_for_pending_writes=true</code> to block until the writer drains (bounded by <code>MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S</code>, default 60&nbsp;s; on timeout it answers from the current index rather than raising). <code>index_stale</code> is <code>true</code> when the IndexWriter had pending or in-flight work. The relevant conditions are: the optional <code>wait_for_pending_writes</code> timed out; a write completed inside the read window; the writer was non-idle at response time. The same <code>_meta.index_stale</code> field rides on the index-querying MCP <strong>resources</strong> (<code>config://</code>, <code>stats://</code>, <code>folders://</code>, <code>tags://</code>, <code>recent://</code>, <code>toc://</code>, <code>similar://</code>), readable via the resource read's <code>_meta</code> (resources carry no <code>wait_for_pending_writes</code> parameter; they signal only).</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">The <code>folder</code> argument</p>
+<p>Every tool taking a <code>folder</code> argument reads it the same way. Omitting it (or passing <code>null</code>) applies no folder restriction. Passing the empty string <code>""</code> means <strong>root-level documents only</strong> on the read tools, and the bundle root on the <code>okf_*</code> write tools, since the root folder is spelled <code>""</code> in <code>list_folders</code> output and in each result's <code>folder</code> field. Any other value selects that folder and its sub-folders, and is matched after folding backslashes to forward slashes and stripping surrounding slashes, so <code>"Journal"</code>, <code>"Journal/"</code> and <code>"/Journal/"</code> all name the same folder.</p>
+</div>
+<!-- DOMAIN-TOOLS-LIST-START -->
+
+<h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Title</th>
+<th>Category</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#search"><code>search</code></a></td>
+<td>Search Vault</td>
+<td>Read</td>
+<td>Hybrid full-text + semantic search with optional frontmatter filters</td>
+</tr>
+<tr>
+<td><a href="#read"><code>read</code></a></td>
+<td>Read Note</td>
+<td>Read</td>
+<td>Read a document or attachment by relative path</td>
+</tr>
+<tr>
+<td><a href="#list_documents"><code>list_documents</code></a></td>
+<td>List Documents</td>
+<td>Read</td>
+<td>List indexed documents and optionally attachments</td>
+</tr>
+<tr>
+<td><a href="#list_folders"><code>list_folders</code></a></td>
+<td>List Folders</td>
+<td>Read</td>
+<td>List all folder paths in the vault</td>
+</tr>
+<tr>
+<td><a href="#list_tags"><code>list_tags</code></a></td>
+<td>List Tags</td>
+<td>Read</td>
+<td>List all unique frontmatter tag values</td>
+</tr>
+<tr>
+<td><a href="#stats"><code>stats</code></a></td>
+<td>Vault Stats</td>
+<td>Read</td>
+<td>Get vault statistics and capabilities</td>
+</tr>
+<tr>
+<td><a href="#embeddings_status"><code>embeddings_status</code></a></td>
+<td>Embeddings Status</td>
+<td>Read</td>
+<td>Check embedding provider and vector index status</td>
+</tr>
+<tr>
+<td><a href="#get_index_status"><code>get_index_status</code></a></td>
+<td>Index Status</td>
+<td>Read</td>
+<td>Check background FTS build state (queryable / building / failed)</td>
+</tr>
+<tr>
+<td><a href="#get_backlinks"><code>get_backlinks</code></a></td>
+<td>Backlinks</td>
+<td>Read</td>
+<td>Find all documents that link to a given document</td>
+</tr>
+<tr>
+<td><a href="#get_outlinks"><code>get_outlinks</code></a></td>
+<td>Outlinks</td>
+<td>Read</td>
+<td>Find all links from a document, with existence check</td>
+</tr>
+<tr>
+<td><a href="#get_broken_links"><code>get_broken_links</code></a></td>
+<td>Broken Links</td>
+<td>Read</td>
+<td>Find all links pointing to non-existent documents</td>
+</tr>
+<tr>
+<td><a href="#get_similar"><code>get_similar</code></a></td>
+<td>Similar Notes</td>
+<td>Read</td>
+<td>Find semantically similar notes by document path</td>
+</tr>
+<tr>
+<td><a href="#get_toc"><code>get_toc</code></a></td>
+<td>Table of Contents</td>
+<td>Read</td>
+<td>Heading outline for a note or a folder subtree</td>
+</tr>
+<tr>
+<td><a href="#get_recent"><code>get_recent</code></a></td>
+<td>Recent Notes</td>
+<td>Read</td>
+<td>Get the most recently modified notes</td>
+</tr>
+<tr>
+<td><a href="#get_context"><code>get_context</code></a></td>
+<td>Note Context</td>
+<td>Read</td>
+<td>Get a consolidated context dossier for a note</td>
+</tr>
+<tr>
+<td><a href="#get_conventions"><code>get_conventions</code></a></td>
+<td>Folder Conventions</td>
+<td>Read</td>
+<td>Get the authoring conventions that apply to a note or folder</td>
+</tr>
+<tr>
+<td><a href="#get_orphan_notes"><code>get_orphan_notes</code></a></td>
+<td>Orphan Notes</td>
+<td>Read</td>
+<td>Find notes with no inbound or outbound links</td>
+</tr>
+<tr>
+<td><a href="#get_most_linked"><code>get_most_linked</code></a></td>
+<td>Most-Linked Notes</td>
+<td>Read</td>
+<td>Find the most-linked-to notes ranked by backlink count</td>
+</tr>
+<tr>
+<td><a href="#get_connection_path"><code>get_connection_path</code></a></td>
+<td>Connection Path</td>
+<td>Read</td>
+<td>Find the shortest path between two notes via link graph</td>
+</tr>
+<tr>
+<td><a href="#okf_validate"><code>okf_validate</code></a></td>
+<td>Validate OKF Bundle</td>
+<td>Read</td>
+<td>Audit the vault's Open Knowledge Format conformance</td>
+</tr>
+<tr>
+<td><a href="#summarize"><code>summarize</code></a></td>
+<td>Summarize Notes</td>
+<td>AI</td>
+<td>Summarize a note, a set of notes, or a subtree with an LLM (needs <code>OPENAI_API_KEY</code> or an OpenAI-compatible base URL)</td>
+</tr>
+<tr>
+<td><a href="#get_job_result"><code>get_job_result</code></a></td>
+<td>Get Job Result</td>
+<td>AI</td>
+<td>Retrieve the outcome of a background job started by a long-running tool</td>
+</tr>
+<tr>
+<td><a href="#get_history"><code>get_history</code></a></td>
+<td>Note History</td>
+<td>Read (git)</td>
+<td>List commits that touched a note, attachment, folder, or the whole vault</td>
+</tr>
+<tr>
+<td><a href="#get_diff"><code>get_diff</code></a></td>
+<td>Note Diff</td>
+<td>Read (git)</td>
+<td>Return a diff of a note or attachment between two points in history</td>
+</tr>
+<tr>
+<td><a href="#reindex"><code>reindex</code></a></td>
+<td>Reindex Vault</td>
+<td>Admin</td>
+<td>Incremental reindex (<code>force=true</code> re-parses everything); inline result when fast, job promotion when slow</td>
+</tr>
+<tr>
+<td><a href="#build_embeddings"><code>build_embeddings</code></a></td>
+<td>Build Embeddings</td>
+<td>Admin</td>
+<td>Build or rebuild vector embeddings; inline result when fast, job promotion when slow</td>
+</tr>
+<tr>
+<td><a href="#write"><code>write</code></a></td>
+<td>Write Note</td>
+<td>Write</td>
+<td>Create or overwrite a document or attachment</td>
+</tr>
+<tr>
+<td><a href="#edit"><code>edit</code></a></td>
+<td>Edit Note</td>
+<td>Write</td>
+<td>Replace a unique text span in a document</td>
+</tr>
+<tr>
+<td><a href="#append"><code>append</code></a></td>
+<td>Append to Note</td>
+<td>Write</td>
+<td>Append text to the end of a note without reading it first</td>
+</tr>
+<tr>
+<td><a href="#delete"><code>delete</code></a></td>
+<td>Delete Note</td>
+<td>Write</td>
+<td>Delete a document or attachment</td>
+</tr>
+<tr>
+<td><a href="#rename"><code>rename</code></a></td>
+<td>Rename Note</td>
+<td>Write</td>
+<td>Rename/move a document or attachment</td>
+</tr>
+<tr>
+<td><a href="#move_folder"><code>move_folder</code></a></td>
+<td>Move Folder</td>
+<td>Write</td>
+<td>Move an entire folder subtree and rewrite vault links</td>
+</tr>
+<tr>
+<td><a href="#okf_convert_links"><code>okf_convert_links</code></a></td>
+<td>OKF: Convert Wikilinks</td>
+<td>Write</td>
+<td>Rewrite wikilinks as OKF root-absolute markdown links</td>
+</tr>
+<tr>
+<td><a href="#okf_generate_index"><code>okf_generate_index</code></a></td>
+<td>OKF: Generate index.md</td>
+<td>Write</td>
+<td>Generate a reserved <code>index.md</code> listing from the TOC</td>
+</tr>
+<tr>
+<td><a href="#okf_seed_log"><code>okf_seed_log</code></a></td>
+<td>OKF: Seed log.md</td>
+<td>Write</td>
+<td>Seed a reserved <code>log.md</code> change history from git</td>
+</tr>
+<tr>
+<td><a href="#okf_verify"><code>okf_verify</code></a></td>
+<td>OKF: Verify Note</td>
+<td>Write</td>
+<td>Attest a note as human-reviewed (elicitation-gated; requires <code>OKF_WRITE</code>)</td>
+</tr>
+<tr>
+<td><a href="#fetch"><code>fetch</code></a></td>
+<td>Fetch to Vault</td>
+<td>Write</td>
+<td>Download from URL and save to vault</td>
+</tr>
+<tr>
+<td><a href="#git_sync"><code>git_sync</code></a></td>
+<td>Sync with Git</td>
+<td>Write (git)</td>
+<td>Force an immediate git pull / push / both, bypassing the periodic loops</td>
+</tr>
+<tr>
+<td><a href="#create_download_link"><code>create_download_link</code></a></td>
+<td>Create Download Link</td>
+<td>Transfer</td>
+<td>Mint a one-time capability URL to download a vault file or an OKF bundle archive (HTTP/SSE only)</td>
+</tr>
+<tr>
+<td><a href="#create_upload_link"><code>create_upload_link</code></a></td>
+<td>Create Upload Link</td>
+<td>Transfer</td>
+<td>Mint a one-time capability URL to upload bytes to a fixed vault path (HTTP/SSE only)</td>
+</tr>
+<tr>
+<td><a href="#browse_vault"><code>browse_vault</code></a></td>
+<td>Browse Vault</td>
+<td>Apps</td>
+<td>Open the vault explorer SPA</td>
+</tr>
+<tr>
+<td><a href="#show_context"><code>show_context</code></a></td>
+<td>Context Card</td>
+<td>Apps</td>
+<td>Open the Context Card for a note</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="search-discovery">Search &amp; Discovery<a class="headerlink" href="#search-discovery" title="Permanent link">&para;</a></h2>
+<h3 id="search"><code>search</code><a class="headerlink" href="#search" title="Permanent link">&para;</a></h3>
+<p>Find documents matching a query using full-text or semantic search.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query</code></td>
+<td>string</td>
+<td>required</td>
+<td>Natural language or keyword query string</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>int</td>
+<td><code>10</code></td>
+<td>Maximum results to return</td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td>string</td>
+<td>server default (<code>auto</code>)</td>
+<td><code>"keyword"</code> (FTS5/BM25), <code>"semantic"</code> (vector similarity), or <code>"hybrid"</code> (reciprocal rank fusion). Omit it to follow <code>MARKDOWN_VAULT_MCP_DEFAULT_SEARCH_MODE</code>, which ships as <code>auto</code>: hybrid where embeddings are configured, keyword where they are not.</td>
+</tr>
+<tr>
+<td><code>folder</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Restrict to documents under this folder path</td>
+</tr>
+<tr>
+<td><code>filters</code></td>
+<td>object</td>
+<td><code>null</code></td>
+<td>Filter by indexed frontmatter field values (such as <code>{"tags": "pacing"}</code>), ANDed. On an OKF bundle, <code>status</code> (<code>stable</code> also matches notes without one), <code>stale</code> (<code>true</code>/<code>false</code>), and <code>trust_tier</code> carry OKF semantics; <code>type</code> filters normally</td>
+</tr>
+<tr>
+<td><code>chunks_per_file</code></td>
+<td>int</td>
+<td>server default (<code>2</code>)</td>
+<td>Maximum number of matching sections returned per file. Overrides <code>MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE</code> for this call. <code>0</code> is rejected.</td>
+</tr>
+<tr>
+<td><code>snippet_words</code></td>
+<td>int</td>
+<td>server default (<code>200</code>)</td>
+<td>Approximate word budget for each section's <code>content</code> field. <code>0</code> returns the full chunk. Overrides <code>MARKDOWN_VAULT_MCP_SNIPPET_WORDS</code> for this call.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> List of grouped result dicts ranked by relevance, one entry per file with up to <code>chunks_per_file</code> best-matching sections. Each entry contains: <code>path</code>, <code>title</code>, <code>folder</code>, <code>score</code> (max section score), <code>search_type</code>, <code>frontmatter</code>, and <code>sections</code> (a list of <code>{heading, content, score}</code> dicts sorted by score then document order). On an OKF (Open Knowledge Format) bundle (see <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> in <a href="../configuration/">Configuration</a>), each entry also carries an <code>okf</code> dict with the note's <code>type</code>, lifecycle <code>status</code>, <code>stale</code> flag, <code>trust_tier</code>, and <code>sources_count</code>. On such a bundle, ranking also downweights <code>deprecated</code> notes (more) and stale notes (less) so current content surfaces first, and demotes the reserved navigation files <code>index.md</code> / <code>log.md</code> below real notes. This ranking adjustment applies only when a bundle is detected; on any other vault the result order is unchanged.</p>
+<div class="admonition note">
+<p class="admonition-title">Grouped result shape</p>
+<p>Each file appears at most once in results, with up to <code>chunks_per_file</code> sections nested under <code>sections</code>. The top-level <code>score</code> is the maximum of the section scores (MaxP aggregation). Iterate <code>sections</code> to drill into individual matches.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Snippet content and full-chunk recovery</p>
+<p>By default, each section's <code>content</code> is a snippet of approximately 200 words centered on the query terms (not the full chunk). Pass <code>snippet_words=0</code> to receive the complete chunk. To read the full section after receiving a search result, call <code>read(path=result["path"], section=result["sections"][0]["heading"])</code>; this returns the entire section (body plus any sub-sections) reconstructed from the document.</p>
+</div>
+<div class="admonition tip">
+<p class="admonition-title">Choosing a search mode</p>
+<ul>
+<li>Omit <code>mode</code> for the best mode this vault can serve: hybrid where embeddings are configured, keyword where they are not</li>
+<li>Use <code>mode="keyword"</code> for exact term matches, FTS5 operators, or filenames</li>
+<li>Use <code>mode="semantic"</code> for meaning-based similarity</li>
+<li>Use <code>mode="hybrid"</code> to force fusion regardless of the server default</li>
+<li>Check <code>stats</code> to see if <code>semantic_search_available</code> is true</li>
+</ul>
+<p>An explicit <code>mode="semantic"</code> or <code>mode="hybrid"</code> raises when the vault has no embeddings. The server default degrades to <code>keyword</code> instead, so an unqualified search never fails for want of a vector index. An operator who wants to keep unqualified searches off a metered embedding provider pins <code>MARKDOWN_VAULT_MCP_DEFAULT_SEARCH_MODE=keyword</code>.</p>
+<p>Keyword and hybrid modes accept FTS5 operators (<code>AND</code>, <code>OR</code>, <code>NEAR</code>, <code>"exact phrase"</code>, <code>prefix*</code>). A natural-language query whose terms contain characters FTS5 reserves (a hyphenated slug such as <code>vault-mcp</code>, or a colon) is matched literally rather than failing, so plain queries do not need escaping.</p>
+<p>An empty or whitespace-only <code>query</code> returns an empty list in <code>semantic</code> and <code>hybrid</code> modes. Such a query carries no signal, and answering it locally avoids a round-trip that embedding providers reject with a raw HTTP 400.</p>
+</div>
+<p><strong>Example usage:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"character development techniques"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"mode"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hybrid"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"filters"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"tags"</span><span class="p">:</span><span class="w"> </span><span class="s2">"craft"</span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="read"><code>read</code><a class="headerlink" href="#read" title="Permanent link">&para;</a></h3>
+<p>Read the full content of a document or attachment by path. When combined with search, the optional <code>section</code> parameter lets you retrieve a single section in full (its body and any sub-sections) without loading the entire document.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>required</td>
+<td>Relative path to the document or attachment (such as <code>"Journal/note.md"</code> or <code>"assets/diagram.pdf"</code>)</td>
+</tr>
+<tr>
+<td><code>section</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk, so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the <code>heading</code> field from a <code>search</code> result. Matching collapses internal whitespace on both sides: <code>"1.3.  Reducing..."</code> (two spaces) matches a stored <code>"1.3. Reducing..."</code> (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty.</td>
+</tr>
+</tbody>
+</table>
+<div class="admonition tip">
+<p class="admonition-title">Recovering the full section after search</p>
+<p>When <code>search</code> returns a snippet result, pass <code>result["heading"]</code> as the <code>section</code> parameter to recover the complete section: <code>read(path=result["path"], section=result["heading"])</code>. If the document has no sub-headings (preamble content), omit <code>section</code> to read the whole document.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Heading matching tolerates whitespace differences</p>
+<p>The <code>section</code> lookup compares heading strings after collapsing all whitespace runs to single spaces (and stripping leading/trailing whitespace). This handles the common case where an LLM caller infers a heading from a rendered TOC that normalises whitespace differently from the source markdown. Markdown emphasis (<code>**bold**</code>, <code>_italic_</code>) and case still matter; pass the heading as it would appear in the document source.</p>
+</div>
+<p><strong>Context cost:</strong> every byte returned counts against the LLM's context
+budget. Reads above <code>MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES</code> (default
+256 KB for <code>.md</code>) or <code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB</code> (default
+1 MB for binaries) raise an error; use <code>section=result["heading"]</code> for
+partial markdown reads (see the tip above).</p>
+<p><strong>Returns:</strong></p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Markdown document</label><label for="__tabbed_1_2">Attachment</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Journal/note.md"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"My Note"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"folder"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Journal"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"frontmatter"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"My Note"</span><span class="p">,</span><span class="w"> </span><span class="nt">"tags"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"journal"</span><span class="p">]},</span>
+<span class="w">  </span><span class="nt">"modified_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1741564800.0</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>On an OKF bundle, whole-document reads also carry an <code>okf</code> dict (<code>type</code>, <code>status</code>, <code>stale</code>, <code>trust_tier</code>, and the note's full <code>sources</code> list). Section reads omit it — they carry no frontmatter to derive it from.</p>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assets/diagram.pdf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"mime_type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"application/pdf"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"size_bytes"</span><span class="p">:</span><span class="w"> </span><span class="mi">12345</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"content_base64"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;base64 string&gt;"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"modified_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1741564800.0</span>
+<span class="p">}</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<h3 id="list_documents"><code>list_documents</code><a class="headerlink" href="#list_documents" title="Permanent link">&para;</a></h3>
+<p>List documents (and optionally attachments) in the vault.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>folder</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Return only documents in this folder</td>
+</tr>
+<tr>
+<td><code>pattern</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Unix glob matched against relative paths (such as <code>"Journal/*.md"</code>)</td>
+</tr>
+<tr>
+<td><code>include_attachments</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>When true, also returns non-<code>.md</code> files that match the configured allowlist</td>
+</tr>
+<tr>
+<td><code>filters</code></td>
+<td>object</td>
+<td><code>null</code></td>
+<td>Frontmatter equality filters, ANDed (any key; list fields match by membership). On an OKF bundle, <code>status</code> / <code>stale</code> / <code>trust_tier</code> carry OKF semantics: <code>{"stale": "true"}</code> or <code>{"status": "deprecated"}</code> builds a triage listing. Any filter excludes attachments</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> List of info dicts. Every entry has a <code>kind</code> field (<code>"note"</code> or <code>"attachment"</code>). Notes also carry <code>content_chars</code>, the character count of the note body with frontmatter excluded, so a caller can size work before fetching anything. Body content is not included; call <code>read</code> for full text.</p>
+<h3 id="list_folders"><code>list_folders</code><a class="headerlink" href="#list_folders" title="Permanent link">&para;</a></h3>
+<p>List all folder paths that contain documents. Use this to discover valid folder names for filtering <code>search</code> or <code>list_documents</code>. The root folder (top-level documents) is represented as the empty string <code>""</code>.</p>
+<p><strong>Returns:</strong> Sorted list of folder paths, such as <code>["", "Journal", "Projects"]</code>.</p>
+<h3 id="list_tags"><code>list_tags</code><a class="headerlink" href="#list_tags" title="Permanent link">&para;</a></h3>
+<p>List all distinct values for a frontmatter field across the vault.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>field</code></td>
+<td>string</td>
+<td><code>"tags"</code></td>
+<td>Frontmatter field name to enumerate. Must match a field in <code>indexed_frontmatter_fields</code> (check <code>stats</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> Sorted list of distinct string values, such as <code>["craft", "pacing", "worldbuilding"]</code>.</p>
+<h3 id="stats"><code>stats</code><a class="headerlink" href="#stats" title="Permanent link">&para;</a></h3>
+<p>Get an overview of the vault's size, capabilities, and configuration. Call this at the start of a session to understand what the vault contains and what search modes are available.</p>
+<p><strong>Returns:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"document_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"chunk_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">156</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"folder_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"semantic_search_available"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"indexed_frontmatter_fields"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"tags"</span><span class="p">,</span><span class="w"> </span><span class="s2">"cluster"</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"attachment_extensions"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"pdf"</span><span class="p">,</span><span class="w"> </span><span class="s2">"png"</span><span class="p">,</span><span class="w"> </span><span class="s2">"jpg"</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>On an OKF bundle (see <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> in <a href="../configuration/">Configuration</a>), the response also carries an <code>okf</code> section: the configured mode, the declared spec version, a per-<code>type</code> histogram plus an untyped count, <code>status</code> and trust-tier breakdowns, and the stale-note count.</p>
+<h3 id="embeddings_status"><code>embeddings_status</code><a class="headerlink" href="#embeddings_status" title="Permanent link">&para;</a></h3>
+<p>Check the embedding provider configuration and vector index status. Use this to diagnose why semantic search is unavailable.</p>
+<p><strong>Returns:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"available"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"provider"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OllamaProvider"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"chunk_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">156</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/data/state/embeddings/embeddings"</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="get_index_status"><code>get_index_status</code><a class="headerlink" href="#get_index_status" title="Permanent link">&para;</a></h3>
+<p>Returns background-build state of the FTS index. Use this when
+<code>initialize</code> returned but bucket-3/4 calls block longer than expected
+or surface <code>IndexUnavailableError</code> (with <code>reason</code> of <code>"never_built"</code>,
+<code>"build_failed"</code>, <code>"timeout"</code>, <code>"broken"</code>, or <code>"busy"</code>). The <code>status</code> field
+distinguishes "still building" from "build failed," and the <code>error</code>
+field carries the diagnostic message from the last failed background
+build attempt.</p>
+<p><strong>Returns:</strong>
+- <code>status</code>: <code>"queryable"</code>, <code>"building"</code>, or <code>"failed"</code>.
+- <code>documents_indexed</code>: count of documents committed to the FTS index
+  right now (rises during <code>"building"</code>). <code>0</code> both for an empty index
+  and when the count could not be read; check <code>documents_indexed_error</code>
+  to tell them apart.
+- <code>documents_indexed_error</code>: <code>null</code> on a normal read; the SQLite error
+  message when the document count could not be read (such as a locked or
+  closed database), in which case <code>documents_indexed</code> is <code>0</code>.
+- <code>error</code>: <code>null</code> unless the background build raised; otherwise the
+  exception message.
+- <code>skipped_files</code>: list of files dropped from the index for a surfaced
+  deterministic reason. Each entry is <code>{"path", "category", "detail"}</code>, with
+  <code>category</code> one of <code>parse_error</code>, <code>encoding_error</code>, <code>missing_frontmatter</code>, or
+  <code>internal_error</code> (an unexpected indexer error rather than a content problem).
+  Empty when nothing was skipped. This tells a parse-dropped note apart from
+  one that simply has not synced yet, without reading container logs.
+  Exclude-pattern matches and transient I/O skips are intentionally omitted.</p>
+<p><strong>Tags:</strong> read-only.</p>
+<hr />
+<h3 id="okf_validate"><code>okf_validate</code><a class="headerlink" href="#okf_validate" title="Permanent link">&para;</a></h3>
+<p>Audit the vault's <a href="https://github.com/GoogleCloudPlatform/knowledge-catalog">OKF (Open Knowledge Format)</a> conformance. Reports degrees, not a verdict: during a migration to OKF this is the progress meter. The audit reads the vault from disk, so it works before the index is built and before the vault declares <code>okf_version</code> (run it first to decide whether to declare). Paths matching the vault's effective exclude patterns are skipped, which doubles as the whitelist for known-nonconforming zones. The tool is hidden when <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> is <code>off</code>.</p>
+<p>No parameters.</p>
+<p><strong>Returns:</strong> Report object with the detection state (<code>mode</code>, <code>declared_version</code>, <code>active</code>), the progress ratio (<code>total_notes</code>, <code>conformant_notes</code>), <code>root_index_missing</code> (bool), and per-rule findings that each carry <code>count</code> and up to 20 <code>examples</code> paths. Conformance findings: <code>missing_type</code>, <code>unparseable_frontmatter</code>, <code>misplaced_okf_version</code>. Advisory: <code>unknown_status</code>, <code>log_heading_shape</code>. Informational: <code>wikilink_files</code>, <code>missing_recommended</code>. Reserved files (<code>index.md</code>, <code>log.md</code>) are exempt from the <code>type</code> rule.</p>
+<h2 id="index-management">Index Management<a class="headerlink" href="#index-management" title="Permanent link">&para;</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Cold-start blocking</p>
+<p>Calls to <code>reindex</code> and <code>build_embeddings</code> during a cold-start background FTS build block via the tool-layer <code>needs_queryable</code> decorator. If the build takes longer than <code>MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S</code> (default 60&nbsp;s), the tool returns <code>IndexUnavailableError(reason="timeout")</code>. The same exception fires with <code>reason="build_failed"</code> if a scheduled background build ran and failed; read <code>get_index_status</code>'s <code>error</code> field for the captured diagnostic. The decorator also remaps a SQLite <code>OperationalError</code> from the handler call to <code>IndexUnavailableError(reason="broken")</code> (corruption / I/O failure / unknown codes) or <code>reason="busy"</code> (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's <code>__cause__</code> for the underlying SQLite error. Poll <code>get_index_status</code> to observe build state without blocking.</p>
+</div>
+<h3 id="reindex"><code>reindex</code><a class="headerlink" href="#reindex" title="Permanent link">&para;</a></h3>
+<p>Incrementally update the full-text search index to reflect file changes made outside this server. Only changed files are processed; unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665).</p>
+<p>If semantic search is configured, the reindex job re-embeds the changed documents on the writer thread. Poll <code>get_index_status</code> and watch the <code>dirty_embeddings</code> counter to observe embedding convergence.</p>
+<div class="admonition note">
+<p class="admonition-title">Boot reconciliation</p>
+<p>The server lifespan automatically queues one incremental reindex at every startup (#665), so files added, modified, or deleted while no server was running are reconciled without a manual <code>reindex</code> call. Reads served before that job completes report <code>index_stale: true</code> in <code>_meta</code>.</p>
+</div>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>force</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>When true, drops every indexed document and re-parses the whole vault instead of applying the hash-detected delta. The index is not queryable while the rebuild runs</td>
+</tr>
+</tbody>
+</table>
+<p>Change detection is hash-based, so an unchanged file is never re-parsed, and the rows derived from it (links, chunks, tags) persist as first extracted. A server upgrade that changes extraction needs the index rebuilt, and the server does that for itself: each build records the version of its parse pipeline, and a start that finds an older version rebuilds once before serving (#1124). <code>force=true</code> is the manual form of the same repair, for an index you have reason to distrust; it is not routine maintenance. An ordinary reindex re-embeds the documents it touches, but a forced rebuild does not, so follow one with <a href="#build_embeddings"><code>build_embeddings</code></a> (without <code>force</code>) when semantic search is configured.</p>
+<p><strong>Returns:</strong> The tool is dual-mode. A fast reindex (the common case, since work scales with the drift, not the vault) completes inline with <code>"status": "completed"</code> and its real counts: <code>added</code>, <code>modified</code>, <code>deleted</code>, <code>unchanged</code>, and <code>skipped</code>, plus <code>full_rebuild</code> (true only for a <code>force=true</code> run, whose counts report every document under <code>added</code> because the rebuild dropped and re-added them all). A reindex still running at the jobs soft deadline (<code>JOBS_SOFT_DEADLINE_S</code>, default 25 s) continues on the single-owner :class:<code>IndexWriter</code> thread (#559) and returns <code>{"status": "working", "job_id": ...}</code> immediately; fetch the outcome with <a href="#get_job_result"><code>get_job_result</code></a>. A failure within the deadline raises immediately; after promotion it is reported through <code>get_job_result</code> (and mirrored in <code>get_index_status</code>'s <code>last_reindex_error</code>). <code>get_index_status</code> remains the non-blocking observability view (<code>queue_depth</code>, <code>in_flight</code>, <code>dirty_paths</code>, <code>dirty_embeddings</code>), covering boot-time and file-watcher work no client call initiated.</p>
+<h3 id="build_embeddings"><code>build_embeddings</code><a class="headerlink" href="#build_embeddings" title="Permanent link">&para;</a></h3>
+<p>Build vector embeddings to enable semantic and hybrid search. This can be slow for large vaults.</p>
+<p>Without <code>force</code>, an existing vector index is <strong>converged</strong> to the FTS chunk set (#665). The operation embeds missing documents, re-embeds those whose indexed content changed, and drops vectors for deleted or excluded documents. A document whose source file still exists but is missing from the search index (such as one that failed to parse) keeps its vectors until the index sees it again (#1130). Work scales with the size of the drift, not the size of the vault; an already-converged index does no embedding work.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>force</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>When true, discards existing embeddings and rebuilds from scratch. Use only if the embedding model has changed</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> The tool is dual-mode. A fast convergence (small drift) completes inline with <code>"status": "completed"</code> and <code>chunks_embedded</code> (the total number of chunks embedded). A build still running at the jobs soft deadline (typical for a <code>force=true</code> rebuild of a large vault) continues on the single-owner :class:<code>IndexWriter</code> thread (#559) and returns <code>{"status": "working", "job_id": ...}</code> immediately; fetch the outcome with <a href="#get_job_result"><code>get_job_result</code></a>. A failure within the deadline raises immediately (a missing embedding provider now surfaces here instead of landing only in <code>get_index_status</code>); after promotion it is reported through <code>get_job_result</code>.</p>
+<div class="admonition note">
+<p class="admonition-title">When to use</p>
+<p>Normally never: the server queues a <code>build_embeddings</code> job at every startup, which converges the vector index to whatever the boot reconciliation reindex found (#665). Manual calls are needed in three cases: embedding a vault for the first time without restarting; retrying after a provider outage; or rebuilding from scratch after an embedding-model change (pass <code>force=true</code>).</p>
+</div>
+<hr />
+<h2 id="write-operations">Write Operations<a class="headerlink" href="#write-operations" title="Permanent link">&para;</a></h2>
+<div class="admonition info">
+<p class="admonition-title">Write tools are hidden when <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code></p>
+<p>They are registered by default. Set the variable to <code>true</code> for a
+search-only vault; through 3.1 that was the default, so a server
+upgrading from 3.x without setting it gains these tools.</p>
+<p>Several of them carry a second gate that this flag does not lift:
+<code>git_sync</code> needs managed git mode, <code>create_upload_link</code> needs an HTTP
+transport with <code>BASE_URL</code>, and the <code>okf_*</code> tools need OKF semantics
+active. Each is noted on its own entry below.</p>
+</div>
+<h3 id="write"><code>write</code><a class="headerlink" href="#write" title="Permanent link">&para;</a></h3>
+<p>Create or overwrite a document or attachment.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>Relative path. Extension determines handling (<code>.md</code> = note, else attachment)</td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td>string</td>
+<td>Full markdown body for <code>.md</code> files (excluding frontmatter). Ignored for attachments</td>
+</tr>
+<tr>
+<td><code>frontmatter</code></td>
+<td>object</td>
+<td>Optional YAML frontmatter dict for <code>.md</code> files. Ignored for attachments</td>
+</tr>
+<tr>
+<td><code>content_base64</code></td>
+<td>string</td>
+<td>Base64-encoded binary content for attachment files. Required when path is not <code>.md</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Context cost:</strong> the <code>content</code> parameter (text) is bounded only by the
+LLM's own output budget. The <code>content_base64</code> parameter (binary) inflates
+by ~33%.</p>
+<p><strong>Returns:</strong> <code>{"path": "Journal/note.md", "created": true}</code></p>
+<p>For <code>.md</code> files, the response may also include a <code>conventions</code> list: the
+<a href="#get_conventions">folder conventions</a> that apply to the target folder
+(root-first <code>{folder, path, content}</code> entries; omitted when none apply).
+Clients should verify the written note complies and issue a corrective <code>edit</code>
+if it does not.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><code>write</code> replaces the entire file. Use <code>edit</code> for targeted changes to existing documents.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Overwrite protection</p>
+<p>With <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code>, a <code>write</code> to a path
+that already exists fails unless the call carries a matching <code>if_match</code>
+etag. The flag defaults to <code>false</code> in 4.x and to <code>true</code> from 5.0. See
+<a href="../configuration/#write-protection">Write protection</a>.</p>
+</div>
+<h3 id="edit"><code>edit</code><a class="headerlink" href="#edit" title="Permanent link">&para;</a></h3>
+<p>Make a targeted text replacement in an existing document. Supports three modes:</p>
+<ul>
+<li><strong>Exact match</strong> (<code>old_text</code> only): must appear exactly once in the document.</li>
+<li><strong>Line-range</strong> (<code>line_start</code> + <code>line_end</code>, no <code>old_text</code>): replaces the specified lines. Pass <code>if_match</code> for safety.</li>
+<li><strong>Scoped match</strong> (<code>old_text</code> + <code>line_start</code>/<code>line_end</code>): searches for <code>old_text</code> within the specified line range only.</li>
+</ul>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Relative path to the document</td>
+</tr>
+<tr>
+<td><code>old_text</code></td>
+<td>string</td>
+<td>Conditional</td>
+<td>Text to replace. Required unless using line-range mode</td>
+</tr>
+<tr>
+<td><code>new_text</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Replacement text</td>
+</tr>
+<tr>
+<td><code>if_match</code></td>
+<td>string</td>
+<td>No</td>
+<td>Etag from <code>read</code> for optimistic concurrency</td>
+</tr>
+<tr>
+<td><code>line_start</code></td>
+<td>integer</td>
+<td>Conditional</td>
+<td>First line to replace (1-based, inclusive). Required with <code>line_end</code></td>
+</tr>
+<tr>
+<td><code>line_end</code></td>
+<td>integer</td>
+<td>Conditional</td>
+<td>Last line to replace (1-based, inclusive). Required with <code>line_start</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> <code>{"path": "Journal/note.md", "replacements": 1, "match_type": "exact"}</code></p>
+<p><code>match_type</code> is <code>"exact"</code> when the text matched byte-for-byte, or <code>"normalized"</code> when it matched after Unicode/whitespace normalization. The response may also include a <code>conventions</code> list; see <a href="#write"><code>write</code></a>.</p>
+<div class="admonition tip">
+<p class="admonition-title">Usage pattern</p>
+<p>Always call <code>read</code> first to get the exact current text and line numbers. For small edits, use <code>old_text</code> (exact match). For large block replacements, use <code>line_start</code>/<code>line_end</code> with the line numbers shown by <code>read</code>. Frontmatter can be edited; <code>old_text</code> may span the YAML block.</p>
+</div>
+<div class="admonition info">
+<p class="admonition-title">Normalized matching</p>
+<p>When exact match fails, the tool automatically tries a normalized comparison. Normalization covers Unicode NFC, whitespace collapsing, and smart quote conversion (en-dash/em-dash to hyphen). If a unique match is found, it proceeds and returns <code>match_type: "normalized"</code>.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Diagnostic errors</p>
+<p>When no match is found, the error message reports the closest matching line number and the character position of the first difference, along with short snippets showing what was expected vs. what was found. This helps identify the exact mismatch.</p>
+</div>
+<h3 id="append"><code>append</code><a class="headerlink" href="#append" title="Permanent link">&para;</a></h3>
+<p>Append text to the end of an existing <code>.md</code> note without reading it first.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Relative path to the document</td>
+</tr>
+<tr>
+<td><code>content</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Text to append (must be non-empty)</td>
+</tr>
+<tr>
+<td><code>if_match</code></td>
+<td>string</td>
+<td>No</td>
+<td>Etag from <code>read</code> for optimistic concurrency</td>
+</tr>
+<tr>
+<td><code>create_if_missing</code></td>
+<td>bool</td>
+<td>No</td>
+<td>When <code>true</code>, a missing note is created with <code>content</code> as its body. Default <code>false</code>, so a typo in <code>path</code> fails loudly rather than silently creating a new note</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> <code>{"path": "Journal/2026.md", "created": false}</code></p>
+<p><code>created</code> is <code>true</code> only when <code>create_if_missing</code> created a new note. The response may also include a <code>conventions</code> list; see <a href="#write"><code>write</code></a>.</p>
+<div class="admonition tip">
+<p class="admonition-title">Cheaper than <code>edit</code> for additive changes</p>
+<p>Unlike <code>edit</code>, no prior <code>read</code> is needed, so the existing note content never enters the LLM context. This makes it ideal for log entries, journal additions, and checklist items. A newline is inserted between the existing content and the appended text when the file does not already end with one; include leading blank lines or heading markers in <code>content</code> yourself for a separating paragraph or section.</p>
+</div>
+<h3 id="delete"><code>delete</code><a class="headerlink" href="#delete" title="Permanent link">&para;</a></h3>
+<p>Permanently delete a document or attachment. For <code>.md</code> documents, also removes from all search indices.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>Relative path to the document or attachment to delete</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> <code>{"path": "Journal/old-note.md"}</code></p>
+<div class="admonition danger">
+<p class="admonition-title">Danger</p>
+<p>This is irreversible unless git history exists. Confirm the path with the user before calling.</p>
+</div>
+<h3 id="rename"><code>rename</code><a class="headerlink" href="#rename" title="Permanent link">&para;</a></h3>
+<p>Rename a document or attachment, or move it to a different folder. Parent directories for the new path are created automatically.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>old_path</code></td>
+<td>string</td>
+<td>Current relative path</td>
+</tr>
+<tr>
+<td><code>new_path</code></td>
+<td>string</td>
+<td>Target relative path. Fails if <code>new_path</code> already exists</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> <code>{"old_path": "drafts/idea.md", "new_path": "projects/idea.md"}</code></p>
+<h3 id="move_folder"><code>move_folder</code><a class="headerlink" href="#move_folder" title="Permanent link">&para;</a></h3>
+<p>Move an entire folder subtree to a new prefix and rewrite all vault links that point into the moved subtree. This is the folder-level analogue of <code>rename</code>.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>old_dir</code></td>
+<td>string</td>
+<td>Current folder path (relative, no trailing slash, such as <code>"drafts/2024"</code>)</td>
+</tr>
+<tr>
+<td><code>new_dir</code></td>
+<td>string</td>
+<td>Target folder path (relative, such as <code>"archive/2024"</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>old_dir</code></td>
+<td>string</td>
+<td>Source folder path (echoed back)</td>
+</tr>
+<tr>
+<td><code>new_dir</code></td>
+<td>string</td>
+<td>Destination folder path (echoed back)</td>
+</tr>
+<tr>
+<td><code>files_moved</code></td>
+<td>integer</td>
+<td>Number of files moved on disk</td>
+</tr>
+<tr>
+<td><code>updated_links</code></td>
+<td>integer</td>
+<td>Number of source documents whose links were rewritten</td>
+</tr>
+<tr>
+<td><code>failed_links</code></td>
+<td>array of strings</td>
+<td>Paths of documents whose link rewrite failed (best-effort)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Atomicity:</strong> before any file is moved, every destination path is checked. If any single destination file already exists the call raises and <strong>nothing is moved</strong>. Merging into a pre-existing target directory is allowed as long as no per-file collision exists.</p>
+<p><strong>Link rewrites:</strong> after the move, all vault links pointing into the subtree (markdown links and wikilinks, including links between documents inside the moved subtree and backlinks from outside) are rewritten in a single pass. Rewriting is best-effort; a document that cannot be rewritten is listed in <code>failed_links</code> and does not abort the move.</p>
+<p><strong>Index:</strong> updated immediately after the call; no <code>reindex</code> needed.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Link rewrites are not rolled back if the process is interrupted after the move phase begins. The move phase itself is not OS-failure-atomic: an OS error during file moves (permission error, full disk, concurrent removal) can leave the subtree partially moved with the index unchanged; run <code>reindex</code> to recover. Use <code>rename</code> for single-file moves where full atomicity is required.</p>
+</div>
+<h3 id="okf-migration-transforms">OKF migration transforms<a class="headerlink" href="#okf-migration-transforms" title="Permanent link">&para;</a></h3>
+<p>Three one-shot <a href="https://github.com/GoogleCloudPlatform/knowledge-catalog">OKF (Open Knowledge Format)</a> migration tools for moving a vault toward the bundle conventions. They are write tools (hidden in read-only mode and when <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> is <code>off</code>), and they run through the normal write path, so a git-backed vault commits each change. Run each one once when moving a vault into the format.</p>
+<h4 id="okf_convert_links"><code>okf_convert_links</code><a class="headerlink" href="#okf_convert_links" title="Permanent link">&para;</a></h4>
+<p>Rewrite <code>[[wikilinks]]</code> as the bundle-root-absolute markdown links OKF recommends (<code>[text](/path/note.md)</code>) across the vault or one folder. Only links whose target is indexed are converted, so the link graph is preserved edge-for-edge; unresolvable wikilinks are left untouched and counted as skipped. Re-running is safe (already-converted markdown links are not touched).</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>folder</code></td>
+<td>string</td>
+<td>Restrict to this folder subtree; omit to convert the whole vault</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> <code>files_changed</code>, <code>links_converted</code>, <code>links_skipped</code>, <code>notes_scanned</code> (all integers).</p>
+<h4 id="okf_generate_index"><code>okf_generate_index</code><a class="headerlink" href="#okf_generate_index" title="Permanent link">&para;</a></h4>
+<p>Generate (or overwrite) a folder's reserved <code>index.md</code> as a progressive-disclosure listing: <code>- [title](/path.md) - description</code> for each note directly in the folder, plus a pointer into each immediate subfolder's own <code>index.md</code>. Descriptions are drawn from frontmatter. The listing is one level deep (it does not flatten the subtree). Existing frontmatter is preserved, so regenerating the bundle-root <code>index.md</code> keeps its <code>okf_version</code> declaration. Reserved files are omitted. When the vault sets <code>REQUIRED_FIELDS</code>, any required field the file lacks is added, so the generated listing is not itself excluded from the index.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>folder</code></td>
+<td>string</td>
+<td>Folder to index; omit for the bundle root</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> <code>path</code> (string), <code>entries</code> (integer), <code>frontmatter_preserved</code> (bool). <code>frontmatter_preserved</code> reports whether frontmatter already on the file was carried over. A file that had none can still be written with required fields added.</p>
+<h4 id="okf_seed_log"><code>okf_seed_log</code><a class="headerlink" href="#okf_seed_log" title="Permanent link">&para;</a></h4>
+<p>Seed a folder's reserved <code>log.md</code> change history from the vault's git commit history, newest-first <code>## YYYY-MM-DD</code> sections, one bullet per commit. The <code>folder</code> argument both places the log and scopes its content: a folder seeds only the commits that touched that subtree, while the bundle root seeds the whole vault's history. Refuses to overwrite an existing <code>log.md</code> (a change history is hand-maintained after seeding). When the vault sets <code>REQUIRED_FIELDS</code>, the seeded log carries those fields, so the bundle's own history is not excluded from the index.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>folder</code></td>
+<td>string</td>
+<td>Folder to write <code>log.md</code> into and scope history to; omit for the bundle root (whole-vault history)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> <code>path</code> (string), <code>commits</code> (integer), <code>dates</code> (integer, distinct-day count).</p>
+<h4 id="okf_verify"><code>okf_verify</code><a class="headerlink" href="#okf_verify" title="Permanent link">&para;</a></h4>
+<p>Attest a note as human-reviewed by appending a <code>{by: human:&lt;subject&gt;, at: &lt;date&gt;}</code> entry to its <code>verified</code> frontmatter list, promoting the note's trust tier to <code>human-reviewed</code>. Part of the <a href="../guides/okf/#the-enforced-write-layer">enforced write layer</a>: registered only when <code>MARKDOWN_VAULT_MCP_OKF_WRITE</code> is enabled. The append itself does not clear <code>verified</code>; only content-changing writes do that.</p>
+<p>How the review is confirmed depends on <a href="../configuration/"><code>MARKDOWN_VAULT_MCP_OKF_VERIFY</code></a>:</p>
+<ul>
+<li><strong><code>elicit</code></strong> (default): the tool issues an MCP elicitation asking you to confirm you reviewed the note, and writes the entry only on an affirmative reply. It fails closed (if the client cannot elicit or you decline, it errors and writes nothing), so a model cannot self-attest on your behalf. The subject recorded is your authenticated identity when present, else <code>local</code>.</li>
+<li><strong><code>trust-auth</code></strong>: attributes to the authenticated caller with no confirmation, and errors when the server runs with no auth. Only safe when the sole caller is a human-driven UI.</li>
+<li><strong><code>off</code></strong>: the tool is hidden entirely.</li>
+</ul>
+<p>Whichever mode, <code>human-reviewed</code> means a human deliberately confirmed the review, not that the note is provably correct.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>Vault-relative path of the note to verify</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> <code>path</code> (string), <code>verifier</code> (string, the <code>human:&lt;subject&gt;</code> actor recorded), <code>verified_count</code> (integer, entries after the append).</p>
+<h3 id="fetch"><code>fetch</code><a class="headerlink" href="#fetch" title="Permanent link">&para;</a></h3>
+<p>Download a file from a URL and save it to the vault as a note or attachment. Designed for MCP-to-MCP file transfer when content is too large for the LLM context window.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>url</code></td>
+<td>string</td>
+<td>required</td>
+<td>Source URL to download. Only <code>http</code>/<code>https</code> schemes allowed; the host is resolved and blocked unless every address is publicly routable (private, loopback, link-local, CGNAT/shared, and reserved ranges are all refused); the validated IP is pinned for the connection; ambient <code>HTTP(S)_PROXY</code>/<code>.netrc</code> settings are ignored. Redirects are followed, and each hop repeats every check above (SSRF protection)</td>
+</tr>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>required</td>
+<td>Destination path in vault. Extension determines handling: <code>.md</code> for notes, anything else for attachments</td>
+</tr>
+<tr>
+<td><code>frontmatter</code></td>
+<td>object</td>
+<td><code>null</code></td>
+<td>Optional YAML frontmatter dict for <code>.md</code> files. Ignored for attachments</td>
+</tr>
+<tr>
+<td><code>if_match</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Optional etag from a previous <code>read</code> call for optimistic concurrency</td>
+</tr>
+<tr>
+<td><code>timeout_s</code></td>
+<td>float</td>
+<td><code>30.0</code></td>
+<td>Download timeout in seconds</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Context cost:</strong> zero. The file is downloaded server-side. Reference
+the saved file by <code>path</code> for downstream tools rather than <code>read()</code>-ing it
+back into context.</p>
+<p><strong>Returns:</strong> <code>{"path": "notes/report.md", "created": true, "content_length": 4096, "content_type": "text/markdown", "final_url": "https://example.com/report.md"}</code></p>
+<p>For <code>.md</code> destinations, the response may also include a <code>conventions</code> list; see <a href="#write"><code>write</code></a>.</p>
+<div class="admonition note">
+<p class="admonition-title">Overwrite protection</p>
+<p><code>fetch</code> saves through the same guarded path as <code>write</code>, so with
+<code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code> a fetch to a path that
+already exists fails unless the call carries a matching <code>if_match</code> etag.
+See <a href="../configuration/#write-protection">Write protection</a>.</p>
+</div>
+<p>The download itself runs through <code>fastmcp-pvl-core</code>'s hardened <code>fetch_url</code>
+primitive, so the SSRF protections above are shared, audited code rather
+than a local copy.</p>
+<div class="admonition warning">
+<p class="admonition-title">Redirects are followed (changed in 4.0)</p>
+<p>Through 3.1 this tool refused every redirect: a <code>301</code> or <code>302</code> produced
+an error rather than content. It now follows the chain, so the bytes may
+come from a host other than the one you asked for. Every hop re-runs the
+full address check, so a redirect cannot reach an internal target — but
+if you rely on <code>fetch</code> to reject indirection, that guarantee is gone.</p>
+<p><code>final_url</code> reports where the bytes came from: equal to <code>url</code> when
+nothing redirected, otherwise the last hop. Check it when the source
+host matters. It keeps its query string (a redirect target's query is
+often load-bearing), so do not log it verbatim.</p>
+<p>A chain longer than the transport's redirect limit fails with a
+"too many redirects" error rather than saving anything.</p>
+</div>
+<h3 id="git_sync"><code>git_sync</code><a class="headerlink" href="#git_sync" title="Permanent link">&para;</a></h3>
+<p>Force an immediate <code>git pull</code> / <code>git push</code> / both, bypassing the periodic
+pull interval and write-idle push delay. Returns a structured payload
+with the local HEAD SHA, branch, and per-leg results so an LLM agent can
+confirm "your changes are now on the remote" or recover from a divergent
+history before continuing the conversation.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>direction</code></td>
+<td><code>"pull"</code> | <code>"push"</code> | <code>"both"</code></td>
+<td><code>"both"</code></td>
+<td>Which legs to run. <code>"both"</code> runs pull first, then push; if pull fails (<code>pull.applied=false</code>) the push leg is skipped and <code>push</code> stays <code>null</code> so a callable can inspect <code>pull.reason</code> before retrying.</td>
+</tr>
+<tr>
+<td><code>dry_run</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>When <code>true</code>, the pull leg runs <code>git fetch</code> and reports what <em>would</em> happen (<code>would_apply: bool</code>, projected <code>to_sha</code>) without moving HEAD. The push leg has no safe local probe for "would the remote accept this," so a dry-run push is a no-op that returns <code>applied=false</code> with <code>reason="dry_run_unsupported"</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> Dict with the following fields:</p>
+<ul>
+<li><code>direction</code> (str): the requested direction, echoed back.</li>
+<li><code>head_sha</code> (str): local HEAD SHA after the operation. Differs from
+  the pre-call HEAD when the pull leg advanced the branch.</li>
+<li><code>branch</code> (str): current branch name (or <code>"HEAD"</code> on detached HEAD).</li>
+<li><code>pull</code> (dict | null): payload from the pull leg, or <code>null</code> when
+  <code>direction="push"</code>. Fields: <code>applied</code>, <code>fast_forward</code>,
+  <code>commits_pulled</code>, <code>from_sha</code>, <code>to_sha</code>; optional <code>reason</code>,
+  <code>conflict_files</code>; <code>would_apply</code> (only in <code>dry_run</code> mode).
+  <code>commits_pulled</code> is reliable on the fast-forward path. On
+  <code>reason="rebased"</code> and <code>reason="conflicts_resolved_with_siblings"</code> it
+  is <code>0</code> even when HEAD advanced (the rebase replays local commits <em>on
+  top of</em> the upstream rather than fast-forwarding); inspect
+  <code>from_sha != to_sha</code> to detect the actual change.</li>
+<li><code>push</code> (dict | null): payload from the push leg, or <code>null</code> when
+  <code>direction="pull"</code> or when the pull leg failed in
+  <code>direction="both"</code>. Fields: <code>applied</code>, <code>commits_pushed</code>,
+  <code>remote_sha_before</code>, <code>remote_sha_after</code>; optional <code>reason</code>, <code>hint</code>.</li>
+<li><code>dry_run</code> (bool): present only when <code>dry_run=true</code> was passed.</li>
+</ul>
+<p><strong>Examples:</strong></p>
+<p>Successful both-direction sync (clean fast-forward + clean push):</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"direction"</span><span class="p">:</span><span class="w"> </span><span class="s2">"both"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"head_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"branch"</span><span class="p">:</span><span class="w"> </span><span class="s2">"main"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"pull"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"applied"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"fast_forward"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"commits_pulled"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"from_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9999999"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"to_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"push"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"applied"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"commits_pushed"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"remote_sha_before"</span><span class="p">:</span><span class="w"> </span><span class="s2">"8888888"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"remote_sha_after"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Pull with conflict (Syncthing-style sibling resolution per
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/232">#232</a>):</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"direction"</span><span class="p">:</span><span class="w"> </span><span class="s2">"pull"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"head_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"branch"</span><span class="p">:</span><span class="w"> </span><span class="s2">"main"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"pull"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"applied"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"fast_forward"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"commits_pulled"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"from_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9999999"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"to_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"conflicts_resolved_with_siblings"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"conflict_files"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"Notes/2026-05-09.conflict-mcp-20260511-114203.md"</span><span class="p">]</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"push"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The pull <em>succeeded</em> (<code>applied=true</code>): HEAD now points at the remote tip
+and the local edits that conflicted with the remote were preserved as
+<code>.conflict-mcp-&lt;timestamp&gt;.md</code> siblings on the same path. The remote
+version wins on the canonical path; the LLM should read the listed
+each sibling and propose how to merge the local content back in.
+<code>commits_pulled</code> is <code>0</code> on this path because the rebase replays local
+commits <em>on top of</em> the remote (the remote commits are reconciled, not
+"pulled forward" in the linear-history sense).</p>
+<p>Push rejected as non-fast-forward:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"direction"</span><span class="p">:</span><span class="w"> </span><span class="s2">"push"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"head_sha"</span><span class="p">:</span><span class="w"> </span><span class="s2">"abc1234"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"branch"</span><span class="p">:</span><span class="w"> </span><span class="s2">"main"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"push"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"applied"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"commits_pushed"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"remote_sha_before"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9999999"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"remote_sha_after"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9999999"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"non_fast_forward"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"hint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Remote has commits the local clone has not seen.  Run git_sync(direction='pull') to reconcile (fast-forward when possible, Syncthing-style siblings on real conflict), then retry git_sync(direction='push')."</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong><code>pull.reason</code> values</strong> (set on every non-fast-forward outcome and on
+failures; <code>null</code> for clean fast-forwards and dry-runs):</p>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Meaning</th>
+<th><code>applied</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>"fetch_failed"</code></td>
+<td><code>git fetch origin</code> exited non-zero (network / auth / proxy). HEAD did not move.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>"no_remote"</code></td>
+<td>No remote-tracking ref (<code>origin/&lt;branch&gt;</code>, or <code>origin/HEAD</code> for a detached checkout) could be resolved on the local clone.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>"rebased"</code></td>
+<td>Local and remote diverged but <code>git rebase origin/&lt;branch&gt;</code> replayed local commits cleanly. <code>conflict_files</code> empty.</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>"conflicts_resolved_with_siblings"</code></td>
+<td>Rebase hit real conflicts; resolved by accepting upstream and writing local versions as <code>.conflict-mcp-*</code> siblings (#232). <code>conflict_files</code> populated.</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td><code>"conflict_resolution_failed"</code></td>
+<td>The conflict-resolution loop could not produce a recoverable working tree; rebase was aborted. HEAD did not move.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>"non_fast_forward_with_conflicts"</code></td>
+<td>Rare catastrophic fallback when even the conflict-resolution path could not stabilise the working tree. HEAD did not move.</td>
+<td><code>false</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>push.reason</code> values</strong> (<code>null</code> on success including the
+already-up-to-date no-op):</p>
+<table>
+<thead>
+<tr>
+<th>Reason</th>
+<th>Meaning</th>
+<th><code>applied</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>"dry_run_unsupported"</code></td>
+<td>Caller passed <code>dry_run=true</code>. Git has no safe local probe for "would the remote accept this," so the push leg is a deliberate no-op.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>"no_remote"</code></td>
+<td>No remote-tracking ref could be resolved (no <code>origin/&lt;branch&gt;</code> and no <code>origin/HEAD</code>). Push not attempted.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>"non_fast_forward"</code></td>
+<td>Remote rejected the push because the local branch is not a strict descendant of the remote tip. <code>hint</code> points at <code>git_sync(direction='pull')</code> to reconcile first.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>"push_failed"</code></td>
+<td><code>git push origin</code> exited non-zero for any other reason (network, auth, server-side hook). <code>hint</code> carries the truncated stderr.</td>
+<td><code>false</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Context cost:</strong> small (structured dict only, no file bytes).</p>
+<p><strong>Tag:</strong> <code>{write, git-managed}</code>. Hidden when
+<code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> or when the deployment is not in
+managed git mode (<code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code> not set).</p>
+<p><strong>Errors:</strong></p>
+<ul>
+<li><code>ValueError</code>: raised at call time when the underlying strategy is
+  not a managed <code>GitWriteStrategy</code> (that is, <code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code>
+  is unset). The visibility tag normally hides the tool in that case;
+  this error guards the path where a client invokes the tool by name
+  despite it not being advertised.</li>
+</ul>
+<div class="admonition note">
+<p class="admonition-title">Requirements</p>
+<p>Only available in managed git mode. Set
+<code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code> and a working
+<code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code> (with the
+<code>MARKDOWN_VAULT_MCP_GIT_USERNAME</code> appropriate for your provider;
+see the <a href="../guides/git-integration/#provider-username-reference">Git Integration guide</a>).</p>
+</div>
+<hr />
+<h2 id="link-graph">Link Graph<a class="headerlink" href="#link-graph" title="Permanent link">&para;</a></h2>
+<div class="admonition note">
+<p class="admonition-title">Cold-start blocking</p>
+<p>Calls to <code>get_backlinks</code>, <code>get_outlinks</code>, <code>get_similar</code>, <code>get_context</code>, and <code>get_connection_path</code> during a cold-start background FTS build block via the tool-layer <code>needs_queryable</code> decorator. If the build takes longer than <code>MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S</code> (default 60&nbsp;s), the tool returns <code>IndexUnavailableError(reason="timeout")</code>. The same exception fires with <code>reason="build_failed"</code> if a scheduled background build ran and failed; read <code>get_index_status</code>'s <code>error</code> field for the captured diagnostic. The decorator also remaps a SQLite <code>OperationalError</code> from the handler call to <code>IndexUnavailableError(reason="broken")</code> (corruption / I/O failure / unknown codes) or <code>reason="busy"</code> (SQLITE_BUSY/LOCKED, lock contention); inspect the exception's <code>__cause__</code> for the underlying SQLite error. Poll <code>get_index_status</code> to observe build state without blocking.</p>
+</div>
+<h3 id="get_backlinks"><code>get_backlinks</code><a class="headerlink" href="#get_backlinks" title="Permanent link">&para;</a></h3>
+<p>Find all documents that link to a given document.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>required</td>
+<td>Relative path to the target document</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>int</td>
+<td><code>null</code></td>
+<td>Maximum number of backlinks to return. Omitted (the default) returns all.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Block until the IndexWriter drains before answering, then report freshness via <code>_meta.index_stale</code> (see the <em>Index freshness on read tools</em> note at the top of this page).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> List of documents containing links to the given path. Each entry has <code>source_path</code>, <code>source_title</code>, <code>link_text</code>, <code>link_type</code>, <code>fragment</code>, and <code>raw_target</code> fields. Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
+<h3 id="get_outlinks"><code>get_outlinks</code><a class="headerlink" href="#get_outlinks" title="Permanent link">&para;</a></h3>
+<p>Find all links from a document, with existence check.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>required</td>
+<td>Relative path to the source document</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>int</td>
+<td><code>null</code></td>
+<td>Maximum number of outlinks to return. Omitted (the default) returns all.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Block until the IndexWriter drains before answering, then report freshness via <code>_meta.index_stale</code> (see the <em>Index freshness on read tools</em> note at the top of this page).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> List of link targets with an <code>exists</code> field indicating whether the target document is in the vault. Each entry has <code>target_path</code>, <code>link_text</code>, <code>link_type</code>, <code>fragment</code>, <code>raw_target</code>, and <code>exists</code> fields. Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
+<h3 id="get_broken_links"><code>get_broken_links</code><a class="headerlink" href="#get_broken_links" title="Permanent link">&para;</a></h3>
+<p>Find all links across the vault pointing to non-existent documents.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>folder</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Optional folder filter; only checks links from documents in this folder</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> List of entries with <code>source_path</code>, <code>source_title</code>, <code>target_path</code>, <code>link_text</code>, <code>link_type</code>, <code>fragment</code>, and <code>raw_target</code> fields.</p>
+<h3 id="get_similar"><code>get_similar</code><a class="headerlink" href="#get_similar" title="Permanent link">&para;</a></h3>
+<p>Find semantically similar notes by document path. Requires embeddings to be built.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>required</td>
+<td>Relative path to the document</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>int</td>
+<td><code>10</code></td>
+<td>Maximum files to return</td>
+</tr>
+<tr>
+<td><code>chunks_per_file</code></td>
+<td>int</td>
+<td>server default (<code>2</code>)</td>
+<td>Maximum number of matching sections returned per file. Overrides <code>MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE</code> for this call. <code>0</code> is rejected.</td>
+</tr>
+<tr>
+<td><code>folder</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Restrict results to this folder (exact match or sub-folder prefix), such as <code>3-Resources</code></td>
+</tr>
+<tr>
+<td><code>filters</code></td>
+<td>object</td>
+<td><code>null</code></td>
+<td>Frontmatter equality filters, ANDed, such as <code>{"type": "resource"}</code>. List-valued fields match by membership. On an OKF bundle, <code>status</code> / <code>stale</code> / <code>trust_tier</code> carry OKF semantics</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Block until the IndexWriter drains before answering, then report freshness via <code>_meta.index_stale</code> (see the <em>Index freshness on read tools</em> note at the top of this page).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> List of grouped similar-document dicts ranked by cosine similarity, one entry per file with up to <code>chunks_per_file</code> best-matching sections. Each entry contains: <code>path</code>, <code>title</code>, <code>folder</code>, <code>score</code> (max section score), <code>search_type</code> (<code>"semantic"</code>), <code>frontmatter</code>, and <code>sections</code> (a list of <code>{heading, content, score}</code> dicts sorted by score then document order). Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
+<div class="admonition note">
+<p class="admonition-title">Grouped result shape</p>
+<p>Returns one entry per file with up to <code>chunks_per_file</code> best-matching sections. Default is 2 sections per file; pass <code>chunks_per_file=1</code> for compact dossiers.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Filter semantics</p>
+<p><code>folder</code> and <code>filters</code> are applied <em>after</em> the vector search (the vector store carries no structured metadata), against each candidate's full frontmatter. Unlike <code>search</code>'s keyword-mode filters, they are not limited to <code>MARKDOWN_VAULT_MCP_INDEXED_FIELDS</code>: any frontmatter key works. The candidate pool is automatically widened when filtering so narrow filters do not starve the result list.</p>
+</div>
+<h3 id="get_toc"><code>get_toc</code><a class="headerlink" href="#get_toc" title="Permanent link">&para;</a></h3>
+<p>Heading outline for a single note or an entire folder subtree. Mirrors the <a href="../resources/#tocvaultpath"><code>toc://vault/{path}</code></a> resource, adding <code>max_level</code> and <code>max_notes</code> controls. Dispatch is by suffix: paths ending in <code>.md</code> are treated as notes; all other paths are treated as folder prefixes.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>required</td>
+<td>Note path (such as <code>"a/b.md"</code>) or folder prefix (such as <code>"a/b"</code>)</td>
+</tr>
+<tr>
+<td><code>max_level</code></td>
+<td>int</td>
+<td><code>null</code></td>
+<td>Drop headings deeper than this level (such as <code>2</code> to keep H1 and H2). The synthetic H1 title always survives. <code>null</code> returns all levels.</td>
+</tr>
+<tr>
+<td><code>max_notes</code></td>
+<td>int</td>
+<td><code>200</code></td>
+<td>Folder mode only. Cap on distinct notes. When more notes match, the first <code>max_notes</code> (sorted by path) are returned and <code>truncated</code> is <code>true</code>.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Block until the IndexWriter drains before answering, then report freshness via <code>_meta.index_stale</code> (see the <em>Index freshness on read tools</em> note at the top of this page).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong></p>
+<ul>
+<li><strong>Note mode</strong> (<code>path</code> ends in <code>.md</code>): flat ordered <code>list</code> of <code>{heading (str), level (int)}</code>. The document title is included as a synthetic H1 entry.</li>
+<li>
+<p><strong>Folder mode</strong> (<code>path</code> is a folder prefix): <code>{path (str), notes (list), truncated (bool)}</code> where each entry in <code>notes</code> is <code>{path, title, headings, content_chars}</code> and <code>headings</code> is a list of <code>{heading, level}</code> for that note. An empty or nonexistent folder returns an empty <code>notes</code> list with <code>truncated: false</code>.</p>
+<p><code>content_chars</code> is the character count of that note's body, frontmatter excluded. It lets a client pack batches against a size budget instead of a note count, which is what the <a href="../prompts/"><code>summarize-subtree</code></a> recipe uses. A note indexed before the field existed reports <code>0</code>; a vault upgrading to this release rebuilds its index once on first startup, after which the real value is served.</p>
+</li>
+</ul>
+<p>Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
+<h3 id="get_recent"><code>get_recent</code><a class="headerlink" href="#get_recent" title="Permanent link">&para;</a></h3>
+<p>Get the most recently modified notes.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>limit</code></td>
+<td>int</td>
+<td><code>20</code></td>
+<td>Maximum results to return</td>
+</tr>
+<tr>
+<td><code>folder</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Optional folder filter; only returns notes from this folder (such as <code>"Journal"</code>)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> List of notes with Unix timestamps (<code>modified_at</code> as float), sorted by modification time (newest first).</p>
+<h3 id="get_context"><code>get_context</code><a class="headerlink" href="#get_context" title="Permanent link">&para;</a></h3>
+<p>Get a consolidated context dossier for a note. Combines backlinks, outlinks, similar notes, folder peers, tags, and modification time into a single response.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>required</td>
+<td>Relative path to the document</td>
+</tr>
+<tr>
+<td><code>similar_limit</code></td>
+<td>int</td>
+<td><code>5</code></td>
+<td>Max similar files to include. Pass <code>0</code> to skip the similarity lookup (such as when <code>stats</code> shows <code>semantic_search_available=false</code>)</td>
+</tr>
+<tr>
+<td><code>link_limit</code></td>
+<td>int</td>
+<td><code>10</code></td>
+<td>Max backlinks and outlinks to include each</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Block until the IndexWriter drains before answering, then report freshness via <code>_meta.index_stale</code> (see the <em>Index freshness on read tools</em> note at the top of this page).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> Object with <code>path</code>, <code>title</code>, <code>folder</code>, <code>frontmatter</code>, <code>modified_at</code>, <code>backlinks</code>, <code>outlinks</code>, <code>similar</code>, <code>folder_notes</code>, and <code>tags</code> fields. The <code>similar</code> list contains grouped result dicts, one entry per file with up to <code>chunks_per_file</code> best-matching sections (default 1 for <code>get_context</code> to keep dossiers compact). May also include a <code>conventions</code> list: the <a href="#get_conventions">folder conventions</a> that apply to the note's folder. On an OKF bundle it also carries the note's <code>okf</code> annotation (<code>type</code>, <code>status</code>, <code>stale</code>, <code>trust_tier</code>, <code>sources_count</code>). Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
+<div class="admonition note">
+<p class="admonition-title">Grouped similar shape</p>
+<p>Each <code>similar</code> entry contains <code>path</code>, <code>title</code>, <code>folder</code>, <code>score</code>, <code>search_type</code>, <code>frontmatter</code>, and <code>sections</code> (a list of <code>{heading, content, score}</code> dicts). <code>get_context</code> defaults to one section per file for compact dossiers; <code>search</code> and <code>get_similar</code> default to 2.</p>
+</div>
+<h3 id="get_conventions"><code>get_conventions</code><a class="headerlink" href="#get_conventions" title="Permanent link">&para;</a></h3>
+<p>Get the vault owner's authoring conventions that apply to a note or folder.</p>
+<p>Vaults may carry per-folder convention files (default <code>_conventions.md</code>,
+configurable via
+<a href="../configuration/"><code>MARKDOWN_VAULT_MCP_CONVENTIONS_FILE</code></a>) whose free-form
+markdown describes how notes in that folder should be authored, such as
+<em>"reference material: keep notes self-contained; do not link out to project
+or journal notes."</em> Conventions accumulate down the tree: a vault-root file
+applies everywhere and nested files add to it. The server transports the text
+verbatim; it never interprets it.</p>
+<p>Convention files are excluded from the search index (they never appear in
+<code>search</code>, <code>list_documents</code>, or <code>get_similar</code> results) but remain readable via
+<code>read</code> and editable via <code>write</code>/<code>edit</code>. This tool reads directly from disk,
+so it works even while the index is still building.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td><code>""</code></td>
+<td>Relative note path (resolves to its parent folder) or folder path. <code>""</code> returns vault-root conventions plus the folder listing</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> Object with:</p>
+<ul>
+<li><code>path</code>: the queried path.</li>
+<li><code>conventions</code>: applicable entries, root-first, each <code>{folder, path, content}</code> (<code>folder</code> is <code>""</code> for the vault root).</li>
+<li><code>convention_folders</code>: every folder carrying a convention file. Included only in discovery mode (<code>path=""</code>), since it requires a vault-wide folder walk.</li>
+</ul>
+<div class="admonition tip">
+<p class="admonition-title">Write-time enforcement</p>
+<p>The <code>write</code>, <code>edit</code>, and <code>fetch</code> tools echo applicable conventions in
+their responses, so a client can self-check compliance right after
+writing. Call <code>get_conventions</code> <em>before</em> writing to get the rules up
+front.</p>
+</div>
+<h3 id="get_orphan_notes"><code>get_orphan_notes</code><a class="headerlink" href="#get_orphan_notes" title="Permanent link">&para;</a></h3>
+<p>Find all notes with no inbound or outbound links (isolated documents that may need cross-referencing).</p>
+<p><strong>Returns:</strong> List of <code>NoteInfo</code> objects (<code>path</code>, <code>title</code>, <code>folder</code>, <code>frontmatter</code>, <code>modified_at</code>, <code>kind</code>), ordered by path. Returns ALL orphans with no limit; check <code>stats.orphan_count</code> before calling on large vaults.</p>
+<h3 id="get_most_linked"><code>get_most_linked</code><a class="headerlink" href="#get_most_linked" title="Permanent link">&para;</a></h3>
+<p>Find the most-linked-to notes in the vault, ranked by backlink count.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>limit</code></td>
+<td>int</td>
+<td><code>10</code></td>
+<td>Maximum results to return</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> List of <code>{"path": "...", "backlink_count": N}</code> entries.</p>
+<h3 id="get_connection_path"><code>get_connection_path</code><a class="headerlink" href="#get_connection_path" title="Permanent link">&para;</a></h3>
+<p>Find the shortest path between two notes via BFS on the undirected link graph (max 10 hops).</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>source</code></td>
+<td>string</td>
+<td>required</td>
+<td>Relative path to the starting document</td>
+</tr>
+<tr>
+<td><code>target</code></td>
+<td>string</td>
+<td>required</td>
+<td>Relative path to the target document</td>
+</tr>
+<tr>
+<td><code>max_depth</code></td>
+<td>int</td>
+<td><code>10</code></td>
+<td>Maximum hops to search (clamped to [1, 10])</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>Block until the IndexWriter drains before answering, then report freshness via <code>_meta.index_stale</code> (see the <em>Index freshness on read tools</em> note at the top of this page).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> Object with <code>found</code> (bool), <code>path</code> (ordered list of document paths from source to target), and <code>hops</code> (number of edges, or <code>-1</code> if not found). Index freshness is reported in <code>_meta.index_stale</code> (see the <em>Index freshness on read tools</em> admonition at the top of this page).</p>
+<h3 id="get_history"><code>get_history</code><a class="headerlink" href="#get_history" title="Permanent link">&para;</a></h3>
+<p>List commits that touched a note, attachment, or folder (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Relative vault path. A <code>.md</code> note or a configured attachment extension (png, pdf, svg, …) scopes to that single file (such as <code>"notes/alpha.md"</code>, <code>"assets/diagram.png"</code>); an existing folder scopes to its subtree (such as <code>"guides"</code>, returning commits that touched <code>guides/**</code>). Omit for vault-wide history. A non-directory path with an unsupported extension is rejected.</td>
+</tr>
+<tr>
+<td><code>since</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>ISO 8601 datetime string (<code>"2026-04-01T00:00:00"</code>) or git date expression (<code>"1 week ago"</code>). Passed as <code>--since</code> to <code>git log</code>. Inclusive at the boundary.</td>
+</tr>
+<tr>
+<td><code>until</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>ISO 8601 datetime string or git date expression, passed as <code>--until</code> to <code>git log</code>. Combined with <code>since</code> to bound a window. Inclusive at the boundary.</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>int</td>
+<td><code>20</code></td>
+<td>Maximum number of commits to return. Capped at 100.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> Object with <code>commits</code> (list of commit entries, newest-first) and <code>total</code> (count; always equals <code>len(commits)</code> and does NOT indicate how many commits exist beyond the <code>limit</code> cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping <code>result</code> key. Each entry in <code>commits</code> contains:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sha</code></td>
+<td>string</td>
+<td>Full 40-character commit SHA</td>
+</tr>
+<tr>
+<td><code>short_sha</code></td>
+<td>string</td>
+<td>7-character abbreviated SHA</td>
+</tr>
+<tr>
+<td><code>timestamp</code></td>
+<td>string</td>
+<td>ISO 8601 author timestamp</td>
+</tr>
+<tr>
+<td><code>author</code></td>
+<td>string</td>
+<td>Author name and email</td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td>string</td>
+<td>First line of the commit message</td>
+</tr>
+<tr>
+<td><code>paths_changed</code></td>
+<td>list[string]</td>
+<td>Files touched by the commit. Populated for vault-wide queries (<code>path=null</code>) and folder queries (the subtree files the commit touched); always empty for single-note queries, since the path is already determined by the query arguments (callers know which file the commit touched without needing it echoed back).</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Raises:</strong> <code>ToolError</code> if <code>path</code> is invalid or uses an unsupported extension.</p>
+<h3 id="get_diff"><code>get_diff</code><a class="headerlink" href="#get_diff" title="Permanent link">&para;</a></h3>
+<p>Return the diff of a specific note or attachment between a reference point and <code>HEAD</code>. Only available for git-backed vaults.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>required</td>
+<td>Relative vault path (such as <code>"notes/alpha.md"</code> or <code>"assets/diagram.png"</code>). May be a <code>.md</code> note or a configured attachment extension (png, pdf, svg, …). An unsupported extension is rejected.</td>
+</tr>
+<tr>
+<td><code>since_sha</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>A commit SHA (full or abbreviated, at least 4 hex digits) to diff from. Mutually exclusive with <code>since_timestamp</code>.</td>
+</tr>
+<tr>
+<td><code>since_timestamp</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>ISO 8601 datetime string, resolved via <code>git rev-list --before=&lt;ts&gt; -1 HEAD</code> to the most recent commit at or before that instant. Boundary is <strong>inclusive</strong>: a commit whose committer date equals <code>since_timestamp</code> IS the resolved ref. Mutually exclusive with <code>since_sha</code>.</td>
+</tr>
+<tr>
+<td><code>per_commit</code></td>
+<td>bool</td>
+<td><code>false</code></td>
+<td>When <code>false</code>, return a single unified diff. When <code>true</code>, return one diff per intervening commit, newest-first.</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>int</td>
+<td><code>null</code></td>
+<td>Applies only when <code>per_commit=true</code>. Caps the number of commits returned to the <code>limit</code> most recent ones. Clamped to <code>[1, 100]</code>. <code>null</code> = unbounded (still bounded by the <code>since..HEAD</code> range). Silently ignored when <code>per_commit=false</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>Exactly one of <code>since_sha</code> / <code>since_timestamp</code> must be supplied.</p>
+<p><strong>Returns:</strong></p>
+<ul>
+<li><code>per_commit=false</code>: object with <code>diff</code> (string), the unified diff from reference to HEAD. For a <strong>binary attachment</strong>, this is a <code>git diff --stat</code> size/rename summary (such as <code>assets/x.png | Bin 1234 -&gt; 5678 bytes</code>); for a <strong>text attachment</strong> (<code>.svg</code>, <code>.csv</code>, …) or <code>.md</code> note, it is a full unified patch. May include <code>[diff truncated: N bytes omitted]</code> if output exceeds 50 KB.</li>
+<li><code>per_commit=true</code>: object with <code>commits</code> (list of per-commit entries, newest-first, each containing <code>sha</code>, <code>short_sha</code>, <code>timestamp</code>, <code>message</code>, and <code>diff</code>) and <code>total</code> (count; always equals <code>len(commits)</code> and does NOT indicate how many commits exist beyond the <code>limit</code> cap). The envelope keeps the structured payload self-describing on the wire instead of relying on FastMCP's auto-wrapping <code>result</code> key.</li>
+</ul>
+<p><strong>Raises:</strong> <code>ToolError</code> if parameters are invalid, the reference commit is not found, or the path uses an unsupported extension.</p>
+<hr />
+<h2 id="ai-summarization">AI Summarization<a class="headerlink" href="#ai-summarization" title="Permanent link">&para;</a></h2>
+<h3 id="summarize"><code>summarize</code><a class="headerlink" href="#summarize" title="Permanent link">&para;</a></h3>
+<p>Summarize a note, a set of notes, or a folder subtree with a language model. In the default <code>synthesis</code> mode the result is one cohesive summary that synthesizes across all the notes and <strong>references the individual source notes by path</strong>, so each point can be traced back to its origin. In <code>per_note</code> mode it returns a separate summary for each note instead.</p>
+<p>The tool is only registered when a summarization backend is configured: an <code>OPENAI_API_KEY</code>, or an explicit OpenAI-compatible base URL for local endpoints that need no key. Otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and others.</p>
+<p>Inputs larger than one model request are handled map-reduce style. Notes are packed into batches of at most <code>SUMMARIZE_MAX_INPUT_CHARS</code> characters and each batch is summarized on its own; a final pass combines the partial summaries into one result. Large folders issue several model calls and take proportionally longer. Coverage per call is capped at the note limit (<code>SUMMARIZE_MAX_NOTES</code>, also the ceiling for the per-call <code>max_notes</code> parameter); the response reports exactly how many notes made it in (<code>notes_included</code>) and how many were dropped (<code>notes_omitted</code>). When notes were dropped, the response carries a <code>hint</code> telling the caller that full coverage needs separate calls on subfolders or smaller path sets. The live configured limit is substituted into the tool description and into the server instructions at startup, so a calling model can plan those splits before its first call.</p>
+<p><strong>Slow summaries do not block.</strong> The tool is dual-mode: an MCP client that speaks background tasks runs it as a protocol-native task, and for any other client the call runs in the foreground up to the jobs soft deadline (<code>JOBS_SOFT_DEADLINE_S</code>, default 25 s). A summary that finishes within the deadline returns inline with <code>"status": "completed"</code> and the fields below. If it is still running when the deadline elapses, the tool returns <code>{"status": "working", "job_id": ...}</code> immediately and keeps generating in the background; fetch the result with <a href="#get_job_result"><code>get_job_result</code></a> using that <code>job_id</code>. Each individual backend call is itself bounded by <code>SUMMARIZE_TIMEOUT</code> (default 120 s); on timeout the summary fails with a clear message that says how to retry rather than a vague client-side hang.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paths</code></td>
+<td>array of string</td>
+<td>required</td>
+<td>Note paths (<code>"notes/topic.md"</code>) and/or folder prefixes (<code>"notes/project"</code>). Folders expand to every note in the subtree (capped by the server's summarize limits). Duplicates are de-duplicated.</td>
+</tr>
+<tr>
+<td><code>focus</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Optional free-text instruction that steers the summary, such as <code>"extract action items"</code> or <code>"focus on decisions and their rationale"</code>. Omit for a general-purpose summary.</td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td><code>"synthesis"</code> | <code>"per_note"</code></td>
+<td><code>"synthesis"</code></td>
+<td><code>synthesis</code> for one cross-note summary that references sources; <code>per_note</code> for one summary per note.</td>
+</tr>
+<tr>
+<td><code>max_notes</code></td>
+<td>int</td>
+<td>server limit</td>
+<td>Per-call note limit. Values above the server's configured cap are clamped to it; values below it narrow the work.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> When the summary completes within the soft deadline, a dict with <code>"status": "completed"</code> plus:</p>
+<ul>
+<li><code>summary</code> (string): the generated summary text.</li>
+<li><code>sources</code> (list of <code>{path, title}</code>): the notes that were summarised, always populated so individual notes are attributable even when the prose does not name every one.</li>
+<li><code>mode</code> (string): the mode used.</li>
+<li><code>truncated</code> (bool): <code>true</code> when content was lost to a cap. This covers the server's note limit and the per-request character budget, which can cut a single note as well as a partial summary during the combine step.</li>
+<li><code>notes_included</code> (int): notes whose content reached the model.</li>
+<li><code>notes_omitted</code> (int): matched notes dropped by the note limit. When non-zero, the summary does not cover the whole selection.</li>
+<li><code>notes_limit</code> (int): the note limit in effect for this call.</li>
+<li><code>hint</code> (string or null): recovery guidance when notes were omitted; <code>null</code> when the selection was fully covered.</li>
+</ul>
+<p>When the work is promoted to a background job, a dict with <code>"status": "working"</code>, a <code>job_id</code> string, a <code>poll_with</code> field naming the polling tool, a <code>retry_after_s</code> hint, and a <code>message</code>. Call <a href="#get_job_result"><code>get_job_result</code></a> with the <code>job_id</code> to fetch the result.</p>
+<p><strong>Errors:</strong> raises if <code>paths</code> is empty, <code>mode</code> is invalid, no readable notes were found, or the backend call fails within the soft deadline. A backend failure after promotion is reported through <code>get_job_result</code> instead.</p>
+<div class="admonition warning">
+<p class="admonition-title">Note content goes to the configured backend</p>
+<p>The referenced notes are sent to the summarization backend the operator configured, which may be a remote provider or a local endpoint. Do not summarize notes whose content must not be shared with that backend. The <a href="../prompts/#summarize-subtree"><code>summarize-subtree</code> prompt</a> is the client-side alternative that summarizes with the client's own model; see its docs for how the two routes relate.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Dependency</p>
+<p>Requires the <code>openai</code> SDK and an OpenAI-compatible backend (an <code>OPENAI_API_KEY</code>, or a base URL such as a local Ollama). Install with <code>pip install 'markdown-vault-mcp[summarize]'</code> (or <code>[all]</code>). Configure the endpoint, model, and limits via the <code>MARKDOWN_VAULT_MCP_SUMMARIZE_*</code> env vars. See <a href="../configuration/">Configuration</a>.</p>
+</div>
+<hr />
+<h3 id="get_job_result"><code>get_job_result</code><a class="headerlink" href="#get_job_result" title="Permanent link">&para;</a></h3>
+<p>Retrieve the outcome of a background job started by a long-running tool on this server: a <a href="#summarize"><code>summarize</code></a>, <a href="#reindex"><code>reindex</code></a>, or <a href="#build_embeddings"><code>build_embeddings</code></a> call promoted past the jobs soft deadline. When such a call returns <code>{"status": "working", "job_id": ...}</code>, pass that <code>job_id</code> here to fetch the result, polling every few seconds while it is still running.</p>
+<p>The tool is provided by the shared jobs subsystem (<code>fastmcp-pvl-core</code>), so its name, payload, and lifecycle vocabulary are uniform across the <code>*-mcp</code> server family, and it is always registered (the index-maintenance tools produce job handles regardless of whether a summarize backend is configured). Retrieval is scoped to the calling subject: another caller's <code>job_id</code> answers exactly like an unknown one. Job records expire <code>JOBS_RESULT_TTL_S</code> seconds after creation (default one hour) and a promoted job does not survive a server restart, so fetch results soon after completion.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>job_id</code></td>
+<td>string</td>
+<td>required</td>
+<td>The <code>job_id</code> from a <code>{"status": "working"}</code> answer of a long-running tool.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> Dict with <code>job_id</code>, <code>status</code>, <code>result</code>, and <code>error</code>, where <code>status</code> is one of:</p>
+<ul>
+<li><code>"working"</code>: still running; the dict adds <code>running_for_s</code> and a <code>retry_after_s</code> polling hint. Poll again shortly.</li>
+<li><code>"completed"</code>: the work is done; <code>result</code> carries the tool's full result object (for <code>summarize</code>: <code>summary</code>, <code>sources</code>, <code>mode</code>, <code>truncated</code>, <code>notes_included</code>, <code>notes_omitted</code>, <code>notes_limit</code>, <code>hint</code>).</li>
+<li><code>"failed"</code>: the work failed; see <code>error</code> for the reason (often a backend timeout; narrow the request and retry).</li>
+</ul>
+<p><strong>Errors:</strong> raises for an unknown, expired, or foreign <code>job_id</code>.</p>
+<hr />
+<h2 id="one-time-transfer-links">One-Time Transfer Links<a class="headerlink" href="#one-time-transfer-links" title="Permanent link">&para;</a></h2>
+<p>Transfer tools mint short-lived capability URLs so large files can move between the vault and a browser or another service without inflating the LLM context window. The unguessable token in the URL is the authorization; no separate <code>Authorization</code> header is needed.</p>
+<div class="admonition note">
+<p class="admonition-title">HTTP/SSE transport only</p>
+<p>Transfer tools require a running HTTP or SSE server with <code>MARKDOWN_VAULT_MCP_BASE_URL</code> set. They are not available on stdio transport.</p>
+</div>
+<div class="admonition warning">
+<p class="admonition-title">Write tool visibility</p>
+<p><code>create_download_link</code> is available in read-only mode. <code>create_upload_link</code> is a write tool and is hidden when <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code>.</p>
+</div>
+<h3 id="create_download_link"><code>create_download_link</code><a class="headerlink" href="#create_download_link" title="Permanent link">&para;</a></h3>
+<p>Mint a one-time capability URL to download vault content. The <code>ref</code> says what to serve. It is either a vault-relative path to a note or attachment that exists at link-creation time, or an OKF-bundle reference for a generated bundle archive. The URL works exactly once; a successful download settles the token. A failed or interrupted download does not settle it, so a retry stays possible until the TTL expires.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ref</code></td>
+<td>string</td>
+<td>required</td>
+<td>What to download. A vault-relative path to an existing note or attachment, or an OKF-bundle reference (see below)</td>
+</tr>
+<tr>
+<td><code>ttl_s</code></td>
+<td>number</td>
+<td>server default (<code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S</code>)</td>
+<td>Token lifetime in seconds. Clamped to <code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S</code>. Omit to use the server default</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://mcp.example.com/transfer/..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expires_in_s"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Example usage:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"ref"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assets/diagram.pdf"</span><span class="p">,</span><span class="w"> </span><span class="nt">"ttl_s"</span><span class="p">:</span><span class="w"> </span><span class="mi">600</span><span class="p">}</span>
+</code></pre></div>
+<p>Then in a terminal:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span><span class="s2">"https://mcp.example.com/transfer/&lt;token&gt;"</span><span class="w"> </span>-o<span class="w"> </span>diagram.pdf
+</code></pre></div>
+<p><strong>OKF bundle export.</strong> Pass an OKF-bundle reference as <code>ref</code> to download a conformant bundle archive of the vault (or a folder subtree) instead of a single file:</p>
+<table>
+<thead>
+<tr>
+<th><code>ref</code> value</th>
+<th>Serves</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>okf-bundle</code></td>
+<td>A zip of the whole vault</td>
+</tr>
+<tr>
+<td><code>okf-bundle:&lt;folder&gt;</code></td>
+<td>A zip scoped to that folder subtree</td>
+</tr>
+</tbody>
+</table>
+<p>The export reads from the live vault and never changes it. Wikilinks become the root-absolute markdown links OKF recommends. Convention files (<code>_conventions.md</code>) and the template folder are left out, while the reserved <code>index.md</code> and <code>log.md</code> stay in. Non-conformant notes appear as they are. Run <code>okf_validate</code> for the residual conformance gaps; the archive itself carries no gap report. Bundle export is unavailable when <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> is <code>off</code>.</p>
+<div class="admonition note">
+<p class="admonition-title">Read-lazy</p>
+<p>A file <code>ref</code> is read from disk at fetch time, not at link-creation time, so the downloader receives the version current at fetch time. A bundle <code>ref</code> is generated at fetch time from the vault's current state.</p>
+</div>
+<h3 id="create_upload_link"><code>create_upload_link</code><a class="headerlink" href="#create_upload_link" title="Permanent link">&para;</a></h3>
+<p>Mint a one-time capability URL to upload bytes to a fixed, pre-validated destination path in the vault. The destination path is decided at link creation; the uploader sends raw bytes via <code>POST</code> (or <code>PUT</code> as an alias). The upload commits via the normal write path (traversal and extension validation, size cap, index update, and git-commit callback).</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ref</code></td>
+<td>string</td>
+<td>required</td>
+<td>Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. May name a new or existing path; an existing file is overwritten on upload</td>
+</tr>
+<tr>
+<td><code>ttl_s</code></td>
+<td>number</td>
+<td>server default (<code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S</code>)</td>
+<td>Token lifetime in seconds. Clamped to <code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S</code>. Omit to use the server default</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://mcp.example.com/transfer/..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expires_in_s"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><strong>Example usage:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"ref"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assets/uploaded-diagram.pdf"</span><span class="p">}</span>
+</code></pre></div>
+<p>Then in a terminal:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>--data-binary<span class="w"> </span>@local-diagram.pdf<span class="w"> </span><span class="se">\</span>
+<span class="w">     </span><span class="s2">"https://mcp.example.com/transfer/&lt;token&gt;"</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Raw body, not multipart</p>
+<p>The upload endpoint expects the raw file bytes as the request body. Do not use <code>multipart/form-data</code>; send the content directly (curl's <code>--data-binary</code> flag does this correctly).</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">One-time</p>
+<p>The token is consumed on the first successful upload. A transient failure (network error, size limit exceeded) does not consume the token; retry is permitted until the TTL expires.</p>
+</div>
+<hr />
+<h2 id="mcp-apps">MCP Apps<a class="headerlink" href="#mcp-apps" title="Permanent link">&para;</a></h2>
+<p>These tools power the browser-based vault explorer views. See the <a href="../guides/mcp-apps/">MCP Apps guide</a> for details.</p>
+<h3 id="browse_vault"><code>browse_vault</code><a class="headerlink" href="#browse_vault" title="Permanent link">&para;</a></h3>
+<p>Open the vault explorer SPA. Optionally focus on a specific note and view.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Note path to focus on</td>
+</tr>
+<tr>
+<td><code>view</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>View to open: <code>context</code>, <code>graph</code>, <code>browse</code>, or <code>note</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> For Apps-capable clients, opens the interactive SPA. For other clients, returns a text summary.</p>
+<h3 id="show_context"><code>show_context</code><a class="headerlink" href="#show_context" title="Permanent link">&para;</a></h3>
+<p>Open the Context Card view for a specific note, showing backlinks, outlinks, similar notes, tags, and folder peers.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>string</td>
+<td>Relative path to the document</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> For Apps-capable clients, opens the Context Card. For other clients, returns the context dossier as text.</p>
+<!-- DOMAIN-TOOLS-LIST-END -->
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../javascripts/config-wizard/wizard.js" type="module"></script>
+      
+    
+  </body>
+</html>

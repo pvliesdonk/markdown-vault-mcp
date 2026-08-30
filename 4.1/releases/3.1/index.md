@@ -1,0 +1,149 @@
+# 3.1
+
+Released July 8, 2026.
+
+Reconstructed after the fact
+
+This page is a best-effort backfill written in August 2026, not a contemporaneous release note. It was reconstructed from the commit range (`v3.0.4...v3.1.0`), the pull requests in it, and the issues those pull requests closed ([#1058](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1058)). Every claim below links its evidence, but the page is weaker evidence than a note written at release time.
+
+3.1 is the scale-hardening release. A single outside reporter ran markdown-vault-mcp against a 4,400-document home directory and a symlink farm and filed six of the issues fixed here, so discovery, watching and semantic recall now behave the same on a large real vault as on a small test one. The four in-panel MCP App views were also rebuilt on a shared visual foundation, and two new tools landed. Upgrading from 3.0 touches only Python API consumers: the configuration dataclass is now `ProjectConfig` with no `VaultConfig` alias, and an `EMBEDDINGS_PATH` value ending in `.npy` needs a look.
+
+This is the release where other people's vaults broke it. One outside reporter ran markdown-vault-mcp against a 4,400-document home directory and a symlink farm, and filed six of the issues behind what follows. The headline work is not a new feature: it is that discovery, watching and semantic recall now behave the same on a large real vault as they did on a small test one.
+
+Alongside that, the four in-panel MCP App views were rebuilt on a shared visual foundation, and two new tools landed.
+
+## Upgrade notes
+
+Read these before upgrading. Two affect existing deployments.
+
+### `VaultConfig` is now `ProjectConfig`, with no alias
+
+The configuration dataclass was renamed from `VaultConfig` to `ProjectConfig` ([#767](https://github.com/pvliesdonk/markdown-vault-mcp/issues/767)). No back-compatible alias was kept, so `from markdown_vault_mcp.config import VaultConfig` now raises `ImportError`. Only Python API consumers are affected. Environment variables, MCP tools and the CLI are unchanged.
+
+The rename was forced by an upstream template gate, `tests/test_config_wizard_drift.py`, which hard-imports `ProjectConfig` and could not collect against this repository at all. The same change taught the gate to see configuration reads that are delegated into `config_sections/` submodules, which it had previously been scanning past. Roughly 40 domain environment variables were unchecked before this landed.
+
+### Check `EMBEDDINGS_PATH` if it ends in `.npy`
+
+Setting `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` to a path with a `.npy` extension could destroy the vector store ([#819](https://github.com/pvliesdonk/markdown-vault-mcp/issues/819)). The loader probed for the sidecar by appending `.npy` to the configured base, while save and load derived it with `Path.with_suffix`. The two agreed only when the base had no extension. With `embeddings.npy` configured, the loader looked for `embeddings.npy.npy`, found nothing, cold-built an empty index, and the next save overwrote the real store.
+
+The reporter lost a 68,796-vector store to a 604-chunk watcher delta on the first `serve` after building it with `index --force`. `embeddings_status` carried the same defect and reported `chunk_count=0` for a store that existed.
+
+Both call sites now derive with `with_suffix`. If you configured an extension and your store looks empty, rebuild with `index --force`.
+
+### New setting: `FILE_WATCHER_ROOT_FLOOR`
+
+`MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR` (default `true`) keeps the non-recursive watch on the vault root, so root-level `.md` changes still trigger a reindex. Set it to `false` to register zero watches rooted at the source directory, at the cost of root-level files being picked up only by scans.
+
+This exists for macOS. A non-recursive watchdog watch is emulated there, and still opens an OS-level recursive `FSEvents` stream over the whole tree, so a vault rooted at `$HOME` produces repeated "would like to access data from other apps" consent prompts naming the Python binary ([#823](https://github.com/pvliesdonk/markdown-vault-mcp/issues/823)).
+
+## Highlights
+
+### Large vaults are no longer minutes behind
+
+File discovery globbed `**/*.md` across the whole vault and applied exclude patterns per file afterwards, so every excluded subtree was fully descended on every scan ([#822](https://github.com/pvliesdonk/markdown-vault-mcp/issues/822)). On a home-directory vault with 4,400 documents and 23 exclude patterns, one `detect_changes` call took 5,043 seconds. A second run sat 28 minutes inside a single `opendir` system call before it was killed. With the watcher on, any churn started the scan again, so the process scanned all day and save-to-searchable latency was measured in minutes.
+
+Discovery now prunes a directory before descending into it, but only when the exclude patterns provably cover everything beneath. The per-file filter stays as the correctness layer. The same scan now takes 3.2 seconds across 25,263 directories, and save-to-searchable drops to about 15 seconds.
+
+The watcher was rebuilt on the same pruning helper. Instead of one recursive watch on the vault root, it derives watch roots from the root's immediate children minus the provably excluded ones: 94 scoped watches on the reporter's vault, none rooted at the source directory.
+
+That re-rooting also fixes a second defect in the same issue. The watcher now decides whether a path is hidden relative to the watch root that delivered the event, rather than relative to the vault root. A vault whose content lives under a dot directory, such as `.claude/` beneath `$HOME`, previously never reindexed from its own edits.
+
+Two follow-ups landed in the same release. Watch roots are resolved to their real paths, because watchdog's FSEvents emitter delivers realpath-prefixed events that the root-relative filter was dropping silently, leaving the watcher live but blind on symlinked layouts ([#849](https://github.com/pvliesdonk/markdown-vault-mcp/issues/849)). And the vault's own state directory and `.git` are never watch roots, after the scoped watch work reintroduced the self-feedback reindex loop that [#720](https://github.com/pvliesdonk/markdown-vault-mcp/issues/720) had fixed: `reindex()` writes tracker state unconditionally, that write is an event under the state-directory watch, and the loop sustains itself ([#830](https://github.com/pvliesdonk/markdown-vault-mcp/issues/830)).
+
+### Semantic search recall no longer depends on `limit`
+
+Semantic search sized its candidate pool from the caller's `limit` before grouping chunks by document, which made the pool a recall cap ([#820](https://github.com/pvliesdonk/markdown-vault-mcp/issues/820)). When a few chunk-heavy documents filled the pool, a smaller document whose best chunk ranked just past it disappeared from the results, even when it was the best-scoring document for the query.
+
+On a 6,916-chunk vault, one query's true best document scored 0.685 and was absent at every limit from 3 to 12, while the returned top result scored 0.495. It appeared only at limit 13 or higher. Scores were also not comparable across limits, because the pool changed what got grouped.
+
+The pool is now floored at 1,000. Because `VectorIndex.search` already scans and sorts the whole index anyway, a wider pool costs only the slice at the end. No extra distance computation happens.
+
+### Chunking gained overlap, and a ceiling
+
+Adjacent chunks now share a configurable within-section overlap, so a passage straddling a chunk boundary stays retrievable from either side ([#791](https://github.com/pvliesdonk/markdown-vault-mcp/issues/791)).
+
+Separately, the derived chunk-character cap has an upper bound ([#790](https://github.com/pvliesdonk/markdown-vault-mcp/issues/790)). It scaled linearly with the embedding model's context length and had no ceiling, so an 8,192-token model produced a roughly 22,900-character cap. That is the regime a previous release moved away from after the fastembed ONNX path froze on oversize chunks, and picking any long-context model silently re-entered it. Pass `-1` to opt back into unbounded behaviour.
+
+### Vault Views rebuilt as "Paper"
+
+The four in-panel MCP App views were restyled onto a shared warm, editorial foundation with serif headings and one accent colour, aware of light and dark ([#809](https://github.com/pvliesdonk/markdown-vault-mcp/issues/809)). Paper tokens map onto the host's existing `--color-*` variables with Paper values as fallback, so a host that pushes its own theme still wins.
+
+Data fetching, routing and tool wiring are unchanged. This was a restyle, and no tool was renamed or removed.
+
+- **Foundation**: token layer, fonts and tab strip ([#811](https://github.com/pvliesdonk/markdown-vault-mcp/issues/811))
+- **Context Card**: folder breadcrumb, relative timestamp, type and status chips, collapsible sections with count badges, similarity scores with progress bars ([#812](https://github.com/pvliesdonk/markdown-vault-mcp/issues/812))
+- **Vault Browser**: restyled tree with attachment glyphs, active-row highlighting, and the hybrid search field ([#813](https://github.com/pvliesdonk/markdown-vault-mcp/issues/813))
+- **Note Preview**: table of contents, collapsible frontmatter and tags, copy actions
+- **Graph Explorer**: level-of-detail labels
+
+As a prerequisite, the single 52 KB `app.src.html` was split into modular partials assembled at build time by `build_spa.py` ([#810](https://github.com/pvliesdonk/markdown-vault-mcp/issues/810)).
+
+### Move a whole folder in one call
+
+`move_folder(old_dir, new_dir)` moves a subtree and rewrites every affected link across the vault in a single pass ([#511](https://github.com/pvliesdonk/markdown-vault-mcp/issues/511)).
+
+Previously an agent had to enumerate the subtree and call `rename` per file, which corrupted links between documents inside the moved subtree: when file A moved, its backlink in still-unmoved sibling B was rewritten to A's new home, then B itself moved, and the intermediate rewrites interleaved badly. Computing the full old-to-new mapping first and rewriting once afterwards is what makes this correct.
+
+The directory move is all-or-nothing and validates before touching anything, so a target collision aborts with nothing moved. Link rewrites stay best-effort and report how many succeeded, matching the existing single-file behaviour.
+
+### Table of contents for a folder
+
+`get_toc` returns a heading outline for a folder or subtree, not just one note ([#773](https://github.com/pvliesdonk/markdown-vault-mcp/issues/773)). The per-note outline was previously reachable only through the `toc://vault/{path}` resource, which left clients that surface tools but not resources with no way to get it at all.
+
+### Skipped notes are visible without reading container logs
+
+A note whose YAML frontmatter failed to parse was dropped from the index and reported only as a warning in the container log ([#775](https://github.com/pvliesdonk/markdown-vault-mcp/issues/775)). `get_index_status` said `queryable` with zero dirty paths and no error, `read` said the document did not exist, and the note surfaced only indirectly as broken inbound links from elsewhere. A parse-skipped note was indistinguishable from one that had not synced yet.
+
+`get_index_status` now returns `skipped_files` with a category and detail per path. Follow-up work separates a true `internal_error` from a `parse_error`, so tooling built on the field can tell "this document has a data problem you can fix" from "the indexer itself hit a bug" ([#802](https://github.com/pvliesdonk/markdown-vault-mcp/issues/802)).
+
+## Other changes
+
+### Indexing and watching
+
+- An already-indexed file that fails to re-hash is kept rather than purged. It was dropped from the disk snapshot and then computed as deleted, which removed a live document from FTS and its embedding until a later scan ([#831](https://github.com/pvliesdonk/markdown-vault-mcp/issues/831)).
+- Transient descriptor exhaustion is retried with backoff while hashing during a scan, instead of silently dropping the file from the scan ([#821](https://github.com/pvliesdonk/markdown-vault-mcp/issues/821)).
+- Excluded files are invisible in `build_index` for file-shaped patterns such as `**/*.draft.md`, matching the contract that discovery pruning already met for directory-shaped ones ([#832](https://github.com/pvliesdonk/markdown-vault-mcp/issues/832)).
+- An unreadable subtree is logged rather than silently skipped, and a watcher that ends up with zero active watches is reported above `INFO` instead of logging success ([#835](https://github.com/pvliesdonk/markdown-vault-mcp/issues/835)).
+
+### Diagnostics
+
+- The `index` and `reindex` CLI commands no longer swallow internal embedding failures. A blanket `except ValueError: pass`, intended to skip when embeddings are not configured, also caught an internal consistency failure, so a corrupt sidecar produced `Indexed N documents` and a zero exit code ([#774](https://github.com/pvliesdonk/markdown-vault-mcp/issues/774)).
+- Internal semantic-search failures surface from `get_context`.
+- `httpx` per-request logs are quiet at the default level. One `INFO` line per Ollama embed batch flooded the log during a build ([#792](https://github.com/pvliesdonk/markdown-vault-mcp/issues/792)).
+- One malformed prompt no longer aborts registration of every prompt after it ([#799](https://github.com/pvliesdonk/markdown-vault-mcp/issues/799)), and prompts are built from a synthetic signature instead of `exec()`.
+
+### MCP Apps
+
+- Graph and context app tools no longer fail on a note larger than `MAX_NOTE_READ_BYTES`. Four sites called the size-capped `read()` purely to extract a title for a node label, so one 375 KB note failed the whole tool. A metadata accessor backed by the index is used instead ([#855](https://github.com/pvliesdonk/markdown-vault-mcp/issues/855)).
+- Graph canvas colours are resolved by probe, so nodes are not black on Claude Desktop.
+- The Vault Explorer view honours host container dimensions on mobile.
+
+### Tooling and plumbing
+
+- Every tool carries a human-readable `title` annotation. VS Code's MCP client honours only `title` and `readOnlyHint` among annotations, so tools had been rendering under their raw machine names ([#751](https://github.com/pvliesdonk/markdown-vault-mcp/issues/751)).
+- Eight `copier update` commits took the upstream template from v2.1.1 to v2.10.1. Most of that range is developer-facing: a diff-scoped structural health gate, Vale linting of user-facing docs, a configuration-wizard coverage gate, and a `DOMAIN-COMMANDS` sentinel for domain CLI subcommands. The in-browser configuration generator on the documentation site arrived the same way.
+
+## Shipped earlier, in the 3.0 patch line
+
+The first draft of this page was written against the `v3.0.0...v3.1.0` range rather than `v3.0.4...v3.1.0`, so it narrated several fixes that had already reached users in a 3.0 patch release. Rather than drop them, this section keeps each one with a pointer to where it is described in full, so a reader who followed a link expecting it on this page still finds it.
+
+- Escaped-pipe wikilinks, `[[path\|alias]]`, resolve instead of being reported broken. Shipped in v3.0.2 ([#731](https://github.com/pvliesdonk/markdown-vault-mcp/issues/731), [3.0 notes](https://pvliesdonk.github.io/markdown-vault-mcp/4.1/releases/3.0/#v302-june-25-2026)).
+- The vector sidecar is written atomically, a corrupt sidecar self-heals on load, and row-count parity is enforced. Shipped in v3.0.2 ([3.0 notes](https://pvliesdonk.github.io/markdown-vault-mcp/4.1/releases/3.0/#v302-june-25-2026)).
+- `read(path, section=...)` returns the whole section rather than its first chunk, and whole-document `read` degrades to `None` on malformed frontmatter instead of raising. Shipped in v3.0.3 ([#741](https://github.com/pvliesdonk/markdown-vault-mcp/issues/741), [3.0 notes](https://pvliesdonk.github.io/markdown-vault-mcp/4.1/releases/3.0/#v303-june-26-2026)).
+- Git sync resolves its comparison ref as `origin/<branch>` rather than `@{upstream}`. Shipped in v3.0.4 ([3.0 notes](https://pvliesdonk.github.io/markdown-vault-mcp/4.1/releases/3.0/#v304-june-27-2026)).
+
+## Thanks
+
+This release leans heavily on reports from outside the repository, several carrying measurements, stack samples and fault-injection reproductions:
+
+- [@michael-denyer](https://github.com/michael-denyer) for [#819](https://github.com/pvliesdonk/markdown-vault-mcp/issues/819), [#820](https://github.com/pvliesdonk/markdown-vault-mcp/issues/820), [#821](https://github.com/pvliesdonk/markdown-vault-mcp/issues/821), [#822](https://github.com/pvliesdonk/markdown-vault-mcp/issues/822), [#823](https://github.com/pvliesdonk/markdown-vault-mcp/issues/823) and [#849](https://github.com/pvliesdonk/markdown-vault-mcp/issues/849)
+
+Two more outside reports shape this release without belonging to it. [@Finomosec](https://github.com/Finomosec) reported the idle reindex loop ([#720](https://github.com/pvliesdonk/markdown-vault-mcp/issues/720)), fixed in the 3.0 patch line and credited on the [3.0 page](https://pvliesdonk.github.io/markdown-vault-mcp/4.1/releases/3.0/#patch-releases). The scoped-watch work in this release reintroduced that loop, and [#830](https://github.com/pvliesdonk/markdown-vault-mcp/issues/830) fixed it again here. [@Denzilla04](https://github.com/Denzilla04) reported the escaped-pipe wikilinks ([#731](https://github.com/pvliesdonk/markdown-vault-mcp/issues/731)), which also shipped in the 3.0 patch line.
+
+## Patch releases
+
+No patch releases yet.
+
+## All changes
+
+See [CHANGELOG.md](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELOG.md) for the full commit-level list, or the [v3.0.4 to v3.1.0 comparison](https://github.com/pvliesdonk/markdown-vault-mcp/compare/v3.0.4...v3.1.0).
