@@ -76,7 +76,7 @@ from markdown_vault_mcp.utils.text import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Sequence
 
     from markdown_vault_mcp.fts_index import FTSIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
@@ -188,7 +188,7 @@ class DocumentManager:
         read_only: bool = True,
         write_protect_existing: bool = False,
         exclude_patterns: list[str] | None = None,
-        attachment_extensions: list[str] | None = None,
+        attachment_extensions: Sequence[str] | None = None,
         max_note_read_bytes: int = 262144,
         on_write_callback: _OnWriteCallback | WriteCallback | None = None,
         mark_paths_dirty: Callable[[Iterable[str]], None] | None = None,

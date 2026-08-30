@@ -659,7 +659,9 @@ class ProjectConfig:
             "help": (
                 "OIDC claim key used as the commit author name (e.g. name); "
                 "overrides GIT_COMMIT_NAME per request when an OIDC token is "
-                "present."
+                "present. The claim is resolved when the tool call arrives "
+                "and carried to the background commit, so it applies on "
+                "every write."
             ),
             "tags": ("git",),
             "wizard": {"group": "Git sync"},
@@ -671,7 +673,8 @@ class ProjectConfig:
             "help": (
                 "OIDC claim key used as the commit author email (e.g. "
                 "email); overrides GIT_COMMIT_EMAIL per request when an OIDC "
-                "token is present."
+                "token is present. Resolved and carried the same way as the "
+                "name claim."
             ),
             "tags": ("git",),
             "wizard": {"group": "Git sync"},

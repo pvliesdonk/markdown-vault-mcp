@@ -346,11 +346,11 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM",
-          "description": "OIDC claim key used as the commit author name (e.g. name); overrides GIT_COMMIT_NAME per request when an OIDC token is present."
+          "description": "OIDC claim key used as the commit author name (e.g. name); overrides GIT_COMMIT_NAME per request when an OIDC token is present. The claim is resolved when the tool call arrives and carried to the background commit, so it applies on every write."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM",
-          "description": "OIDC claim key used as the commit author email (e.g. email); overrides GIT_COMMIT_EMAIL per request when an OIDC token is present."
+          "description": "OIDC claim key used as the commit author email (e.g. email); overrides GIT_COMMIT_EMAIL per request when an OIDC token is present. Resolved and carried the same way as the name claim."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_LFS",
@@ -906,11 +906,11 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM",
-          "description": "OIDC claim key used as the commit author name (e.g. name); overrides GIT_COMMIT_NAME per request when an OIDC token is present."
+          "description": "OIDC claim key used as the commit author name (e.g. name); overrides GIT_COMMIT_NAME per request when an OIDC token is present. The claim is resolved when the tool call arrives and carried to the background commit, so it applies on every write."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM",
-          "description": "OIDC claim key used as the commit author email (e.g. email); overrides GIT_COMMIT_EMAIL per request when an OIDC token is present."
+          "description": "OIDC claim key used as the commit author email (e.g. email); overrides GIT_COMMIT_EMAIL per request when an OIDC token is present. Resolved and carried the same way as the name claim."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_GIT_LFS",

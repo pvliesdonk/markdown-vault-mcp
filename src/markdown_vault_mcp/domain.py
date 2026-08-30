@@ -18,7 +18,11 @@ from typing import TYPE_CHECKING
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
 
-from markdown_vault_mcp.config import ProjectConfig, to_vault_kwargs
+from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.config_sections._assembly import (
+    to_vault_instances,
+    to_vault_settings,
+)
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
@@ -117,13 +121,24 @@ class Service:
         config = self._config
         logger.info("Initialising vault from %s", config.source_dir)
 
-        kwargs = to_vault_kwargs(config)
-        if kwargs.get("embedding_provider") is not None:
+        # Settings-first construction (#1158): the config-derived knobs
+        # travel as one VaultSettings; the constructed collaborators stay
+        # explicit keywords, resolved once into VaultInstances.
+        instances = to_vault_instances(config)
+        settings = to_vault_settings(config, instances=instances)
+        if instances.embedding_provider is not None:
             logger.info(
                 "Embedding provider: %s",
-                type(kwargs["embedding_provider"]).__name__,
+                type(instances.embedding_provider).__name__,
             )
-        vault = Vault(**kwargs)
+        vault = Vault(
+            source_dir=config.source_dir,
+            settings=settings,
+            embedding_provider=instances.embedding_provider,
+            summarizer=instances.summarizer,
+            git_strategy=instances.git_strategy,
+            on_write=instances.on_write,
+        )
         self._vault = vault
         set_vault_singleton(vault)
 
@@ -156,7 +171,7 @@ class Service:
         vault.index.reindex_async()
         logger.info("Submitted boot Reindex job to writer")
 
-        if kwargs.get("embedding_provider") is not None:
+        if instances.embedding_provider is not None:
             vault.index.build_embeddings_async()
             logger.info("Submitted BuildEmbeddings job to writer")
 
@@ -171,10 +186,11 @@ class Service:
         )
         from markdown_vault_mcp.exceptions import IndexUnavailableError
 
-        # Use the *resolved* pull interval from kwargs, not config.git.pull_interval_s:
-        # the config default is 600 even on non-git vaults, but to_vault_kwargs()
-        # only passes a non-zero interval through when a git strategy is configured.
-        git_pull_active = kwargs.get("git_pull_interval_s", 0) > 0
+        # Use the *resolved* pull interval from the git assembly, not
+        # config.git.pull_interval_s: the config default is 600 even on
+        # non-git vaults, but to_vault_instances() only resolves a non-zero
+        # interval when a sync-enabled git strategy is configured.
+        git_pull_active = instances.git_pull_interval_s > 0
 
         if should_start_file_watcher(
             config.sync.file_watcher_enabled,

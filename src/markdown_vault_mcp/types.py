@@ -5,7 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
+
+if TYPE_CHECKING:
+    from markdown_vault_mcp._identity import Principal
 
 # The four deterministic, non-excluded skip categories surfaced via
 # get_index_status.skipped_files. A plain frozenset (not an enum) keeps the
@@ -865,6 +868,47 @@ class RenameAwareWriteCallback(Protocol):
         old_path: Path | None = None,
     ) -> None:
         """Handle one write, optionally told where a rename moved from."""
+        ...
+
+
+#: Attribute name a :data:`WriteCallback` sets to ``True`` to opt into
+#: receiving the ``principal=`` keyword on dispatches (#1160).
+#:
+#: The write-callback dispatcher runs callbacks on its own daemon thread,
+#: where the MCP request context does not exist — a callback that resolved
+#: identity there always saw ``None`` (#1218). The dispatcher therefore
+#: snapshots the :class:`~markdown_vault_mcp._identity.Principal` bound at
+#: ``fire()`` time (on the request's ``to_thread`` worker, where the
+#: contextvar is visible) into the queue item, and forwards it — but only to
+#: callbacks that advertise this attribute, mirroring
+#: :data:`ACCEPTS_OLD_PATH_ATTR` so a third-party three-argument callback
+#: keeps working untouched.
+ACCEPTS_PRINCIPAL_ATTR = "accepts_principal"
+
+
+class PrincipalAwareWriteCallback(Protocol):
+    """A :data:`WriteCallback` that also accepts the acting principal.
+
+    Structural type for the opt-in described at
+    :data:`ACCEPTS_PRINCIPAL_ATTR`, mirroring
+    :class:`RenameAwareWriteCallback`. The ``old_path`` keyword is included
+    so the dispatcher can express the combined call (a callback opted into
+    both keywords, like ``GitWriteStrategy``) in the type system; the
+    dispatcher only ever passes keywords the callback opted into.
+    """
+
+    accepts_principal: bool
+
+    def __call__(
+        self,
+        path: Path,
+        content: str,
+        operation: WriteOperation,
+        *,
+        old_path: Path | None = None,
+        principal: Principal | None = None,
+    ) -> None:
+        """Handle one write, optionally told who performed it."""
         ...
 
 

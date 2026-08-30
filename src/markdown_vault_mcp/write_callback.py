@@ -16,13 +16,16 @@ import queue
 import threading
 from typing import TYPE_CHECKING, cast
 
-from markdown_vault_mcp.types import ACCEPTS_OLD_PATH_ATTR
+from markdown_vault_mcp._identity import current_principal
+from markdown_vault_mcp.types import ACCEPTS_OLD_PATH_ATTR, ACCEPTS_PRINCIPAL_ATTR
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Any
 
+    from markdown_vault_mcp._identity import Principal
     from markdown_vault_mcp.types import (
-        RenameAwareWriteCallback,
+        PrincipalAwareWriteCallback,
         WriteCallback,
         WriteOperation,
     )
@@ -65,12 +68,15 @@ class WriteCallbackDispatcher:
                 ``rename`` dispatches (#894).
         """
         self._on_write = on_write
-        # Read the opt-in once, here, rather than per dispatch: the callback
+        # Read the opt-ins once, here, rather than per dispatch: the callback
         # is fixed for the dispatcher's lifetime, and the worker loop is on
         # the write path.
         self._accepts_old_path = bool(getattr(on_write, ACCEPTS_OLD_PATH_ATTR, False))
+        self._accepts_principal = bool(getattr(on_write, ACCEPTS_PRINCIPAL_ATTR, False))
         self._queue: queue.Queue[
-            tuple[Path, str, WriteOperation, Path | None] | _DrainMarker | None
+            tuple[Path, str, WriteOperation, Path | None, Principal | None]
+            | _DrainMarker
+            | None
         ] = queue.Queue()
         self._worker: threading.Thread | None = None
         # Guards every read/write of ``_worker`` and ``_closed`` AND the
@@ -103,9 +109,18 @@ class WriteCallbackDispatcher:
                 that opted in via
                 :data:`~markdown_vault_mcp.types.ACCEPTS_OLD_PATH_ATTR`;
                 ignored otherwise, and unused for every other operation.
+
+        The currently bound :class:`~markdown_vault_mcp._identity.Principal`
+        is snapshotted **here**, not on the worker: ``fire`` runs on the
+        request's ``to_thread`` worker (whose copied context carries the
+        contextvar), while the dispatcher's own thread has no request context
+        at all — reading identity there is exactly the silent-fallback bug of
+        #1218. The snapshot is forwarded only to a callback that opted in via
+        :data:`~markdown_vault_mcp.types.ACCEPTS_PRINCIPAL_ATTR`.
         """
         if self._on_write is None:
             return
+        principal = current_principal()
         with self._worker_lock:
             if self._closed:
                 logger.warning(
@@ -117,7 +132,7 @@ class WriteCallbackDispatcher:
             self._ensure_worker_locked()
             # Enqueue under the lock so close() cannot slip the sentinel in
             # ahead of this item (which would leave it permanently undrained).
-            self._queue.put((abs_path, content, operation, old_path))
+            self._queue.put((abs_path, content, operation, old_path, principal))
 
     def _ensure_worker_locked(self) -> None:
         """Start the background worker if it is not running.
@@ -146,11 +161,18 @@ class WriteCallbackDispatcher:
                 if isinstance(item, _DrainMarker):
                     item.event.set()
                     continue
-                abs_path, content, operation, old_path = item
+                abs_path, content, operation, old_path, principal = item
                 try:
+                    # Build the opted-in keywords flat so the four
+                    # (old_path, principal) combinations stay one call site.
+                    extra: dict[str, Any] = {}
                     if old_path is not None and self._accepts_old_path:
-                        rename_aware = cast("RenameAwareWriteCallback", on_write)
-                        rename_aware(abs_path, content, operation, old_path=old_path)
+                        extra["old_path"] = old_path
+                    if principal is not None and self._accepts_principal:
+                        extra["principal"] = principal
+                    if extra:
+                        aware = cast("PrincipalAwareWriteCallback", on_write)
+                        aware(abs_path, content, operation, **extra)
                     else:
                         on_write(abs_path, content, operation)
                 except Exception:

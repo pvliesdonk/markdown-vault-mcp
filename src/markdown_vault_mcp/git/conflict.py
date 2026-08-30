@@ -449,9 +449,9 @@ def write_conflict_files(
 
     n = len(written)
     file_list = ", ".join(written)
-    # Conflict resolution runs on the pull background thread, not inside a
-    # request context, so _extract_claim would return None.  Use the static
-    # server identity directly — per-user attribution does not apply here.
+    # Conflict resolution runs on the pull background thread, with no acting
+    # Principal (#1160) — per-user attribution does not apply here.  Use the
+    # static server identity directly.
     # NOTE: this commit is pathspec-less — it commits the whole staged index,
     # not just ``paths_to_add``. That is intentional: it also captures upstream
     # content already staged during conflict resolution (by the rebase's merge,

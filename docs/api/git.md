@@ -10,7 +10,7 @@ The `git` module provides:
 ```python
 from pathlib import Path
 from markdown_vault_mcp.git import GitWriteStrategy
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 strategy = GitWriteStrategy(
     token="ghp_your_token",
@@ -19,7 +19,7 @@ strategy = GitWriteStrategy(
 
 vault = Vault(
     source_dir=Path("/path/to/vault"),
-    read_only=False,
+    settings=VaultSettings(read_only=False),
     on_write=strategy,
 )
 

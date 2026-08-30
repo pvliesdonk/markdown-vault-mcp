@@ -13,7 +13,7 @@ from fastmcp_pvl_core import (
     normalise_http_path,
 )
 
-from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig, to_vault_kwargs
+from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
 
 app = typer.Typer(
     name="markdown-vault-mcp",
@@ -129,9 +129,10 @@ if TYPE_CHECKING:
 def _build_vault(source_dir: str | None = None, index_path: str | None = None) -> Vault:
     """Build a synchronous Vault from env vars + optional CLI overrides.
 
-    Uses the same ``to_vault_kwargs(config)`` bridge as the server path,
-    but constructs a bare Vault (no background tasks, file watcher, or index
-    writer — those belong to the server's lifespan).
+    Uses the same settings-first ``to_vault_settings`` / ``to_vault_instances``
+    assembly as the server path (#1158), but constructs a bare Vault (no
+    background tasks, file watcher, or index writer — those belong to the
+    server's lifespan).
 
     Args:
         source_dir: Overrides ``{PREFIX}_SOURCE_DIR`` when given (set into the
@@ -141,9 +142,14 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
     Returns:
         A constructed :class:`~markdown_vault_mcp.vault.Vault` (index not built).
     """
+    import dataclasses
     import os
     from pathlib import Path
 
+    from markdown_vault_mcp.config_sections._assembly import (
+        to_vault_instances,
+        to_vault_settings,
+    )
     from markdown_vault_mcp.vault import Vault
 
     # --source-dir overrides the env var: set it before from_env() reads it.
@@ -151,10 +157,18 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
     if source_dir:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir
     config = ProjectConfig.from_env()
-    kwargs = to_vault_kwargs(config)
+    instances = to_vault_instances(config)
+    settings = to_vault_settings(config, instances=instances)
     if index_path:
-        kwargs["index_path"] = Path(index_path)
-    return Vault(**kwargs)
+        settings = dataclasses.replace(settings, index_path=Path(index_path))
+    return Vault(
+        source_dir=config.source_dir,
+        settings=settings,
+        embedding_provider=instances.embedding_provider,
+        summarizer=instances.summarizer,
+        git_strategy=instances.git_strategy,
+        on_write=instances.on_write,
+    )
 
 
 @app.command()

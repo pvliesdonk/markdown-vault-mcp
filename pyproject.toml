@@ -194,7 +194,11 @@ ignore = ["E501"]
 [tool.ruff.lint.per-file-ignores]
 # Phase 1 write stubs: method signatures define the public API but bodies are
 # not yet implemented. ARG002 fires because parameters are unused.
-"src/markdown_vault_mcp/vault.py" = ["ARG002"]
+# PLR0913: transitional dual-mode constructor (#1158) — the config-derived
+# kwargs are docstring-deprecated in favour of VaultSettings, and their
+# removal (which shrinks the signature under the ceiling) is scheduled for
+# the next major. Gate-only rule, so a `# noqa` would be stripped (RUF100).
+"src/markdown_vault_mcp/vault.py" = ["ARG002", "PLR0913"]
 # Depends() and CurrentContext() calls in argument defaults are the standard
 # FastMCP dependency injection pattern — B008 is a false positive here.
 # Context/FastMCP/Vault imports must stay runtime (not TYPE_CHECKING) for

@@ -62,11 +62,12 @@ markdown-vault-mcp (new package)
 +-- vector_index.py   -- numpy embeddings, cosine similarity
 +-- providers.py      -- Ollama / OpenAI / Voyage / SentenceTransformers
 +-- tracker.py        -- hash-based change detection
-+-- vault.py          -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
++-- vault.py          -- thin composition root: settings-first dual-mode construction (#1158), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
 +-- write_callback.py -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
 +-- config.py         -- template-owned skeleton: flat metadata-carrying ProjectConfig fields + section-view properties + from_env, in CONFIG-* sentinels (#900, #952)
 +-- config_sections/  -- domain-grouped sub-config VIEWS (git/indexing/embeddings/search/sync/content), assembled by ProjectConfig properties; no from_env of their own (#952)
-|   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_kwargs, derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
+|   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (+ deprecated to_vault_kwargs bridge, #1158), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
+|   +-- vault_settings.py -- VaultSettings: frozen config-derived Vault construction settings + pure effective_* derivations (#1158)
 +-- server.py         -- template-owned skeleton; domain wiring in DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
 +-- _instructions.py  -- contribute_instructions: domain snippets for pvl-core's instructions builder (#901)
 +-- domain.py         -- Service: owns Vault lifecycle + get_vault/set_pending_config singleton (#902)
@@ -2177,22 +2178,56 @@ directly. ``Vault`` itself now exposes only construction, the four facet
 accessors, and lifecycle; the per-facet method surface is the Facets table
 above.
 
+#### Settings-first construction (#1158)
+
+Construction is dual-mode. The preferred mode passes ``source_dir`` plus a
+frozen ``VaultSettings`` (``config_sections/vault_settings.py``) carrying the
+31 config-derived knobs; the five collaborators that are never config-derived
+— ``embedding_provider``, ``summarizer``, ``git_strategy``, ``on_write``,
+``chunk_strategy`` — stay explicit keywords. The legacy per-knob keywords
+keep working (they are folded into a ``VaultSettings`` via the module-level
+``_settings_from_legacy`` seam), are docstring-deprecated, and are scheduled
+for removal in the next major; mixing ``settings=`` with a non-default
+config-derived keyword raises ``ValueError``. Either way exactly ONE wiring
+path consumes ``settings`` + the collaborators. A signature drift-guard test
+(``tests/test_vault_settings.py``) pins field names and defaults against the
+legacy keywords, including the two deliberate default drifts
+(``chunk_overlap_words=0`` vs ``SearchConfig``'s 40; the ``read_only=True``
+library fail-safe vs the server env default).
+
+``VaultSettings`` also owns the construction-time pure derivations that the
+constructor used to inline: ``effective_indexed_fields(okf_active=...)`` (OKF
+scalar-key extension), ``effective_exclude_patterns()`` (conventions-file
+fnmatch forms + metacharacter validation), and
+``effective_state_path(source_dir)``.
+
+On the served path, ``config_sections/_assembly.py`` resolves the two halves:
+``to_vault_instances(config)`` builds the collaborators (embedding-provider /
+summarizer resolution with the explicit-vs-auto error posture, the three-mode
+git-strategy construction, and the *resolved* pull interval), and
+``to_vault_settings(config, instances=...)`` maps the config onto
+``VaultSettings`` (threading the provider's token context into the
+``max_chunk_chars`` derivation). ``domain.Service.start`` and the CLI's
+``_build_vault`` construct settings-first from those two; the historical
+``to_vault_kwargs(config)`` remains as a deprecated bridge that delegates to
+them and reproduces the legacy kwargs-dict shape byte-for-byte.
+
 ```python
 class Vault:
     def __init__(
         self,
         *,
         source_dir: Path,
-        index_path: Path | None = None,       # None = in-memory SQLite
-        embeddings_path: Path | None = None,  # None = semantic search disabled
+        settings: VaultSettings | None = None,  # None = built from legacy kwargs
+        # Collaborators (never config-derived):
         embedding_provider: EmbeddingProvider | None = None,
-        read_only: bool = True,
-        state_path: Path | None = None,       # None = {source_dir}/.markdown_vault_mcp/state.json
-        indexed_frontmatter_fields: list[str] | None = None,
-        required_frontmatter: list[str] | None = None,
-        chunk_strategy: str | ChunkStrategy = "heading",
+        summarizer: Summarizer | None = None,
+        git_strategy: GitWriteStrategy | None = None,
         on_write: WriteCallback | None = None,
-        exclude_patterns: list[str] | None = None,
+        chunk_strategy: str | ChunkStrategy = "heading",
+        # ... plus the deprecated config-derived legacy kwargs
+        # (index_path, embeddings_path, read_only, exclude_patterns, ...),
+        # one per VaultSettings field, same names and defaults.
     ): ...
 
     # --- Facet accessors (the public operation surface) ---
@@ -2218,7 +2253,8 @@ class Vault:
     def sync_from_remote_before_index(self) -> None: ...
 ```
 
-**Constructor defaults**:
+**Constructor defaults** (identical on `VaultSettings` and the legacy
+kwargs):
 - `index_path=None`: index is created in-memory (`:memory:` SQLite). If
   provided, persisted to disk.
 - `embeddings_path=None`: semantic search is disabled.
@@ -2391,9 +2427,47 @@ is. An old path git does not track is dropped from the pathspec rather than
 passed — `git add` fails the whole invocation on a pathspec matching nothing,
 which would leave the new path unstaged too.
 
+**Write identity: the `Principal` value (#1160, fixes #1218).** "Who is
+acting" is resolved **once, at the MCP tool edge**, into a frozen
+`Principal` (`_identity.py`: `subject`, `display_name`, `email`,
+`kind: human|local`) — credentials (`GIT_TOKEN`) and permissions
+(`read_only`) deliberately stay off it; they are service configuration, not
+properties of the caller. `resolve_mcp_principal()` performs the single
+request-context read (`fastmcp_pvl_core.get_subject()` + `get_claims()`,
+applying the claim keys registered at startup via
+`configure_identity_claims()`), and the write tools bind the result on a
+contextvar (`write_identity_scope()` in `_server_tools/writer.py`) around
+their `asyncio.to_thread` call, together with the OKF write intent whose
+actor derives from the **same** Principal — so the OKF provenance stamp and
+the git commit author can no longer disagree by construction.
+
+Propagation to the deferred commit is **capture-at-fire**: the historical
+design had `GitWriteStrategy` read the OIDC claims itself via FastMCP's
+`get_access_token()` per commit, but the strategy runs on
+`WriteCallbackDispatcher`'s own daemon thread, where no request context
+exists — the read silently returned `None` and the configured
+`GIT_COMMIT_NAME_CLAIM`/`EMAIL_CLAIM` never applied on the deployed write
+path (#1218; the OKF read worked because `asyncio.to_thread` copies the
+context, a fresh `threading.Thread` does not). `WriteCallbackDispatcher.fire`
+therefore snapshots `current_principal()` — it runs on the request's
+`to_thread` worker, where the contextvar is visible — into the queue item,
+and the worker forwards `principal=` only to callbacks that opt in via the
+`accepts_principal` attribute (`types.ACCEPTS_PRINCIPAL_ATTR`), mirroring
+the `old_path` opt-in above so third-party three-argument callbacks are
+untouched. `GitWriteStrategy.__call__` consumes the Principal's
+`display_name`/`email` as the commit `--author` (committer stays the static
+identity); the `git/` package imports nothing from `fastmcp` (guard-tested),
+so non-MCP drivers supply a `Principal` instead of faking request context.
+Background paths without an acting person — the pull-loop conflict commits,
+the webhook, the transfer-route uploads — carry no Principal and use the
+static identity / tool actor, as before.
+
 **Deprecation note**: `git_write_strategy()` factory function is preserved for
 backward compatibility. Prefer constructing `GitWriteStrategy` directly for
-access to `flush()` and `close()` methods.
+access to `flush()` and `close()` methods. The `commit_name_claim` /
+`commit_email_claim` constructor kwargs no longer drive claim extraction
+(see above); they remain accepted and still inform the startup identity
+warning.
 
 ### `scanner.py`: File Discovery and Parsing
 
