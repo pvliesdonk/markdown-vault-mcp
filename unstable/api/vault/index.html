@@ -1658,6 +1658,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deprecated-per-knob-keyword-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deprecated: per-knob keyword arguments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1665,6 +1676,67 @@
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VaultSettings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="VaultSettings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.from_project_config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        from_project_config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_indexed_fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        effective_indexed_fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_exclude_patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        effective_exclude_patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_state_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        effective_state_path
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2110,6 +2182,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deprecated-per-knob-keyword-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deprecated: per-knob keyword arguments
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2117,6 +2200,67 @@
       
     </span>
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VaultSettings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="VaultSettings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.from_project_config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        from_project_config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_indexed_fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        effective_indexed_fields
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_exclude_patterns" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        effective_exclude_patterns
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_state_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        effective_state_path
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2336,13 +2480,24 @@
 <h1 id="vault">Vault<a class="headerlink" href="#vault" title="Permanent link">&para;</a></h1>
 <p>The <code>Vault</code> class is the primary public API for the library. MCP tools, CLI commands, and direct integrations all go through this class. It is a thin composition root: the read / write / graph / index operations live on the four facets, reached through the <code>reader</code> / <code>writer</code> / <code>graph</code> / <code>index</code> accessors (see <a href="../facets/">Facets</a>).</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
+<p>Construction is <em>settings-first</em>: pass <code>source_dir</code> plus a <code>VaultSettings</code> carrying the configuration knobs. Collaborator objects that are never derived from configuration (<code>embedding_provider</code>, <code>summarizer</code>, <code>git_strategy</code>, <code>on_write</code>, and <code>chunk_strategy</code>) stay explicit keywords.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span><span class="p">,</span> <span class="n">VaultSettings</span>
 
-<span class="c1"># Basic read-only vault</span>
+<span class="c1"># Basic read-only vault (all settings at their defaults)</span>
 <span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/path/to/vault"</span><span class="p">))</span>
 <span class="n">stats</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">build_index</span><span class="p">()</span>
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Indexed </span><span class="si">{</span><span class="n">stats</span><span class="o">.</span><span class="n">documents_indexed</span><span class="si">}</span><span class="s2"> documents"</span><span class="p">)</span>
+
+<span class="c1"># Configured vault: knobs travel on VaultSettings</span>
+<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span>
+    <span class="n">source_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/path/to/vault"</span><span class="p">),</span>
+    <span class="n">settings</span><span class="o">=</span><span class="n">VaultSettings</span><span class="p">(</span>
+        <span class="n">read_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">index_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/path/to/index.db"</span><span class="p">),</span>
+        <span class="n">exclude_patterns</span><span class="o">=</span><span class="p">[</span><span class="s2">".obsidian/**"</span><span class="p">],</span>
+    <span class="p">),</span>
+<span class="p">)</span>
 
 <span class="c1"># Search (reader facet)</span>
 <span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"query text"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
@@ -2353,6 +2508,8 @@
 <span class="n">note</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="s2">"Journal/note.md"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">note</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
 </code></pre></div>
+<h2 id="deprecated-per-knob-keyword-arguments">Deprecated: per-knob keyword arguments<a class="headerlink" href="#deprecated-per-knob-keyword-arguments" title="Permanent link">&para;</a></h2>
+<p>Before <code>VaultSettings</code>, every configuration knob was its own <code>Vault(...)</code> keyword (<code>Vault(source_dir=..., read_only=False, index_path=...)</code>). Those keywords still work unchanged, but they are deprecated in favor of the same-named <code>VaultSettings</code> fields and scheduled for removal in the next major release. Passing <code>settings=</code> together with a non-default legacy keyword raises <code>ValueError</code>: pick one mode per construction. <code>source_dir</code> and the five collaborator keywords are not deprecated.</p>
 <h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <!-- vale off -->
 
@@ -2361,8 +2518,775 @@
 
 
 
+<h2 id="markdown_vault_mcp.config_sections.vault_settings.VaultSettings" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">VaultSettings</span><span class="p">(</span><span class="n">index_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embeddings_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">write_protect_existing</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">state_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">indexed_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">required_frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_pull_interval_s</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exclude_patterns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">attachment_extensions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_attachment_size_mb</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_note_read_bytes</span><span class="o">=</span><span class="mi">262144</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">length_downweight_alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">default_search_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">max_chunk_words</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">max_chunk_chars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_chunk_chars_override</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_overlap_words</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">summarize_max_notes</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">summarize_max_input_chars</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span> <span class="n">title_field</span><span class="o">=</span><span class="s1">'title'</span><span class="p">,</span> <span class="n">searchable_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embed_context</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">embedding_batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">folder_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fts_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">conventions_file</span><span class="o">=</span><span class="s1">'_conventions.md'</span><span class="p">,</span> <span class="n">okf_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">okf_write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>Config-derived construction settings for a :class:<code>~markdown_vault_mcp.vault.Vault</code>.</p>
+<p>One field per config-derived <code>Vault</code> parameter, carrying the same name,
+type, and default as the corresponding (docstring-deprecated) legacy
+keyword — see the <code>Vault</code> docstring for per-knob semantics.  Construct
+directly for library use, or from a served config via
+:meth:<code>from_project_config</code> /
+:func:<code>~markdown_vault_mcp.config_sections._assembly.to_vault_settings</code>.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.index_path">index_path</span></code></td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Path to the SQLite index file (<code>None</code> = in-memory).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.embeddings_path">embeddings_path</span></code></td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Base path for the vector sidecar files (<code>None</code>
+disables semantic search).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.read_only">read_only</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When <code>True</code> (library default), write operations raise.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.write_protect_existing">write_protect_existing</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Require an <code>if_match</code> etag to overwrite.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.state_path">state_path</span></code></td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Hash-state JSON path (<code>None</code> = derived default, see
+:meth:<code>effective_state_path</code>).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.indexed_frontmatter_fields">indexed_frontmatter_fields</span></code></td>
+            <td>
+                  <code><span title="collections.abc.Sequence">Sequence</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frontmatter keys promoted to
+<code>document_tags</code> for structured filtering.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.required_frontmatter">required_frontmatter</span></code></td>
+            <td>
+                  <code><span title="collections.abc.Sequence">Sequence</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Fields a document must carry to be indexed.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.git_pull_interval_s">git_pull_interval_s</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Periodic-pull interval; <code>0</code> disables the loop.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.exclude_patterns">exclude_patterns</span></code></td>
+            <td>
+                  <code><span title="collections.abc.Sequence">Sequence</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Configured glob patterns excluded from indexing
+(before the conventions-file derivation, see
+:meth:<code>effective_exclude_patterns</code>).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.attachment_extensions">attachment_extensions</span></code></td>
+            <td>
+                  <code><span title="collections.abc.Sequence">Sequence</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Attachment extension allowlist.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.max_attachment_size_mb">max_attachment_size_mb</span></code></td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Attachment context-size cap (<code>0</code> = off).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.max_note_read_bytes">max_note_read_bytes</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Full-document read cap in bytes (<code>0</code> = off).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.chunks_per_file">chunks_per_file</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Search results kept per file before grouping.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.snippet_words">snippet_words</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Snippet truncation length in words.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.length_downweight_alpha">length_downweight_alpha</span></code></td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Length-downweight exponent for ranking.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.default_search_mode">default_search_mode</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Mode used when <code>search</code> gets no <code>mode</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.max_chunk_words">max_chunk_words</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Word cap for the default heading chunker.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.max_chunk_chars">max_chunk_chars</span></code></td>
+            <td>
+                  <code><span title="int">int</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Character cap for the default heading chunker.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.max_chunk_chars_override">max_chunk_chars_override</span></code></td>
+            <td>
+                  <code><span title="int">int</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Explicit operator char-cap override — the
+stable warm-restart key (#649).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.chunk_overlap_words">chunk_overlap_words</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Overlap carried between split chunks.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.summarize_max_notes">summarize_max_notes</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Cap on notes per <code>summarize</code> call.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.summarize_max_input_chars">summarize_max_input_chars</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Char budget per summarization request.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.title_field">title_field</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frontmatter key consulted first for document titles.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.searchable_frontmatter_fields">searchable_frontmatter_fields</span></code></td>
+            <td>
+                  <code><span title="collections.abc.Sequence">Sequence</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frontmatter keys made keyword-searchable
+(activates embed-text format v2).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.embed_context">embed_context</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Force context-enriched (v2) embedding text.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.embedding_batch_size">embedding_batch_size</span></code></td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Chunk texts per embedding-provider call.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.folder_weights">folder_weights</span></code></td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="float">float</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Folder-prefix score multipliers for search results.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.fts_weights">fts_weights</span></code></td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="float">float</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Per-column BM25 weights for the FTS5 rank config.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.conventions_file">conventions_file</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Per-folder conventions filename (<code>None</code> disables).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.okf_mode">okf_mode</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>OKF read-semantics mode (<code>auto</code> / <code>off</code> / <code>on</code>).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.okf_write">okf_write</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Enable the OKF enforced-write layer.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.from_project_config" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">from_project_config</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">embedding_context_length</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.from_project_config" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Map a served :class:<code>ProjectConfig</code> onto vault settings.</p>
+<p>Absorbs the historical <code>to_vault_kwargs</code> renames
+(<code>searchable_frontmatter</code> → <code>searchable_frontmatter_fields</code>,
+<code>default_mode</code> → <code>default_search_mode</code>) and the weight-map
+tuple → dict conversions (#639).  The git pull interval resolves the
+same way the git-strategy assembly does: <code>config.git.pull_interval_s</code>
+only when a remote is configured (repo URL or token), else <code>0</code>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>config</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(server=ServerConfig(), source_dir=Path('/data/vault'), read_only=False, write_protect_existing=False, server_name='markdown-vault-mcp', disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, github_webhook_secret=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())
+
+  
+      dataclass
+   (markdown_vault_mcp.config.ProjectConfig)" href="../config/#markdown_vault_mcp.config.ProjectConfig">ProjectConfig</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The served project configuration.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>embedding_context_length</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Token context length of the resolved
+embedding provider, used to derive <code>max_chunk_chars</code>
+(<code>None</code> — no provider — falls back to the bounded ceiling).
+Prefer
+:func:<code>~markdown_vault_mcp.config_sections._assembly.to_vault_settings</code>,
+which resolves the provider and threads this automatically.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="VaultSettings(index_path=None, embeddings_path=None, read_only=True, write_protect_existing=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)
+
+  
+      dataclass
+   (markdown_vault_mcp.config_sections.vault_settings.VaultSettings)" href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings">VaultSettings</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The mapped :class:<code>VaultSettings</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_indexed_fields" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">effective_indexed_fields</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">okf_active</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_indexed_fields" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the indexed-frontmatter set, OKF-extended when active.</p>
+<p>When OKF read semantics are active at construction time, the OKF
+scalar keys (<code>type</code> / <code>status</code> / <code>stale_after</code>) join the
+configured set so <code>document_tags</code> carries them (design okf.md §3).</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>okf_active</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Whether the vault's OKF detection probe reports
+active read semantics.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="list">list</span>[<span title="str">str</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The effective field list (possibly empty, never <code>None</code>).</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_exclude_patterns" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">effective_exclude_patterns</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_exclude_patterns" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the exclusion patterns with the conventions-file derivation.</p>
+<p>When a conventions file is configured, both fnmatch forms are
+appended (<code>name</code> and <code>**/name</code> — the <code>**/</code> form alone does not
+match a root-level file) so convention files stay out of the index
+while remaining disk-readable.  Without one, the configured patterns
+pass through unchanged (possibly <code>None</code>).</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="collections.abc.Sequence">Sequence</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The effective pattern sequence, or <code>None</code> when nothing is</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="collections.abc.Sequence">Sequence</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>excluded.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <em>conventions_file</em> contains fnmatch
+metacharacters (which would invert the exclusion).</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_state_path" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">effective_state_path</span><span class="p">(</span><span class="n">source_dir</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_state_path" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the hash-state path, defaulting under the vault root.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>source_dir</code>
+            </td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The vault root, used when no explicit <code>state_path</code>
+is configured.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pathlib.Path">Path</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The explicit <code>state_path</code>, or</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pathlib.Path">Path</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>{source_dir}/.markdown_vault_mcp/state.json</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
 <h2 id="markdown_vault_mcp.vault.Vault" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">Vault</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">source_dir</span><span class="p">,</span> <span class="n">index_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embeddings_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embedding_provider</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">write_protect_existing</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">state_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">indexed_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">required_frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_strategy</span><span class="o">=</span><span class="s1">'heading'</span><span class="p">,</span> <span class="n">on_write</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_strategy</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_pull_interval_s</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exclude_patterns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">attachment_extensions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_attachment_size_mb</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_note_read_bytes</span><span class="o">=</span><span class="mi">262144</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">length_downweight_alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">default_search_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">max_chunk_words</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">max_chunk_chars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_chunk_chars_override</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_overlap_words</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">summarizer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">summarize_max_notes</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">summarize_max_input_chars</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span> <span class="n">title_field</span><span class="o">=</span><span class="s1">'title'</span><span class="p">,</span> <span class="n">searchable_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embed_context</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">embedding_batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">folder_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fts_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">conventions_file</span><span class="o">=</span><span class="s1">'_conventions.md'</span><span class="p">,</span> <span class="n">okf_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">okf_write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">Vault</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">source_dir</span><span class="p">,</span> <span class="n">index_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embeddings_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embedding_provider</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">write_protect_existing</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">state_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">indexed_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">required_frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_strategy</span><span class="o">=</span><span class="s1">'heading'</span><span class="p">,</span> <span class="n">on_write</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_strategy</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_pull_interval_s</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exclude_patterns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">attachment_extensions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_attachment_size_mb</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_note_read_bytes</span><span class="o">=</span><span class="mi">262144</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">length_downweight_alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">default_search_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">max_chunk_words</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">max_chunk_chars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_chunk_chars_override</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_overlap_words</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">summarizer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">summarize_max_notes</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">summarize_max_input_chars</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span> <span class="n">title_field</span><span class="o">=</span><span class="s1">'title'</span><span class="p">,</span> <span class="n">searchable_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embed_context</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">embedding_batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">folder_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fts_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">conventions_file</span><span class="o">=</span><span class="s1">'_conventions.md'</span><span class="p">,</span> <span class="n">okf_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">okf_write</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">settings</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.vault.Vault" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -2426,6 +3350,33 @@ caller's responsibility — pass <code>if_match=</code> to write methods for
 optimistic concurrency. <code>fork()</code> is not supported. See <code>docs/design/design.md</code>
 "Vault thread-safety contract" for the underlying per-thread
 SQLite-connection model.</p>
+<p><strong>Construction (#1158).</strong> The preferred mode is <em>settings-first</em>: pass
+<code>source_dir</code> plus a
+:class:<code>~markdown_vault_mcp.config_sections.vault_settings.VaultSettings</code>
+(<code>settings=</code>), and — as needed — the five collaborator keywords that
+are never config-derived (<code>embedding_provider</code>, <code>summarizer</code>,
+<code>git_strategy</code>, <code>on_write</code>, <code>chunk_strategy</code>).  The per-knob
+keywords documented below keep working unchanged as a compatibility
+mode, but mixing the two — <code>settings=</code> together with a non-default
+config-derived keyword — raises :exc:<code>ValueError</code>.</p>
+<p>.. deprecated::
+    The config-derived per-knob keywords — <code>index_path</code>,
+    <code>embeddings_path</code>, <code>read_only</code>, <code>write_protect_existing</code>,
+    <code>state_path</code>, <code>indexed_frontmatter_fields</code>,
+    <code>required_frontmatter</code>, <code>git_pull_interval_s</code>,
+    <code>exclude_patterns</code>, <code>attachment_extensions</code>,
+    <code>max_attachment_size_mb</code>, <code>max_note_read_bytes</code>,
+    <code>chunks_per_file</code>, <code>snippet_words</code>, <code>length_downweight_alpha</code>,
+    <code>default_search_mode</code>, <code>max_chunk_words</code>, <code>max_chunk_chars</code>,
+    <code>max_chunk_chars_override</code>, <code>chunk_overlap_words</code>,
+    <code>summarize_max_notes</code>, <code>summarize_max_input_chars</code>,
+    <code>title_field</code>, <code>searchable_frontmatter_fields</code>,
+    <code>embed_context</code>, <code>embedding_batch_size</code>, <code>folder_weights</code>,
+    <code>fts_weights</code>, <code>conventions_file</code>, <code>okf_mode</code>, and
+    <code>okf_write</code> — are superseded by the same-named fields on
+    <code>VaultSettings</code>; removal is scheduled for the next major.
+    <code>source_dir</code> and the five collaborator keywords are <em>not</em>
+    deprecated.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -2453,6 +3404,27 @@ SQLite-connection model.</p>
             </td>
             <td>
                 <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>settings</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="VaultSettings(index_path=None, embeddings_path=None, read_only=True, write_protect_existing=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)
+
+  
+      dataclass
+   (markdown_vault_mcp.config_sections.vault_settings.VaultSettings)" href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings">VaultSettings</a> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Config-derived construction settings.  <code>None</code> (default)
+builds them from the legacy per-knob keywords below.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
             </td>
           </tr>
           <tr class="doc-section-item">
@@ -2526,7 +3498,7 @@ is a product decision about what an installed server should do,
 while this one is a fail-safe for a downstream Python consumer
 who constructs a <code>Vault</code> without naming the argument. Keeping
 it costs nothing — the server path always passes the value
-explicitly through <code>to_vault_kwargs</code> — and moving it would be
+explicitly through <code>to_vault_settings</code> — and moving it would be
 an independent breaking change to the public library interface.</p>
               </div>
             </td>
