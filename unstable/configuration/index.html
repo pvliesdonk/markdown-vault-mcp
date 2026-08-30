@@ -3117,13 +3117,13 @@ durable cross-restart execution is what the native task path with a
 <td><code>MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM</code></td>
 <td>string</td>
 <td>(none)</td>
-<td>OIDC claim key to use as the commit author name when a token is present (such as <code>name</code>); falls back to <code>GIT_COMMIT_NAME</code> when absent</td>
+<td>OIDC claim key to use as the commit author name when a token is present (such as <code>name</code>); falls back to <code>GIT_COMMIT_NAME</code> when absent. The claim is resolved when the tool call arrives and carried to the background commit, so it applies on every write</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM</code></td>
 <td>string</td>
 <td>(none)</td>
-<td>OIDC claim key to use as the commit author e-mail when a token is present (such as <code>email</code>); falls back to <code>GIT_COMMIT_EMAIL</code> when absent</td>
+<td>OIDC claim key to use as the commit author e-mail when a token is present (such as <code>email</code>); falls back to <code>GIT_COMMIT_EMAIL</code> when absent. Resolved and carried the same way as the name claim</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_GIT_LFS</code></td>

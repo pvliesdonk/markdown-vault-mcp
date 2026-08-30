@@ -2490,6 +2490,47 @@ the timer (push only on :meth:<code>close</code>).</p>
           </tr>
           <tr class="doc-section-item">
             <td>
+                <code>commit_name_claim</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>OIDC claim key configured for the author name.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>commit_email_claim</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>OIDC claim key configured for the author email.</p>
+<p>.. deprecated::
+    The two claim kwargs no longer drive claim extraction — the
+    strategy runs on the write-callback dispatcher thread, where
+    no request token exists (#1218). Claims are now resolved at
+    the MCP tool edge into the <code>principal</code> passed per
+    invocation (register the keys via
+    :func:<code>markdown_vault_mcp._identity.configure_identity_claims</code>).
+    They remain accepted, and still inform the startup
+    identity warning (:meth:<code>_check_identity</code>).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
                 <code>git_lfs</code>
             </td>
             <td>
@@ -2578,7 +2619,7 @@ strategy.close()  # final flush
 
 
 <h3 id="markdown_vault_mcp.git.GitWriteStrategy.__call__" class="doc doc-heading">
-            <code class="highlight language-python"><span class="fm">__call__</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">operation</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">old_path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="fm">__call__</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">operation</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">old_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">principal</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.git.GitWriteStrategy.__call__" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -2660,6 +2701,26 @@ reads the working tree.</p>
               <div class="doc-md-description">
                 <p>For a rename, the absolute path the file moved from,
 so staging can be scoped to it and <em>path</em> (#894).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>principal</code>
+            </td>
+            <td>
+                  <code><span title="markdown_vault_mcp._identity.Principal">Principal</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The identity performing the write, resolved at the MCP
+tool edge and snapshotted through the dispatcher queue
+(#1160). Its display name / email become the commit's
+<code>--author</code>; <code>None</code> fields (or no principal) fall back to
+the static committer identity.</p>
               </div>
             </td>
             <td>
