@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import fnmatch
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.types import DEFAULT_ATTACHMENT_EXTENSIONS
+from markdown_vault_mcp.utils.content_kind import (
+    artifact_suffix,
+    effective_attachment_extensions,
+    has_md_suffix,
+    is_allowed_artifact,
+    is_allowed_artifact_suffix,
+    is_attachment,
+    is_note,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 from markdown_vault_mcp.utils.fts import fts_row_to_note_info
 from markdown_vault_mcp.utils.links import (
     apply_link_replacement,
@@ -85,24 +93,6 @@ def folder_matches(row_folder: str, folder: str) -> bool:
     return row_folder == folder or row_folder.startswith(folder + "/")
 
 
-def effective_attachment_extensions(
-    attachment_extensions: Sequence[str] | None,
-) -> frozenset[str]:
-    """Return the effective set of allowed attachment extensions.
-
-    Args:
-        attachment_extensions: User-configured extension list, or ``None``
-            to use the default set.
-
-    Returns:
-        Frozenset of lower-case extension strings (without leading dot).
-        The special value ``frozenset(["*"])`` means all non-.md files.
-    """
-    if attachment_extensions is None:
-        return DEFAULT_ATTACHMENT_EXTENSIONS
-    return frozenset(attachment_extensions)
-
-
 def resolve_inside(path: str, base: Path, *, original: str | None = None) -> Path:
     """Resolve *path* against *base* and verify the result stays inside it.
 
@@ -147,7 +137,7 @@ def validate_path(path: str, source_dir: Path) -> Path:
         ValueError: If the path escapes the source directory or does
             not end with ``.md``.
     """
-    if not path.endswith(".md"):
+    if not is_note(path):
         raise ValueError(f"Path must end with '.md': {path}")
     return resolve_inside(path, source_dir)
 
@@ -178,11 +168,9 @@ def validate_history_path(
         ValueError: *path* is neither ``.md`` nor an allowed attachment
             extension, or it escapes *source_dir*.
     """
-    suffix = Path(path).suffix.lstrip(".").lower()
     if not (
-        path.endswith(".md")
-        or "*" in attachment_extensions
-        or suffix in attachment_extensions
+        is_note(path)
+        or is_allowed_artifact_suffix(artifact_suffix(path), attachment_extensions)
     ):
         raise ValueError(
             f"Path must be a .md note or a configured attachment type: {path}"
@@ -222,11 +210,17 @@ def validate_history_dir(path: str, source_dir: Path) -> Path:
 __all__ = [
     "CHAR_SUBS",
     "apply_link_replacement",
+    "artifact_suffix",
     "build_position_map",
     "compute_new_raw_target",
     "effective_attachment_extensions",
     "find_closest_match",
     "fts_row_to_note_info",
+    "has_md_suffix",
+    "is_allowed_artifact",
+    "is_allowed_artifact_suffix",
+    "is_attachment",
+    "is_note",
     "is_path_excluded",
     "normalize_text",
     "resolve_inside",
