@@ -26,6 +26,7 @@ from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 from markdown_vault_mcp.fts_index import _derive_folder
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.scanner import parse_note
+from markdown_vault_mcp.utils import is_note
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1093,7 +1094,7 @@ class EmbeddingsManager:
                 # Excluded paths (e.g. convention files) never get vectors,
                 # mirroring the FTS guard in process_dirty_paths → delete.
                 pre_embedded.append((path, None, None, False))
-            elif abs_path.is_file() and path.endswith(".md"):
+            elif abs_path.is_file() and is_note(path):
                 try:
                     note = parse_note(
                         abs_path,

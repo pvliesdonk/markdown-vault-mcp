@@ -34,7 +34,10 @@ from markdown_vault_mcp.scanner import (
     scan_directory,
 )
 from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult, SkippedFile
-from markdown_vault_mcp.utils import is_path_excluded
+from markdown_vault_mcp.utils import (
+    is_note,
+    is_path_excluded,
+)
 from markdown_vault_mcp.utils.fs import iter_markdown_files
 
 if TYPE_CHECKING:
@@ -919,7 +922,7 @@ class IndexManager:
                         # before the exclusion existed.
                         self._fts.delete_by_path(path)
                         continue
-                    if abs_path.is_file() and path.endswith(".md"):
+                    if abs_path.is_file() and is_note(path):
                         note = parse_note(
                             abs_path,
                             self._source_dir,

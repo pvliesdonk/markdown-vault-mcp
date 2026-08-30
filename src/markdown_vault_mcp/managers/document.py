@@ -635,7 +635,7 @@ class DocumentManager:
             raise ValueError(f"max_notes must be >= 1, got {max_notes!r}")
         if max_level is not None and max_level < 1:
             raise ValueError(f"max_level must be >= 1, got {max_level!r}")
-        if path.endswith(".md"):
+        if is_note(path):
             return self._note_toc(path, max_level=max_level)
         return self._subtree_toc(path, max_level=max_level, max_notes=max_notes)
 

@@ -28,6 +28,7 @@ from markdown_vault_mcp.types import (
     SummaryResult,
     SummarySource,
 )
+from markdown_vault_mcp.utils import is_note
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.managers.document import DocumentManager
@@ -233,7 +234,7 @@ class SummarizeManager:
 
     def _expand_path(self, path: str) -> list[str]:
         """Resolve one input path to note paths (single note or subtree)."""
-        if path.endswith(".md"):
+        if is_note(path):
             return [path]
         # Expand generously so the pre-cap match count is known; the
         # note limit is applied by _resolve_paths afterwards.

@@ -7,6 +7,8 @@ import os
 import sys
 from typing import TYPE_CHECKING, Any
 
+from markdown_vault_mcp.utils.content_kind import is_note
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
     from pathlib import Path
@@ -191,5 +193,5 @@ def iter_markdown_files(
             dirnames[:] = kept
         base = source_dir / rel_prefix if rel_prefix else source_dir
         for filename in filenames:
-            if filename.endswith(".md"):
+            if is_note(filename):
                 yield base / filename
