@@ -2458,6 +2458,16 @@ untouched. `GitWriteStrategy.__call__` consumes the Principal's
 `display_name`/`email` as the commit `--author` (committer stays the static
 identity); the `git/` package imports nothing from `fastmcp` (guard-tested),
 so non-MCP drivers supply a `Principal` instead of faking request context.
+
+`resolve_mcp_principal()` is the **only** place the subject rules live
+(#1231) — `human:<subject>`, and the `"local"` sentinel counting as no human
+identity. `_okf_write.py` used to re-derive them in a fallback branch that
+read `get_subject()` itself; it now resolves a `Principal` instead, so the
+rules cannot drift between two copies. The dead `resolve_write_actor()` went
+with that branch: since #1160 the write tools stamp
+`principal.okf_actor(...)` directly. Registering the claim keys likewise
+moved out of the git-strategy builder into `to_vault_instances`, so
+configuring identity is not the git builder's job.
 Background paths without an acting person — the pull-loop conflict commits,
 the webhook, the transfer-route uploads — carry no Principal and use the
 static identity / tool actor, as before.

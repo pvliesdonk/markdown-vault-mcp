@@ -31,7 +31,6 @@ from markdown_vault_mcp._okf_write import (
     okf_write_intent,
     okf_write_suppressed,
     resolve_human_subject,
-    resolve_write_actor,
     tool_actor,
 )
 from markdown_vault_mcp.okf import (
@@ -157,26 +156,6 @@ class TestAppendOkfVerification:
 class TestActorResolution:
     def test_tool_actor_format(self) -> None:
         assert tool_actor("1.2.3") == "markdown-vault-mcp/1.2.3"
-
-    def test_resolve_write_actor_human_when_subject_present(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
-        assert resolve_write_actor() == "human:peter"
-
-    def test_resolve_write_actor_tool_when_no_subject(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: None)
-        actor = resolve_write_actor()
-        assert actor.startswith("markdown-vault-mcp/")
-
-    def test_resolve_write_actor_tool_when_local_sentinel(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # get_subject() returns "local" under auth mode none — not a human.
-        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "local")
-        assert resolve_write_actor().startswith("markdown-vault-mcp/")
 
     def test_resolve_human_subject_present(
         self, monkeypatch: pytest.MonkeyPatch

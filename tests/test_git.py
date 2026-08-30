@@ -5208,6 +5208,31 @@ class TestGitClaimConfig:
             # other tests' resolve_mcp_principal calls.
             _identity.configure_identity_claims(name_claim=None, email_claim=None)
 
+    def test_claims_registered_by_to_vault_instances(self, tmp_path: Path) -> None:
+        """The assembly registers claim keys, not the git-strategy builder.
+
+        The registration moved out of ``_build_git_strategy`` (#1231) so
+        configuring identity is not the git builder's job.  Pinned against
+        ``to_vault_instances`` directly, since that is now the owner.
+        """
+        from markdown_vault_mcp import _identity
+        from markdown_vault_mcp.config import ProjectConfig
+        from markdown_vault_mcp.config_sections._assembly import to_vault_instances
+
+        config = ProjectConfig(
+            source_dir=tmp_path,
+            read_only=False,
+            git_commit_name_claim="name",
+            git_commit_email_claim="email",
+        )
+        try:
+            to_vault_instances(config)
+
+            assert _identity._name_claim == "name"
+            assert _identity._email_claim == "email"
+        finally:
+            _identity.configure_identity_claims(name_claim=None, email_claim=None)
+
 
 class TestStageAndCommitAuthorSplit:
     """_stage_and_commit sets --author separately from the committer when provided."""

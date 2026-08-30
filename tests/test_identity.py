@@ -49,7 +49,7 @@ def _patch_context(
 
 
 class TestPrincipalOkfActor:
-    """okf_actor keeps exact parity with resolve_write_actor's rules."""
+    """okf_actor implements the design-§6 actor rules."""
 
     def test_human_with_subject_is_human_actor(self) -> None:
         p = Principal(subject="peter", display_name=None, email=None, kind="human")
@@ -193,24 +193,6 @@ class TestOkfResolversPreferBoundPrincipal:
     The context-reading fallback path is pinned — unmodified — by
     ``tests/test_okf_write.py``; these tests cover the new preferred branch.
     """
-
-    def test_resolve_write_actor_uses_principal(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from markdown_vault_mcp._okf_write import resolve_write_actor
-
-        # get_subject would say something else entirely; the binding wins.
-        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "other")
-        p = Principal(subject="peter", display_name=None, email=None, kind="human")
-        with bound_principal(p):
-            assert resolve_write_actor() == "human:peter"
-
-    def test_resolve_write_actor_local_principal_is_tool_actor(self) -> None:
-        from markdown_vault_mcp._okf_write import resolve_write_actor
-
-        p = Principal(subject=None, display_name=None, email=None, kind="local")
-        with bound_principal(p):
-            assert resolve_write_actor().startswith("markdown-vault-mcp/")
 
     def test_resolve_human_subject_uses_principal(
         self, monkeypatch: pytest.MonkeyPatch

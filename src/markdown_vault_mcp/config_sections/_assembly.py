@@ -128,14 +128,10 @@ def _build_git_strategy(
     or disables them in lockstep.
     """
     git = config.git
-    # Register the OIDC claim keys with the identity layer: claims are
-    # resolved at the MCP tool edge into a Principal (#1160), not by the
-    # strategy itself (whose dispatcher thread has no request token, #1218).
-    # The kwargs below still carry the keys for the startup identity warning.
-    configure_identity_claims(
-        name_claim=git.commit_name_claim,
-        email_claim=git.commit_email_claim,
-    )
+    # The claim kwargs below no longer drive claim extraction — they inform
+    # only the startup identity warning. Registration with the identity layer
+    # happens in ``to_vault_instances`` (#1231), not here: configuring
+    # identity is not the git builder's job.
     return GitWriteStrategy(
         token=token,
         repo_url=repo_url,
@@ -332,6 +328,15 @@ def to_vault_instances(config: ProjectConfig) -> VaultInstances:
     """
     provider = _resolve_embedding_provider(config)
     summarizer = _resolve_summarizer(config)
+    # Register the OIDC claim keys with the identity layer, which resolves
+    # them at the MCP tool edge into a Principal (#1160) — the strategy's own
+    # dispatcher thread has no request token (#1218). Done here rather than
+    # inside the git-strategy builder so the identity and versioning seams
+    # stay separate at their construction point (#1231).
+    configure_identity_claims(
+        name_claim=config.git.commit_name_claim,
+        email_claim=config.git.commit_email_claim,
+    )
     git_strategy, git_pull_interval_s = _resolve_git(config)
     return VaultInstances(
         embedding_provider=provider,

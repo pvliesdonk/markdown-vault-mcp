@@ -16,8 +16,12 @@ Actor resolution rules (design §6):
 - a tool actor ``markdown-vault-mcp/<version>`` otherwise (unauthenticated, or a
   non-tool write with no request identity).
 
-``get_subject()`` returns the sentinel ``"local"`` under auth mode ``none``; that
-is treated as *no human identity* for both actor resolution and ``okf_verify``.
+Those rules are implemented once, in
+:mod:`markdown_vault_mcp._identity` — including that ``get_subject()`` returns
+the sentinel ``"local"`` under auth mode ``none``, which counts as *no human
+identity* for both actor resolution and ``okf_verify``. This module reads a
+``Principal`` and never the request context directly (#1231); a second copy of
+the rules is a second thing to keep in agreement.
 """
 
 from __future__ import annotations
@@ -32,8 +36,8 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp._identity import current_principal
-from markdown_vault_mcp.okf import _HUMAN_ACTOR_PREFIX, apply_okf_write_stamp
+from markdown_vault_mcp._identity import current_principal, resolve_mcp_principal
+from markdown_vault_mcp.okf import apply_okf_write_stamp
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -111,44 +115,23 @@ def tool_actor(version: str) -> str:
     return f"markdown-vault-mcp/{version}"
 
 
-def resolve_write_actor() -> str:
-    """Resolve the content-write actor from the request identity.
-
-    ``human:<subject>`` when an authenticated subject is present, else the tool
-    actor. Prefers a bound
-    :class:`~markdown_vault_mcp._identity.Principal` (resolved once at the
-    tool edge, #1160); otherwise reads the request context directly, so call
-    inside a tool handler.
-    """
-    principal = current_principal()
-    if principal is not None:
-        return principal.okf_actor(package_version())
-    from fastmcp_pvl_core import get_subject
-
-    subject = get_subject()
-    if subject and subject != _LOCAL_SUBJECT:
-        return f"{_HUMAN_ACTOR_PREFIX}{subject}"
-    return tool_actor(package_version())
-
-
 def resolve_human_subject() -> str | None:
     """Return the authenticated human subject, or ``None`` if unattributable.
 
     Used by ``okf_verify`` to decide whether a verification is attributable
     (``None`` under auth mode ``none`` or when no subject is present).
-    Prefers a bound :class:`~markdown_vault_mcp._identity.Principal` (#1160),
-    whose ``subject`` is already ``None`` for a non-human caller; otherwise
-    reads the request context directly.
+
+    Prefers the principal bound at the tool edge (#1160), whose ``subject`` is
+    already ``None`` for a non-human caller.  With none bound — a driver that
+    is not the MCP server, or a call outside ``write_identity_scope`` — it
+    resolves one from the request context rather than re-deriving the rules
+    here, so the ``local``-sentinel handling lives in exactly one place
+    (#1231).
     """
     principal = current_principal()
-    if principal is not None:
-        return principal.subject
-    from fastmcp_pvl_core import get_subject
-
-    subject = get_subject()
-    if subject and subject != _LOCAL_SUBJECT:
-        return subject
-    return None
+    if principal is None:
+        principal = resolve_mcp_principal()
+    return principal.subject
 
 
 def resolve_verify_subject() -> str:

@@ -92,7 +92,7 @@ class Principal:
 
         ``human:<subject>`` for an authenticated human, else the tool actor
         ``markdown-vault-mcp/<version>`` — the exact rules of
-        ``_okf_write.resolve_write_actor``, expressed over the resolved value.
+        the design-§6 actor rules, expressed over the resolved value.
 
         Args:
             version: Package version used for the tool actor.
