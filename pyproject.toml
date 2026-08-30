@@ -294,6 +294,14 @@ ignore = ["E501"]
 # IndexManager (#1157; callable injection per the #736 precedent). Same
 # gate-only mechanism as okf_migrate.py above.
 "src/markdown_vault_mcp/managers/embeddings.py" = ["PLR0913"]
+# fts_index.py is the single SQL owner: several queries are assembled from
+# code-owned fragments (folder LIKE clauses, `?`-placeholder lists, snippet
+# projections) with every value bound as a parameter — no user input ever
+# reaches the SQL text. S608 flags any string-built query on sight, so a
+# diff touching one of these lines would need a routine `# noqa` that the
+# base pass strips as unused (RUF100, S isn't in the base select) — the same
+# gate-only mechanism as the git/ package's S603/S607 entry above.
+"src/markdown_vault_mcp/fts_index.py" = ["S608"]
 # Test fixtures import vault/protocol types only used in annotations.
 "tests/conftest.py" = ["TC002", "TC003"]
 # _install_fake_openai's keyword-only scenario toggles (content/refusal/

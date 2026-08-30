@@ -144,7 +144,6 @@ class IndexManager:
             embeddings_path=embeddings_path,
             embedding_provider=embedding_provider,
             chunk_strategy=chunk_strategy,
-            required_frontmatter=required_frontmatter,
             get_vectors=get_vectors,
             set_vectors=set_vectors,
             title_field=title_field,
@@ -276,6 +275,57 @@ class IndexManager:
             return False
         return True
 
+    def _tombstone_skip(
+        self,
+        skip: SkippedFile,
+        abs_path: Path,
+        *,
+        content_hash: str | None = None,
+    ) -> None:
+        """Record a surfaced skip as an FTS tombstone row (#1129).
+
+        The single skip-recording choke point shared by all three pipelines
+        (:meth:`build_index`, :meth:`reindex`, :meth:`process_dirty_paths`),
+        so the hash/mtime provenance is computed consistently with
+        :meth:`_record_skip_hash`: a transient ``OSError`` while reading the
+        file records nothing — the file retries on the next scan, matching
+        the tracker's transient policy. Any pre-existing row for the path
+        (a stale live row included) is replaced inside the upsert.
+
+        Args:
+            skip: The surfaced skip to record.
+            abs_path: Absolute path of the skipped file, hashed/stat'ed when
+                *content_hash* needs computing.
+            content_hash: Hash of the exact bytes that were evaluated, when
+                the caller already has it (avoids a second, raceable read).
+        """
+        try:
+            if content_hash is None:
+                content_hash = compute_file_hash(abs_path)
+            modified_at = abs_path.stat().st_mtime
+        except OSError as exc:
+            logger.debug("tombstone_skip_read_failed path=%s err=%s", skip.path, exc)
+            return
+        self._fts.upsert_tombstone(
+            skip, content_hash=content_hash, modified_at=modified_at
+        )
+
+    def _sync_tombstones(self) -> None:
+        """Drop tombstone rows whose skip left the tracker registry (#1129).
+
+        The tracker's ``skip_reasons`` map stays authoritative for what is
+        currently skipped; tombstones mirror it in the FTS index. A skipped
+        file that is deleted from disk (or newly excluded) leaves the
+        registry silently on the next scan — it was never indexed, so no
+        ``deleted`` event fires — and its tombstone must not linger as a
+        phantom candidate. Called after ``update_state`` so the re-read
+        registry reflects this pass.
+        """
+        reasons = self._tracker.skip_reasons()
+        for row in self._fts.list_tombstones():
+            if row["path"] not in reasons:
+                self._fts.delete_by_path(row["path"])
+
     def _purge_stale_excluded(
         self,
         vectors: VectorIndex | None,
@@ -358,13 +408,19 @@ class IndexManager:
             logger.info("build_index(force=True): dropping and rebuilding index")
             for row in self._fts.list_notes():
                 self._fts.delete_by_path(row["path"])
+            # list_notes() is live-only, so tombstones need their own wipe;
+            # the scan below re-creates one per still-skipped candidate.
+            for row in self._fts.list_tombstones():
+                self._fts.delete_by_path(row["path"])
 
         logger.info("build_index: scanning %s", self._source_dir)
 
         skip_reasons: dict[str, dict[str, str]] = {}
+        skip_files: dict[str, SkippedFile] = {}
 
         def _collect_skip(sf: SkippedFile) -> None:
             skip_reasons[sf.path] = {"category": sf.category, "detail": sf.detail}
+            skip_files[sf.path] = sf
 
         notes = list(
             scan_directory(
@@ -436,18 +492,29 @@ class IndexManager:
                 continue
             # A failed hash is possibly transient — left unrecorded so the
             # next scan retries the file (#802; see _record_skip_hash).
-            self._record_skip_hash(
+            recorded = self._record_skip_hash(
                 skipped_state,
                 rel_str,
                 abs_path,
                 event="build_index",
                 surfaced=rel_str in skip_reasons,
             )
+            # Surfaced skips are also recorded as FTS tombstone rows (#1129),
+            # reusing the hash just computed so both records cover the same
+            # bytes. A transient (unrecorded) hash tombstones nothing —
+            # tracker and tombstone stay in lockstep.
+            if recorded and rel_str in skip_files:
+                self._tombstone_skip(
+                    skip_files[rel_str],
+                    abs_path,
+                    content_hash=skipped_state[rel_str],
+                )
 
         # Update tracker state so reindex() knows the baseline.
         self._tracker.update_state(
             notes, skipped=skipped_state, skip_reasons=skip_reasons
         )
+        self._sync_tombstones()
 
         if errored:
             logger.warning(
@@ -591,6 +658,7 @@ class IndexManager:
         self._tracker.update_state(
             state_notes, skipped=newly_skipped, skip_reasons=newly_skip_reasons
         )
+        self._sync_tombstones()
 
         return ReindexResult(
             added=indexed_added,
@@ -666,6 +734,12 @@ class IndexManager:
                         "category": sf.category,
                         "detail": sf.detail,
                     }
+                    # Tombstone the skip in FTS (#1129). This *replaces* any
+                    # stale live row: a file that becomes unparseable stops
+                    # serving its last-good content from search/read instead
+                    # of serving it indefinitely. Reuses the hash recorded
+                    # above so tracker and tombstone cover the same bytes.
+                    self._tombstone_skip(sf, abs_path, content_hash=newly_skipped[path])
                 continue
             parsed.append((path, outcome))
 
@@ -814,6 +888,10 @@ class IndexManager:
         validation failures (``ValueError``) are caught, logged at
         WARNING, and skipped so a single bad note does not starve the
         rest — matching the coverage in :meth:`flush_dirty_embeddings`.
+        A ``yaml.YAMLError`` additionally replaces the note's stale row with
+        a ``parse_error`` tombstone, and a note missing required frontmatter
+        is tombstoned rather than deleted, so FTS absence keeps meaning
+        "not a candidate" (#1129).
         When the parse failure stems from the file disappearing between
         the ``is_file()`` check and ``parse_note()``, the stale FTS row
         is deleted so keyword/hybrid search results stay consistent with
@@ -849,11 +927,27 @@ class IndexManager:
                             self._chunk_strategy,
                             title_field=self._title_field,
                         )
-                        if self._required_frontmatter and not all(
-                            k in (note.frontmatter or {})
-                            for k in self._required_frontmatter
-                        ):
-                            self._fts.delete_by_path(path)
+                        missing = [
+                            k
+                            for k in (self._required_frontmatter or [])
+                            if k not in (note.frontmatter or {})
+                        ]
+                        if missing:
+                            # Tombstone rather than delete (#1129): the file
+                            # is still a candidate, so its row must stay
+                            # present (invisibly) instead of becoming
+                            # indistinguishable from a deletion. The parsed
+                            # note's own hash/mtime cover the exact bytes
+                            # that were evaluated (#888 pattern).
+                            self._fts.upsert_tombstone(
+                                SkippedFile(
+                                    path=path,
+                                    category="missing_frontmatter",
+                                    detail=f"missing: {missing}",
+                                ),
+                                content_hash=note.content_hash,
+                                modified_at=note.modified_at,
+                            )
                             continue
                         self._fts.upsert_note(note)
                     else:
@@ -888,6 +982,15 @@ class IndexManager:
                         "process_dirty_paths: skipping %s (malformed frontmatter): %s",
                         path,
                         exc,
+                    )
+                    # Tombstone instead of keeping the stale row (#1129): a
+                    # note edited into unparseable frontmatter must stop
+                    # serving its last-good content. A transient read failure
+                    # inside the helper records nothing (row kept; the next
+                    # scan retries).
+                    self._tombstone_skip(
+                        SkippedFile(path=path, category="parse_error", detail=str(exc)),
+                        abs_path,
                     )
                     continue
                 # sqlite3 / programming-bug exceptions propagate: fail the

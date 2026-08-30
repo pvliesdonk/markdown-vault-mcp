@@ -586,6 +586,67 @@ lifespan behind the initial build job, #665) + explicit `reindex` tool call
 Architecture supports adding `watch_interval` or watchdog integration later
 without refactoring.
 
+### Skip Tombstones (#1129)
+
+**Absence semantics.** Absence of a `documents` row means exactly one thing:
+the path is *not an index candidate* — deleted, non-markdown, or excluded by
+pattern. Every surfaced deterministic skip (the four `SKIP_CATEGORIES`:
+`parse_error`, `encoding_error`, `missing_frontmatter`, `internal_error`)
+instead stays PRESENT as a *tombstone* row: `skip_category` non-NULL,
+`chunk_count = 0`, no child rows. Excluded-by-pattern files stay absent —
+exclusion is config-static, so their absence is already unambiguous — and so
+do transient `OSError` skips (nothing is recorded; the file retries next
+scan). Walk incompleteness is not representable as tombstones, so the
+embeddings empty-build check keeps its `on_walk_error` source walk.
+
+**Invariant.** A tombstone row exists iff the path is currently in the
+tracker's `skip_reasons` registry, which stays authoritative for
+`get_index_status.skipped_files`; the two are kept in lockstep by the three
+skip-recording pipelines (`build_index`, `reindex`/`_parse_changed_notes`,
+`process_dirty_paths`) through the shared `IndexManager._tombstone_skip`
+helper, and by `IndexManager._sync_tombstones`, which garbage-collects
+tombstones whose path left the registry (a skipped file deleted from disk
+leaves the registry silently — it was never indexed — so its tombstone is
+dropped after each `update_state`).
+
+**Readers.** All direct-`documents` readers query the `documents_live` view,
+so tombstones are invisible to every existing consumer — non-breaking by
+construction. Queries that reach `documents` through child tables (the FTS5
+MATCH join, `list_chunks`, `get_toc`, `get_backlinks`, `list_field_values`)
+are naturally safe because tombstones have no child rows.
+
+**Stale-row fix.** Before #1129, a file that *became* unparseable kept its
+last-good FTS row on `reindex` (and on `process_dirty_paths`), serving stale
+content from search/read indefinitely. Tombstoning replaces that row, so the
+stale content stops being served while the path remains distinguishable from
+a deletion.
+
+**Links to tombstones stay broken — by decision.** `get_broken_links` /
+`count_broken_links` / `get_outlinks.exists` check `documents_live`, and
+vault-wide wikilink resolution never resolves to a tombstone. A skipped file
+contributes no readable content, so pretending its link targets exist would
+hide exactly the problem the tombstone records.
+
+**Warm restart.** The coordinator's warm-restart gate keys on
+`FTSIndex.has_documents()` (ANY row, tombstones included), so an
+all-tombstone vault short-circuits like any completed build; reported stats
+stay on the live `count_documents()`.
+
+**Embeddings.** Tombstones give the vector convergence a direct answer to
+"is this FTS absence deliberate?" (#1130): a stale sidecar path is
+reclaimable iff it has a tombstone (any category), is excluded, or its
+source is gone from disk (one `stat`, transient-`OSError`-aware, with an
+unavailable source *root* confirming nothing); and an empty embedding build
+is authoritative iff every candidate absent from FTS has a tombstone. The
+former per-candidate re-parse loops are gone.
+
+**Migration.** The columns are additive (`ALTER TABLE` on open, following
+the `chunk_count` precedent) and `INDEX_SEMANTICS_VERSION` was bumped to 3:
+a pre-tombstone index has ambiguous absences, so the first start after the
+upgrade cold-rebuilds once and materialises tombstones for existing skips.
+Non-breaking and minor-releasable — no operator action, and tombstones are
+invisible to every reader.
+
 ### Incremental Reindex
 
 Full numpy array rebuild on every reindex (filter unchanged rows + append new).
@@ -1831,7 +1892,10 @@ class MostLinkedNote:
 Full DDL for the SQLite database used by `FTSIndex`:
 
 ```sql
--- Documents table: one row per .md file
+-- Documents table: one row per .md file — live documents AND skip
+-- tombstones (#1129). skip_category IS NULL marks a live row; a tombstone
+-- carries the surfaced skip category/detail, chunk_count = 0, and no child
+-- rows at all (no sections/notes_fts/links/document_tags/document_aliases).
 CREATE TABLE IF NOT EXISTS documents (
     id INTEGER PRIMARY KEY,
     path TEXT UNIQUE NOT NULL,        -- relative path (document identity)
@@ -1839,8 +1903,17 @@ CREATE TABLE IF NOT EXISTS documents (
     folder TEXT NOT NULL DEFAULT '',  -- derived from path parent
     frontmatter_json TEXT,            -- raw YAML frontmatter as JSON (for display)
     content_hash TEXT NOT NULL,       -- SHA256 of raw file content
-    modified_at REAL NOT NULL         -- file mtime
+    modified_at REAL NOT NULL,        -- file mtime
+    skip_category TEXT,               -- NULL = live; else a SKIP_CATEGORIES value
+    skip_detail TEXT NOT NULL DEFAULT ''
 );
+
+-- Reader view: every direct-documents reader goes through this, so
+-- tombstones are invisible to all existing consumers. Dropped and
+-- recreated on every open so future column additions refresh the
+-- SELECT * expansion.
+CREATE VIEW documents_live AS
+    SELECT * FROM documents WHERE skip_category IS NULL;
 
 -- Sections table: one row per chunk within a document
 CREATE TABLE IF NOT EXISTS sections (

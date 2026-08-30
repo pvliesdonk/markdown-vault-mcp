@@ -1093,19 +1093,18 @@ class TestBuildEmbeddings:
         assert mgr.build_embeddings() == 1
         assert VectorIndex.load(embeddings_path, provider).count == 1
 
-        # An unreadable source is not authoritative: keep its last good vector.
+        # An unreadable source is not authoritative while its live FTS row
+        # still exists: the re-parse fails, so keep its last good vector.
         note.write_text("---\ntitle: [unclosed\n---\nbody", encoding="utf-8")
         assert mgr.build_embeddings(force=True) == 0
         assert VectorIndex.load(embeddings_path, provider).count == 1
 
-        # The same guarantee must hold after a forced FTS rebuild has skipped
-        # the malformed source and therefore no longer exposes its old row.
+        # A forced FTS rebuild tombstones the malformed source (#1129).
         mgr.build_index(force=True)
-        assert mgr.build_embeddings(force=True) == 0
-        assert VectorIndex.load(embeddings_path, provider).count == 1
 
-        # An incomplete directory walk is equally non-authoritative, even
-        # when the unreadable subtree leaves discovery with no candidates.
+        # An incomplete directory walk is never authoritative, even when the
+        # unreadable subtree leaves discovery with no candidates — walk
+        # incompleteness is not representable as tombstones.
         def incomplete_walk(_source, _excludes, *, on_error=None):
             if on_error is not None:
                 on_error(PermissionError("unreadable subtree"))
@@ -1116,8 +1115,14 @@ class TestBuildEmbeddings:
             assert mgr.build_embeddings(force=True) == 0
             assert VectorIndex.load(embeddings_path, provider).count == 1
 
-        # A successful parse with no embeddable text is authoritative: the
-        # empty index must reach disk so a restart cannot revive stale vectors.
+        # With the walk intact, the absentee now carries a tombstone, so the
+        # empty build IS authoritative (#1129): the unparseable file stops
+        # serving its stale vector, mirroring the FTS stale-row fix.
+        assert mgr.build_embeddings(force=True) == 0
+        assert VectorIndex.load(embeddings_path, provider).count == 0
+
+        # A successful parse with no embeddable text is likewise
+        # authoritative: the empty index reaches disk.
         note.write_text("---\ntitle: Note\n---\n", encoding="utf-8")
         mgr.build_index(force=True)
         assert mgr.build_embeddings(force=True) == 0
@@ -1166,10 +1171,12 @@ class TestConvergeStaleConfirmation:
     """FTS row absence alone must not delete a still-existing source's vectors.
 
     ``_converge_embeddings`` reclaims vectors for paths absent from FTS.
-    Absence also covers sources a build could not parse or a walk could not
-    see (#1129), so an unconfirmed absence must keep the vectors (#1130)
-    while genuine deletions, exclusions, deliberate ``missing_frontmatter``
-    skips, and body-less notes (#930/#1087) still reclaim.
+    Since #1129 every deliberate skip leaves a tombstone row, so a stale
+    sidecar path is reclaimable iff it has a tombstone OR its source is no
+    longer a candidate (deleted / excluded). A source still on disk with
+    neither a live row nor a tombstone is a build gap and keeps its vectors
+    (#1130); an unavailable source root or a possibly-transient stat failure
+    likewise confirms nothing.
     """
 
     @staticmethod
@@ -1207,19 +1214,49 @@ class TestConvergeStaleConfirmation:
 
         return set(VectorIndex.load(embeddings_path, provider).chunks_by_path())
 
-    def test_unparseable_source_keeps_vectors(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """Shape A of #1130: parse failure + forced FTS rebuild loses nothing."""
+    def test_unparseable_source_reclaims_via_tombstone(self, tmp_path: Path) -> None:
+        """A parse-failure skip is tombstoned (#1129), so its vectors reclaim.
+
+        The stale-content counterpart of the FTS fix: a file that becomes
+        unparseable stops serving its last-good vectors too — the tombstone
+        records the absence as deliberate, so convergence reclaims instead
+        of conservatively keeping them (the pre-#1129 #1130 behaviour).
+        """
         vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
 
-        # Corrupt bad.md; a forced FTS rebuild drops its row while the file
-        # is still on disk.
+        # Corrupt bad.md; a forced FTS rebuild replaces its row with a
+        # parse_error tombstone while the file is still on disk.
         (vault / "bad.md").write_text(
             "---\ntitle: [unclosed\n---\nbody", encoding="utf-8"
         )
         mgr.build_index(force=True)
         assert {row["path"] for row in mgr._fts.list_notes()} == {"good.md"}
+        assert mgr._fts.get_tombstone("bad.md") is not None
+
+        mgr.build_embeddings()
+        assert self._sidecar_paths(embeddings_path, provider) == {"good.md"}
+
+        # Once repaired and re-indexed, the note converges back in.
+        (vault / "bad.md").write_text(
+            "---\ntitle: Bad\n---\n# Bad\n\nRepaired body.\n", encoding="utf-8"
+        )
+        mgr.build_index(force=True)
+        mgr.build_embeddings()
+        assert self._sidecar_paths(embeddings_path, provider) == {
+            "good.md",
+            "bad.md",
+        }
+
+    def test_fts_gap_keeps_vectors(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Shape A of #1130: no row, no tombstone, source on disk → keep."""
+        _vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
+
+        # Simulate a build gap: the row vanishes without a tombstone while
+        # the (perfectly valid) source stays on disk.
+        mgr._fts.delete_by_path("bad.md")
+        assert mgr._fts.get_tombstone("bad.md") is None
 
         with caplog.at_level(
             logging.WARNING, logger="markdown_vault_mcp.managers.index"
@@ -1235,26 +1272,8 @@ class TestConvergeStaleConfirmation:
             for r in caplog.records
         )
 
-        # A second pass does not erode the guarantee.
-        mgr.build_embeddings()
-        assert self._sidecar_paths(embeddings_path, provider) == {
-            "good.md",
-            "bad.md",
-        }
-
-        # Once the source is valid again but FTS has not yet caught up, the
-        # gap is FTS-side, so the vectors still stay.
-        (vault / "bad.md").write_text(
-            "---\ntitle: Bad\n---\n# Bad\n\nRepaired body.\n", encoding="utf-8"
-        )
-        mgr.build_embeddings()
-        assert self._sidecar_paths(embeddings_path, provider) == {
-            "good.md",
-            "bad.md",
-        }
-
-        # After reindexing picks the repaired file back up, convergence heals.
-        mgr.build_index()
+        # After a rebuild picks the file back up, convergence heals.
+        mgr.build_index(force=True)
         mgr.build_embeddings()
         assert {row["path"] for row in mgr._fts.list_notes()} == {
             "good.md",
@@ -1274,8 +1293,8 @@ class TestConvergeStaleConfirmation:
         vault, embeddings_path, provider, _mgr = self._embedded_pair(tmp_path)
 
         # Cold boot against the same sidecar with the source tree unavailable
-        # (unmounted volume / not-yet-populated checkout): the walk is
-        # incomplete, so nothing is authoritative and nothing is removed.
+        # (unmounted volume / not-yet-populated checkout): the source root is
+        # gone, so nothing is authoritative and nothing is removed.
         shutil.rmtree(vault)
         state2 = tmp_path / "state2"
         state2.mkdir()
@@ -1296,7 +1315,7 @@ class TestConvergeStaleConfirmation:
             "bad.md",
         }
         assert any(
-            "build_embeddings_converge_walk_incomplete" in r.getMessage()
+            "build_embeddings_converge_source_root_unavailable" in r.getMessage()
             for r in caplog.records
         )
 
@@ -1371,18 +1390,22 @@ class TestConvergeStaleConfirmation:
     def test_transient_oserror_keeps_vectors(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A possibly-transient read failure confirms nothing."""
-        from markdown_vault_mcp.managers import embeddings as embeddings_module
+        """A possibly-transient stat failure confirms nothing (#1130)."""
+        import pathlib
 
-        vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
+        _vault, embeddings_path, provider, mgr = self._embedded_pair(tmp_path)
 
-        (vault / "bad.md").write_text(
-            "---\ntitle: [unclosed\n---\nbody", encoding="utf-8"
-        )
-        mgr.build_index(force=True)
-        monkeypatch.setattr(
-            embeddings_module, "parse_note_categorized", lambda *_a, **_kw: None
-        )
+        # Build gap (no row, no tombstone) whose source momentarily cannot
+        # be stat'ed: a permission flap must read as "present" and keep.
+        mgr._fts.delete_by_path("bad.md")
+        real_stat = pathlib.Path.stat
+
+        def flaky_stat(self: pathlib.Path, **kwargs: object):
+            if self.name == "bad.md":
+                raise PermissionError("transient permission flap")
+            return real_stat(self, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(pathlib.Path, "stat", flaky_stat)
         mgr.build_embeddings()
         assert self._sidecar_paths(embeddings_path, provider) == {
             "good.md",

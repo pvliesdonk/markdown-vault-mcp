@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import stat as stat_module
 import time
 from collections import Counter
 from typing import TYPE_CHECKING, Any
@@ -24,12 +25,7 @@ from markdown_vault_mcp.embed_text import is_embeddable
 from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 from markdown_vault_mcp.fts_index import _derive_folder
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
-from markdown_vault_mcp.scanner import (
-    CategorizedSkip,
-    parse_note,
-    parse_note_categorized,
-)
-from markdown_vault_mcp.types import ParsedNote
+from markdown_vault_mcp.scanner import parse_note
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -39,6 +35,7 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.fts_index import FTSIndex
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.scanner import ChunkStrategy
+    from markdown_vault_mcp.types import ParsedNote
     from markdown_vault_mcp.vector_index import VectorIndex
 
 logger = logging.getLogger(__name__)
@@ -74,8 +71,6 @@ class EmbeddingsManager:
             ``None`` disables embedding support.
         embedding_provider: Provider used to generate embeddings.
         chunk_strategy: Strategy for splitting documents into chunks.
-        required_frontmatter: If provided, documents missing any listed
-            field are excluded from the index entirely.
         get_vectors: Callback returning the current
             :class:`~markdown_vault_mcp.vector_index.VectorIndex` (or
             ``None``).
@@ -94,7 +89,7 @@ class EmbeddingsManager:
             ``_is_path_excluded``), so both pipelines share one policy.
         discover_candidates: Injected source-tree discovery (the owner's
             ``_discover_indexable_candidates``), used by the authoritative
-            emptiness / stale-path confirmation walks.
+            empty-build check's source walk.
     """
 
     def __init__(
@@ -105,7 +100,6 @@ class EmbeddingsManager:
         embeddings_path: Path | None,
         embedding_provider: EmbeddingProvider | None,
         chunk_strategy: ChunkStrategy,
-        required_frontmatter: list[str] | None,
         get_vectors: Callable[[], VectorIndex | None],
         set_vectors: Callable[[VectorIndex | None], None],
         title_field: str,
@@ -119,7 +113,6 @@ class EmbeddingsManager:
         self._embeddings_path = embeddings_path
         self._embedding_provider = embedding_provider
         self._chunk_strategy = chunk_strategy
-        self._required_frontmatter = required_frontmatter
         self._get_vectors = get_vectors
         self._set_vectors = set_vectors
         self._title_field = title_field
@@ -233,8 +226,12 @@ class EmbeddingsManager:
         A forced FTS rebuild can omit a source that failed parsing, leaving no
         row for :meth:`build_embeddings` to re-parse. Before replacing an old
         sidecar with an empty one, inspect only source candidates absent from
-        FTS. Deliberate required-frontmatter skips are authoritative; parse,
-        I/O, and FTS-population gaps are not.
+        FTS: since #1129, every deliberate skip (any surfaced category) leaves
+        a tombstone row, so a candidate is accounted for iff it has one — no
+        per-candidate re-parse needed. A candidate with neither a live row
+        nor a tombstone is an FTS-population gap, and an incomplete source
+        walk can hide candidates entirely (walk incompleteness is not
+        representable as tombstones), so both still veto the empty save.
         """
         walk_incomplete = False
 
@@ -247,22 +244,11 @@ class EmbeddingsManager:
             logger.warning("build_embeddings_source_walk_incomplete (no vectors saved)")
             return False
 
-        for abs_path, path in candidates:
+        for _abs_path, path in candidates:
             if path in indexed_paths:
                 continue
-            outcome = parse_note_categorized(
-                abs_path,
-                self._source_dir,
-                self._chunk_strategy,
-                rel_path=path,
-                title_field=self._title_field,
-                required_frontmatter=self._required_frontmatter,
-                log_context="build_embeddings",
-            )
-            if (
-                isinstance(outcome, CategorizedSkip)
-                and outcome.skip.category == "missing_frontmatter"
-            ):
+            if self._fts.get_tombstone(path) is not None:
+                # Deliberately skipped — the absence is recorded, not a gap.
                 continue
             logger.warning(
                 "build_embeddings_unindexed_source path=%s (no vectors saved)",
@@ -275,19 +261,20 @@ class EmbeddingsManager:
         """Return the stale sidecar paths whose FTS absence is authoritative.
 
         A path present in the vector sidecar but absent from the FTS index is
-        reclaimable only when the absence means "deleted or deliberately not
-        indexed". Absence equally covers a source the producing build failed
-        to parse or a walk failed to see (#1129), and deleting those vectors
-        turns a transient build gap into semantic-search loss that no later
-        pass repairs while the gap persists (#1130).
+        reclaimable only when the absence means "not an index candidate".
+        Since #1129 that is a direct check: a deliberately skipped candidate
+        has a tombstone row, so a path is reclaimable iff it has a tombstone
+        OR its source is no longer a candidate at all (excluded by pattern,
+        or gone from disk — one ``stat`` replaces the former full
+        re-parse/walk). The conservative default stands (#1130): a source
+        still on disk with neither a live row nor a tombstone is a build gap
+        — the FTS gap, not the source, is the anomaly — so its vectors are
+        kept for the pass that next sees it.
 
-        The convergence-side mirror of
-        :meth:`_empty_embedding_build_is_authoritative`: an incomplete source
-        walk confirms nothing, and a source still present on disk keeps its
-        vectors unless re-parsing shows a state the current build would also
-        decline to embed — a deliberate ``missing_frontmatter`` skip, or a
-        note whose chunks yield no embeddable text (#930/#1087) — so
-        reclaiming those is convergent rather than lossy.
+        An unavailable source *root* (unmounted volume, not-yet-populated
+        checkout) would make every per-path stat read as "gone" and wipe the
+        whole sidecar, so it confirms nothing — the cheap root check replaces
+        the former walk-incompleteness guard for this method.
 
         Args:
             stale_paths: Sidecar paths absent from the FTS chunk listing.
@@ -295,71 +282,48 @@ class EmbeddingsManager:
         Returns:
             The subset safe to reclaim, in input order.
         """
-        walk_incomplete = False
-
-        def _record_walk_error(_exc: OSError) -> None:
-            nonlocal walk_incomplete
-            walk_incomplete = True
-
-        candidates = self._discover_candidates(on_walk_error=_record_walk_error)
-        if walk_incomplete:
+        if stale_paths and not self._source_dir.is_dir():
             logger.warning(
-                "build_embeddings_converge_walk_incomplete kept=%d "
+                "build_embeddings_converge_source_root_unavailable kept=%d "
                 "(no vectors removed)",
                 len(stale_paths),
             )
             return []
-        present = {rel: abs_path for abs_path, rel in candidates}
         confirmed: list[str] = []
         for path in stale_paths:
-            abs_path = present.get(path)
-            if abs_path is None:
+            if self._fts.get_tombstone(path) is not None:
+                confirmed.append(path)
+                continue
+            if self._is_path_excluded(path) or self._stale_source_gone(path):
                 # Deleted or excluded — the reclaim convergence exists for.
                 confirmed.append(path)
                 continue
-            outcome = parse_note_categorized(
-                abs_path,
-                self._source_dir,
-                self._chunk_strategy,
-                rel_path=path,
-                title_field=self._title_field,
-                required_frontmatter=self._required_frontmatter,
-                log_context="build_embeddings",
+            logger.warning(
+                "build_embeddings_converge_kept path=%s "
+                "(source present but absent from FTS; vectors kept)",
+                path,
             )
-            if self._stale_source_is_reclaimable(path, outcome):
-                confirmed.append(path)
-            else:
-                logger.warning(
-                    "build_embeddings_converge_kept path=%s "
-                    "(source present but absent from FTS; vectors kept)",
-                    path,
-                )
         return confirmed
 
-    def _stale_source_is_reclaimable(
-        self, path: str, outcome: ParsedNote | CategorizedSkip | None
-    ) -> bool:
-        """Return whether a still-on-disk stale source's vectors may go.
+    def _stale_source_gone(self, path: str) -> bool:
+        """Return whether a stale sidecar path's source file is gone from disk.
 
-        ``True`` only for the two states the current build would also decline
-        to embed: a deliberate ``missing_frontmatter`` skip, or a note that
-        parses but yields no embeddable chunk text (#930/#1087). A transient
-        ``OSError`` (``None``), any other skip category, or a note that would
-        embed today all keep their vectors — the FTS gap, not the source, is
-        the anomaly there (#1130).
+        ``FileNotFoundError`` / ``NotADirectoryError`` mean the source is
+        genuinely not there (or no longer a file), so its vectors are
+        reclaimable. Any other ``OSError`` — a permission flap, an I/O error
+        — is possibly transient and reads as *present*, so the conservative
+        keep applies and the next pass re-checks (#1130).
         """
-        if isinstance(outcome, CategorizedSkip):
-            return outcome.skip.category == "missing_frontmatter"
-        if isinstance(outcome, ParsedNote):
-            texts, _meta = self._embed_inputs(
-                path=path,
-                title=outcome.title,
-                folder=_derive_folder(outcome.path),
-                frontmatter=outcome.frontmatter,
-                chunks=outcome.chunks,
+        try:
+            st = (self._source_dir / path).stat()
+        except (FileNotFoundError, NotADirectoryError):
+            return True
+        except OSError as exc:
+            logger.debug(
+                "build_embeddings_converge_stat_failed path=%s err=%s", path, exc
             )
-            return not texts
-        return False
+            return False
+        return not stat_module.S_ISREG(st.st_mode)
 
     def _load_vectors(self) -> VectorIndex:
         """Load or return the cached VectorIndex, self-healing corrupt sidecars.
@@ -723,12 +687,12 @@ class EmbeddingsManager:
         affected documents and converges after it.  Documents present only
         in the vector index lose their vectors when that absence is
         authoritative — deleted, newly excluded, or deliberately skipped
-        while no server ran.  FTS absence alone does not establish that: it
-        equally covers a source the producing build failed to parse or a
-        walk failed to see (#1129), so paths FTS has no rows for at all are
-        first confirmed against the source tree via
-        :meth:`_confirm_stale_vector_paths`, and an unconfirmed path keeps
-        its vectors for the pass that next sees its source (#1130).
+        (which since #1129 leaves a tombstone row).  Paths FTS has no rows
+        for at all are confirmed via :meth:`_confirm_stale_vector_paths`
+        (tombstone lookup, exclusion check, or a source ``stat``); an
+        unconfirmed path — source on disk, no live row, no tombstone: a
+        build gap — keeps its vectors for the pass that next sees its
+        source (#1130).
         Documents missing from the vector index are embedded; documents
         whose chunk multiset differs in any way (modified content, changed
         title, re-chunked boundaries) are re-embedded in full.  The sidecar
@@ -886,9 +850,10 @@ class EmbeddingsManager:
         vec_by_path = vectors.chunks_by_path()
 
         stale_paths = [p for p in vec_by_path if p not in fts_by_path]
-        # Sidecar paths FTS does not know at all cannot be reclaimed on row
-        # absence alone — that also covers parse failures and discovery gaps
-        # (#1129) — so they need source-side confirmation first (#1130).
+        # Sidecar paths FTS has no chunk rows for cannot be reclaimed on row
+        # absence alone: they must carry a skip tombstone, be excluded, or be
+        # gone from disk (#1129); anything else is a build gap whose vectors
+        # are kept (#1130).
         unconfirmed = [p for p in stale_paths if p not in fts_chunk_paths]
         if unconfirmed:
             kept = set(unconfirmed) - set(self._confirm_stale_vector_paths(unconfirmed))

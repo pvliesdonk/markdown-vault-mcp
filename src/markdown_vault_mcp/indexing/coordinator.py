@@ -273,23 +273,27 @@ class IndexWriteCoordinator:
 
     def build_index(self, *, force: bool = False) -> IndexStats:
         """Scan source_dir and build the FTS index (warm restart is O(1))."""
+        # The gate counts ANY documents row — tombstones included (#1129): an
+        # all-tombstone vault (every candidate skipped) is a completed build
+        # and must warm-restart; a truly empty index still rebuilds. Reported
+        # stats stay on the live count.
         if (
             not force
             and self._fts.is_build_completed()
             and self._chunking_meta_matches()
+            and self._fts.has_documents()
         ):
-            existing = self._fts.list_notes()
-            if existing:
-                logger.debug(
-                    "build_index: index already populated (%d docs), skipping",
-                    len(existing),
-                )
-                self._readiness.mark_built()
-                return IndexStats(
-                    documents_indexed=len(existing),
-                    chunks_indexed=0,
-                    skipped=0,
-                )
+            live = self._fts.count_documents()
+            logger.debug(
+                "build_index: index already populated (%d docs), skipping",
+                live,
+            )
+            self._readiness.mark_built()
+            return IndexStats(
+                documents_indexed=live,
+                chunks_indexed=0,
+                skipped=0,
+            )
         self._readiness.begin_sync_build()
         self._fts.clear_build_completed()
         try:
@@ -360,27 +364,28 @@ class IndexWriteCoordinator:
         Warm-restart short-circuit returns an already-resolved Future
         without touching the writer queue, mirroring :meth:`build_index`.
         """
+        # Same tombstone-inclusive gate as build_index (#1129).
         if (
             not force
             and self._fts.is_build_completed()
             and self._chunking_meta_matches()
+            and self._fts.has_documents()
         ):
-            existing = self._fts.list_notes()
-            if existing:
-                logger.debug(
-                    "build_index_async: index already populated (%d docs), skipping",
-                    len(existing),
+            live = self._fts.count_documents()
+            logger.debug(
+                "build_index_async: index already populated (%d docs), skipping",
+                live,
+            )
+            self._readiness.mark_built()
+            fut: Future[IndexStats] = Future()
+            fut.set_result(
+                IndexStats(
+                    documents_indexed=live,
+                    chunks_indexed=0,
+                    skipped=0,
                 )
-                self._readiness.mark_built()
-                fut: Future[IndexStats] = Future()
-                fut.set_result(
-                    IndexStats(
-                        documents_indexed=len(existing),
-                        chunks_indexed=0,
-                        skipped=0,
-                    )
-                )
-                return fut
+            )
+            return fut
 
         self._readiness.begin_async_build()
         self._fts.clear_build_completed()

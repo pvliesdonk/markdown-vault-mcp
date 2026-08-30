@@ -1,4 +1,24 @@
-"""SQLite FTS5 index for full-text search and tag filtering."""
+"""SQLite FTS5 index for full-text search and tag filtering.
+
+**Skip tombstones (#1129):** files that a scan deliberately skipped for one
+of the four surfaced :data:`~markdown_vault_mcp.types.SKIP_CATEGORIES` are
+kept PRESENT in the ``documents`` table as *tombstone* rows — ``skip_category``
+non-NULL, ``chunk_count = 0``, and no child rows (no ``sections``,
+``notes_fts``, ``links``, ``document_tags``, or ``document_aliases`` entries).
+Absence of a ``documents`` row therefore means exactly one thing: the path is
+not an index candidate at all (deleted, non-markdown, or excluded by
+pattern). Every reader query goes through the ``documents_live`` view
+(``WHERE skip_category IS NULL``), so tombstones are invisible to all
+existing consumers. Queries that join ``documents`` through child tables —
+the FTS5 MATCH search join, :meth:`FTSIndex.list_chunks`,
+:meth:`FTSIndex.get_toc`, :meth:`FTSIndex.get_backlinks`, and
+:meth:`FTSIndex.list_field_values` — are naturally tombstone-safe because a
+tombstone has no child rows, and deliberately keep reading ``documents``.
+Links pointing at a tombstoned file intentionally stay *broken* (and
+vault-wide wikilinks never resolve to a tombstone): the file contributes no
+readable content, so pretending its link target exists would only hide the
+problem the tombstone records.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +40,13 @@ from markdown_vault_mcp._fts_connection import (
     retry_on_sqlite_locked as _retry_on_sqlite_locked,
 )
 from markdown_vault_mcp.embed_text import fields_text as _fields_text
-from markdown_vault_mcp.types import FTSResult, ParsedNote, SubtreeNote, TocEntry
+from markdown_vault_mcp.types import (
+    FTSResult,
+    ParsedNote,
+    SkippedFile,
+    SubtreeNote,
+    TocEntry,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -89,7 +115,9 @@ CREATE TABLE IF NOT EXISTS documents (
     content_hash TEXT NOT NULL,
     modified_at REAL NOT NULL,
     chunk_count INTEGER NOT NULL DEFAULT 1,
-    content_chars INTEGER NOT NULL DEFAULT 0
+    content_chars INTEGER NOT NULL DEFAULT 0,
+    skip_category TEXT,
+    skip_detail TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS sections (
@@ -211,7 +239,13 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: short-circuit is rejected and every file is re-parsed once. Changes that
 #: only affect how stored rows are *queried* or *rendered* (ranking, snippets,
 #: response shaping) need no bump — nothing on disk went stale.
-INDEX_SEMANTICS_VERSION = 2
+#:
+#: Version 3 (#1129): skipped files became part of the stored row set —
+#: every surfaced deterministic skip now writes a tombstone row into
+#: ``documents``. An index built by an older pipeline has no tombstones, so
+#: its row absences are ambiguous (skipped vs. deleted); the bump forces the
+#: one cold rebuild that materialises tombstones for existing skips.
+INDEX_SEMANTICS_VERSION = 3
 
 
 class ChunkingMeta(NamedTuple):
@@ -463,8 +497,17 @@ class FTSIndex:
                 logger.debug(
                     "fts_index: content_chars column already added by concurrent process"
                 )
+        self._migrate_tombstone_columns(conn, cols)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sections_docid ON sections(document_id)"
+        )
+        # Drop-then-create so a future documents column addition refreshes the
+        # view's SELECT * expansion (a view snapshots the column list at
+        # CREATE time).
+        conn.execute("DROP VIEW IF EXISTS documents_live")
+        conn.execute(
+            "CREATE VIEW documents_live AS "
+            "SELECT * FROM documents WHERE skip_category IS NULL"
         )
         conn.commit()
         self._migrate_notes_fts_summary(conn)
@@ -480,6 +523,43 @@ class FTSIndex:
                     result[0] if result else "no result",
                 )
         conn.commit()
+
+    def _migrate_tombstone_columns(
+        self, conn: sqlite3.Connection, cols: set[str]
+    ) -> None:
+        """Add the skip-tombstone columns to a pre-#1129 ``documents`` table.
+
+        Additive migration following the ``chunk_count`` / ``content_chars``
+        precedent: ``ALTER TABLE ADD COLUMN`` guarded by the PRAGMA column
+        set, tolerating a duplicate-column race with a concurrent process.
+        ``skip_category`` is ``NULL`` on every pre-existing row, so all
+        migrated rows read as live through ``documents_live``.
+
+        Args:
+            conn: The primary connection (inside :meth:`_init_schema`).
+            cols: The ``PRAGMA table_info(documents)`` column-name set.
+        """
+        for name, ddl in (
+            ("skip_category", "ALTER TABLE documents ADD COLUMN skip_category TEXT"),
+            (
+                "skip_detail",
+                "ALTER TABLE documents ADD COLUMN skip_detail TEXT NOT NULL DEFAULT ''",
+            ),
+        ):
+            if name in cols:
+                continue
+            try:
+                conn.execute(ddl)
+                conn.commit()
+                logger.info(
+                    "fts_index: migrated documents table — added %s column", name
+                )
+            except sqlite3.OperationalError as exc:
+                if "duplicate column name" not in str(exc).lower():
+                    raise
+                logger.debug(
+                    "fts_index: %s column already added by concurrent process", name
+                )
 
     def _migrate_notes_fts_summary(self, conn: sqlite3.Connection) -> None:
         """Migrate a legacy 5-column ``notes_fts`` to the 6-column schema.
@@ -973,6 +1053,114 @@ class FTSIndex:
             logger.debug("delete_by_path: removed %s", path)
         return deleted
 
+    # ------------------------------------------------------------------
+    # Skip tombstones (issue #1129)
+    # ------------------------------------------------------------------
+
+    @_retry_on_locked
+    def upsert_tombstone(
+        self, skip: SkippedFile, *, content_hash: str, modified_at: float
+    ) -> None:
+        """Record a surfaced skip as a tombstone row in ``documents``.
+
+        Deletes any existing rows for ``skip.path`` (live or tombstone) and
+        inserts a bare document row carrying the skip category and detail —
+        ``chunk_count = 0``, ``content_chars = 0``, and deliberately **no**
+        child rows (no ``sections``, ``notes_fts``, ``links``,
+        ``document_tags``, or ``document_aliases`` entries), so every reader
+        that joins through a child table sees nothing and ``documents_live``
+        hides the row from direct readers. The delete + insert run in one
+        transaction, mirroring :meth:`upsert_note`.
+
+        Args:
+            skip: The surfaced skip to record; ``skip.category`` must be one
+                of :data:`~markdown_vault_mcp.types.SKIP_CATEGORIES`.
+            content_hash: SHA-256 of the exact bytes that were evaluated,
+                matching what the tracker records for the skip.
+            modified_at: The file's mtime at skip time.
+        """
+        folder = _derive_folder(skip.path)
+        conn = self._conn()
+        with conn:
+            cur = conn.cursor()
+            self._delete_document(cur, skip.path)
+            cur.execute(
+                """
+                INSERT INTO documents (path, title, folder, frontmatter_json,
+                                       content_hash, modified_at, chunk_count,
+                                       content_chars, skip_category, skip_detail)
+                VALUES (?, ?, ?, NULL, ?, ?, 0, 0, ?, ?)
+                """,
+                (
+                    skip.path,
+                    Path(skip.path).stem,
+                    folder,
+                    content_hash,
+                    modified_at,
+                    skip.category,
+                    skip.detail,
+                ),
+            )
+        logger.debug(
+            "upsert_tombstone: recorded %s (category=%s)", skip.path, skip.category
+        )
+
+    @_retry_on_locked
+    def get_tombstone(self, path: str) -> dict[str, Any] | None:
+        """Return the tombstone row for *path*, or ``None``.
+
+        Args:
+            path: Relative document path.
+
+        Returns:
+            A dict with keys ``path``, ``skip_category``, ``skip_detail``,
+            ``content_hash``, ``modified_at``, or ``None`` when the path has
+            no tombstone (absent entirely, or present as a live document).
+        """
+        row = (
+            self._conn()
+            .execute(
+                """
+                SELECT path, skip_category, skip_detail, content_hash, modified_at
+                FROM documents
+                WHERE path = ? AND skip_category IS NOT NULL
+                """,
+                (path,),
+            )
+            .fetchone()
+        )
+        return dict(row) if row is not None else None
+
+    @_retry_on_locked
+    def list_tombstones(self) -> list[dict[str, Any]]:
+        """Return every tombstone row, ordered by path.
+
+        Returns:
+            List of dicts with the same shape as :meth:`get_tombstone`.
+        """
+        cur = self._conn().execute(
+            """
+            SELECT path, skip_category, skip_detail, content_hash, modified_at
+            FROM documents
+            WHERE skip_category IS NOT NULL
+            ORDER BY path
+            """
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+    @_retry_on_locked
+    def has_documents(self) -> bool:
+        """Return ``True`` when ``documents`` holds ANY row, tombstones included.
+
+        The warm-restart gate (#1129): an index whose candidates were all
+        skipped is still a completed build, so the short-circuit must count
+        tombstones — keying on live rows alone would cold-rebuild an
+        all-tombstone vault on every boot. A truly empty table (no build has
+        ever recorded anything) still reads ``False``.
+        """
+        row = self._conn().execute("SELECT 1 FROM documents LIMIT 1").fetchone()
+        return row is not None
+
     def optimize(self) -> bool:
         """Merge FTS5 inverted-index segments, dropping deleted-document tokens.
 
@@ -1384,7 +1572,7 @@ class FTSIndex:
             """
             SELECT path, title, folder, frontmatter_json,
                    content_hash, modified_at, content_chars
-            FROM documents
+            FROM documents_live
             WHERE path = ?
             """,
             (path,),
@@ -1413,7 +1601,7 @@ class FTSIndex:
                 """
                 SELECT path, title, folder, frontmatter_json,
                        content_hash, modified_at, content_chars
-                FROM documents
+                FROM documents_live
                 WHERE folder = ? OR folder LIKE ? ESCAPE '\\'
                 ORDER BY path
                 """,
@@ -1424,7 +1612,7 @@ class FTSIndex:
                 """
                 SELECT path, title, folder, frontmatter_json,
                        content_hash, modified_at, content_chars
-                FROM documents
+                FROM documents_live
                 ORDER BY path
                 """
             )
@@ -1438,7 +1626,7 @@ class FTSIndex:
             Sorted list of folder strings (including ``""`` for the root).
         """
         cur = self._conn().execute(
-            "SELECT DISTINCT folder FROM documents ORDER BY folder"
+            "SELECT DISTINCT folder FROM documents_live ORDER BY folder"
         )
         return [row[0] for row in cur.fetchall()]
 
@@ -1468,8 +1656,8 @@ class FTSIndex:
 
     @_retry_on_locked
     def count_documents(self) -> int:
-        """Return the total number of indexed documents."""
-        row = self._conn().execute("SELECT COUNT(*) FROM documents").fetchone()
+        """Return the total number of live (non-tombstone) indexed documents."""
+        row = self._conn().execute("SELECT COUNT(*) FROM documents_live").fetchone()
         return int(row[0])
 
     @_retry_on_locked
@@ -1584,7 +1772,7 @@ class FTSIndex:
             .execute(
                 """
             SELECT id, path, title, content_chars
-            FROM documents
+            FROM documents_live
             WHERE (folder = ? OR folder LIKE ? ESCAPE '\\')
             ORDER BY path ASC
             LIMIT ?
@@ -1680,7 +1868,10 @@ class FTSIndex:
         """Return all links FROM the given document.
 
         Uses a LEFT JOIN to check target existence in a single query,
-        avoiding N+1 round-trips.
+        avoiding N+1 round-trips. Existence is checked against
+        ``documents_live``, so a link to a tombstoned (skipped) file reports
+        ``exists = False`` — consistent with :meth:`get_broken_links`
+        treating such links as broken (#1129).
 
         Args:
             path: Relative document path that is the link source
@@ -1703,7 +1894,7 @@ class FTSIndex:
                    (t.id IS NOT NULL) AS target_exists
             FROM links l
             JOIN documents d ON d.id = l.source_id
-            LEFT JOIN documents t ON t.path = l.target_path
+            LEFT JOIN documents_live t ON t.path = l.target_path
             WHERE d.path = ?
             ORDER BY l.rowid
             {limit_clause}
@@ -1755,7 +1946,8 @@ class FTSIndex:
         # Load all document paths once into a Python set/list for in-memory
         # matching — avoids O(N) SQL round-trips (one SELECT per wikilink row).
         doc_paths: list[str] = [
-            r["path"] for r in conn.execute("SELECT path FROM documents").fetchall()
+            r["path"]
+            for r in conn.execute("SELECT path FROM documents_live").fetchall()
         ]
 
         # Build alias → document path mapping for fallback resolution.
@@ -1856,7 +2048,7 @@ class FTSIndex:
             FROM links l
             JOIN documents d ON d.id = l.source_id
             WHERE NOT EXISTS (
-                SELECT 1 FROM documents d2 WHERE d2.path = l.target_path
+                SELECT 1 FROM documents_live d2 WHERE d2.path = l.target_path
             )
               {folder_clause}
             ORDER BY d.path, l.rowid
@@ -1885,7 +2077,7 @@ class FTSIndex:
                 """
                 SELECT path, title, folder, frontmatter_json,
                        modified_at, content_chars
-                FROM documents
+                FROM documents_live
                 WHERE folder = ? OR folder LIKE ? ESCAPE '\\'
                 ORDER BY modified_at DESC
                 LIMIT ?
@@ -1897,7 +2089,7 @@ class FTSIndex:
                 """
                 SELECT path, title, folder, frontmatter_json,
                        modified_at, content_chars
-                FROM documents
+                FROM documents_live
                 ORDER BY modified_at DESC
                 LIMIT ?
                 """,
@@ -1921,7 +2113,7 @@ class FTSIndex:
         cur = self._conn().execute(
             """
             SELECT path, title, folder, frontmatter_json, modified_at, content_chars
-            FROM documents d
+            FROM documents_live d
             WHERE NOT EXISTS (SELECT 1 FROM links WHERE source_id = d.id)
               AND NOT EXISTS (SELECT 1 FROM links WHERE target_path = d.path)
             ORDER BY path
@@ -1947,7 +2139,7 @@ class FTSIndex:
                    d.folder,
                    COUNT(DISTINCT l.source_id) AS backlink_count
             FROM links l
-            JOIN documents d ON d.path = l.target_path
+            JOIN documents_live d ON d.path = l.target_path
             GROUP BY d.path, d.title, d.folder
             ORDER BY backlink_count DESC
             LIMIT ?
@@ -1987,7 +2179,7 @@ class FTSIndex:
         for path in (source_path, target_path):
             row = (
                 self._conn()
-                .execute("SELECT 1 FROM documents WHERE path = ?", (path,))
+                .execute("SELECT 1 FROM documents_live WHERE path = ?", (path,))
                 .fetchone()
             )
             if row is None:
@@ -2001,8 +2193,8 @@ class FTSIndex:
         adj: dict[str, set[str]] = {}
         cur = self._conn().execute(
             "SELECT d1.path, d2.path FROM links l"
-            " JOIN documents d1 ON d1.id = l.source_id"
-            " JOIN documents d2 ON d2.path = l.target_path"
+            " JOIN documents_live d1 ON d1.id = l.source_id"
+            " JOIN documents_live d2 ON d2.path = l.target_path"
         )
         for src, tgt in cur.fetchall():
             adj.setdefault(src, set()).add(tgt)
@@ -2083,7 +2275,7 @@ class FTSIndex:
             SELECT COUNT(*)
             FROM links
             WHERE NOT EXISTS (
-                SELECT 1 FROM documents d WHERE d.path = links.target_path
+                SELECT 1 FROM documents_live d WHERE d.path = links.target_path
             )
             """
         )
@@ -2098,7 +2290,7 @@ class FTSIndex:
         return self._count_links_query(
             """
             SELECT COUNT(*)
-            FROM documents d
+            FROM documents_live d
             WHERE NOT EXISTS (SELECT 1 FROM links WHERE source_id = d.id)
               AND NOT EXISTS (SELECT 1 FROM links WHERE target_path = d.path)
             """
@@ -2117,7 +2309,7 @@ class FTSIndex:
         """
         row = (
             self._conn()
-            .execute("SELECT chunk_count FROM documents WHERE path = ?", (path,))
+            .execute("SELECT chunk_count FROM documents_live WHERE path = ?", (path,))
             .fetchone()
         )
         return int(row["chunk_count"]) if row else 1
@@ -2155,7 +2347,8 @@ class FTSIndex:
         rows = (
             self._conn()
             .execute(
-                f"SELECT path, chunk_count FROM documents WHERE path IN ({placeholders})",
+                "SELECT path, chunk_count FROM documents_live "
+                f"WHERE path IN ({placeholders})",
                 paths,
             )
             .fetchall()
