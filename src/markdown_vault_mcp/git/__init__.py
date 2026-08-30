@@ -13,10 +13,10 @@ applies globally, so calls from any submodule that does ``import subprocess`` ar
 still intercepted. Keeping the attribute here preserves those patch targets.
 
 Symbols that a submodule looks up via its own module globals (e.g.
-``_stage_and_commit`` / ``_push`` / ``_get_access_token`` in ``strategy``;
-``frontmatter`` in ``conflict``) are patched by tests at their real home --
-``markdown_vault_mcp.git.<submodule>.<name>`` -- not via this package namespace.
-"Patch where the name is used."
+``_stage_and_commit`` / ``_get_access_token`` in ``strategy``; ``_push`` in
+``push_scheduler`` since #893; ``frontmatter`` in ``conflict``) are patched by
+tests at their real home -- ``markdown_vault_mcp.git.<submodule>.<name>`` --
+not via this package namespace.  "Patch where the name is used."
 """
 
 from __future__ import annotations
@@ -26,6 +26,8 @@ import subprocess  # noqa: F401 -- preserves the `markdown_vault_mcp.git.subproc
 from markdown_vault_mcp.git._run import (
     _find_git_root,  # noqa: F401 -- re-exported for the historic import surface
 )
+from markdown_vault_mcp.git.bootstrap import RepoBootstrap
+from markdown_vault_mcp.git.push_scheduler import PushScheduler
 from markdown_vault_mcp.git.strategy import (  # noqa: F401 -- re-exported for the historic import surface
     GitWriteStrategy,
     _extract_claim,
@@ -61,5 +63,7 @@ __all__ = [
     "GitWriteStrategy",
     "PullResult",
     "PushResult",
+    "PushScheduler",
+    "RepoBootstrap",
     "git_write_strategy",
 ]

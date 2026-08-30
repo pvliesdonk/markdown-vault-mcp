@@ -3250,11 +3250,32 @@ Startup recovery: `GitWriteStrategy` checks for unpushed local commits
 (`git log origin/<branch>..HEAD`) on first invocation and pushes them before
 accepting new writes.
 
-**Deferred push mechanics**: `GitWriteStrategy` uses a `threading.Timer` that
-resets on each write. After `push_delay_s` seconds of idle, all accumulated
-local commits are pushed in a single `git push`. `flush()` cancels the timer
-and pushes synchronously. `close()` calls `flush()` and marks the strategy as
-closed (subsequent writes are ignored).
+**Deferred push mechanics**: the timer and pending-flag state live in a
+composed `PushScheduler` collaborator (`git/push_scheduler.py`, #893). It
+holds a `threading.Timer` that resets on each write; after `push_delay_s`
+seconds of idle, all accumulated local commits are pushed in a single
+`git push`. The strategy's public `flush()` delegates to
+`PushScheduler.flush()` (cancel timer + synchronous push); `close()` marks
+the strategy closed (subsequent writes are ignored), stops the pull thread,
+then calls `flush()`. The pull loop retries a failed deferred push via
+`PushScheduler.do_push_safe()` after each tick (#957).
+
+**Strategy collaborators (#893)**: `GitWriteStrategy` composes two
+collaborators extracted from the class, following the Versioner/Syncer
+seams of the decoupling-and-layering study (#879):
+
+- `RepoBootstrap` (`git/bootstrap.py`) — managed-repo clone/validation
+  (`ensure_managed_repo`), the SSH-vs-HTTPS remote-protocol check for token
+  auth (`check_remote_protocol`), startup validation (`validate_startup`),
+  and the memoised git-root discovery (`ensure_git_root`). It owns the
+  single copy of the discovered `git_root`, which the strategy and the
+  scheduler read through it.
+- `PushScheduler` (`git/push_scheduler.py`) — see above.
+
+Both collaborators receive the strategy-wide lock — the SAME object; no new
+locks were introduced — so the documented lock-ordering contracts of the
+pull/write paths (`_force_pull_rebase_fallback` requires the lock held;
+`_quiesce_writes` drains before the lock is taken) are unchanged.
 
 For private repos, HTTPS token auth uses:
 
@@ -3277,8 +3298,9 @@ with `***`).
 
 **Git LFS support**: when `MARKDOWN_VAULT_MCP_GIT_LFS=true` (default),
 `GitWriteStrategy` calls `_lfs_pull()` once during lazy initialisation, after
-startup recovery (`_push_if_unpushed()`) and outside the init lock, to resolve
-LFS pointer files before the first write is committed. `_lfs_pull()` runs
+startup recovery (`PushScheduler.push_if_unpushed()`) and outside the init
+lock, to resolve LFS pointer files before the first write is committed.
+`_lfs_pull()` runs
 `git lfs pull` in the vault root; failures (including `git lfs` not installed
 or any non-zero exit) are logged at ERROR and never propagated to the caller.
 Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` for repos that do not use LFS, or when

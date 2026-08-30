@@ -45,7 +45,9 @@ src/markdown_vault_mcp/
   git/
     __init__.py        -- package facade preserving the historical single-module import surface (incl. test patch targets)
     _run.py            -- low-level git subprocess + credential plumbing
-    strategy.py        -- GitWriteStrategy: auto-commit per write, deferred background push
+    strategy.py        -- GitWriteStrategy: auto-commit per write; composes RepoBootstrap + PushScheduler over one shared lock (#893)
+    bootstrap.py       -- RepoBootstrap: managed-clone bootstrap, remote-protocol validation, memoised git-root discovery (#893)
+    push_scheduler.py  -- PushScheduler: deferred-push timer + pending-flag mechanics and push execution (#893)
     conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
     query.py           -- read-only git history/diff queries; lock-free pure functions
     types.py           -- PullResult/PushResult + pull/push reason-code constants

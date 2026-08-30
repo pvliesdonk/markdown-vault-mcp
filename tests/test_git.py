@@ -18,8 +18,30 @@ from markdown_vault_mcp.config import to_vault_kwargs
 from markdown_vault_mcp.git import (
     GitWriteStrategy,
     _find_git_root,
+    conflict,
     git_write_strategy,
 )
+
+
+def _write_conflict_files(
+    git_root: Path,
+    saved: list[tuple[str, str]],
+    env: dict[str, str] | None = None,
+    token: str | None = None,
+) -> list[str] | None:
+    """Call ``conflict.write_conflict_files`` with the strategy's default identity.
+
+    Replaces the removed ``GitWriteStrategy._write_conflict_files`` delegation
+    shim (#893) so the assertions in the tests below stay unchanged.
+    """
+    return conflict.write_conflict_files(
+        git_root,
+        saved,
+        env,
+        commit_name=GitWriteStrategy.DEFAULT_COMMIT_NAME,
+        commit_email=GitWriteStrategy.DEFAULT_COMMIT_EMAIL,
+        token=token,
+    )
 
 
 @pytest.fixture
@@ -422,18 +444,18 @@ class TestGitWriteStrategyClass:
         calls. (The earlier "assert not-yet-in-the-bare-log right after the
         writes" approach raced the 0.3 s timer and was flaky on Python 3.14.)
         """
-        import markdown_vault_mcp.git.strategy as git_strategy
+        import markdown_vault_mcp.git.push_scheduler as git_push_scheduler
 
         work, bare = git_repo_with_remote
 
         push_calls: list[tuple[object, ...]] = []
-        real_push = git_strategy._push
+        real_push = git_push_scheduler._push
 
         def counting_push(*args: object, **kwargs: object) -> None:
             push_calls.append(args)
             real_push(*args, **kwargs)  # type: ignore[arg-type]
 
-        monkeypatch.setattr(git_strategy, "_push", counting_push)
+        monkeypatch.setattr(git_push_scheduler, "_push", counting_push)
 
         # 30 s delay: the idle timer cannot fire during the writes below, so
         # there is no timer race to lose.
@@ -793,9 +815,9 @@ class TestGitWriteStrategyClass:
             cmd=["git", "push", "origin"],
             stderr="non-fast-forward",
         )
-        with patch("markdown_vault_mcp.git.strategy._push", side_effect=fake_exc):
+        with patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=fake_exc):
             # _do_push_safe swallows the error; the flag must stay set.
-            strategy._do_push_safe()
+            strategy._push_scheduler.do_push_safe()
 
         assert strategy._push_pending is True
 
@@ -807,8 +829,8 @@ class TestGitWriteStrategyClass:
         strategy._git_root = tmp_path
         strategy._push_pending = True
 
-        with patch("markdown_vault_mcp.git.strategy._push") as mock_push:
-            strategy._do_push()
+        with patch("markdown_vault_mcp.git.push_scheduler._push") as mock_push:
+            strategy._push_scheduler.do_push()
 
         assert mock_push.called
         assert strategy._push_pending is False
@@ -1091,10 +1113,10 @@ class TestTokenRedactionInLogs:
         )
 
         with (
-            patch("markdown_vault_mcp.git.strategy._push", side_effect=fake_exc),
+            patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=fake_exc),
             caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
         ):
-            strategy._do_push_safe()
+            strategy._push_scheduler.do_push_safe()
 
         log_text = " ".join(r.message for r in caplog.records)
         assert secret not in log_text
@@ -1113,13 +1135,13 @@ class TestTokenRedactionInLogs:
 
         with (
             patch(
-                "markdown_vault_mcp.git.strategy._push",
+                "markdown_vault_mcp.git.push_scheduler._push",
                 side_effect=RuntimeError("network down"),
             ),
             caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
         ):
             # Must not raise.
-            strategy._do_push_safe()
+            strategy._push_scheduler.do_push_safe()
 
         assert any("Git push failed" in r.message for r in caplog.records)
 
@@ -1157,10 +1179,10 @@ class TestTokenRedactionInLogs:
         )
 
         with (
-            patch("markdown_vault_mcp.git.strategy._push", side_effect=fake_exc),
+            patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=fake_exc),
             caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
         ):
-            strategy._push_if_unpushed()
+            strategy._push_scheduler.push_if_unpushed()
 
         log_text = " ".join(r.message for r in caplog.records)
         assert secret not in log_text
@@ -1307,7 +1329,9 @@ class TestGitLfsSupport:
 
         with (
             patch.object(strategy, "_lfs_pull", lfs_pull_mock),
-            patch.object(strategy, "_push_if_unpushed", push_if_unpushed_mock),
+            patch.object(
+                strategy._push_scheduler, "push_if_unpushed", push_if_unpushed_mock
+            ),
             patch("markdown_vault_mcp.git.strategy._stage_and_commit", commit_mock),
         ):
             # First call — triggers lazy init including _lfs_pull.
@@ -2014,8 +2038,6 @@ class TestGitSyncOnce:
         """_resolve_rebase_conflicts returns saved content when iteration limit hit."""
         from types import SimpleNamespace
 
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
-
         call_count = 0
 
         def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
@@ -2042,7 +2064,7 @@ class TestGitSyncOnce:
 
         monkeypatch.setattr("markdown_vault_mcp.git.subprocess.run", fake_run)
 
-        result = strategy._resolve_rebase_conflicts(tmp_path, env=None)
+        result = conflict.resolve_rebase_conflicts(tmp_path, env=None)
 
         # The same file conflicted in all 50 iterations; deduplication keeps only
         # the last version, so the result is a single unique entry.
@@ -2055,7 +2077,6 @@ class TestGitSyncOnce:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """_write_conflict_files returns None and logs ERROR when git commit fails."""
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
 
         # Create a real file for the original path.
         (git_repo / "note.md").write_text("# Original\n")
@@ -2084,7 +2105,7 @@ class TestGitSyncOnce:
             ),
             caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
         ):
-            written = strategy._write_conflict_files(git_repo, saved, env=None)
+            written = _write_conflict_files(git_repo, saved)
 
         # Commit failed: helper signals failure to its caller via None.
         assert written is None
@@ -2097,7 +2118,6 @@ class TestGitSyncOnce:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Commit-failure stderr passes through _redact before being logged."""
-        strategy = GitWriteStrategy(token="secret-pat-xyz", push_delay_s=0)
 
         (git_repo / "note.md").write_text("# Original\n")
         saved = [("note.md", "# MCP version\n")]
@@ -2125,7 +2145,7 @@ class TestGitSyncOnce:
             ),
             caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
         ):
-            strategy._write_conflict_files(git_repo, saved, env=None)
+            _write_conflict_files(git_repo, saved, token="secret-pat-xyz")
 
         joined = " ".join(r.getMessage() for r in caplog.records)
         assert "secret-pat-xyz" not in joined
@@ -2137,7 +2157,6 @@ class TestGitSyncOnce:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """_write_conflict_files logs WARNING for unparseable frontmatter but still writes files."""
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
 
         # Write an original file with invalid YAML frontmatter.
         (git_repo / "broken.md").write_text("---\n{invalid: yaml: [\n---\n# Body\n")
@@ -2154,7 +2173,7 @@ class TestGitSyncOnce:
             ),
             caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"),
         ):
-            written = strategy._write_conflict_files(git_repo, saved, env=None)
+            written = _write_conflict_files(git_repo, saved)
 
         # Conflict file was still written despite parse errors.
         assert len(written) == 1
@@ -2175,7 +2194,6 @@ class TestGitSyncOnce:
         even if the parse fails — no double read_text (#662)."""
         from pathlib import Path
 
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
         (git_repo / "note.md").write_text("# original body\n")
         saved = [("note.md", "# mcp body\n")]
 
@@ -2195,7 +2213,7 @@ class TestGitSyncOnce:
         # the old code re-read the file in that branch.
         monkeypatch.setattr("markdown_vault_mcp.git.conflict.frontmatter.loads", _raise)
 
-        written = strategy._write_conflict_files(git_repo, saved, env=None)
+        written = _write_conflict_files(git_repo, saved)
 
         assert len(written) == 1
         assert reads["n"] == 1, f"original file read {reads['n']} times, expected 1"
@@ -2211,7 +2229,6 @@ class TestGitSyncOnce:
         than crashing, and the conflict sibling is still written (#662)."""
         from pathlib import Path
 
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
         (git_repo / "note.md").write_text("# original body\n")
         saved = [("note.md", "# mcp body\n")]
 
@@ -2228,7 +2245,7 @@ class TestGitSyncOnce:
         monkeypatch.setattr(Path, "read_text", failing_read_text)
 
         with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
-            written = strategy._write_conflict_files(git_repo, saved, env=None)
+            written = _write_conflict_files(git_repo, saved)
 
         # No crash; the conflict sibling was still written.
         assert len(written) == 1
@@ -2251,12 +2268,11 @@ class TestGitSyncOnce:
         otherwise it bypasses the handler and crashes the whole pull. Uses a real
         non-UTF-8 file (no mocking), exercising the actual decode path.
         """
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
         (git_repo / "note.md").write_bytes(b"\xff\xfe not valid utf-8 \x80\n")
         saved = [("note.md", "# mcp body\n")]
 
         with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
-            written = strategy._write_conflict_files(git_repo, saved, env=None)
+            written = _write_conflict_files(git_repo, saved)
 
         # No crash; the conflict sibling was still written.
         assert len(written) == 1
@@ -2284,11 +2300,10 @@ class TestGitSyncOnce:
         """A skipped original (non-UTF-8) must NOT be staged into the conflict
         commit — only its sibling is (#675). Staging it would commit a spurious
         change (or a deletion, for a TOCTOU-removed original)."""
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
         (git_repo / "note.md").write_bytes(b"\xff\xfe not valid utf-8 \x80\n")
         saved = [("note.md", "# mcp body\n")]
 
-        written = strategy._write_conflict_files(git_repo, saved, env=None)
+        written = _write_conflict_files(git_repo, saved)
 
         assert len(written) == 1
         files = self._head_commit_files(git_repo)
@@ -2299,11 +2314,10 @@ class TestGitSyncOnce:
         """A successfully-updated original (conflict_with frontmatter written) IS
         staged into the conflict commit alongside its sibling (#675 regression
         guard — the fix must not stop staging originals it actually rewrote)."""
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
         (git_repo / "note.md").write_text("# original\n", encoding="utf-8")
         saved = [("note.md", "# mcp body\n")]
 
-        written = strategy._write_conflict_files(git_repo, saved, env=None)
+        written = _write_conflict_files(git_repo, saved)
 
         assert len(written) == 1
         files = self._head_commit_files(git_repo)
@@ -2320,12 +2334,11 @@ class TestGitSyncOnce:
         all-or-nothing (#675). This pins the selective-staging contract that the
         single-original tests cannot (a 'stage every saved original' regression
         would still pass those)."""
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
         (git_repo / "good.md").write_text("# good original\n", encoding="utf-8")
         (git_repo / "bad.md").write_bytes(b"\xff\xfe not valid utf-8 \x80\n")
         saved = [("good.md", "# good mcp\n"), ("bad.md", "# bad mcp\n")]
 
-        written = strategy._write_conflict_files(git_repo, saved, env=None)
+        written = _write_conflict_files(git_repo, saved)
 
         assert len(written) == 2
         files = self._head_commit_files(git_repo)
@@ -2341,7 +2354,6 @@ class TestGitSyncOnce:
         must NOT be staged — otherwise the conflict commit records a *deletion* of
         the upstream file (the motivating data-loss shape in #675), distinct from
         the non-UTF-8 spurious-change case."""
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
         note = git_repo / "note.md"
         note.write_text("# tracked original\n", encoding="utf-8")
         subprocess.run(["git", "-C", str(git_repo), "add", "note.md"], check=True)
@@ -2353,7 +2365,7 @@ class TestGitSyncOnce:
         note.unlink()  # removed after it was committed/tracked
         saved = [("note.md", "# mcp body\n")]
 
-        written = strategy._write_conflict_files(git_repo, saved, env=None)
+        written = _write_conflict_files(git_repo, saved)
 
         assert len(written) == 1
         files = self._head_commit_files(git_repo)
@@ -2366,18 +2378,15 @@ class TestRebaseInProgress:
     """Tests for the _rebase_in_progress helper (refs #466)."""
 
     def test_returns_false_on_clean_repo(self, git_repo: Path) -> None:
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
-        assert strategy._rebase_in_progress(git_repo, env=None) is False
+        assert conflict.rebase_in_progress(git_repo, env=None, token=None) is False
 
     def test_detects_rebase_merge_directory(self, git_repo: Path) -> None:
         (git_repo / ".git" / "rebase-merge").mkdir()
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
-        assert strategy._rebase_in_progress(git_repo, env=None) is True
+        assert conflict.rebase_in_progress(git_repo, env=None, token=None) is True
 
     def test_detects_rebase_apply_directory(self, git_repo: Path) -> None:
         (git_repo / ".git" / "rebase-apply").mkdir()
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
-        assert strategy._rebase_in_progress(git_repo, env=None) is True
+        assert conflict.rebase_in_progress(git_repo, env=None, token=None) is True
 
     def test_ignores_stale_rebase_head_ref(self, git_repo: Path) -> None:
         """Stale REBASE_HEAD ref must not trip the in-progress check (refs #466)."""
@@ -2389,8 +2398,7 @@ class TestRebaseInProgress:
         ).stdout.strip()
         (git_repo / ".git" / "REBASE_HEAD").write_text(head_sha + "\n")
 
-        strategy = GitWriteStrategy(token=None, push_delay_s=0)
-        assert strategy._rebase_in_progress(git_repo, env=None) is False
+        assert conflict.rebase_in_progress(git_repo, env=None, token=None) is False
 
 
 class TestGitPullLoop:
@@ -2562,7 +2570,7 @@ class TestGitPullLoop:
 
         push_calls: list[int] = []
         with patch(
-            "markdown_vault_mcp.git.strategy._push",
+            "markdown_vault_mcp.git.push_scheduler._push",
             side_effect=lambda *_a, **_k: push_calls.append(1),
         ):
             strategy.start(repo_path=tmp_path, pull_interval_s=3600)
@@ -2606,7 +2614,7 @@ class TestGitPullLoop:
         _run_git(local, "add", "local.md")
         _run_git(local, "commit", "-m", "local commit")
         strategy._push_pending = True
-        strategy._do_push_safe()
+        strategy._push_scheduler.do_push_safe()
         assert strategy._push_pending is True
 
         # Start the pull loop with a long interval so exactly one tick fires.
@@ -2656,7 +2664,7 @@ class TestGitPullLoop:
         strategy._push_pending = True
         safe_calls: list[str] = []
         monkeypatch.setattr(
-            strategy, "_do_push_safe", lambda: safe_calls.append("push")
+            strategy._push_scheduler, "do_push_safe", lambda: safe_calls.append("push")
         )
 
         strategy.start(repo_path=tmp_path, pull_interval_s=3600)
@@ -2870,7 +2878,7 @@ class TestCheckRemoteProtocol:
         )
 
         with pytest.raises(ConfigurationError) as exc_info:
-            strategy._check_remote_protocol(tmp_path)
+            strategy._bootstrap.check_remote_protocol(tmp_path)
 
         msg = str(exc_info.value)
         assert "SSH transport" in msg
@@ -2887,7 +2895,7 @@ class TestCheckRemoteProtocol:
             self._make_run("https://github.com/owner/repo.git"),
         )
 
-        strategy._check_remote_protocol(tmp_path)
+        strategy._bootstrap.check_remote_protocol(tmp_path)
 
     def test_no_token_does_not_raise_for_ssh_remote(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -2900,7 +2908,7 @@ class TestCheckRemoteProtocol:
             self._make_run("git@github.com:owner/repo.git"),
         )
 
-        strategy._check_remote_protocol(tmp_path)
+        strategy._bootstrap.check_remote_protocol(tmp_path)
 
     def test_startup_validation_raises_in_constructor(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -2908,7 +2916,7 @@ class TestCheckRemoteProtocol:
         from markdown_vault_mcp.exceptions import ConfigurationError
 
         monkeypatch.setattr(
-            "markdown_vault_mcp.git.strategy._find_git_root",
+            "markdown_vault_mcp.git.bootstrap._find_git_root",
             lambda _repo_path: tmp_path,
         )
         monkeypatch.setattr(

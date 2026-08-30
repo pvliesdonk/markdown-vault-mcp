@@ -153,10 +153,10 @@ def resolve_conflicts_safely(
             has consistent ``from_sha == to_sha`` semantics.
         token: PAT used for redacting sensitive text in log messages.
         resolve_fn: Optional override for the conflict-resolution
-            callable.  Defaults to :func:`resolve_rebase_conflicts`.
-            ``GitWriteStrategy`` passes ``self._resolve_rebase_conflicts``
-            so that tests which monkeypatch ``_resolve_rebase_conflicts`` on
-            the strategy instance are still honoured.
+            callable.  Defaults to :func:`resolve_rebase_conflicts`
+            (resolved from this module's globals at call time, so tests
+            monkeypatch ``conflict.resolve_rebase_conflicts`` directly;
+            #893 removed the strategy-level delegation shims).
 
     Returns:
         ``(saved, None)`` on success — ``saved`` is the list of

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.git import conflict
 from tests.fixtures.git import _run_git
 
 if TYPE_CHECKING:
@@ -486,7 +487,7 @@ class TestForceMethodsErrorBranches:
         def _raising_resolve(*_args: object, **_kwargs: object) -> object:
             raise RuntimeError("simulated conflict resolution failure")
 
-        monkeypatch.setattr(strategy, "_resolve_rebase_conflicts", _raising_resolve)
+        monkeypatch.setattr(conflict, "resolve_rebase_conflicts", _raising_resolve)
 
         result = strategy.force_pull()
 
@@ -559,7 +560,7 @@ class TestForceMethodsErrorBranches:
         def _stub_resolve(*_args: object, **_kwargs: object) -> list[tuple[str, str]]:
             return [("README.md", "# local\n")]
 
-        monkeypatch.setattr(strategy, "_resolve_rebase_conflicts", _stub_resolve)
+        monkeypatch.setattr(conflict, "resolve_rebase_conflicts", _stub_resolve)
 
         # Patch subprocess.run on the git module to fail the
         # ``checkout origin/main -- <path>`` restore call.  All other
@@ -662,18 +663,11 @@ class TestForceMethodsErrorBranches:
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """_resolve_rebase_conflicts cap exhaustion logs ERROR + returns partial saved (#468)."""
+        """resolve_rebase_conflicts cap exhaustion logs ERROR + returns partial saved (#468)."""
         import logging
         import subprocess as _real_subprocess
 
-        from markdown_vault_mcp.git import GitWriteStrategy
         from markdown_vault_mcp.git import subprocess as git_subprocess
-
-        strategy = GitWriteStrategy(
-            enable_pull=True,
-            enable_push=False,
-            repo_path=git_repo_pair.local_path,
-        )
 
         real_run = _real_subprocess.run
 
@@ -710,7 +704,7 @@ class TestForceMethodsErrorBranches:
         monkeypatch.setattr(git_subprocess, "run", _patched_run)
 
         with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"):
-            saved = strategy._resolve_rebase_conflicts(
+            saved = conflict.resolve_rebase_conflicts(
                 git_repo_pair.local_path, env=None
             )
 
@@ -754,7 +748,7 @@ class TestForceMethodsErrorBranches:
         def _stub_resolve(*_args: object, **_kwargs: object) -> list[tuple[str, str]]:
             return [("README.md", "# local\n")]
 
-        monkeypatch.setattr(strategy, "_resolve_rebase_conflicts", _stub_resolve)
+        monkeypatch.setattr(conflict, "resolve_rebase_conflicts", _stub_resolve)
 
         real_run = _real_subprocess.run
 

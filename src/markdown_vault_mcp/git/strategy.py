@@ -3,6 +3,15 @@
 Provides :class:`GitWriteStrategy`, a stateful callback that commits
 per-write and defers pushes to a background timer.  Also retains the
 legacy :func:`git_write_strategy` factory for backward compatibility.
+
+Two collaborators are composed in (#893): repository discovery, managed
+cloning, and startup validation live in
+:class:`~markdown_vault_mcp.git.bootstrap.RepoBootstrap`; the deferred-push
+timer, pending-flag, and push execution live in
+:class:`~markdown_vault_mcp.git.push_scheduler.PushScheduler`.  Both share
+the strategy-wide lock — the SAME object — so the lock-ordering contracts
+documented on :meth:`GitWriteStrategy._force_pull_rebase_fallback` and
+:meth:`GitWriteStrategy._quiesce_writes` are unchanged.
 """
 
 from __future__ import annotations
@@ -12,23 +21,18 @@ import logging
 import re
 import subprocess
 import threading
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+    from pathlib import Path
 
     from markdown_vault_mcp.types import CommitDiff, HistoryEntry, WriteOperation
 
 from fastmcp.server.dependencies import get_access_token as _get_access_token
 
-from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
-    _build_askpass_env,
-    _find_git_root,
-    _is_ssh_remote,
-    _normalize_remote,
     cleanup_git_env,
     git_env,
     redact,
@@ -36,6 +40,8 @@ from markdown_vault_mcp.git._run import (
     run_git,
     run_git_capturing,
 )
+from markdown_vault_mcp.git.bootstrap import RepoBootstrap
+from markdown_vault_mcp.git.push_scheduler import PushScheduler
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS,
@@ -163,12 +169,21 @@ class GitWriteStrategy:
         # the caller re-passing it.  Distinct from ``_pull_repo_path`` which
         # is only set when the periodic pull loop is started via ``start()``.
         self._repo_path: Path | None = repo_path
-        self._git_root: Path | None = None
-        self._git_root_checked = False
         self._write_init_done = False
-        self._push_pending = False
-        self._timer: threading.Timer | None = None
+        # ONE strategy-wide lock, shared with both collaborators below.
         self._lock = threading.Lock()
+        self._bootstrap = RepoBootstrap(
+            lock=self._lock,
+            token=token,
+            username=username,
+            repo_url=repo_url,
+        )
+        self._push_scheduler = PushScheduler(
+            lock=self._lock,
+            bootstrap=self._bootstrap,
+            enable_push=enable_push,
+            push_delay_s=push_delay_s,
+        )
         self._closed = False
         self._pull_stop = threading.Event()
         self._pull_thread: threading.Thread | None = None
@@ -181,7 +196,7 @@ class GitWriteStrategy:
         self._on_pull: Callable[[], object] | None = None
         if repo_path is not None:
             if self._managed:
-                self._ensure_managed_repo(repo_path)
+                self._bootstrap.ensure_managed_repo(repo_path)
             else:
                 self.validate_startup(repo_path)
 
@@ -210,129 +225,36 @@ class GitWriteStrategy:
         """
         return redact(text, self._token)
 
+    @property
+    def _git_root(self) -> Path | None:
+        """The memoised working-tree root, owned by :class:`RepoBootstrap`."""
+        return self._bootstrap.git_root
+
+    @_git_root.setter
+    def _git_root(self, value: Path | None) -> None:
+        self._bootstrap.git_root = value
+
+    @property
+    def _push_pending(self) -> bool:
+        """The pending-push flag, owned by :class:`PushScheduler`."""
+        return self._push_scheduler._push_pending
+
+    @_push_pending.setter
+    def _push_pending(self, value: bool) -> None:
+        self._push_scheduler._push_pending = value
+
+    @property
+    def _timer(self) -> threading.Timer | None:
+        """The idle push timer, owned by :class:`PushScheduler`."""
+        return self._push_scheduler._timer
+
     def _ensure_git_root(self, repo_path: Path) -> Path | None:
-        if self._git_root_checked:
-            return self._git_root
-        with self._lock:
-            if not self._git_root_checked:
-                self._git_root = _find_git_root(repo_path)
-                self._git_root_checked = True
-        return self._git_root
-
-    def _get_origin_url(self, git_root: Path) -> str | None:
-        try:
-            result = subprocess.run(
-                ["git", "-C", str(git_root), "remote", "get-url", "origin"],
-                capture_output=True,
-                text=True,
-            )
-        except FileNotFoundError:
-            return None
-        if result.returncode != 0:
-            return None
-        return result.stdout.strip() or None
-
-    def _ensure_managed_repo(self, repo_path: Path) -> None:
-        if self._repo_url is None:
-            raise ConfigurationError("Managed git mode requires a repo_url.")
-
-        if self._token and _is_ssh_remote(self._repo_url):
-            raise ConfigurationError(
-                f"Managed mode repo URL {self._repo_url!r} uses SSH transport, but "
-                "GIT_TOKEN auth requires HTTPS."
-            )
-
-        path = Path(repo_path)
-        if path.exists():
-            if not path.is_dir():
-                raise ConfigurationError(
-                    f"Managed mode requires SOURCE_DIR to be a directory: {path}"
-                )
-            is_empty = not any(path.iterdir())
-        else:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            is_empty = True
-
-        if is_empty:
-            env = self._git_env()
-            try:
-                subprocess.run(
-                    ["git", "clone", self._repo_url, str(path)],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    env=env,
-                )
-            except FileNotFoundError as exc:
-                raise ConfigurationError(
-                    "git is not installed or not on PATH."
-                ) from exc
-            except subprocess.CalledProcessError as exc:
-                raise ConfigurationError(
-                    f"Failed to clone managed git repo {self._repo_url!r} into {path}: "
-                    f"{(exc.stderr or '').strip()}"
-                ) from exc
-            finally:
-                self._cleanup_git_env(env)
-
-        git_root = _find_git_root(path)
-        if git_root is None:
-            raise ConfigurationError(
-                f"Managed mode requires SOURCE_DIR to be empty or a git repository: {path}"
-            )
-        origin_url = self._get_origin_url(git_root)
-        if origin_url is None:
-            raise ConfigurationError(
-                f"Managed mode requires an 'origin' remote in repository {git_root}."
-            )
-        if _normalize_remote(origin_url) != _normalize_remote(self._repo_url):
-            raise ConfigurationError(
-                "Managed mode remote mismatch: existing origin is "
-                f"{origin_url!r}, expected {self._repo_url!r}."
-            )
-        self._git_root = git_root
-        self._git_root_checked = True
-        self._check_remote_protocol(git_root)
-
-    def _check_remote_protocol(self, git_root: Path) -> None:
-        """Raise ConfigurationError if origin uses SSH while token auth is enabled."""
-        if not self._token:
-            return
-        try:
-            result = subprocess.run(
-                ["git", "-C", str(git_root), "remote", "get-url", "origin"],
-                capture_output=True,
-                text=True,
-            )
-        except FileNotFoundError:
-            return
-        if result.returncode != 0:
-            # No remote configured; ignore here.
-            return
-
-        url = result.stdout.strip()
-        if not _is_ssh_remote(url):
-            return
-
-        if url.startswith("ssh://git@"):
-            https_url = "https://" + url[len("ssh://git@") :]
-        elif url.startswith("ssh://"):
-            https_url = "https://" + url[len("ssh://") :]
-        else:
-            without_prefix = url[len("git@") :]
-            https_url = "https://" + without_prefix.replace(":", "/", 1)
-
-        raise ConfigurationError(
-            f"Remote URL {url!r} uses SSH transport, but GIT_TOKEN requires HTTPS.\n"
-            f"Run: git -C {git_root} remote set-url origin {https_url}"
-        )
+        """Discover and memoise the git root via :class:`RepoBootstrap`."""
+        return self._bootstrap.ensure_git_root(repo_path)
 
     def validate_startup(self, repo_path: Path) -> None:
         """Validate startup git settings for token-authenticated workflows."""
-        git_root = self._ensure_git_root(repo_path)
-        if git_root is None:
-            return
-        self._check_remote_protocol(git_root)
+        self._bootstrap.validate_startup(repo_path)
 
     def _ensure_write_init(self) -> None:
         """One-time initialisation for the write path (identity/push/LFS)."""
@@ -341,10 +263,10 @@ class GitWriteStrategy:
         with self._lock:
             if self._write_init_done or self._git_root is None:
                 return
-            self._check_remote_protocol(self._git_root)
+            self._bootstrap.check_remote_protocol(self._git_root)
             self._check_identity()
             if self._enable_push:
-                self._push_if_unpushed()
+                self._push_scheduler.push_if_unpushed()
             # LFS pull runs under the git lock to avoid overlapping git ops.
             # Forward auth credentials so token-protected LFS backends
             # authenticate with the same GIT_ASKPASS mechanism used for push.
@@ -427,7 +349,7 @@ class GitWriteStrategy:
                     else None,
                 )
             if self._enable_push:
-                self._schedule_push()
+                self._push_scheduler.schedule_push()
         except subprocess.CalledProcessError as exc:
             sanitized_stderr = self._redact(exc.stderr or "")
             logger.error(
@@ -445,53 +367,6 @@ class GitWriteStrategy:
                 operation,
                 exc_info=True,
             )
-
-    def _schedule_push(self) -> None:
-        """Reset the idle push timer."""
-        with self._lock:
-            self._push_pending = True
-            if self._timer is not None:
-                self._timer.cancel()
-            if self._push_delay_s > 0:
-                self._timer = threading.Timer(self._push_delay_s, self._do_push_safe)
-                self._timer.daemon = True
-                self._timer.start()
-
-    def _do_push_safe(self) -> None:
-        """Push wrapper that catches and logs errors."""
-        try:
-            self._do_push()
-        except subprocess.CalledProcessError as exc:
-            sanitized_stderr = self._redact(exc.stderr or "")
-            logger.error(
-                "Git push failed: command %s returned %d\n%s",
-                exc.cmd,
-                exc.returncode,
-                sanitized_stderr,
-            )
-        except Exception:
-            logger.error("Git push failed", exc_info=True)
-
-    def _do_push(self) -> None:
-        """Execute git push and clear the pending flag on success.
-
-        ``_push_pending`` is cleared *after* ``_push()`` returns without
-        raising. On failure the flag stays set so the periodic pull loop
-        retries the push after its rebase step resolves any non-fast-forward
-        divergence (#957); previously the flag was cleared before the push,
-        so a failed deferred push left commits local with no retry until the
-        next write or startup.
-        """
-        with self._lock:
-            if (
-                not self._enable_push
-                or not self._push_pending
-                or self._git_root is None
-            ):
-                return
-            _push(self._git_root, self._token, self._username)
-            self._push_pending = False
-            logger.info("Git: pushed to remote")
 
     def _check_identity(self) -> None:
         """Warn once at startup if no git committer identity is configured.
@@ -523,51 +398,6 @@ class GitWriteStrategy:
                 self._commit_name,
                 self._commit_email,
             )
-
-    def _push_if_unpushed(self) -> None:
-        """On startup, push any local commits ahead of the remote."""
-        if self._git_root is None or not self._enable_push:
-            return
-
-        try:
-            ref = self._tracking_ref(self._git_root)
-            if ref is None:
-                # No remote-tracking ref resolvable — not an error at startup.
-                logger.debug("Git: no remote ref to check for unpushed commits")
-                return
-            result = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(self._git_root),
-                    "log",
-                    "--oneline",
-                    f"{ref}..HEAD",
-                ],
-                capture_output=True,
-                text=True,
-            )
-        except FileNotFoundError:
-            logger.debug("Git: git not found, skipping unpushed check")
-            return
-
-        if result.returncode != 0:
-            # No remote-tracking ref or no remote — not an error at startup.
-            logger.debug("Git: no remote ref to check for unpushed commits")
-            return
-
-        if result.stdout.strip():
-            logger.info("Git: found unpushed commits on startup, pushing now")
-            try:
-                _push(self._git_root, self._token, self._username)
-            except subprocess.CalledProcessError as exc:
-                sanitized_stderr = self._redact(exc.stderr or "")
-                logger.error(
-                    "Git startup push failed: command %s returned %d\n%s",
-                    exc.cmd,
-                    exc.returncode,
-                    sanitized_stderr,
-                )
 
     def _lfs_pull(self, env: dict[str, str] | None = None) -> None:
         """Run ``git lfs pull`` to resolve LFS pointers, if LFS is enabled.
@@ -602,144 +432,6 @@ class GitWriteStrategy:
                 "Git LFS pull failed: git not found on PATH. "
                 "Install git or set MARKDOWN_VAULT_MCP_GIT_LFS=false to suppress this error."
             )
-
-    def _resolve_rebase_conflicts(
-        self,
-        git_root: Path,
-        env: dict[str, str] | None,
-    ) -> list[tuple[str, str]]:
-        """Resolve rebase conflicts by accepting theirs and saving ours.
-
-        Called when ``git rebase <ref>`` (the resolved ``origin/<branch>``
-        remote-tracking ref) has stopped at a conflict.
-        For each conflicting file, saves the MCP version from
-        ``REBASE_HEAD``, then accepts the upstream version via
-        ``git checkout --ours``.  Continues the rebase, looping if
-        multiple commits conflict.
-
-        Returns:
-            A list of ``(relative_path, saved_content)`` tuples for the
-            files that had conflicts.  May be partial (not all commits
-            resolved) if the iteration limit is hit; the caller is
-            responsible for aborting any in-progress rebase before
-            writing the conflict files.
-        """
-        return conflict.resolve_rebase_conflicts(git_root, env)
-
-    def _resolve_conflicts_safely(
-        self,
-        git_root: Path,
-        env: dict[str, str] | None,
-        from_sha: str,
-    ) -> tuple[list[tuple[str, str]] | None, PullResult | None]:
-        """Delegate to :func:`conflict.resolve_conflicts_safely`.
-
-        Passes ``self._resolve_rebase_conflicts`` as ``resolve_fn`` so
-        instance-level monkeypatches of it in tests are still honoured.
-
-        Returns:
-            ``(saved, None)`` on success, or ``(None, PullResult)`` on
-            failure — in which case the caller should return the
-            ``PullResult`` immediately.
-        """
-        return conflict.resolve_conflicts_safely(
-            git_root,
-            env,
-            from_sha,
-            token=self._token,
-            resolve_fn=self._resolve_rebase_conflicts,
-        )
-
-    def _rebase_in_progress(
-        self,
-        git_root: Path,
-        env: dict[str, str] | None,
-    ) -> bool:
-        """Return True if a rebase is in progress in this working tree.
-
-        Reliable signal: the existence of ``.git/rebase-merge`` or
-        ``.git/rebase-apply`` directories.  ``REBASE_HEAD`` ref is NOT
-        reliable — git keeps it around after a successful ``rebase
-        --continue`` for use as a backup reference, so its mere existence
-        does not mean a rebase is in flight.  Resolves ``GIT_DIR`` via
-        ``rev-parse`` so this works inside worktrees and submodules where
-        the directory is not the repo's literal ``.git``.
-
-        On ``rev-parse --git-dir`` failure (which means we genuinely cannot
-        tell), this conservatively returns ``True`` so the caller's abort
-        runs — abort on a clean tree fails loudly (and is logged), but
-        failing to abort a real in-progress rebase would leave the repo
-        wedged for every subsequent ``force_pull``.  The underlying
-        rev-parse failure is logged at ERROR with token-redacted stderr.
-
-        Args:
-            git_root: Working-tree root.
-            env: Optional GIT_ASKPASS environment.
-
-        Returns:
-            ``True`` if a rebase appears to be in progress (or if we cannot
-            tell); ``False`` only when ``rev-parse --git-dir`` succeeded
-            AND no ``rebase-merge`` / ``rebase-apply`` directory exists.
-        """
-        return conflict.rebase_in_progress(git_root, env, token=self._token)
-
-    def _abort_in_progress_rebase(
-        self,
-        git_root: Path,
-        env: dict[str, str] | None,
-    ) -> bool:
-        """Run ``git rebase --abort`` synchronously.
-
-        Args:
-            git_root: Working-tree root.
-            env: Optional GIT_ASKPASS environment.
-
-        Returns:
-            ``True`` if abort succeeded; ``False`` if abort itself failed
-            (in which case the caller should bail out — the working tree
-            may be inconsistent).  Failure is logged at ERROR with
-            token-redacted stderr.
-        """
-        return conflict.abort_in_progress_rebase(git_root, env, token=self._token)
-
-    def _restore_upstream_paths(
-        self,
-        git_root: Path,
-        env: dict[str, str] | None,
-        saved: list[tuple[str, str]],
-        ref: str,
-    ) -> list[tuple[str, str]]:
-        """Restore upstream content for each conflict path after rebase abort.
-
-        After ``git rebase --abort`` the working tree reverts to the
-        pre-rebase MCP state — every file in ``saved`` again contains the
-        MCP version, not the upstream version.  For each path we run
-        ``git checkout <ref> -- <path>`` to bring back the upstream
-        bytes so :meth:`_write_conflict_files` reads the right side
-        (canonical = upstream, sibling = MCP).
-
-        On per-path checkout failure (file deleted upstream, permission
-        error, etc.), the path is DROPPED from the returned list — writing
-        a sibling that contains the same MCP bytes as the canonical path
-        would defeat the "remote wins, local preserved" invariant.  Each
-        drop is logged at ERROR with the path name and token-redacted
-        stderr so an operator can investigate.
-
-        Args:
-            git_root: Working-tree root.
-            env: Optional GIT_ASKPASS environment.
-            saved: List of ``(rel_path, mcp_content)`` tuples returned by
-                :meth:`_resolve_conflicts_safely`.
-            ref: Remote-tracking ref to restore from (``origin/<branch>``),
-                resolved by :meth:`_tracking_ref`.
-
-        Returns:
-            Subset of ``saved`` whose upstream restore succeeded.  May be
-            empty if every checkout failed.
-        """
-        return conflict.restore_upstream_paths(
-            git_root, env, saved, ref, token=self._token
-        )
 
     def _build_pull_result_advanced(
         self,
@@ -784,41 +476,6 @@ class GitWriteStrategy:
             to_sha=new_head,
             reason=reason,
             conflict_files=conflict_files,
-        )
-
-    def _write_conflict_files(
-        self,
-        git_root: Path,
-        saved: list[tuple[str, str]],
-        env: dict[str, str] | None,
-    ) -> list[str] | None:
-        """Write conflict files and add ``conflict_with`` frontmatter to both sides.
-
-        For each ``(relative_path, content)`` in *saved*:
-
-        1. Write the MCP version as ``<stem>.conflict-mcp-<timestamp><ext>``
-           with ``conflict_with`` and ``conflict_date`` frontmatter.
-        2. Merge ``conflict_with`` and ``conflict_date`` into the original
-           file's existing frontmatter.  If the original cannot be read or
-           rewritten (removed/inaccessible after the existence check, or not
-           valid UTF-8), its update is skipped with a logged warning — the
-           conflict sibling is still written and counted.
-
-        Returns:
-            List of conflict file relative paths that were written and
-            committed.  Returns ``None`` when the final ``git commit`` step
-            failed (nothing-to-commit, hook failure, signing failure, etc.)
-            so callers can surface ``conflict_resolution_failed`` instead of
-            implying a successful conflict-resolution commit.  Returns an
-            empty list when *saved* is empty (nothing to do).
-        """
-        return conflict.write_conflict_files(
-            git_root,
-            saved,
-            env,
-            commit_name=self._commit_name,
-            commit_email=self._commit_email,
-            token=self._token,
         )
 
     # ------------------------------------------------------------------
@@ -926,8 +583,10 @@ class GitWriteStrategy:
 
         On ``ff-only`` failure (divergent history) the implementation
         falls through to the same rebase + Syncthing-style sibling write
-        path used by :meth:`sync_once` (see :meth:`_resolve_rebase_conflicts`
-        and :meth:`_write_conflict_files`).  When the conflict-resolution
+        path used by :meth:`sync_once` (see
+        :func:`~markdown_vault_mcp.git.conflict.resolve_rebase_conflicts` and
+        :func:`~markdown_vault_mcp.git.conflict.write_conflict_files`).  When
+        the conflict-resolution
         path produces sibling files HEAD has advanced to the remote and
         :attr:`PullResult.applied` is ``True`` with
         :attr:`PullResult.reason` set to
@@ -1017,7 +676,8 @@ class GitWriteStrategy:
                     # network-touching subprocess in this method, and git
                     # error messages can echo the URL with credentials
                     # back at the user.  Mirrors the redaction pattern
-                    # already used in ``_do_push_safe`` and ``force_push``.
+                    # already used in ``PushScheduler.do_push_safe`` and
+                    # ``force_push``.
                     stderr = self._redact((exc.stderr or "").strip())
                     logger.warning(
                         "%s: fetch failed: %s",
@@ -1177,16 +837,18 @@ class GitWriteStrategy:
             # Real conflicts during rebase — resolve by accepting upstream
             # and saving the local MCP versions as Syncthing-style siblings.
             #
-            # ``_resolve_rebase_conflicts`` runs ``git checkout --ours`` and
-            # ``git add`` with ``check=True``; if either raises mid-loop the
+            # ``conflict.resolve_rebase_conflicts`` runs ``git checkout --ours``
+            # and ``git add`` with ``check=True``; if either raises mid-loop the
             # repository is left in a half-rebased state.
-            # ``_resolve_conflicts_safely`` wraps that in a defensive abort
-            # so a subsequent ``force_pull`` (or any per-write commit path)
-            # does not trip over the leftover ``rebase-merge`` directory.
-            saved, early_exit = self._resolve_conflicts_safely(git_root, env, from_sha)
+            # ``conflict.resolve_conflicts_safely`` wraps that in a defensive
+            # abort so a subsequent ``force_pull`` (or any per-write commit
+            # path) does not trip over the leftover ``rebase-merge`` directory.
+            saved, early_exit = conflict.resolve_conflicts_safely(
+                git_root, env, from_sha, token=self._token
+            )
             if early_exit is not None:
                 return early_exit
-            # ``_resolve_conflicts_safely`` returns ``(saved, None)`` on
+            # ``resolve_conflicts_safely`` returns ``(saved, None)`` on
             # success and ``(None, PullResult)`` on failure — exactly one
             # is non-None.  After the early-exit guard above, ``saved`` is
             # guaranteed non-None; assert so mypy can narrow.
@@ -1196,14 +858,20 @@ class GitWriteStrategy:
             # limit, or exited via ``break`` without completing), abort
             # cleanly so the working tree is consistent before we write
             # conflict files.
-            rebase_in_progress = self._rebase_in_progress(git_root, env)
+            rebase_in_progress = conflict.rebase_in_progress(
+                git_root, env, token=self._token
+            )
 
             if rebase_in_progress:
-                if not self._abort_in_progress_rebase(git_root, env):
+                if not conflict.abort_in_progress_rebase(
+                    git_root, env, token=self._token
+                ):
                     return PullResult.head_unchanged_failure(
                         from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS
                     )
-                saved = self._restore_upstream_paths(git_root, env, saved, ref)
+                saved = conflict.restore_upstream_paths(
+                    git_root, env, saved, ref, token=self._token
+                )
 
             if not saved:
                 logger.warning(
@@ -1217,7 +885,14 @@ class GitWriteStrategy:
             # Rebase has already completed via ``git rebase --continue`` — HEAD
             # has advanced even if the sibling-files commit below fails.
             actual_head = self._head_sha(git_root)
-            written = self._write_conflict_files(git_root, saved, env)
+            written = conflict.write_conflict_files(
+                git_root,
+                saved,
+                env,
+                commit_name=self._commit_name,
+                commit_email=self._commit_email,
+                token=self._token,
+            )
             if written is None:
                 logger.warning("%s: conflict commit failed, skipping", log_prefix)
                 return PullResult(
@@ -1611,9 +1286,10 @@ class GitWriteStrategy:
                             self._on_pull()
                 # Retry a pending push after the pull reconciled any
                 # non-fast-forward divergence via its rebase step (#957).
-                # _do_push's guard makes this a no-op when nothing is pending.
+                # PushScheduler.do_push's guard makes this a no-op when
+                # nothing is pending.
                 if self._enable_push:
-                    self._do_push_safe()
+                    self._push_scheduler.do_push_safe()
             except Exception:
                 logger.exception("Git pull loop tick failed")
             # Wait until the next interval, or stop early.
@@ -1637,19 +1313,19 @@ class GitWriteStrategy:
         """Block until any pending push completes.
 
         Cancels the idle timer and pushes immediately if there are
-        pending local commits.
+        pending local commits.  Thin delegation to
+        :meth:`PushScheduler.flush`, which owns the timer/pending-flag
+        mechanics (#893).
         """
-        with self._lock:
-            if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
-            pending = self._push_pending
-
-        if pending and self._git_root is not None:
-            self._do_push_safe()
+        self._push_scheduler.flush()
 
     def close(self) -> None:
-        """Cancel timer, flush pending push, mark strategy as closed."""
+        """Cancel timer, flush pending push, mark strategy as closed.
+
+        Sequencing: mark closed first (new writes become no-ops), stop the
+        periodic pull thread, then flush the push scheduler so the final
+        push happens with no pull tick racing it.
+        """
         self._closed = True
         self.stop()
         self.flush()
@@ -2025,48 +1701,3 @@ def _stage_and_commit(
     )
 
     logger.info("Git: committed %s (%s)", rel_path, operation)
-
-
-def _push(git_root: Path, token: str | None, username: str = "x-access-token") -> None:
-    """Push to the default remote, using GIT_ASKPASS for token auth.
-
-    When a token is supplied a temporary helper script is written to a
-    private temporary file (mode 0o700).  Git reads credentials from this
-    script via ``GIT_ASKPASS`` so the token is never present in any
-    process's command-line arguments and is therefore not visible in
-    ``/proc/<pid>/cmdline``.  The script is deleted in a ``finally`` block
-    regardless of push outcome.
-
-    Args:
-        git_root: Git repository root.
-        token: Optional PAT for HTTPS push.  If ``None``, relies on SSH
-            keys or pre-configured git credentials.
-        username: Username used for HTTPS auth prompts when *token* is set.
-    """
-    root = str(git_root)
-
-    # Always push to "origin".  If the remote is named differently,
-    # configure a git remote alias or adjust this constant.
-    if not token:
-        subprocess.run(
-            ["git", "-C", root, "push", "origin"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return
-
-    env = _build_askpass_env(token, username)
-    script_path_str = env["GIT_ASKPASS"]
-    script_path = Path(script_path_str)
-    try:
-        subprocess.run(
-            ["git", "-C", root, "push", "origin"],
-            capture_output=True,
-            text=True,
-            check=True,
-            env=env,
-        )
-    finally:
-        with contextlib.suppress(OSError):
-            script_path.unlink()
