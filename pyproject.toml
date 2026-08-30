@@ -376,6 +376,12 @@ exclude_lines = [
     "raise NotImplementedError",
     "if TYPE_CHECKING:",
     "if __name__ == .__main__.:",
+    # Ellipsis-only bodies: Protocol members and typing stubs (interfaces.py,
+    # git/interfaces.py, scanner.ChunkStrategy, the write-callback Protocols).
+    # They are declarations, never executed — `isinstance` against a
+    # runtime_checkable Protocol inspects member presence without calling
+    # anything — so counting them as missed lines measures nothing.
+    "^\\s*\\.\\.\\.$",
 ]
 
 [tool.mypy]
