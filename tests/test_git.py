@@ -4968,101 +4968,42 @@ class TestVaultGitHistoryMethods:
         assert len(out) == 2
 
 
-class TestExtractClaim:
-    """Unit tests for _extract_claim — reads a named claim from the current access token."""
+class TestGitPackageImportClean:
+    """The git package must not import fastmcp (#1160).
 
-    def test_returns_claim_value_when_token_has_claim(self) -> None:
-        """Returns the string claim value when the token carries it."""
-        from unittest.mock import MagicMock, patch
+    Request identity is resolved at the MCP tool edge into a Principal and
+    passed into the strategy; a fastmcp import creeping back into ``git/``
+    would re-couple the write path to the request context — the coupling
+    whose dispatcher-thread read silently broke the claims (#1218).
+    """
 
-        from markdown_vault_mcp.git import _extract_claim
+    def test_no_git_submodule_imports_fastmcp(self) -> None:
+        """No module under markdown_vault_mcp/git/ imports fastmcp."""
+        import re
+        from pathlib import Path
 
-        token = MagicMock()
-        token.claims = {"name": "Alice"}
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            assert _extract_claim("name") == "Alice"
+        import markdown_vault_mcp.git as git_pkg
 
-    def test_returns_none_when_no_token(self) -> None:
-        """Returns None when get_access_token() returns None (no-auth / local mode)."""
-        from unittest.mock import patch
-
-        from markdown_vault_mcp.git import _extract_claim
-
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=None
-        ):
-            assert _extract_claim("name") is None
-
-    def test_returns_none_when_claim_absent(self) -> None:
-        """Returns None when the named claim is not in the token."""
-        from unittest.mock import MagicMock, patch
-
-        from markdown_vault_mcp.git import _extract_claim
-
-        token = MagicMock()
-        token.claims = {"sub": "user123"}
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            assert _extract_claim("name") is None
-
-    def test_returns_none_when_claim_is_empty_string(self) -> None:
-        """Returns None when the claim value is an empty string."""
-        from unittest.mock import MagicMock, patch
-
-        from markdown_vault_mcp.git import _extract_claim
-
-        token = MagicMock()
-        token.claims = {"name": ""}
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            assert _extract_claim("name") is None
-
-    def test_returns_none_when_claim_is_not_string(self) -> None:
-        """Returns None when the claim value is not a string (e.g. boolean, int)."""
-        from unittest.mock import MagicMock, patch
-
-        from markdown_vault_mcp.git import _extract_claim
-
-        token = MagicMock()
-        token.claims = {"email_verified": True}
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            assert _extract_claim("email_verified") is None
-
-    def test_returns_none_when_claims_is_not_dict(self) -> None:
-        """Returns None when token.claims is not a dict."""
-        from unittest.mock import MagicMock, patch
-
-        from markdown_vault_mcp.git import _extract_claim
-
-        token = MagicMock()
-        token.claims = None
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            assert _extract_claim("name") is None
-
-    def test_returns_none_when_claim_key_is_none(self) -> None:
-        """Returns None immediately when claim_key is None (claim not configured)."""
-        from unittest.mock import MagicMock, patch
-
-        from markdown_vault_mcp.git import _extract_claim
-
-        token = MagicMock()
-        token.claims = {"name": "Alice"}
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            assert _extract_claim(None) is None
+        pkg_dir = Path(git_pkg.__file__).resolve().parent
+        # Match module imports of fastmcp (and submodules), but not
+        # fastmcp_pvl_core.
+        pattern = re.compile(r"^\s*(?:from|import)\s+fastmcp(?:\.|\s|$)", re.M)
+        offenders = [
+            str(f.relative_to(pkg_dir))
+            for f in sorted(pkg_dir.glob("*.py"))
+            if pattern.search(f.read_text(encoding="utf-8"))
+        ]
+        assert offenders == []
 
 
-class TestOidcClaimGitIdentity:
-    """Integration tests for OIDC claim-based git author attribution in GitWriteStrategy."""
+class TestPrincipalGitIdentity:
+    """Principal-based git author attribution in GitWriteStrategy (#1160).
+
+    Claims are resolved at the MCP tool edge into a Principal; the strategy
+    consumes its display_name/email as the commit author instead of reading
+    the request token itself (which is unreachable on the dispatcher thread,
+    #1218).
+    """
 
     def _get_commit_identity(self, repo: Path) -> tuple[str, str]:
         """Return (author_name, author_email) of the most recent commit."""
@@ -5080,119 +5021,113 @@ class TestOidcClaimGitIdentity:
         ).stdout.strip()
         return name, email
 
-    def test_name_claim_used_when_token_has_claim(self, git_repo: Path) -> None:
-        """When commit_name_claim is set and token has the claim, commit uses claim value."""
-        from unittest.mock import MagicMock, patch
+    def test_principal_name_used_when_present(self, git_repo: Path) -> None:
+        """A principal display_name becomes the commit author name."""
+        from markdown_vault_mcp._identity import Principal
 
         strategy = GitWriteStrategy(
             commit_name="bot",
             commit_email="bot@example.com",
-            commit_name_claim="name",
         )
         test_file = git_repo / "note.md"
         test_file.write_text("# Note\n")
 
-        token = MagicMock()
-        token.claims = {"name": "Alice Human"}
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            strategy(test_file, "# Note\n", "write")
+        principal = Principal(
+            subject="user123", display_name="Alice Human", email=None, kind="human"
+        )
+        strategy(test_file, "# Note\n", "write", principal=principal)
 
         name, email = self._get_commit_identity(git_repo)
         assert name == "Alice Human"
         assert email == "bot@example.com"
 
-    def test_email_claim_used_when_token_has_claim(self, git_repo: Path) -> None:
-        """When commit_email_claim is set and token has the claim, commit uses claim value."""
-        from unittest.mock import MagicMock, patch
+    def test_principal_email_used_when_present(self, git_repo: Path) -> None:
+        """A principal email becomes the commit author email."""
+        from markdown_vault_mcp._identity import Principal
 
         strategy = GitWriteStrategy(
             commit_name="bot",
             commit_email="bot@example.com",
-            commit_email_claim="email",
         )
         test_file = git_repo / "note.md"
         test_file.write_text("# Note\n")
 
-        token = MagicMock()
-        token.claims = {"email": "alice@humans.org"}
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            strategy(test_file, "# Note\n", "write")
+        principal = Principal(
+            subject="user123",
+            display_name=None,
+            email="alice@humans.org",
+            kind="human",
+        )
+        strategy(test_file, "# Note\n", "write", principal=principal)
 
         name, email = self._get_commit_identity(git_repo)
         assert name == "bot"
         assert email == "alice@humans.org"
 
-    def test_both_claims_used_when_token_has_both(self, git_repo: Path) -> None:
-        """Both name and email come from claims when both are configured and present."""
-        from unittest.mock import MagicMock, patch
+    def test_principal_name_and_email_used_when_both_present(
+        self, git_repo: Path
+    ) -> None:
+        """Both author fields come from the principal when both are present."""
+        from markdown_vault_mcp._identity import Principal
 
         strategy = GitWriteStrategy(
             commit_name="bot",
             commit_email="bot@example.com",
-            commit_name_claim="name",
-            commit_email_claim="email",
         )
         test_file = git_repo / "note.md"
         test_file.write_text("# Note\n")
 
-        token = MagicMock()
-        token.claims = {"name": "Alice Human", "email": "alice@humans.org"}
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            strategy(test_file, "# Note\n", "write")
+        principal = Principal(
+            subject="user123",
+            display_name="Alice Human",
+            email="alice@humans.org",
+            kind="human",
+        )
+        strategy(test_file, "# Note\n", "write", principal=principal)
 
         name, email = self._get_commit_identity(git_repo)
         assert name == "Alice Human"
         assert email == "alice@humans.org"
 
-    def test_falls_back_to_configured_when_no_token(self, git_repo: Path) -> None:
-        """When no access token, configured name and email are used."""
-        from unittest.mock import patch
-
+    def test_falls_back_to_configured_when_no_principal(self, git_repo: Path) -> None:
+        """Without a principal, the configured static name and email are used."""
         strategy = GitWriteStrategy(
             commit_name="bot",
             commit_email="bot@example.com",
-            commit_name_claim="name",
-            commit_email_claim="email",
         )
         test_file = git_repo / "note.md"
         test_file.write_text("# Note\n")
 
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=None
-        ):
-            strategy(test_file, "# Note\n", "write")
+        strategy(test_file, "# Note\n", "write")
 
         name, email = self._get_commit_identity(git_repo)
         assert name == "bot"
         assert email == "bot@example.com"
 
-    def test_falls_back_when_claim_absent_from_token(self, git_repo: Path) -> None:
-        """When the named claim is not in the token, configured value is used."""
-        from unittest.mock import MagicMock, patch
+    def test_falls_back_when_principal_fields_are_none(self, git_repo: Path) -> None:
+        """A principal with no claim-derived fields falls back to the static identity.
+
+        This is the shape resolve_mcp_principal produces when the token has a
+        subject but the configured claims are absent — the pre-#1160
+        claim-absent fallback, expressed over the resolved value.
+        """
+        from markdown_vault_mcp._identity import Principal
 
         strategy = GitWriteStrategy(
             commit_name="bot",
             commit_email="bot@example.com",
-            commit_name_claim="name",
         )
         test_file = git_repo / "note.md"
         test_file.write_text("# Note\n")
 
-        token = MagicMock()
-        token.claims = {"sub": "user123"}  # has sub but not name
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            strategy(test_file, "# Note\n", "write")
+        principal = Principal(
+            subject="user123", display_name=None, email=None, kind="human"
+        )
+        strategy(test_file, "# Note\n", "write", principal=principal)
 
-        name, _email = self._get_commit_identity(git_repo)
+        name, email = self._get_commit_identity(git_repo)
         assert name == "bot"
+        assert email == "bot@example.com"
 
     def test_no_claim_config_is_backward_compatible(self, git_repo: Path) -> None:
         """Without claim config, strategy uses static name/email as before."""
@@ -5248,7 +5183,10 @@ class TestGitClaimConfig:
         assert config.git.commit_email_claim is None
 
     def test_claim_config_passed_to_strategy(self, tmp_path: Path) -> None:
-        """to_vault_kwargs() passes claim keys to GitWriteStrategy."""
+        """to_vault_kwargs() passes claim keys to GitWriteStrategy and registers
+        them with the identity layer (#1160), which now performs the actual
+        claim extraction at the MCP tool edge."""
+        from markdown_vault_mcp import _identity
         from markdown_vault_mcp.config import ProjectConfig
 
         config = ProjectConfig(
@@ -5257,11 +5195,18 @@ class TestGitClaimConfig:
             git_commit_name_claim="name",
             git_commit_email_claim="email",
         )
-        kwargs = to_vault_kwargs(config)
-        strategy = kwargs["on_write"]
-        assert isinstance(strategy, GitWriteStrategy)
-        assert strategy._commit_name_claim == "name"
-        assert strategy._commit_email_claim == "email"
+        try:
+            kwargs = to_vault_kwargs(config)
+            strategy = kwargs["on_write"]
+            assert isinstance(strategy, GitWriteStrategy)
+            assert strategy._commit_name_claim == "name"
+            assert strategy._commit_email_claim == "email"
+            assert _identity._name_claim == "name"
+            assert _identity._email_claim == "email"
+        finally:
+            # Module-level registration; reset so no claim keys leak into
+            # other tests' resolve_mcp_principal calls.
+            _identity.configure_identity_claims(name_claim=None, email_claim=None)
 
 
 class TestStageAndCommitAuthorSplit:
@@ -5462,7 +5407,7 @@ class TestStageAndCommitAuthorSplit:
 
 
 class TestOidcClaimAuthorCommitterSplit:
-    """GitWriteStrategy uses OIDC claims for author only; committer stays static."""
+    """GitWriteStrategy uses the principal for author only; committer stays static."""
 
     def _get_identity(self, repo: Path) -> tuple[str, str, str, str]:
         """Return (author_name, author_email, committer_name, committer_email)."""
@@ -5477,25 +5422,24 @@ class TestOidcClaimAuthorCommitterSplit:
 
         return _log("%aN"), _log("%aE"), _log("%cN"), _log("%cE")
 
-    def test_claim_sets_author_committer_stays_static(self, git_repo: Path) -> None:
-        """When claim is configured and token present, author = claim, committer = static."""
-        from unittest.mock import MagicMock, patch
+    def test_principal_sets_author_committer_stays_static(self, git_repo: Path) -> None:
+        """With a claim-carrying principal, author = principal, committer = static."""
+        from markdown_vault_mcp._identity import Principal
 
         strategy = GitWriteStrategy(
             commit_name="bot",
             commit_email="bot@srv.com",
-            commit_name_claim="name",
-            commit_email_claim="email",
         )
         f = git_repo / "note.md"
         f.write_text("# hi\n")
 
-        token = MagicMock()
-        token.claims = {"name": "Alice Human", "email": "alice@humans.org"}
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            strategy(f, "# hi\n", "write")
+        principal = Principal(
+            subject="user123",
+            display_name="Alice Human",
+            email="alice@humans.org",
+            kind="human",
+        )
+        strategy(f, "# hi\n", "write", principal=principal)
 
         a_name, a_email, c_name, c_email = self._get_identity(git_repo)
         assert a_name == "Alice Human"
@@ -5503,8 +5447,8 @@ class TestOidcClaimAuthorCommitterSplit:
         assert c_name == "bot"
         assert c_email == "bot@srv.com"
 
-    def test_no_claim_config_author_equals_committer(self, git_repo: Path) -> None:
-        """Without claim config, author and committer are both the static identity."""
+    def test_no_principal_author_equals_committer(self, git_repo: Path) -> None:
+        """Without a principal, author and committer are both the static identity."""
         strategy = GitWriteStrategy(
             commit_name="bot",
             commit_email="bot@srv.com",
@@ -5517,9 +5461,70 @@ class TestOidcClaimAuthorCommitterSplit:
         assert a_name == c_name == "bot"
         assert a_email == c_email == "bot@srv.com"
 
-    def test_no_token_falls_back_author_equals_committer(self, git_repo: Path) -> None:
-        """When claim is configured but no token, author falls back to static identity."""
-        from unittest.mock import patch
+    def test_empty_principal_falls_back_author_equals_committer(
+        self, git_repo: Path
+    ) -> None:
+        """A principal with no claim fields falls back to the static identity."""
+        from markdown_vault_mcp._identity import Principal
+
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@srv.com",
+        )
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+
+        principal = Principal(subject=None, display_name=None, email=None, kind="local")
+        strategy(f, "# hi\n", "write", principal=principal)
+
+        a_name, a_email, c_name, c_email = self._get_identity(git_repo)
+        assert a_name == c_name == "bot"
+        assert a_email == c_email == "bot@srv.com"
+
+    def test_only_name_present_committer_email_unchanged(self, git_repo: Path) -> None:
+        """Name-only principal: author name = principal, email = static for both."""
+        from markdown_vault_mcp._identity import Principal
+
+        strategy = GitWriteStrategy(
+            commit_name="bot",
+            commit_email="bot@srv.com",
+        )
+        f = git_repo / "note.md"
+        f.write_text("# hi\n")
+
+        principal = Principal(
+            subject="user123", display_name="Alice Human", email=None, kind="human"
+        )
+        strategy(f, "# hi\n", "write", principal=principal)
+
+        a_name, a_email, c_name, c_email = self._get_identity(git_repo)
+        assert a_name == "Alice Human"
+        assert a_email == "bot@srv.com"
+        assert c_name == "bot"
+        assert c_email == "bot@srv.com"
+
+
+class TestPrincipalThroughDispatcher:
+    """#1218 regression: claim identity must survive the dispatcher thread.
+
+    The pre-#1160 strategy read the OIDC claims itself, per commit, via
+    FastMCP's ``get_access_token()`` — but the strategy runs on the
+    write-callback dispatcher's own daemon thread, where no request context
+    exists, so that read always returned ``None`` and the configured
+    ``GIT_COMMIT_NAME_CLAIM`` / ``GIT_COMMIT_EMAIL_CLAIM`` silently never
+    applied on the deployed write path. This test drives a write through a
+    REAL ``WriteCallbackDispatcher`` (real worker thread) wired to a real
+    ``GitWriteStrategy`` — the seam every prior claims test bypassed by
+    calling the strategy synchronously. Against the old code this scenario
+    committed with the static author (the token read yields ``None`` on the
+    worker); with identity captured at ``fire()`` time it commits with the
+    claim-derived author while the committer stays static.
+    """
+
+    def test_bound_principal_survives_dispatcher_thread(self, git_repo: Path) -> None:
+        """Author = claim-derived principal, committer = static, via the worker."""
+        from markdown_vault_mcp._identity import Principal, bound_principal
+        from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
         strategy = GitWriteStrategy(
             commit_name="bot",
@@ -5527,42 +5532,36 @@ class TestOidcClaimAuthorCommitterSplit:
             commit_name_claim="name",
             commit_email_claim="email",
         )
+        dispatcher = WriteCallbackDispatcher(strategy)
         f = git_repo / "note.md"
         f.write_text("# hi\n")
 
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=None
-        ):
-            strategy(f, "# hi\n", "write")
-
-        a_name, a_email, c_name, c_email = self._get_identity(git_repo)
-        assert a_name == c_name == "bot"
-        assert a_email == c_email == "bot@srv.com"
-
-    def test_only_name_claim_committer_email_unchanged(self, git_repo: Path) -> None:
-        """When only name_claim is configured, author name = claim, email = static for both."""
-        from unittest.mock import MagicMock, patch
-
-        strategy = GitWriteStrategy(
-            commit_name="bot",
-            commit_email="bot@srv.com",
-            commit_name_claim="name",
+        principal = Principal(
+            subject="user123",
+            display_name="Alice Human",
+            email="alice@humans.org",
+            kind="human",
         )
-        f = git_repo / "note.md"
-        f.write_text("# hi\n")
+        # fire() runs on the (simulated) request-side thread where the
+        # contextvar is bound; the commit runs on the dispatcher worker.
+        with bound_principal(principal):
+            dispatcher.fire(f, "# hi\n", "write")
+        assert dispatcher.drain(timeout=10.0)
+        dispatcher.close()
+        strategy.close()
 
-        token = MagicMock()
-        token.claims = {"name": "Alice Human"}
-        with patch(
-            "markdown_vault_mcp.git.strategy._get_access_token", return_value=token
-        ):
-            strategy(f, "# hi\n", "write")
+        def _log(fmt: str) -> str:
+            return subprocess.run(
+                ["git", "-C", str(git_repo), "log", "-1", f"--format={fmt}"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
 
-        a_name, a_email, c_name, c_email = self._get_identity(git_repo)
-        assert a_name == "Alice Human"
-        assert a_email == "bot@srv.com"
-        assert c_name == "bot"
-        assert c_email == "bot@srv.com"
+        assert _log("%aN") == "Alice Human"
+        assert _log("%aE") == "alice@humans.org"
+        assert _log("%cN") == "bot"
+        assert _log("%cE") == "bot@srv.com"
 
 
 class TestWriteQuiescer:

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from markdown_vault_mcp._identity import Principal
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 
@@ -338,3 +339,125 @@ class TestOldPathForwarding:
         d.close()
 
         assert calls == [(Path("/new.md"), "x", "rename")]
+
+
+# ---------------------------------------------------------------------------
+# principal forwarding (#1160 / #1218)
+# ---------------------------------------------------------------------------
+
+
+def _make_principal(name: str = "Alice") -> Principal:
+    return Principal(
+        subject="user123", display_name=name, email="a@humans.org", kind="human"
+    )
+
+
+class TestPrincipalForwarding:
+    """The bound Principal reaches opted-in callbacks and nothing else (#1160)."""
+
+    def test_three_arg_callback_is_never_passed_principal(self) -> None:
+        """A three-argument third-party callback keeps working untouched."""
+        from markdown_vault_mcp._identity import bound_principal
+
+        calls, cb = _recorder()
+        d = WriteCallbackDispatcher(cb)  # type: ignore[arg-type]
+        with bound_principal(_make_principal()):
+            d.fire(Path("/a.md"), "x", "write")
+        d.close()
+
+        assert calls == [(Path("/a.md"), "x", "write")]
+
+    def test_opted_in_callback_receives_principal(self) -> None:
+        """A callback advertising the opt-in gets the bound principal."""
+        from markdown_vault_mcp._identity import bound_principal
+        from markdown_vault_mcp.types import ACCEPTS_PRINCIPAL_ATTR
+
+        seen: list[object] = []
+
+        def cb(
+            abs_path: Path,  # noqa: ARG001
+            content: str,  # noqa: ARG001
+            operation: str,  # noqa: ARG001
+            principal: object = None,
+        ) -> None:
+            seen.append(principal)
+
+        setattr(cb, ACCEPTS_PRINCIPAL_ATTR, True)
+
+        principal = _make_principal()
+        d = WriteCallbackDispatcher(cb)  # type: ignore[arg-type]
+        with bound_principal(principal):
+            d.fire(Path("/a.md"), "x", "write")
+        d.close()
+
+        assert seen == [principal]
+
+    def test_principal_is_snapshotted_at_fire_time(self) -> None:
+        """The value bound when fire() ran wins, not a later rebinding.
+
+        This is the #1218 mechanism in miniature: the dispatcher worker has
+        no request context, so the identity must be captured on the firing
+        thread. The worker is held busy so the queue item is processed only
+        after the contextvar has moved on — the earlier snapshot must win.
+        """
+        import threading
+
+        from markdown_vault_mcp._identity import bound_principal
+        from markdown_vault_mcp.types import ACCEPTS_PRINCIPAL_ATTR
+
+        gate = threading.Event()
+        seen: list[object] = []
+
+        def cb(
+            abs_path: Path,  # noqa: ARG001
+            content: str,  # noqa: ARG001
+            operation: str,  # noqa: ARG001
+            principal: object = None,
+        ) -> None:
+            gate.wait(timeout=5)
+            seen.append(principal)
+
+        setattr(cb, ACCEPTS_PRINCIPAL_ATTR, True)
+
+        first = _make_principal("First")
+        second = _make_principal("Second")
+        d = WriteCallbackDispatcher(cb)  # type: ignore[arg-type]
+        with bound_principal(first):
+            d.fire(Path("/a.md"), "x", "write")
+        # The firing context has moved on before the worker processes the
+        # item; the snapshot taken at fire() time must still say "First".
+        with bound_principal(second):
+            gate.set()
+            d.close()
+
+        assert [getattr(p, "display_name", None) for p in seen] == ["First"]
+
+    def test_both_opt_ins_receive_both_keywords(self) -> None:
+        """A callback opted into old_path AND principal receives both."""
+        from markdown_vault_mcp._identity import bound_principal
+        from markdown_vault_mcp.types import (
+            ACCEPTS_OLD_PATH_ATTR,
+            ACCEPTS_PRINCIPAL_ATTR,
+        )
+
+        seen: list[tuple[object, object]] = []
+
+        def cb(
+            abs_path: Path,  # noqa: ARG001
+            content: str,  # noqa: ARG001
+            operation: str,  # noqa: ARG001
+            old_path: Path | None = None,
+            principal: object = None,
+        ) -> None:
+            seen.append((old_path, principal))
+
+        setattr(cb, ACCEPTS_OLD_PATH_ATTR, True)
+        setattr(cb, ACCEPTS_PRINCIPAL_ATTR, True)
+
+        principal = _make_principal()
+        d = WriteCallbackDispatcher(cb)  # type: ignore[arg-type]
+        with bound_principal(principal):
+            d.fire(Path("/new.md"), "x", "rename", old_path=Path("/old.md"))
+        d.close()
+
+        assert seen == [(Path("/old.md"), principal)]

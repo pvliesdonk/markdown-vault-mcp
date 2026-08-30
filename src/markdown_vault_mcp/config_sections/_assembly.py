@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp_pvl_core import parse_bool as _parse_bool
 
+from markdown_vault_mcp._identity import configure_identity_claims
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git import GitWriteStrategy
 
@@ -120,6 +121,14 @@ def _build_git_strategy(
     or disables them in lockstep.
     """
     git = config.git
+    # Register the OIDC claim keys with the identity layer: claims are
+    # resolved at the MCP tool edge into a Principal (#1160), not by the
+    # strategy itself (whose dispatcher thread has no request token, #1218).
+    # The kwargs below still carry the keys for the startup identity warning.
+    configure_identity_claims(
+        name_claim=git.commit_name_claim,
+        email_claim=git.commit_email_claim,
+    )
     return GitWriteStrategy(
         token=token,
         repo_url=repo_url,

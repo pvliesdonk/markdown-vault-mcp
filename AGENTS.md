@@ -67,6 +67,7 @@ src/markdown_vault_mcp/
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)
   _okf_convention.py   -- OKF reserved-file maintenance after enforced writes: log.md bullet + index.md refresh (#964)
   _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
+  _identity.py         -- Principal write identity: tool-edge resolution, contextvar carry, claim-key registration (#1160)
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
   vault.py             -- thin composition root: lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)

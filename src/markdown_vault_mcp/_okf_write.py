@@ -32,6 +32,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp._identity import current_principal
 from markdown_vault_mcp.okf import _HUMAN_ACTOR_PREFIX, apply_okf_write_stamp
 
 if TYPE_CHECKING:
@@ -114,8 +115,14 @@ def resolve_write_actor() -> str:
     """Resolve the content-write actor from the request identity.
 
     ``human:<subject>`` when an authenticated subject is present, else the tool
-    actor. Call inside a tool handler (it reads the request context).
+    actor. Prefers a bound
+    :class:`~markdown_vault_mcp._identity.Principal` (resolved once at the
+    tool edge, #1160); otherwise reads the request context directly, so call
+    inside a tool handler.
     """
+    principal = current_principal()
+    if principal is not None:
+        return principal.okf_actor(package_version())
     from fastmcp_pvl_core import get_subject
 
     subject = get_subject()
@@ -129,7 +136,13 @@ def resolve_human_subject() -> str | None:
 
     Used by ``okf_verify`` to decide whether a verification is attributable
     (``None`` under auth mode ``none`` or when no subject is present).
+    Prefers a bound :class:`~markdown_vault_mcp._identity.Principal` (#1160),
+    whose ``subject`` is already ``None`` for a non-human caller; otherwise
+    reads the request context directly.
     """
+    principal = current_principal()
+    if principal is not None:
+        return principal.subject
     from fastmcp_pvl_core import get_subject
 
     subject = get_subject()

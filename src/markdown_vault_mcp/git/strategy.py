@@ -27,9 +27,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from pathlib import Path
 
+    from markdown_vault_mcp._identity import Principal
     from markdown_vault_mcp.types import CommitDiff, HistoryEntry, WriteOperation
-
-from fastmcp.server.dependencies import get_access_token as _get_access_token
 
 from markdown_vault_mcp.git import conflict, query
 from markdown_vault_mcp.git._run import (
@@ -59,25 +58,6 @@ from markdown_vault_mcp.git.types import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _extract_claim(claim_key: str | None) -> str | None:
-    """Return the string value of an OIDC claim from the current request token.
-
-    Returns ``None`` when *claim_key* is ``None``, no access token is present,
-    the key is absent from the token's claims, or the value is not a non-empty
-    string.
-    """
-    if claim_key is None:
-        return None
-    token = _get_access_token()
-    if token is None:
-        return None
-    claims = getattr(token, "claims", None)
-    if not isinstance(claims, dict):
-        return None
-    value = claims.get(claim_key)
-    return value if isinstance(value, str) and value else None
 
 
 class GitWriteStrategy:
@@ -112,6 +92,18 @@ class GitWriteStrategy:
             :attr:`DEFAULT_COMMIT_NAME`.
         commit_email: Git committer email; defaults to
             :attr:`DEFAULT_COMMIT_EMAIL`.
+        commit_name_claim: OIDC claim key configured for the author name.
+        commit_email_claim: OIDC claim key configured for the author email.
+
+            .. deprecated::
+                The two claim kwargs no longer drive claim extraction — the
+                strategy runs on the write-callback dispatcher thread, where
+                no request token exists (#1218). Claims are now resolved at
+                the MCP tool edge into the ``principal`` passed per
+                invocation (register the keys via
+                :func:`markdown_vault_mcp._identity.configure_identity_claims`).
+                They remain accepted, and still inform the startup
+                identity warning (:meth:`_check_identity`).
         git_lfs: When ``True`` (default), run ``git lfs pull`` during
             lazy initialisation so LFS pointers are resolved before the
             first write is committed.  Requires ``git-lfs`` to be on
@@ -283,6 +275,12 @@ class GitWriteStrategy:
     #: See :data:`~markdown_vault_mcp.types.ACCEPTS_OLD_PATH_ATTR`.
     accepts_old_path: bool = True
 
+    #: Opt into the dispatcher's ``principal=`` keyword (#1160), so the commit
+    #: author reflects the identity resolved at the MCP tool edge instead of a
+    #: request-context read that is always empty on the dispatcher thread
+    #: (#1218). See :data:`~markdown_vault_mcp.types.ACCEPTS_PRINCIPAL_ATTR`.
+    accepts_principal: bool = True
+
     def __call__(
         self,
         path: Path,
@@ -290,6 +288,7 @@ class GitWriteStrategy:
         operation: WriteOperation,
         *,
         old_path: Path | None = None,
+        principal: Principal | None = None,
     ) -> None:
         """WriteCallback interface: stage + commit, then schedule push.
 
@@ -301,6 +300,11 @@ class GitWriteStrategy:
             operation: The kind of write that occurred.
             old_path: For a rename, the absolute path the file moved from,
                 so staging can be scoped to it and *path* (#894).
+            principal: The identity performing the write, resolved at the MCP
+                tool edge and snapshotted through the dispatcher queue
+                (#1160). Its display name / email become the commit's
+                ``--author``; ``None`` fields (or no principal) fall back to
+                the static committer identity.
         """
         if self._closed:
             return
@@ -318,20 +322,16 @@ class GitWriteStrategy:
             return
 
         try:
-            effective_name = (
-                _extract_claim(self._commit_name_claim) or self._commit_name
-            )
-            effective_email = (
-                _extract_claim(self._commit_email_claim) or self._commit_email
-            )
+            principal_name = principal.display_name if principal is not None else None
+            principal_email = principal.email if principal is not None else None
+            effective_name = principal_name or self._commit_name
+            effective_email = principal_email or self._commit_email
             logger.debug(
-                "git_identity_resolved name=%s email=%s name_from_claim=%s email_from_claim=%s",
+                "git_identity_resolved name=%s email=%s name_from_principal=%s email_from_principal=%s",
                 effective_name,
                 effective_email,
-                self._commit_name_claim is not None
-                and effective_name != self._commit_name,
-                self._commit_email_claim is not None
-                and effective_email != self._commit_email,
+                principal_name is not None,
+                principal_email is not None,
             )
             with self._lock:
                 _stage_and_commit(

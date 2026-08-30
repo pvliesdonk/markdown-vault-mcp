@@ -2318,9 +2318,47 @@ is. An old path git does not track is dropped from the pathspec rather than
 passed — `git add` fails the whole invocation on a pathspec matching nothing,
 which would leave the new path unstaged too.
 
+**Write identity: the `Principal` value (#1160, fixes #1218).** "Who is
+acting" is resolved **once, at the MCP tool edge**, into a frozen
+`Principal` (`_identity.py`: `subject`, `display_name`, `email`,
+`kind: human|local`) — credentials (`GIT_TOKEN`) and permissions
+(`read_only`) deliberately stay off it; they are service configuration, not
+properties of the caller. `resolve_mcp_principal()` performs the single
+request-context read (`fastmcp_pvl_core.get_subject()` + `get_claims()`,
+applying the claim keys registered at startup via
+`configure_identity_claims()`), and the write tools bind the result on a
+contextvar (`write_identity_scope()` in `_server_tools/writer.py`) around
+their `asyncio.to_thread` call, together with the OKF write intent whose
+actor derives from the **same** Principal — so the OKF provenance stamp and
+the git commit author can no longer disagree by construction.
+
+Propagation to the deferred commit is **capture-at-fire**: the historical
+design had `GitWriteStrategy` read the OIDC claims itself via FastMCP's
+`get_access_token()` per commit, but the strategy runs on
+`WriteCallbackDispatcher`'s own daemon thread, where no request context
+exists — the read silently returned `None` and the configured
+`GIT_COMMIT_NAME_CLAIM`/`EMAIL_CLAIM` never applied on the deployed write
+path (#1218; the OKF read worked because `asyncio.to_thread` copies the
+context, a fresh `threading.Thread` does not). `WriteCallbackDispatcher.fire`
+therefore snapshots `current_principal()` — it runs on the request's
+`to_thread` worker, where the contextvar is visible — into the queue item,
+and the worker forwards `principal=` only to callbacks that opt in via the
+`accepts_principal` attribute (`types.ACCEPTS_PRINCIPAL_ATTR`), mirroring
+the `old_path` opt-in above so third-party three-argument callbacks are
+untouched. `GitWriteStrategy.__call__` consumes the Principal's
+`display_name`/`email` as the commit `--author` (committer stays the static
+identity); the `git/` package imports nothing from `fastmcp` (guard-tested),
+so non-MCP drivers supply a `Principal` instead of faking request context.
+Background paths without an acting person — the pull-loop conflict commits,
+the webhook, the transfer-route uploads — carry no Principal and use the
+static identity / tool actor, as before.
+
 **Deprecation note**: `git_write_strategy()` factory function is preserved for
 backward compatibility. Prefer constructing `GitWriteStrategy` directly for
-access to `flush()` and `close()` methods.
+access to `flush()` and `close()` methods. The `commit_name_claim` /
+`commit_email_claim` constructor kwargs no longer drive claim extraction
+(see above); they remain accepted and still inform the startup identity
+warning.
 
 ### `scanner.py`: File Discovery and Parsing
 
