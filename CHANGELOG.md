@@ -22,6 +22,27 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 4.1.0 (2026-08-30)
+
+### Features
+
+- Voyage embedding provider and the WRITE_PROTECT_EXISTING guard (#1169)
+- expose note size on the enumeration surfaces (#1171)
+- adopt template v6.0.0 and compose via pvl-core 5 (#1192)
+- ✨ Resolve the default search mode from what the vault can serve. (#1189)
+
+### Bug Fixes
+
+- v4.1 bug sweep — rename staging, webhook gating, blank query, changelog (#1163)
+- drop the pygments pins, which held the lock on the broken release (#1166)
+- make the template-conformance gate actually render (#1191)
+- let @claude review actually run a review (#1194)
+- give generated reserved files the frontmatter the index gate requires (#1196)
+- declare the font origins the SPA actually loads (#1199)
+- validate default_search_mode at the constructor boundary too (#1206)
+- give the release index the marker form the promotion matches (#1212)
+
+
 ## 4.1.0-rc.0 (2026-08-29)
 
 ### Features
