@@ -3447,6 +3447,34 @@ locks were introduced — so the documented lock-ordering contracts of the
 pull/write paths (`_force_pull_rebase_fallback` requires the lock held;
 `_quiesce_writes` drains before the lock is taken) are unchanged.
 
+**Facet protocols (`git/interfaces.py`, #1229)**: the three concerns are
+also expressed as protocols, so each consumer depends on the surface it uses
+rather than on the concrete class:
+
+- `HistorySource` — `get_file_history` / `get_file_diff`. `GitQueryManager`
+  depends on this and nothing else.
+- `Syncer` — pull/push (`force_pull`, `force_push`, `sync_once`), the loop
+  lifecycle (`start`/`stop`/`flush`/`close`/`set_write_quiescer`), and the
+  repository reads the `git_sync` tool needs (`is_managed`,
+  `resolve_force_repo`, `head_sha`, `branch_name`).
+- `Versioner` — the per-write commit; structurally the same shape as
+  `PrincipalAwareWriteCallback`, restated so the module needs no runtime
+  import beyond `typing`.
+- `VersionedStore` — all three, which is what `Vault` holds.
+
+`GitWriteStrategy` remains the single object implementing all of them, and is
+still wired as both `git_strategy` and `on_write`; `Vault.close()` compares
+the two by identity to avoid closing one object twice. Splitting into three
+*objects* is deliberately not done — the collaborators share one lock, and
+that identity check depends on there being one object.
+
+The promotion of `is_managed`, `resolve_force_repo`, `head_sha`, and
+`branch_name` to the public surface replaced private-attribute reads
+(`strategy._managed`, `strategy._git(...)`) that the MCP tool layer had been
+making; the `git_sync` managed-mode gate now tests `isinstance(strategy,
+Syncer) and strategy.is_managed`, i.e. what the store can do rather than
+which class it is.
+
 For private repos, HTTPS token auth uses:
 
 - `MARKDOWN_VAULT_MCP_GIT_USERNAME` (default `x-access-token`)

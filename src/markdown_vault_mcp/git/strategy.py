@@ -466,7 +466,7 @@ class GitWriteStrategy:
             ``commits_pulled=0``, ``to_sha`` set to the post-operation
             HEAD, and the provided ``reason`` / ``conflict_files``.
         """
-        new_head = self._head_sha(git_root)
+        new_head = self.head_sha(git_root)
         self._lfs_pull(env=env)
         return PullResult(
             applied=True,
@@ -482,8 +482,21 @@ class GitWriteStrategy:
     # Synchronous force-trigger helpers (used by the ``git_sync`` MCP tool)
     # ------------------------------------------------------------------
 
-    def _resolve_force_repo(self) -> Path:
+    @property
+    def is_managed(self) -> bool:
+        """Whether this strategy owns a managed clone of a remote repository.
+
+        Part of the :class:`~markdown_vault_mcp.git.interfaces.Syncer` seam
+        (#1229): the ``git_sync`` tool gates on it, and did so by reading the
+        private attribute before the promotion.
+        """
+        return self._managed
+
+    def resolve_force_repo(self) -> Path:
         """Return the working tree path used by ``force_*`` methods.
+
+        Returns:
+            The configured working tree.
 
         Raises:
             RuntimeError: When no ``repo_path`` was configured at
@@ -498,9 +511,31 @@ class GitWriteStrategy:
             )
         return self._repo_path
 
-    def _head_sha(self, git_root: Path) -> str:
-        """Return the current HEAD SHA of *git_root*."""
+    def head_sha(self, git_root: Path) -> str:
+        """Return the current HEAD SHA of *git_root*.
+
+        Args:
+            git_root: The working tree to read.
+
+        Returns:
+            The full HEAD SHA.
+        """
         return self._git(git_root, "rev-parse", "HEAD").strip()
+
+    def branch_name(self, git_root: Path) -> str:
+        """Return the checked-out branch name of *git_root*.
+
+        A detached HEAD yields ``"HEAD"`` from git itself.  Failures to invoke
+        git at all propagate; the caller decides whether a fallback is
+        appropriate.
+
+        Args:
+            git_root: The working tree to read.
+
+        Returns:
+            The branch name.
+        """
+        return self._git(git_root, "rev-parse", "--abbrev-ref", "HEAD").strip()
 
     def _git(
         self,
@@ -603,7 +638,7 @@ class GitWriteStrategy:
         ``"pull_disabled"`` **before running any git command** (#1128).
         Without that gate the pipeline ran ``git fetch origin`` on a
         remoteless checkout (answering ``"fetch_failed"``, which reads as
-        retryable) and raised ``CalledProcessError`` out of ``_head_sha``
+        retryable) and raised ``CalledProcessError`` out of ``head_sha``
         on a vault that is not a git repository at all. ``enable_pull``
         gated only the periodic loop before; it now gates every pull.
 
@@ -634,7 +669,7 @@ class GitWriteStrategy:
                 to_sha="",
                 reason=PULL_REASON_PULL_DISABLED,
             )
-        git_root = self._resolve_force_repo()
+        git_root = self.resolve_force_repo()
         return self._pull_pipeline(git_root, dry_run=dry_run)
 
     def _pull_pipeline(
@@ -665,7 +700,7 @@ class GitWriteStrategy:
         env = self._git_env()
         try:
             with self._quiesce_writes(skip=dry_run), self._lock:
-                from_sha = self._head_sha(git_root)
+                from_sha = self.head_sha(git_root)
 
                 # Always fetch first — both dry-run and real-pull need the
                 # remote-tracking ref refreshed before comparing SHAs.
@@ -775,7 +810,7 @@ class GitWriteStrategy:
                     )
 
                 # Fast-forward succeeded.  ``remote_sha`` is the new HEAD —
-                # no need to re-read it via ``_head_sha``.
+                # no need to re-read it via ``head_sha``.
                 self._lfs_pull(env=env)
                 return PullResult(
                     applied=True,
@@ -884,7 +919,7 @@ class GitWriteStrategy:
 
             # Rebase has already completed via ``git rebase --continue`` — HEAD
             # has advanced even if the sibling-files commit below fails.
-            actual_head = self._head_sha(git_root)
+            actual_head = self.head_sha(git_root)
             written = conflict.write_conflict_files(
                 git_root,
                 saved,
@@ -973,10 +1008,10 @@ class GitWriteStrategy:
             RuntimeError: When the strategy was constructed without
                 ``repo_path``.
         """
-        git_root = self._resolve_force_repo()
+        git_root = self.resolve_force_repo()
 
         with self._lock:
-            local_head = self._head_sha(git_root)
+            local_head = self.head_sha(git_root)
 
             # Resolve the remote-tracking SHA before the push.  Mirrors
             # :meth:`force_pull` — derive ``origin/<branch>`` from the current

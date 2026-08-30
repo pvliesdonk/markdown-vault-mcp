@@ -199,6 +199,12 @@ ignore = ["E501"]
 # removal (which shrinks the signature under the ceiling) is scheduled for
 # the next major. Gate-only rule, so a `# noqa` would be stripped (RUF100).
 "src/markdown_vault_mcp/vault.py" = ["ARG002", "PLR0913"]
+# PLR0913: the facet protocols (#1229) restate the signatures of the methods
+# they describe, so their argument counts are fixed by GitWriteStrategy's
+# existing surface — shrinking them here would only make the protocol stop
+# matching the implementation. Gate-only rule, so a `# noqa` would be
+# stripped (RUF100).
+"src/markdown_vault_mcp/git/interfaces.py" = ["PLR0913"]
 # Depends() and CurrentContext() calls in argument defaults are the standard
 # FastMCP dependency injection pattern — B008 is a false positive here.
 # Context/FastMCP/Vault imports must stay runtime (not TYPE_CHECKING) for

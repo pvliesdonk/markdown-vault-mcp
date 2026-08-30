@@ -1,7 +1,7 @@
 """Git history/diff query manager.
 
 Handles read-only git queries (commit history, diffs) with dependency
-injection — receives a :class:`~markdown_vault_mcp.git.GitWriteStrategy`
+injection — receives a :class:`~markdown_vault_mcp.git.HistorySource`
 (or ``None`` when the vault is not a git repository) and the ``source_dir``,
 with no back-reference to :class:`Vault`. Sibling to
 :class:`~markdown_vault_mcp.managers.link.LinkManager`. Extracted from
@@ -23,15 +23,20 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from markdown_vault_mcp.git import GitWriteStrategy
+    from markdown_vault_mcp.git import HistorySource
     from markdown_vault_mcp.types import CommitDiff, HistoryEntry
 
 
 class GitQueryManager:
-    """Read-only git history/diff queries, backed by a ``GitWriteStrategy``.
+    """Read-only git history/diff queries, backed by a ``HistorySource``.
+
+    Depends on the narrowest of the three versioning facets (#1229): this
+    manager calls ``get_file_history`` and ``get_file_diff`` and nothing else,
+    so it is coupled to neither the commit nor the sync surface.
+    ``GitWriteStrategy`` is the implementation the git-backed vault supplies.
 
     Args:
-        git_strategy: The git strategy to query, or ``None`` when the vault's
+        git_strategy: The history source to query, or ``None`` when the vault's
             source directory is not inside a git repository (queries then
             return empty results rather than raising).
         source_dir: Absolute path to the vault root directory.
@@ -44,7 +49,7 @@ class GitQueryManager:
 
     def __init__(
         self,
-        git_strategy: GitWriteStrategy | None,
+        git_strategy: HistorySource | None,
         source_dir: Path,
         attachment_extensions: Sequence[str] | None = None,
     ) -> None:

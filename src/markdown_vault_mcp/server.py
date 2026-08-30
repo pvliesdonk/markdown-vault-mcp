@@ -289,7 +289,7 @@ def make_server(
     # ``to_vault_kwargs(config)`` — that call builds an embedding
     # provider (slow, GBs of memory) and may run ``git clone`` as a side
     # effect.  The runtime check inside the ``git_sync`` tool body
-    # (``isinstance(strategy, GitWriteStrategy) and strategy._managed``)
+    # (``isinstance(strategy, Syncer) and strategy.is_managed``)
     # stays aligned with this gate via the same ``config.git.repo_url``
     # value: managed mode requires an explicit remote URL.  See #220 for
     # the broader cleanup of duplicate ``to_vault_kwargs`` calls.

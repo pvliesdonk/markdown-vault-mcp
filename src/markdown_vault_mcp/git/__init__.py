@@ -32,6 +32,12 @@ from markdown_vault_mcp.git._run import (
     _find_git_root,  # noqa: F401 -- re-exported for the historic import surface
 )
 from markdown_vault_mcp.git.bootstrap import RepoBootstrap
+from markdown_vault_mcp.git.interfaces import (
+    HistorySource,
+    Syncer,
+    VersionedStore,
+    Versioner,
+)
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
 from markdown_vault_mcp.git.strategy import (  # noqa: F401 -- re-exported for the historic import surface
     GitWriteStrategy,
@@ -65,9 +71,13 @@ __all__ = [
     "PUSH_REASON_NO_REMOTE",
     "PUSH_REASON_PUSH_FAILED",
     "GitWriteStrategy",
+    "HistorySource",
     "PullResult",
     "PushResult",
     "PushScheduler",
     "RepoBootstrap",
+    "Syncer",
+    "VersionedStore",
+    "Versioner",
     "git_write_strategy",
 ]

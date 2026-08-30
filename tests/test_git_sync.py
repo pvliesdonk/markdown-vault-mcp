@@ -410,7 +410,7 @@ class TestGitSync:
             push_called = {"count": 0}
 
             def _failing_pull(*_args: object, **_kwargs: object) -> PullResult:
-                head = strategy._head_sha(strategy._resolve_force_repo())
+                head = strategy.head_sha(strategy.resolve_force_repo())
                 return PullResult(
                     applied=False,
                     fast_forward=False,

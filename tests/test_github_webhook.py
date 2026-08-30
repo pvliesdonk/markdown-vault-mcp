@@ -490,7 +490,7 @@ def test_force_pull_is_inert_without_remote_sync(tmp_path: Path) -> None:
 def test_force_pull_on_a_non_git_directory_does_not_raise(tmp_path: Path) -> None:
     """The second reported shape: a plain directory, not a git repo (#1128).
 
-    ``_pull_pipeline``'s ``_head_sha`` raised ``CalledProcessError`` here,
+    ``_pull_pipeline``'s ``head_sha`` raised ``CalledProcessError`` here,
     which escaped the webhook handler as an unhandled 500.
     """
     from markdown_vault_mcp.git.strategy import GitWriteStrategy

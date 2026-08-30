@@ -10,7 +10,7 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 
-from markdown_vault_mcp.git import GitWriteStrategy, PullResult, PushResult
+from markdown_vault_mcp.git import PullResult, PushResult, Syncer
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
@@ -27,11 +27,15 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def _resolve_managed_strategy(vault: Vault) -> GitWriteStrategy:
-    """Resolve and validate the managed-mode git strategy from a Vault.
+def _resolve_managed_strategy(vault: Vault) -> Syncer:
+    """Resolve and validate the managed-mode git syncer from a Vault.
+
+    Gates on the :class:`~markdown_vault_mcp.git.Syncer` seam rather than the
+    concrete strategy class (#1229), so the check is about what the store can
+    do, not which class implements it.
 
     Returns:
-        The Vault's :class:`GitWriteStrategy` if it's in managed mode.
+        The Vault's syncer if it is in managed mode.
 
     Raises:
         ValueError: If the deployment isn't wired with a managed git
@@ -40,7 +44,7 @@ def _resolve_managed_strategy(vault: Vault) -> GitWriteStrategy:
     # The MCP layer is a trusted consumer of Vault internals — adding
     # a public accessor for this single tool would be scope creep.
     strategy = vault._git_strategy
-    if not isinstance(strategy, GitWriteStrategy) or not strategy._managed:
+    if not isinstance(strategy, Syncer) or not strategy.is_managed:
         raise ValueError(
             "git_sync requires a managed git deployment.  Set "
             "MARKDOWN_VAULT_MCP_GIT_REPO_URL to enable it."
@@ -48,7 +52,7 @@ def _resolve_managed_strategy(vault: Vault) -> GitWriteStrategy:
     return strategy
 
 
-async def _get_branch_name(strategy: GitWriteStrategy, git_root: Path) -> str:
+async def _get_branch_name(strategy: Syncer, git_root: Path) -> str:
     """Return the current branch name, falling back to ``"HEAD"`` on failure.
 
     Used by :func:`git_sync` to populate the ``branch`` field of the
@@ -56,12 +60,8 @@ async def _get_branch_name(strategy: GitWriteStrategy, git_root: Path) -> str:
     git itself; this helper's fallback covers the rarer cases where
     git invocation fails entirely (binary missing, transient FS error).
     """
-
-    def _read_branch() -> str:
-        return strategy._git(git_root, "rev-parse", "--abbrev-ref", "HEAD").strip()
-
     try:
-        return await asyncio.to_thread(_read_branch)
+        return await asyncio.to_thread(strategy.branch_name, git_root)
     except (subprocess.CalledProcessError, FileNotFoundError):
         # Narrow the catch per CLAUDE.md's logging standard so a real bug
         # (e.g. AttributeError) still propagates.
@@ -120,9 +120,9 @@ async def _reindex_after_pull(vault: Vault, pull_dict: dict[str, Any]) -> None:
 
     ``force_pull`` only mutates the working tree; without this call,
     ``search`` / ``list_documents`` / ``get_context`` would serve stale
-    data until the next write.  Mirrors the periodic pull loop's
-    ``on_pull`` callback in :meth:`GitWriteStrategy._pull_loop` —
-    same ``pause_writes()`` + ``reindex()`` pattern.
+    data until the next write.  Mirrors the ``on_pull`` callback the
+    store's own periodic pull loop fires — same ``pause_writes()`` +
+    ``reindex()`` pattern.
 
     On reindex failure: the pull side-effect already happened (HEAD
     moved, files on disk), so failing the whole tool would hide the
@@ -155,14 +155,14 @@ async def _reindex_after_pull(vault: Vault, pull_dict: dict[str, Any]) -> None:
 
 
 async def _run_pull_leg(
-    strategy: GitWriteStrategy,
+    strategy: Syncer,
     vault: Vault,
     *,
     dry_run: bool,
 ) -> dict[str, Any]:
     """Run the pull leg of ``git_sync`` and return its response dict.
 
-    Calls :meth:`GitWriteStrategy.force_pull`, projects the result,
+    Calls :meth:`~markdown_vault_mcp.git.Syncer.force_pull`, projects the result,
     and triggers a reindex when HEAD actually moved (skipped on
     dry-run and on failure).  The reindex's own failure is surfaced
     on the returned dict, not raised.
@@ -188,7 +188,7 @@ async def _run_pull_leg(
     return pull_dict
 
 
-async def _run_push_leg(strategy: GitWriteStrategy, *, dry_run: bool) -> dict[str, Any]:
+async def _run_push_leg(strategy: Syncer, *, dry_run: bool) -> dict[str, Any]:
     """Run the push leg of ``git_sync`` and return its response dict."""
     push_result = await asyncio.to_thread(strategy.force_push, dry_run=dry_run)
     return _format_push_dict(push_result)
@@ -377,8 +377,8 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Synchronously reconcile the local clone with ``origin``.
 
-        Composes :meth:`GitWriteStrategy.force_pull` and
-        :meth:`GitWriteStrategy.force_push` behind a single tool call so
+        Composes :meth:`~markdown_vault_mcp.git.Syncer.force_pull` and
+        :meth:`~markdown_vault_mcp.git.Syncer.force_push` behind a single tool call so
         an operator can request "pull then push" with one round-trip.
         Only available on managed git deployments
         (``MARKDOWN_VAULT_MCP_GIT_REPO_URL`` set).
@@ -398,7 +398,7 @@ def register(mcp: FastMCP) -> None:
         Args:
             direction: ``"pull"``, ``"push"``, or ``"both"`` (default).
             dry_run: When ``True``, projects pull without moving HEAD.
-                See :meth:`GitWriteStrategy.force_push` for why this is
+                See :meth:`~markdown_vault_mcp.git.Syncer.force_push` for why this is
                 a no-op on the push leg.
 
         Returns:
@@ -426,15 +426,15 @@ def register(mcp: FastMCP) -> None:
 
         Raises:
             ValueError: When the underlying strategy is not a managed
-                :class:`GitWriteStrategy` (i.e. the deployment is not
+                :class:`~markdown_vault_mcp.git.Syncer` (i.e. the deployment is not
                 wired with ``MARKDOWN_VAULT_MCP_GIT_REPO_URL``).
         """
         strategy = _resolve_managed_strategy(vault)
-        git_root = strategy._resolve_force_repo()
+        git_root = strategy.resolve_force_repo()
 
         result: dict[str, Any] = {
             "direction": direction,
-            "head_sha": await asyncio.to_thread(strategy._head_sha, git_root),
+            "head_sha": await asyncio.to_thread(strategy.head_sha, git_root),
             "branch": await _get_branch_name(strategy, git_root),
             "pull": None,
             "push": None,
@@ -457,7 +457,7 @@ def register(mcp: FastMCP) -> None:
                 # Refresh head_sha defensively (today's force_pull leaves
                 # HEAD in place on failure, but allowed to move).
                 result["head_sha"] = await asyncio.to_thread(
-                    strategy._head_sha, git_root
+                    strategy.head_sha, git_root
                 )
                 return result
 
@@ -467,5 +467,5 @@ def register(mcp: FastMCP) -> None:
         # HEAD may have moved (pull leg advanced it).  Refresh once at the
         # end so the caller sees the post-sync state regardless of which
         # legs ran.
-        result["head_sha"] = await asyncio.to_thread(strategy._head_sha, git_root)
+        result["head_sha"] = await asyncio.to_thread(strategy.head_sha, git_root)
         return result

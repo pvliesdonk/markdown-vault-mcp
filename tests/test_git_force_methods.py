@@ -220,7 +220,7 @@ class TestForceMethodsErrorBranches:
 
     These tests target the branches the happy-path tests do not exercise:
 
-    * ``_resolve_force_repo`` raising when constructed without ``repo_path``
+    * ``resolve_force_repo`` raising when constructed without ``repo_path``
     * ``force_pull`` ``fetch_failed`` (remote URL unreachable)
     * ``force_pull`` ``no_remote`` (no upstream and no ``origin/HEAD``)
     * ``force_pull`` ``rebased`` (divergent histories on different files)
