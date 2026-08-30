@@ -73,7 +73,7 @@ class IndexManager:
         indexed_frontmatter_fields: Frontmatter keys promoted to the
             ``document_tags`` table for structured filtering.
         get_vectors: Callback returning the current
-            :class:`~markdown_vault_mcp.vector_index.VectorIndex` (or
+            :class:`~markdown_vault_mcp.interfaces.VectorStore` (or
             ``None``).
         set_vectors: Callback to set the vector index on the owner.
         embed_model_name: Embedding model name in force at build time, or
@@ -202,14 +202,14 @@ class IndexManager:
         return candidates
 
     def _load_vectors(self) -> VectorStore:
-        """Load or return the cached VectorIndex, self-healing corrupt sidecars.
+        """Load or return the cached vector store, self-healing corrupt sidecars.
 
         Thin delegation to
         :meth:`~markdown_vault_mcp.managers.embeddings.EmbeddingsManager._load_vectors`
         (#1157); see there for the full contract.
 
         Returns:
-            A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
+            The loaded :class:`~markdown_vault_mcp.interfaces.VectorStore`.
         """
         return self._embeddings._load_vectors()
 

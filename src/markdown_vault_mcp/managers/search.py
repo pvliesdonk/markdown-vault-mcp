@@ -310,7 +310,7 @@ class SearchManager:
             )
 
     def _load_vectors(self) -> VectorStore:
-        """Load or return the cached VectorIndex, self-healing corrupt sidecars.
+        """Load or return the cached vector store, self-healing corrupt sidecars.
 
         Delegates to
         :func:`markdown_vault_mcp.managers._vector_loader.load_or_self_heal`
@@ -318,7 +318,7 @@ class SearchManager:
         self-heal contract.
 
         Returns:
-            A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
+            The loaded :class:`~markdown_vault_mcp.interfaces.VectorStore`.
 
         Raises:
             RuntimeError: If called without a prior ``_require_vectors()``

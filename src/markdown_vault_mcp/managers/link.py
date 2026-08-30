@@ -2,8 +2,10 @@
 
 Handles all link-related queries (backlinks, outlinks, broken links,
 orphans, most-linked, connection paths) with dependency injection —
-receives only :class:`~markdown_vault_mcp.fts_index.FTSIndex` and a
-``source_dir`` path, no back-reference to :class:`Vault`.
+receives only a :class:`~markdown_vault_mcp.interfaces.KeywordGraphIndex`
+and a ``source_dir`` path, no back-reference to :class:`Vault`.  It uses the
+graph facet plus one relational read (``get_note``), so it is coupled to
+neither search ranking nor the concrete SQLite backend (#1230).
 """
 
 from __future__ import annotations

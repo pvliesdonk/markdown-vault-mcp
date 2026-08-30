@@ -16,12 +16,12 @@ Actor resolution rules (design §6):
 - a tool actor ``markdown-vault-mcp/<version>`` otherwise (unauthenticated, or a
   non-tool write with no request identity).
 
-Those rules are implemented once, in
-:mod:`markdown_vault_mcp._identity` — including that ``get_subject()`` returns
-the sentinel ``"local"`` under auth mode ``none``, which counts as *no human
-identity* for both actor resolution and ``okf_verify``. This module reads a
-``Principal`` and never the request context directly (#1231); a second copy of
-the rules is a second thing to keep in agreement.
+Those rules are applied once, in :mod:`markdown_vault_mcp._identity` —
+including that ``get_subject()`` returns the sentinel ``"local"`` under auth
+mode ``none``, which counts as *no human identity* for both actor resolution
+and ``okf_verify``. This module reads a ``Principal`` and never the request
+context directly (#1231); a second copy of the rules is a second thing to keep
+in agreement.
 """
 
 from __future__ import annotations
@@ -47,7 +47,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_LOCAL_SUBJECT = "local"  # get_subject() sentinel for startup auth mode "none"
+#: The subject recorded for an unattributable elicit-mode verification. Shares
+#: its spelling with the ``get_subject()`` sentinel that :mod:`._identity`
+#: treats as *no human identity*, but the role here is the opposite: this is a
+#: value deliberately stamped (``human:local``), not one detected and
+#: discarded. Kept separate so narrowing one never silently moves the other.
+_LOCAL_SUBJECT = "local"
 
 
 @dataclass(frozen=True)
@@ -125,8 +130,8 @@ def resolve_human_subject() -> str | None:
     already ``None`` for a non-human caller.  With none bound — a driver that
     is not the MCP server, or a call outside ``write_identity_scope`` — it
     resolves one from the request context rather than re-deriving the rules
-    here, so the ``local``-sentinel handling lives in exactly one place
-    (#1231).
+    here, so the rule that decides what counts as a human subject — including
+    the ``"local"`` sentinel — is applied in exactly one place (#1231).
     """
     principal = current_principal()
     if principal is None:
