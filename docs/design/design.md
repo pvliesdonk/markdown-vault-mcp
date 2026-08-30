@@ -3182,6 +3182,7 @@ mcp = ["fastmcp>=3.0,<4"]
 embeddings-api = ["httpx>=0.25", "numpy"]
 embeddings = ["fastembed>=0.3", "numpy"]
 all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1", "mypy>=1.0"]
 
 [tool.uv]
 # The single numpy bound while requires-python floors at 3.11: numpy 2.5.x
@@ -3189,7 +3190,6 @@ all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy"]
 # (#727, #1214).  Held here, not in the extras, so Renovate cannot rewrite
 # it (#1216); check_pins.py enforces the exit condition.
 constraint-dependencies = ["numpy<2.5"]  # until: fastmcp-server-template#547
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1", "mypy>=1.0"]
 
 [project.scripts]
 markdown-vault-mcp = "markdown_vault_mcp.cli:main"
