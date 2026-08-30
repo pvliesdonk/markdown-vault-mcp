@@ -73,6 +73,12 @@ vault = Vault(on_write=strategy, ...)
 strategy.close()  # final flush
 ```
 
+### `is_managed`
+
+Whether this strategy owns a managed clone of a remote repository.
+
+Part of the :class:`~markdown_vault_mcp.git.interfaces.Syncer` seam (#1229): the `git_sync` tool gates on it, and did so by reading the private attribute before the promotion.
+
 ### `validate_startup(repo_path)`
 
 Validate startup git settings for token-authenticated workflows.
@@ -91,6 +97,56 @@ Parameters:
 | `old_path`  | \`Path           | None\`                                                                                | For a rename, the absolute path the file moved from, so staging can be scoped to it and path (#894).                                                                                                                                                    |
 | `principal` | \`Principal      | None\`                                                                                | The identity performing the write, resolved at the MCP tool edge and snapshotted through the dispatcher queue (#1160). Its display name / email become the commit's --author; None fields (or no principal) fall back to the static committer identity. |
 
+### `resolve_force_repo()`
+
+Return the working tree path used by `force_*` methods.
+
+Returns:
+
+| Type   | Description                  |
+| ------ | ---------------------------- |
+| `Path` | The configured working tree. |
+
+Raises:
+
+| Type           | Description                                                                                                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RuntimeError` | When no repo_path was configured at construction time. The force\_\* methods require an explicit working tree because they cannot infer one from a per-write callback path. |
+
+### `head_sha(git_root)`
+
+Return the current HEAD SHA of *git_root*.
+
+Parameters:
+
+| Name       | Type   | Description               | Default    |
+| ---------- | ------ | ------------------------- | ---------- |
+| `git_root` | `Path` | The working tree to read. | *required* |
+
+Returns:
+
+| Type  | Description        |
+| ----- | ------------------ |
+| `str` | The full HEAD SHA. |
+
+### `branch_name(git_root)`
+
+Return the checked-out branch name of *git_root*.
+
+A detached HEAD yields `"HEAD"` from git itself. Failures to invoke git at all propagate; the caller decides whether a fallback is appropriate.
+
+Parameters:
+
+| Name       | Type   | Description               | Default    |
+| ---------- | ------ | ------------------------- | ---------- |
+| `git_root` | `Path` | The working tree to read. | *required* |
+
+Returns:
+
+| Type  | Description      |
+| ----- | ---------------- |
+| `str` | The branch name. |
+
 ### `force_pull(*, dry_run=False)`
 
 Pull from `origin` synchronously and return a structured result.
@@ -105,7 +161,7 @@ On `ff-only` failure (divergent history) the implementation falls through to the
 
 After a successful HEAD advance — fast-forward or sibling resolution — :meth:`_lfs_pull` runs so any LFS pointers in the new commits are materialised before the caller sees the working tree.
 
-A strategy built without remote sync — unmanaged / commit-only mode, where `enable_pull` is `False` — has no remote to pull from, so this returns `applied=False` with reason `"pull_disabled"` **before running any git command** (#1128). Without that gate the pipeline ran `git fetch origin` on a remoteless checkout (answering `"fetch_failed"`, which reads as retryable) and raised `CalledProcessError` out of `_head_sha` on a vault that is not a git repository at all. `enable_pull` gated only the periodic loop before; it now gates every pull.
+A strategy built without remote sync — unmanaged / commit-only mode, where `enable_pull` is `False` — has no remote to pull from, so this returns `applied=False` with reason `"pull_disabled"` **before running any git command** (#1128). Without that gate the pipeline ran `git fetch origin` on a remoteless checkout (answering `"fetch_failed"`, which reads as retryable) and raised `CalledProcessError` out of `head_sha` on a vault that is not a git repository at all. `enable_pull` gated only the periodic loop before; it now gates every pull.
 
 Parameters:
 

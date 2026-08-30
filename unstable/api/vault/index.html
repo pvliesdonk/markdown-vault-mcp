@@ -3617,7 +3617,7 @@ operation.  Signature:
                 <code>git_strategy</code>
             </td>
             <td>
-                  <code><a class="autorefs autorefs-internal" title="GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, commit_name_claim=None, commit_email_claim=None, git_lfs=True, repo_path=None) (markdown_vault_mcp.git.GitWriteStrategy)" href="../git/#markdown_vault_mcp.git.GitWriteStrategy">GitWriteStrategy</a> | None</code>
+                  <code><span title="markdown_vault_mcp.git.VersionedStore">VersionedStore</span> | None</code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -4272,8 +4272,9 @@ firing before the initial build would crash the loop thread.</p>
     <div class="doc doc-contents ">
 
         <p>Pull from the git remote synchronously.</p>
-<p>Thin public facade over :meth:<code>GitWriteStrategy.force_pull</code> used by
-the GitHub webhook handler so the strategy stays an implementation detail.</p>
+<p>Thin public facade over :meth:<code>~markdown_vault_mcp.git.Syncer.force_pull</code>
+used by the GitHub webhook handler so the store stays an implementation
+detail.</p>
 <p>The strategy self-quiesces around its own merge: it pauses new writes
 (via the :meth:<code>pause_writes</code> callable wired in :meth:<code>__init__</code> through
 <code>set_write_quiescer</code>) and drains the deferred-commit queue before the
