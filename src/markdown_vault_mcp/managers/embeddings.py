@@ -32,11 +32,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
-    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.interfaces import KeywordIndex, VectorStore
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.scanner import ChunkStrategy
     from markdown_vault_mcp.types import ParsedNote
-    from markdown_vault_mcp.vector_index import VectorIndex
 
 logger = logging.getLogger(__name__)
 
@@ -95,13 +94,13 @@ class EmbeddingsManager:
     def __init__(
         self,
         *,
-        fts: FTSIndex,
+        fts: KeywordIndex,
         source_dir: Path,
         embeddings_path: Path | None,
         embedding_provider: EmbeddingProvider | None,
         chunk_strategy: ChunkStrategy,
-        get_vectors: Callable[[], VectorIndex | None],
-        set_vectors: Callable[[VectorIndex | None], None],
+        get_vectors: Callable[[], VectorStore | None],
+        set_vectors: Callable[[VectorStore | None], None],
         title_field: str,
         embed_text_builder: EmbedTextBuilder,
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
@@ -325,7 +324,7 @@ class EmbeddingsManager:
             return False
         return not stat_module.S_ISREG(st.st_mode)
 
-    def _load_vectors(self) -> VectorIndex:
+    def _load_vectors(self) -> VectorStore:
         """Load or return the cached VectorIndex, self-healing corrupt sidecars.
 
         Delegates to
@@ -361,7 +360,7 @@ class EmbeddingsManager:
     # Inline reindex embedding
     # ------------------------------------------------------------------
 
-    def _embed_note_inline(self, vectors: VectorIndex, note: ParsedNote) -> int:
+    def _embed_note_inline(self, vectors: VectorStore, note: ParsedNote) -> int:
         """Embed one changed note's chunks inline, resiliently (#930).
 
         Mirrors the cold-build / convergence contract: chunks are embedded
@@ -607,7 +606,7 @@ class EmbeddingsManager:
 
     def _embed_cold_build_batches(
         self,
-        vectors: VectorIndex,
+        vectors: VectorStore,
         texts: list[str],
         meta: list[dict[str, Any]],
     ) -> int:
@@ -673,7 +672,7 @@ class EmbeddingsManager:
                 )
         return embedded
 
-    def _converge_embeddings(self, vectors: VectorIndex) -> int:
+    def _converge_embeddings(self, vectors: VectorStore) -> int:
         """Reconcile a non-empty vector index with the FTS chunk set (#665).
 
         Chunk identity is the ``(title, heading, content)`` multiset per
@@ -767,7 +766,7 @@ class EmbeddingsManager:
         return added
 
     def _diff_converge_state(
-        self, vectors: VectorIndex
+        self, vectors: VectorStore
     ) -> tuple[dict[str, list[dict[str, Any]]], list[str], list[str], list[str], int]:
         """Diff the FTS chunk set against the sidecar for convergence.
 
@@ -874,7 +873,7 @@ class EmbeddingsManager:
 
     def _reembed_converge_documents(
         self,
-        vectors: VectorIndex,
+        vectors: VectorStore,
         fts_by_path: dict[str, list[dict[str, Any]]],
         paths: list[str],
     ) -> tuple[int, int, int, int]:

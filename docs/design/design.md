@@ -2529,6 +2529,12 @@ Uses the schema defined in [Database Schema](#database-schema). Note that
 with RRF scoring in hybrid mode; each file appears once with up to
 `chunks_per_file` matching sections).
 
+`FTSIndex` satisfies the `KeywordIndex` and `GraphStore` protocols
+(`interfaces.py`, #1230) structurally — it does not inherit from them. The
+managers are typed against those protocols rather than against this class, so
+the concrete backend is substitutable; `Vault` constructs the `FTSIndex` and
+that construction is where mypy proves the conformance.
+
 ### `vector_index.py`: Numpy Embeddings
 
 Adapted from ifcraftcorpus `embeddings.py`. Rename `EmbeddingIndex` to
@@ -2556,6 +2562,37 @@ Key methods:
   mismatch (the residue of a crash between the two independent atomic
   replaces), which the load-time self-heal routes to a `force=True`
   rebuild (#734).
+
+`VectorIndex` satisfies the `VectorStore` protocol (`interfaces.py`, #1230)
+structurally. The managers hold `VectorStore`; `_vector_loader.py` and
+`EmbeddingsManager` are the factory sites that still name `VectorIndex`
+concretely, because constructing one is exactly what they are for. `load()`
+is deliberately outside the protocol for the same reason — how a backend is
+built is not part of what consumers ask of it.
+
+### `interfaces.py`: Storage Protocols (#1230)
+
+Three protocols for what the managers depend on, mirroring the move already
+made for `EmbeddingProvider` and applying it to the storage that provider
+feeds:
+
+- `KeywordIndex` — the relational document store, full-text search,
+  enumeration, tombstones, and the build-state bookkeeping.
+- `GraphStore` — the link graph. A distinct concept from search: it answers
+  *structure* (what links to what), not *relevance* (what matches a query).
+- `KeywordGraphIndex` — both, which is what one SQLite database serves today.
+  Consumers needing members from both facets are typed against this, so the
+  two concepts stay separable without pretending the current backend
+  separates them.
+- `VectorStore` — the semantic surface.
+
+Each protocol carries exactly what its consumers call, not everything the
+current implementation exposes; grow one when a consumer needs more. A
+protocol wider than its consumers is a god interface with extra steps.
+
+This is the seam the standing "if tens of thousands, evaluate Qdrant" risk
+note needs: substituting a backend is now a matter of satisfying a protocol
+rather than editing six manager constructors.
 
 ### `providers.py`: Embedding Providers
 
@@ -3822,7 +3859,7 @@ real release runs. No committed manifest bump is needed for the bundle.
 | Risk | Mitigation |
 |-|-|
 | VRAM contention (Ollama on RTX 4060 8 GB) | `cpu_only` mode, batch embeddings |
-| Vault scale (numpy in-memory) | Fine for thousands of documents. If tens of thousands, evaluate Qdrant. |
+| Vault scale (numpy in-memory) | Fine for thousands of documents. If tens of thousands, evaluate Qdrant behind the `VectorStore` protocol (`interfaces.py`, #1230). |
 | Concurrent writes (Obsidian + MCP) | Use git as sync layer. MCP server should not write directly to live Obsidian vault without git in between. |
 | FastMCP breaking changes | Pin `>=3.0,<4`. Monitor for 4.0 migration. |
 | `Vault` API doesn't fit ifcraftcorpus | Validate in Phase 1 before building MCP server. |

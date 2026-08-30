@@ -27,7 +27,7 @@ from markdown_vault_mcp.utils import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.interfaces import KeywordGraphIndex
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class LinkManager:
         source_dir: Absolute path to the vault root directory.
     """
 
-    def __init__(self, fts: FTSIndex, source_dir: Path) -> None:
+    def __init__(self, fts: KeywordGraphIndex, source_dir: Path) -> None:
         self._fts = fts
         self._source_dir = source_dir
 

@@ -41,11 +41,10 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.interfaces import KeywordGraphIndex, VectorStore
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.scanner import ChunkStrategy
     from markdown_vault_mcp.tracker import ChangeTracker
-    from markdown_vault_mcp.vector_index import VectorIndex
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +100,7 @@ class IndexManager:
 
     def __init__(
         self,
-        fts: FTSIndex,
+        fts: KeywordGraphIndex,
         tracker: ChangeTracker,
         source_dir: Path,
         *,
@@ -111,8 +110,8 @@ class IndexManager:
         exclude_patterns: list[str] | None = None,
         required_frontmatter: list[str] | None = None,
         indexed_frontmatter_fields: list[str] | None = None,
-        get_vectors: Callable[[], VectorIndex | None],
-        set_vectors: Callable[[VectorIndex | None], None],
+        get_vectors: Callable[[], VectorStore | None],
+        set_vectors: Callable[[VectorStore | None], None],
         embed_model_name: str | None = None,
         max_chunk_chars_override: int | None = None,
         title_field: str = "title",
@@ -202,7 +201,7 @@ class IndexManager:
             candidates.append((abs_path, rel_str))
         return candidates
 
-    def _load_vectors(self) -> VectorIndex:
+    def _load_vectors(self) -> VectorStore:
         """Load or return the cached VectorIndex, self-healing corrupt sidecars.
 
         Thin delegation to
@@ -214,7 +213,7 @@ class IndexManager:
         """
         return self._embeddings._load_vectors()
 
-    def _embed_note_inline(self, vectors: VectorIndex, note: ParsedNote) -> int:
+    def _embed_note_inline(self, vectors: VectorStore, note: ParsedNote) -> int:
         """Embed one changed note's chunks inline, resiliently (#930).
 
         Thin delegation to
@@ -328,10 +327,10 @@ class IndexManager:
 
     def _purge_stale_excluded(
         self,
-        vectors: VectorIndex | None,
+        vectors: VectorStore | None,
         *,
         keep_paths: set[str] | None = None,
-    ) -> tuple[int, VectorIndex | None]:
+    ) -> tuple[int, VectorStore | None]:
         """Delete indexed rows that now match ``exclude_patterns`` (#255).
 
         Shared by :meth:`build_index` and :meth:`reindex`, carrying the
@@ -748,7 +747,7 @@ class IndexManager:
     def _upsert_parsed_notes(
         self,
         parsed: list[tuple[str, ParsedNote]],
-        vectors: VectorIndex | None,
+        vectors: VectorStore | None,
         *,
         added_paths: set[str],
     ) -> tuple[int, int]:

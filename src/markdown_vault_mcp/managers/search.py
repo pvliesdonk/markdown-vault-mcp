@@ -83,12 +83,11 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.interfaces import KeywordGraphIndex, VectorStore
     from markdown_vault_mcp.managers.link import LinkManager
     from markdown_vault_mcp.okf import OkfDetector
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.types import FTSResult
-    from markdown_vault_mcp.vector_index import VectorIndex
 
 logger = logging.getLogger(__name__)
 
@@ -176,7 +175,7 @@ class SearchManager:
 
     def __init__(
         self,
-        fts: FTSIndex,
+        fts: KeywordGraphIndex,
         source_dir: Path,
         *,
         embeddings_path: Path | None = None,
@@ -222,19 +221,19 @@ class SearchManager:
         self._embed_text_format = embed_text_format
 
         # Vector index is loaded lazily (only if embeddings_path is set).
-        self._vectors: VectorIndex | None = None
+        self._vectors: VectorStore | None = None
 
     # ------------------------------------------------------------------
     # Vector index property (shared with IndexManager's EmbeddingsManager)
     # ------------------------------------------------------------------
 
     @property
-    def vectors(self) -> VectorIndex | None:
+    def vectors(self) -> VectorStore | None:
         """Return the lazily-loaded vector index, or ``None``."""
         return self._vectors
 
     @vectors.setter
-    def vectors(self, value: VectorIndex | None) -> None:
+    def vectors(self, value: VectorStore | None) -> None:
         self._vectors = value
 
     # ------------------------------------------------------------------
@@ -310,7 +309,7 @@ class SearchManager:
                 "'embeddings_path' to be configured."
             )
 
-    def _load_vectors(self) -> VectorIndex:
+    def _load_vectors(self) -> VectorStore:
         """Load or return the cached VectorIndex, self-healing corrupt sidecars.
 
         Delegates to

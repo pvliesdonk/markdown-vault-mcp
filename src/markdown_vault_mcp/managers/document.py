@@ -78,7 +78,7 @@ from markdown_vault_mcp.utils.text import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
-    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.interfaces import KeywordGraphIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
 
 logger = logging.getLogger(__name__)
@@ -180,7 +180,7 @@ class DocumentManager:
 
     def __init__(
         self,
-        fts: FTSIndex,
+        fts: KeywordGraphIndex,
         source_dir: Path,
         *,
         write_lock: threading.RLock,

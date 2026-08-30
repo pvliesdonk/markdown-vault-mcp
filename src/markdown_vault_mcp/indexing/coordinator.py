@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
-    from markdown_vault_mcp.fts_index import FTSIndex
+    from markdown_vault_mcp.interfaces import KeywordIndex
     from markdown_vault_mcp.managers.index import IndexManager
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class IndexWriteCoordinator:
     def __init__(
         self,
         *,
-        fts: FTSIndex,
+        fts: KeywordIndex,
         index_mgr: IndexManager,
         index_path: Path | str | None,
         file_write_lock: threading.RLock,

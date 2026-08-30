@@ -54,12 +54,12 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.git import PullResult, VersionedStore
+    from markdown_vault_mcp.interfaces import VectorStore
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.summarizer import Summarizer
     from markdown_vault_mcp.types import (
         WriteCallback,
     )
-    from markdown_vault_mcp.vector_index import VectorIndex
 
 logger = logging.getLogger(__name__)
 
@@ -969,12 +969,12 @@ class Vault:
         self._coordinator.require_built()
 
     @property
-    def _vectors(self) -> VectorIndex | None:
+    def _vectors(self) -> VectorStore | None:
         """Bridge property: vector index is owned by SearchManager."""
         return self._search_mgr.vectors
 
     @_vectors.setter
-    def _vectors(self, value: VectorIndex | None) -> None:
+    def _vectors(self, value: VectorStore | None) -> None:
         self._search_mgr.vectors = value
 
     # ------------------------------------------------------------------

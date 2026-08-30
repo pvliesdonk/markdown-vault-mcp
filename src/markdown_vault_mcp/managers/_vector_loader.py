@@ -18,20 +18,20 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from markdown_vault_mcp.interfaces import VectorStore
     from markdown_vault_mcp.providers import EmbeddingProvider
-    from markdown_vault_mcp.vector_index import VectorIndex
 
 
 def load_or_self_heal(
     *,
     embeddings_path: Path,
     embedding_provider: EmbeddingProvider,
-    get_vectors: Callable[[], VectorIndex | None],
-    set_vectors: Callable[[VectorIndex], None],
+    get_vectors: Callable[[], VectorStore | None],
+    set_vectors: Callable[[VectorStore], None],
     rebuild: Callable[[], object],
     logger: logging.Logger,
     embed_text_format: str = "v1",
-) -> VectorIndex:
+) -> VectorStore:
     """Load the vector sidecar into the caller's slot, self-healing corruption.
 
     Returns the cached index if ``get_vectors()`` is already populated.
@@ -64,7 +64,11 @@ def load_or_self_heal(
             this token so its save records the format.
 
     Returns:
-        A :class:`~markdown_vault_mcp.vector_index.VectorIndex` instance.
+        The loaded store.  This function is the backend factory, so it names
+        :class:`~markdown_vault_mcp.vector_index.VectorIndex` concretely when
+        constructing one, but hands it back through the
+        :class:`~markdown_vault_mcp.interfaces.VectorStore` seam its callers
+        hold (#1230).
 
     Raises:
         ValueError: If a self-heal rebuild completes but leaves the slot empty.

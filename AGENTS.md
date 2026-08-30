@@ -54,6 +54,7 @@ src/markdown_vault_mcp/
     query.py           -- read-only git history/diff queries; lock-free pure functions
     types.py           -- PullResult/PushResult + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking
+  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex/VectorStore: the search/index storage seam (#1230)
   fts_index.py         -- SQLite FTS5 schema, BM25 search
   _fts_connection.py   -- per-thread sqlite connection registry + SQLITE_LOCKED retry (#760)
   vector_index.py      -- numpy embeddings, cosine similarity
