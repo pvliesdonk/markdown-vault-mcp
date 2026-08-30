@@ -79,16 +79,18 @@ dependencies = [
 [project.optional-dependencies]
 # PROJECT-EXTRAS-START — add domain-specific optional-dependency groups below; kept across copier update
 mcp = ["fastmcp>=3.0,<4"]
-# numpy <2.5: 2.5.x is 3.12-only and its stubs abort mypy at
-# python_version=3.11 — see the [tool.mypy] comment below and #1214.  Lift
-# together with `requires-python`/`python_version` moving to 3.12.
-embeddings-api = ["httpx>=0.25", "numpy>=1.20,<2.5", "openai>=1.45"]
-embeddings = ["fastembed>=0.3", "numpy>=1.20,<2.5"]
+# numpy carries no bound here on purpose: the <2.5 ceiling lives in
+# [tool.uv] constraint-dependencies below (single bound per package, per
+# scripts/check_pins.py), where Renovate's range rewriting cannot reach it
+# (#1216) — an extras cap got rewritten to >=2.5 by rangeStrategy
+# update-lockfile's out-of-range fallback.
+embeddings-api = ["httpx>=0.25", "numpy", "openai>=1.45"]
+embeddings = ["fastembed>=0.3", "numpy"]
 file-watcher = ["watchdog>=4.0"]
 # LLM-backed summarize tool (OpenAI-compatible chat-completions backend:
 # OpenAI, Ollama, Anthropic's compat endpoint, vLLM, ...).
 summarize = ["openai>=1.45"]
-all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy>=1.20,<2.5", "watchdog>=4.0", "openai>=1.45"]
+all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0", "openai>=1.45"]
 # Pulls debugpy transitively via fastmcp-pvl-core's [debug] extra.  The
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.
@@ -152,6 +154,21 @@ Changelog = "https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CHANGELO
 # with a publisher that accepts whatever the new minor emits.
 requires = ["hatchling>=1.32,<1.33"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+# The single numpy bound (extras above are deliberately bare).  numpy 2.5+
+# is 3.12-only and its PEP 695 stubs abort mypy at this project's
+# python_version=3.11 (#727, #1214); without a ceiling, uv's forked
+# resolution locks 2.5.x for the 3.12+ interpreters CI type-checks on.  It
+# lives here rather than in the extras because Renovate does not manage
+# [tool.uv], so its update-lockfile fallback cannot rewrite the range the
+# way it did to an extras cap (#1216) — while uv itself honors the
+# constraint in every re-lock, lockFileMaintenance included.  check_pins.py
+# fails CI the moment the `until:` issue closes, so the pin cannot outlive
+# the 3.12 floor raise that removes it.
+constraint-dependencies = [
+  "numpy<2.5", # until: https://github.com/pvliesdonk/fastmcp-server-template/issues/547
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/markdown_vault_mcp"]
@@ -349,8 +366,9 @@ exclude_lines = [
 # The `requires-python = ">=3.11"` floor alone does NOT keep numpy 2.5 out:
 # uv forks the resolution on `python_full_version` markers, so a plain
 # `uv lock --upgrade` locks 2.5.x for 3.12+ interpreters — the ones CI
-# type-checks on (#1214).  The `numpy<2.5` caps in the extras above are what
-# hold the single 2.4.x resolution; lift them when this moves to "3.12".
+# type-checks on (#1214).  The `numpy<2.5` entry in [tool.uv]
+# constraint-dependencies is what holds the single 2.4.x resolution; lift
+# it when this moves to "3.12".
 # Beware when re-verifying: an incremental `uv lock` (no --upgrade) keeps the
 # already-locked 2.4.x and hides the fork — that masking is how #1168 judged
 # the previous cap redundant and removed it.  Test with --upgrade.

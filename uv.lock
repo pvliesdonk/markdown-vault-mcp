@@ -9,6 +9,9 @@ resolution-markers = [
     "python_full_version < '3.12'",
 ]
 
+[manifest]
+constraints = [{ name = "numpy", specifier = "<2.5" }]
+
 [[package]]
 name = "aiofile"
 version = "3.12.3"
@@ -1865,9 +1868,9 @@ requires-dist = [
     { name = "fastmcp-pvl-core", extras = ["debug"], marker = "extra == 'debug'" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },
-    { name = "numpy", marker = "extra == 'all'", specifier = ">=1.20,<2.5" },
-    { name = "numpy", marker = "extra == 'embeddings'", specifier = ">=1.20,<2.5" },
-    { name = "numpy", marker = "extra == 'embeddings-api'", specifier = ">=1.20,<2.5" },
+    { name = "numpy", marker = "extra == 'all'" },
+    { name = "numpy", marker = "extra == 'embeddings'" },
+    { name = "numpy", marker = "extra == 'embeddings-api'" },
     { name = "openai", marker = "extra == 'all'", specifier = ">=1.45" },
     { name = "openai", marker = "extra == 'embeddings-api'", specifier = ">=1.45" },
     { name = "openai", marker = "extra == 'summarize'", specifier = ">=1.45" },
