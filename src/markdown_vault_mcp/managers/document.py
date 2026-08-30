@@ -7,14 +7,9 @@ and no back-reference to :class:`Vault`.
 
 from __future__ import annotations
 
-import base64
 import logging
-import mimetypes
-import os
 import shutil
 import sqlite3
-import tempfile
-import threading
 from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
@@ -24,17 +19,17 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp.exceptions import (
-    ConcurrentModificationError,
     DocumentExistsError,
     DocumentNotFoundError,
     EditConflictError,
     ReadOnlyError,
 )
-from markdown_vault_mcp.hashing import compute_etag, compute_file_hash
+from markdown_vault_mcp.managers._write_kernel import atomic_write, check_if_match
 from markdown_vault_mcp.managers._write_notifier import (
     OnWriteCallback,
     WriteNotifier,
 )
+from markdown_vault_mcp.managers.artifacts import ArtifactPolicy, ArtifactStore
 from markdown_vault_mcp.scanner import (
     extract_section,
     list_section_headings,
@@ -54,10 +49,7 @@ from markdown_vault_mcp.types import (
     WriteResult,
 )
 from markdown_vault_mcp.utils import (
-    artifact_suffix,
-    effective_attachment_extensions,
     is_allowed_artifact,
-    is_allowed_artifact_suffix,
     is_note,
     is_path_excluded,
     resolve_inside,
@@ -83,44 +75,13 @@ from markdown_vault_mcp.utils.text import (
 )
 
 if TYPE_CHECKING:
+    import threading
     from collections.abc import Callable, Iterable, Sequence
 
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
 
 logger = logging.getLogger(__name__)
-
-
-_UMASK_LOCK = threading.Lock()
-_umask: int | None = None
-
-
-def _process_umask() -> int:
-    """Return the process umask, read once and cached.
-
-    ``os.umask`` is set-and-restore with no read-only accessor; we read it
-    once under a lock so concurrent writers serialise the set-and-restore
-    and never observe a transient mask. The umask is set by the parent
-    (shell / systemd) before Python starts and is effectively immutable
-    for the service lifetime, so a one-time read is correct.
-    """
-    global _umask
-    if _umask is not None:
-        return _umask
-    with _UMASK_LOCK:
-        # The lock serialises the set-and-restore so no writer in this
-        # module observes a transient mask. A second writer that lost the
-        # outer cache check re-reads and re-sets the same value (the umask
-        # is process-global), so no inner guard is needed.
-        mask = os.umask(0o077)
-        os.umask(mask)
-        _umask = mask
-    return _umask
-
-
-def _new_file_mode() -> int:
-    """Mode for a freshly-created file, matching a plain ``open(path, "w")``."""
-    return 0o666 & ~_process_umask()
 
 
 class DocumentManager:
@@ -190,6 +151,16 @@ class DocumentManager:
         self._attachment_extensions = attachment_extensions
         self._max_note_read_bytes = max_note_read_bytes
         self._notifier = WriteNotifier(on_write_callback)
+        self._artifacts = ArtifactStore(
+            source_dir,
+            write_lock=write_lock,
+            notifier=self._notifier,
+            policy=ArtifactPolicy(
+                attachment_extensions=attachment_extensions,
+                read_only=read_only,
+                write_protect_existing=write_protect_existing,
+            ),
+        )
         # Same opt-in probe the dispatcher uses (#894): a callback wired
         # straight into this manager — the isolation tests, and any consumer
         # constructing DocumentManager directly — may still be the published
@@ -228,13 +199,8 @@ class DocumentManager:
         self._check_writable()
 
     def _effective_attachment_extensions(self) -> frozenset[str]:
-        """Return the effective set of allowed attachment extensions.
-
-        Returns:
-            Frozenset of lower-case extension strings (without leading dot).
-            The special value ``frozenset(["*"])`` means all non-.md files.
-        """
-        return effective_attachment_extensions(self._attachment_extensions)
+        """Return the effective set of allowed attachment extensions."""
+        return self._artifacts.extensions()
 
     def _is_attachment(self, path: str) -> bool:
         """Return True if *path* is an allowed non-.md attachment.
@@ -281,6 +247,9 @@ class DocumentManager:
     def _validate_attachment_path(self, path: str) -> Path:
         """Resolve and validate a non-.md attachment path.
 
+        Thin delegator to :meth:`ArtifactStore.validate_path` (#1235); kept
+        because ``Vault`` and the tests reach for it by this name.
+
         Args:
             path: Relative attachment path.
 
@@ -291,22 +260,7 @@ class DocumentManager:
             ValueError: If the path escapes the source directory, ends with
                 ``.md``, or has an extension not in the attachment allowlist.
         """
-        if is_note(path):
-            raise ValueError(
-                f"Path ends with '.md' — use the note read/write methods "
-                f"instead: {path}"
-            )
-        exts = self._effective_attachment_extensions()
-        suffix = artifact_suffix(path)
-        if not is_allowed_artifact_suffix(suffix, exts):
-            allowed_str = ", ".join(f".{e}" for e in sorted(exts))
-            raise ValueError(
-                f"Extension '.{suffix}' is not in the attachment allowlist. "
-                f"Allowed: {allowed_str}. "
-                "Set MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS=* to allow "
-                "all non-.md files."
-            )
-        return resolve_inside(path, self._source_dir)
+        return self._artifacts.validate_path(path)
 
     def _validate_dir_path(self, path: str) -> Path:
         """Resolve a relative folder path and validate it is inside the vault.
@@ -535,13 +489,7 @@ class DocumentManager:
             ValueError: If the path escapes the source directory, has an
                 extension not in the allowlist, or the file does not exist.
         """
-        abs_path = self._validate_attachment_path(path)
-        try:
-            if not abs_path.is_file():
-                raise ValueError(f"Attachment not found: {path}")
-            return abs_path.stat().st_size
-        except OSError as exc:
-            raise ValueError(f"Attachment not found: {path}") from exc
+        return self._artifacts.size(path)
 
     def read_attachment(self, path: str) -> AttachmentContent:
         """Read the binary content of a non-.md attachment.
@@ -557,25 +505,7 @@ class DocumentManager:
             ValueError: If the path escapes the source directory, has an
                 extension not in the allowlist, or the file does not exist.
         """
-        abs_path = self._validate_attachment_path(path)
-        if not abs_path.is_file():
-            raise ValueError(f"Attachment not found: {path}")
-
-        stat = abs_path.stat()
-        size_bytes = stat.st_size
-
-        mime_type, _ = mimetypes.guess_type(path)
-        raw = abs_path.read_bytes()
-        content_base64 = base64.b64encode(raw).decode("ascii")
-        etag = compute_etag(raw)
-        return AttachmentContent(
-            path=path,
-            mime_type=mime_type,
-            size_bytes=size_bytes,
-            content_base64=content_base64,
-            modified_at=stat.st_mtime,
-            etag=etag,
-        )
+        return self._artifacts.read(path)
 
     def get_toc(
         self,
@@ -655,33 +585,6 @@ class DocumentManager:
     # Write operations
     # ------------------------------------------------------------------
 
-    def _check_if_match(self, abs_path: Path, path: str, if_match: str | None) -> None:
-        """Enforce an optional etag precondition on *abs_path*.
-
-        Args:
-            abs_path: Absolute path of the file the etag refers to.
-            path: Vault-relative path, used in the error.
-            if_match: Etag from a previous read, or ``None`` to skip the
-                check. A file that does not exist counts as a mismatch.
-
-        Raises:
-            ConcurrentModificationError: If *if_match* is provided and does
-                not match the current file hash (or the file is missing).
-        """
-        if if_match is None:
-            return
-        if not abs_path.is_file():
-            raise ConcurrentModificationError(
-                path,
-                expected=if_match,
-                actual="(file does not exist)",
-            )
-        current_hash = compute_file_hash(abs_path)
-        if current_hash != if_match:
-            raise ConcurrentModificationError(
-                path, expected=if_match, actual=current_hash
-            )
-
     def _check_no_clobber(
         self, abs_path: Path, path: str, if_match: str | None
     ) -> None:
@@ -711,50 +614,6 @@ class DocumentManager:
                 "proves nothing. (Write protection is enabled by the "
                 "operator: MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING.)"
             )
-
-    def _atomic_write(self, abs_path: Path, data: str | bytes) -> None:
-        """Write *data* to *abs_path* atomically via a sibling tempfile.
-
-        The temp file lands with :meth:`Path.replace` semantics; permission
-        bits are preserved when the target already exists. A freshly-created
-        target is chmod'd to ``0o666 & ~umask`` after the replace so fresh
-        writes honour the process umask (matching a plain ``open``) instead
-        of the ``0o600`` ``tempfile`` hardcodes. On failure the temp file is
-        removed and the original is left untouched.
-
-        Args:
-            abs_path: Absolute destination path.
-            data: Text (written UTF-8) or raw bytes.
-        """
-        existed = abs_path.is_file()
-        if isinstance(data, str):
-            with tempfile.NamedTemporaryFile(
-                dir=abs_path.parent,
-                mode="w",
-                encoding="utf-8",
-                suffix=".tmp",
-                delete=False,
-            ) as tmp:
-                tmp.write(data)
-                tmp_name = tmp.name
-        else:
-            with tempfile.NamedTemporaryFile(
-                dir=abs_path.parent,
-                mode="wb",
-                suffix=".tmp",
-                delete=False,
-            ) as tmp:
-                tmp.write(data)
-                tmp_name = tmp.name
-        if existed:
-            shutil.copymode(abs_path, tmp_name)
-        try:
-            Path(tmp_name).replace(abs_path)
-        except Exception:
-            Path(tmp_name).unlink(missing_ok=True)
-            raise
-        if not existed:
-            abs_path.chmod(_new_file_mode())
 
     def write(
         self,
@@ -801,7 +660,7 @@ class DocumentManager:
             abs_path = self._validate_path(path)
             if not allow_overwrite:
                 self._check_no_clobber(abs_path, path, if_match)
-            self._check_if_match(abs_path, path, if_match)
+            check_if_match(abs_path, path, if_match)
             created = not abs_path.is_file()
 
             abs_path.parent.mkdir(parents=True, exist_ok=True)
@@ -840,7 +699,7 @@ class DocumentManager:
         """
         if self._okf_write_enrich is not None:
             content = self._okf_write_enrich(content, operation)
-        self._atomic_write(abs_path, content)
+        atomic_write(abs_path, content)
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])
         self._notifier.fire(abs_path, content, operation)
@@ -897,7 +756,7 @@ class DocumentManager:
             existed = abs_path.is_file()
             if not existed and not create_if_missing:
                 raise DocumentNotFoundError(f"Document not found: {path}")
-            self._check_if_match(abs_path, path, if_match)
+            check_if_match(abs_path, path, if_match)
 
             if existed:
                 file_content = _read_text_utf8(abs_path)
@@ -945,17 +804,7 @@ class DocumentManager:
                 extension not in the allowlist.
         """
         self._check_writable()
-        with self._file_write_lock:
-            abs_path = self._validate_attachment_path(path)
-            self._check_no_clobber(abs_path, path, if_match)
-            self._check_if_match(abs_path, path, if_match)
-            created = not abs_path.is_file()
-            abs_path.parent.mkdir(parents=True, exist_ok=True)
-            self._atomic_write(abs_path, content)
-            result = WriteResult(path=path, created=created)
-            self._notifier.fire(abs_path, "", "write")
-
-        return result
+        return self._artifacts.write(path, content, if_match)
 
     def edit(
         self,
@@ -1039,7 +888,7 @@ class DocumentManager:
             if not abs_path.is_file():
                 raise DocumentNotFoundError(f"Document not found: {path}")
 
-            self._check_if_match(abs_path, path, if_match)
+            check_if_match(abs_path, path, if_match)
 
             file_content = _read_text_utf8(abs_path)
 
@@ -1203,16 +1052,12 @@ class DocumentManager:
                 abs_path = self._validate_path(path)
                 if not abs_path.is_file():
                     raise DocumentNotFoundError(f"Document not found: {path}")
-                self._check_if_match(abs_path, path, if_match)
+                check_if_match(abs_path, path, if_match)
                 abs_path.unlink()
                 if self._mark_paths_dirty is not None:
                     self._mark_paths_dirty([path])
             else:
-                abs_path = self._validate_attachment_path(path)
-                if not abs_path.is_file():
-                    raise DocumentNotFoundError(f"Attachment not found: {path}")
-                self._check_if_match(abs_path, path, if_match)
-                abs_path.unlink()
+                abs_path = self._artifacts.unlink(path, if_match)
 
             self._notifier.fire(abs_path, "", "delete")
 
@@ -1275,7 +1120,7 @@ class DocumentManager:
                     raise DocumentNotFoundError(f"Document not found: {old_path}")
                 if new_abs.is_file():
                     raise DocumentExistsError(f"Target already exists: {new_path}")
-                self._check_if_match(old_abs, old_path, if_match)
+                check_if_match(old_abs, old_path, if_match)
 
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
 
@@ -1301,18 +1146,7 @@ class DocumentManager:
                     dirty.extend(backlink_paths)
                     self._mark_paths_dirty(dirty)
             else:
-                old_abs = self._validate_attachment_path(old_path)
-                new_abs = self._validate_attachment_path(new_path)
-
-                if not old_abs.is_file():
-                    raise DocumentNotFoundError(f"Attachment not found: {old_path}")
-                if new_abs.is_file():
-                    raise DocumentExistsError(f"Target already exists: {new_path}")
-                self._check_if_match(old_abs, old_path, if_match)
-
-                new_abs.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(old_abs), str(new_abs))
-
+                old_abs, new_abs = self._artifacts.move(old_path, new_path, if_match)
                 callback_content = ""
 
             self._notifier.fire_rename(new_abs, callback_content, old_abs)
@@ -1360,7 +1194,7 @@ class DocumentManager:
                 old_path=target_old,
             )
             content = _apply_link_replacement(content, link_type, raw_target, new_raw)
-        self._atomic_write(source_abs, content)
+        atomic_write(source_abs, content)
         return content
 
     def _rewrite_link_sources(

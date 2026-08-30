@@ -2031,7 +2031,7 @@ class TestAtomicWrites:
         self, writable: Vault, vault_path: Path
     ) -> None:
         """A freshly written document lands at 0o666 & ~umask, not tempfile's 0o600."""
-        from markdown_vault_mcp.managers import document as doc
+        from markdown_vault_mcp.managers import _write_kernel as doc
 
         old = os.umask(0o027)
         doc._umask = None  # force a re-read of the umask we just set
@@ -2049,7 +2049,7 @@ class TestAtomicWrites:
         self, writable: Vault, vault_path: Path
     ) -> None:
         """A freshly written attachment lands at 0o666 & ~umask, not 0o600."""
-        from markdown_vault_mcp.managers import document as doc
+        from markdown_vault_mcp.managers import _write_kernel as doc
 
         old = os.umask(0o027)
         doc._umask = None
@@ -2065,7 +2065,7 @@ class TestAtomicWrites:
 
     def test_process_umask_caches_across_calls(self) -> None:
         """_process_umask caches: repeat calls return the same value."""
-        from markdown_vault_mcp.managers import document as doc
+        from markdown_vault_mcp.managers import _write_kernel as doc
 
         doc._umask = None
         try:

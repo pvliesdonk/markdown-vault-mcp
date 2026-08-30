@@ -868,7 +868,7 @@ class TestAttachmentSize:
             def stat(self) -> object:
                 raise OSError("vanished mid-stat")
 
-        monkeypatch.setattr(mgr, "_validate_attachment_path", lambda _p: _Racy())
+        monkeypatch.setattr(mgr._artifacts, "validate_path", lambda _p: _Racy())
         with pytest.raises(ValueError, match="Attachment not found"):
             mgr.attachment_size("gone.bin")
 
