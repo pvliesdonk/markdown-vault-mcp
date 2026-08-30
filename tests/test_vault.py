@@ -2100,29 +2100,6 @@ class TestAtomicWrites:
 
 
 class TestAttachmentHelpers:
-    def test_is_attachment_pdf(self, vault_path: Path) -> None:
-        """_is_attachment() returns True for a .pdf path with default allowlist."""
-        col = Vault(source_dir=vault_path)
-        assert col._doc_mgr._is_attachment("assets/report.pdf") is True
-
-    def test_is_attachment_md_always_false(self, vault_path: Path) -> None:
-        """_is_attachment() always returns False for .md paths."""
-        col = Vault(source_dir=vault_path)
-        assert col._doc_mgr._is_attachment("notes/note.md") is False
-
-    def test_is_attachment_disallowed_extension(self, vault_path: Path) -> None:
-        """_is_attachment() returns False for extensions not in the default list."""
-        col = Vault(source_dir=vault_path)
-        # .xyz is not in the default list
-        assert col._doc_mgr._is_attachment("file.xyz") is False
-
-    def test_is_attachment_wildcard_allows_all(self, vault_path: Path) -> None:
-        """_is_attachment() returns True for any non-.md extension when '*' is set."""
-        col = Vault(source_dir=vault_path, attachment_extensions=["*"])
-        assert col._doc_mgr._is_attachment("file.xyz") is True
-        assert col._doc_mgr._is_attachment("file.bin") is True
-        assert col._doc_mgr._is_attachment("notes/note.md") is False
-
     def test_validate_attachment_path_rejects_md(self, vault_path: Path) -> None:
         """_validate_attachment_path() raises ValueError for .md paths."""
         col = Vault(source_dir=vault_path)

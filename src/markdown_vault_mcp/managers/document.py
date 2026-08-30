@@ -202,21 +202,6 @@ class DocumentManager:
         """Return the effective set of allowed attachment extensions."""
         return self._artifacts.extensions()
 
-    def _is_attachment(self, path: str) -> bool:
-        """Return True if *path* is an allowed non-.md attachment.
-
-        Args:
-            path: Relative path to check.
-
-        Returns:
-            ``True`` when the extension is in the allowlist and is not ``.md``.
-        """
-        if path.endswith(".md"):
-            return False
-        suffix = Path(path).suffix.lstrip(".").lower()
-        exts = self._effective_attachment_extensions()
-        return "*" in exts or suffix in exts
-
     def _is_path_excluded(self, path: str) -> bool:
         """Check whether *path* matches any configured exclude pattern.
 

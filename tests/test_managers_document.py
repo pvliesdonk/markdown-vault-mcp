@@ -713,10 +713,6 @@ class TestValidation:
     def test_check_writable_ok_when_writable(self, doc_mgr: DocumentManager) -> None:
         doc_mgr._check_writable()  # should not raise
 
-    def test_is_attachment(self, doc_mgr: DocumentManager) -> None:
-        assert doc_mgr._is_attachment("image.png") is True
-        assert doc_mgr._is_attachment("note.md") is False
-
     def test_get_toc_folder_traversal_raises(self, doc_mgr: DocumentManager) -> None:
         with pytest.raises(ValueError, match="Path traversal"):
             doc_mgr.get_toc("../../etc")
