@@ -1563,6 +1563,31 @@ def _is_tracked(root: str, path: Path) -> bool:
     return bool(result.stdout.strip())
 
 
+def _is_ignored(root: str, path: Path) -> bool:
+    """Return whether git's exclude rules would refuse to add *path*.
+
+    ``--no-index`` is deliberate. Without it ``git check-ignore`` answers
+    "not ignored" for anything already in the index, but ``git add`` refuses
+    a pathspec naming a file under an ignored directory *even when that file
+    is tracked* — so the default answer would not match the rule this probe
+    exists to predict.
+
+    Args:
+        root: Git repository root, as a string.
+        path: Absolute path to probe.
+
+    Returns:
+        ``True`` when the path matches an exclude rule.
+    """
+    result = subprocess.run(
+        ["git", "-C", root, "check-ignore", "--no-index", "-q", "--", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def _stage_rename(root: str, path: Path, old_path: Path | None) -> None:
     """Stage both sides of a rename without touching anything else (#894).
 
@@ -1574,7 +1599,12 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> None:
 
     An untracked old path is omitted from the pathspec rather than passed and
     tolerated: ``git add`` fails the *whole* invocation on a pathspec that
-    matches nothing, which would leave the new path unstaged too.
+    matches nothing, which would leave the new path unstaged too. A gitignored
+    path is omitted for the same reason — ``git add`` exits non-zero on an
+    explicitly named ignored pathspec, and force-adding it instead would
+    commit a file the operator deliberately excluded (#1238). When that leaves
+    nothing to stage, the call is skipped entirely rather than run with an
+    empty pathspec, which would sweep in the whole repository.
 
     Args:
         root: Git repository root, as a string.
@@ -1600,11 +1630,22 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> None:
         )
         return
 
-    pathspec = [str(path)]
-    if _is_tracked(root, old_path):
-        pathspec.insert(0, str(old_path))
-    else:
+    pathspec: list[str] = []
+    if not _is_tracked(root, old_path):
         logger.debug("git_stage_rename_old_untracked old_path=%s", old_path)
+    elif _is_ignored(root, old_path):
+        logger.debug("git_stage_rename_old_ignored old_path=%s", old_path)
+    else:
+        pathspec.append(str(old_path))
+
+    if _is_ignored(root, path):
+        logger.debug("git_stage_rename_new_ignored path=%s", path)
+    else:
+        pathspec.append(str(path))
+
+    if not pathspec:
+        return
+
     subprocess.run(
         ["git", "-C", root, "add", "-A", "--", *pathspec],
         capture_output=True,
