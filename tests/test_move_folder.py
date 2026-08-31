@@ -7,6 +7,7 @@ mirroring the established writable-Vault test pattern in
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -22,7 +23,6 @@ from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
 
 @pytest.fixture
@@ -256,6 +256,52 @@ def test_move_folder_carries_non_allowlisted_file(
     assert (source_dir / "archive/.DS_Store").is_file()
     assert not (source_dir / "drafts").exists()
     assert result.files_moved == 2
+
+
+def test_move_folder_reports_every_moved_file_to_the_write_callback(
+    source_dir: Path,
+) -> None:
+    """Moving a file and not reporting it loses it (#1238).
+
+    Git staging is scoped to the paths a callback names, so a file moved
+    without one leaves an unstaged delete at the old path and an untracked
+    add at the new one, and is never committed. The allowlist governs which
+    files the *tools* expose, not what the repository tracks — so every
+    moved file gets a rename callback, allowlisted or not.
+
+    Asserting the disk result alone is what let this through before: the
+    file does arrive at its new path either way.
+    """
+    calls: list[tuple[str, ...]] = []
+
+    col = Vault(
+        source_dir=source_dir,
+        read_only=False,
+        attachment_extensions=["png"],
+        on_write=lambda path, _content, operation: calls.append(
+            (operation, Path(path).name)
+        ),
+    )
+    try:
+        col.index.build_index()
+        _write(col, "drafts/note.md", "n\n")
+        (source_dir / "drafts" / "pic.png").write_bytes(b"\x89PNG\r\n")
+        (source_dir / "drafts" / ".DS_Store").write_bytes(b"junk")
+        calls.clear()
+
+        col.writer.move_folder("drafts", "archive")
+        wait_for_writer_drain(col)
+    finally:
+        col.close()
+
+    renamed = {name for operation, name in calls if operation == "rename"}
+
+    assert "note.md" in renamed, "the note should be reported"
+    assert "pic.png" in renamed, "an allowlisted attachment should be reported"
+    assert ".DS_Store" in renamed, (
+        "a non-allowlisted file is moved on disk, so git must be told about "
+        "it too — otherwise it silently leaves the repository"
+    )
 
 
 def test_move_folder_rejects_nested_target(vault: Vault) -> None:

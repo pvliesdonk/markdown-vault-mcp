@@ -49,7 +49,6 @@ from markdown_vault_mcp.types import (
     WriteResult,
 )
 from markdown_vault_mcp.utils import (
-    is_allowed_artifact,
     is_note,
     is_path_excluded,
     resolve_inside,
@@ -191,10 +190,6 @@ class DocumentManager:
         would otherwise silently no-op.
         """
         self._check_writable()
-
-    def _effective_attachment_extensions(self) -> frozenset[str]:
-        """Return the effective set of allowed attachment extensions."""
-        return self._artifacts.extensions()
 
     def _is_path_excluded(self, path: str) -> bool:
         """Check whether *path* matches any configured exclude pattern.
@@ -1313,12 +1308,12 @@ class DocumentManager:
             new_dir: Vault-relative target prefix.
 
         Returns:
-            Tuple ``(moves, md_map, attachment_moves)``:
+            Tuple ``(moves, md_map, non_note_moves)``:
 
             * ``moves`` — ``(src_abs, dst_abs)`` for every file to move.
             * ``md_map`` — old→new vault-relative path map (``.md`` only).
-            * ``attachment_moves`` — ``(dst_abs, new_rel_path, src_abs)`` for
-              allowlisted attachments.
+            * ``non_note_moves`` — ``(dst_abs, new_rel_path, src_abs)`` for
+              every other moved file, allowlisted or not (#1238).
 
         Raises:
             DocumentNotFoundError: If the folder contains no files.
@@ -1326,12 +1321,11 @@ class DocumentManager:
         """
         old_rel = old_dir.strip("/")
         new_rel = new_dir.strip("/")
-        attachment_exts = self._effective_attachment_extensions()
         moves: list[tuple[Path, Path]] = []  # (src_abs, dst_abs)
         md_map: dict[str, str] = {}  # old_rel_path -> new_rel_path (.md only)
         # (dst_abs, new_rel, src_abs) — src_abs so the rename callback can
         # scope its git staging to both sides of the move (#894).
-        attachment_moves: list[tuple[Path, str, Path]] = []
+        non_note_moves: list[tuple[Path, str, Path]] = []
         for src_abs in sorted(old_abs.rglob("*")):
             if not src_abs.is_file():
                 continue
@@ -1343,8 +1337,13 @@ class DocumentManager:
             if is_note(old_path):
                 md_map[old_path] = new_path
             else:
-                if is_allowed_artifact(src_abs, attachment_exts):
-                    attachment_moves.append((dst_abs, new_path, src_abs))
+                # Every non-note file that moves gets a rename callback, not
+                # just allowlisted ones (#1238). The allowlist governs which
+                # files the *tools* expose, not what the repository tracks:
+                # git staging is scoped to the paths a callback names, so a
+                # file moved without one is left as an unstaged delete plus an
+                # untracked add, and never committed.
+                non_note_moves.append((dst_abs, new_path, src_abs))
 
         if not moves:
             raise DocumentNotFoundError(f"Folder is empty: {old_dir}")
@@ -1355,25 +1354,25 @@ class DocumentManager:
                 rel = dst_abs.relative_to(self._source_dir.resolve()).as_posix()
                 raise DocumentExistsError(f"Target already exists: {rel}")
 
-        return moves, md_map, attachment_moves
+        return moves, md_map, non_note_moves
 
     def _dispatch_move_callbacks(
         self,
         md_map: dict[str, str],
-        attachment_moves: list[tuple[Path, str, Path]],
+        non_note_moves: list[tuple[Path, str, Path]],
         pending_callbacks: list[tuple[Path, str]],
     ) -> None:
         """Fire write callbacks for a completed folder move.
 
-        Emits ``rename`` for every moved note and allowlisted attachment,
-        and ``edit`` for every rewritten source. A source inside the moved
-        subtree already gets a ``rename`` callback (it is in *md_map*), so
-        its redundant ``edit`` is skipped to avoid a duplicate git commit.
+        Emits ``rename`` for every moved file — notes and everything else
+        alike — and ``edit`` for every rewritten source. A source inside the
+        moved subtree already gets a ``rename`` callback (it is in *md_map*),
+        so its redundant ``edit`` is skipped to avoid a duplicate git commit.
 
         Args:
             md_map: Old→new vault-relative path map for moved notes.
-            attachment_moves: ``(dst_abs, new_rel_path, src_abs)`` for moved
-                allowlisted attachments.
+            non_note_moves: ``(dst_abs, new_rel_path, src_abs)`` for every
+                moved file that is not a note (#1238).
             pending_callbacks: ``(abs_path, new_content)`` for rewritten
                 link sources.
         """
@@ -1386,7 +1385,7 @@ class DocumentManager:
                 _read_text_utf8(new_note_abs),
                 (self._source_dir / old_path).resolve(),
             )
-        for dst_abs, _new_rel, src_abs_moved in attachment_moves:
+        for dst_abs, _new_rel, src_abs_moved in non_note_moves:
             self._notifier.fire_rename(dst_abs, "", src_abs_moved)
         for src_abs, src_content in pending_callbacks:
             src_rel = src_abs.relative_to(source_root).as_posix()
@@ -1446,7 +1445,7 @@ class DocumentManager:
 
             # 1+2. Enumerate the subtree, build the old->new path map, and
             #      gate on destination collisions before moving anything.
-            moves, md_map, attachment_moves = self._plan_folder_move(
+            moves, md_map, non_note_moves = self._plan_folder_move(
                 old_abs, old_dir, new_dir
             )
 
@@ -1486,9 +1485,9 @@ class DocumentManager:
                 move_dirty.extend(dirty_paths)  # rewritten sources
                 self._mark_paths_dirty(move_dirty)
 
-            # 7. Callbacks: rename for every moved note + allowlisted attachment,
-            #    edit for every rewritten source (minus intra-subtree dupes).
-            self._dispatch_move_callbacks(md_map, attachment_moves, pending_callbacks)
+            # 7. Callbacks: rename for every moved file, edit for every
+            #    rewritten source (minus intra-subtree dupes).
+            self._dispatch_move_callbacks(md_map, non_note_moves, pending_callbacks)
 
             # 8. Remove the now-empty source tree. A leftover file (e.g. from a
             #    concurrent write) is logged rather than silently swallowed.

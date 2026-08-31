@@ -2350,6 +2350,16 @@ can leave the subtree partially moved with the index unchanged; a subsequent
 allowlisted attachments, and any other files). Only `.md` files are
 re-indexed; non-markdown files are moved on disk without index updates.
 
+Every moved file also gets a `rename` write callback, whether or not its
+extension is allowlisted (#1238). Those two rules are independent, and
+conflating them was a bug: the allowlist governs which files the *tools*
+expose, not what the repository tracks. Git staging is scoped to the paths a
+callback names, so a file moved without one leaves an unstaged delete at the
+old path and an untracked add at the new one, and is never committed —
+silently, since the file does arrive where the caller asked. Skipping the
+move instead is not an option: the source tree is removed afterwards, so an
+unmoved file would be destroyed.
+
 *Link rewrite*: after all files are moved, a single pass over the vault
 rewrites every outbound link (markdown links and wikilinks) whose target falls
 under the old prefix. This covers links between documents inside the moved
