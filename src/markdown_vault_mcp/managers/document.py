@@ -1489,8 +1489,10 @@ class DocumentManager:
             #    rewritten source (minus intra-subtree dupes).
             self._dispatch_move_callbacks(md_map, non_note_moves, pending_callbacks)
 
-            # 8. Remove the now-empty source tree. A leftover file (e.g. from a
-            #    concurrent write) is logged rather than silently swallowed.
+            # 8. Remove the source tree. rmtree takes whatever is still in it
+            #    — a file a concurrent write dropped there after step 4 is
+            #    deleted, not preserved. Only a failure to remove is reported,
+            #    and only as a warning: the move itself already succeeded.
             try:
                 shutil.rmtree(old_abs)
             except OSError as exc:

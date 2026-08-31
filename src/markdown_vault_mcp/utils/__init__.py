@@ -167,10 +167,7 @@ def validate_history_path(
         ValueError: *path* is neither ``.md`` nor an allowed attachment
             extension, or it escapes *source_dir*.
     """
-    if not (
-        is_note(path)
-        or is_allowed_artifact_suffix(artifact_suffix(path), attachment_extensions)
-    ):
+    if not (is_note(path) or is_allowed_artifact(path, attachment_extensions)):
         raise ValueError(
             f"Path must be a .md note or a configured attachment type: {path}"
         )
