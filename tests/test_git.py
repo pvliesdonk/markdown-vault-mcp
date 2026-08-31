@@ -6200,42 +6200,119 @@ class TestRenameStagingSkipsIgnoredPaths:
         assert _commit_files(git_repo) == {"note.md"}
         assert _worktree_status(git_repo) == set()
 
-    def test_tracked_file_under_an_ignored_directory_is_left_alone(
-        self, git_repo: Path
-    ) -> None:
-        """``check-ignore --no-index`` is why this does not raise.
+    @staticmethod
+    def _commit_legacy(repo: Path) -> Path:
+        """Force-commit ``cache/legacy.md``, tracked despite ``cache/`` being ignored.
 
-        A file committed before its directory was ignored stays tracked, yet
-        ``git add`` still refuses to name it. The default (index-aware)
+        The awkward case ``check-ignore --no-index`` exists for: a file
+        committed before its directory was excluded stays tracked, yet
+        ``git add -A`` still refuses to name it. The default, index-aware
         ``check-ignore`` would call it "not ignored" and let it through.
         """
         import subprocess
 
-        from markdown_vault_mcp.git import _stage_and_commit
-
-        self._seed(git_repo)
-        legacy = git_repo / "cache" / "legacy.md"
+        legacy = repo / "cache" / "legacy.md"
         legacy.parent.mkdir()
         legacy.write_text("# Legacy\n", encoding="utf-8")
         subprocess.run(
-            ["git", "-C", str(git_repo), "add", "-f", "--", str(legacy)],
+            ["git", "-C", str(repo), "add", "-f", "--", str(legacy)],
             capture_output=True,
             check=True,
         )
         subprocess.run(
-            ["git", "-C", str(git_repo), "commit", "-m", "legacy"],
+            ["git", "-C", str(repo), "commit", "-m", "legacy"],
             capture_output=True,
             check=True,
         )
+        return legacy
+
+    def test_tracked_file_moved_within_an_ignored_directory_records_the_deletion(
+        self, git_repo: Path
+    ) -> None:
+        """The destination is unstageable, but the departure is still real.
+
+        Dropping the old path because an exclude rule covers it would leave
+        git serving content the vault no longer has there. ``git add -u``
+        records the deletion: it acts on tracked files only, so the exclude
+        rules never apply to it.
+        """
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        self._seed(git_repo)
+        legacy = self._commit_legacy(git_repo)
+        head_before = _head(git_repo)
 
         moved = git_repo / "cache" / "moved.md"
         legacy.rename(moved)
 
         _stage_and_commit(git_repo, moved, "rename", old_path=legacy)
 
-        # Neither side is stageable, so the commit is skipped and the move
-        # shows up only as an untracked working-tree change.
+        assert _head(git_repo) != head_before
         assert _commit_files(git_repo) == {"cache/legacy.md"}
+        # The old path is gone from the index; the new one is ignored, so it
+        # stays out of the repository rather than being force-added.
+        assert "cache/legacy.md" not in _tracked_files(git_repo)
+        assert "cache/moved.md" not in _tracked_files(git_repo)
+
+    def test_tracked_file_moved_out_of_an_ignored_directory_stages_both_sides(
+        self, git_repo: Path
+    ) -> None:
+        """Codex P2: the deletion must not be dropped with the ignored old path.
+
+        Filtering the old path out of the ``add -A`` pathspec staged the
+        arrival at the new path while silently leaving the departure
+        unstaged, so the commit added a file without removing the one it
+        replaced.
+        """
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        self._seed(git_repo)
+        legacy = self._commit_legacy(git_repo)
+
+        moved = git_repo / "kept.md"
+        legacy.rename(moved)
+
+        _stage_and_commit(git_repo, moved, "rename", old_path=legacy)
+
+        assert _commit_files(git_repo) == {"cache/legacy.md", "kept.md"}
+        assert _worktree_status(git_repo) == set()
+
+    def test_a_noop_rename_does_not_commit_unrelated_staged_work(
+        self, git_repo: Path
+    ) -> None:
+        """Codex P1: skipping the ``git add`` must skip the commit too.
+
+        The diff check in ``_stage_and_commit`` is repository-wide. With
+        nothing staged for this operation, it saw the operator's own staged
+        work and committed it under the rename's message — the exact class of
+        leak #894 exists to prevent, through a new door.
+        """
+        import subprocess
+
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        self._seed(git_repo)
+
+        # The operator stages something of their own, deliberately uncommitted.
+        (git_repo / "note.md").write_text("# Staged by the operator\n", "utf-8")
+        subprocess.run(
+            ["git", "-C", str(git_repo), "add", "--", str(git_repo / "note.md")],
+            capture_output=True,
+            check=True,
+        )
+        head_before = _head(git_repo)
+
+        old_abs = git_repo / "a" / ".DS_Store"
+        new_abs = git_repo / "b" / ".DS_Store"
+        old_abs.parent.mkdir()
+        new_abs.parent.mkdir()
+        new_abs.write_bytes(b"junk")
+
+        _stage_and_commit(git_repo, new_abs, "rename", old_path=old_abs)
+
+        assert _head(git_repo) == head_before
+        # Still staged, still theirs to commit when they choose.
+        assert _worktree_status(git_repo) == {"M  note.md"}
 
 
 def _head(repo: Path) -> str:

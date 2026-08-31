@@ -2451,6 +2451,16 @@ file "not ignored", but `git add` still refuses to name a tracked file living
 under an ignored directory, so only `--no-index` predicts the rule the filter
 exists to satisfy.
 
+Two consequences of that filter are load-bearing. A **tracked** path an exclude
+rule covers is still staged, with `git add -u` rather than `-A`: its deletion is
+real, dropping it would leave git serving content the vault no longer has there,
+and `-u` acts on tracked files only, so the exclude rules never apply to it.
+And when the filter leaves nothing at all to stage, `_stage_rename` reports that
+to its caller, which skips the commit rather than falling through — the
+`git diff --cached --quiet` check below it is repository-wide, so an operator's
+own staged work would otherwise be committed under the rename's message and
+pushed, the very leak this section exists to prevent.
+
 **Write identity: the `Principal` value (#1160, fixes #1218).** "Who is
 acting" is resolved **once, at the MCP tool edge**, into a frozen
 `Principal` (`_identity.py`: `subject`, `display_name`, `email`,

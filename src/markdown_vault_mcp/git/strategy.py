@@ -1588,7 +1588,7 @@ def _is_ignored(root: str, path: Path) -> bool:
     return result.returncode == 0
 
 
-def _stage_rename(root: str, path: Path, old_path: Path | None) -> None:
+def _stage_rename(root: str, path: Path, old_path: Path | None) -> bool:
     """Stage both sides of a rename without touching anything else (#894).
 
     ``git add -A`` over an explicit pathspec records the old path's
@@ -1602,9 +1602,13 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> None:
     matches nothing, which would leave the new path unstaged too. A gitignored
     path is omitted for the same reason — ``git add`` exits non-zero on an
     explicitly named ignored pathspec, and force-adding it instead would
-    commit a file the operator deliberately excluded (#1238). When that leaves
-    nothing to stage, the call is skipped entirely rather than run with an
-    empty pathspec, which would sweep in the whole repository.
+    commit a file the operator deliberately excluded (#1238).
+
+    A **tracked** path that an exclude rule covers — committed before its
+    directory was ignored — is the one case that still has to be staged: its
+    deletion is real, and dropping it leaves git serving content the vault no
+    longer has there. ``git add -u`` records it, since ``-u`` acts on tracked
+    files only and the exclude rules never apply to those.
 
     Args:
         root: Git repository root, as a string.
@@ -1613,6 +1617,12 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> None:
             a caller predating #894 — which falls back to the historical
             repository-wide staging, imprecise in exactly the two ways this
             function fixes.
+
+    Returns:
+        Whether anything was staged. ``False`` means both sides were ignored
+        and untrackable, so there is nothing for this operation to commit —
+        the caller must not fall through to a repository-wide diff check,
+        which would commit whatever the operator happened to have staged.
     """
     if old_path is None:
         logger.debug("git_stage_rename_unscoped path=%s", path)
@@ -1628,13 +1638,15 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> None:
             text=True,
             check=True,
         )
-        return
+        return True
 
     pathspec: list[str] = []
+    deletions: list[str] = []
     if not _is_tracked(root, old_path):
         logger.debug("git_stage_rename_old_untracked old_path=%s", old_path)
     elif _is_ignored(root, old_path):
-        logger.debug("git_stage_rename_old_ignored old_path=%s", old_path)
+        logger.debug("git_stage_rename_old_tracked_but_ignored old_path=%s", old_path)
+        deletions.append(str(old_path))
     else:
         pathspec.append(str(old_path))
 
@@ -1643,15 +1655,15 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> None:
     else:
         pathspec.append(str(path))
 
-    if not pathspec:
-        return
-
-    subprocess.run(
-        ["git", "-C", root, "add", "-A", "--", *pathspec],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    for args, spec in (("-u", deletions), ("-A", pathspec)):
+        if spec:
+            subprocess.run(
+                ["git", "-C", root, "add", args, "--", *spec],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+    return bool(deletions or pathspec)
 
 
 def _stage_and_commit(
@@ -1700,7 +1712,13 @@ def _stage_and_commit(
             check=True,
         )
     elif operation == "rename":
-        _stage_rename(root, path, old_path)
+        if not _stage_rename(root, path, old_path):
+            # Nothing this operation touched is stageable. Returning here
+            # rather than falling through matters: the diff check below is
+            # repository-wide, so an operator's unrelated staged work would
+            # otherwise be committed under this rename's message and pushed.
+            logger.debug("git_stage_rename_noop path=%s", path)
+            return
     else:
         subprocess.run(
             ["git", "-C", root, "add", "--", str(path)],
