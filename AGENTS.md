@@ -17,7 +17,7 @@ src/markdown_vault_mcp/
     text.py            -- text normalization, position mapping, fuzzy matching
     links.py           -- link target computation and replacement
     serialization.py   -- toc_payload: TocEntry/SubtreeToc → JSON-able dicts
-    content_kind.py    -- is_note/is_allowed_artifact/is_attachment: single owner of the note-vs-artifact boundary + the registry of the three '.md' axes (#1235)
+    content_kind.py    -- is_note/has_md_suffix/artifact_suffix/is_allowed_artifact(_suffix): single owner of the note-vs-artifact boundary + the registry of the three '.md' axes (#1235)
     fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
     fts.py             -- fts_row_to_note_info: FTS row → NoteInfo conversion shared across managers
   managers/

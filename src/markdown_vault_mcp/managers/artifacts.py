@@ -265,6 +265,11 @@ class ArtifactStore:
         Fires no callback: the caller reports the delete once, after its own
         note/artifact branch closes.
 
+        Guards read-only and takes the shared lock itself rather than relying
+        on the caller to have done so, so the store's policy holds however it
+        is reached. The lock is re-entrant, so the nested acquisition when
+        ``DocumentManager.delete`` already holds it is free.
+
         Args:
             path: Relative artifact path.
             if_match: Etag from a previous read, enforced as a precondition.
@@ -273,15 +278,18 @@ class ArtifactStore:
             The absolute path that was removed.
 
         Raises:
+            ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If the artifact does not exist.
             ConcurrentModificationError: If *if_match* does not match.
             ValueError: If the path is invalid.
         """
-        abs_path = self.validate_path(path)
-        if not abs_path.is_file():
-            raise DocumentNotFoundError(f"Attachment not found: {path}")
-        check_if_match(abs_path, path, if_match)
-        abs_path.unlink()
+        self._check_writable()
+        with self._file_write_lock:
+            abs_path = self.validate_path(path)
+            if not abs_path.is_file():
+                raise DocumentNotFoundError(f"Attachment not found: {path}")
+            check_if_match(abs_path, path, if_match)
+            abs_path.unlink()
         return abs_path
 
     def move(
@@ -289,7 +297,8 @@ class ArtifactStore:
     ) -> tuple[Path, Path]:
         """Move an artifact, returning the old and new absolute paths.
 
-        Fires no callback, for the same reason as :meth:`unlink`.
+        Fires no callback, and guards read-only and the shared lock, for the
+        same reasons as :meth:`unlink`.
 
         Args:
             old_path: Current relative artifact path.
@@ -300,18 +309,21 @@ class ArtifactStore:
             ``(old_abs, new_abs)``.
 
         Raises:
+            ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If *old_path* does not exist.
             DocumentExistsError: If *new_path* already exists.
             ConcurrentModificationError: If *if_match* does not match.
             ValueError: If either path is invalid.
         """
-        old_abs = self.validate_path(old_path)
-        new_abs = self.validate_path(new_path)
-        if not old_abs.is_file():
-            raise DocumentNotFoundError(f"Attachment not found: {old_path}")
-        if new_abs.is_file():
-            raise DocumentExistsError(f"Target already exists: {new_path}")
-        check_if_match(old_abs, old_path, if_match)
-        new_abs.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(old_abs), str(new_abs))
+        self._check_writable()
+        with self._file_write_lock:
+            old_abs = self.validate_path(old_path)
+            new_abs = self.validate_path(new_path)
+            if not old_abs.is_file():
+                raise DocumentNotFoundError(f"Attachment not found: {old_path}")
+            if new_abs.is_file():
+                raise DocumentExistsError(f"Target already exists: {new_path}")
+            check_if_match(old_abs, old_path, if_match)
+            new_abs.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(old_abs), str(new_abs))
         return old_abs, new_abs

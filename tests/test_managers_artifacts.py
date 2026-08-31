@@ -288,6 +288,52 @@ class TestUnlinkAndMove:
         with pytest.raises(ConcurrentModificationError):
             store.move("a.png", "b.png", "wrong")
 
+    def test_unlink_refuses_on_a_read_only_store(self, tmp_path: Path) -> None:
+        """The store enforces its own policy, not just the manager's.
+
+        DocumentManager.delete happens to check first, so this guard is
+        unreachable through that path -- which is exactly why it needs a test:
+        a store used directly would otherwise delete from a read-only vault.
+        """
+        store, _ = _store(tmp_path, read_only=True)
+        (tmp_path / "a.png").write_bytes(b"x")
+
+        with pytest.raises(ReadOnlyError):
+            store.unlink("a.png", None)
+
+        assert (tmp_path / "a.png").exists()
+
+    def test_move_refuses_on_a_read_only_store(self, tmp_path: Path) -> None:
+        """Same for move: policy holds however the store is reached."""
+        store, _ = _store(tmp_path, read_only=True)
+        (tmp_path / "a.png").write_bytes(b"x")
+
+        with pytest.raises(ReadOnlyError):
+            store.move("a.png", "b.png", None)
+
+        assert (tmp_path / "a.png").exists()
+        assert not (tmp_path / "b.png").exists()
+
+    def test_unlink_and_move_are_reentrant_under_the_managers_lock(
+        self, tmp_path: Path
+    ) -> None:
+        """Taking the lock inside must not deadlock the manager that holds it.
+
+        DocumentManager.delete and .rename call these while already holding
+        the shared lock. It is an RLock, so re-acquiring on the same thread is
+        free -- this pins that, since a plain Lock here would hang the vault.
+        """
+        store, _ = _store(tmp_path)
+        (tmp_path / "a.png").write_bytes(b"x")
+        (tmp_path / "c.png").write_bytes(b"y")
+
+        with store._file_write_lock:
+            assert store.unlink("a.png", None) == tmp_path / "a.png"
+            old_abs, new_abs = store.move("c.png", "d.png", None)
+
+        assert not old_abs.exists()
+        assert new_abs.read_bytes() == b"y"
+
 
 class TestSharedWiring:
     """The store must share the manager's lock and notifier, not copy them."""
