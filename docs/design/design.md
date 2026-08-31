@@ -2438,6 +2438,19 @@ is. An old path git does not track is dropped from the pathspec rather than
 passed — `git add` fails the whole invocation on a pathspec matching nothing,
 which would leave the new path unstaged too.
 
+A **gitignored** path is dropped for the same reason (#1238): `git add` exits
+non-zero on an explicitly named ignored pathspec, and once `move_folder`
+started reporting every moved file, the vault's own ignored clutter
+(`.DS_Store`, `.obsidian/`) began arriving here. Force-adding it instead was
+never on the table — that would commit a file the operator deliberately
+excluded — so an ignored path is skipped, and when both sides are ignored the
+`git add` is skipped entirely rather than run with an empty pathspec, which
+would sweep in the whole repository. The probe is
+`git check-ignore --no-index`: the default, index-aware answer calls a tracked
+file "not ignored", but `git add` still refuses to name a tracked file living
+under an ignored directory, so only `--no-index` predicts the rule the filter
+exists to satisfy.
+
 **Write identity: the `Principal` value (#1160, fixes #1218).** "Who is
 acting" is resolved **once, at the MCP tool edge**, into a frozen
 `Principal` (`_identity.py`: `subject`, `display_name`, `email`,
