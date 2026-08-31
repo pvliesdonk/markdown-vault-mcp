@@ -148,7 +148,6 @@ def is_allowed_artifact(path: str | Path, extensions: frozenset[str]) -> bool:
     return is_allowed_artifact_suffix(artifact_suffix(path), extensions)
 
 
-
 def effective_attachment_extensions(
     attachment_extensions: Sequence[str] | None,
 ) -> frozenset[str]:
