@@ -23,7 +23,11 @@ from typing import TYPE_CHECKING
 import frontmatter as fm
 import yaml
 
-from markdown_vault_mcp.utils import is_path_excluded, resolve_inside
+from markdown_vault_mcp.utils import (
+    is_note,
+    is_path_excluded,
+    resolve_inside,
+)
 from markdown_vault_mcp.utils.fs import iter_markdown_files
 
 if TYPE_CHECKING:
@@ -168,7 +172,7 @@ class ConventionsResolver:
             ValueError: If the path escapes the vault root.
         """
         cleaned = path.replace("\\", "/").strip("/")
-        if cleaned.endswith(".md"):
+        if is_note(cleaned):
             cleaned = cleaned.rsplit("/", 1)[0] if "/" in cleaned else ""
         if not cleaned:
             return ""

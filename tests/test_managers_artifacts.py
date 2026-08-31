@@ -170,10 +170,43 @@ class TestWrite:
         assert (tmp_path / "a.png").read_bytes() == b"new"
 
     def test_read_only_refuses(self, tmp_path: Path) -> None:
+        """Message pinned, not just the type.
+
+        The store and DocumentManager must refuse a read-only vault with the
+        same words: an operator hitting this sees one wording whichever path
+        raised, and pinning it is what stops the two drifting apart.
+        """
         store, rec = _store(tmp_path, read_only=True)
-        with pytest.raises(ReadOnlyError):
+        with pytest.raises(
+            ReadOnlyError,
+            match="Vault is read-only; write operations are not permitted",
+        ):
             store.write("a.png", b"x")
         assert rec.calls == []
+
+    def test_read_only_message_matches_the_manager(self, tmp_path: Path) -> None:
+        """The two guards state the same rule, so they must say the same thing."""
+        from markdown_vault_mcp.fts_index import FTSIndex
+        from markdown_vault_mcp.managers.document import DocumentManager
+        from markdown_vault_mcp.scanner import HeadingChunker
+
+        store, _ = _store(tmp_path, read_only=True)
+        fts = FTSIndex(db_path=":memory:")
+        try:
+            mgr = DocumentManager(
+                fts,
+                tmp_path,
+                write_lock=threading.RLock(),
+                chunk_strategy=HeadingChunker(),
+                read_only=True,
+            )
+            with pytest.raises(ReadOnlyError) as from_store:
+                store.write("a.png", b"x")
+            with pytest.raises(ReadOnlyError) as from_manager:
+                mgr.write("a.md", "x")
+            assert str(from_store.value) == str(from_manager.value)
+        finally:
+            fts.close()
 
     def test_write_protect_refuses_blind_overwrite(self, tmp_path: Path) -> None:
         store, _ = _store(tmp_path, write_protect_existing=True)

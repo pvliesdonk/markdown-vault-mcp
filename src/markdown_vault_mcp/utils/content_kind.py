@@ -11,7 +11,8 @@ what a *non-note* means:
   which validator runs (``DocumentManager``, ``ArtifactStore``, the transfer
   sink, the ``read``/``write``/``fetch`` tools).
 * **FOLDER** — a directory scope: ``DocumentManager.get_toc`` and
-  ``SummarizeManager._expand_path`` treat a non-note path as a subtree prefix.
+  ``SummarizeManager._expand_path`` treat a non-note path as a subtree prefix,
+  and ``ConventionsResolver`` folds a note path to its parent folder.
 * **INDEXABILITY** — not a candidate for the index: ``IndexManager``,
   ``EmbeddingsManager``, ``utils.fs.iter_markdown_files``.
 
@@ -32,6 +33,15 @@ prose rather than in the type.
   Symlinks make those differ: ``link.pdf -> target.bin`` is ``pdf`` by name and
   ``bin`` by target.  Nothing here resolves — each caller passes the object
   whose extension it means.
+
+There is deliberately no ``is_attachment(path, extensions)`` helper. It reads
+like the routing test and is not one — the tool layer and the transfer sink
+route on ``not is_note(path)`` alone, so a non-allowlisted file still reaches
+the artifact branch and is rejected there with the error naming
+``MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS``. A caller that genuinely wants
+"non-note and allowlisted" composes the two predicates at the point of use,
+where the surrounding branch shows which it meant. The private method this
+module replaced had exactly that misleading name and zero callers (#1235).
 
 Not owned here, because they are not path predicates: glob patterns that state
 the same rule in another language (``scanner``'s ``**/*.md``, ``tracker``'s
@@ -55,7 +65,6 @@ __all__ = [
     "has_md_suffix",
     "is_allowed_artifact",
     "is_allowed_artifact_suffix",
-    "is_attachment",
     "is_note",
 ]
 
@@ -125,8 +134,8 @@ def is_allowed_artifact(path: str | Path, extensions: frozenset[str]) -> bool:
     """Return whether *path*'s extension is in the attachment allowlist.
 
     Says nothing about ``.md`` — a note passes this test whenever ``md`` is
-    allowlisted.  Combine with :func:`is_note` when both matter, or use
-    :func:`is_attachment`.
+    allowlisted.  Combine with :func:`is_note` when both matter, at the point
+    of use rather than through a helper (see the module docstring).
 
     Args:
         path: A vault-relative path or a resolved path (see
@@ -138,25 +147,6 @@ def is_allowed_artifact(path: str | Path, extensions: frozenset[str]) -> bool:
     """
     return is_allowed_artifact_suffix(artifact_suffix(path), extensions)
 
-
-def is_attachment(path: str, extensions: frozenset[str]) -> bool:
-    """Return whether *path* is a non-note file of an allowlisted type.
-
-    **Not the routing test.**  The tool layer and the transfer sink route on
-    ``not is_note(path)`` alone, so a non-allowlisted, non-``.md`` file still
-    reaches the attachment branch and is rejected *there* — with the error that
-    names ``MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS``.  Routing on this
-    predicate instead would send such a file down the note path and change that
-    operator-facing message.
-
-    Args:
-        path: A vault-relative path.
-        extensions: The effective allowlist.
-
-    Returns:
-        ``True`` when *path* is an allowlisted attachment.
-    """
-    return not is_note(path) and is_allowed_artifact(path, extensions)
 
 
 def effective_attachment_extensions(

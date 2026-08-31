@@ -148,7 +148,6 @@ class DocumentManager:
         self._read_only = read_only
         self._write_protect_existing = write_protect_existing
         self._exclude_patterns = exclude_patterns
-        self._attachment_extensions = attachment_extensions
         self._max_note_read_bytes = max_note_read_bytes
         self._notifier = WriteNotifier(on_write_callback)
         self._artifacts = ArtifactStore(
@@ -161,11 +160,6 @@ class DocumentManager:
                 write_protect_existing=write_protect_existing,
             ),
         )
-        # Same opt-in probe the dispatcher uses (#894): a callback wired
-        # straight into this manager — the isolation tests, and any consumer
-        # constructing DocumentManager directly — may still be the published
-        # three-argument shape, which must not be handed a keyword it cannot
-        # take.
         self._mark_paths_dirty = mark_paths_dirty
         self._title_field = title_field
         # OKF enforced-write hook (#964): transforms the final note text
@@ -788,7 +782,6 @@ class DocumentManager:
             ValueError: If the path escapes the source directory or has an
                 extension not in the allowlist.
         """
-        self._check_writable()
         return self._artifacts.write(path, content, if_match)
 
     def edit(

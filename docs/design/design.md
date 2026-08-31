@@ -3317,11 +3317,14 @@ rather than collapsed into one tri-state:
 | Axis | Meaning of non-note | Where |
 |---|---|---|
 | Artifact | an attachment | `ArtifactStore`, `DocumentManager` delete/rename/move, the transfer sink, the `read`/`write`/`fetch` tools |
-| Folder | a directory scope | `DocumentManager.get_toc`, `SummarizeManager._expand_path` |
+| Folder | a directory scope | `DocumentManager.get_toc`, `SummarizeManager._expand_path`, `ConventionsResolver` |
 | Indexability | not a candidate for the index | `IndexManager`, `EmbeddingsManager`, `utils.fs.iter_markdown_files` |
 
-Routing the indexability axis through the same predicate is what makes a
-future non-markdown format a single edit rather than a hunt.
+Routing the indexability axis through the same predicate narrows a future
+non-markdown format to that one predicate plus the two glob defaults that
+still spell the rule in another language (`scanner`'s `**/*.md` and
+`tracker`'s comparison against it) — rather than a hunt through a dozen
+spellings.
 
 **Two divergences are deliberate and preserved** (#1240), recorded in that module:
 

@@ -11,7 +11,6 @@ from markdown_vault_mcp.utils.content_kind import (
     has_md_suffix,
     is_allowed_artifact,
     is_allowed_artifact_suffix,
-    is_attachment,
     is_note,
 )
 
@@ -219,7 +218,6 @@ __all__ = [
     "has_md_suffix",
     "is_allowed_artifact",
     "is_allowed_artifact_suffix",
-    "is_attachment",
     "is_note",
     "is_path_excluded",
     "normalize_text",

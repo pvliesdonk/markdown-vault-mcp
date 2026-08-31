@@ -1,11 +1,13 @@
 """Tests for the note/artifact boundary predicate (#1235).
 
-Two of these are tripwires rather than ordinary coverage. The symlink test
-pins that :func:`is_allowed_artifact` never resolves, because the transfer
-sink deliberately passes a resolved path while ``DocumentManager`` passes the
-raw string — a helper that resolved internally would silently change the
-sink's symlink policy. And the ``has_md_suffix`` cases pin that it is *not*
-:func:`is_note` with ``.lower()`` bolted on, so the two stay non-interchangeable.
+Two of these are tripwires rather than ordinary coverage. The symlink tests
+pin that :func:`artifact_suffix` — the function every extension check shares —
+never resolves. The transfer sink deliberately passes an already-resolved path
+so it judges a symlink by its target, while ``ArtifactStore.validate_path``
+passes the raw string so it judges by name; a helper that resolved internally
+would silently change the sink's policy. And the ``has_md_suffix`` cases pin
+that it is *not* :func:`is_note` with ``.lower()`` bolted on, so the two stay
+non-interchangeable.
 """
 
 from __future__ import annotations
@@ -21,7 +23,6 @@ from markdown_vault_mcp.utils.content_kind import (
     has_md_suffix,
     is_allowed_artifact,
     is_allowed_artifact_suffix,
-    is_attachment,
     is_note,
 )
 
@@ -126,30 +127,44 @@ class TestAllowlist:
         assert is_allowed_artifact(link.resolve(), allow_pdf) is False
 
 
-class TestIsAttachment:
-    """The five assertions migrated from DocumentManager._is_attachment."""
+class TestNonNoteAllowlistedComposition:
+    """The concept the deleted ``_is_attachment`` named, composed at the call site.
 
-    def test_allowlisted_non_note_is_an_attachment(self) -> None:
-        assert is_attachment("image.png", DEFAULT_ATTACHMENT_EXTENSIONS) is True
-        assert is_attachment("assets/report.pdf", DEFAULT_ATTACHMENT_EXTENSIONS) is True
+    There is no ``is_attachment`` helper: the name reads like the routing test
+    and is not one. These pin the same five cases the old private method did,
+    expressed the way a caller must express them.
+    """
+
+    @staticmethod
+    def _is_attachment(path: str, exts: frozenset[str]) -> bool:
+        return not is_note(path) and is_allowed_artifact(path, exts)
+
+    def test_allowlisted_non_note(self) -> None:
+        assert self._is_attachment("image.png", DEFAULT_ATTACHMENT_EXTENSIONS) is True
+        assert (
+            self._is_attachment("assets/report.pdf", DEFAULT_ATTACHMENT_EXTENSIONS)
+            is True
+        )
 
     def test_note_is_never_an_attachment(self) -> None:
-        assert is_attachment("note.md", DEFAULT_ATTACHMENT_EXTENSIONS) is False
-        assert is_attachment("notes/note.md", DEFAULT_ATTACHMENT_EXTENSIONS) is False
+        assert self._is_attachment("note.md", DEFAULT_ATTACHMENT_EXTENSIONS) is False
+        assert (
+            self._is_attachment("notes/note.md", DEFAULT_ATTACHMENT_EXTENSIONS) is False
+        )
 
     def test_non_allowlisted_is_not_an_attachment(self) -> None:
-        assert is_attachment("file.xyz", DEFAULT_ATTACHMENT_EXTENSIONS) is False
+        assert self._is_attachment("file.xyz", DEFAULT_ATTACHMENT_EXTENSIONS) is False
 
     def test_wildcard_accepts_any_non_note(self) -> None:
-        assert is_attachment("file.xyz", _WILDCARD) is True
-        assert is_attachment("file.bin", _WILDCARD) is True
-        assert is_attachment("notes/note.md", _WILDCARD) is False
+        assert self._is_attachment("file.xyz", _WILDCARD) is True
+        assert self._is_attachment("file.bin", _WILDCARD) is True
+        assert self._is_attachment("notes/note.md", _WILDCARD) is False
 
-    def test_is_not_the_routing_predicate(self) -> None:
+    def test_routing_does_not_use_this_composition(self) -> None:
         """A non-allowlisted, non-note file is not an attachment, yet the tool
-        layer must still route it to the attachment branch so it is rejected
-        with the allowlist error. Pins why the two are separate functions."""
-        assert is_attachment("file.xyz", DEFAULT_ATTACHMENT_EXTENSIONS) is False
+        layer must still route it to the artifact branch so it is rejected
+        there with the allowlist error. Pins why no helper exists."""
+        assert self._is_attachment("file.xyz", DEFAULT_ATTACHMENT_EXTENSIONS) is False
         assert is_note("file.xyz") is False
 
 

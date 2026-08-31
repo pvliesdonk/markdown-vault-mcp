@@ -116,8 +116,7 @@ class ArtifactStore:
         """
         if self._policy.read_only:
             raise ReadOnlyError(
-                "Vault is read-only. Set MARKDOWN_VAULT_MCP_READ_ONLY=false "
-                "to enable writes."
+                "Vault is read-only; write operations are not permitted."
             )
 
     def _check_no_clobber(
