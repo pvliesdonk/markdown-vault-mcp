@@ -124,12 +124,14 @@ flagged string literal that is not an env var at all, list it under
 
 The inverse direction raises the same duplicate-name error: a var the scan
 *does* see that the template already declares. `config-presentation.yml`
-declares `MARKDOWN_VAULT_MCP_SERVER_NAME` and `MARKDOWN_VAULT_MCP_INSTRUCTIONS`
-with template provenance, so a literal `env(...)` read of either inside
+declares `MARKDOWN_VAULT_MCP_SERVER_NAME`,
+`MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION`,
+`MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`, and `MARKDOWN_VAULT_MCP_INSTRUCTIONS`
+with template provenance, so a literal `env(...)` read of any of them inside
 `from_env` gets discovered as a domain var too, and the generator exits with
-the duplicate-name error. If your project honors either var (an anticipated
-pattern since the template started honoring them), keep the field but move
-the read outside `from_env` — for example a module-level helper your server
+the duplicate-name error. If your project honors any of these variables (an
+anticipated pattern since the template started honoring them), keep the field
+but move the read outside `from_env` — for example a module-level helper your server
 assembly calls. The scan only walks `from_env`, so the read stays invisible
 to it while runtime behavior is unchanged.
 
@@ -311,7 +313,8 @@ auth vars such as `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` and
 array, the one a remote HTTP deployment reads. The `pypi` package's
 array keeps only what a stdio install needs: the log-level and
 rich-logging switches, together with `MARKDOWN_VAULT_MCP_SERVER_NAME`,
-`MARKDOWN_VAULT_MCP_INSTRUCTIONS`, and `MARKDOWN_VAULT_MCP_KV_STORE_URL`.
+`MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION`, the two instruction overrides, and
+`MARKDOWN_VAULT_MCP_KV_STORE_URL`.
 If you diff your project's old `server.json` against the regenerated
 one, expect the `pypi` array to shrink. That is the intended split, not
 lost data; the vars that dropped out of the `pypi` array are still
@@ -342,3 +345,69 @@ Recovery: restore `server.json` from git history (or `copier update`'s
 pre-update commit) before rerunning the generator; this generator only
 ever replaces the two declared arrays inside the file, never creates the
 file itself.
+
+## The docs reference became generated, and the README domain table became curated
+
+A later template version again reshapes the two Markdown destinations:
+
+- **`docs/configuration.md` is now the complete generated reference.**
+  Every collected var renders in exactly one section table, spliced
+  between `GENERATED-ENV-TABLE-REF-*` marker pairs, one region per
+  section (Server, Authentication, Persistence, and so on, mirroring
+  `.env.example`'s sections). Domain vars render under
+  `## Domain variables`, segmented into `###` sub-sections by each
+  field's `wizard: {group: ...}` metadata hint — the same grouping the
+  config wizard presents — with ungrouped fields first. The generator's
+  `complete: true` guard fails generation (and so CI) when a var would
+  land in no section, so the reference cannot silently go incomplete.
+- **`README.md`'s `## Domain configuration` table is now a curated
+  subset**, no longer the full domain surface. A domain field appears
+  there only when its `tags` metadata includes `readme` — the same
+  hand-picked mechanism the core table above it always used. A project
+  with no `readme`-tagged fields renders a short note pointing at the
+  reference instead of an empty table.
+
+Why: the flat generated README table this replaces became unreadable the
+moment a project grew a few dozen domain vars, and the hand-written
+tables projects kept in `docs/configuration.md` were drift debt — every
+row duplicated field metadata the generator already owns.
+
+Migration, on the first `copier update` that pulls this version in:
+
+1. **Pick the handful of domain vars a newcomer should meet first** and
+   add `readme` to those fields' `tags` metadata (between the
+   `CONFIG-FIELDS` sentinels in `config.py`, or in the
+   `config-presentation.domain.yml` entry for a var declared there).
+   Three to six is a good number; the README table is an entry point,
+   not a reference.
+2. **Give your domain fields `wizard: {group: ...}` hints** if they lack
+   them, so the reference's domain section renders grouped. Projects
+   that already grouped their wizard questions get this for free.
+3. **Resolve the `docs/configuration.md` merge.** If you never touched
+   the template's version, the update lands cleanly. If you rewrote the
+   page with hand-written tables (common), copier reports conflicts:
+   take the template's side for the page skeleton and every
+   `GENERATED-ENV-TABLE-REF-*` marker pair, then move what your
+   hand-written version carried to where it now belongs — per-var
+   descriptions into each field's `help` metadata, and conceptual prose
+   (how variables interact, worked examples) into the
+   `DOMAIN-CONFIG-VARS` sentinel block or next to the relevant marker
+   pair, never between the markers.
+4. **Rerun the generator and diff.** `python scripts/gen_config_surface.py`
+   fills every region; confirm each var your hand-written tables
+   documented reappears in the reference, then delete any remaining
+   hand-written duplicate rows.
+
+Dropping or breaking a `REF-*` marker fails the same guard as every
+other spliced region: `scripts/gen_config_surface.py --check` raises a
+`SystemExit` naming the file and region. A var whose tags match no
+reference section fails the `complete: true` guard instead, naming the
+var and its tags:
+
+```text
+ERROR: docs/configuration.md declares `complete: true` but its regions match none of: 'DEMO_MCP_MYSTERY' (tags=['no_such_tag']). Add one of each var's tags to a region (or a new region covering it) so the reference stays complete.
+```
+
+In practice that error means the same thing as the env-destination guard
+that fires first for the same root cause: the field's `tags` name no
+known section — fix the tags rather than the presentation file.

@@ -2953,14 +2953,18 @@ contain this, both operator-tunable:
   observability tools — they also report boot-time builds and
   file-watcher reindexes that no client call initiated.
 
-**Composed instructions**: from fastmcp-pvl-core 5 the server's MCP
+**Composed instructions**: from fastmcp-pvl-core 6 the server's MCP
 `instructions` string is not a single templated value but a collection of
-snippets, each added with a priority and the tool names it directs calls to.
-Every contributor — the template-owned scaffold (identity, documentation
-pointer), pvl-core's own `register_*` helpers (job polling, transfer links),
-and this domain — adds to one builder obtained via `instructions_for(mcp)`.
+snippets, each added with a semantic role and the tool names it directs calls
+to. The template-owned scaffold contributes a shaped
+`<server name>: <product description>` identity and the documentation pointer;
+pvl-core's `register_*` helpers contribute job-polling and transfer workflows;
+the domain contributes vault capabilities, workflows, and deployment mode.
+All contributors add to one builder obtained via `instructions_for(mcp)`.
 `finalize_instructions(mcp, config.server, env_prefix=...)` renders it once,
-as the last call in `make_server()`, after `apply_tool_visibility()`.
+as the last call in `make_server()`, after `apply_tool_visibility()`. Server
+construction and finalization are synchronous and must finish before entering
+an event loop; finalization resolves FastMCP's effective tool visibility.
 
 The domain half lives in `_instructions.py` (kept out of the template-owned
 `server.py`, #901): `_domain_snippets()` selects the fragments that apply to
@@ -2978,28 +2982,29 @@ interchangeable:
   backend). These are the only gate that works for this server's
   `mcp.disable(tags=...)` calls, which pvl-core deliberately does not model:
   a disabled-but-registered tool still counts as exposed at finalize.
-- **The `tools` declaration on a snippet** gates on the operator's
+- **The `requires_tools` declaration on a snippet** gates on the operator's
   `TOOLS_ALLOW` / `TOOLS_DENY` lists. pvl-core drops a snippet whose declared
   tools are not all exposed, so workflow prose can never point the model at a
   tool an operator removed. A name belongs in that declaration only when its
   absence makes the snippet actively wrong — not when the snippet merely
   mentions it or offers it as an alternative.
 
-Ordering comes from the priority anchors pvl-core exports
-(`IDENTITY < DOCS < CAPABILITIES < WORKFLOWS < INSTANCE < OPERATOR`), with
-ties broken by insertion order. The vault prelude sits at `IDENTITY + 10`,
-deliberately not at `IDENTITY`: exactly one snippet may hold that priority
-and a second raises `ConfigurationError` at finalize. Workflow fragments sit
-at `WORKFLOWS` in selection order, and the READ-ONLY/READ-WRITE announcement
-at `INSTANCE`, which places it after every workflow fragment and before the
-operator's own text at `OPERATOR`.
+Ordering comes from pvl-core's semantic roles:
+`IDENTITY`, `ROUTING`, `INSTANCE`, `POLICY`, `CAPABILITIES`, `WORKFLOWS`, then
+`DOCUMENTATION`, with insertion order preserved within a role. The vault
+prelude uses `CAPABILITIES`, workflow fragments use `WORKFLOWS`, and the
+READ-ONLY/READ-WRITE announcement uses `INSTANCE`. General contributors may
+use only `INSTANCE`, `CAPABILITIES`, and `WORKFLOWS`; pvl-core reserves shaped
+identity, operator routing and policy, and the documentation role.
 
-Operators shape the result with two env vars, both read inside
-`finalize_instructions`: `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` is appended
-at `OPERATOR`, and the legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the
-whole text and logs a deprecation warning (when both are set, `_EXTRA` is
-ignored). Neither reaches `ProjectConfig`: a domain field mirroring them
-would be a second, silently-diverging reader of the same variables.
+Operators shape the result with three env vars read inside
+`finalize_instructions`: `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION` supplies
+concise routing context at `ROUTING`, and
+`MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` supplies behavioral policy at
+`POLICY`. The legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` replaces the whole text
+and logs a deprecation warning; when it is set, both additive variables are
+ignored. None reaches `ProjectConfig`: a domain field mirroring them would be
+a second, silently-diverging reader of the same variables.
 
 **Tool semantics**:
 - `read(path)` returns full file content + frontmatter metadata
@@ -3178,7 +3183,8 @@ For MCP server deployment:
 | Variable | Description | Default |
 |-|-|-|
 | `MARKDOWN_VAULT_MCP_SERVER_NAME` | MCP server name shown to clients | `markdown-vault-mcp` |
-| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | Operator context appended to the composed instructions | (none) |
+| `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION` | Concise routing context that distinguishes this deployment | (none) |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | Deployment-specific behavioral policy added to the composed instructions | (none) |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | Deprecated: replaces the composed instructions entirely | composed text |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files | required |

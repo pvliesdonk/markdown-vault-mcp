@@ -2526,10 +2526,43 @@ def splice_region(text: str, region_id: str, body: str, *, source: str) -> str:
     return f"{before}{body}\n{after}" if body else f"{before}{after}"
 
 
+def _region_provenances(
+    region: Mapping[str, Any], source: str
+) -> frozenset[str] | None:
+    """The region's validated `provenance:` filter, or ``None`` for no filter.
+
+    Rejects a non-list value rather than coercing (``list("domain")``
+    silently explodes a scalar into per-character entries — the same trap
+    `_wizard_guard` and `_validate_packaging_map` already guard against) and
+    any token outside `_PROVENANCE_ORDER`: a misspelled provenance
+    (``[domian]``) matches nothing, and a filter that silently selects zero
+    vars is byte-for-byte indistinguishable from a deliberately empty
+    region.
+    """
+    declared = region.get("provenance")
+    if declared is None:
+        return None
+    if not isinstance(declared, list):
+        raise SystemExit(
+            f"ERROR: {source} has a non-list 'provenance' value {declared!r} "
+            "— expected a list, e.g. [domain]."
+        )
+    unknown = [item for item in declared if item not in _PROVENANCE_ORDER]
+    if unknown:
+        raise SystemExit(
+            f"ERROR: {source} names unknown provenance(s) {unknown!r} — "
+            f"known provenances are {sorted(_PROVENANCE_ORDER)!r}."
+        )
+    return frozenset(declared)
+
+
 def _select_region_vars(
     vars_: Sequence[Var],
     region: Mapping[str, Any],
     required_names: Collection[str] | None = None,
+    *,
+    claimed: Collection[str] | None = None,
+    source: str = "region",
 ) -> list[Var]:
     """Select the vars_ one spliced region's table should render.
 
@@ -2547,13 +2580,140 @@ def _select_region_vars(
     split cleanly into a "required" and an "optional" region for the same
     file, each claiming a disjoint half of the same tag-matched set whose
     union is the unfiltered set.
+
+    The optional `provenance:` region key (a list of `_PROVENANCE_ORDER`
+    tokens, validated loudly — see `_region_provenances`) further narrows
+    to vars of those provenances. This is what lets README.md's two curated
+    regions share the `readme` tag without double-listing a var: the CORE
+    region takes the template-enumerable provenances, the DOMAIN region
+    takes `[domain]`.
+
+    *claimed* (keyword-only) is a set of var names an earlier region of the
+    same `claim_once: true` file already claimed — those are skipped here,
+    the same first-declared-section-wins rule `render_env_file` applies to
+    its sections. ``None`` (the default) means no claim tracking at all.
     """
     region_tags = set(region.get("tags", ()))
-    matched = [v for v in vars_ if region_tags & set(v.tags)]
+    provenances = _region_provenances(region, source)
+    matched = [
+        v
+        for v in vars_
+        if (claimed is None or v.name not in claimed)
+        and region_tags & set(v.tags)
+        and (provenances is None or v.provenance in provenances)
+    ]
     required = region.get("required")
     if required is None:
         return matched
     return [v for v in matched if _is_required(v, required_names) == bool(required)]
+
+
+def _render_region_body(
+    region_vars: Sequence[Var],
+    region: Mapping[str, Any],
+    ctx: PresentationContext,
+    *,
+    source: str,
+) -> str:
+    """Render one spliced region's body: a table, grouped sub-tables, or a note.
+
+    Three shapes, in priority order:
+
+    - Zero selected vars *and* the region declares an `empty_note:` — the
+      note text is spliced verbatim instead of a header-only table. A bare
+      header with no data rows is technically correct but reads as a
+      rendering bug on a landing page; the note is the declarative place to
+      say *why* the region is empty and what fills it (e.g. "tag a field
+      `readme` to feature it here"). Without the key, the header-only table
+      renders exactly as it always did.
+    - A `group_by: group` region renders one sub-table per wizard `group`
+      hint — the same segmentation the config wizard already presents — each
+      under a heading (level set by `group_heading_level:`, default 3, i.e.
+      `###`). Vars with no group render first, as a plain table above any
+      heading, so they cannot visually attach to whichever group happens to
+      precede them; groups follow in first-appearance order, which is
+      declaration order and therefore deterministic (template-ci renders
+      twice and diffs). This is what keeps a downstream with dozens of
+      domain vars readable: the flat table it replaces is the reason this
+      lever exists.
+    - Otherwise: one flat table, unchanged.
+    """
+    if not region_vars:
+        note = region.get("empty_note")
+        if note is not None:
+            return str(note).rstrip("\n")
+
+    def _table(selected: Sequence[Var]) -> str:
+        return render_md_table(
+            selected,
+            region["columns"],
+            required_names=ctx.required_names,
+            vocabulary=ctx.vocabulary,
+            documented_defaults=ctx.documented_defaults,
+        )
+
+    group_by = region.get("group_by")
+    if group_by is None:
+        return _table(region_vars)
+    if group_by != "group":
+        raise SystemExit(
+            f"ERROR: {source} has unknown 'group_by' value {group_by!r} — "
+            "the only supported value is 'group' (the wizard group hint)."
+        )
+
+    raw_level = region.get("group_heading_level", 3)
+    # `isinstance(raw_level, bool)` first: bool subclasses int, and YAML
+    # `true` silently multiplying into a one-`#` heading is exactly the
+    # quiet misrender the loud-SystemExit discipline here exists to stop.
+    if (
+        isinstance(raw_level, bool)
+        or not isinstance(raw_level, int)
+        or not 2 <= raw_level <= 6
+    ):
+        raise SystemExit(
+            f"ERROR: {source} has invalid 'group_heading_level' {raw_level!r} "
+            "— expected an integer between 2 and 6."
+        )
+    heading = "#" * raw_level
+    ungrouped = [v for v in region_vars if not v.wizard.get("group")]
+    groups: dict[str, list[Var]] = {}
+    for var in region_vars:
+        group = var.wizard.get("group")
+        if group:
+            groups.setdefault(str(group), []).append(var)
+
+    parts: list[str] = []
+    if ungrouped:
+        parts.append(_table(ungrouped))
+    parts.extend(
+        f"{heading} {group_name}\n\n{_table(group_vars)}"
+        for group_name, group_vars in groups.items()
+    )
+    return "\n\n".join(parts) if parts else _table(region_vars)
+
+
+def _assert_regions_cover_every_var(
+    rel_path: str, vars_: Sequence[Var], claimed: Collection[str]
+) -> None:
+    """`SystemExit` when a `complete: true` splice file misses a collected var.
+
+    The counterpart of `_assert_every_var_has_an_env_destination` for a
+    reference document: a file that promises to be the complete surface must
+    fail loudly when a new var (a core bump, a new domain field, a new
+    template var) matches none of its regions, rather than silently shipping
+    a "complete" reference that isn't. The message names every missing var
+    and its tags, so the fix — adding the tag to a region, or a region for
+    the tag — is one edit away.
+    """
+    missing = [v for v in vars_ if v.name not in claimed]
+    if not missing:
+        return
+    offenders = ", ".join(f"{v.name!r} (tags={list(v.tags)!r})" for v in missing)
+    raise SystemExit(
+        f"ERROR: {rel_path} declares `complete: true` but its regions match "
+        f"none of: {offenders}. Add one of each var's tags to a region (or "
+        "a new region covering it) so the reference stays complete."
+    )
 
 
 def render_splice_file(
@@ -2570,14 +2730,32 @@ def render_splice_file(
     disk — a missing file is a `SystemExit` naming *rel_path*, since this
     generator only rewrites the marked region inside an existing file and
     never creates the file itself. Each declared region's vars are chosen
-    by `_select_region_vars` (tag intersection, then an optional `required`
-    filter, both driven by *ctx*'s `required_vars:` list) and rendered via
-    `render_md_table` using the region's declared `columns` (forwarding the
-    same list too, so a region that declares a `required` table column
-    agrees with its own filter). Regions are spliced one after another,
-    each pass operating on the previous pass's output, so multiple regions
-    in one file compose correctly regardless of their relative marker
-    positions.
+    by `_select_region_vars` (tag intersection, then the optional
+    `provenance` and `required` filters, the latter driven by *ctx*'s
+    `required_vars:` list) and rendered via `_render_region_body` (a flat
+    table, `group_by: group` sub-tables, or an `empty_note`). Regions are
+    spliced one after another, each pass operating on the previous pass's
+    output, so multiple regions in one file compose correctly regardless of
+    their relative marker positions.
+
+    Three file-level behaviours layer on top, all off by default:
+
+    - A region with a `when_answer:` whose answer is falsy is skipped
+      entirely — splice *and* selection — mirroring an env-file section's
+      gate. This matters because the region's marker pair typically lives
+      inside the same Jinja conditional in the source template, so the
+      markers do not exist in the gated-off render and splicing would die
+      on the missing-marker guard.
+    - `claim_once: true` makes regions claim vars first-declared-wins, the
+      rule `render_env_file`'s sections already follow — so a var whose
+      tags span two regions (e.g. TASKS_URL, tagged both `persistence` and
+      `tasks`) appears exactly once, under whichever region is declared
+      first. Region order is the `regions:` list's declaration order, not
+      marker position in the file.
+    - `complete: true` asserts, after every region has selected, that no
+      collected var was left unclaimed — see
+      `_assert_regions_cover_every_var`. This is the anti-drift guard for a
+      file that documents the *whole* surface.
     """
     target = project_root / rel_path
     if not target.exists():
@@ -2587,16 +2765,25 @@ def render_splice_file(
             "region inside it, never the surrounding file."
         )
     text = target.read_text(encoding="utf-8")
+    claim_once = bool(file_spec.get("claim_once", False))
+    claimed: set[str] = set()
     for region in file_spec.get("regions", ()):
-        region_vars = _select_region_vars(vars_, region, ctx.required_names)
-        table = render_md_table(
-            region_vars,
-            region["columns"],
-            required_names=ctx.required_names,
-            vocabulary=ctx.vocabulary,
-            documented_defaults=ctx.documented_defaults,
+        when_answer = region.get("when_answer")
+        if when_answer is not None and not ctx.answers.get(when_answer):
+            continue
+        source = f"{rel_path} region {region.get('id')!r}"
+        region_vars = _select_region_vars(
+            vars_,
+            region,
+            ctx.required_names,
+            claimed=claimed if claim_once else None,
+            source=source,
         )
-        text = splice_region(text, region["id"], table, source=rel_path)
+        claimed.update(v.name for v in region_vars)
+        body = _render_region_body(region_vars, region, ctx, source=source)
+        text = splice_region(text, region["id"], body, source=rel_path)
+    if file_spec.get("complete"):
+        _assert_regions_cover_every_var(rel_path, vars_, claimed)
     return text
 
 
@@ -2716,17 +2903,16 @@ _ARTIFACT_RENDERERS: dict[str, Callable[..., str]] = {
 }
 
 
-def _render_one_artifact(
-    project_root: Path,
-    rel_path: str,
-    file_spec: Mapping[str, Any],
-    vars_: Sequence[Var],
-    ctx: PresentationContext,
-) -> str:
-    """Dispatch one `files:` entry to its kind's renderer.
+def _resolve_renderer(
+    rel_path: str, file_spec: Mapping[str, Any]
+) -> Callable[..., str]:
+    """The renderer for one `files:` entry's ``kind``.
 
     An unrecognised ``kind`` fails loudly instead of either silently
-    producing nothing or raising a bare `KeyError`.
+    producing nothing or raising a bare `KeyError`. Split out of the render
+    call so `write_artifacts` can validate every declared kind *before* any
+    other whole-run guard fires — a genuinely malformed `files:` entry gets
+    this, its most specific error, first.
     """
     kind = file_spec.get("kind")
     renderer = _ARTIFACT_RENDERERS.get(kind) if isinstance(kind, str) else None
@@ -2736,6 +2922,18 @@ def _render_one_artifact(
             f"unknown kind {kind!r} — expected one of "
             f"{sorted(_KNOWN_FILE_KINDS)!r}."
         )
+    return renderer
+
+
+def _render_one_artifact(
+    project_root: Path,
+    rel_path: str,
+    file_spec: Mapping[str, Any],
+    vars_: Sequence[Var],
+    ctx: PresentationContext,
+) -> str:
+    """Dispatch one `files:` entry to its kind's renderer."""
+    renderer = _resolve_renderer(rel_path, file_spec)
     return renderer(project_root, rel_path, file_spec, vars_, ctx)
 
 
@@ -2858,16 +3056,24 @@ def write_artifacts(
         files=merged_files,
     )
 
+    # Guard ordering is deliberate, most-specific error first. Every file
+    # kind is validated up front, so a genuinely malformed `files:` entry
+    # gets its own error before any whole-run check. Then the
+    # env-destination guard: a var that would land in no env artifact is a
+    # config-presentation bug, and this guard's message (which names the
+    # known section tags) is the actionable one — it must fire before any
+    # renderer runs, or docs/configuration.md's own `complete: true` guard
+    # reports the same root cause with a less specific message. Both run
+    # before anything is written to disk, so partial output never masks
+    # either.
+    for rel_path, file_spec in merged_files.items():
+        _resolve_renderer(rel_path, file_spec)
+    _assert_every_var_has_an_env_destination(presentation, vars_, answers)
+
     artifacts: list[tuple[str, str]] = [
         (rel_path, _render_one_artifact(project_root, rel_path, file_spec, vars_, ctx))
         for rel_path, file_spec in merged_files.items()
     ]
-
-    # Checked after every file kind is known-good (so a genuinely malformed
-    # `files:` entry above still gets its own, more specific error) but
-    # before anything is written to disk — a var that would land nowhere is
-    # a config-presentation bug, not something partial output should mask.
-    _assert_every_var_has_an_env_destination(presentation, vars_, answers)
 
     changed: list[str] = []
     for rel_path, text in artifacts:

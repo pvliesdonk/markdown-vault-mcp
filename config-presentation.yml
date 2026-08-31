@@ -16,11 +16,19 @@ vars:
     tags: [server]
     wizard: {group: Server, when: server}
 
+  - name: "{PREFIX}_INSTANCE_DESCRIPTION"
+    provenance: template
+    type_name: "str"
+    default: null
+    help: "Concise routing context that distinguishes this deployment's material or responsibility."
+    tags: [server]
+    wizard: {group: Server}
+
   - name: "{PREFIX}_INSTRUCTIONS_EXTRA"
     provenance: template
     type_name: "str"
     default: null
-    help: "Operator context appended to the generated MCP instructions."
+    help: "Deployment-specific behavioral policy added to the generated MCP instructions."
     tags: [server]
     wizard: {group: Server, when: server}
 
@@ -28,7 +36,7 @@ vars:
     provenance: template
     type_name: "str"
     default: null
-    help: "Legacy: replaces the entire generated MCP instructions text (deprecated; prefer the _EXTRA variant)."
+    help: "Legacy: replaces all generated MCP instructions (deprecated; use _INSTANCE_DESCRIPTION for routing and _INSTRUCTIONS_EXTRA for policy)."
     tags: [server]
     wizard: {group: Server, when: server}
 
@@ -44,7 +52,7 @@ vars:
     provenance: template
     type_name: "int"
     default: 5678
-    help: "debugpy listen port; the image must be built with --build-arg DEBUG=true."
+    help: "debugpy listen port; the image must be built with `--build-arg DEBUG=true`."
     tags: [debug]
     # Development-only; read inside core's maybe_start_debugpy, not project
     # src/. Documented in the env artifacts but offered no wizard control —
@@ -68,7 +76,7 @@ vars:
     provenance: template
     type_name: "int"
     default: 1000
-    help: "Run the server process as this UID; the container entrypoint chowns writable paths to match."
+    help: "Run the server process as this UID; the container entrypoint reassigns ownership of writable paths to match."
     tags: [container]
     wizard: {control: none}
 
@@ -224,6 +232,7 @@ packaging:
   FASTMCP_LOG_LEVEL: [pypi, oci]
   FASTMCP_ENABLE_RICH_LOGGING: [pypi, oci]
   "{PREFIX}_SERVER_NAME": [pypi, oci]
+  "{PREFIX}_INSTANCE_DESCRIPTION": [pypi, oci]
   "{PREFIX}_INSTRUCTIONS_EXTRA": [pypi, oci]
   "{PREFIX}_INSTRUCTIONS": [pypi, oci]
   "{PREFIX}_HTTP_PATH": [oci]
@@ -263,6 +272,9 @@ packaging:
 # tables (`JWTs` → `JSON Web Tokens`) rather than merely accepted.
 markdown_vocabulary:
   JWTs: "JSON Web Tokens"
+  # `ai-tells.OverusedVocabulary` rejects "meaningful"; core's TASKS_URL
+  # help uses it in this one transitional shape.
+  "Only meaningful when": "Only applies when"
 
 # The effective value a var falls back to at runtime when its own dataclass
 # `default` renders empty (see `_is_empty_default`) — core's field metadata
@@ -512,23 +524,95 @@ files:
         required: false
         columns: [variable, default, description]
 
+  # The complete configuration reference: every collected var appears in
+  # exactly one section table (`claim_once` gives regions the same
+  # first-declared-wins rule the .env.example sections follow, and
+  # `complete` fails generation when a var matches no region at all — the
+  # anti-drift guard that replaces the hand-written tables downstreams used
+  # to keep here). Section order mirrors .env.example; Persistence is
+  # declared before Background tasks for the same TASKS_URL reason noted
+  # there. The surrounding prose is hand-authored in
+  # docs/configuration.md.jinja — per-section intros are the place for the
+  # conceptual explanations a table cell cannot carry.
+  docs/configuration.md:
+    kind: splice
+    claim_once: true
+    complete: true
+    regions:
+      # Declared FIRST even though its markers sit last in the file (splice
+      # order is declaration order, marker position is irrelevant): every
+      # domain var carries the implicit `domain` tag, and claiming them here
+      # first keeps a downstream field that reuses a template section tag
+      # (`persistence`, `server`, ...) in the project's own section instead
+      # of quietly folding it into a template one. Segmented by each
+      # field's wizard `group` hint — the same annotation the config wizard
+      # presents — so a project with dozens of domain vars renders as
+      # readable sub-sections instead of one flat table. Ungrouped fields
+      # render first, above any group heading.
+      - id: REF-DOMAIN
+        tags: [domain]
+        group_by: group
+        columns: [variable, default, required, description]
+        # Operator-facing wording only (this note renders on the published
+        # docs site): the authoring guidance — fields added between the
+        # CONFIG-FIELDS sentinels appear here automatically — lives in the
+        # DOMAIN-CONFIG-VARS sentinel comment beside this region and in the
+        # config-contract skill, per the scrub of implementer prose from
+        # operator pages (#286/#287).
+        empty_note: "_This project defines no variables of its own yet, beyond the sections above._"
+      - id: REF-SERVER
+        tags: [server]
+        columns: [variable, default, description]
+      - id: REF-AUTH
+        tags: [auth]
+        columns: [variable, default, required, description]
+      - id: REF-PERSISTENCE
+        tags: [persistence]
+        columns: [variable, default, description]
+      - id: REF-TASKS
+        tags: [tasks]
+        columns: [variable, default, description]
+      - id: REF-APPS
+        tags: [apps]
+        columns: [variable, default, description]
+      - id: REF-AUTHZ
+        tags: [authz]
+        when_answer: enable_authorization
+        columns: [variable, default, description]
+      - id: REF-LOGGING
+        tags: [observability]
+        columns: [variable, default, description]
+      - id: REF-CONTAINER
+        tags: [container]
+        columns: [variable, default, description]
+      - id: REF-DEBUG
+        tags: [debug]
+        columns: [variable, default, description]
+
   README.md:
     kind: splice
     regions:
       # A deliberately curated landing-page subset, not the full surface —
       # `readme` is a hand-picked tag on a handful of vars, not a
       # section-wide selector like the env-file `tags:` above. Do not widen
-      # it to cover more ground; that is what the full `.env.example` and
-      # the Domain region below are for.
+      # it to cover more ground; that is what docs/configuration.md (the
+      # complete generated reference) and `.env.example` are for. The
+      # provenance split keeps the two regions disjoint: a domain field
+      # tagged `readme` lands in the Domain region below, never here.
       - id: CORE
         tags: [readme]
+        provenance: [core, template, external]
         columns: [variable, default, description]
-      # A fresh scaffold has no domain fields yet, so this renders as an
-      # empty table (header + separator only, no data rows) until the
-      # project's own `ProjectConfig` grows some.
+      # The project's own curated subset: a downstream features a domain
+      # field on the landing page by adding `readme` to that field's `tags`
+      # metadata. The full domain surface lives in docs/configuration.md's
+      # REF-DOMAIN region; this region deliberately does NOT dump it — a
+      # README table with dozens of rows stops being an entry point.
       - id: DOMAIN
-        tags: [domain]
+        tags: [readme]
+        provenance: [domain]
         columns: [variable, default, required, description]
+        empty_note: "_No variables are featured here yet. Add `readme` to a config field's `tags` metadata to feature it; the [configuration reference](docs/configuration.md) lists every variable._"
 
   # JSON has no comment syntax, so there is nowhere for a GENERATED-* marker
   # pair to live. This kind splices structurally instead: each declared
@@ -561,6 +645,9 @@ files:
       "{PREFIX}_SERVER_NAME":
         id: server_name
         title: "Server name"
+      "{PREFIX}_INSTANCE_DESCRIPTION":
+        id: instance_description
+        title: "Instance description"
       FASTMCP_LOG_LEVEL:
         id: log_level
         title: "Log level"

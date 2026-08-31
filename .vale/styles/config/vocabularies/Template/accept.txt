@@ -17,6 +17,8 @@ Traefik
 
 # --- HTTP / URL terminology ---
 hostname
+resumability
+sandboxing
 subpath
 
 # --- OAuth / OIDC token fields ---
@@ -25,6 +27,7 @@ id_token
 
 # --- Python / runtime ecosystem ---
 debugpy
+fastmcp's
 lockfile
 namespace
 scaffolded
@@ -45,6 +48,7 @@ env
 hotfix
 knope
 repo
+repowise
 ruleset
 rulesets
 systemd

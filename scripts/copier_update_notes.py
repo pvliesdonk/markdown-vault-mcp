@@ -5,6 +5,9 @@ Two subcommands, both consumed by ``.github/workflows/copier-update.yml``:
 
 ``notes``
     Select the UPGRADING.md sections a copier-update PR must surface.
+``section-files``
+    Print the per-minor ``upgrading/vX.Y.md`` paths a jump needs, so the
+    workflow can fetch each one before running ``notes``.
 ``pick-target``
     Choose the ref an *automated* update run should target, stepping at
     most one major at a time so a multi-major jump becomes a sequence of
@@ -22,6 +25,17 @@ ref's minor section first (later patches in that line may carry migration
 work this project has not done yet), then every later minor through the
 target's.
 
+Since the template split UPGRADING.md into an index plus per-minor
+``upgrading/vX.Y.md`` files, the index's released sections are one-line
+pointers.  Pass ``--sections-dir`` with a directory holding the fetched
+per-minor files (see ``section-files``) and each in-range minor embeds its
+file's full content; a minor whose file is absent from the directory falls
+back to its index pointer section, so the embed degrades to a working link
+rather than going silently empty.  Without ``--sections-dir`` the selection
+runs over the index text alone — against a pre-split template that IS the
+full content, and against a post-split template it is the pointer rows,
+the same degraded-but-linked shape.
+
 Selection rules:
 
 - previous ``vX.Y.Z`` and target ``vA.B.C``: every ``## vX.Y ...`` section
@@ -29,7 +43,8 @@ Selection rules:
 - target is not a version tag (a branch or sha run): from the previous
   minor through the end of the file, ``## Unreleased`` included — an
   unreleased ref may carry migration notes not yet promoted under a
-  version heading.
+  version heading.  The Unreleased section always comes from the index;
+  it is the one section the split leaves there in full.
 - previous is missing or unparseable (first tracked update): emit nothing;
   the caller links the full file instead of guessing a range.
 - selection longer than ``--max-chars``: emit a one-line overflow note
@@ -40,6 +55,16 @@ Selection rules:
 All of the above exit 0 (an empty output file is a valid outcome the
 workflow renders around); only an unreadable input or unwritable output
 fails.
+
+section-files
+=============
+
+Reads the index the same way ``notes`` does and prints the repo-relative
+``upgrading/vX.Y.md`` path of every in-range minor, one per line — the
+fetch list for the workflow, derived from the index rather than guessed
+from version arithmetic, so a minor that never existed (a skipped number)
+is never requested and a 404 never looks like a missing note.  Prints
+nothing when the previous ref is unparseable, matching ``notes``.
 
 pick-target
 ===========
@@ -120,18 +145,48 @@ def _in_range(
     return upper is None and UNRELEASED_HEADING_RE.match(heading) is not None
 
 
-def select_sections(text: str, previous: str, target: str) -> str:
-    """The markdown to embed in the PR body — possibly empty."""
+def select_sections(
+    text: str, previous: str, target: str, sections_dir: Path | None = None
+) -> str:
+    """The markdown to embed in the PR body — possibly empty.
+
+    With *sections_dir*, an in-range ``## vX.Y`` index section is replaced
+    by the full content of ``sections_dir/vX.Y.md`` when that file exists;
+    otherwise (file missing, or no directory given) the index section
+    itself is used — a pointer row after the split, the full content
+    before it. ``## Unreleased`` always comes from *text*.
+    """
     lower = parse_minor(previous)
     if lower is None:
         return ""
     upper = parse_minor(target)
-    selected = [
-        section
-        for heading, section in split_sections(text)
-        if _in_range(heading, lower, upper)
-    ]
+    selected: list[str] = []
+    for heading, section in split_sections(text):
+        if not _in_range(heading, lower, upper):
+            continue
+        minor_match = MINOR_HEADING_RE.match(heading)
+        if sections_dir is not None and minor_match is not None:
+            section_path = (
+                sections_dir / f"v{minor_match.group(1)}.{minor_match.group(2)}.md"
+            )
+            if section_path.is_file():
+                section = section_path.read_text(encoding="utf-8").rstrip() + "\n"
+        selected.append(section)
     return "\n".join(selected)
+
+
+def section_files(text: str, previous: str, target: str) -> list[str]:
+    """Repo-relative per-minor paths for the jump, in index order."""
+    lower = parse_minor(previous)
+    if lower is None:
+        return []
+    upper = parse_minor(target)
+    paths: list[str] = []
+    for heading, _section in split_sections(text):
+        minor_match = MINOR_HEADING_RE.match(heading)
+        if minor_match is not None and _in_range(heading, lower, upper):
+            paths.append(f"upgrading/v{minor_match.group(1)}.{minor_match.group(2)}.md")
+    return paths
 
 
 def pick_target(previous: str, tags: list[str]) -> str:
@@ -163,7 +218,7 @@ def _run_notes(args: argparse.Namespace) -> int:
         print(f"::error::cannot read {args.upgrading}: {exc}", file=sys.stderr)
         return 1
 
-    notes = select_sections(text, args.previous, args.target)
+    notes = select_sections(text, args.previous, args.target, args.sections_dir)
     if len(notes) > args.max_chars:
         notes = (
             "> The upgrade notes for this jump are too long to embed here — "
@@ -176,6 +231,17 @@ def _run_notes(args: argparse.Namespace) -> int:
     except OSError as exc:
         print(f"::error::cannot write {args.output}: {exc}", file=sys.stderr)
         return 1
+    return 0
+
+
+def _run_section_files(args: argparse.Namespace) -> int:
+    try:
+        text = args.upgrading.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"::error::cannot read {args.upgrading}: {exc}", file=sys.stderr)
+        return 1
+    for path in section_files(text, args.previous, args.target):
+        print(path)
     return 0
 
 
@@ -201,7 +267,24 @@ def main() -> int:
     notes.add_argument("--target", required=True)
     notes.add_argument("--output", required=True, type=Path)
     notes.add_argument("--max-chars", type=int, default=30000)
+    notes.add_argument(
+        "--sections-dir",
+        type=Path,
+        default=None,
+        help="Directory of fetched per-minor upgrading/vX.Y.md files; an "
+        "in-range minor found here embeds in full, one missing falls back "
+        "to its index pointer section.",
+    )
     notes.set_defaults(func=_run_notes)
+
+    files = subparsers.add_parser(
+        "section-files",
+        help="print the per-minor upgrading/vX.Y.md paths a jump needs",
+    )
+    files.add_argument("--upgrading", required=True, type=Path)
+    files.add_argument("--previous", required=True)
+    files.add_argument("--target", required=True)
+    files.set_defaults(func=_run_section_files)
 
     pick = subparsers.add_parser(
         "pick-target", help="choose the next automated update ref (one major max)"

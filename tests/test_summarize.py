@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 from markdown_vault_mcp.config import ProjectConfig, to_vault_kwargs
 from markdown_vault_mcp.config_sections import SummarizeConfig
 from markdown_vault_mcp.exceptions import ConfigurationError
-from markdown_vault_mcp.server import make_server
 from markdown_vault_mcp.summarizer import (
     OpenAISummarizer,
     Summarizer,
@@ -30,6 +29,7 @@ from markdown_vault_mcp.summarizer import (
 )
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_mcp_writer_drain
+from tests.server_factory import make_server
 
 _CLEAR_VARS = (
     "MARKDOWN_VAULT_MCP_INDEX_PATH",
@@ -993,7 +993,7 @@ def test_summarize_snippet_declares_the_tools_it_directs_calls_to() -> None:
         if "notes per call" in s.text
     ]
     assert len(limit_snippets) == 1
-    assert set(limit_snippets[0].tools) == {"summarize", "get_toc"}
+    assert set(limit_snippets[0].requires_tools) == {"summarize", "get_toc"}
 
 
 async def test_summarize_visible_with_base_url_only(

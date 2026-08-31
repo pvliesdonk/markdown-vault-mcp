@@ -38,7 +38,6 @@ from markdown_vault_mcp.okf import (
     append_okf_verification,
     apply_okf_write_stamp,
 )
-from markdown_vault_mcp.server import make_server
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import (
     _CLEAR_VARS,
@@ -46,6 +45,7 @@ from tests.conftest import (
     wait_for_mcp_writer_drain,
     wait_for_writer_drain,
 )
+from tests.server_factory import make_server
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

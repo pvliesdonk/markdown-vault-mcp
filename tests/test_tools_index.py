@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from fastmcp import Client
 
-from markdown_vault_mcp.server import make_server
 from tests.conftest import wait_for_mcp_writer_drain
+from tests.server_factory import make_server
 
 if TYPE_CHECKING:
     from pathlib import Path

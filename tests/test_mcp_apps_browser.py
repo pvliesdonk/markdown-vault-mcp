@@ -13,8 +13,8 @@ import pytest
 from fastmcp import Client
 
 from markdown_vault_mcp._server_apps import _hashed
-from markdown_vault_mcp.server import make_server
 from tests.conftest import get_app_html, wait_for_mcp_writer_drain
+from tests.server_factory import make_server
 
 
 def _parse_tool_data(result: Any) -> Any:

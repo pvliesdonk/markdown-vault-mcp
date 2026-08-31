@@ -37,12 +37,16 @@
           "description": "Rename this server instance; defaults to the project name."
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION",
+          "description": "Concise routing context that distinguishes this deployment's material or responsibility."
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA",
-          "description": "Operator context appended to the generated MCP instructions."
+          "description": "Deployment-specific behavioral policy added to the generated MCP instructions."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
-          "description": "Legacy: replaces the entire generated MCP instructions text (deprecated; prefer the _EXTRA variant)."
+          "description": "Legacy: replaces all generated MCP instructions (deprecated; use _INSTANCE_DESCRIPTION for routing and _INSTRUCTIONS_EXTRA for policy)."
         },
         {
           "name": "FASTMCP_LOG_LEVEL",
@@ -580,12 +584,16 @@
           "description": "Rename this server instance; defaults to the project name."
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION",
+          "description": "Concise routing context that distinguishes this deployment's material or responsibility."
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA",
-          "description": "Operator context appended to the generated MCP instructions."
+          "description": "Deployment-specific behavioral policy added to the generated MCP instructions."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
-          "description": "Legacy: replaces the entire generated MCP instructions text (deprecated; prefer the _EXTRA variant)."
+          "description": "Legacy: replaces all generated MCP instructions (deprecated; use _INSTANCE_DESCRIPTION for routing and _INSTRUCTIONS_EXTRA for policy)."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_HTTP_PATH",
@@ -594,7 +602,7 @@
         },
         {
           "name": "PUID",
-          "description": "Run the server process as this UID; the container entrypoint chowns writable paths to match.",
+          "description": "Run the server process as this UID; the container entrypoint reassigns ownership of writable paths to match.",
           "format": "number",
           "default": "1000"
         },

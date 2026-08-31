@@ -25,8 +25,12 @@ you applied, what you skipped and why, and what is left for a human.
 Extract from it: the previous and target template refs, the compare link,
 the `UPGRADING.md` sections for the jump, and the list of files with
 conflict markers. If the body has no upgrade notes, fetch `UPGRADING.md` at
-the target ref from the template repository and select every section
-between the two refs yourself.
+the target ref from the template repository — it is an index whose released
+`## vX.Y` sections point at per-minor `upgrading/vX.Y.md` files — and fetch
+every per-minor file from the previous ref's minor through the target's,
+reading each one whole. Never grep or tail your way through them: each file
+is complete for its minor, and the index enumerates which files a jump
+needs.
 
 ## 2. Apply every upgrade note
 

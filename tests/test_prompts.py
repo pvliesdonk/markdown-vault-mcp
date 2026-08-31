@@ -19,7 +19,7 @@ from markdown_vault_mcp._server_prompts import (
     _load_builtin_prompt,
     _load_user_prompt_defs,
 )
-from markdown_vault_mcp.server import make_server
+from tests.server_factory import make_server
 
 # ---------------------------------------------------------------------------
 # _load_user_prompt_defs unit tests

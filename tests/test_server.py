@@ -17,8 +17,8 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from mcp.shared.exceptions import McpError
 
-from markdown_vault_mcp.server import make_server
 from tests.conftest import _meta_stale, _parse_tool_data, wait_for_mcp_writer_drain
+from tests.server_factory import make_server
 
 if TYPE_CHECKING:
     import mcp.types as mcp_types
@@ -152,12 +152,12 @@ class TestServerIdentity:
         assert "relative" in server.instructions
         assert "'search'" in server.instructions
         assert "'stats'" in server.instructions
-        # The composed text opens with the identity line the template-owned
-        # scaffold contributes, then the domain prelude.
+        # The composed text opens with the shaped identity the template-owned
+        # scaffold contributes.
         assert server.instructions.startswith(
-            "Generic markdown vault MCP with hybrid search"
+            "markdown-vault-mcp: Generic markdown vault MCP with hybrid search"
         )
-        # pvl-core 5 no longer appends an operator-override hint: the
+        # pvl-core does not append an operator-override hint: the
         # instructions are model-facing prose, and the env vars that shape
         # them are documented for operators rather than advertised to the
         # model. Pinned so a regression re-adding it is caught.
@@ -168,11 +168,9 @@ class TestServerIdentity:
 
         pvl-core 4.11.2 dropped the announcement because nothing in the
         library enforced it. This server does enforce it, so the sentence is
-        a domain snippet — added at ``INSTANCE``, which places it after every
-        ``WORKFLOWS`` fragment and before the operator's
-        ``INSTRUCTIONS_EXTRA`` at ``OPERATOR``.
+        a domain snippet with the semantic ``INSTANCE`` role.
         """
-        from fastmcp_pvl_core import INSTANCE, OPERATOR, WORKFLOWS
+        from fastmcp_pvl_core import InstructionRole
 
         from markdown_vault_mcp._instructions import _domain_snippets
 
@@ -180,8 +178,7 @@ class TestServerIdentity:
             snippets = _domain_snippets(read_only=read_only)
             mode = [s for s in snippets if expected in s.text]
             assert len(mode) == 1, f"expected exactly one {expected} snippet"
-            assert mode[0].priority == INSTANCE
-            assert WORKFLOWS < mode[0].priority < OPERATOR
+            assert mode[0].role is InstructionRole.INSTANCE
             assert snippets[-1] is mode[0], "the mode line is composed last"
 
     @pytest.mark.usefixtures("_mcp_env")
@@ -213,8 +210,9 @@ class TestServerIdentity:
             okf_mode="on",
         ):
             assert snippet.text in text, (
-                f"the snippet at priority {snippet.priority} never reached the "
-                f"composed text; a name in tools={snippet.tools} is most likely "
+                f"the {snippet.role.value} snippet never reached the composed "
+                f"text; a name in requires_tools={snippet.requires_tools} is "
+                "most likely "
                 "not a registered tool any more"
             )
 
@@ -4181,7 +4179,7 @@ async def test_transfer_download_present_upload_hidden_in_readonly(
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://example.test")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_KV_STORE_URL", "memory://")
-    from markdown_vault_mcp.server import make_server
+    from tests.server_factory import make_server
 
     server = make_server(transport="http")
     async with Client(server) as client:

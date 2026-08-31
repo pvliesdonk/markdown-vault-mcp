@@ -82,7 +82,7 @@ class ProjectConfig:
                 "refuses to start without it. Symbolic links inside the vault "
                 "are followed on Python 3.13+."
             ),
-            "tags": ("vault",),
+            "tags": ("vault", "readme"),
         },
     )
     read_only: bool = field(
@@ -94,7 +94,7 @@ class ProjectConfig:
                 f"{gated_tool('git_sync')} also needs managed git mode; "
                 f"{gated_tool('create_upload_link')} needs an HTTP transport."
             ),
-            "tags": ("vault",),
+            "tags": ("vault", "readme"),
         },
     )
     write_protect_existing: bool = field(
@@ -106,7 +106,7 @@ class ProjectConfig:
                 "replacement (read first, pass if_match) still works, and "
                 "edit / append / delete / rename are unaffected."
             ),
-            "tags": ("vault",),
+            "tags": ("vault", "readme"),
         },
     )
     # server_name is declared by the template-owned
@@ -357,7 +357,7 @@ class ProjectConfig:
                 "unsearchable; an explicit mode= argument is never "
                 "downgraded."
             ),
-            "tags": ("search",),
+            "tags": ("search", "readme"),
             "wizard": {"group": "Search tuning"},
         },
     )
@@ -464,7 +464,7 @@ class ProjectConfig:
                 "OpenAI-compatible endpoint works with openai plus "
                 "OPENAI_BASE_URL; see the embeddings guide."
             ),
-            "tags": ("embeddings",),
+            "tags": ("embeddings", "readme"),
             "wizard": {"group": "Embeddings"},
         },
     )
@@ -588,7 +588,7 @@ class ProjectConfig:
                 "existing origin) and enables the pull loop, auto-commit, "
                 "and deferred push."
             ),
-            "tags": ("git",),
+            "tags": ("git", "readme"),
             "wizard": {"group": "Git sync"},
         },
     )
@@ -699,7 +699,7 @@ class ProjectConfig:
                 "auto-disabled when git pull or the webhook is active. "
                 "Requires the file-watcher extra."
             ),
-            "tags": ("sync",),
+            "tags": ("sync", "readme"),
             "wizard": {"group": "Change detection"},
         },
     )
@@ -771,7 +771,7 @@ class ProjectConfig:
                 "bare OPENAI_BASE_URL routes traffic only when a key already "
                 "enables the feature."
             ),
-            "tags": ("summarize",),
+            "tags": ("summarize", "readme"),
             "wizard": {"group": "Summarize"},
         },
     )

@@ -1,9 +1,9 @@
 """Domain-specific server-instructions contributions.
 
-pvl-core 5 composes server instructions from snippets rather than from one
+pvl-core 6 composes server instructions from snippets rather than from one
 templated string: every contributor calls
-:func:`fastmcp_pvl_core.instructions_for` and adds its prose with a priority
-and the tool names it depends on, and
+:func:`fastmcp_pvl_core.instructions_for` and adds its prose with a semantic
+role and the tool names it depends on, and
 :func:`fastmcp_pvl_core.finalize_instructions` renders the collection once,
 after tool visibility is resolved.
 
@@ -21,19 +21,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from fastmcp_pvl_core import IDENTITY, INSTANCE, WORKFLOWS, instructions_for
+from fastmcp_pvl_core import InstructionRole, instructions_for
 
 from markdown_vault_mcp._write_tools import gated_tool
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from fastmcp import FastMCP
-
-#: Priority for the vault prelude: immediately after the identity line the
-#: template contributes, and before the documentation pointer at ``DOCS``.
-#: Deliberately *not* ``IDENTITY`` — pvl-core requires exactly one snippet at
-#: that priority and raises ``ConfigurationError`` on a second, whichever
-#: method added it.
-PRELUDE = IDENTITY + 10
 
 #: Tools the write-guidance fragment tells the model to call. Resolved
 #: through :func:`~markdown_vault_mcp._write_tools.gated_tool` at import
@@ -52,9 +45,9 @@ class Snippet:
 
     Attributes:
         text: Model-facing prose, with no leading or trailing whitespace.
-        priority: The pvl-core sort anchor this fragment is added at.
-        tools: Names of the tools the fragment tells the model to call. When
-            any of them is unregistered or hidden by the operator's
+        role: The semantic pvl-core instruction role for this fragment.
+        requires_tools: Names of the tools the fragment tells the model to
+            call. When any of them is unregistered or hidden by the operator's
             ``TOOLS_ALLOW`` / ``TOOLS_DENY`` lists, pvl-core drops the whole
             fragment at finalize — so a name belongs here only when its
             absence would make the fragment actively wrong, not when the
@@ -62,8 +55,8 @@ class Snippet:
     """
 
     text: str
-    priority: int
-    tools: tuple[str, ...] = field(default=())
+    role: InstructionRole
+    requires_tools: tuple[str, ...] = field(default=())
 
 
 def _domain_snippets(
@@ -80,7 +73,7 @@ def _domain_snippets(
     empty string.
 
     Configuration gates stay Python conditionals here rather than becoming
-    ``tools`` declarations: pvl-core's pruning models the operator
+    ``requires_tools`` declarations: pvl-core's pruning models the operator
     allow/deny rule and registration, and explicitly *not* the
     ``mcp.disable(tags=...)`` transforms this server uses for read-only
     mode, managed-git mode, the summarize backend, the apps UI, and the
@@ -129,7 +122,7 @@ def _domain_snippets(
         Snippet(
             "A searchable markdown document vault. "
             "Paths are always relative (e.g. 'Journal/note.md').",
-            PRELUDE,
+            InstructionRole.CAPABILITIES,
         )
     ]
     if not read_only:
@@ -143,7 +136,7 @@ def _domain_snippets(
                 "links in one call. All write operations update the "
                 "search index immediately — never call 'reindex' after write, edit, "
                 "append, delete, or rename.",
-                WORKFLOWS,
+                InstructionRole.WORKFLOWS,
                 _WRITE_SNIPPET_TOOLS,
             )
         )
@@ -157,7 +150,7 @@ def _domain_snippets(
             "'browse_vault' and 'show_context' open a visual UI for the user — do "
             "not call them to retrieve vault content; use 'search', 'read', "
             "'list_documents', or 'get_context' instead.",
-            WORKFLOWS,
+            InstructionRole.WORKFLOWS,
             ("search", "read", "list_documents", "stats"),
         )
     )
@@ -168,14 +161,14 @@ def _domain_snippets(
             "'summarize-subtree' prompt, which summarizes in batches "
             "(delegated to subagents when available) instead of pulling "
             "every note into your context.",
-            WORKFLOWS,
+            InstructionRole.WORKFLOWS,
         )
         if summarize_note_limit is None
         else Snippet(
             f"The 'summarize' tool reads at most {summarize_note_limit} "
             "notes per call; for a folder larger than that (check with "
             "'get_toc'), call it once per subfolder and combine the results.",
-            WORKFLOWS,
+            InstructionRole.WORKFLOWS,
             ("summarize", "get_toc"),
         )
     )
@@ -186,7 +179,7 @@ def _domain_snippets(
                 "files; call 'get_conventions(path)' before creating or "
                 "restructuring notes, and follow any 'conventions' returned by "
                 "write/edit results.",
-                WORKFLOWS,
+                InstructionRole.WORKFLOWS,
                 ("get_conventions",),
             )
         )
@@ -202,20 +195,17 @@ def _domain_snippets(
                 "such a vault, follow OKF conventions: record changes in 'log.md', "
                 "keep 'index.md' listings current, and prefer root-relative "
                 "markdown links for new cross-references.",
-                WORKFLOWS,
+                InstructionRole.WORKFLOWS,
             )
         )
-    # Enforced here, so announced here — see above. ``INSTANCE`` places it
-    # after every workflow fragment and before the operator's
-    # ``MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`` at ``OPERATOR``, preserving
-    # the order pvl-core produced before 4.11.2: domain prose, then the mode
-    # line, then operator context.
+    # Enforced here, so announced here — see above. ``INSTANCE`` gives the
+    # deployment mode its semantic position alongside operator routing context.
     snippets.append(
         Snippet(
             "This instance is READ-ONLY — write tools are not available."
             if read_only
             else "This instance is READ-WRITE — write tools are available.",
-            INSTANCE,
+            InstructionRole.INSTANCE,
         )
     )
     return snippets
@@ -233,8 +223,7 @@ def contribute_instructions(
 
     Call before :func:`fastmcp_pvl_core.finalize_instructions`, which renders
     the collection once and freezes the builder. Adds no identity snippet:
-    ``server.py`` contributes the single one pvl-core requires, and a second
-    at ``IDENTITY`` would raise ``ConfigurationError`` at finalize.
+    ``server.py`` contributes the single shaped identity pvl-core requires.
 
     Args:
         mcp: The server whose builder to contribute to.
@@ -252,4 +241,8 @@ def contribute_instructions(
         summarize_note_limit=summarize_note_limit,
         okf_mode=okf_mode,
     ):
-        builder.add(snippet.text, priority=snippet.priority, tools=snippet.tools)
+        builder.add(
+            snippet.text,
+            role=snippet.role,
+            requires_tools=snippet.requires_tools,
+        )

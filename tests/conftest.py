@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 import pytest
-from fastmcp import Client
+from fastmcp import Client, FastMCP
 
 from markdown_vault_mcp.providers import EmbeddingProvider
 from markdown_vault_mcp.server import make_server
@@ -232,7 +232,7 @@ async def get_app_html() -> str:
     """Spin up a fresh server and fetch the SPA HTML resource."""
     from fastmcp import Client
 
-    from markdown_vault_mcp.server import make_server
+    from tests.server_factory import make_server
 
     server = make_server()
     async with Client(server) as client:
@@ -281,7 +281,13 @@ def _mcp_env(
 
 
 @pytest.fixture
-async def client(_mcp_env: None) -> AsyncIterator[Client[Any]]:
+def server(_mcp_env: None) -> FastMCP:
+    """Construct a fresh server before any async client loop starts."""
+    return make_server()
+
+
+@pytest.fixture
+async def client(server: FastMCP) -> AsyncIterator[Client[Any]]:
     """In-memory FastMCP client on a server backed by a throwaway tmp vault.
 
     Adapted from the template's ``client`` fixture: MVM's ``make_server()``
@@ -293,13 +299,11 @@ async def client(_mcp_env: None) -> AsyncIterator[Client[Any]]:
     results rather than empty cold-start state.
 
     Args:
-        _mcp_env: Fixture that sets ``SOURCE_DIR`` from ``vault_path``
-            (injected by pytest; transitively pulls in ``vault_path``).
+        server: Fresh server built after ``_mcp_env`` configures ``SOURCE_DIR``.
 
     Yields:
         An in-process FastMCP ``Client`` with the index writer drained.
     """
-    server = make_server()
     async with Client(server) as c:
         await wait_for_mcp_writer_drain(c)
         yield c

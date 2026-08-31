@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from fastmcp_pvl_core import ServerConfig
 
 from markdown_vault_mcp.config import ProjectConfig
-from markdown_vault_mcp.server import make_server
+from tests.server_factory import make_server
 
 if TYPE_CHECKING:
     from pathlib import Path

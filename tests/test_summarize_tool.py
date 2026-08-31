@@ -18,8 +18,8 @@ from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
 import markdown_vault_mcp.summarizer as summ_mod
-from markdown_vault_mcp.server import make_server
 from markdown_vault_mcp.summarizer import Summarizer
+from tests.server_factory import make_server
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator

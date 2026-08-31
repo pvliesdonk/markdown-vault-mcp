@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 from fastmcp import Client
 
-from markdown_vault_mcp.server import make_server
+from tests.server_factory import make_server
 
 from .conftest import _CLEAR_VARS, wait_for_mcp_writer_drain
 

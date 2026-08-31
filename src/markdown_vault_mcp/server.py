@@ -114,12 +114,14 @@ def make_server(
     # Server instructions are composed, not templated: every contributor adds
     # a snippet to the builder (identity here; core register_* helpers add
     # their workflow prose; domain code adds its own via
-    # ``instructions_for(mcp).add(text, priority=WORKFLOWS, tools=(...))`` in
-    # the DOMAIN-WIRING block, using the ``IDENTITY < DOCS < CAPABILITIES <
-    # WORKFLOWS < INSTANCE < OPERATOR`` anchors pvl-core exports — never
-    # ``priority=0``, which is ``IDENTITY`` and must stay unique), and
+    # ``instructions_for(mcp).add(text, role=InstructionRole.WORKFLOWS,
+    # requires_tools=(...))`` in the DOMAIN-WIRING block. General contributors
+    # may use only INSTANCE, CAPABILITIES, and WORKFLOWS; pvl-core reserves the
+    # shaped identity, operator routing/policy, and documentation roles.
     # ``finalize_instructions`` renders them once, after tool visibility.
-    instructions_for(mcp).identity("Generic markdown vault MCP with hybrid search")
+    instructions_for(mcp).identity(
+        server_name, "Generic markdown vault MCP with hybrid search"
+    )
     # The docs site publishes llms.txt per version (mkdocs-llmstxt, mike);
     # `/latest/` resolves once the first release has published the site.
     instructions_for(mcp).documentation(
@@ -370,9 +372,11 @@ def make_server(
     apply_tool_visibility(mcp, config.server)
 
     # Render the composed instructions exactly once, after visibility: a
-    # snippet whose tools are hidden is dropped, MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA
-    # is appended, and the legacy MARKDOWN_VAULT_MCP_INSTRUCTIONS full-replace
-    # still wins (with a deprecation warning).  Must stay the last call that
+    # snippet whose required tools are hidden is dropped,
+    # MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION supplies operator routing,
+    # MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA supplies operator policy, and the
+    # legacy MARKDOWN_VAULT_MCP_INSTRUCTIONS full replacement still wins with a
+    # deprecation warning. Must run synchronously and stay the last call that
     # touches tools or instructions.
     finalize_instructions(mcp, config.server, env_prefix=_ENV_PREFIX)
 

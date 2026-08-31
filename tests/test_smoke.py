@@ -11,6 +11,7 @@ test to any real vault.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -76,10 +77,14 @@ def test_server_name_env_override(
     """``MARKDOWN_VAULT_MCP_SERVER_NAME`` overrides the FastMCP server name."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "renamed-instance")
-    assert make_server().name == "renamed-instance"
+    server = make_server()
+    assert server.name == "renamed-instance"
+    assert (server.instructions or "").startswith(
+        "renamed-instance: Generic markdown vault MCP with hybrid search"
+    )
 
 
-async def test_server_name_override_reaches_server_info(
+def test_server_name_override_reaches_server_info(
     monkeypatch: pytest.MonkeyPatch, vault_path: Path
 ) -> None:
     """The overridden name also flows through to ``get_server_info``.
@@ -90,9 +95,14 @@ async def test_server_name_override_reaches_server_info(
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "renamed-instance")
-    async with Client(make_server()) as c:
-        await wait_for_mcp_writer_drain(c)
-        result = await c.call_tool("get_server_info", {})
+    server = make_server()
+
+    async def _call_server_info() -> Any:
+        async with Client(server) as c:
+            await wait_for_mcp_writer_drain(c)
+            return await c.call_tool("get_server_info", {})
+
+    result = asyncio.run(_call_server_info())
     assert result.data.get("server_name") == "renamed-instance"
 
 
@@ -101,34 +111,46 @@ def test_instructions_env_override(
     vault_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Legacy ``MARKDOWN_VAULT_MCP_INSTRUCTIONS`` still replaces everything, and
-    says so: pvl-core logs one deprecation warning pointing at ``_EXTRA``."""
+    """Legacy instructions replace generated text and warn about both additions."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", "Custom operator text.")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION", "Demo material.")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA", "House rule: be brief.")
     # Scope to core's logger: make_server() re-applies FASTMCP_LOG_LEVEL to the
     # root logger, which would otherwise drop the record under a stricter env.
     monkeypatch.delenv("FASTMCP_LOG_LEVEL", raising=False)
     with caplog.at_level("WARNING", logger="fastmcp_pvl_core"):
         server = make_server()
     assert server.instructions == "Custom operator text."
-    assert any(
-        "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA" in rec.getMessage()
+    warning = next(
+        rec.getMessage()
         for rec in caplog.records
-    ), "expected the deprecation warning naming the _EXTRA replacement"
+        if "MARKDOWN_VAULT_MCP_INSTRUCTIONS" in rec.getMessage()
+    )
+    assert "MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION" in warning
+    assert "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA" in warning
 
 
-def test_instructions_compose_identity_and_operator_extra(
+def test_instructions_compose_semantic_operator_roles(
     monkeypatch: pytest.MonkeyPatch, vault_path: Path
 ) -> None:
-    """Unset ``INSTRUCTIONS``, the text is composed: the identity line the
-    scaffold contributes comes first, and ``_EXTRA`` is appended verbatim."""
+    """Operator routing and policy retain their semantic positions."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.delenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", raising=False)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION", "Demo material.")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA", "House rule: be brief.")
     text = make_server().instructions or ""
-    assert text.startswith("Generic markdown vault MCP with hybrid search")
-    assert "https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt" in text
-    assert text.rstrip().endswith("House rule: be brief.")
+    sections = text.split("\n\n")
+    assert sections[0] == (
+        "markdown-vault-mcp: Generic markdown vault MCP with hybrid search"
+    )
+    assert sections[1] == "Demo material."
+    assert sections[2] == "This instance is READ-WRITE — write tools are available."
+    assert sections[3] == "House rule: be brief."
+    assert sections[-1] == (
+        "Full documentation for this server: "
+        "https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt"
+    )
 
 
 def test_blank_overrides_fall_back_to_defaults(
@@ -146,11 +168,11 @@ def test_blank_overrides_fall_back_to_defaults(
     server = make_server()
     assert server.name == "markdown-vault-mcp"
     assert (server.instructions or "").startswith(
-        "Generic markdown vault MCP with hybrid search"
+        "markdown-vault-mcp: Generic markdown vault MCP with hybrid search"
     )
 
 
-async def test_no_file_exchange_scaffolding(
+def test_no_file_exchange_scaffolding(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """make_server() on stdio registers no file-exchange or transfer tools.
@@ -163,9 +185,14 @@ async def test_no_file_exchange_scaffolding(
     in-memory ``Client`` channel is unrelated to that gating).
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
-    async with Client(make_server()) as c:
-        await wait_for_mcp_writer_drain(c)
-        tools = {t.name for t in await c.list_tools()}
+    server = make_server()
+
+    async def _list_tools() -> set[str]:
+        async with Client(server) as c:
+            await wait_for_mcp_writer_drain(c)
+            return {t.name for t in await c.list_tools()}
+
+    tools = asyncio.run(_list_tools())
     assert not any("file_exchange" in t or "upload_file" in t for t in tools)
     assert "create_upload_link" not in tools
     assert "create_download_link" not in tools

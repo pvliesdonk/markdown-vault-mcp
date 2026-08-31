@@ -19,8 +19,8 @@ from markdown_vault_mcp._server_apps import (
     _rewrite_spa_app_tool_calls,
 )
 from markdown_vault_mcp._vault_apps import _compute_claude_app_domain
-from markdown_vault_mcp.server import make_server
 from tests.conftest import _CLEAR_VARS, wait_for_mcp_writer_drain
+from tests.server_factory import make_server
 
 if TYPE_CHECKING:
     from pathlib import Path

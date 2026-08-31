@@ -115,6 +115,12 @@
       "description": "Rename this server instance; defaults to the project name.",
       "required": false
     },
+    "instance_description": {
+      "type": "string",
+      "title": "Instance description",
+      "description": "Concise routing context that distinguishes this deployment's material or responsibility.",
+      "required": false
+    },
     "log_level": {
       "type": "string",
       "title": "Log level",

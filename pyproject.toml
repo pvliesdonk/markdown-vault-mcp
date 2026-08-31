@@ -31,13 +31,17 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    # >=5.0.0 for the InstructionsBuilder (instructions_for /
-    # finalize_instructions): 5.0.0 removes build_instructions, which
-    # server.py imported, so the floor and the wiring move in one change
-    # (#502).  The same major keeps {PREFIX}_INSTRUCTIONS as a deprecated
-    # full-replace and adds {PREFIX}_INSTRUCTIONS_EXTRA as the additive
-    # operator path; add_transfer_workflow contributes the capability-link
-    # prose for path-2 transfer tools.
+    # >=6.0.0 for semantic InstructionRole values, shaped deployment identity,
+    # effective FastMCP tool visibility during instruction finalization, and
+    # the split operator contract: {PREFIX}_INSTANCE_DESCRIPTION supplies
+    # routing context while {PREFIX}_INSTRUCTIONS_EXTRA supplies policy (#553).
+    # The identity call and every domain contribution must move with this floor.
+    #
+    # 5.0.0 was the previous floor, for the InstructionsBuilder
+    # (instructions_for / finalize_instructions). It removed
+    # build_instructions, retained {PREFIX}_INSTRUCTIONS as a deprecated full
+    # replacement, and added {PREFIX}_INSTRUCTIONS_EXTRA as the additive path;
+    # add_transfer_workflow contributes capability-link prose for path-2 tools.
     #
     # 4.11.3 was the floor before that, for ServerConfig.oidc_advertised_scopes, which
     # config-presentation.yml names: the config-surface generator rejects a
@@ -67,7 +71,7 @@ dependencies = [
     # this whole constraint rather than the floor alone (#335), but a floor
     # naming a release nobody can install is still a trap for anyone pinning
     # to it.
-    "fastmcp-pvl-core>=5.0.0,<6",
+    "fastmcp-pvl-core>=6.0.0,<7",
     "typer>=0.12",
 
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update

@@ -23,6 +23,7 @@
       "MARKDOWN_VAULT_MCP_GIT_REPO_URL": "${user_config.git_repo_url}",
       "MARKDOWN_VAULT_MCP_GIT_TOKEN": "${user_config.git_token}",
       "MARKDOWN_VAULT_MCP_SERVER_NAME": "${user_config.server_name}",
+      "MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION": "${user_config.instance_description}",
       "FASTMCP_LOG_LEVEL": "${user_config.log_level}"
     }
   }

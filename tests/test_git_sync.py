@@ -15,8 +15,8 @@ import pytest
 from fastmcp import Client
 
 from markdown_vault_mcp import domain
-from markdown_vault_mcp.server import make_server
 from tests.fixtures.git import _run_git
+from tests.server_factory import make_server
 
 if TYPE_CHECKING:
     from pathlib import Path

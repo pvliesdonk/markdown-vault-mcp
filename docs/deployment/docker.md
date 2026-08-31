@@ -77,6 +77,16 @@ All `/data/*` directories are pre-created and owned by the runtime user in the i
 !!! warning "Upgrading from v1.8.x"
     Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddings-data`, `fastembed-data`). These have been consolidated into a single `state-data` volume mounted at `/data/state`. Existing state is **not automatically migrated**: the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large vaults). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into `state-data` before starting the new container.
 
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MARKDOWN_VAULT_MCP_BEARER_TOKEN` | n/a | Enable bearer token auth |
+| `FASTMCP_LOG_LEVEL` | `INFO` | Log level (`DEBUG` / `INFO` / `WARNING` / `ERROR`) |
+| `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION` | n/a | Routing context that distinguishes this deployment |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | n/a | Deployment-specific behavioral policy added to the generated MCP instructions |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | (computed at startup) | Legacy full replacement of the generated instructions (deprecated) |
+| `MARKDOWN_VAULT_MCP_DEBUG_PORT` | n/a | Remote-debugger TCP port (see [Remote debugging](#remote-debugging); requires `--build-arg DEBUG=true` image) |
+| `MARKDOWN_VAULT_MCP_DEBUG_WAIT` | `false` | Block startup until IDE attaches (see [Remote debugging](#remote-debugging)) |
+
 ## Traefik Reverse Proxy
 
 The `compose.yml` includes Traefik labels out of the box. When Traefik is running and watching Docker, it picks up these labels and routes traffic automatically.

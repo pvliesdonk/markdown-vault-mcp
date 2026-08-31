@@ -218,11 +218,32 @@ jobs:
             echo "::notice::could not fetch UPGRADING.md at ${REF}; the PR body links the file instead"
             exit 0
           fi
+          # Since the per-minor split, UPGRADING.md is an index whose
+          # released sections are pointer rows; the full steps live in
+          # upgrading/vX.Y.md files. Fetch the jump's files (the list comes
+          # from the index, so a skipped minor number is never requested)
+          # and let `notes` embed each in full. A file that fails to fetch
+          # falls back to its index pointer row — a working link, never a
+          # silently empty embed. Against a pre-split target ref the index
+          # still carries the full sections and the list is empty.
+          mkdir -p /tmp/upgrading-sections
+          python3 scripts/copier_update_notes.py section-files \
+            --upgrading /tmp/upgrading.md \
+            --previous "${PREV_REF}" \
+            --target "${REF}" > /tmp/upgrading-files.txt
+          while IFS= read -r section_path; do
+            [ -n "${section_path}" ] || continue
+            gh api -H "Accept: application/vnd.github.raw" \
+              "repos/${TEMPLATE_REPO}/contents/${section_path}?ref=${REF}" \
+              > "/tmp/upgrading-sections/$(basename "${section_path}")" 2>/dev/null \
+              || rm -f "/tmp/upgrading-sections/$(basename "${section_path}")"
+          done < /tmp/upgrading-files.txt
           python3 scripts/copier_update_notes.py notes \
             --upgrading /tmp/upgrading.md \
             --previous "${PREV_REF}" \
             --target "${REF}" \
             --max-chars 30000 \
+            --sections-dir /tmp/upgrading-sections \
             --output /tmp/upgrading-notes.md
 
       - name: Ensure PR labels exist

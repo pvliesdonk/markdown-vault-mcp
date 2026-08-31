@@ -40,6 +40,7 @@
       ],
       "env": {
         "MARKDOWN_VAULT_MCP_SERVER_NAME": "${user_config.server_name}",
+        "MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION": "${user_config.instance_description}",
         "FASTMCP_LOG_LEVEL": "${user_config.log_level}",
         "MARKDOWN_VAULT_MCP_SOURCE_DIR": "${user_config.source_dir}",
         "MARKDOWN_VAULT_MCP_READ_ONLY": "${user_config.read_only}",
@@ -63,6 +64,12 @@
       "type": "string",
       "title": "Server name",
       "description": "Rename this server instance; defaults to the project name.",
+      "required": false
+    },
+    "instance_description": {
+      "type": "string",
+      "title": "Instance description",
+      "description": "Concise routing context that distinguishes this deployment's material or responsibility.",
       "required": false
     },
     "log_level": {

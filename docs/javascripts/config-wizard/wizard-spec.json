@@ -368,11 +368,19 @@
       }
     },
     {
+      "id": "instance_description",
+      "label": "Instance Description",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION",
+      "help": "Concise routing context that distinguishes this deployment's material or responsibility.",
+      "advancedGroup": "Server"
+    },
+    {
       "id": "instructions_extra",
       "label": "Instructions Extra",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA",
-      "help": "Operator context appended to the generated MCP instructions.",
+      "help": "Deployment-specific behavioral policy added to the generated MCP instructions.",
       "advancedGroup": "Server",
       "showIf": {
         "deployment": [
@@ -385,7 +393,7 @@
       "label": "Instructions",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
-      "help": "Legacy: replaces the entire generated MCP instructions text (deprecated; prefer the _EXTRA variant).",
+      "help": "Legacy: replaces all generated MCP instructions (deprecated; use _INSTANCE_DESCRIPTION for routing and _INSTRUCTIONS_EXTRA for policy).",
       "advancedGroup": "Server",
       "showIf": {
         "deployment": [
