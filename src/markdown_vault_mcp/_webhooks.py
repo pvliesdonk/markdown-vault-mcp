@@ -298,6 +298,100 @@ def _reindex_after_pull(vault: Any, provider_name: str) -> None:
         )
 
 
+async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse:
+    """Pull, then reindex when HEAD moved, and map the outcome to a status.
+
+    Split out of the handler so the request-shaped concerns (authenticate,
+    classify the event) stay separate from the git-shaped ones, and so each
+    stays inside the project's complexity budget.
+
+    ``force_pull`` runs regardless of ``is_queryable()``: it is a pure git
+    operation with no FTS or vector-index dependency, so blocking on a cold
+    index would exhaust the host's retry budget (GitHub: ~5 s + ~25 s + ~90 s
+    ≈ 2 min) before a large vault finishes its initial build, permanently
+    losing the delivery.
+
+    Args:
+        vault: Live :class:`~markdown_vault_mcp.vault.Vault`.
+        name: Provider name, used as the log prefix.
+        delivery_id: The host's delivery id, for log correlation.
+
+    Returns:
+        200 when the delivery is settled — pulled, or nothing to pull; 503
+        when a retry might succeed.
+    """
+    try:
+        pull_result = await asyncio.to_thread(vault.force_pull)
+    except Exception:
+        # The handler's contract is 401 / 200 / 503; an exception escaping
+        # here would surface as an unhandled 500 with a traceback (#1128).
+        # A retry may still succeed, so 503 rather than 200.
+        logger.error(
+            "%s: force_pull raised delivery_id=%s", name, delivery_id, exc_info=True
+        )
+        return JSONResponse({"error": "pull failed"}, status_code=503)
+
+    if pull_result is None:
+        # Reachable for a library consumer that constructed Vault with
+        # git_strategy=None; a config-driven server always has one.
+        logger.info("%s: no git strategy configured delivery_id=%s", name, delivery_id)
+        return JSONResponse({"ok": True, "message": "no git strategy"})
+
+    if pull_result.reason == PULL_REASON_PULL_DISABLED:
+        # A webhook credential set on a deployment with no managed remote
+        # (#1128). Nothing was fetched and nothing can be: answer 200 so the
+        # host records the delivery instead of retrying every push.
+        logger.warning(
+            "%s: delivery received but this deployment has no managed git "
+            "remote, so there is nothing to pull — set "
+            "MARKDOWN_VAULT_MCP_GIT_REPO_URL (or unset the webhook "
+            "credentials) delivery_id=%s",
+            name,
+            delivery_id,
+        )
+        return JSONResponse({"ok": True, "message": "pull disabled"})
+
+    if not pull_result.applied:
+        # Transient failures (network, expired token) benefit from retry.
+        # Permanent failures (no_remote, conflict) exhaust the retry budget
+        # and fall back to the next periodic pull tick.
+        logger.warning(
+            "%s: force_pull not applied reason=%s delivery_id=%s",
+            name,
+            pull_result.reason,
+            delivery_id,
+        )
+        return JSONResponse(
+            {"error": "pull not applied", "reason": pull_result.reason},
+            status_code=503,
+        )
+
+    if pull_result.from_sha != pull_result.to_sha:
+        if vault.index.is_queryable():
+            await asyncio.to_thread(_reindex_after_pull, vault, name)
+        else:
+            logger.info(
+                "%s: pull applied but vault not queryable, skipping reindex "
+                "delivery_id=%s",
+                name,
+                delivery_id,
+            )
+
+    logger.info(
+        "%s: push processed commits_pulled=%s delivery_id=%s",
+        name,
+        pull_result.commits_pulled,
+        delivery_id,
+    )
+    return JSONResponse(
+        {
+            "ok": True,
+            "applied": pull_result.applied,
+            "commits_pulled": pull_result.commits_pulled,
+        }
+    )
+
+
 def make_webhook_handler(provider: WebhookProvider) -> Callable[[Request], Any]:
     """Return a Starlette-compatible async handler for *provider*'s route.
 
@@ -307,18 +401,11 @@ def make_webhook_handler(provider: WebhookProvider) -> Callable[[Request], Any]:
     - Returns 401 on invalid or absent credentials.
     - Returns 200 for the host's ping event, when it has one, and for
       any event that is not a push.
-    - On push events: calls ``Vault.force_pull()`` unconditionally
-      (it is a pure git operation with no FTS dependency), then reindexes when
-      HEAD moved and the vault is queryable.
-    - Returns 200 when the deployment has no remote to pull from — no git
-      strategy at all, or a strategy built without remote sync (reason
-      ``"pull_disabled"``). Both are configuration states, not failures:
-      retrying cannot change the answer, so a 503 would only burn the host's
-      retry budget on every push (#1128).
-    - Returns 503 when the server has not yet initialised (singleton not set),
-      or when ``force_pull`` fails for a reason a retry might clear
-      (``applied=False``), so the host retries the delivery rather than
-      permanently marking it as delivered.
+    - Returns 503 when the server has not yet initialised (singleton not
+      set), so the host retries rather than treating the delivery as
+      successfully handled.
+    - Hands push events to :func:`_process_push`, which owns the pull, the
+      conditional reindex, and the remaining status mapping.
 
     Args:
         provider: The host's envelope, from :func:`github_provider` or
@@ -335,9 +422,7 @@ def make_webhook_handler(provider: WebhookProvider) -> Callable[[Request], Any]:
 
         if not provider.verify(request.headers, body):
             logger.warning(
-                "%s: invalid or missing credentials delivery_id=%s",
-                name,
-                delivery_id,
+                "%s: invalid or missing credentials delivery_id=%s", name, delivery_id
             )
             return JSONResponse({"error": "invalid signature"}, status_code=401)
 
@@ -353,18 +438,6 @@ def make_webhook_handler(provider: WebhookProvider) -> Callable[[Request], Any]:
             )
             return JSONResponse({"ok": True, "message": "event ignored"})
 
-        # push event — pull then conditional reindex.
-        #
-        # force_pull() is a pure git operation (fetch + merge/rebase) with no
-        # FTS or vector-index dependency.  Run it regardless of is_queryable()
-        # so that cold-start deliveries are not permanently lost — blocking here
-        # would exhaust the host's retry budget (GitHub: ~5 s + ~25 s + ~90 s
-        # ≈ 2 min) before a large vault finishes its initial index build.
-        #
-        # Return 503 only when the Vault singleton itself hasn't been set
-        # yet (server lifespan not complete) or when the pull fails, so the
-        # host retries rather than treating the delivery as successfully
-        # handled.
         try:
             vault = get_vault_singleton()
         except RuntimeError:
@@ -375,80 +448,6 @@ def make_webhook_handler(provider: WebhookProvider) -> Callable[[Request], Any]:
             )
             return JSONResponse({"error": "vault not initialised"}, status_code=503)
 
-        try:
-            pull_result = await asyncio.to_thread(vault.force_pull)
-        except Exception:
-            # The handler's contract is 401 / 200 / 503; an exception escaping
-            # here would surface as an unhandled 500 with a traceback (#1128).
-            # A retry may still succeed, so 503 rather than 200.
-            logger.error(
-                "%s: force_pull raised delivery_id=%s",
-                name,
-                delivery_id,
-                exc_info=True,
-            )
-            return JSONResponse({"error": "pull failed"}, status_code=503)
-
-        if pull_result is None:
-            # Reachable for a library consumer that constructed Vault with
-            # git_strategy=None; a config-driven server always has one.
-            logger.info(
-                "%s: no git strategy configured delivery_id=%s", name, delivery_id
-            )
-            return JSONResponse({"ok": True, "message": "no git strategy"})
-
-        if pull_result.reason == PULL_REASON_PULL_DISABLED:
-            # A webhook credential set on a deployment with no managed remote
-            # (#1128). Nothing was fetched and nothing can be: answer 200 so
-            # the host records the delivery instead of retrying every push.
-            logger.warning(
-                "%s: delivery received but this deployment has no "
-                "managed git remote, so there is nothing to pull — set "
-                "MARKDOWN_VAULT_MCP_GIT_REPO_URL (or unset the webhook "
-                "credentials) delivery_id=%s",
-                name,
-                delivery_id,
-            )
-            return JSONResponse({"ok": True, "message": "pull disabled"})
-
-        if not pull_result.applied:
-            # Transient failures (network, expired token) benefit from retry.
-            # Permanent failures (no_remote, conflict) exhaust the retry
-            # budget and fall back to the next periodic pull tick.
-            logger.warning(
-                "%s: force_pull not applied reason=%s delivery_id=%s",
-                name,
-                pull_result.reason,
-                delivery_id,
-            )
-            return JSONResponse(
-                {"error": "pull not applied", "reason": pull_result.reason},
-                status_code=503,
-            )
-
-        if pull_result.from_sha != pull_result.to_sha:
-            if vault.index.is_queryable():
-                await asyncio.to_thread(_reindex_after_pull, vault, name)
-            else:
-                logger.info(
-                    "%s: pull applied but vault not queryable, "
-                    "skipping reindex delivery_id=%s",
-                    name,
-                    delivery_id,
-                )
-
-        logger.info(
-            "%s: push processed commits_pulled=%s delivery_id=%s",
-            name,
-            pull_result.commits_pulled,
-            delivery_id,
-        )
-        return JSONResponse(
-            {
-                "ok": True,
-                "applied": pull_result.applied,
-                "commits_pulled": pull_result.commits_pulled,
-            }
-        )
+        return await _process_push(vault, name, delivery_id)
 
     return handle
