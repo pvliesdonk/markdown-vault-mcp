@@ -1761,6 +1761,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#which-mode-this-server-prefers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which mode this server prefers
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2459,6 +2470,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#which-mode-this-server-prefers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which mode this server prefers
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2496,7 +2518,7 @@
 </thead>
 <tbody>
 <tr>
-<td><strong>remote</strong> (recommended)</td>
+<td><strong>remote</strong></td>
 <td><code>BASE_URL</code>, <code>OIDC_CONFIG_URL</code></td>
 <td>Local JWKS validation. No client credentials needed.</td>
 </tr>
@@ -2507,7 +2529,7 @@
 </tr>
 </tbody>
 </table>
-<p>Set <code>MARKDOWN_VAULT_MCP_AUTH_MODE</code> to force a mode, or let the server auto-detect based on which variables are set.</p>
+<p>Set <code>MARKDOWN_VAULT_MCP_AUTH_MODE</code> to state the mode, or let the server auto-detect it from which variables are set.</p>
 <h2 id="remote-mode-variables">Remote Mode Variables<a class="headerlink" href="#remote-mode-variables" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2600,12 +2622,13 @@
 <!-- GENERATED-ENV-TABLE-OIDC-OPTIONAL-END -->
 
 <h2 id="jwt-signing-key">JWT Signing Key<a class="headerlink" href="#jwt-signing-key" title="Permanent link">&para;</a></h2>
-<p>When <code>MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY</code> is unset, FastMCP derives the signing key from the OIDC client secret using deterministic key derivation, so the key stays the same across restarts and tokens keep validating.</p>
+<p>The signing key applies to oidc-proxy mode; remote mode does not use it. When <code>MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY</code> is unset, FastMCP derives the signing key from the OIDC client secret using deterministic key derivation, so the key stays the same across restarts and tokens keep validating.</p>
 <p>The real reason to set an explicit key is secret rotation: because the default key is derived from the client secret, rotating that secret changes the derived key and invalidates every token issued under the old one. Setting an explicit signing key decouples token validity from client-secret rotation:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Generate once, store in your .env file</span>
 openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> </span><span class="m">32</span>
 </code></pre></div>
 <h2 id="setup-with-authelia">Setup with Authelia<a class="headerlink" href="#setup-with-authelia" title="Permanent link">&para;</a></h2>
+<p>This section configures oidc-proxy mode. Remote mode needs no client registration, since the client authenticates with the provider itself.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>Authelia does not support Dynamic Client Registration (RFC 7591). Clients must be registered manually in <code>configuration.yml</code>.</p>
@@ -2849,6 +2872,9 @@ curl<span class="w"> </span>-s<span class="w"> </span>https://mcp.example.com/.w
 <!-- Project-specific notes for OIDC deployment go here; kept across copier
      update. (E.g. "Keycloak requires X claim", "Authelia token-cache quirk
      for /admin paths", "this server's audience claim must include 'mcp'".) -->
+
+<h2 id="which-mode-this-server-prefers">Which mode this server prefers<a class="headerlink" href="#which-mode-this-server-prefers" title="Permanent link">&para;</a></h2>
+<p>The Auth Modes table above states what each mode needs. For why remote is the better default here, and how to move an existing oidc-proxy deployment to it, see <a href="../../guides/authentication/#choosing-an-oidc-mode">Choosing an OIDC mode</a>.</p>
 <!-- DOMAIN-OIDC-EXTRA-END -->
 
 

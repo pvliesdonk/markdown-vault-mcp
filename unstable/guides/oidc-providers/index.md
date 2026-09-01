@@ -133,7 +133,7 @@ Use Keycloak directly as your OIDC provider for username/password (or federated)
 
 Remote mode (simpler alternative)
 
-If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication: Remote mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#remote-mode) for details.
+If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication: Remote mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#how-remote-mode-works) for details.
 
 ### 1. Create a realm
 
@@ -200,7 +200,7 @@ Use Google as your OIDC identity provider to authenticate users with their Googl
 
 Remote mode (simpler alternative)
 
-If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead: set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication: Remote mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#remote-mode).
+If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead: set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication: Remote mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#how-remote-mode-works).
 
 ### 1. Create OAuth credentials
 

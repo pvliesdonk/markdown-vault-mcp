@@ -960,10 +960,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#oidc-mode-selection" class="md-nav__link">
+  <a href="#how-remote-mode-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        OIDC mode selection
+        How remote mode works
       
     </span>
   </a>
@@ -971,10 +971,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#remote-mode" class="md-nav__link">
+  <a href="#how-oidc-proxy-mode-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How it works (remote mode)
+        How oidc-proxy mode works
       
     </span>
   </a>
@@ -982,10 +982,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#how-it-works-oidc-proxy-mode" class="md-nav__link">
+  <a href="#remote-mode-variables" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How it works (oidc-proxy mode)
+        Remote mode variables
       
     </span>
   </a>
@@ -993,10 +993,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#required-variables" class="md-nav__link">
+  <a href="#oidcproxy-required-variables" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Required variables
+        OIDCProxy required variables
       
     </span>
   </a>
@@ -1182,6 +1182,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#choosing-an-oidc-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing an OIDC mode
+      
+    </span>
+  </a>
   
 </li>
       
@@ -2278,10 +2289,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#oidc-mode-selection" class="md-nav__link">
+  <a href="#how-remote-mode-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        OIDC mode selection
+        How remote mode works
       
     </span>
   </a>
@@ -2289,10 +2300,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#remote-mode" class="md-nav__link">
+  <a href="#how-oidc-proxy-mode-works" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How it works (remote mode)
+        How oidc-proxy mode works
       
     </span>
   </a>
@@ -2300,10 +2311,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#how-it-works-oidc-proxy-mode" class="md-nav__link">
+  <a href="#remote-mode-variables" class="md-nav__link">
     <span class="md-ellipsis">
       
-        How it works (oidc-proxy mode)
+        Remote mode variables
       
     </span>
   </a>
@@ -2311,10 +2322,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#required-variables" class="md-nav__link">
+  <a href="#oidcproxy-required-variables" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Required variables
+        OIDCProxy required variables
       
     </span>
   </a>
@@ -2503,6 +2514,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#choosing-an-oidc-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Choosing an OIDC mode
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -2542,8 +2564,8 @@
 <tbody>
 <tr>
 <td><strong>Multi-auth</strong></td>
-<td>Mixed clients (such as Claude web with OIDC and Claude Code with bearer token) on the same server</td>
-<td>Set both <code>MARKDOWN_VAULT_MCP_BEARER_TOKEN</code> and OIDC variables</td>
+<td>Mixed clients, such as Claude web (OIDC) + Claude Code (bearer token) on the same server</td>
+<td>Set both <code>MARKDOWN_VAULT_MCP_BEARER_TOKEN</code> and the OIDC variables</td>
 </tr>
 <tr>
 <td><strong>Bearer token</strong></td>
@@ -2552,12 +2574,12 @@
 </tr>
 <tr>
 <td><strong>OIDC (remote)</strong></td>
-<td>Production, recommended over oidc-proxy: local JWKS validation, no token re-validation</td>
+<td>Production with user identity, SSO, multi-user access; local JWKS validation, no confidential client to register</td>
 <td>Set <code>MARKDOWN_VAULT_MCP_BASE_URL</code> + <code>MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL</code> only</td>
 </tr>
 <tr>
 <td><strong>OIDC (oidc-proxy)</strong></td>
-<td>Production with user identity, SSO, multi-user access; backward-compatible mode</td>
+<td>The same, where the server should run the OAuth flow itself and manage sessions</td>
 <td>Set all four OIDC variables (<code>BASE_URL</code>, <code>OIDC_CONFIG_URL</code>, <code>OIDC_CLIENT_ID</code>, <code>OIDC_CLIENT_SECRET</code>)</td>
 </tr>
 <tr>
@@ -2611,45 +2633,14 @@
 <p>Each token resolves to a distinct subject string for downstream attribution. Subject strings are opaque: the <code>&lt;kind&gt;:&lt;id&gt;</code> convention (<code>user:</code>, <code>service:</code>, <code>token:</code>) is documentation only. When <code>BEARER_TOKENS_FILE</code> is set it overrides <code>BEARER_TOKEN</code> (a <code>WARNING</code> is logged if both are present). A missing or malformed file aborts startup with <code>ConfigurationError</code> rather than silently denying every request.</p>
 <hr />
 <h2 id="oidc">OIDC<a class="headerlink" href="#oidc" title="Permanent link">&para;</a></h2>
-<p>Full OAuth 2.1 authentication using an external identity provider. Supports user login flows, SSO, and multi-user access control.</p>
-<h3 id="oidc-mode-selection">OIDC mode selection<a class="headerlink" href="#oidc-mode-selection" title="Permanent link">&para;</a></h3>
-<p>The server supports two OIDC modes:</p>
-<table>
-<thead>
-<tr>
-<th>Mode</th>
-<th>How it works</th>
-<th>When to use</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>remote</strong> (recommended)</td>
-<td>Validates tokens locally via JWKS. No client credentials needed. Token refresh happens between client and IdP directly.</td>
-<td>Most deployments. Avoids the OIDCProxy double-validation session timeout.</td>
-</tr>
-<tr>
-<td><strong>oidc-proxy</strong></td>
-<td>Acts as an OAuth proxy: exchanges codes for tokens, stores sessions, re-validates upstream tokens on every request.</td>
-<td>When your provider requires Dynamic Client Registration (DCR) emulation or you need the proxy's session management.</td>
-</tr>
-</tbody>
-</table>
-<p>Set <code>MARKDOWN_VAULT_MCP_AUTH_MODE</code> to force a mode, or let the server auto-detect:</p>
-<ul>
-<li>All four OIDC vars set (<code>BASE_URL</code>, <code>OIDC_CONFIG_URL</code>, <code>OIDC_CLIENT_ID</code>, <code>OIDC_CLIENT_SECRET</code>) → <strong>oidc-proxy</strong> (backward compatible)</li>
-<li>Only <code>BASE_URL</code> + <code>OIDC_CONFIG_URL</code> set → <strong>remote</strong></li>
-</ul>
-<div class="admonition tip">
-<p class="admonition-title">Migrating from oidc-proxy to remote</p>
-<p>Remove <code>OIDC_CLIENT_ID</code> and <code>OIDC_CLIENT_SECRET</code> from your env. The server will auto-detect remote mode. Or set <code>AUTH_MODE=remote</code> explicitly.</p>
-</div>
-<h3 id="remote-mode">How it works (remote mode)<a class="headerlink" href="#remote-mode" title="Permanent link">&para;</a></h3>
-<p>The server validates tokens locally using JWKS, with no upstream token calls after startup:</p>
-<div class="highlight"><pre><span></span><code>Client → IdP (authenticate + get JWT)
-Client → markdown-vault-mcp (present JWT → validate via JWKS)
+<p>Full OAuth 2.1 authentication using an external identity provider. Supports user login flows, SSO, and multi-user access control. Which of the two OIDC modes runs follows from which variables are set; <code>MARKDOWN_VAULT_MCP_AUTH_MODE</code> states the choice instead of leaving it to be inferred.</p>
+<h3 id="how-remote-mode-works">How remote mode works<a class="headerlink" href="#how-remote-mode-works" title="Permanent link">&para;</a></h3>
+<p>The client authenticates with the identity provider and presents the resulting token, which the server validates locally against the provider's JWKS:</p>
+<div class="highlight"><pre><span></span><code>Client → OIDC Provider (log in, get JWT)
+Client → markdown-vault-mcp (present JWT, validated via JWKS)
 </code></pre></div>
-<h3 id="how-it-works-oidc-proxy-mode">How it works (oidc-proxy mode)<a class="headerlink" href="#how-it-works-oidc-proxy-mode" title="Permanent link">&para;</a></h3>
+<p>No redirect passes through the server and no code exchange happens, so the provider needs no client registered for this server.</p>
+<h3 id="how-oidc-proxy-mode-works">How oidc-proxy mode works<a class="headerlink" href="#how-oidc-proxy-mode-works" title="Permanent link">&para;</a></h3>
 <p>The server proxies OIDC itself, with no external auth sidecar to deploy:</p>
 <div class="highlight"><pre><span></span><code>Client → markdown-vault-mcp → OIDC Provider
 </code></pre></div>
@@ -2660,7 +2651,9 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <li>Server exchanges the code for tokens</li>
 <li>Subsequent requests include the JWT</li>
 </ol>
-<h3 id="required-variables">Required variables<a class="headerlink" href="#required-variables" title="Permanent link">&para;</a></h3>
+<h3 id="remote-mode-variables">Remote mode variables<a class="headerlink" href="#remote-mode-variables" title="Permanent link">&para;</a></h3>
+<p><code>MARKDOWN_VAULT_MCP_BASE_URL</code> and <code>MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL</code>, plus any of the optional variables below. Omitting the two client credentials is what selects this mode.</p>
+<h3 id="oidcproxy-required-variables">OIDCProxy required variables<a class="headerlink" href="#oidcproxy-required-variables" title="Permanent link">&para;</a></h3>
 <!-- GENERATED-ENV-TABLE-OIDC-REQUIRED-START — generated by scripts/gen_config_surface.py; do not edit -->
 <table>
 <thead>
@@ -2856,6 +2849,13 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 </ul>
 <p>When these are resolved, OIDC sessions should persist indefinitely via automatic token refresh with no changes needed to markdown-vault-mcp.</p>
 <!-- DOMAIN-AUTH-EXTRA-START -->
+<h2 id="choosing-an-oidc-mode">Choosing an OIDC mode<a class="headerlink" href="#choosing-an-oidc-mode" title="Permanent link">&para;</a></h2>
+<p>Both modes are supported and neither is going away, but for this server remote mode is the better default. It avoids the session timeout described above: oidc-proxy re-validates the upstream token on every request, so the shortest upstream token lifetime becomes the session lifetime, while remote mode validates locally against JWKS and leaves refresh between the client and the identity provider.</p>
+<p>Reach for oidc-proxy when the provider needs Dynamic Client Registration emulated, or when you want the proxy's session management.</p>
+<div class="admonition tip">
+<p class="admonition-title">Moving an existing deployment from oidc-proxy to remote</p>
+<p>Remove <code>MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID</code> and <code>MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET</code> from the environment and the server auto-detects remote mode, or set <code>MARKDOWN_VAULT_MCP_AUTH_MODE=remote</code> to say so outright. The client credentials stay registered with the provider until you remove them there too.</p>
+</div>
 <!-- DOMAIN-AUTH-EXTRA-END -->
 
 

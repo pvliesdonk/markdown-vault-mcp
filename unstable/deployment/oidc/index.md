@@ -8,12 +8,12 @@ OIDC requires `--transport http` (or `sse`). It has no effect with `--transport 
 
 ## Auth Modes
 
-| Mode                     | Required Variables                                                    | Description                                          |
-| ------------------------ | --------------------------------------------------------------------- | ---------------------------------------------------- |
-| **remote** (recommended) | `BASE_URL`, `OIDC_CONFIG_URL`                                         | Local JWKS validation. No client credentials needed. |
-| **oidc-proxy**           | `BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Full OAuth proxy with session management.            |
+| Mode           | Required Variables                                                    | Description                                          |
+| -------------- | --------------------------------------------------------------------- | ---------------------------------------------------- |
+| **remote**     | `BASE_URL`, `OIDC_CONFIG_URL`                                         | Local JWKS validation. No client credentials needed. |
+| **oidc-proxy** | `BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Full OAuth proxy with session management.            |
 
-Set `MARKDOWN_VAULT_MCP_AUTH_MODE` to force a mode, or let the server auto-detect based on which variables are set.
+Set `MARKDOWN_VAULT_MCP_AUTH_MODE` to state the mode, or let the server auto-detect it from which variables are set.
 
 ## Remote Mode Variables
 
@@ -47,7 +47,7 @@ No `CLIENT_ID` or `CLIENT_SECRET` needed. Tokens are validated locally via JWKS.
 
 ## JWT Signing Key
 
-When `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` is unset, FastMCP derives the signing key from the OIDC client secret using deterministic key derivation, so the key stays the same across restarts and tokens keep validating.
+The signing key applies to oidc-proxy mode; remote mode does not use it. When `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` is unset, FastMCP derives the signing key from the OIDC client secret using deterministic key derivation, so the key stays the same across restarts and tokens keep validating.
 
 The real reason to set an explicit key is secret rotation: because the default key is derived from the client secret, rotating that secret changes the derived key and invalidates every token issued under the old one. Setting an explicit signing key decouples token validity from client-secret rotation:
 
@@ -57,6 +57,8 @@ openssl rand -hex 32
 ```
 
 ## Setup with Authelia
+
+This section configures oidc-proxy mode. Remote mode needs no client registration, since the client authenticates with the provider itself.
 
 Note
 
@@ -325,3 +327,7 @@ curl -s https://mcp.example.com/.well-known/oauth-protected-resource/myservice/m
 ```
 
 Both must reach this server, and the `resource` field in the JSON must read `https://mcp.example.com/myservice/mcp`. A `resource` naming a different service is the shared-hostname problem above, not an incorrect `BASE_URL`.
+
+## Which mode this server prefers
+
+The Auth Modes table above states what each mode needs. For why remote is the better default here, and how to move an existing oidc-proxy deployment to it, see [Choosing an OIDC mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#choosing-an-oidc-mode).

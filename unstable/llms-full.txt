@@ -284,7 +284,9 @@ Generated guidance targets 1,536 UTF-16 units, reserving 512 units for normal op
 
 ## Authentication
 
-Callers authenticate with a bearer token or OIDC; the two are mutually exclusive, and `MARKDOWN_VAULT_MCP_AUTH_MODE` is normally inferred from which credentials are set. The Required column below means "required to enable OIDC": with none of these set, the server starts and serves unauthenticated. See the [authentication guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/index.md) for setup, mapped multi-subject tokens, and troubleshooting.
+Callers authenticate with a bearer token, with OIDC, or with both. OIDC itself has two modes. **remote** validates tokens locally against the provider's JWKS and needs only `MARKDOWN_VAULT_MCP_BASE_URL` and `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL`. **oidc-proxy** runs the OAuth flow itself and also needs `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` and `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET`, registered with the provider as a confidential client whose redirect URI points at this server.
+
+The Required column below marks the oidc-proxy set. Setting all four selects that mode and omitting the two client credentials selects remote, so `MARKDOWN_VAULT_MCP_AUTH_MODE` is the way to state the choice rather than leave it to be inferred. With none of these set, the server starts and serves unauthenticated. See the [authentication guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/index.md) for setup, mapped multi-subject tokens, and troubleshooting.
 
 | Variable                                      | Default                 | Required | Description                                                                                                                                                                                                                                                                                                                                                                   |
 | --------------------------------------------- | ----------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1852,13 +1854,13 @@ Authentication only works with HTTP transport (`--transport http` or `sse`). It 
 
 The server supports five authentication modes:
 
-| Mode                  | When to use                                                                                       | Configuration                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| **Multi-auth**        | Mixed clients (such as Claude web with OIDC and Claude Code with bearer token) on the same server | Set both `MARKDOWN_VAULT_MCP_BEARER_TOKEN` and OIDC variables                                       |
-| **Bearer token**      | Simple deployments behind a VPN, Docker compose stacks, development                               | Set `MARKDOWN_VAULT_MCP_BEARER_TOKEN` only                                                          |
-| **OIDC (remote)**     | Production, recommended over oidc-proxy: local JWKS validation, no token re-validation            | Set `MARKDOWN_VAULT_MCP_BASE_URL` + `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` only                       |
-| **OIDC (oidc-proxy)** | Production with user identity, SSO, multi-user access; backward-compatible mode                   | Set all four OIDC variables (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`) |
-| **No auth**           | Local stdio usage, trusted networks                                                               | Default (nothing to configure)                                                                      |
+| Mode                  | When to use                                                                                                      | Configuration                                                                                       |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Multi-auth**        | Mixed clients, such as Claude web (OIDC) + Claude Code (bearer token) on the same server                         | Set both `MARKDOWN_VAULT_MCP_BEARER_TOKEN` and the OIDC variables                                   |
+| **Bearer token**      | Simple deployments behind a VPN, Docker compose stacks, development                                              | Set `MARKDOWN_VAULT_MCP_BEARER_TOKEN` only                                                          |
+| **OIDC (remote)**     | Production with user identity, SSO, multi-user access; local JWKS validation, no confidential client to register | Set `MARKDOWN_VAULT_MCP_BASE_URL` + `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` only                       |
+| **OIDC (oidc-proxy)** | The same, where the server should run the OAuth flow itself and manage sessions                                  | Set all four OIDC variables (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`) |
+| **No auth**           | Local stdio usage, trusted networks                                                                              | Default (nothing to configure)                                                                      |
 
 When both bearer token and OIDC are configured, the server accepts **either** credential: a valid bearer token or a valid OIDC session. This is useful when different clients require different authentication flows against the same vault instance.
 
@@ -1922,36 +1924,20 @@ ______________________________________________________________________
 
 ## OIDC
 
-Full OAuth 2.1 authentication using an external identity provider. Supports user login flows, SSO, and multi-user access control.
+Full OAuth 2.1 authentication using an external identity provider. Supports user login flows, SSO, and multi-user access control. Which of the two OIDC modes runs follows from which variables are set; `MARKDOWN_VAULT_MCP_AUTH_MODE` states the choice instead of leaving it to be inferred.
 
-### OIDC mode selection
+### How remote mode works
 
-The server supports two OIDC modes:
-
-| Mode                     | How it works                                                                                                            | When to use                                                                                                         |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| **remote** (recommended) | Validates tokens locally via JWKS. No client credentials needed. Token refresh happens between client and IdP directly. | Most deployments. Avoids the OIDCProxy double-validation session timeout.                                           |
-| **oidc-proxy**           | Acts as an OAuth proxy: exchanges codes for tokens, stores sessions, re-validates upstream tokens on every request.     | When your provider requires Dynamic Client Registration (DCR) emulation or you need the proxy's session management. |
-
-Set `MARKDOWN_VAULT_MCP_AUTH_MODE` to force a mode, or let the server auto-detect:
-
-- All four OIDC vars set (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`) → **oidc-proxy** (backward compatible)
-- Only `BASE_URL` + `OIDC_CONFIG_URL` set → **remote**
-
-Migrating from oidc-proxy to remote
-
-Remove `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET` from your env. The server will auto-detect remote mode. Or set `AUTH_MODE=remote` explicitly.
-
-### How it works (remote mode)
-
-The server validates tokens locally using JWKS, with no upstream token calls after startup:
+The client authenticates with the identity provider and presents the resulting token, which the server validates locally against the provider's JWKS:
 
 ```
-Client → IdP (authenticate + get JWT)
-Client → markdown-vault-mcp (present JWT → validate via JWKS)
+Client → OIDC Provider (log in, get JWT)
+Client → markdown-vault-mcp (present JWT, validated via JWKS)
 ```
 
-### How it works (oidc-proxy mode)
+No redirect passes through the server and no code exchange happens, so the provider needs no client registered for this server.
+
+### How oidc-proxy mode works
 
 The server proxies OIDC itself, with no external auth sidecar to deploy:
 
@@ -1965,7 +1951,11 @@ Client → markdown-vault-mcp → OIDC Provider
 1. Server exchanges the code for tokens
 1. Subsequent requests include the JWT
 
-### Required variables
+### Remote mode variables
+
+`MARKDOWN_VAULT_MCP_BASE_URL` and `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL`, plus any of the optional variables below. Omitting the two client credentials is what selects this mode.
+
+### OIDCProxy required variables
 
 | Variable                                | Description                                                                                                                                                        |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -2116,6 +2106,16 @@ These upstream issues are actively tracked:
 
 When these are resolved, OIDC sessions should persist indefinitely via automatic token refresh with no changes needed to markdown-vault-mcp.
 
+## Choosing an OIDC mode
+
+Both modes are supported and neither is going away, but for this server remote mode is the better default. It avoids the session timeout described above: oidc-proxy re-validates the upstream token on every request, so the shortest upstream token lifetime becomes the session lifetime, while remote mode validates locally against JWKS and leaves refresh between the client and the identity provider.
+
+Reach for oidc-proxy when the provider needs Dynamic Client Registration emulated, or when you want the proxy's session management.
+
+Moving an existing deployment from oidc-proxy to remote
+
+Remove `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` and `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` from the environment and the server auto-detects remote mode, or set `MARKDOWN_VAULT_MCP_AUTH_MODE=remote` to say so outright. The client credentials stay registered with the provider until you remove them there too.
+
 # OIDC Providers
 
 This guide covers configuring markdown-vault-mcp with specific OIDC providers. For general OIDC setup and architecture, see [OIDC Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/index.md).
@@ -2251,7 +2251,7 @@ Use Keycloak directly as your OIDC provider for username/password (or federated)
 
 Remote mode (simpler alternative)
 
-If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication: Remote mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#remote-mode) for details.
+If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication: Remote mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#how-remote-mode-works) for details.
 
 ### 1. Create a realm
 
@@ -2318,7 +2318,7 @@ Use Google as your OIDC identity provider to authenticate users with their Googl
 
 Remote mode (simpler alternative)
 
-If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead: set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication: Remote mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#remote-mode).
+If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead: set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication: Remote mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#how-remote-mode-works).
 
 ### 1. Create OAuth credentials
 
@@ -6936,12 +6936,12 @@ OIDC requires `--transport http` (or `sse`). It has no effect with `--transport 
 
 ## Auth Modes
 
-| Mode                     | Required Variables                                                    | Description                                          |
-| ------------------------ | --------------------------------------------------------------------- | ---------------------------------------------------- |
-| **remote** (recommended) | `BASE_URL`, `OIDC_CONFIG_URL`                                         | Local JWKS validation. No client credentials needed. |
-| **oidc-proxy**           | `BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Full OAuth proxy with session management.            |
+| Mode           | Required Variables                                                    | Description                                          |
+| -------------- | --------------------------------------------------------------------- | ---------------------------------------------------- |
+| **remote**     | `BASE_URL`, `OIDC_CONFIG_URL`                                         | Local JWKS validation. No client credentials needed. |
+| **oidc-proxy** | `BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Full OAuth proxy with session management.            |
 
-Set `MARKDOWN_VAULT_MCP_AUTH_MODE` to force a mode, or let the server auto-detect based on which variables are set.
+Set `MARKDOWN_VAULT_MCP_AUTH_MODE` to state the mode, or let the server auto-detect it from which variables are set.
 
 ## Remote Mode Variables
 
@@ -6975,7 +6975,7 @@ No `CLIENT_ID` or `CLIENT_SECRET` needed. Tokens are validated locally via JWKS.
 
 ## JWT Signing Key
 
-When `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` is unset, FastMCP derives the signing key from the OIDC client secret using deterministic key derivation, so the key stays the same across restarts and tokens keep validating.
+The signing key applies to oidc-proxy mode; remote mode does not use it. When `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` is unset, FastMCP derives the signing key from the OIDC client secret using deterministic key derivation, so the key stays the same across restarts and tokens keep validating.
 
 The real reason to set an explicit key is secret rotation: because the default key is derived from the client secret, rotating that secret changes the derived key and invalidates every token issued under the old one. Setting an explicit signing key decouples token validity from client-secret rotation:
 
@@ -6985,6 +6985,8 @@ openssl rand -hex 32
 ```
 
 ## Setup with Authelia
+
+This section configures oidc-proxy mode. Remote mode needs no client registration, since the client authenticates with the provider itself.
 
 Note
 
@@ -7253,6 +7255,10 @@ curl -s https://mcp.example.com/.well-known/oauth-protected-resource/myservice/m
 ```
 
 Both must reach this server, and the `resource` field in the JSON must read `https://mcp.example.com/myservice/mcp`. A `resource` naming a different service is the shared-hostname problem above, not an incorrect `BASE_URL`.
+
+## Which mode this server prefers
+
+The Auth Modes table above states what each mode needs. For why remote is the better default here, and how to move an existing oidc-proxy deployment to it, see [Choosing an OIDC mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/#choosing-an-oidc-mode).
 
 # Release Process
 
