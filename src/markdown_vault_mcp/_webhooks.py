@@ -114,7 +114,7 @@ def _verify_github_signature(
     return hmac.compare_digest(expected, provided)
 
 
-def _timestamp_is_fresh(raw: str | None, *, now: float | None = None) -> bool:
+def _timestamp_is_fresh(raw: str, *, now: float | None = None) -> bool:
     """Return ``True`` when *raw* is a Unix second count within the tolerance.
 
     A signature that never expires can be captured and replayed forever, so
@@ -123,15 +123,14 @@ def _timestamp_is_fresh(raw: str | None, *, now: float | None = None) -> bool:
     suspect as a stale one, since only clock skew explains it.
 
     Args:
-        raw: Value of the ``webhook-timestamp`` header, or ``None``.
+        raw: Value of the ``webhook-timestamp`` header. The only caller
+            checks the header is present first, so this is never ``None``.
         now: Current Unix time; injected by tests.
 
     Returns:
         ``True`` when *raw* parses as an integer within
         :data:`GITLAB_TIMESTAMP_TOLERANCE_S` of *now*.
     """
-    if raw is None:
-        return False
     try:
         sent = int(raw)
     except ValueError:
