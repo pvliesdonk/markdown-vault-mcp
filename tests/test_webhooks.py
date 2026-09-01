@@ -994,3 +994,36 @@ def test_gitlab_hmac_key_accepts_the_url_safe_alphabet() -> None:
     assert standard != urlsafe, "fixture must exercise the differing characters"
     assert gitlab_hmac_key(f"whsec_{standard}") == key
     assert gitlab_hmac_key(f"whsec_{urlsafe}") == key
+
+
+def test_gitlab_secret_token_authenticates_through_the_handler() -> None:
+    """The legacy path end to end, over real request headers.
+
+    Every other secret-token test calls `verify` with a plain dict, which
+    cannot show that the header name matches what a request actually carries.
+    This is the credential most self-managed GitLab installs below 19.0 will
+    use, so it gets the round trip.
+    """
+    body = _push_body()
+    col = _mock_vault(pull_result=_pull_result(from_sha="aaa", to_sha="bbb"))
+    client = _make_gitlab_client(signing_token=None, secret_token=SECRET_TOKEN)
+
+    with patch("markdown_vault_mcp._webhooks.get_vault_singleton", return_value=col):
+        response = client.post(
+            "/gitlab-webhook",
+            content=body,
+            headers={"X-Gitlab-Token": SECRET_TOKEN, "X-Gitlab-Event": "Push Hook"},
+        )
+
+    assert response.status_code == 200
+    col.force_pull.assert_called_once()
+
+
+def test_gitlab_wrong_secret_token_is_rejected_through_the_handler() -> None:
+    client = _make_gitlab_client(signing_token=None, secret_token=SECRET_TOKEN)
+    response = client.post(
+        "/gitlab-webhook",
+        content=_push_body(),
+        headers={"X-Gitlab-Token": "wrong", "X-Gitlab-Event": "Push Hook"},
+    )
+    assert response.status_code == 401

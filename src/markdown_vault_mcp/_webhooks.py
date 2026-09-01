@@ -385,9 +385,9 @@ def gitlab_provider(
     def verify(headers: Mapping[str, str], body: bytes) -> bool:
         if hmac_key is not None and _verify_gitlab_signature(body, hmac_key, headers):
             return True
-        return bool(secret_token) and _verify_gitlab_secret_token(
-            secret_token or "", headers.get("X-Gitlab-Token")
-        )
+        if not secret_token:
+            return False
+        return _verify_gitlab_secret_token(secret_token, headers.get("X-Gitlab-Token"))
 
     return WebhookProvider(
         name="gitlab_webhook",
