@@ -88,6 +88,32 @@ class WebhookProvider:
     ping_event: str | None = None
 
 
+def _credentials_match(expected: str, provided: str | None) -> bool:
+    """Constant-time comparison of two header-shaped values that never raises.
+
+    ``hmac.compare_digest`` refuses two ``str`` operands when either holds a
+    non-ASCII character, and ASGI hands header values through as latin-1
+    decoded text. A hostile client can therefore put one byte above 0x7f in a
+    signature header and turn this module's documented 401 into an unhandled
+    500, since ``handle`` calls ``verify`` outside any exception guard.
+
+    Comparing encoded bytes keeps the timing property and makes such a value
+    simply fail to match. Every value that could legitimately match — a hex
+    digest, a base64 digest, a configured token — is ASCII, so the encoding
+    is byte-identical to the wire for anything that matters.
+
+    Args:
+        expected: The value computed or configured on this side.
+        provided: The value the request presented, or ``None``.
+
+    Returns:
+        ``True`` only when both are present and equal.
+    """
+    if provided is None:
+        return False
+    return hmac.compare_digest(expected.encode(), provided.encode())
+
+
 def _verify_github_signature(
     payload: bytes,
     secret: str,
@@ -115,7 +141,7 @@ def _verify_github_signature(
         return False
     provided = signature_header[len("sha256=") :]
     expected = hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, provided)
+    return _credentials_match(expected, provided)
 
 
 def _timestamp_is_fresh(raw: str, *, now: float | None = None) -> bool:
@@ -238,7 +264,7 @@ def _verify_gitlab_signature(
     matched = False
     for candidate in signature_header.split():
         version, _, provided = candidate.partition(",")
-        if version == "v1" and hmac.compare_digest(expected, provided):
+        if version == "v1" and _credentials_match(expected, provided):
             matched = True
     return matched
 
@@ -260,9 +286,7 @@ def _verify_gitlab_secret_token(secret_token: str, provided: str | None) -> bool
     Returns:
         ``True`` when the header is present and matches.
     """
-    if not provided:
-        return False
-    return hmac.compare_digest(secret_token, provided)
+    return _credentials_match(secret_token, provided)
 
 
 def github_provider(secret: str) -> WebhookProvider:

@@ -44,6 +44,7 @@ if TYPE_CHECKING:
 from markdown_vault_mcp._webhooks import (
     GITLAB_TIMESTAMP_TOLERANCE_S,
     _verify_github_signature,
+    _verify_gitlab_signature,
     github_provider,
     gitlab_hmac_key,
     gitlab_provider,
@@ -674,10 +675,18 @@ def test_gitlab_signing_token_rejects_a_delivery_from_the_future() -> None:
 
 
 def test_gitlab_signing_token_accepts_the_window_edge() -> None:
-    """The tolerance is inclusive, so ordinary clock skew is not a rejection."""
+    """The tolerance is inclusive, pinned at the boundary rather than near it.
+
+    `_timestamp_is_fresh` compares with `<=`, so exactly
+    `GITLAB_TIMESTAMP_TOLERANCE_S` seconds of skew must still authenticate;
+    one second more must not, which the stale test above covers.
+    """
     body = _push_body()
-    edge = int(time.time()) - GITLAB_TIMESTAMP_TOLERANCE_S + 1
-    assert _gitlab_verify(_gitlab_signed_headers(body, timestamp=edge), body) is True
+    now = time.time()
+    edge = int(now) - GITLAB_TIMESTAMP_TOLERANCE_S
+    headers = _gitlab_signed_headers(body, timestamp=edge)
+    key = base64.b64decode(SIGNING_TOKEN.removeprefix("whsec_"))
+    assert _verify_gitlab_signature(body, key, headers, now=float(int(now))) is True
 
 
 def test_gitlab_signing_token_rejects_a_non_numeric_timestamp() -> None:
@@ -903,3 +912,54 @@ def test_gitlab_accepts_a_delivery_signed_with_the_decoded_key() -> None:
     key = base64.b64decode(SIGNING_TOKEN.removeprefix("whsec_"))
     headers = _gitlab_signed_headers(body, key=key)
     assert _gitlab_verify(headers, body) is True
+
+
+# ---------------------------------------------------------------------------
+# Non-ASCII credentials (all three comparison sites)
+#
+# ASGI decodes header values as latin-1, and `hmac.compare_digest` refuses two
+# `str` operands when either holds a non-ASCII character. `verify` runs outside
+# the handler's exception guard, so one byte above 0x7f in a signature header
+# turned the documented 401 into an unhandled 500. GitHub's path had the same
+# exposure and predates GitLab's, so all three are pinned here.
+# ---------------------------------------------------------------------------
+
+NON_ASCII = "caf\xe9"
+
+
+def test_github_non_ascii_signature_is_refused_not_raised() -> None:
+    assert (
+        _verify_github_signature(_push_body(), SECRET, f"sha256={NON_ASCII}") is False
+    )
+
+
+def test_gitlab_non_ascii_signature_is_refused_not_raised() -> None:
+    body = _push_body()
+    headers = _gitlab_signed_headers(body)
+    headers["webhook-signature"] = f"v1,{NON_ASCII}"
+    assert _gitlab_verify(headers, body) is False
+
+
+def test_gitlab_non_ascii_secret_token_is_refused_not_raised() -> None:
+    assert (
+        _gitlab_verify(
+            {"X-Gitlab-Token": NON_ASCII},
+            _push_body(),
+            signing_token=None,
+            secret_token=SECRET_TOKEN,
+        )
+        is False
+    )
+
+
+def test_non_ascii_signature_returns_401_through_the_handler() -> None:
+    """End to end: the contract is 401, not a 500 with a traceback."""
+    body = _push_body()
+    headers = _gitlab_signed_headers(body)
+    headers["webhook-signature"] = f"v1,{NON_ASCII}"
+    headers["X-Gitlab-Event"] = "Push Hook"
+    # httpx refuses to encode a non-ASCII str header, so hand it raw bytes the
+    # way a hostile client would put them on the wire.
+    raw = [(k.encode(), v.encode("latin-1")) for k, v in headers.items()]
+    response = _make_gitlab_client().post("/gitlab-webhook", content=body, headers=raw)
+    assert response.status_code == 401

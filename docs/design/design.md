@@ -3748,9 +3748,9 @@ reconfiguring the deployment.
 
 The webhook handler treats it as such, answering 200 so the host records the
 delivery rather than spending its full retry budget on every push, and logs a
-warning naming the misconfiguration; `server.py` logs the same warning once at
-startup, when any webhook credential is set with neither `GIT_REPO_URL` nor
-`GIT_TOKEN`. The handler also wraps `force_pull` so no exception escapes as an
+warning naming the misconfiguration; `register_webhook_routes` logs the same
+warning once at startup, when any webhook credential is set with neither
+`GIT_REPO_URL` nor `GIT_TOKEN`. The handler also wraps `force_pull` so no exception escapes as an
 unhandled 500 — its documented outcome set is 401 / 200 / 503. The
 `git_sync` tool cannot reach any of this: `_resolve_managed_strategy` refuses
 outside managed mode, and managed mode always has `enable_pull=True`. The
