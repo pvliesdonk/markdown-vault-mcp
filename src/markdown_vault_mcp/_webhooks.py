@@ -175,6 +175,46 @@ def _timestamp_is_fresh(raw: str, *, now: float | None = None) -> bool:
 GITLAB_SIGNING_TOKEN_PREFIX = "whsec_"
 
 
+def _decode_base64_either_alphabet(body: str) -> bytes:
+    """Decode *body* as base64, accepting the standard or URL-safe alphabet.
+
+    GitLab's documented examples decode with `Base64.strict_decode64` and
+    `base64.b64decode`, both of which are the standard alphabet, so that is
+    tried first. The URL-safe fallback exists because the token is a value
+    this server does not control and cannot re-issue: if any GitLab edition
+    emits `-`/`_`, a strict-only decode would refuse to start the server
+    rather than authenticate a delivery it could have verified.
+
+    The fallback introduces no ambiguity. A token valid under both alphabets
+    contains only characters they share, so both decodes agree; a token valid
+    under just one is decoded by that one; a token valid under neither still
+    raises.
+
+    Args:
+        body: The token with its ``whsec_`` prefix already removed.
+
+    Returns:
+        The decoded key bytes.
+
+    Raises:
+        ConfigurationError: If neither alphabet decodes *body*.
+    """
+    # Fold the two URL-safe characters onto their standard counterparts, then
+    # decode once with validation. `urlsafe_b64decode` has no `validate`
+    # parameter, so a two-decoder version could not reject a malformed token
+    # as strictly on the fallback path as on the primary one.
+    normalized = body.replace("-", "+").replace("_", "/")
+    try:
+        return base64.b64decode(normalized, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ConfigurationError(
+            "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN is not a GitLab "
+            "signing token: the part after 'whsec_' must be base64, and this "
+            f"value does not decode ({exc}). Copy the token GitLab shows when "
+            "you select 'Generate signing token'."
+        ) from exc
+
+
 def gitlab_hmac_key(signing_token: str) -> bytes:
     """Decode a GitLab signing token to the raw bytes used as the HMAC key.
 
@@ -195,7 +235,8 @@ def gitlab_hmac_key(signing_token: str) -> bytes:
         The raw HMAC key bytes.
 
     Raises:
-        ConfigurationError: If the token does not decode as base64.
+        ConfigurationError: If the token does not decode as base64, or
+            decodes to an empty key.
     """
     if not signing_token.startswith(GITLAB_SIGNING_TOKEN_PREFIX):
         # Not fatal: the prefix is GitLab's convention, not part of the key,
@@ -210,15 +251,19 @@ def gitlab_hmac_key(signing_token: str) -> bytes:
             GITLAB_SIGNING_TOKEN_PREFIX,
         )
     body = signing_token.removeprefix(GITLAB_SIGNING_TOKEN_PREFIX)
-    try:
-        return base64.b64decode(body, validate=True)
-    except (binascii.Error, ValueError) as exc:
+    key = _decode_base64_either_alphabet(body)
+
+    if not key:
+        # `whsec_` alone decodes cleanly to b"", and HMAC accepts an empty
+        # key — the route would mount with a key anyone can guess, so every
+        # forged delivery would authenticate. Refuse rather than serve a
+        # webhook that authenticates nothing.
         raise ConfigurationError(
-            "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN is not a GitLab "
-            "signing token: the part after 'whsec_' must be base64, and this "
-            f"value does not decode ({exc}). Copy the token GitLab shows when "
-            "you select 'Generate signing token'."
-        ) from exc
+            "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN decodes to an "
+            "empty key, which would authenticate any delivery. Copy the "
+            "token GitLab shows when you select 'Generate signing token'."
+        )
+    return key
 
 
 def _verify_gitlab_signature(

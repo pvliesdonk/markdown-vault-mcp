@@ -3750,8 +3750,9 @@ The webhook handler treats it as such, answering 200 so the host records the
 delivery rather than spending its full retry budget on every push, and logs a
 warning naming the misconfiguration; `register_webhook_routes` logs the same
 warning once at startup, when any webhook credential is set with neither
-`GIT_REPO_URL` nor `GIT_TOKEN`. The handler also wraps `force_pull` so no exception escapes as an
-unhandled 500 — its documented outcome set is 401 / 200 / 503. The
+`GIT_REPO_URL` nor `GIT_TOKEN`. The handler also wraps `force_pull` so no
+exception escapes as an unhandled 500 — its documented outcome set is
+401 / 200 / 503. The
 `git_sync` tool cannot reach any of this: `_resolve_managed_strategy` refuses
 outside managed mode, and managed mode always has `enable_pull=True`. The
 handler's `pull_result is None` branch is likewise not dead code — a library
@@ -3784,8 +3785,15 @@ authentication mechanisms with genuinely different security properties:
   verification example. Signing with the token text instead produces a digest
   that never matches a real delivery while every self-signed test still
   passes, so the tests derive the key from the token the way GitLab does and
-  one of them asserts a token-text signature is refused. The header is specified as possibly carrying
-  several space-separated signatures, so every candidate is compared. Because
+  one of them asserts a token-text signature is refused. `whsec_` alone
+  decodes cleanly to an empty key that HMAC accepts, which would authenticate
+  every forged delivery, so a zero-length key is refused at startup. The
+  decode folds `-`/`_` onto `+`/`/` before validating: GitLab's examples use
+  the standard alphabet, but the token is a value this server neither
+  controls nor can re-issue, and the fold is unambiguous because a token
+  valid under both alphabets contains only the characters they share. The
+  header is specified as possibly carrying several space-separated
+  signatures, so every candidate is compared. Because
   the timestamp is inside the digest, it cannot be re-stamped, and a delivery
   more than `GITLAB_TIMESTAMP_TOLERANCE_S` (300 s) from now is rejected in
   either direction. Without that window a captured delivery would replay

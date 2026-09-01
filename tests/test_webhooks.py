@@ -963,3 +963,34 @@ def test_non_ascii_signature_returns_401_through_the_handler() -> None:
     raw = [(k.encode(), v.encode("latin-1")) for k, v in headers.items()]
     response = _make_gitlab_client().post("/gitlab-webhook", content=body, headers=raw)
     assert response.status_code == 401
+
+
+def test_gitlab_hmac_key_rejects_an_empty_key() -> None:
+    """`whsec_` alone decodes cleanly to b"" — a key anyone can guess.
+
+    HMAC accepts an empty key, so without this guard the route would mount
+    and authenticate every forged delivery.
+    """
+    with pytest.raises(ConfigurationError, match="empty key"):
+        gitlab_hmac_key("whsec_")
+
+
+def test_gitlab_provider_rejects_an_empty_key() -> None:
+    with pytest.raises(ConfigurationError, match="empty key"):
+        gitlab_provider("whsec_", None)
+
+
+def test_gitlab_hmac_key_accepts_the_url_safe_alphabet() -> None:
+    """The token is a value this server neither controls nor can re-issue.
+
+    GitLab's documented examples decode with the standard alphabet, so that
+    is what the implementation targets; folding `-`/`_` onto `+`/`/` means an
+    edition emitting the URL-safe form starts the server rather than failing
+    it. A key exercising both characters proves the two agree.
+    """
+    key = bytes([0xFB, 0xFF, 0x3E, 0x00, 0xD2, 0x7F]) * 4
+    standard = base64.b64encode(key).decode()
+    urlsafe = base64.urlsafe_b64encode(key).decode()
+    assert standard != urlsafe, "fixture must exercise the differing characters"
+    assert gitlab_hmac_key(f"whsec_{standard}") == key
+    assert gitlab_hmac_key(f"whsec_{urlsafe}") == key
