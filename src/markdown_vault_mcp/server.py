@@ -227,25 +227,50 @@ def make_server(
         "enabled" if config.indexing.embeddings_path else "disabled",
     )
 
-    # GitHub webhook endpoint — only when secret is configured and transport
-    # is HTTP/SSE (stdio has no HTTP server to receive POST requests).
-    if config.sync.github_webhook_secret and transport != "stdio":
-        from markdown_vault_mcp._github_webhook import make_webhook_handler
+    # Push-webhook endpoints — one route per host, mounted only when that
+    # host's credentials are configured and the transport is HTTP/SSE (stdio
+    # has no HTTP server to receive POST requests).  Both routes run the same
+    # handler over a per-host provider (#530, #1178).
+    if config.sync.webhook_configured and transport != "stdio":
+        from markdown_vault_mcp._webhooks import (
+            github_provider,
+            gitlab_provider,
+            make_webhook_handler,
+        )
 
         if config.git.repo_url is None and config.git.token is None:
-            # The route still mounts and answers 200, but every delivery is a
+            # The routes still mount and answer 200, but every delivery is a
             # no-op: this deployment has no managed remote to pull from.  Say
             # so at startup rather than leaving the operator to infer it from
             # per-delivery logs (#1128).
             logger.warning(
-                "github_webhook_inert: GITHUB_WEBHOOK_SECRET is set but no "
-                "managed git remote is configured, so push deliveries have "
-                "nothing to pull — set GIT_REPO_URL to enable sync, or unset "
-                "GITHUB_WEBHOOK_SECRET to drop the endpoint"
+                "webhook_inert: webhook credentials are set but no managed "
+                "git remote is configured, so push deliveries have nothing to "
+                "pull — set GIT_REPO_URL to enable sync, or unset the webhook "
+                "credentials to drop the endpoints"
             )
-        mcp.custom_route("/github-webhook", methods=["POST"])(
-            make_webhook_handler(config.sync.github_webhook_secret)
-        )
+
+        if config.sync.github_webhook_secret:
+            mcp.custom_route("/github-webhook", methods=["POST"])(
+                make_webhook_handler(github_provider(config.sync.github_webhook_secret))
+            )
+
+        gitlab_signing = config.sync.gitlab_webhook_signing_token
+        gitlab_secret = config.sync.gitlab_webhook_secret_token
+        if gitlab_signing or gitlab_secret:
+            if not gitlab_signing:
+                # Reachable only by choosing the weaker of two documented
+                # options, which an operator on GitLab 19.0+ has no reason to
+                # do — so say it once at startup rather than per delivery.
+                logger.warning(
+                    "gitlab_webhook_secret_token_only: authenticating GitLab "
+                    "deliveries with the plain-text secret token, which "
+                    "proves nothing about the body and cannot expire — set "
+                    "GITLAB_WEBHOOK_SIGNING_TOKEN instead on GitLab 19.0+"
+                )
+            mcp.custom_route("/gitlab-webhook", methods=["POST"])(
+                make_webhook_handler(gitlab_provider(gitlab_signing, gitlab_secret))
+            )
 
     # One-time capability-link transfer (#622, #979) via pvl-core's shared
     # framework. HTTP/SSE only and only with base_url set: the /transfer/{token}

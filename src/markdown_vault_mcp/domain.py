@@ -195,7 +195,7 @@ class Service:
         if should_start_file_watcher(
             config.sync.file_watcher_enabled,
             git_pull_active,
-            config.sync.github_webhook_secret,
+            config.sync.webhook_configured,
         ):
 
             def _on_file_change() -> None:

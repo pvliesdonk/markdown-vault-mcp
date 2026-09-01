@@ -504,8 +504,8 @@ class TestConfigDrivenPrompts:
         assert result.data["server_name"] == "markdown-vault-mcp"
 
 
-class TestGithubWebhookWiring:
-    """Cover the GitHub-webhook custom-route gate in make_server's DOMAIN-WIRING."""
+class TestWebhookWiring:
+    """Cover the push-webhook custom-route gates in make_server's DOMAIN-WIRING."""
 
     @staticmethod
     def _route_paths(server: FastMCP) -> set[str]:
@@ -551,7 +551,7 @@ class TestGithubWebhookWiring:
             server = make_server(transport="http")
 
         assert "/github-webhook" in self._route_paths(server)
-        assert "github_webhook_inert" in caplog.text
+        assert "webhook_inert" in caplog.text
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_webhook_with_a_managed_remote_does_not_warn(
@@ -567,7 +567,77 @@ class TestGithubWebhookWiring:
         with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.server"):
             make_server(transport="http")
 
-        assert "github_webhook_inert" not in caplog.text
+        assert "webhook_inert" not in caplog.text
+
+    @pytest.mark.usefixtures("_mcp_env")
+    @pytest.mark.parametrize(
+        "var",
+        ["GITLAB_WEBHOOK_SIGNING_TOKEN", "GITLAB_WEBHOOK_SECRET_TOKEN"],
+    )
+    def test_gitlab_route_registered_for_either_credential(
+        self, monkeypatch: pytest.MonkeyPatch, var: str
+    ) -> None:
+        """Either GitLab credential is enough to mount the route (#1178)."""
+        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{var}", "s3cret")
+        server = make_server(transport="http")
+        assert "/gitlab-webhook" in self._route_paths(server)
+        assert "/github-webhook" not in self._route_paths(server)
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_gitlab_route_absent_on_stdio(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", "s3cret")
+        server = make_server(transport="stdio")
+        assert "/gitlab-webhook" not in self._route_paths(server)
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_gitlab_route_absent_without_credentials(self) -> None:
+        server = make_server(transport="http")
+        assert "/gitlab-webhook" not in self._route_paths(server)
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_both_hosts_mount_side_by_side(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A vault mirrored to both hosts gets both routes, not one."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "gh")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", "gl")
+        paths = self._route_paths(make_server(transport="http"))
+        assert {"/github-webhook", "/gitlab-webhook"} <= paths
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_plain_secret_token_alone_warns_at_startup(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Choosing the weaker GitLab credential is announced, not silent."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN", "plain")
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
+            "https://gitlab.com/example/vault.git",
+        )
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.server"):
+            make_server(transport="http")
+
+        assert "gitlab_webhook_secret_token_only" in caplog.text
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_signing_token_present_does_not_warn(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The warning is about the weak form being alone, not about being set."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", "sign")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN", "plain")
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
+            "https://gitlab.com/example/vault.git",
+        )
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.server"):
+            make_server(transport="http")
+
+        assert "gitlab_webhook_secret_token_only" not in caplog.text
 
 
 class TestToolManifest:

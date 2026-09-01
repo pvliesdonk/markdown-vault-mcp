@@ -33,17 +33,25 @@ Behavior:
 - Periodic pull uses fast-forward-only updates.
 
 Two mechanisms sit alongside the periodic loop, both described below: a
-GitHub webhook that pulls the moment someone pushes, and the `git_sync`
+push webhook that pulls the moment someone pushes, and the `git_sync`
 tool for pulling or pushing on demand from inside a conversation.
 
-## Push-Triggered Pull: GitHub Webhook
+## Push-Triggered Pull: Webhooks
 
 The periodic loop leaves reads up to `GIT_PULL_INTERVAL_S` seconds behind
 the remote (default 600). In a multi-author vault, where a teammate or
-another instance commits from elsewhere, that window is what the webhook
-closes: GitHub delivers a `push` event, the server pulls and reindexes
+another instance commits from elsewhere, that window is what a webhook
+closes: the host delivers a push event, the server pulls and reindexes
 straight away, and staleness drops to delivery latency, a couple of
 seconds in practice.
+
+GitHub and GitLab each get their own endpoint, mounted only when that
+host's credentials are set. Both endpoints run the same pull-and-reindex
+path and differ only in how a delivery proves it came from the host. Under
+stdio no HTTP server exists, so nothing is mounted and the settings have no
+effect.
+
+### GitHub
 
 Generate a secret and set it:
 
@@ -51,30 +59,72 @@ Generate a secret and set it:
 MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32)
 ```
 
-Setting the secret mounts `POST /github-webhook` on the HTTP and SSE
-transports. Under stdio there is no HTTP server, so nothing is mounted and
-the setting has no effect. In the GitHub repository, add a webhook pointing
-at `https://<your-host>/github-webhook` with content type
-`application/json`, the same secret, and the `push` event selected.
+Setting the secret mounts `POST /github-webhook`. In the GitHub repository,
+add a webhook pointing at `https://<your-host>/github-webhook` with content
+type `application/json`, the same secret, and the `push` event selected.
 
-Behavior:
+Every delivery's `X-Hub-Signature-256` header is verified: HMAC-SHA256 over
+the raw body, compared in constant time.
 
-- Every delivery's `X-Hub-Signature-256` header is verified (HMAC-SHA256,
-  constant-time). An invalid or missing signature returns 401 and no git
-  operation runs.
-- A `push` event pulls first, then reindexes only when HEAD actually moved.
+### GitLab
+
+GitLab authenticates webhooks two ways, and the version decides which one
+is available.
+
+**Signing token, GitLab 19.0 and later.** The stronger form, and the one to
+prefer:
+
+```bash
+MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN=$(openssl rand -hex 32)
+```
+
+GitLab signs each delivery with HMAC-SHA256 over the webhook id, the
+timestamp and the raw body, following the Standard Webhooks specification.
+The server checks the signature and rejects any delivery whose timestamp is
+more than five minutes from the current time, so a captured delivery cannot
+be replayed later.
+
+**Secret token, any version.** The original form, and the only one below
+19.0:
+
+```bash
+MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN=$(openssl rand -hex 32)
+```
+
+GitLab sends this value in clear text in the `X-Gitlab-Token` header. It
+proves nothing about the body and never expires, so GitLab no longer
+recommends it for new webhooks. Reach for it when the GitLab version
+predates the signing token; the server logs a warning at startup when it is
+the only credential set.
+
+Either setting mounts `POST /gitlab-webhook`. In the GitLab project, go to
+**Settings > Webhooks**, point the URL at
+`https://<your-host>/gitlab-webhook`, fill in the matching token field, and
+select the **Push events** trigger.
+
+Setting both accepts either form, which is what makes a migration possible:
+add the signing token here, switch the webhook over in GitLab, then drop the
+secret token once deliveries are landing.
+
+GitLab has no handshake event. Its **Test** button sends a real `Push Hook`,
+so a test delivery pulls exactly as a push does.
+
+### What both endpoints do
+
+- An invalid or missing credential returns 401 and no git operation runs.
+- A push event pulls first, then reindexes only when HEAD actually moved.
   A push to a branch the vault does not track leaves HEAD where it was, so
   it costs a fetch and nothing more.
 - `ping`, GitHub's handshake delivery, answers `pong`; every other event
   returns 200 and does nothing.
-- A delivery whose pull did not apply returns 503, so GitHub retries it
+- A delivery whose pull did not apply returns 503, so the host retries it
   instead of marking it delivered. A pull that keeps failing, such as an
   unresolved conflict, exhausts the retries and waits for the next
   periodic tick. Divergent history is not a failure: it flows through the
   Syncthing-style sibling resolution described under
   [`git_sync`](#manual-sync-git_sync-tool) below.
-- A delivery to a server with no managed remote returns 200, not 503. There
-  is nothing to pull and a retry cannot change that, so the delivery is
+- A delivery to a server with no managed remote returns 200, not 503. No
+  remote exists to pull from and a retry cannot change that, so the delivery is
   recorded rather than retried. Each one logs a warning naming the
   problem, and the server logs the same warning once at startup.
 - A delivery arriving while the initial index build is still running is
@@ -83,7 +133,7 @@ Behavior:
   reconciliation pass that follows the build picks the pulled changes up.
 
 !!! warning "Managed mode only"
-    Set the secret only where the server owns the remote. Outside managed
+    Set these only where the server owns the remote. Outside managed
     mode the endpoint is inert: it verifies signatures and answers 200, but
     there is no remote to pull from, so every delivery is a no-op. The
     server says so at startup and on each delivery, because a webhook that
@@ -92,7 +142,7 @@ Behavior:
     This is a no-op rather than a failure as of 4.1. Before that the pull
     path ignored the sync switch unmanaged mode turns off and ran
     `git fetch origin` anyway: a checkout with no reachable `origin`
-    failed that fetch and answered 503, burning GitHub's retries on every
+    failed that fetch and answered 503, burning the host's retries on every
     push, and against a vault that was not a git repository at all the
     pull raised out of the handler.
 
@@ -100,14 +150,15 @@ Keep `GIT_PULL_INTERVAL_S` enabled. The webhook narrows the staleness
 window; the loop is what catches the deliveries the webhook loses.
 
 !!! note "The file watcher steps aside"
-    Setting `GITHUB_WEBHOOK_SECRET` disables the filesystem watcher, the
+    Setting any webhook credential disables the filesystem watcher, the
     same way `GIT_PULL_INTERVAL_S > 0` does. Git rewrites the working tree
     during a checkout, and a watcher firing mid-checkout would scan a
     partial tree. Reindexing stays driven by the webhook and the periodic
     loop. See [File Watcher](../configuration.md#file-watcher).
 
-The variable itself is listed in the
-[configuration reference](../configuration.md#github-webhook-push-triggered-pull).
+The variables themselves are listed under
+[Change detection](../configuration.md#change-detection) in the
+configuration reference.
 
 ## Manual sync: `git_sync` tool
 

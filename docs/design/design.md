@@ -3746,10 +3746,10 @@ that is not a git repository at all. `force_pull` now returns
 reason is terminal by construction: retrying cannot change it without
 reconfiguring the deployment.
 
-The webhook handler treats it as such, answering 200 so GitHub records the
+The webhook handler treats it as such, answering 200 so the host records the
 delivery rather than spending its full retry budget on every push, and logs a
 warning naming the misconfiguration; `server.py` logs the same warning once at
-startup, when `GITHUB_WEBHOOK_SECRET` is set with neither `GIT_REPO_URL` nor
+startup, when any webhook credential is set with neither `GIT_REPO_URL` nor
 `GIT_TOKEN`. The handler also wraps `force_pull` so no exception escapes as an
 unhandled 500 — its documented outcome set is 401 / 200 / 503. The
 `git_sync` tool cannot reach any of this: `_resolve_managed_strategy` refuses
@@ -3757,6 +3757,46 @@ outside managed mode, and managed mode always has `enable_pull=True`. The
 handler's `pull_result is None` branch is likewise not dead code — a library
 consumer constructing `Vault(git_strategy=None)` reaches it, though a
 config-driven server never does.
+
+### Push webhooks: one handler, two hosts (#1178)
+
+GitHub and GitLab notify the same fact — the remote moved — and the response
+is identical, so `_webhooks.py` holds one handler and a `WebhookProvider`
+record carrying what actually differs: how a delivery authenticates, the
+header naming the event, the value of that header meaning "push", the
+delivery-id header used for log correlation, and whether the host has a
+handshake event at all. Each host still gets its own route
+(`/github-webhook`, `/gitlab-webhook`), mounted only when that host's
+credentials are set; the routes are separate because the credentials are, not
+because the logic is.
+
+GitLab needs two credential fields rather than one, because it has two
+authentication mechanisms with genuinely different security properties:
+
+- `GITLAB_WEBHOOK_SIGNING_TOKEN` (GitLab 19.0+) follows the Standard Webhooks
+  specification. The HMAC-SHA256 covers `{webhook-id}.{webhook-timestamp}.`
+  concatenated with the raw body — not the body alone — and the digest is
+  base64 behind a `v1,` prefix. The header is specified as possibly carrying
+  several space-separated signatures, so every candidate is compared. Because
+  the timestamp is inside the digest, it cannot be re-stamped, and a delivery
+  more than `GITLAB_TIMESTAMP_TOLERANCE_S` (300 s) from now is rejected in
+  either direction. Without that window a captured delivery would replay
+  forever, which is why GitLab's own documentation requires the check.
+- `GITLAB_WEBHOOK_SECRET_TOKEN` is the plain-text `X-Gitlab-Token` header:
+  the shared secret sent in the clear, with no body integrity and no expiry.
+
+Accepting the weaker form is deliberate. The signing token reached general
+availability in GitLab 19.1, so refusing the plain token would leave
+push-triggered reindex unreachable on every self-managed install below 19.0 —
+the deployment the feature was asked for. Setting both accepts either, which
+is what lets a live webhook migrate; `server.py` logs a warning at startup
+when the plain token is the only credential, so the weaker choice is visible
+rather than silent.
+
+The file-watcher gate asks `SyncConfig.webhook_configured` rather than naming
+a provider. The hazard it guards — a watcher scanning a tree mid-checkout —
+does not care which host triggered the pull, and a gate that named only
+GitHub would have let the watcher run alongside GitLab-driven checkouts.
 
 **Tracking-independent remote ref**: all sync operations (startup unpushed
 check, periodic `sync_once`, interactive `force_pull`/`force_push`, and the

@@ -349,14 +349,16 @@ def _format_root_names(roots: Sequence[_WatchRoot]) -> str:
 def should_start_file_watcher(
     file_watcher_enabled: bool,
     git_pull_active: bool,
-    github_webhook_secret: str | None,
+    webhook_configured: bool,
 ) -> bool:
     """Return True when the file watcher should be started.
 
-    The watcher is mutually exclusive with the git pull loop and GitHub
-    webhook: those mechanisms trigger reindex on their own cadence, and
+    The watcher is mutually exclusive with the git pull loop and with any
+    push webhook: those mechanisms trigger reindex on their own cadence, and
     running the file watcher alongside them would cause mid-checkout partial
-    scans when git modifies the working tree.
+    scans when git modifies the working tree. Which host sends the webhook
+    does not matter to this gate, so it takes the resolved boolean rather
+    than a provider's credential.
 
     Args:
         file_watcher_enabled: Value of ``FILE_WATCHER`` config field.
@@ -367,12 +369,14 @@ def should_start_file_watcher(
             resolved ``git_pull_interval_s`` from ``to_vault_instances()``
             (which is 0 unless ``git_repo_url``/``git_token`` is set),
             compared ``> 0``.
-        github_webhook_secret: Value of ``GITHUB_WEBHOOK_SECRET`` config field.
+        webhook_configured: Whether any push webhook has credentials set.
+            Pass ``config.sync.webhook_configured``, which covers the GitHub
+            secret and both GitLab tokens.
 
     Returns:
         ``True`` when the watcher should be started.
     """
-    git_active = git_pull_active or bool(github_webhook_secret)
+    git_active = git_pull_active or webhook_configured
     return file_watcher_enabled and not git_active
 
 

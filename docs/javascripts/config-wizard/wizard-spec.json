@@ -13,6 +13,8 @@
     "VOYAGE_API_KEY",
     "MARKDOWN_VAULT_MCP_GIT_TOKEN",
     "MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET",
+    "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN",
+    "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN",
     "MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY"
   ],
   "questions": [
@@ -905,6 +907,32 @@
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET",
       "help": "Shared secret for the GitHub push-event webhook; when set, mounts POST /github-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events.",
+      "advancedGroup": "Change detection",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
+    },
+    {
+      "id": "gitlab_webhook_signing_token",
+      "label": "Gitlab Webhook Signing Token",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN",
+      "help": "Signing token for the GitLab push-event webhook (GitLab 19.0+); when set, mounts POST /gitlab-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events. Deliveries are authenticated by HMAC-SHA256 over the webhook id, timestamp and body, and a delivery older than 5 minutes is rejected.",
+      "advancedGroup": "Change detection",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
+    },
+    {
+      "id": "gitlab_webhook_secret_token",
+      "label": "Gitlab Webhook Secret Token",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN",
+      "help": "Secret token for the GitLab push-event webhook, GitLab's plain-text form and the only one below 19.0; also mounts POST /gitlab-webhook. It proves nothing about the body and cannot expire, so prefer the signing token where the GitLab version offers it. Setting both accepts either, which is how an existing webhook migrates.",
       "advancedGroup": "Change detection",
       "showIf": {
         "deployment": [

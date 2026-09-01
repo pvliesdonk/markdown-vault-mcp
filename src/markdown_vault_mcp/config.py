@@ -738,6 +738,36 @@ class ProjectConfig:
             "wizard": {"group": "Change detection", "when": "server", "secret": True},
         },
     )
+    gitlab_webhook_signing_token: str | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Signing token for the GitLab push-event webhook (GitLab "
+                "19.0+); when set, mounts POST /gitlab-webhook on HTTP/SSE "
+                "transports to trigger an immediate pull + reindex on push "
+                "events. Deliveries are authenticated by HMAC-SHA256 over the "
+                "webhook id, timestamp and body, and a delivery older than "
+                "5 minutes is rejected."
+            ),
+            "tags": ("sync",),
+            "wizard": {"group": "Change detection", "when": "server", "secret": True},
+        },
+    )
+    gitlab_webhook_secret_token: str | None = field(
+        default=None,
+        metadata={
+            "help": (
+                "Secret token for the GitLab push-event webhook, GitLab's "
+                "plain-text form and the only one below 19.0; also mounts "
+                "POST /gitlab-webhook. It proves nothing about the body and "
+                "cannot expire, so prefer the signing token where the GitLab "
+                "version offers it. Setting both accepts either, which is how "
+                "an existing webhook migrates."
+            ),
+            "tags": ("sync",),
+            "wizard": {"group": "Change detection", "when": "server", "secret": True},
+        },
+    )
     summarize_provider: str | None = field(
         default=None,
         metadata={
@@ -945,6 +975,8 @@ class ProjectConfig:
             file_watcher_debounce_s=self.file_watcher_debounce_s,
             file_watcher_root_floor=self.file_watcher_root_floor,
             github_webhook_secret=self.github_webhook_secret,
+            gitlab_webhook_signing_token=self.gitlab_webhook_signing_token,
+            gitlab_webhook_secret_token=self.gitlab_webhook_secret_token,
         )
 
     @property
@@ -1139,6 +1171,12 @@ class ProjectConfig:
                 env(_ENV_PREFIX, "FILE_WATCHER_ROOT_FLOOR"), default=True
             ),
             github_webhook_secret=env(_ENV_PREFIX, "GITHUB_WEBHOOK_SECRET") or None,
+            gitlab_webhook_signing_token=(
+                env(_ENV_PREFIX, "GITLAB_WEBHOOK_SIGNING_TOKEN") or None
+            ),
+            gitlab_webhook_secret_token=(
+                env(_ENV_PREFIX, "GITLAB_WEBHOOK_SECRET_TOKEN") or None
+            ),
             summarize_provider=env(_ENV_PREFIX, "SUMMARIZE_PROVIDER") or None,
             summarize_openai_api_key=(
                 _summarize_key := resolve_summarize_api_key(
