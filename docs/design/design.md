@@ -1384,7 +1384,9 @@ what is implemented today:
 - **Stats & config surface**: `stats` gains an `okf` section (mode,
   declared version, `type` histogram + untyped count, status/trust
   breakdowns, stale count — aggregated from the same `documents` rows
-  `stats` already reads); `config://vault` reports `okf_mode` /
+  `stats` already reads, minus the reserved files, which are counted
+  apart as `reserved_count` so the histograms cover the same note
+  population `okf_validate` audits); `config://vault` reports `okf_mode` /
   `okf_active` / `okf_declared_version`; the default server instructions
   gain an OKF guidance sentence whenever the mode permits detection
   (same pre-clone rationale as the conventions sentence).

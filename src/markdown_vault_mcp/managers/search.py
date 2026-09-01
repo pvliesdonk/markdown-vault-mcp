@@ -51,6 +51,7 @@ from markdown_vault_mcp.managers._ranking import (
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.okf import (
     OKF_FILTER_KEYS,
+    OKF_RESERVED_FILENAMES,
     derive_annotation,
     matches_okf_filters,
     okf_downweight_factor,
@@ -1457,8 +1458,11 @@ class SearchManager:
         Iterates the same ``documents`` rows :meth:`stats` already counts
         and aggregates the OKF read annotations: a ``type`` histogram (plus
         an untyped count), lifecycle-``status`` and trust-tier breakdowns,
-        and the stale-note count. Reserved bundle files (``index.md`` /
-        ``log.md``) are ordinary indexed notes and are included.
+        and the stale-note count. The aggregate reports over the OKF *note*
+        population — the same set :func:`~markdown_vault_mcp.okf.audit_bundle`
+        audits — so reserved bundle files (``index.md`` / ``log.md``), which
+        the spec exempts from the ``type`` rule, are excluded from every
+        histogram and reported on their own as ``reserved_count``.
 
         Returns:
             The aggregate dict, or ``None`` when no OKF detector is wired
@@ -1476,7 +1480,11 @@ class SearchManager:
         trust: dict[str, int] = {}
         untyped = 0
         stale = 0
+        reserved = 0
         for row in self._fts.list_notes():
+            if row["path"].rsplit("/", 1)[-1] in OKF_RESERVED_FILENAMES:
+                reserved += 1
+                continue
             metadata = self._parse_frontmatter_json(
                 row.get("frontmatter_json"), row["path"]
             )
@@ -1500,6 +1508,7 @@ class SearchManager:
             "status": dict(sorted(status.items())),
             "trust": dict(sorted(trust.items())),
             "stale_count": stale,
+            "reserved_count": reserved,
         }
 
     # ------------------------------------------------------------------
