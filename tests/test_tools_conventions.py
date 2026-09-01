@@ -191,6 +191,7 @@ class TestConfigSurface:
         server = make_server()
         assert "_conventions.md" in (server.instructions or "")
         assert "get_conventions" in (server.instructions or "")
+        assert "write-result 'conventions'" in (server.instructions or "")
 
     async def test_instructions_omit_conventions_when_disabled(
         self, monkeypatch: pytest.MonkeyPatch

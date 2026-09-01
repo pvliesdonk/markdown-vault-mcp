@@ -155,9 +155,9 @@ def _domain_snippets(
     if conventions_file is not None:
         snippets.append(
             Snippet(
-                "Before creating, restructuring, or linking notes, call "
-                f"'get_conventions(path)' and follow it ('{conventions_file}' "
-                "configured).",
+                "Before changing or linking notes, call "
+                "'get_conventions(path)'; follow it and write-result "
+                f"'conventions' ('{conventions_file}' configured).",
                 InstructionRole.INSTANCE,
                 ("get_conventions",),
             )

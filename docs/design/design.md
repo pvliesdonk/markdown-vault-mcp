@@ -3015,7 +3015,7 @@ The generated-text compatibility target is a tested configuration matrix,
 not an estimate from the default stdio server. The maximal case enables
 read-write mode, summarization, conventions, OKF, jobs, and HTTP transfer and
 must remain at or below pvl-core's 1,536 UTF-16-unit generated target. It is
-1,495 units as of #1252's acceptance fix. A second case adds representative
+1,507 units as of #1252's acceptance fix. A second case adds representative
 routing and policy and must remain within Claude Code's 2,048-unit limit.
 The mode, summarize limit, conventions, and OKF guidance are `INSTANCE` facts;
 the vault/search seed is `CAPABILITIES`; write, transfer, and job sequences are
@@ -3036,7 +3036,7 @@ units after FastMCP has parsed docstrings and built schemas. Schemas use compact
 sorted JSON so formatting cannot move the baseline. This is a prose/schema
 budget, not the byte size of complete serialized list responses: names, icons,
 annotations, and other protocol metadata are deliberately outside it. The
-initial post-reduction measurement is 57,228 units: 1,495 instructions, 22,853
+initial post-reduction measurement is 57,240 units: 1,507 instructions, 22,853
 tool descriptions,
 27,259 input schemas, 3,353 output schemas, 842 prompt descriptions, 101 prompt
 argument descriptions, 613 resource descriptions, and 712 resource-template
