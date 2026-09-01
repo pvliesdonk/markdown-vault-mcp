@@ -1934,6 +1934,28 @@ class TestSyncConfigFromEnv:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "mysecret")
         assert ProjectConfig.from_env().sync.github_webhook_secret == "mysecret"
 
+    def test_gitlab_webhook_signing_token(self, monkeypatch):
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", "signing")
+        assert ProjectConfig.from_env().sync.gitlab_webhook_signing_token == "signing"
+
+    def test_gitlab_webhook_secret_token(self, monkeypatch):
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN", "plain")
+        assert ProjectConfig.from_env().sync.gitlab_webhook_secret_token == "plain"
+
+    @pytest.mark.parametrize(
+        "var",
+        [
+            "GITHUB_WEBHOOK_SECRET",
+            "GITLAB_WEBHOOK_SIGNING_TOKEN",
+            "GITLAB_WEBHOOK_SECRET_TOKEN",
+        ],
+    )
+    def test_webhook_configured_covers_every_credential(self, monkeypatch, var):
+        """The file-watcher gate must see any host's webhook, not just GitHub's."""
+        assert ProjectConfig.from_env().sync.webhook_configured is False
+        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{var}", "x")
+        assert ProjectConfig.from_env().sync.webhook_configured is True
+
     def test_frozen(self):
         import dataclasses
 

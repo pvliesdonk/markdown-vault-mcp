@@ -227,25 +227,12 @@ def make_server(
         "enabled" if config.indexing.embeddings_path else "disabled",
     )
 
-    # GitHub webhook endpoint — only when secret is configured and transport
-    # is HTTP/SSE (stdio has no HTTP server to receive POST requests).
-    if config.sync.github_webhook_secret and transport != "stdio":
-        from markdown_vault_mcp._github_webhook import make_webhook_handler
+    # Push-webhook endpoints (#530, #1178).  The routes, their credential
+    # gates and the startup warnings all live in _webhooks.py, which owns the
+    # handlers too — one call keeps a second host from branching here.
+    from markdown_vault_mcp._webhooks import register_webhook_routes
 
-        if config.git.repo_url is None and config.git.token is None:
-            # The route still mounts and answers 200, but every delivery is a
-            # no-op: this deployment has no managed remote to pull from.  Say
-            # so at startup rather than leaving the operator to infer it from
-            # per-delivery logs (#1128).
-            logger.warning(
-                "github_webhook_inert: GITHUB_WEBHOOK_SECRET is set but no "
-                "managed git remote is configured, so push deliveries have "
-                "nothing to pull — set GIT_REPO_URL to enable sync, or unset "
-                "GITHUB_WEBHOOK_SECRET to drop the endpoint"
-            )
-        mcp.custom_route("/github-webhook", methods=["POST"])(
-            make_webhook_handler(config.sync.github_webhook_secret)
-        )
+    register_webhook_routes(mcp, config, transport)
 
     # One-time capability-link transfer (#622, #979) via pvl-core's shared
     # framework. HTTP/SSE only and only with base_url set: the /transfer/{token}

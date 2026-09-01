@@ -451,23 +451,23 @@ def test_start_logs_warning_when_watchdog_unavailable(
 
 
 def test_should_start_when_no_git_active() -> None:
-    assert should_start_file_watcher(True, False, None) is True
+    assert should_start_file_watcher(True, False, False) is True
 
 
 def test_should_not_start_when_git_pull_active() -> None:
-    assert should_start_file_watcher(True, True, None) is False
+    assert should_start_file_watcher(True, True, False) is False
 
 
 def test_should_not_start_when_webhook_active() -> None:
-    assert should_start_file_watcher(True, False, "secret") is False
+    assert should_start_file_watcher(True, False, True) is False
 
 
 def test_should_not_start_when_explicitly_disabled() -> None:
-    assert should_start_file_watcher(False, False, None) is False
+    assert should_start_file_watcher(False, False, False) is False
 
 
 def test_should_not_start_when_both_git_and_disabled() -> None:
-    assert should_start_file_watcher(False, True, "secret") is False
+    assert should_start_file_watcher(False, True, True) is False
 
 
 # ---------------------------------------------------------------------------
