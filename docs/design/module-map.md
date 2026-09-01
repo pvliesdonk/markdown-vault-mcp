@@ -115,7 +115,7 @@ src/markdown_vault_mcp/
   _server_queryable.py -- needs_queryable decorator: MCP-layer wait/block on index readiness (#513)
   _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for pvl-core's transfer routes (#979)
   _file_watcher.py     -- watchdog external-change watcher with debounce; used when git pull and webhook are off (#558)
-  _webhooks.py         -- GitHub + GitLab push-webhook routes: per-host verify → force_pull + reindex (#530, #1178)
+  _webhooks.py         -- GitHub + GitLab push-webhook routes and their mounting: per-host verify → force_pull + reindex (#530, #1178)
   _http_logging.py     -- quiet_http_loggers: pin httpx/httpcore to WARNING unless root level is DEBUG (#792)
   _icons.py            -- Lucide SVG tool icons from static/icons/ as data URIs
   server.py            -- generic FastMCP server factory (make_server); template-owned, domain customization confined to DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)

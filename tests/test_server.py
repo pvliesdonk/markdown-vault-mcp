@@ -504,12 +504,12 @@ class TestConfigDrivenPrompts:
         assert result.data["server_name"] == "markdown-vault-mcp"
 
 
-class TestWebhookWiring:
-    """Cover the push-webhook custom-route gates in make_server's DOMAIN-WIRING."""
+def _route_paths(server: FastMCP) -> set[str]:
+    return {r.path for r in server._additional_http_routes}
 
-    @staticmethod
-    def _route_paths(server: FastMCP) -> set[str]:
-        return {r.path for r in server._additional_http_routes}
+
+class TestGitHubWebhookWiring:
+    """Cover the GitHub webhook's route gate and its inert-deployment warning."""
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_webhook_route_registered_when_secret_and_http(
@@ -517,7 +517,7 @@ class TestWebhookWiring:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "s3cret")
         server = make_server(transport="http")
-        assert "/github-webhook" in self._route_paths(server)
+        assert "/github-webhook" in _route_paths(server)
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_webhook_route_absent_on_stdio(
@@ -526,12 +526,12 @@ class TestWebhookWiring:
         # A secret is set, but stdio has no HTTP server to receive POSTs.
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "s3cret")
         server = make_server(transport="stdio")
-        assert "/github-webhook" not in self._route_paths(server)
+        assert "/github-webhook" not in _route_paths(server)
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_webhook_route_absent_without_secret(self) -> None:
         server = make_server(transport="http")
-        assert "/github-webhook" not in self._route_paths(server)
+        assert "/github-webhook" not in _route_paths(server)
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_webhook_without_a_remote_warns_at_startup(
@@ -547,10 +547,10 @@ class TestWebhookWiring:
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_REPO_URL", raising=False)
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_TOKEN", raising=False)
 
-        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.server"):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp._webhooks"):
             server = make_server(transport="http")
 
-        assert "/github-webhook" in self._route_paths(server)
+        assert "/github-webhook" in _route_paths(server)
         assert "webhook_inert" in caplog.text
 
     @pytest.mark.usefixtures("_mcp_env")
@@ -564,10 +564,14 @@ class TestWebhookWiring:
             "https://github.com/example/vault.git",
         )
 
-        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.server"):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp._webhooks"):
             make_server(transport="http")
 
         assert "webhook_inert" not in caplog.text
+
+
+class TestGitLabWebhookWiring:
+    """Cover the GitLab webhook's two credentials and their route gate (#1178)."""
 
     @pytest.mark.usefixtures("_mcp_env")
     @pytest.mark.parametrize(
@@ -580,8 +584,8 @@ class TestWebhookWiring:
         """Either GitLab credential is enough to mount the route (#1178)."""
         monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{var}", "s3cret")
         server = make_server(transport="http")
-        assert "/gitlab-webhook" in self._route_paths(server)
-        assert "/github-webhook" not in self._route_paths(server)
+        assert "/gitlab-webhook" in _route_paths(server)
+        assert "/github-webhook" not in _route_paths(server)
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_gitlab_route_absent_on_stdio(
@@ -589,12 +593,12 @@ class TestWebhookWiring:
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", "s3cret")
         server = make_server(transport="stdio")
-        assert "/gitlab-webhook" not in self._route_paths(server)
+        assert "/gitlab-webhook" not in _route_paths(server)
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_gitlab_route_absent_without_credentials(self) -> None:
         server = make_server(transport="http")
-        assert "/gitlab-webhook" not in self._route_paths(server)
+        assert "/gitlab-webhook" not in _route_paths(server)
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_both_hosts_mount_side_by_side(
@@ -603,7 +607,7 @@ class TestWebhookWiring:
         """A vault mirrored to both hosts gets both routes, not one."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "gh")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", "gl")
-        paths = self._route_paths(make_server(transport="http"))
+        paths = _route_paths(make_server(transport="http"))
         assert {"/github-webhook", "/gitlab-webhook"} <= paths
 
     @pytest.mark.usefixtures("_mcp_env")
@@ -617,7 +621,7 @@ class TestWebhookWiring:
             "https://gitlab.com/example/vault.git",
         )
 
-        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.server"):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp._webhooks"):
             make_server(transport="http")
 
         assert "gitlab_webhook_secret_token_only" in caplog.text
@@ -634,7 +638,7 @@ class TestWebhookWiring:
             "https://gitlab.com/example/vault.git",
         )
 
-        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.server"):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp._webhooks"):
             make_server(transport="http")
 
         assert "gitlab_webhook_secret_token_only" not in caplog.text

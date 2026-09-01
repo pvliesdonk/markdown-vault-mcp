@@ -15,8 +15,10 @@ set and the transport is HTTP/SSE:
 
 Integration points
 ------------------
+- :func:`register_webhook_routes` — the whole mounting decision; the one
+  call ``server.py``'s wiring block makes.
 - :func:`github_provider` / :func:`gitlab_provider` — build a provider from
-  configured credentials; call from ``server.py``.
+  configured credentials.
 - :func:`make_webhook_handler` — handler factory; produces the callable
   passed to ``mcp.custom_route()``.
 - :func:`_verify_github_signature` / :func:`_verify_gitlab_signature` — pure
@@ -450,3 +452,58 @@ def make_webhook_handler(provider: WebhookProvider) -> Callable[[Request], Any]:
         return await _process_push(vault, name, delivery_id)
 
     return handle
+
+
+def register_webhook_routes(mcp: Any, config: Any, transport: str) -> None:
+    """Mount each host's webhook route when its credentials are configured.
+
+    Owns the whole decision — which routes exist, and the two startup
+    warnings about credentials that are set but weak or inert — so
+    ``server.py``'s wiring block makes one call rather than growing a second
+    host's worth of branching.
+
+    Nothing is mounted under stdio: there is no HTTP server to receive a POST,
+    so the credentials have no effect there.
+
+    Args:
+        mcp: The ``FastMCP`` server to mount routes on.
+        config: The project configuration; ``config.sync`` supplies the
+            credentials and ``config.git`` the managed-remote check.
+        transport: The resolved transport name.
+    """
+    if not config.sync.webhook_configured or transport == "stdio":
+        return
+
+    if config.git.repo_url is None and config.git.token is None:
+        # The routes still mount and answer 200, but every delivery is a
+        # no-op: this deployment has no managed remote to pull from.  Say so
+        # at startup rather than leaving the operator to infer it from
+        # per-delivery logs (#1128).
+        logger.warning(
+            "webhook_inert: webhook credentials are set but no managed git "
+            "remote is configured, so push deliveries have nothing to pull — "
+            "set GIT_REPO_URL to enable sync, or unset the webhook "
+            "credentials to drop the endpoints"
+        )
+
+    if config.sync.github_webhook_secret:
+        mcp.custom_route("/github-webhook", methods=["POST"])(
+            make_webhook_handler(github_provider(config.sync.github_webhook_secret))
+        )
+
+    signing = config.sync.gitlab_webhook_signing_token
+    secret = config.sync.gitlab_webhook_secret_token
+    if signing or secret:
+        if not signing:
+            # Reachable only by choosing the weaker of two documented options,
+            # which an operator on GitLab 19.0+ has no reason to do — so say it
+            # once at startup rather than per delivery.
+            logger.warning(
+                "gitlab_webhook_secret_token_only: authenticating GitLab "
+                "deliveries with the plain-text secret token, which proves "
+                "nothing about the body and cannot expire — set "
+                "GITLAB_WEBHOOK_SIGNING_TOKEN instead on GitLab 19.0+"
+            )
+        mcp.custom_route("/gitlab-webhook", methods=["POST"])(
+            make_webhook_handler(gitlab_provider(signing, secret))
+        )
