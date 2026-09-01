@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import hashlib
 import hmac
 import logging
@@ -43,6 +44,7 @@ from typing import TYPE_CHECKING, Any
 from starlette.responses import JSONResponse
 
 from markdown_vault_mcp.domain import get_vault_singleton
+from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.git.types import PULL_REASON_PULL_DISABLED
 
 if TYPE_CHECKING:
@@ -141,9 +143,61 @@ def _timestamp_is_fresh(raw: str, *, now: float | None = None) -> bool:
     return abs(reference - sent) <= GITLAB_TIMESTAMP_TOLERANCE_S
 
 
+#: GitLab prefixes a generated signing token with this; the rest is the
+#: base64-encoded HMAC key. Stripped before decoding, per GitLab's own
+#: verification example.
+GITLAB_SIGNING_TOKEN_PREFIX = "whsec_"
+
+
+def gitlab_hmac_key(signing_token: str) -> bytes:
+    """Decode a GitLab signing token to the raw bytes used as the HMAC key.
+
+    GitLab generates the token as ``whsec_`` followed by a standard-base64
+    key, and its verification example decodes that to raw bytes *before*
+    computing the HMAC — the token text itself is not the key. Signing with
+    the text produces a digest that never matches a real delivery, so this
+    conversion is the difference between working and rejecting every push.
+
+    Called once when the provider is built, so a token that cannot be a key
+    is an error at startup rather than a 401 per delivery.
+
+    Args:
+        signing_token: The value copied from GitLab's **Generate signing
+            token** button.
+
+    Returns:
+        The raw HMAC key bytes.
+
+    Raises:
+        ConfigurationError: If the token does not decode as base64.
+    """
+    if not signing_token.startswith(GITLAB_SIGNING_TOKEN_PREFIX):
+        # Not fatal: the prefix is GitLab's convention, not part of the key,
+        # and a future version could change it. It is a strong signal the
+        # wrong value was pasted, so say so once rather than silently
+        # authenticating nothing.
+        logger.warning(
+            "gitlab_signing_token_unprefixed: the signing token does not "
+            "start with %r — GitLab generates this value, so copy it from "
+            "'Generate signing token' rather than inventing one; a "
+            "self-chosen string authenticates no delivery",
+            GITLAB_SIGNING_TOKEN_PREFIX,
+        )
+    body = signing_token.removeprefix(GITLAB_SIGNING_TOKEN_PREFIX)
+    try:
+        return base64.b64decode(body, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ConfigurationError(
+            "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN is not a GitLab "
+            "signing token: the part after 'whsec_' must be base64, and this "
+            f"value does not decode ({exc}). Copy the token GitLab shows when "
+            "you select 'Generate signing token'."
+        ) from exc
+
+
 def _verify_gitlab_signature(
     payload: bytes,
-    signing_token: str,
+    hmac_key: bytes,
     headers: Mapping[str, str],
     *,
     now: float | None = None,
@@ -159,8 +213,8 @@ def _verify_gitlab_signature(
 
     Args:
         payload: Raw request body bytes.
-        signing_token: Value of
-            ``MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN``.
+        hmac_key: Raw key bytes from :func:`gitlab_hmac_key` — the decoded
+            signing token, not its text.
         headers: Request headers; ``webhook-id``, ``webhook-timestamp`` and
             ``webhook-signature`` are all inputs to the check.
         now: Current Unix time; injected by tests.
@@ -178,7 +232,7 @@ def _verify_gitlab_signature(
         return False
 
     signed = f"{webhook_id}.{timestamp}.".encode() + payload
-    digest = hmac.new(signing_token.encode(), signed, hashlib.sha256).digest()
+    digest = hmac.new(hmac_key, signed, hashlib.sha256).digest()
     expected = base64.b64encode(digest).decode()
 
     matched = False
@@ -257,8 +311,10 @@ def gitlab_provider(
         A :class:`WebhookProvider` for ``POST /gitlab-webhook``.
     """
 
+    hmac_key = gitlab_hmac_key(signing_token) if signing_token else None
+
     def verify(headers: Mapping[str, str], body: bytes) -> bool:
-        if signing_token and _verify_gitlab_signature(body, signing_token, headers):
+        if hmac_key is not None and _verify_gitlab_signature(body, hmac_key, headers):
             return True
         return bool(secret_token) and _verify_gitlab_secret_token(
             secret_token or "", headers.get("X-Gitlab-Token")

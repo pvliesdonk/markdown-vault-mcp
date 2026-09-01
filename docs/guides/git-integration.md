@@ -72,10 +72,12 @@ GitLab authenticates webhooks two ways, and the version decides which one
 is available.
 
 **Signing token, GitLab 19.0 and later.** The stronger form, and the one to
-prefer:
+prefer. GitLab generates this one; you do not invent it. In the webhook
+form select **Generate signing token**, then copy the value it shows, which
+starts with `whsec_` and is displayed only once:
 
 ```bash
-MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN=$(openssl rand -hex 32)
+MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN=whsec_...
 ```
 
 GitLab signs each delivery with HMAC-SHA256 over the webhook id, the
@@ -84,8 +86,14 @@ The server checks the signature and rejects any delivery whose timestamp is
 more than five minutes from the current time, so a captured delivery cannot
 be replayed later.
 
+A self-chosen string authenticates nothing here: the part after `whsec_` is
+the base64-encoded key GitLab signs with, so the server decodes it before
+checking a signature. A value that is not base64 is refused at startup, and
+one without the prefix logs a warning.
+
 **Secret token, any version.** The original form, and the only one below
-19.0:
+19.0. This one you do choose, and enter in the webhook form's **Secret
+token** field:
 
 ```bash
 MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN=$(openssl rand -hex 32)
@@ -98,7 +106,7 @@ predates the signing token; the server logs a warning at startup when it is
 the only credential set.
 
 Either setting mounts `POST /gitlab-webhook`. In the GitLab project, go to
-**Settings > Webhooks**, point the URL at
+**Settings > Webhooks**, select **Add new webhook**, point the URL at
 `https://<your-host>/gitlab-webhook`, fill in the matching token field, and
 select the **Push events** trigger.
 

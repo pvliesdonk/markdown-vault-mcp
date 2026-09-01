@@ -745,9 +745,11 @@ class ProjectConfig:
                 "Signing token for the GitLab push-event webhook (GitLab "
                 "19.0+); when set, mounts POST /gitlab-webhook on HTTP/SSE "
                 "transports to trigger an immediate pull + reindex on push "
-                "events. Deliveries are authenticated by HMAC-SHA256 over the "
-                "webhook id, timestamp and body, and a delivery older than "
-                "5 minutes is rejected."
+                "events. GitLab generates this value; copy the `whsec_` "
+                "token it shows under Generate signing token rather than "
+                "inventing one. Deliveries are authenticated by HMAC-SHA256 "
+                "over the webhook id, timestamp and body, and a delivery "
+                "older than 5 minutes is rejected."
             ),
             "tags": ("sync",),
             "wizard": {"group": "Change detection", "when": "server", "secret": True},

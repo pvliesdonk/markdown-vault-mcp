@@ -3778,7 +3778,13 @@ authentication mechanisms with genuinely different security properties:
 - `GITLAB_WEBHOOK_SIGNING_TOKEN` (GitLab 19.0+) follows the Standard Webhooks
   specification. The HMAC-SHA256 covers `{webhook-id}.{webhook-timestamp}.`
   concatenated with the raw body — not the body alone — and the digest is
-  base64 behind a `v1,` prefix. The header is specified as possibly carrying
+  base64 behind a `v1,` prefix. The token is *not* the key: GitLab generates
+  it as `whsec_` plus the standard-base64 key, and `gitlab_hmac_key` decodes
+  it to raw bytes once when the provider is built, matching GitLab's own
+  verification example. Signing with the token text instead produces a digest
+  that never matches a real delivery while every self-signed test still
+  passes, so the tests derive the key from the token the way GitLab does and
+  one of them asserts a token-text signature is refused. The header is specified as possibly carrying
   several space-separated signatures, so every candidate is compared. Because
   the timestamp is inside the digest, it cannot be re-stamped, and a delivery
   more than `GITLAB_TIMESTAMP_TOLERANCE_S` (300 s) from now is rejected in

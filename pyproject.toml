@@ -209,6 +209,11 @@ ignore = ["E501"]
 # matching the implementation. Gate-only rule, so a `# noqa` would be
 # stripped (RUF100).
 "src/markdown_vault_mcp/git/interfaces.py" = ["PLR0913"]
+# S105: GITLAB_SIGNING_TOKEN_PREFIX is the published `whsec_` format marker
+# GitLab puts in front of a signing token, not a credential — the secret is
+# the base64 that follows it. Gate-only rule, so a `# noqa` would be
+# stripped (RUF100).
+"src/markdown_vault_mcp/_webhooks.py" = ["S105"]
 # Depends() and CurrentContext() calls in argument defaults are the standard
 # FastMCP dependency injection pattern — B008 is a false positive here.
 # Context/FastMCP/Vault imports must stay runtime (not TYPE_CHECKING) for

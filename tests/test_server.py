@@ -17,6 +17,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
 from mcp.shared.exceptions import McpError
 
+from markdown_vault_mcp.exceptions import ConfigurationError
 from tests.conftest import _meta_stale, _parse_tool_data, wait_for_mcp_writer_drain
 from tests.server_factory import make_server
 
@@ -570,6 +571,12 @@ class TestGitHubWebhookWiring:
         assert "webhook_inert" not in caplog.text
 
 
+#: A realistic GitLab signing token: `whsec_` plus the base64 key GitLab
+#: generates. A placeholder string is refused at provider construction, which
+#: is the point of the guard — so these tests carry a decodable one.
+GITLAB_SIGNING_TOKEN = "whsec_paWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaU="
+
+
 class TestGitLabWebhookWiring:
     """Cover the GitLab webhook's two credentials and their route gate (#1178)."""
 
@@ -582,7 +589,8 @@ class TestGitLabWebhookWiring:
         self, monkeypatch: pytest.MonkeyPatch, var: str
     ) -> None:
         """Either GitLab credential is enough to mount the route (#1178)."""
-        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{var}", "s3cret")
+        value = GITLAB_SIGNING_TOKEN if var.endswith("SIGNING_TOKEN") else "s3cret"
+        monkeypatch.setenv(f"MARKDOWN_VAULT_MCP_{var}", value)
         server = make_server(transport="http")
         assert "/gitlab-webhook" in _route_paths(server)
         assert "/github-webhook" not in _route_paths(server)
@@ -606,7 +614,9 @@ class TestGitLabWebhookWiring:
     ) -> None:
         """A vault mirrored to both hosts gets both routes, not one."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "gh")
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", "gl")
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", GITLAB_SIGNING_TOKEN
+        )
         paths = _route_paths(make_server(transport="http"))
         assert {"/github-webhook", "/gitlab-webhook"} <= paths
 
@@ -631,7 +641,9 @@ class TestGitLabWebhookWiring:
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
     ) -> None:
         """The warning is about the weak form being alone, not about being set."""
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", "sign")
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", GITLAB_SIGNING_TOKEN
+        )
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN", "plain")
         monkeypatch.setenv(
             "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
@@ -642,6 +654,17 @@ class TestGitLabWebhookWiring:
             make_server(transport="http")
 
         assert "gitlab_webhook_secret_token_only" not in caplog.text
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_undecodable_signing_token_fails_startup(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A token that cannot be a key is an error now, not a 401 per delivery."""
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN", "whsec_not base64!!"
+        )
+        with pytest.raises(ConfigurationError, match="signing token"):
+            make_server(transport="http")
 
 
 class TestToolManifest:
