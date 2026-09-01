@@ -786,13 +786,52 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#push-triggered-pull-github-webhook" class="md-nav__link">
+  <a href="#push-triggered-pull-webhooks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Push-Triggered Pull: GitHub Webhook
+        Push-Triggered Pull: Webhooks
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Push-Triggered Pull: Webhooks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#github" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitHub
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gitlab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitLab
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-both-endpoints-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What both endpoints do
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2005,13 +2044,52 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#push-triggered-pull-github-webhook" class="md-nav__link">
+  <a href="#push-triggered-pull-webhooks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Push-Triggered Pull: GitHub Webhook
+        Push-Triggered Pull: Webhooks
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Push-Triggered Pull: Webhooks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#github" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitHub
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gitlab" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GitLab
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-both-endpoints-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What both endpoints do
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2130,41 +2208,82 @@
 <li>Periodic pull uses fast-forward-only updates.</li>
 </ul>
 <p>Two mechanisms sit alongside the periodic loop, both described below: a
-GitHub webhook that pulls the moment someone pushes, and the <code>git_sync</code>
+push webhook that pulls the moment someone pushes, and the <code>git_sync</code>
 tool for pulling or pushing on demand from inside a conversation.</p>
-<h2 id="push-triggered-pull-github-webhook">Push-Triggered Pull: GitHub Webhook<a class="headerlink" href="#push-triggered-pull-github-webhook" title="Permanent link">&para;</a></h2>
+<h2 id="push-triggered-pull-webhooks">Push-Triggered Pull: Webhooks<a class="headerlink" href="#push-triggered-pull-webhooks" title="Permanent link">&para;</a></h2>
 <p>The periodic loop leaves reads up to <code>GIT_PULL_INTERVAL_S</code> seconds behind
 the remote (default 600). In a multi-author vault, where a teammate or
-another instance commits from elsewhere, that window is what the webhook
-closes: GitHub delivers a <code>push</code> event, the server pulls and reindexes
+another instance commits from elsewhere, that window is what a webhook
+closes: the host delivers a push event, the server pulls and reindexes
 straight away, and staleness drops to delivery latency, a couple of
 seconds in practice.</p>
+<p>GitHub and GitLab each get their own endpoint, mounted only when that
+host's credentials are set. Both endpoints run the same pull-and-reindex
+path and differ only in how a delivery proves it came from the host. Under
+stdio no HTTP server exists, so nothing is mounted and the settings have no
+effect.</p>
+<h3 id="github">GitHub<a class="headerlink" href="#github" title="Permanent link">&para;</a></h3>
 <p>Generate a secret and set it:</p>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET</span><span class="o">=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> </span><span class="m">32</span><span class="k">)</span>
 </code></pre></div>
-<p>Setting the secret mounts <code>POST /github-webhook</code> on the HTTP and SSE
-transports. Under stdio there is no HTTP server, so nothing is mounted and
-the setting has no effect. In the GitHub repository, add a webhook pointing
-at <code>https://&lt;your-host&gt;/github-webhook</code> with content type
-<code>application/json</code>, the same secret, and the <code>push</code> event selected.</p>
-<p>Behavior:</p>
+<p>Setting the secret mounts <code>POST /github-webhook</code>. In the GitHub repository,
+add a webhook pointing at <code>https://&lt;your-host&gt;/github-webhook</code> with content
+type <code>application/json</code>, the same secret, and the <code>push</code> event selected.</p>
+<p>Every delivery's <code>X-Hub-Signature-256</code> header is verified: HMAC-SHA256 over
+the raw body, compared in constant time.</p>
+<h3 id="gitlab">GitLab<a class="headerlink" href="#gitlab" title="Permanent link">&para;</a></h3>
+<p>GitLab authenticates webhooks two ways, and the version decides which one
+is available.</p>
+<p><strong>Signing token, GitLab 19.0 and later.</strong> The stronger form, and the one to
+prefer. GitLab generates this one; you do not invent it. In the webhook
+form select <strong>Generate signing token</strong>, then copy the value it shows, which
+starts with <code>whsec_</code> and is displayed only once:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN</span><span class="o">=</span>whsec_...
+</code></pre></div>
+<p>GitLab signs each delivery with HMAC-SHA256 over the webhook id, the
+timestamp and the raw body, following the Standard Webhooks specification.
+The server checks the signature and rejects any delivery whose timestamp is
+more than five minutes from the current time, so a captured delivery cannot
+be replayed later.</p>
+<p>A self-chosen string authenticates nothing here: the part after <code>whsec_</code> is
+the base64-encoded key GitLab signs with, so the server decodes it before
+checking a signature. A value that is not base64 is refused at startup, and
+one without the prefix logs a warning.</p>
+<p><strong>Secret token, any version.</strong> The original form, and the only one below
+19.0. This one you do choose, and enter in the webhook form's <strong>Secret
+token</strong> field:</p>
+<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN</span><span class="o">=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> </span><span class="m">32</span><span class="k">)</span>
+</code></pre></div>
+<p>GitLab sends this value in clear text in the <code>X-Gitlab-Token</code> header. It
+proves nothing about the body and never expires, so GitLab no longer
+recommends it for new webhooks. Reach for it when the GitLab version
+predates the signing token; the server logs a warning at startup when it is
+the only credential set.</p>
+<p>Either setting mounts <code>POST /gitlab-webhook</code>. In the GitLab project, go to
+<strong>Settings &gt; Webhooks</strong>, select <strong>Add new webhook</strong>, point the URL at
+<code>https://&lt;your-host&gt;/gitlab-webhook</code>, fill in the matching token field, and
+select the <strong>Push events</strong> trigger.</p>
+<p>Setting both accepts either form, which is what makes a migration possible:
+add the signing token here, switch the webhook over in GitLab, then drop the
+secret token once deliveries are landing.</p>
+<p>GitLab has no handshake event. Its <strong>Test</strong> button sends a real <code>Push Hook</code>,
+so a test delivery pulls exactly as a push does.</p>
+<h3 id="what-both-endpoints-do">What both endpoints do<a class="headerlink" href="#what-both-endpoints-do" title="Permanent link">&para;</a></h3>
 <ul>
-<li>Every delivery's <code>X-Hub-Signature-256</code> header is verified (HMAC-SHA256,
-  constant-time). An invalid or missing signature returns 401 and no git
-  operation runs.</li>
-<li>A <code>push</code> event pulls first, then reindexes only when HEAD actually moved.
+<li>An invalid or missing credential returns 401 and no git operation runs.</li>
+<li>A push event pulls first, then reindexes only when HEAD actually moved.
   A push to a branch the vault does not track leaves HEAD where it was, so
   it costs a fetch and nothing more.</li>
 <li><code>ping</code>, GitHub's handshake delivery, answers <code>pong</code>; every other event
   returns 200 and does nothing.</li>
-<li>A delivery whose pull did not apply returns 503, so GitHub retries it
+<li>A delivery whose pull did not apply returns 503, so the host retries it
   instead of marking it delivered. A pull that keeps failing, such as an
   unresolved conflict, exhausts the retries and waits for the next
   periodic tick. Divergent history is not a failure: it flows through the
   Syncthing-style sibling resolution described under
   <a href="#manual-sync-git_sync-tool"><code>git_sync</code></a> below.</li>
-<li>A delivery to a server with no managed remote returns 200, not 503. There
-  is nothing to pull and a retry cannot change that, so the delivery is
+<li>A delivery to a server with no managed remote returns 200, not 503. No
+  remote exists to pull from and a retry cannot change that, so the delivery is
   recorded rather than retried. Each one logs a warning naming the
   problem, and the server logs the same warning once at startup.</li>
 <li>A delivery arriving while the initial index build is still running is
@@ -2174,7 +2293,7 @@ at <code>https://&lt;your-host&gt;/github-webhook</code> with content type
 </ul>
 <div class="admonition warning">
 <p class="admonition-title">Managed mode only</p>
-<p>Set the secret only where the server owns the remote. Outside managed
+<p>Set these only where the server owns the remote. Outside managed
 mode the endpoint is inert: it verifies signatures and answers 200, but
 there is no remote to pull from, so every delivery is a no-op. The
 server says so at startup and on each delivery, because a webhook that
@@ -2182,7 +2301,7 @@ is quietly doing nothing looks the same as one that is working.</p>
 <p>This is a no-op rather than a failure as of 4.1. Before that the pull
 path ignored the sync switch unmanaged mode turns off and ran
 <code>git fetch origin</code> anyway: a checkout with no reachable <code>origin</code>
-failed that fetch and answered 503, burning GitHub's retries on every
+failed that fetch and answered 503, burning the host's retries on every
 push, and against a vault that was not a git repository at all the
 pull raised out of the handler.</p>
 </div>
@@ -2190,14 +2309,15 @@ pull raised out of the handler.</p>
 window; the loop is what catches the deliveries the webhook loses.</p>
 <div class="admonition note">
 <p class="admonition-title">The file watcher steps aside</p>
-<p>Setting <code>GITHUB_WEBHOOK_SECRET</code> disables the filesystem watcher, the
+<p>Setting any webhook credential disables the filesystem watcher, the
 same way <code>GIT_PULL_INTERVAL_S &gt; 0</code> does. Git rewrites the working tree
 during a checkout, and a watcher firing mid-checkout would scan a
 partial tree. Reindexing stays driven by the webhook and the periodic
 loop. See <a href="../../configuration/#file-watcher">File Watcher</a>.</p>
 </div>
-<p>The variable itself is listed in the
-<a href="../../configuration/#github-webhook-push-triggered-pull">configuration reference</a>.</p>
+<p>The variables themselves are listed under
+<a href="../../configuration/#change-detection">Change detection</a> in the
+configuration reference.</p>
 <h2 id="manual-sync-git_sync-tool">Manual sync: <code>git_sync</code> tool<a class="headerlink" href="#manual-sync-git_sync-tool" title="Permanent link">&para;</a></h2>
 <p>The periodic loops are time-based: pull every
 <code>MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S</code> seconds (default 600), push

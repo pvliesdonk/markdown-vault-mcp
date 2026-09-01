@@ -3434,6 +3434,18 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td>No</td>
 <td>Shared secret for the GitHub push-event webhook; when set, mounts POST /github-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events.</td>
 </tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN</code></td>
+<td>(none)</td>
+<td>No</td>
+<td>Signing token for the GitLab push-event webhook (GitLab 19.0+); when set, mounts POST /gitlab-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events. GitLab generates this value; copy the <code>whsec_</code> token it shows under Generate signing token rather than inventing one. Deliveries are authenticated by HMAC-SHA256 over the webhook id, timestamp and body, and a delivery older than 5 minutes is rejected.</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN</code></td>
+<td>(none)</td>
+<td>No</td>
+<td>Secret token for the GitLab push-event webhook, GitLab's plain-text form and the only one below 19.0; also mounts POST /gitlab-webhook. It proves nothing about the body and cannot expire, so prefer the signing token where the GitLab version offers it. Setting both accepts either, which is how an existing webhook migrates.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="summarize">Summarize<a class="headerlink" href="#summarize" title="Permanent link">&para;</a></h3>
