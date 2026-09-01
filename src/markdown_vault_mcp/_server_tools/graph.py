@@ -12,7 +12,11 @@ from markdown_vault_mcp.vault import Vault
 from .._icons import _TOOL_ICONS
 from .._server_queryable import needs_queryable
 from ..domain import get_vault
-from ._common import _maybe_wait_for_drain, _staleness_result
+from ._common import (
+    _maybe_wait_for_drain,
+    _staleness_result,
+    _WaitForPendingWrites,
+)
 
 
 def register(mcp: FastMCP) -> None:
@@ -31,7 +35,7 @@ def register(mcp: FastMCP) -> None:
     async def get_backlinks(
         path: str,
         limit: int | None = None,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Find all documents that link TO the given document (backlinks).
@@ -113,7 +117,7 @@ def register(mcp: FastMCP) -> None:
     async def get_outlinks(
         path: str,
         limit: int | None = None,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Find all links FROM the given document to other documents (outlinks).
@@ -191,7 +195,7 @@ def register(mcp: FastMCP) -> None:
     )
     async def get_broken_links(
         folder: str | None = None,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Find all links that point to non-existent documents (broken links).
@@ -259,7 +263,7 @@ def register(mcp: FastMCP) -> None:
         },
     )
     async def get_orphan_notes(
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Return all notes with no inbound or outbound links.
@@ -324,7 +328,7 @@ def register(mcp: FastMCP) -> None:
     )
     async def get_most_linked(
         limit: int = 10,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Return the documents with the most inbound links, ranked by backlink count.
@@ -384,7 +388,7 @@ def register(mcp: FastMCP) -> None:
         source: str,
         target: str,
         max_depth: int = 10,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Find the shortest connection path between two notes in the link graph.

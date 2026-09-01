@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 from dataclasses import asdict
-from typing import Any, TypeVar
+from typing import Annotated, Any, TypeVar
 
 from fastmcp.tools import ToolResult
 
@@ -19,6 +19,12 @@ logger = logging.getLogger(__name__)
 # ToolResult, so its result must be `return`ed directly from a tool, never
 # stored or processed as `_T` (mypy would not catch the mismatch).
 _T = TypeVar("_T")
+
+_WaitForPendingWrites = Annotated[
+    bool,
+    "Wait for recent index writes. On timeout, answer from the current index "
+    "with _meta.index_stale=true. Default false.",
+]
 
 
 def conventions_payload(vault: Vault, path: str) -> list[dict[str, str]]:

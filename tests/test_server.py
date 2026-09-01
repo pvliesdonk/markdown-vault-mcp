@@ -34,6 +34,7 @@ _CLEAR_VARS = (
     "MARKDOWN_VAULT_MCP_GIT_TOKEN",
     "MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER",
     "MARKDOWN_VAULT_MCP_SERVER_NAME",
+    "MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION",
     "MARKDOWN_VAULT_MCP_INSTRUCTIONS",
     "MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA",
     # Auth vars — ensure non-auth tests run unauthenticated
@@ -116,6 +117,14 @@ def _mcp_env_with_fields(vault_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "cluster,tags")
 
 
+@pytest.fixture
+def _mcp_env_maximal(_mcp_env_writable: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enable every feature that contributes generated instructions."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "https://vault.example")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+
+
 # ---------------------------------------------------------------------------
 # Server identity
 # ---------------------------------------------------------------------------
@@ -179,7 +188,91 @@ class TestServerIdentity:
             mode = [s for s in snippets if expected in s.text]
             assert len(mode) == 1, f"expected exactly one {expected} snippet"
             assert mode[0].role is InstructionRole.INSTANCE
-            assert snippets[-1] is mode[0], "the mode line is composed last"
+            assert snippets[0] is mode[0], "the mode fact must be composed first"
+
+    def test_domain_snippets_use_their_normative_roles(self) -> None:
+        """Pin the role ownership required by pvl-core's #299 design."""
+        from fastmcp_pvl_core import InstructionRole
+
+        from markdown_vault_mcp._instructions import _domain_snippets
+
+        snippets = _domain_snippets(
+            read_only=False,
+            conventions_file="_conventions.md",
+            summarize_note_limit=50,
+            okf_mode="on",
+        )
+        roles = {snippet.text: snippet.role for snippet in snippets}
+
+        assert roles[next(text for text in roles if "'summarize' handles" in text)] is (
+            InstructionRole.INSTANCE
+        )
+        assert roles[next(text for text in roles if "get_conventions" in text)] is (
+            InstructionRole.INSTANCE
+        )
+        assert roles[next(text for text in roles if "OKF bundle" in text)] is (
+            InstructionRole.INSTANCE
+        )
+        assert roles[next(text for text in roles if "'search' finds" in text)] is (
+            InstructionRole.CAPABILITIES
+        )
+        assert roles[next(text for text in roles if "'write'/'edit'" in text)] is (
+            InstructionRole.WORKFLOWS
+        )
+
+    @pytest.mark.usefixtures("_mcp_env_maximal")
+    def test_maximal_generated_instructions_fit_target(self) -> None:
+        """The complete generated feature matrix keeps operator headroom."""
+        from fastmcp_pvl_core import (
+            GENERATED_INSTRUCTIONS_TARGET_UTF16,
+            utf16_code_units,
+        )
+
+        text = make_server(transport="http").instructions or ""
+        for required in (
+            "READ-WRITE",
+            "summarize",
+            "get_conventions",
+            "OKF bundle",
+            "create_upload_link",
+            "get_job_result",
+        ):
+            assert required in text
+        assert utf16_code_units(text) <= GENERATED_INSTRUCTIONS_TARGET_UTF16
+
+    @pytest.mark.usefixtures("_mcp_env_maximal")
+    def test_representative_operator_context_fits_client_limit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Routing and policy retain their positions inside the client budget."""
+        from fastmcp_pvl_core import (
+            CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16,
+            utf16_code_units,
+        )
+
+        routing = "Contains projects, meetings, and operational notes."
+        policy = "Prefer concise answers and cite each note by path."
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION", routing)
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA", policy)
+
+        text = make_server(transport="http").instructions or ""
+        assert utf16_code_units(text) <= CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16
+        assert text.index(routing) < text.index("READ-WRITE") < text.index(policy)
+        assert text.index(policy) < text.index("'search' finds")
+        assert text.index("get_job_result") < text.index("Full documentation")
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_distinct_server_names_produce_distinct_identity_prefixes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        prefixes = []
+        for name in ("work-vault", "corpus-mcp"):
+            monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", name)
+            text = make_server().instructions or ""
+            prefixes.append(text.splitlines()[0])
+            assert prefixes[-1].startswith(f"{name}: ")
+
+        assert prefixes[0] != prefixes[1]
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_no_domain_snippet_is_silently_pruned(

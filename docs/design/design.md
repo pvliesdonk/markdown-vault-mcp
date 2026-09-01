@@ -1174,6 +1174,11 @@ detect: a write that started and finished entirely between two snapshots.
 
 Each such tool accepts an optional `wait_for_pending_writes: bool = false`
 parameter (client-facing name; the internal primitive is still "drain").
+Its wire-schema description is owned once by the shared
+`_WaitForPendingWrites` `Annotated` alias in `_server_tools/_common.py`;
+the longer per-tool `Args:` entries remain developer documentation. This
+prevents the same schema prose from being copied into every read tool while
+keeping the runtime signatures and Google-style docstrings explicit (#1010).
 When `true`, the tool layer polls `IndexFacet.is_drained()`
 with `asyncio.sleep` until the writer drains or
 `MARKDOWN_VAULT_MCP_DRAIN_TIMEOUT_S` (default 60 s) elapses, then
@@ -3005,6 +3010,45 @@ concise routing context at `ROUTING`, and
 and logs a deprecation warning; when it is set, both additive variables are
 ignored. None reaches `ProjectConfig`: a domain field mirroring them would be
 a second, silently-diverging reader of the same variables.
+
+The generated-text compatibility target is a tested configuration matrix,
+not an estimate from the default stdio server. The maximal case enables
+read-write mode, summarization, conventions, OKF, jobs, and HTTP transfer and
+must remain at or below pvl-core's 1,536 UTF-16-unit generated target. It is
+1,495 units as of #1252's acceptance fix. A second case adds representative
+routing and policy and must remain within Claude Code's 2,048-unit limit.
+The mode, summarize limit, conventions, and OKF guidance are `INSTANCE` facts;
+the vault/search seed is `CAPABILITIES`; write, transfer, and job sequences are
+`WORKFLOWS`.
+
+Instructions deliberately carry only concise discovery seeds, enforced facts,
+and the vault-wide OKF interpretation/editing rule. Tool descriptions own the
+detailed call contract. This reduces the overlap identified by #1257 without
+claiming that every repeated workflow sentence is safely removable: whether a
+tool-searching client needs a larger discovery seed remains an experiment and
+#1257 stays open for that evidence.
+
+**Client-facing surface budget**: `tests/test_client_surface_budget.py`
+constructs the maximal discoverable HTTP surface (read-write, summarization,
+OKF enforced writes, managed Git, transfer, jobs, prompts, resources, and
+resource templates), enumerates real MCP protocol objects, and measures UTF-16
+units after FastMCP has parsed docstrings and built schemas. Schemas use compact,
+sorted JSON so formatting cannot move the baseline. This is a prose/schema
+budget, not the byte size of complete serialized list responses: names, icons,
+annotations, and other protocol metadata are deliberately outside it. The
+initial post-reduction measurement is 57,228 units: 1,495 instructions, 22,853
+tool descriptions,
+27,259 input schemas, 3,353 output schemas, 842 prompt descriptions, 101 prompt
+argument descriptions, 613 resource descriptions, and 712 resource-template
+descriptions. Reviewed category ceilings plus a 58,000-unit total ceiling make
+future growth visible without turning the exact measurement into a golden
+snapshot.
+
+Parameterless tools always pass an explicit concise `description=` at
+registration. Otherwise FastMCP falls back to the complete raw docstring when
+it extracts no parameters, exposing developer-only `Returns:` detail and making
+the wire cost depend on whether the tool happens to accept an argument (#1253;
+upstream FastMCP #4952).
 
 **Tool semantics**:
 - `read(path)` returns full file content + frontmatter metadata

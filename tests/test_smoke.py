@@ -145,8 +145,13 @@ def test_instructions_compose_semantic_operator_roles(
         "markdown-vault-mcp: Generic markdown vault MCP with hybrid search"
     )
     assert sections[1] == "Demo material."
-    assert sections[2] == "This instance is READ-WRITE — write tools are available."
-    assert sections[3] == "House rule: be brief."
+    mode = "This instance is READ-WRITE; write tools are available."
+    policy = "House rule: be brief."
+    assert sections[2] == mode
+    assert sections.index(mode) < sections.index(policy)
+    assert sections.index(policy) < next(
+        index for index, section in enumerate(sections) if "'search' finds" in section
+    )
     assert sections[-1] == (
         "Full documentation for this server: "
         "https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt"

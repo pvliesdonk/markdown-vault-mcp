@@ -17,6 +17,7 @@ from ..domain import get_vault
 from ._common import (
     _maybe_wait_for_drain,
     _staleness_result,
+    _WaitForPendingWrites,
     attach_conventions,
     attach_okf,
     attach_okf_to_results,
@@ -43,7 +44,7 @@ def register(mcp: FastMCP) -> None:
         filters: dict[str, str] | None = None,
         chunks_per_file: int | None = None,
         snippet_words: int | None = None,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Find documents matching a query using full-text or semantic search.
@@ -272,7 +273,7 @@ def register(mcp: FastMCP) -> None:
         pattern: str | None = None,
         include_attachments: bool = False,
         filters: dict[str, str] | None = None,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """List documents (and optionally attachments) in the vault.
@@ -353,7 +354,7 @@ def register(mcp: FastMCP) -> None:
         },
     )
     async def list_folders(
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[str]:
         """List all folder paths that contain documents.
@@ -406,7 +407,7 @@ def register(mcp: FastMCP) -> None:
     )
     async def list_tags(
         field: str = "tags",
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[str]:
         """List all distinct values for a frontmatter field across the vault.
@@ -462,7 +463,7 @@ def register(mcp: FastMCP) -> None:
         },
     )
     async def stats(
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Get an overview of the vault's size, capabilities, and configuration.
@@ -540,7 +541,7 @@ def register(mcp: FastMCP) -> None:
         chunks_per_file: int | None = None,
         folder: str | None = None,
         filters: dict[str, str] | None = None,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Find notes most semantically similar to the given document.
@@ -649,7 +650,7 @@ def register(mcp: FastMCP) -> None:
         path: str,
         max_level: int | None = None,
         max_notes: int = 200,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]] | dict[str, Any]:
         """Heading outline for a single note or a whole folder subtree.
@@ -714,7 +715,7 @@ def register(mcp: FastMCP) -> None:
     async def get_recent(
         limit: int = 20,
         folder: str | None = None,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
         """Get the most recently modified notes in the vault.
@@ -779,7 +780,7 @@ def register(mcp: FastMCP) -> None:
         path: str,
         similar_limit: int = 5,
         link_limit: int = 10,
-        wait_for_pending_writes: bool = False,
+        wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Get a consolidated context dossier for a document.
@@ -965,6 +966,7 @@ def register(mcp: FastMCP) -> None:
         return await asyncio.to_thread(_lookup)
 
     @mcp.tool(
+        description="Audit the vault's Open Knowledge Format conformance.",
         icons=_TOOL_ICONS["okf_validate"],
         tags={"okf"},
         annotations={

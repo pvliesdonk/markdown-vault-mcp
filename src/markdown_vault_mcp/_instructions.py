@@ -118,96 +118,70 @@ def _domain_snippets(
     Returns:
         The applicable guidance fragments, in the order they are composed.
     """
+    # Enforced here, so announced here — see above. Keep the deployment mode
+    # first among INSTANCE facts because it is the most consequential routing
+    # constraint for a caller.
     snippets = [
         Snippet(
-            "A searchable markdown document vault. "
-            "Paths are always relative (e.g. 'Journal/note.md').",
-            InstructionRole.CAPABILITIES,
+            "This instance is READ-ONLY; write tools are not available."
+            if read_only
+            else "This instance is READ-WRITE; write tools are available.",
+            InstructionRole.INSTANCE,
         )
     ]
-    if not read_only:
-        snippets.append(
-            Snippet(
-                "Write tools: use 'write' to create, 'edit' for targeted changes "
-                "(read first), 'append' to add to the end of a note (no read "
-                "needed), 'rename' to move (pass update_links=True to fix links "
-                "in other notes), 'delete' to remove. Use 'move_folder(old_dir, "
-                "new_dir)' to move an entire folder subtree and rewrite all vault "
-                "links in one call. All write operations update the "
-                "search index immediately — never call 'reindex' after write, edit, "
-                "append, delete, or rename.",
-                InstructionRole.WORKFLOWS,
-                _WRITE_SNIPPET_TOOLS,
-            )
-        )
     snippets.append(
         Snippet(
-            "Use 'search' to find documents, 'read' for full content, "
-            "'list_documents' to enumerate, 'stats' to check capabilities. Omit "
-            "'mode' on 'search' and the server picks the best mode this vault can "
-            "serve — hybrid where embeddings exist, keyword otherwise; pass "
-            "mode='keyword' for exact terms, operators, or filenames. "
-            "'browse_vault' and 'show_context' open a visual UI for the user — do "
-            "not call them to retrieve vault content; use 'search', 'read', "
-            "'list_documents', or 'get_context' instead.",
-            InstructionRole.WORKFLOWS,
+            "Notes use vault-relative paths. 'search' finds; 'read' returns full "
+            "content; 'list_documents' enumerates; 'stats' reports capabilities. "
+            "Omit 'mode' for automatic search; use 'keyword' for exact terms.",
+            InstructionRole.CAPABILITIES,
             ("search", "read", "list_documents", "stats"),
         )
     )
     snippets.append(
         Snippet(
-            "No summarization backend is configured, so there is no "
-            "'summarize' tool; for multi-note or folder summaries use the "
-            "'summarize-subtree' prompt, which summarizes in batches "
-            "(delegated to subagents when available) instead of pulling "
-            "every note into your context.",
-            InstructionRole.WORKFLOWS,
+            "No 'summarize' tool is configured; use the 'summarize-subtree' "
+            "prompt for multi-note or folder summaries.",
+            InstructionRole.INSTANCE,
         )
         if summarize_note_limit is None
         else Snippet(
-            f"The 'summarize' tool reads at most {summarize_note_limit} "
-            "notes per call; for a folder larger than that (check with "
-            "'get_toc'), call it once per subfolder and combine the results.",
-            InstructionRole.WORKFLOWS,
+            f"'summarize' handles at most {summarize_note_limit} notes per call; "
+            "split larger folders with 'get_toc'.",
+            InstructionRole.INSTANCE,
             ("summarize", "get_toc"),
         )
     )
     if conventions_file is not None:
         snippets.append(
             Snippet(
-                f"Folders may carry authoring conventions in '{conventions_file}' "
-                "files; call 'get_conventions(path)' before creating or "
-                "restructuring notes, and follow any 'conventions' returned by "
-                "write/edit results.",
-                InstructionRole.WORKFLOWS,
+                "Before creating, restructuring, or linking notes, call "
+                f"'get_conventions(path)' and follow it ('{conventions_file}' "
+                "configured).",
+                InstructionRole.INSTANCE,
                 ("get_conventions",),
             )
         )
     if okf_mode != "off":
         snippets.append(
             Snippet(
-                "When the vault is an OKF bundle (Open Knowledge Format — "
-                "'okf_version' declared in the root 'index.md'; check the 'okf' "
-                "section of 'stats'), search/read results carry an 'okf' key with "
-                "each note's type, lifecycle status, staleness, and trust tier "
-                "(unverified / machine-confirmed / human-reviewed) — weigh "
-                "deprecated, stale, or unverified notes accordingly. When editing "
-                "such a vault, follow OKF conventions: record changes in 'log.md', "
-                "keep 'index.md' listings current, and prefer root-relative "
-                "markdown links for new cross-references.",
-                InstructionRole.WORKFLOWS,
+                "If 'stats.okf' reports an OKF bundle ('okf_version' in root "
+                "'index.md'), discount deprecated, stale, or unverified notes by "
+                "trust tier. For edits, update 'log.md'/'index.md' and use "
+                "root-relative Markdown links.",
+                InstructionRole.INSTANCE,
             )
         )
-    # Enforced here, so announced here — see above. ``INSTANCE`` gives the
-    # deployment mode its semantic position alongside operator routing context.
-    snippets.append(
-        Snippet(
-            "This instance is READ-ONLY — write tools are not available."
-            if read_only
-            else "This instance is READ-WRITE — write tools are available.",
-            InstructionRole.INSTANCE,
+    if not read_only:
+        snippets.append(
+            Snippet(
+                "Use 'write'/'edit'/'append' to change notes, "
+                "'rename'/'move_folder' to move, and 'delete' to remove. Writes "
+                "update the index; never call 'reindex' afterward.",
+                InstructionRole.WORKFLOWS,
+                _WRITE_SNIPPET_TOOLS,
+            )
         )
-    )
     return snippets
 
 

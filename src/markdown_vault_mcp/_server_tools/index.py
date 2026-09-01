@@ -31,6 +31,7 @@ def register(mcp: FastMCP) -> None:
     """
 
     @mcp.tool(
+        description="Check embedding provider and vector-index status.",
         icons=_TOOL_ICONS["embeddings_status"],
         annotations={
             "title": "Embeddings Status",
@@ -63,6 +64,7 @@ def register(mcp: FastMCP) -> None:
         return await asyncio.to_thread(vault.index.embeddings_status)
 
     @mcp.tool(
+        description="Report FTS index readiness, progress, and last build error.",
         annotations={
             "title": "Index Status",
             "readOnlyHint": True,
