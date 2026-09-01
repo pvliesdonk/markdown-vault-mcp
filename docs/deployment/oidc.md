@@ -9,10 +9,10 @@ Optional token-based authentication for HTTP deployments. OIDC activates automat
 
 | Mode | Required Variables | Description |
 |------|-------------------|-------------|
-| **remote** (recommended) | `BASE_URL`, `OIDC_CONFIG_URL` | Local JWKS validation. No client credentials needed. |
+| **remote** | `BASE_URL`, `OIDC_CONFIG_URL` | Local JWKS validation. No client credentials needed. |
 | **oidc-proxy** | `BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Full OAuth proxy with session management. |
 
-Set `MARKDOWN_VAULT_MCP_AUTH_MODE` to force a mode, or let the server auto-detect based on which variables are set.
+Set `MARKDOWN_VAULT_MCP_AUTH_MODE` to state the mode, or let the server auto-detect it from which variables are set.
 
 ## Remote Mode Variables
 
@@ -50,7 +50,7 @@ No `CLIENT_ID` or `CLIENT_SECRET` needed. Tokens are validated locally via JWKS.
 
 ## JWT Signing Key
 
-When `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` is unset, FastMCP derives the signing key from the OIDC client secret using deterministic key derivation, so the key stays the same across restarts and tokens keep validating.
+The signing key applies to oidc-proxy mode; remote mode does not use it. When `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` is unset, FastMCP derives the signing key from the OIDC client secret using deterministic key derivation, so the key stays the same across restarts and tokens keep validating.
 
 The real reason to set an explicit key is secret rotation: because the default key is derived from the client secret, rotating that secret changes the derived key and invalidates every token issued under the old one. Setting an explicit signing key decouples token validity from client-secret rotation:
 
@@ -60,6 +60,8 @@ openssl rand -hex 32
 ```
 
 ## Setup with Authelia
+
+This section configures oidc-proxy mode. Remote mode needs no client registration, since the client authenticates with the provider itself.
 
 !!! note
     Authelia does not support Dynamic Client Registration (RFC 7591). Clients must be registered manually in `configuration.yml`.
@@ -329,4 +331,8 @@ Both must reach this server, and the `resource` field in the JSON must read `htt
 <!-- Project-specific notes for OIDC deployment go here; kept across copier
      update. (E.g. "Keycloak requires X claim", "Authelia token-cache quirk
      for /admin paths", "this server's audience claim must include 'mcp'".) -->
+
+## Which mode this server prefers
+
+The Auth Modes table above states what each mode needs. For why remote is the better default here, and how to move an existing oidc-proxy deployment to it, see [Choosing an OIDC mode](../guides/authentication.md#choosing-an-oidc-mode).
 <!-- DOMAIN-OIDC-EXTRA-END -->

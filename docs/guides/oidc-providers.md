@@ -127,7 +127,7 @@ If login fails:
 Use Keycloak directly as your OIDC provider for username/password (or federated) authentication.
 
 !!! tip "Remote mode (simpler alternative)"
-    If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication: Remote mode](authentication.md#remote-mode) for details.
+    If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication: Remote mode](authentication.md#how-remote-mode-works) for details.
 
 ### 1. Create a realm
 
@@ -193,7 +193,7 @@ If login fails:
 Use Google as your OIDC identity provider to authenticate users with their Google accounts.
 
 !!! tip "Remote mode (simpler alternative)"
-    If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead: set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication: Remote mode](authentication.md#remote-mode).
+    If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead: set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication: Remote mode](authentication.md#how-remote-mode-works).
 
 ### 1. Create OAuth credentials
 

@@ -13,6 +13,7 @@ Authelia
 Keycloak
 OAuth
 OIDC
+OIDCProxy
 Traefik
 
 # --- HTTP / URL terminology ---
