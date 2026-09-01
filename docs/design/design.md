@@ -2103,6 +2103,10 @@ The MCP tool `get_connection_path` returns
 
 ## Module Design
 
+The sections below specify a handful of modules in depth. For the complete
+index — every file under `src/markdown_vault_mcp/` with a one-line
+responsibility — see [`module-map.md`](module-map.md).
+
 ### `__init__.py`: Minimal Package Root (#665, #903)
 
 The package root is the bare template skeleton — a module docstring and
