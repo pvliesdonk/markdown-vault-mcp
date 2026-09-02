@@ -11,6 +11,16 @@ chunk-cap heuristic, and the ``from_env`` field validators — lives here instea
 
 Imports only fastmcp_pvl_core, stdlib, and sibling domain modules (never
 ``config`` at runtime) so ``config.py`` can import these without a cycle.
+
+Module-scope imports here are also bound by the config import floor: every
+module reachable from ``ProjectConfig`` at import time must resolve with only
+``fastmcp-pvl-core`` and PyYAML installed, because the template's
+``scripts/gen_config_surface.py`` imports ``ProjectConfig`` under
+``uv run --no-project`` with exactly those two, before any project
+virtualenv exists (#1259). Anything reaching a further third-party package —
+``markdown_vault_mcp.git`` reaches ``python-frontmatter``, for one — belongs
+in ``TYPE_CHECKING`` plus a function-local import at the use site.
+``tests/test_config_import_floor.py`` enforces this.
 """
 
 from __future__ import annotations
@@ -25,10 +35,10 @@ from fastmcp_pvl_core import parse_bool as _parse_bool
 from markdown_vault_mcp._identity import configure_identity_claims
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.exceptions import ConfigurationError
-from markdown_vault_mcp.git import GitWriteStrategy
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.config import ProjectConfig
+    from markdown_vault_mcp.git import GitWriteStrategy
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.summarizer import Summarizer
     from markdown_vault_mcp.types import WriteCallback
@@ -127,6 +137,12 @@ def _build_git_strategy(
     ``enable_sync`` toggles both pull and push together — every call site enables
     or disables them in lockstep.
     """
+    # Imported here rather than at module scope: `markdown_vault_mcp.git`
+    # reaches `python-frontmatter` transitively, and every module reachable
+    # from `ProjectConfig` at import time must resolve under the
+    # config-surface generator's dependency floor (see the module docstring).
+    from markdown_vault_mcp.git import GitWriteStrategy
+
     git = config.git
     # The claim kwargs below no longer drive claim extraction — they inform
     # only the startup identity warning. Registration with the identity layer

@@ -3299,6 +3299,43 @@ first-party prompt is a packaging defect.
 
 ## Configuration
 
+### The config import floor (#1259)
+
+Importing `markdown_vault_mcp.config` must succeed with only
+`fastmcp-pvl-core` and PyYAML installed. That is not a style preference: the
+template-owned `scripts/gen_config_surface.py` imports `ProjectConfig` to
+discover this project's domain env vars, and it runs from copier's
+`_migrations` under `uv run --no-project --with fastmcp-pvl-core --with
+pyyaml` — before any project virtualenv exists. Nothing else this project
+declares as a dependency is importable at that moment.
+
+A module-scope import that reaches further fails in a way that reads as
+someone else's bug. `_import_project_config` treats the `ModuleNotFoundError`
+as tolerable (a stderr warning, then `None`), so discovery yields zero domain
+vars; the mcpb install-screen `files:` guard then aborts the run with
+"names config vars that do not exist (check for a typo…)" — pointing at the
+install screen rather than at the import. That is how the weekly copier-update
+workflow failed twice in August 2026, invisibly to anyone running the
+generator locally: from inside the repository, `uv run --no-project` still
+resolves the project's own `.venv`, which has everything installed.
+
+So a domain module reachable from `ProjectConfig` puts any heavier import
+behind `TYPE_CHECKING` (annotations — `from __future__ import annotations` is
+on everywhere, so they never evaluate) plus a function-local import at the
+runtime use site. `config_sections/_assembly.py` → `markdown_vault_mcp.git`
+(the `GitWriteStrategy` construction in `_build_git_strategy`) is one such
+edge; `config_sections/vault_settings.py` → `markdown_vault_mcp.okf` (the
+`OKF_INDEXED_FIELDS` table in `effective_indexed_fields`) is another, and both
+reach `python-frontmatter`. Note that importing `markdown_vault_mcp.git.types`
+would not have helped: a submodule import executes the package `__init__`
+first, and that is where the chain to `frontmatter` runs — which is also why
+the git edge is the older of the two, and why it, not the OKF edge, is what
+the pre-`config_sections/` tree tripped over in August.
+
+`tests/test_config_import_floor.py` enforces the floor by importing
+`config` in a fresh interpreter and asserting it adds no third-party module
+beyond what `fastmcp_pvl_core` and `yaml` already pull in.
+
 ### Phase 1: Python API Only
 
 Configuration is the `Vault` constructor. No config files.
