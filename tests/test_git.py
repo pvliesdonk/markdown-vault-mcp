@@ -6722,14 +6722,16 @@ class TestTheExcludeProbeItself:
 
         Reporting an exclusion nobody asked for would drop a real path from
         the staging pathspec; reporting none lets the ``git add`` that follows
-        fail loudly with git's own stderr.
+        fail loudly with git's own stderr — and when the paths were not
+        excluded after all, that ``git add`` succeeds and the warning is the
+        only record that the answer came from a failure.
         """
         from markdown_vault_mcp.git.strategy import _ignored_paths
 
         not_a_repo = tmp_path / "plain"
         not_a_repo.mkdir()
 
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.WARNING):
             assert _ignored_paths(str(not_a_repo), (not_a_repo / "x.md",)) == set()
 
         assert any("git_check_ignore_failed" in r.message for r in caplog.records)

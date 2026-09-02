@@ -1690,8 +1690,11 @@ def _ignored_paths(root: str, paths: Sequence[Path]) -> set[str]:
         # 1 means "none of them", which is the ordinary negative answer. Above
         # that is a real failure; report no exclusions, exactly as the
         # single-path probe did, and let the ``git add`` that follows surface
-        # the underlying problem with its own stderr.
-        logger.debug(
+        # the underlying problem with its own stderr. Warned rather than
+        # traced: when the paths turn out not to be excluded after all, that
+        # ``git add`` succeeds and this is the only record that the filter
+        # answered from a failure rather than from the exclude rules.
+        logger.warning(
             "git_check_ignore_failed rc=%s stderr=%s",
             result.returncode,
             (result.stderr or "").strip(),
