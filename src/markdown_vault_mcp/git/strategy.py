@@ -1810,7 +1810,7 @@ def _index_matches_head(root: str, pathspec: Sequence[str]) -> bool:
     The question a commit decision has to ask is "did this operation stage
     anything", not "does the index differ from HEAD anywhere". Asking the
     repository-wide form let an operation that staged nothing of its own —
-    a byte-identical write, a delete of an already-deleted path — see the
+    writing byte-identical content is the clearest way in — see the
     operator's deliberately-uncommitted staged work and commit it under the
     operation's message.
 
