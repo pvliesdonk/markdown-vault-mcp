@@ -3384,7 +3384,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES` | Comma-separated OAuth scopes to request | `openid` |
 | `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES` | Scopes advertised to MCP clients in protected-resource metadata; required scopes are always added on top (pvl-core 4.11.3) | `openid offline_access` |
 | `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | Verify the upstream access token as JWT instead of the id token. Set `true` only when your provider issues JWT access tokens and you need audience-claim validation on that token | `false` (verify id token) |
-| `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | Comma-separated allowlist of non-.md extensions (without dot), such as `pdf,png,docx`; use `*` to allow all non-.md files | common list (pdf, png, jpg, docx, …) |
+| `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` | Comma-separated allowlist of non-.md extensions, such as `pdf,png,docx`; case and a leading dot are ignored, so `PDF` and `.pdf` name the same type; use `*` to allow all non-.md files | common list (pdf, png, jpg, docx, …) |
 | `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB` | Maximum attachment size in MB, enforced by the `read` / `write` / `fetch` MCP tools (not the vault library); `0` disables the limit | `1.0` |
 | `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` | Maximum bytes returned by full-document `read()` for `.md` files; raises `ValueError` if exceeded. `read(path, section=...)` for partial reads bypasses the cap. `0` disables the limit | `262144` (256 KB) |
 | `MARKDOWN_VAULT_MCP_APP_DOMAIN` | Claude app domain for MCP Apps iframe sandboxing; auto-computed from `BASE_URL` via `_compute_claude_app_domain()` | derived from `BASE_URL` |
@@ -3507,6 +3507,14 @@ identity_providers:
 The server supports reading and writing non-markdown binary files (PDFs, images, and so on) by overloading the existing MCP tools, with no new tool registrations.
 
 **Extension-based dispatch**: `.md` files always follow the markdown path. All other extensions are treated as attachments if they appear in the configured allowlist.
+
+Both sides of that comparison are normalized identically —
+`artifact_suffix()` lower-cases the path's extension and drops the leading
+dot, and `effective_attachment_extensions()` does the same to each configured
+value — so `pdf`, `PDF` and `.pdf` all name one file type, whichever side they
+are written on (#1239). A configured entry that normalizes to nothing (`.`) is
+dropped rather than becoming the empty extension, which would otherwise
+allowlist every extension-less file. The `*` wildcard is unaffected.
 
 That decision has a single owner, `utils/content_kind.py` (#1235). It was
 previously re-derived from the path string at roughly fifteen call sites whose

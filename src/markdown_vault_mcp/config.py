@@ -313,9 +313,10 @@ class ProjectConfig:
         default=None,
         metadata={
             "help": (
-                "Comma-separated allowed attachment extensions without the "
-                "dot (e.g. pdf,png,jpg); use * to allow every non-markdown "
-                "file. Unset selects the built-in allowlist."
+                "Comma-separated allowed attachment extensions (e.g. "
+                "pdf,png,jpg); case and a leading dot are ignored, so PDF "
+                "and .pdf name the same type. Use * to allow every "
+                "non-markdown file. Unset selects the built-in allowlist."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},

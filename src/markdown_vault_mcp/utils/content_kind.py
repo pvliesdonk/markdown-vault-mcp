@@ -153,14 +153,17 @@ def effective_attachment_extensions(
 ) -> frozenset[str]:
     """Return the effective set of allowed attachment extensions.
 
-    Note the configured values are used verbatim: unlike the path side, they
-    are not lower-cased or dot-stripped, so a config of ``["PDF"]`` or
-    ``[".pdf"]`` matches nothing. That asymmetry is pre-existing and pinned by
-    a test rather than fixed here (#1239).
+    Configured values are normalized the way :func:`artifact_suffix` normalizes
+    the path side — surrounding whitespace and leading dots stripped, then
+    lower-cased — so ``pdf``, ``PDF`` and ``.pdf`` all name the same file type
+    (#1239).  The wildcard ``*`` is unaffected.  An entry that normalizes to
+    nothing (``"."``, ``" "``) is dropped rather than kept as ``""``, which
+    :func:`artifact_suffix` returns for an extension-less path and which would
+    silently allowlist files such as ``Makefile``.
 
     Args:
-        attachment_extensions: User-configured extension list, or ``None``
-            to use the default set.
+        attachment_extensions: User-configured extension list, in any case and
+            with or without leading dots, or ``None`` to use the default set.
 
     Returns:
         Frozenset of lower-case extension strings (without leading dot).
@@ -168,4 +171,5 @@ def effective_attachment_extensions(
     """
     if attachment_extensions is None:
         return DEFAULT_ATTACHMENT_EXTENSIONS
-    return frozenset(attachment_extensions)
+    normalized = (ext.strip().lstrip(".").lower() for ext in attachment_extensions)
+    return frozenset(ext for ext in normalized if ext)

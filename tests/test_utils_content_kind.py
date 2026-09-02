@@ -177,20 +177,29 @@ class TestEffectiveAttachmentExtensions:
 
     def test_wildcard_passes_through(self) -> None:
         assert effective_attachment_extensions(["*"]) == _WILDCARD
+        assert effective_attachment_extensions([" * "]) == _WILDCARD
 
-    def test_config_side_is_not_normalized_today(self) -> None:
-        """Pins a known asymmetry as current behaviour, not as desirable.
+    @pytest.mark.parametrize("configured", ["pdf", "PDF", ".pdf", ".PDF", "  pdf  "])
+    def test_config_side_is_normalized_like_the_path_side(
+        self, configured: str
+    ) -> None:
+        """Case and a leading dot do not change what an entry means (#1239).
 
-        Only the *path* side is lower-cased and dot-stripped, so an operator
-        who writes ``PDF`` or ``.pdf`` in the allowlist matches nothing. Pinning
-        it here makes the eventual fix a visible one-line flip in this test
-        rather than a silent semantic drift. Tracked as #1239.
+        The path side is lower-cased and dot-stripped by ``artifact_suffix``;
+        an allowlist written ``PDF`` or ``.pdf`` used to match nothing at all.
         """
-        assert (
-            is_allowed_artifact("report.pdf", effective_attachment_extensions(["PDF"]))
-            is False
-        )
-        assert (
-            is_allowed_artifact("report.pdf", effective_attachment_extensions([".pdf"]))
-            is False
-        )
+        exts = effective_attachment_extensions([configured])
+        assert exts == frozenset({"pdf"})
+        assert is_allowed_artifact("report.pdf", exts) is True
+        assert is_allowed_artifact("report.PDF", exts) is True
+
+    @pytest.mark.parametrize("configured", [".", "..", "  ", ""])
+    def test_entries_normalizing_to_nothing_are_dropped(self, configured: str) -> None:
+        """An empty entry must not allowlist extension-less files.
+
+        ``artifact_suffix`` returns ``""`` for a path with no extension, so a
+        surviving ``""`` would quietly admit ``Makefile`` and friends.
+        """
+        exts = effective_attachment_extensions([configured, "pdf"])
+        assert exts == frozenset({"pdf"})
+        assert is_allowed_artifact("Makefile", exts) is False

@@ -274,8 +274,10 @@ class Vault:
             disables the pull loop.
         exclude_patterns: Glob patterns (relative to *source_dir*) for files
             and directories to exclude from indexing.
-        attachment_extensions: Allowlist of extensions (without leading dot)
-            for binary attachments.  ``["*"]`` accepts all extensions.
+        attachment_extensions: Allowlist of extensions for binary
+            attachments, in any case and with or without leading dots
+            (``"pdf"``, ``"PDF"`` and ``".pdf"`` are the same type).
+            ``["*"]`` accepts all extensions.
         max_attachment_size_mb: Attachment context-size cap in megabytes,
             enforced by the ``read`` / ``write`` / ``fetch`` MCP tools (not by
             the vault library). ``0`` disables the limit (default ``1.0``).

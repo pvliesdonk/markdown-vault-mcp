@@ -193,7 +193,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS",
-          "description": "Comma-separated allowed attachment extensions without the dot (e.g. pdf,png,jpg); use * to allow every non-markdown file. Unset selects the built-in allowlist."
+          "description": "Comma-separated allowed attachment extensions (e.g. pdf,png,jpg); case and a leading dot are ignored, so PDF and .pdf name the same type. Use * to allow every non-markdown file. Unset selects the built-in allowlist."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB",
@@ -767,7 +767,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS",
-          "description": "Comma-separated allowed attachment extensions without the dot (e.g. pdf,png,jpg); use * to allow every non-markdown file. Unset selects the built-in allowlist."
+          "description": "Comma-separated allowed attachment extensions (e.g. pdf,png,jpg); case and a leading dot are ignored, so PDF and .pdf name the same type. Use * to allow every non-markdown file. Unset selects the built-in allowlist."
         },
         {
           "name": "MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB",

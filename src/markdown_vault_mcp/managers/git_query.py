@@ -41,9 +41,10 @@ class GitQueryManager:
             source directory is not inside a git repository (queries then
             return empty results rather than raising).
         source_dir: Absolute path to the vault root directory.
-        attachment_extensions: Allowed attachment file extensions (lowercase,
-            without leading dot, e.g. ``["png", "pdf"]``).  ``None`` uses the
-            default set from :data:`~markdown_vault_mcp.types.DEFAULT_ATTACHMENT_EXTENSIONS`.
+        attachment_extensions: Allowed attachment file extensions, in any
+            case and with or without leading dots (e.g. ``["png", "pdf"]``).
+            ``None`` uses the default set from
+            :data:`~markdown_vault_mcp.types.DEFAULT_ATTACHMENT_EXTENSIONS`.
             Passed to :func:`~markdown_vault_mcp.utils.validate_history_path`
             so that history/diff queries accept attachments as well as notes.
     """

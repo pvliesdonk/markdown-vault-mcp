@@ -96,6 +96,17 @@ class TestValidatePath:
         assert "not in the attachment allowlist" in str(exc.value)
         assert "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in str(exc.value)
 
+    @pytest.mark.parametrize("configured", ["pdf", "PDF", ".pdf"])
+    def test_allowlist_spelling_does_not_change_what_it_matches(
+        self, tmp_path: Path, configured: str
+    ) -> None:
+        """The reported repro (#1239): `ATTACHMENT_EXTENSIONS=PDF` matched nothing.
+
+        The rejection even echoed the operator's own spelling back at them.
+        """
+        store, _ = _store(tmp_path, extensions=[configured])
+        assert store.validate_path("docs/report.pdf") == tmp_path / "docs/report.pdf"
+
     def test_wildcard_accepts_anything_non_markdown(self, tmp_path: Path) -> None:
         store, _ = _store(tmp_path, extensions=["*"])
         assert store.validate_path("a.whatever")
