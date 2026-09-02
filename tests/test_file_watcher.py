@@ -10,6 +10,8 @@ Failure modes covered:
 - watchdog not installed → start() logs warning and returns cleanly
 - _stopped flag prevents post-stop events from calling on_change
 - should_start_file_watcher() logic (all four config combinations)
+- Lifespan gate: a webhook credential stands the watcher down on http,
+  but not on stdio, where its route is never mounted (#1263)
 - Config: debounce validation (invalid, non-positive, valid custom)
 - Config: FILE_WATCHER=false is honoured
 """
