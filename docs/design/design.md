@@ -3108,8 +3108,8 @@ Instructions deliberately carry only concise discovery seeds, enforced facts,
 and the vault-wide OKF interpretation/editing rule. Tool descriptions own the
 detailed call contract. This reduces the overlap identified by #1257 without
 claiming that every repeated workflow sentence is safely removable: whether a
-tool-searching client needs a larger discovery seed remains an experiment and
-#1257 stays open for that evidence.
+tool-searching client needs a larger discovery seed remains unverified, and no
+evidence establishes where the floor is.
 
 **Client-facing surface budget**: `tests/test_client_surface_budget.py`
 constructs the maximal discoverable HTTP surface (read-write, summarization,
