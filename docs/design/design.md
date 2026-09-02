@@ -2488,9 +2488,30 @@ git's own spelling of "the whole repository", returned only by the unscoped
 batch containing one widens its own check back to match, or a rename that
 reported no pathspec would be dropped from the check and its commit skipped.
 
-The commit itself is still repository-wide: `git commit` takes no pathspec, so
-a write that *does* have a diff of its own carries any unrelated staged work
-along with it (#1273).
+**Scoping the commit itself (#1273).** Scoping the decision left the act
+unscoped: `git commit` without a pathspec commits the **whole index**, so a
+write that *did* have a diff of its own still carried an operator's unrelated
+staged work into a commit titled after a vault write they never made.
+`_commit_staged` therefore takes the same pathspec and names it, making the
+commit *partial* — every other index entry is left where the operator put it.
+The unscoped legacy rename branch reports the empty pathspec and keeps the
+whole-index invocation, because `--only` with no paths is rejected outside
+`--amend` and that branch has no narrower truth to offer.
+
+A partial commit differs from the whole-index form in two ways, both accepted
+deliberately. It records the named paths' **working-tree** content rather than
+what was staged a moment earlier, so an external edit landing between the
+`git add` and the `git commit` is committed rather than left dirty — the
+repository ends up describing what is on disk, which is what the vault mirrors.
+And git refuses it outright while a merge is in progress
+(`cannot do a partial commit during a merge`), which is the better failure: the
+whole-index form would have swept the operator's entire in-progress merge into
+a `write: <note>` commit. The write is on disk, the `CalledProcessError` is
+logged, and the operator's own merge commit carries the staged file. A
+conflicted *rebase* — the state `resolve_conflicts_safely`'s defensive abort
+exists to clean up, and cannot always — is unaffected in the other direction: a
+partial commit succeeds there, where the whole-index form fails outright on
+"unmerged files".
 
 **Write identity: the `Principal` value (#1160, fixes #1218).** "Who is
 acting" is resolved **once, at the MCP tool edge**, into a frozen

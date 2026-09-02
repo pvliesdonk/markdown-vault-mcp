@@ -6453,18 +6453,20 @@ def _tracked_files(repo: Path) -> set[str]:
 
 
 # ---------------------------------------------------------------------------
-# scoped commit checks (#1249)
+# scoped commits (#1249, #1273)
 # ---------------------------------------------------------------------------
 
 
-class TestTheCommitCheckIsScopedToTheOperation:
-    """A write that stages nothing must not commit the operator's staged work.
+class TestCommitsAreScopedToTheOperation:
+    """An auto-commit carries the operation's own paths and nothing else.
 
+    Both halves of the decision used to be repository-wide.
     ``git diff --cached --quiet`` without a pathspec answers "does the index
     differ from HEAD anywhere", which is not the question a commit decision
-    asks. An operation whose own ``git add`` stages nothing then saw the
-    operator's deliberately-uncommitted work and committed it under the
-    operation's message.
+    asks (#1249); and ``git commit`` without a pathspec commits the whole
+    index, so even a write with a diff of its own swept an operator's
+    deliberately-uncommitted work into a commit titled after a vault write
+    they did not make (#1273).
     """
 
     @staticmethod
@@ -6494,6 +6496,81 @@ class TestTheCommitCheckIsScopedToTheOperation:
 
         assert _head(git_repo) == head_before
         assert _worktree_status(git_repo) == {"A  operator.md"}
+
+    def test_a_real_write_commits_only_its_own_path(self, git_repo: Path) -> None:
+        """#1273: a diff of its own is no licence to commit everything staged.
+
+        ``git commit`` without a pathspec commits the whole index, so the
+        operator's deliberately-uncommitted work rode along in a commit
+        titled after a vault write they did not make.
+        """
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        self._stage_operator_work(git_repo)
+
+        (git_repo / "vault-note.md").write_text("# Vault\n", encoding="utf-8")
+        _stage_and_commit(git_repo, git_repo / "vault-note.md", "write")
+
+        assert _commit_files(git_repo) == {"vault-note.md"}
+        assert _worktree_status(git_repo) == {"A  operator.md"}
+
+    def test_a_write_during_a_merge_commits_nothing(self, git_repo: Path) -> None:
+        """Git refuses a partial commit mid-merge, and that is the right failure.
+
+        The whole-index form would have swept the operator's in-progress
+        merge into a commit titled after a vault write. The strategy logs the
+        failure and leaves the merge alone.
+        """
+        import subprocess
+
+        strategy = GitWriteStrategy(
+            token=None,
+            repo_url=None,
+            managed=False,
+            enable_pull=False,
+            enable_push=False,
+            repo_path=git_repo,
+        )
+        try:
+            self._start_a_merge(git_repo)
+            head_before = _head(git_repo)
+
+            (git_repo / "vault-note.md").write_text("# Vault\n", encoding="utf-8")
+            strategy(git_repo / "vault-note.md", "# Vault\n", "write")
+        finally:
+            strategy.close()
+
+        assert _head(git_repo) == head_before
+        assert (git_repo / ".git" / "MERGE_HEAD").exists()
+        # The merge is still the operator's to finish.
+        assert (
+            subprocess.run(
+                ["git", "-C", str(git_repo), "rev-parse", "--verify", "MERGE_HEAD"],
+                capture_output=True,
+                check=False,
+            ).returncode
+            == 0
+        )
+
+    @staticmethod
+    def _start_a_merge(repo: Path) -> None:
+        """Leave the repository with ``MERGE_HEAD`` set and nothing committed."""
+        import subprocess
+
+        def _git(*args: str) -> None:
+            subprocess.run(
+                ["git", "-C", str(repo), *args], capture_output=True, check=True
+            )
+
+        _git("checkout", "-b", "side")
+        (repo / "side.md").write_text("# Side\n", encoding="utf-8")
+        _git("add", "-A")
+        _git("commit", "-m", "side")
+        _git("checkout", "-")
+        (repo / "trunk.md").write_text("# Trunk\n", encoding="utf-8")
+        _git("add", "-A")
+        _git("commit", "-m", "trunk")
+        _git("merge", "--no-commit", "--no-ff", "side")
 
     def test_a_real_write_still_commits(self, git_repo: Path) -> None:
         """The scoped check must not suppress a commit that has a diff of its own."""

@@ -596,6 +596,35 @@ class TestBatchCommitsForReal:
         assert len(_subjects(repo)) == before
         assert _staged_paths(repo) == {"operator.md"}
 
+    def test_a_batch_commits_only_the_paths_it_wrote(self, tmp_path: Path) -> None:
+        """#1273: the shared commit still names the batch's own paths.
+
+        ``git commit`` without a pathspec commits the whole index, so an
+        operator's staged work rode along under this tool call's message.
+        """
+        import subprocess
+
+        repo = _repo(tmp_path)
+        (repo / "operator.md").write_text("# Theirs\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "--", str(repo / "operator.md")],
+            capture_output=True,
+            check=True,
+        )
+        strategy = self._strategy(repo)
+
+        for name in ("a.md", "b.md"):
+            (repo / name).write_text(f"# {name}\n", encoding="utf-8")
+        strategy.on_write_batch(
+            [(repo / name, "write", None, None) for name in ("a.md", "b.md")],
+            "okf_convert_links",
+        )
+        strategy.close()
+
+        assert _subjects(repo)[0] == "okf_convert_links: 2 files"
+        assert _files_in_head(repo) == {"a.md", "b.md"}
+        assert _staged_paths(repo) == {"operator.md"}
+
     def test_an_unscoped_rename_widens_the_batch_check_back_to_the_repository(
         self, tmp_path: Path
     ) -> None:
