@@ -1926,7 +1926,9 @@ def _stage_and_commit_batch(
 
     Staging is per item, using the same scoped rules as a single write, so a
     batch never widens what gets swept in: a delete still stages only its own
-    path, and a rename still stages exactly its two. Only the commit is shared.
+    path, and a rename still stages exactly its two. Only the commit is shared,
+    and the no-diff check that guards it, which asks about the union of the
+    pathspecs the items reported (#1249).
 
     A one-item batch delegates to :func:`_stage_and_commit` instead, so the
     commit subject stays that file's own path rather than becoming the
