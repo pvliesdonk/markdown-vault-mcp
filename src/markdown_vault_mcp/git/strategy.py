@@ -1670,6 +1670,12 @@ def _ignored_paths(root: str, paths: Sequence[Path]) -> set[str]:
     **verbatim**, so the strings returned here compare equal to the strings
     that were sent.
 
+    Git defines exactly two answers: 0 for "some of them" and 1 for "none",
+    so 1 is an ordinary negative reply rather than a failure. Every other
+    code is a failure and is answered as "none excluded" — the negative code
+    POSIX reports for a signal included, which is why the guard tests
+    membership rather than ordering.
+
     Args:
         root: Git repository root, as a string.
         paths: Absolute paths to probe.
@@ -1686,14 +1692,17 @@ def _ignored_paths(root: str, paths: Sequence[Path]) -> set[str]:
         text=True,
         check=False,
     )
-    if result.returncode > 1:
-        # 1 means "none of them", which is the ordinary negative answer. Above
-        # that is a real failure; report no exclusions, exactly as the
-        # single-path probe did, and let the ``git add`` that follows surface
-        # the underlying problem with its own stderr. Warned rather than
-        # traced: when the paths turn out not to be excluded after all, that
-        # ``git add`` succeeds and this is the only record that the filter
-        # answered from a failure rather than from the exclude rules.
+    if result.returncode not in (0, 1):
+        # 0 and 1 are the two answers git defines — "some" and "none of them";
+        # 1 is the ordinary negative answer, not a failure. Anything else is,
+        # including the *negative* code POSIX reports for a signal, which an
+        # ordered ``> 1`` test would let through into the parse. Report no
+        # exclusions, exactly as the single-path probe did, and let the
+        # ``git add`` that follows surface the underlying problem with its own
+        # stderr. Warned rather than traced: when the paths turn out not to be
+        # excluded after all, that ``git add`` succeeds and this is the only
+        # record that the filter answered from a failure rather than from the
+        # exclude rules.
         logger.warning(
             "git_check_ignore_failed rc=%s stderr=%s",
             result.returncode,

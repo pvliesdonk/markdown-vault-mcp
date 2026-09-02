@@ -6735,3 +6735,29 @@ class TestTheExcludeProbeItself:
             assert _ignored_paths(str(not_a_repo), (not_a_repo / "x.md",)) == set()
 
         assert any("git_check_ignore_failed" in r.message for r in caplog.records)
+
+    def test_a_signalled_probe_is_a_failure_too(
+        self, git_repo: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A killed probe reports a negative code, which no ``> 1`` test catches.
+
+        It would fall through to parsing the empty reply as "none excluded" —
+        the same safe answer, but reached silently, losing the one record that
+        the filter answered from a failure.
+        """
+        from unittest import mock
+
+        from markdown_vault_mcp.git.strategy import _ignored_paths
+
+        killed = subprocess.CompletedProcess(
+            args=["git", "check-ignore"], returncode=-9, stdout="", stderr=""
+        )
+        with (
+            mock.patch(
+                "markdown_vault_mcp.git.strategy.subprocess.run", return_value=killed
+            ),
+            caplog.at_level(logging.WARNING),
+        ):
+            assert _ignored_paths(str(git_repo), (git_repo / "x.md",)) == set()
+
+        assert any("git_check_ignore_failed" in r.message for r in caplog.records)
