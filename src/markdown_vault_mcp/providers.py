@@ -87,8 +87,8 @@ class _OpenAICompatEmbeddings:
     Owns the SDK client, the ``embeddings.create`` call, input-order
     restoration, and error mapping. :class:`OpenAIProvider`,
     :class:`OllamaProvider` and :class:`VoyageProvider` are thin presets over
-    this one code path; the ``input_type`` parameter below is the only place
-    the transport branches for one of them (#1135).
+    this one code path; the ``input_type`` parameter below is Voyage's one
+    accommodation in it (#1135), as ``_PLACEHOLDER_API_KEY`` is Ollama's.
 
     Args:
         api_key: API key, or ``None`` for keyless endpoints (a placeholder

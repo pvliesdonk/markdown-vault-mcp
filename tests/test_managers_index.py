@@ -2260,9 +2260,9 @@ class TestReindexSkipReasons:
 class _CapturingProvider(EmbeddingProvider):
     """Deterministic provider that records every embedded text.
 
-    Implements only the abstract surface, so it also stands as the working
-    proof that a provider written before the query/document split keeps
-    working: ``embed_query`` and ``provider_variant`` come from the ABC.
+    Implements only the abstract surface; the indexing paths below therefore
+    exercise a provider that predates the query/document split. The query
+    door's default is pinned in ``tests/test_providers.py``.
     """
 
     def __init__(self) -> None:

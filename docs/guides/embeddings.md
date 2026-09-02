@@ -352,14 +352,16 @@ provider.
 ### Caveats worth knowing
 
 !!! warning "Changing only the base URL is invisible to the index"
-    The vector sidecar records the provider name and the model name, and a
-    mismatch on startup re-embeds the vault automatically. Both values stay
-    `openai` and your configured model string no matter which vendor serves
-    them, so aiming `OPENAI_BASE_URL` at a different vendor while keeping
-    the same model name goes undetected: vectors from two different models
-    end up in one index, and search quality degrades quietly. Force the rebuild
-    yourself by deleting the two sidecar files beside `EMBEDDINGS_PATH`
-    (the `.npy` matrix and the `.json` metadata) and restarting.
+    The vector sidecar records the provider name, the model name, and how
+    that provider embeds, and a mismatch on startup re-embeds the vault
+    automatically. Under this recipe the first two stay `openai` and your
+    configured model string no matter which vendor serves them, and the
+    third is always empty, so aiming `OPENAI_BASE_URL` at a different vendor
+    while keeping the same model name goes undetected: vectors from two
+    different models end up in one index, and search quality degrades
+    quietly. Force the rebuild yourself by deleting the two sidecar files
+    beside `EMBEDDINGS_PATH` (the `.npy` matrix and the `.json` metadata)
+    and restarting.
 
 !!! note "Unknown context length falls back to a 1500-character chunk cap"
     The chunk cap derives from the model's context length. That is known only

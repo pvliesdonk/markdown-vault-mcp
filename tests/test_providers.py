@@ -395,12 +395,14 @@ class TestVoyageProvider:
     def test_embed_sends_no_params_voyage_rejects(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Only ``model``/``input``/``extra_body`` go on the wire.
+        """Only ``model``, ``input`` and ``input_type`` reach Voyage.
 
         Voyage answers ``dimensions`` and ``user`` with HTTP 400 and rejects
         ``encoding_format="float"`` outright, so the request must carry neither
         — ``encoding_format`` is left to the SDK, whose base64 default Voyage
-        accepts. ``extra_body`` carries ``input_type`` and nothing else.
+        accepts. ``input_type`` travels as the SDK's ``extra_body`` kwarg,
+        which the client merges into the JSON body, so pinning the kwarg set
+        here pins the request body.
         """
         captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
         VoyageProvider(api_key="pa-test").embed(["hello"])
