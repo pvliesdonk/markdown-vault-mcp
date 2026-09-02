@@ -1,14 +1,16 @@
 """Filesystem-event watcher for external file changes (issue #558).
 
 Monitors ``source_dir`` with watchdog and calls ``on_change()`` after a
-quiet debounce window.  Used when neither the git periodic-pull loop nor
-the GitHub webhook is configured — those mechanisms already trigger reindex
+quiet debounce window.  Used when neither the git periodic-pull loop nor a
+push webhook drives reindexing — those mechanisms already trigger reindex
 on their own cadence, and mixing a file watcher with git checkout would
 cause redundant reindexes and mid-checkout partial scans.
 
 Only mounted when ``MARKDOWN_VAULT_MCP_FILE_WATCHER=true`` (default) AND
 git pull is disabled (``GIT_PULL_INTERVAL_S=0`` or not set) AND no webhook
-secret is configured.
+can actually deliver — credentials set *and* an HTTP/SSE transport to mount
+their route on, which is what
+:func:`markdown_vault_mcp._webhooks.webhook_routes_active` answers (#1263).
 """
 
 from __future__ import annotations

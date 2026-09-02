@@ -37,8 +37,12 @@ class SyncConfig:
         """Whether any push webhook has credentials, so a host can drive pulls.
 
         The file watcher is mutually exclusive with webhook-driven pulls
-        regardless of which host sends them, so the gate asks this rather than
-        naming a provider.
+        regardless of which host sends them, so nothing here names a provider.
+        Credentials are only half the question, though: the route they mount
+        exists on HTTP/SSE transports and not under stdio, so the watcher gate
+        reads :func:`markdown_vault_mcp._webhooks.webhook_routes_active`, which
+        weighs this against the transport, rather than this property alone
+        (#1263).
         """
         return bool(
             self.github_webhook_secret
