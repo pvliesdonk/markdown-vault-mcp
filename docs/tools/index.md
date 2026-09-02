@@ -205,6 +205,10 @@ The revision read differs from a working-tree read in four ways:
 - It requires a git-backed vault, and a `.md` path. Either one missing is an
   error rather than a quiet fall-back to current content, which would be
   indistinguishable from a successful recovery.
+- It stays inside the vault. When the vault is a subdirectory of a larger
+  repository and the note was moved in from elsewhere in that repository, the
+  read reports that the note was not in the vault at that revision instead of
+  serving content from outside it.
 - It carries no `etag` and no `modified_at`. Both describe the current file.
 - It answers even when the note no longer exists in the working tree.
 - `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` still applies, and `section=`

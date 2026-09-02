@@ -255,7 +255,14 @@ def register(mcp: FastMCP) -> None:
         # recovering read then fails loudly rather than serving other content.
         # An empty history (no git, or a note not yet committed) yields no
         # breadcrumb at all.
-        previous = await asyncio.to_thread(vault.reader.get_history, path, limit=1)
+        # Best-effort by design: a repository whose branch has no commit yet
+        # makes ``git log`` exit non-zero, and a breadcrumb is never worth
+        # failing the write it annotates. The write proceeds without one.
+        try:
+            previous = await asyncio.to_thread(vault.reader.get_history, path, limit=1)
+        except ValueError as exc:
+            logger.debug("previous_revision unavailable for %s: %s", path, exc)
+            previous = []
         # Bind the caller's Principal plus the OKF provenance actor for the
         # enforced-write layer (#964, #1160). The OKF intent is a no-op unless
         # OKF_WRITE is on; both values ride contextvars into the to_thread

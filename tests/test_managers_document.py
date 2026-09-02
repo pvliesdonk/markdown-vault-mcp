@@ -1247,6 +1247,33 @@ class TestNoteAtRevision:
                 historical_path="alpha.md",
             )
 
+    def test_section_read_of_an_oversized_revision_is_allowed(
+        self, doc_vault: Path
+    ) -> None:
+        """The cap governs whole-document reads only, as it does for read().
+
+        The cap's own error sends the caller to ``section=``; a cap that also
+        governed section reads would then refuse the route it just recommended.
+        """
+        mgr = DocumentManager(
+            fts=FTSIndex(db_path=":memory:"),
+            source_dir=doc_vault,
+            write_lock=threading.RLock(),
+            chunk_strategy=HeadingChunker(),
+            max_note_read_bytes=32,
+        )
+        oversized = "# Big\n\n## Wanted\n\nthe part worth having\n" + "x" * 200
+
+        result = mgr.note_at_revision(
+            "alpha.md",
+            "abcd1234",
+            oversized,
+            historical_path="alpha.md",
+            section="Wanted",
+        )
+
+        assert result.content.strip().startswith("the part worth having")
+
     def test_cap_of_zero_disables_the_check(self, doc_vault: Path) -> None:
         mgr = DocumentManager(
             fts=FTSIndex(db_path=":memory:"),

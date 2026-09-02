@@ -466,8 +466,12 @@ class DocumentManager:
         Pure: *content* is the blob some versioning backend already produced,
         so this touches no working tree and consults no index — a revision may
         predate the note's current path, or hold a note that no longer exists.
-        The ``max_note_read_bytes`` cap still applies: a historical revision
-        costs the caller's context exactly what a current read would.
+        Otherwise the shaping rules are :meth:`read`'s, ``max_note_read_bytes``
+        included: a historical revision costs the caller's context exactly what
+        a current read would, and a section read is exempt from the
+        whole-document cap in the same way, so narrowing to ``section=`` is a
+        real route out of an oversized revision rather than advice the cap
+        would refuse.
 
         Args:
             path: Vault-relative path the caller asked about (the note's
@@ -486,12 +490,17 @@ class DocumentManager:
             A :class:`~markdown_vault_mcp.types.RevisionContent`.
 
         Raises:
-            ValueError: If *content* exceeds ``max_note_read_bytes``, its
-                frontmatter is not parseable, or *section* is empty or names
-                a heading the revision does not contain.
+            ValueError: If *content* exceeds ``max_note_read_bytes`` on a
+                whole-document read, its frontmatter is not parseable, or
+                *section* is empty or names a heading the revision does not
+                contain.
         """
+        # Whole-document reads only, exactly as :meth:`read` applies it —
+        # section reads short-circuit past the cap there, and the error below
+        # sends the caller to ``section=``, which a cap that also governed
+        # section reads would then refuse.
         size_bytes = len(content.encode())
-        if 0 < self._max_note_read_bytes < size_bytes:
+        if section is None and 0 < self._max_note_read_bytes < size_bytes:
             raise ValueError(
                 f"Document {path!r} at revision {revision!r} is {size_bytes} "
                 f"bytes ({size_bytes / 1024:.1f} KB), exceeds "

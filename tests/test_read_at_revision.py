@@ -78,6 +78,30 @@ def git_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
+def commitless_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A git-backed vault whose branch has no commit yet.
+
+    What a managed clone of an empty remote looks like on first boot, and the
+    one state where ``git log`` exits non-zero rather than reporting an empty
+    history.
+    """
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _git(vault, "init")
+    _git(vault, "config", "user.email", "test@test.com")
+    _git(vault, "config", "user.name", "Test")
+    (vault / "note.md").write_text(_ORIGINAL, encoding="utf-8")
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "0")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "0")
+    return vault
+
+
+@pytest.fixture
 def plain_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A read-write vault that is not inside a git repository."""
     for var in _CLEAR_VARS:
@@ -204,6 +228,26 @@ class TestOverwriteRecovery:
             )
 
         assert written["created"] is False
+        assert "previous_revision" not in written
+
+    @pytest.mark.usefixtures("commitless_vault")
+    async def test_write_succeeds_when_the_branch_has_no_commit_yet(self) -> None:
+        """The breadcrumb is best-effort: it never fails the write it annotates.
+
+        ``git log`` exits non-zero on an unborn branch rather than reporting an
+        empty history, so a breadcrumb read that let that surface would abort
+        every write on a repository that has not been committed to yet —
+        including the one creating its first note.
+        """
+        server = make_server()
+        async with Client(server) as client:
+            written = _data(
+                await client.call_tool(
+                    "write", {"path": "note.md", "content": "replacement\n"}
+                )
+            )
+
+        assert written["path"] == "note.md"
         assert "previous_revision" not in written
 
     @pytest.mark.usefixtures("plain_vault")

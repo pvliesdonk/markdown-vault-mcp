@@ -4772,6 +4772,78 @@ class TestGetFileAtRef:
         with pytest.raises(ValueError, match="outside the git repository"):
             GitWriteStrategy().get_file_at_ref(repo, outside, first)
 
+    def test_refuses_a_path_that_was_outside_the_vault(self, tmp_path: Path) -> None:
+        """A note moved in from elsewhere in the repository is not served.
+
+        Rename resolution walks the whole repository, so on a vault nested
+        inside a larger one the earlier path can lie outside the vault. Reading
+        it would hand the caller content the vault does not govern.
+        """
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        private = repo / "private"
+        private.mkdir()
+        vault = repo / "vault"
+        vault.mkdir()
+        (private / "note.md").write_text("outside the vault\n")
+        (vault / "keep.md").write_text("# keep\n")
+        first = self._commit(repo, "seed")
+        subprocess.run(
+            ["git", "-C", str(repo), "mv", "private/note.md", "vault/note.md"],
+            capture_output=True,
+            check=True,
+        )
+        self._commit(repo, "move into the vault")
+
+        with pytest.raises(ValueError, match="was not inside the vault"):
+            GitWriteStrategy().get_file_at_ref(vault, vault / "note.md", first)
+
+    def test_resolves_a_rename_between_non_ascii_names(self, tmp_path: Path) -> None:
+        """Git quotes non-ASCII paths unless told not to.
+
+        Left quoted, the octal-escaped name goes back to ``git show`` as a
+        literal filename and never resolves.
+        """
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "café.md").write_text("# première version\n")
+        first = self._commit(repo, "add note")
+        subprocess.run(
+            ["git", "-C", str(repo), "mv", "café.md", "résumé.md"],
+            capture_output=True,
+            check=True,
+        )
+        self._commit(repo, "rename note")
+
+        content, historical = GitWriteStrategy().get_file_at_ref(
+            repo, repo / "résumé.md", first
+        )
+
+        assert content == "# première version\n"
+        assert historical == "café.md"
+
+    def test_strips_a_leading_byte_order_mark(self, tmp_path: Path) -> None:
+        """A BOM-prefixed revision parses like the same note on disk (#673).
+
+        Left in place, the BOM sits before the ``---`` and the frontmatter
+        block stops being recognised.
+        """
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "note.md").write_bytes(
+            "\ufeff---\ntitle: Bommy\n---\n\nbody\n".encode()
+        )
+        first = self._commit(repo, "add note with a BOM")
+        (repo / "note.md").write_text("replaced\n")
+        self._commit(repo, "overwrite")
+
+        content, _historical = GitWriteStrategy().get_file_at_ref(
+            repo, repo / "note.md", first
+        )
+
+        assert content.startswith("---")
+        assert "\ufeff" not in content
+
     def test_unreadable_log_falls_back_to_the_current_name(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

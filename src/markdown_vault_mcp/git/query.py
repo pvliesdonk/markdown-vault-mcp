@@ -25,6 +25,7 @@ from pathlib import Path
 
 from markdown_vault_mcp.git._run import cleanup_git_env, git_env
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry
+from markdown_vault_mcp.utils.text import decode_utf8
 
 logger = logging.getLogger(__name__)
 
@@ -852,6 +853,11 @@ def _path_at_ref_via_follow(
         log_result = subprocess.run(
             [
                 "git",
+                # Without this git octal-escapes and quotes any non-ASCII path
+                # ("r\303\251sum\303\251.md"), which would then be fed back
+                # to ``git show`` as a literal filename and never resolve.
+                "-c",
+                "core.quotePath=false",
                 "-C",
                 str(git_root),
                 "log",
@@ -921,8 +927,10 @@ def get_file_at_ref(
 
     Raises:
         ValueError: If the vault is not inside a git repository, *path* lies
-            outside *git_root*, *ref* is unknown, the file did not exist at
-            *ref*, or its bytes at *ref* are not valid UTF-8.
+            outside *git_root*, the file was outside the vault at *ref* (a
+            rename can have moved it in from elsewhere in the repository),
+            *ref* is unknown, the file did not exist at *ref*, or its bytes
+            at *ref* are not valid UTF-8.
     """
     if git_root is None:
         raise ValueError(
@@ -934,9 +942,21 @@ def get_file_at_ref(
     except ValueError as exc:
         raise ValueError(f"Path {path} is outside the git repository") from exc
 
+    vault_prefix = _vault_prefix(git_root, repo_path)
     env = git_env(token, username)
     try:
         historical = _path_at_ref_via_follow(git_root, ref, cur_rel, env) or cur_rel
+        # Confinement, checked before the blob is read: rename resolution
+        # walks the whole repository, so on a vault nested inside a larger
+        # repository a note moved in from a sibling directory resolves to a
+        # path outside the vault. Serving it would hand the caller content the
+        # vault does not govern. At *ref* the note simply was not in the
+        # vault, and that is what the caller is told.
+        if not historical.startswith(vault_prefix):
+            raise ValueError(
+                f"Note {cur_rel!r} was not inside the vault at revision "
+                f"{ref!r}: it lived at {historical!r}, outside it"
+            )
         try:
             result = subprocess.run(
                 ["git", "-C", str(git_root), "show", f"{ref}:{historical}"],
@@ -954,10 +974,13 @@ def get_file_at_ref(
 
     # Bytes, not text=True: a blob that is not valid UTF-8 must fail loudly
     # here rather than reach the caller mangled by replacement characters.
+    # decode_utf8 also drops a leading BOM, as the scanner does before parsing
+    # a note on disk (#673) — without it the frontmatter block of a
+    # BOM-prefixed revision would not be recognised.
     try:
-        content = result.stdout.decode()
+        content = decode_utf8(result.stdout)
     except UnicodeDecodeError as exc:
         raise ValueError(
             f"Content of {historical!r} at revision {ref!r} is not valid UTF-8"
         ) from exc
-    return content, _strip_vault_prefix(historical, _vault_prefix(git_root, repo_path))
+    return content, _strip_vault_prefix(historical, vault_prefix)
