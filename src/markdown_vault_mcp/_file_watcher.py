@@ -1,14 +1,16 @@
 """Filesystem-event watcher for external file changes (issue #558).
 
 Monitors ``source_dir`` with watchdog and calls ``on_change()`` after a
-quiet debounce window.  Used when neither the git periodic-pull loop nor
-the GitHub webhook is configured — those mechanisms already trigger reindex
+quiet debounce window.  Used when neither the git periodic-pull loop nor a
+push webhook drives reindexing — those mechanisms already trigger reindex
 on their own cadence, and mixing a file watcher with git checkout would
 cause redundant reindexes and mid-checkout partial scans.
 
 Only mounted when ``MARKDOWN_VAULT_MCP_FILE_WATCHER=true`` (default) AND
 git pull is disabled (``GIT_PULL_INTERVAL_S=0`` or not set) AND no webhook
-secret is configured.
+can actually deliver — credentials set *and* an HTTP/SSE transport to mount
+their route on, which is what
+:func:`markdown_vault_mcp._webhooks.webhook_routes_active` answers (#1263).
 """
 
 from __future__ import annotations
@@ -349,16 +351,21 @@ def _format_root_names(roots: Sequence[_WatchRoot]) -> str:
 def should_start_file_watcher(
     file_watcher_enabled: bool,
     git_pull_active: bool,
-    webhook_configured: bool,
+    webhook_active: bool,
 ) -> bool:
     """Return True when the file watcher should be started.
 
-    The watcher is mutually exclusive with the git pull loop and with any
+    The watcher is mutually exclusive with the git pull loop and with a live
     push webhook: those mechanisms trigger reindex on their own cadence, and
     running the file watcher alongside them would cause mid-checkout partial
     scans when git modifies the working tree. Which host sends the webhook
     does not matter to this gate, so it takes the resolved boolean rather
     than a provider's credential.
+
+    The gate stands down only for a mechanism that is actually going to drive
+    reindexing. A webhook credential alone is not one: under stdio no route is
+    mounted, so no delivery can arrive and the watcher is what keeps external
+    edits visible (#1263).
 
     Args:
         file_watcher_enabled: Value of ``FILE_WATCHER`` config field.
@@ -369,14 +376,17 @@ def should_start_file_watcher(
             resolved ``git_pull_interval_s`` from ``to_vault_instances()``
             (which is 0 unless ``git_repo_url``/``git_token`` is set),
             compared ``> 0``.
-        webhook_configured: Whether any push webhook has credentials set.
-            Pass ``config.sync.webhook_configured``, which covers the GitHub
-            secret and both GitLab tokens.
+        webhook_active: Whether a push webhook can actually deliver — its
+            credentials are set *and* the transport mounts the route.  Pass
+            ``webhook_routes_active(config, transport)`` from ``_webhooks``,
+            which covers the GitHub secret and both GitLab tokens; passing
+            ``config.sync.webhook_configured`` alone silences the watcher on
+            a transport that serves no webhook (#1263).
 
     Returns:
         ``True`` when the watcher should be started.
     """
-    git_active = git_pull_active or webhook_configured
+    git_active = git_pull_active or webhook_active
     return file_watcher_enabled and not git_active
 
 

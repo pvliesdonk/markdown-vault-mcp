@@ -160,7 +160,7 @@ def make_server(
     from markdown_vault_mcp._icons import _SERVER_ICON
     from markdown_vault_mcp._instructions import contribute_instructions
     from markdown_vault_mcp._server_prompts import register_domain_prompts
-    from markdown_vault_mcp.domain import set_pending_config
+    from markdown_vault_mcp.domain import set_pending_config, set_pending_transport
 
     is_read_only = config.read_only
 
@@ -184,6 +184,11 @@ def make_server(
     # Hand the already-loaded config to the no-arg server_lifespan's Service so it
     # builds the vault from this config, not a second from_env() read (#609).
     set_pending_config(config)
+    # Same handoff for the transport, which is an argument here rather than a
+    # config field: the Service needs it to tell a webhook that can deliver from
+    # one whose route this transport never mounts, before deciding whether the
+    # file watcher stands down (#1263).
+    set_pending_transport(transport)
     # Quiet httpx/httpcore per-request INFO on the serve path (#792); the CLI's
     # index/search/reindex commands do the same before their own vault builds.
     quiet_http_loggers()

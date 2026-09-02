@@ -20,6 +20,8 @@ Failure modes covered:
   stale and future timestamps / multiple candidate signatures / missing headers
 - GitLab secret token: valid / wrong / absent, and rejected when only the
   signing token is configured
+- webhook_routes_active: credentials x transport, the shared predicate the
+  file-watcher gate reads (#1263)
 """
 
 from __future__ import annotations
@@ -1027,3 +1029,35 @@ def test_gitlab_wrong_secret_token_is_rejected_through_the_handler() -> None:
         headers={"X-Gitlab-Token": "wrong", "X-Gitlab-Event": "Push Hook"},
     )
     assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# webhook_routes_active — the predicate shared with the file-watcher gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("configured", "transport", "expected"),
+    [
+        (True, "http", True),
+        (True, "sse", True),
+        (True, "stdio", False),
+        (False, "http", False),
+        (False, "stdio", False),
+    ],
+)
+def test_webhook_routes_active(
+    configured: bool, transport: str, expected: bool
+) -> None:
+    """A delivery can arrive only where credentials and an HTTP server meet.
+
+    The stdio row is the one #1263 turned on: credentials alone used to be
+    enough to stand the file watcher down, on a transport that mounts no route
+    for the delivery to arrive at.
+    """
+    from types import SimpleNamespace
+
+    from markdown_vault_mcp._webhooks import webhook_routes_active
+
+    config = SimpleNamespace(sync=SimpleNamespace(webhook_configured=configured))
+    assert webhook_routes_active(config, transport) is expected
