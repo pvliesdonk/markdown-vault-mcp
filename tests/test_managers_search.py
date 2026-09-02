@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.managers.link import LinkManager
 from markdown_vault_mcp.managers.search import SearchManager
+from markdown_vault_mcp.providers import EmbeddingProvider
 from markdown_vault_mcp.scanner import scan_directory
 from markdown_vault_mcp.types import (
     AttachmentInfo,
@@ -758,19 +759,36 @@ class TestGetSimilarFilters:
         assert "alpha.md" not in [r.path for r in unfiltered]
 
 
-class _FixedQueryProvider:
+class _FixedQueryProvider(EmbeddingProvider):
     """Embeds every query to the same unit vector along the first axis.
 
     The stored document vectors are written directly onto the index, so the
     cosine of each chunk against the query is just that chunk's first
     coordinate. This gives a test exact control over chunk ranks.
-    """
 
-    provider_name = "fixed"
-    model_name = "fixed-model"
+    Only ``embed`` is implemented, so queries reach it through the ABC's
+    default ``embed_query`` — the symmetric behaviour every provider without
+    a query/document distinction keeps.
+    """
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return [[1.0, 0.0] for _ in texts]
+
+    @property
+    def dimension(self) -> int:
+        return 2
+
+    @property
+    def provider_name(self) -> str:
+        return "fixed"
+
+    @property
+    def model_name(self) -> str:
+        return "fixed-model"
+
+    @property
+    def context_length(self) -> int | None:
+        return None
 
 
 def _semantic_mgr_with_ranked_chunks(base: Path) -> SearchManager:
@@ -1601,18 +1619,32 @@ class TestGetContextSurfacesInternalFailure:
 # ---------------------------------------------------------------------------
 
 
-class _UnitQueryProvider:
+class _UnitQueryProvider(EmbeddingProvider):
     """Embeds every text (query or chunk) to the same unit vector.
 
     Every stored chunk then scores an identical, positive cosine against any
-    query, so the folder boost alone decides the ordering.
+    query, so the folder boost alone decides the ordering. Queries reach
+    ``embed`` through the ABC's default ``embed_query``.
     """
-
-    provider_name = "unit"
-    model_name = "unit-model"
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         return [[1.0, 0.0] for _ in texts]
+
+    @property
+    def dimension(self) -> int:
+        return 2
+
+    @property
+    def provider_name(self) -> str:
+        return "unit"
+
+    @property
+    def model_name(self) -> str:
+        return "unit-model"
+
+    @property
+    def context_length(self) -> int | None:
+        return None
 
 
 @pytest.fixture()

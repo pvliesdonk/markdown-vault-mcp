@@ -243,6 +243,22 @@ MARKDOWN_VAULT_MCP_VOYAGE_MODEL=voyage-4-large
 
 The default is `voyage-4`, the balanced member of the family; `voyage-4-large` trades cost for retrieval quality and `voyage-4-lite` trades quality for cost. The voyage-4 and voyage-3.5 families take 32,000 tokens of input and return 1024-dimensional vectors by default. Changing the model re-embeds the vault once on the next startup.
 
+### Queries and documents are embedded differently
+
+Voyage's models are tuned for retrieval, and the vendor asks callers to say
+which side of a search each text is on. The server does: notes are embedded as
+`input_type: document` and search queries as `input_type: query`, which makes
+Voyage prepend its own retrieval prompt to each. Nothing to configure: it is
+how the `voyage` provider embeds.
+
+!!! note "Voyage vaults re-embed once on upgrade"
+    Vaults embedded before this behavior existed hold vectors Voyage produced
+    with no `input_type` at all. Those sit in a different space from the typed
+    ones, so the vector sidecar's identity check fails on the first startup
+    after the upgrade and the vault re-embeds itself once, exactly as it does
+    after a model change. The rebuild is automatic; it costs one pass of Voyage
+    API calls over the vault.
+
 !!! note "Voyage must be selected explicitly"
     Unlike the other three, `voyage` is not in the auto-detection chain. A `VOYAGE_API_KEY` exported for some other tool would otherwise take over an existing index and force a full re-embed.
 
@@ -326,6 +342,12 @@ whose base64 default is widely accepted. This narrow request shape is why
 strict endpoints work: Voyage answers HTTP 400 to `dimensions`, to `user`,
 and to `encoding_format="float"`. An endpoint that requires a
 field outside `model` and `input` cannot be driven this way.
+
+The one addition is vendor-specific and reached only through a named provider:
+[`voyage`](#voyage-ai) also sends `input_type`. Driving Voyage through this
+`openai` recipe instead sends no `input_type`, so it does not get the
+query/document asymmetry. That is one more reason to prefer the named
+provider.
 
 ### Caveats worth knowing
 
