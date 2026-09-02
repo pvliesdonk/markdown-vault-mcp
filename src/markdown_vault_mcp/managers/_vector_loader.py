@@ -60,7 +60,7 @@ def load_or_self_heal(
             A persisted sidecar with a different token (absent key reads as
             ``"v1"``) raises ``VectorIndexCompatibilityError`` inside
             :meth:`VectorIndex.load` and routes to the same rebuild path as
-            a provider/model mismatch; a fresh empty index is stamped with
+            an embedding-identity mismatch; a fresh empty index is stamped with
             this token so its save records the format.
 
     Returns:

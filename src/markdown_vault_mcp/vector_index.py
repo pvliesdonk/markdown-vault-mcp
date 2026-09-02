@@ -74,7 +74,7 @@ def _check_persisted_identity(
     expected = (provider.provider_name, provider.model_name, provider.provider_variant)
     if persisted != expected:
         raise VectorIndexCompatibilityError(
-            "Embedding provider/model mismatch for persisted index at "
+            "Embedding identity mismatch for persisted index at "
             f"{path}: stored provider={persisted[0]!r}, "
             f"stored model={persisted[1]!r}, "
             f"stored variant={persisted[2]!r}, "

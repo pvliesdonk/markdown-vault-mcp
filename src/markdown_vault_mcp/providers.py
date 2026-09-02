@@ -85,8 +85,10 @@ class _OpenAICompatEmbeddings:
     """Shared OpenAI-compatible embeddings transport (official openai SDK).
 
     Owns the SDK client, the ``embeddings.create`` call, input-order
-    restoration, and error mapping. :class:`OpenAIProvider` and
-    :class:`OllamaProvider` are thin presets over this one code path.
+    restoration, and error mapping. :class:`OpenAIProvider`,
+    :class:`OllamaProvider` and :class:`VoyageProvider` are thin presets over
+    this one code path; the ``input_type`` parameter below is the only place
+    the transport branches for one of them (#1135).
 
     Args:
         api_key: API key, or ``None`` for keyless endpoints (a placeholder
