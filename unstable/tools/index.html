@@ -3631,7 +3631,7 @@ partial markdown reads (see the tip above).</p>
 <span class="w">  </span><span class="nt">"attachment_extensions"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"pdf"</span><span class="p">,</span><span class="w"> </span><span class="s2">"png"</span><span class="p">,</span><span class="w"> </span><span class="s2">"jpg"</span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>On an OKF bundle (see <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> in <a href="../configuration/">Configuration</a>), the response also carries an <code>okf</code> section: the configured mode, the declared spec version, a per-<code>type</code> histogram plus an untyped count, <code>status</code> and trust-tier breakdowns, and the stale-note count.</p>
+<p>On an OKF bundle (see <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> in <a href="../configuration/">Configuration</a>), the response also carries an <code>okf</code> section: the configured mode, the declared spec version, a per-<code>type</code> histogram plus an untyped count, <code>status</code> and trust-tier breakdowns, and the stale-note count. Those counts cover the same note population <a href="#okf_validate"><code>okf_validate</code></a> audits, so the reserved <code>index.md</code> / <code>log.md</code> files land in none of them and are reported on their own as <code>reserved_count</code>.</p>
 <h3 id="embeddings_status"><code>embeddings_status</code><a class="headerlink" href="#embeddings_status" title="Permanent link">&para;</a></h3>
 <p>Check the embedding provider configuration and vector index status. Use this to diagnose why semantic search is unavailable.</p>
 <p><strong>Returns:</strong></p>
