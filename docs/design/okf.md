@@ -171,7 +171,11 @@ frontmatter blob; not persisted):
    `sources` are surfaced on `read` (full) and counted on search hits
    (`sources_count`), not inlined into result lists.
 2. `stats` gains an `okf` section: declared version, effective mode,
-   `type` histogram, status/trust-tier breakdowns, stale count.
+   `type` histogram, status/trust-tier breakdowns, stale count. The
+   histograms cover the note population — reserved files are excluded
+   from them and counted apart as `reserved_count` (#1251), so the
+   section reconciles with the `okf_validate` audit rather than
+   contradicting it on a conformant bundle.
 3. Default server instructions gain an OKF paragraph (composed in
    `_instructions.py`, wired through the existing DOMAIN-WIRING seam):
    what the tiers mean, that `log.md`/`index.md` conventions apply, and —
@@ -184,7 +188,8 @@ frontmatter blob; not persisted):
    conditionally, rather than gated on the marker file existing.
 4. Reserved files `index.md`/`log.md` remain indexed (they are searchable
    navigation) but are tagged for the ranking layer (§5) and excluded from
-   conformance checks (§4) per spec.
+   conformance checks (§4) per spec. They are not notes, so the `stats`
+   histograms (channel 2) exclude them as well.
 
 **Indexing integration:** OKF scalar fields ride the existing
 `document_tags` machinery — when detection is on, the effective

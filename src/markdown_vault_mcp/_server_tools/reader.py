@@ -507,7 +507,10 @@ def register(mcp: FastMCP) -> None:
             - okf (dict, optional): Present only when the vault is an active
               OKF (Open Knowledge Format) bundle. Carries mode,
               declared_version, a per-``type`` histogram plus untyped_count,
-              status and trust-tier breakdowns, and stale_count.
+              status and trust-tier breakdowns, and stale_count. Those cover
+              the note population 'okf_validate' audits; the reserved
+              ``index.md`` / ``log.md`` files are counted apart as
+              reserved_count.
 
             Index freshness rides in the response's ``_meta.index_stale``
             field — True when the IndexWriter was non-idle, a write completed

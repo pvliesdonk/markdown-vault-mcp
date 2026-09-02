@@ -60,6 +60,22 @@ PLAIN_NOTE = """# Plain
 Zebra background notes.
 """
 
+FOLDER_INDEX = """---
+title: Guides
+---
+# Guides
+"""
+
+RESERVED_LOG = """---
+title: Change history
+---
+# Log
+
+## 2026-01-01
+
+- Seeded the bundle.
+"""
+
 
 def _write_notes(vault: Path, *, declared: bool) -> None:
     (vault / "guides").mkdir(parents=True)
@@ -83,6 +99,25 @@ def plain_vault(tmp_path: Path) -> Path:
     vault = tmp_path / "vault"
     _write_notes(vault, declared=False)
     return vault
+
+
+@pytest.fixture
+def scaffold_vault(tmp_path: Path) -> Path:
+    """A declared bundle holding nothing but reserved files."""
+    vault = tmp_path / "vault"
+    (vault / "guides").mkdir(parents=True)
+    (vault / "index.md").write_text(ROOT_INDEX, encoding="utf-8")
+    (vault / "log.md").write_text(RESERVED_LOG, encoding="utf-8")
+    (vault / "guides" / "index.md").write_text(FOLDER_INDEX, encoding="utf-8")
+    return vault
+
+
+@pytest.fixture
+def _scaffold_env(scaffold_vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(scaffold_vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "true")
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
 
 
 @pytest.fixture
@@ -217,10 +252,26 @@ class TestDeclaredBundle:
         assert okf["mode"] == "auto"
         assert okf["declared_version"] == "0.2"
         assert okf["types"] == {"Playbook": 1}
-        assert okf["untyped_count"] == 2  # index.md + plain.md
-        assert okf["status"] == {"deprecated": 1, "stable": 2}
-        assert okf["trust"] == {"human-reviewed": 1, "unverified": 2}
+        assert okf["untyped_count"] == 1  # plain.md; index.md is reserved
+        assert okf["status"] == {"deprecated": 1, "stable": 1}
+        assert okf["trust"] == {"human-reviewed": 1, "unverified": 1}
         assert okf["stale_count"] == 1
+        assert okf["reserved_count"] == 1  # index.md
+
+    async def test_stats_and_validate_agree_on_the_note_population(self) -> None:
+        """#1251: both OKF surfaces count the same set of notes."""
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            stats = _structured(await client.call_tool("stats", {}))
+            report = _structured(await client.call_tool("okf_validate", {}))
+        okf = stats["okf"]
+        typed = sum(okf["types"].values())
+        assert typed + okf["untyped_count"] == report["total_notes"]
+        assert typed == report["conformant_notes"]
+        assert (
+            typed + okf["untyped_count"] + okf["reserved_count"]
+            == stats["document_count"]
+        )
 
     async def test_indexed_fields_extended_and_filterable(self) -> None:
         async with Client(make_server()) as client:
@@ -382,6 +433,28 @@ class TestOkfValidateTool:
         async with Client(make_server()) as client:
             tools = {t.name for t in await client.list_tools()}
         assert "okf_validate" not in tools
+
+
+@pytest.mark.usefixtures("_scaffold_env")
+class TestReservedOnlyBundle:
+    """#1251: a bundle of nothing but reserved files holds zero notes."""
+
+    async def test_stats_counts_reserved_files_apart(self) -> None:
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            stats = _structured(await client.call_tool("stats", {}))
+            report = _structured(await client.call_tool("okf_validate", {}))
+        okf = stats["okf"]
+        assert okf["types"] == {}
+        assert okf["untyped_count"] == 0
+        assert okf["status"] == {}
+        assert okf["trust"] == {}
+        assert okf["stale_count"] == 0
+        # index.md, guides/index.md and log.md — the whole indexed vault.
+        assert okf["reserved_count"] == 3
+        assert okf["reserved_count"] == stats["document_count"]
+        assert report["total_notes"] == 0
+        assert report["missing_type"]["count"] == 0
 
 
 @pytest.mark.usefixtures("_plain_env")
