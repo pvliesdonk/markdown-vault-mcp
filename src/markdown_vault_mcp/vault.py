@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    from markdown_vault_mcp._commit_scope import CommitScope
     from markdown_vault_mcp.git import PullResult, VersionedStore
     from markdown_vault_mcp.interfaces import VectorStore
     from markdown_vault_mcp.providers import EmbeddingProvider
@@ -926,6 +927,19 @@ class Vault:
         """
         if self._git_strategy is not None:
             self._git_strategy.stop()
+
+    def end_commit_scope(self, scope: CommitScope) -> None:
+        """Close a tool call's commit scope, grouping its writes into one commit.
+
+        Called by
+        :class:`~markdown_vault_mcp._commit_scope.CommitScopeMiddleware` when a
+        tool call returns. Never blocks: the marker is queued behind the writes
+        that call fired, and the dispatcher flushes it in order.
+
+        Args:
+            scope: The scope to close.
+        """
+        self._write_callback.end_scope(scope)
 
     def close(self) -> None:
         """Release resources held by the vault.

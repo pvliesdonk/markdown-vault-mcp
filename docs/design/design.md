@@ -3636,11 +3636,50 @@ Three git modes:
 Backward compatibility: `GIT_TOKEN` without `GIT_REPO_URL` keeps previous
 pull+push behavior against the existing checkout but logs a deprecation warning.
 
-In managed/legacy push-enabled modes, `GitWriteStrategy` commits per-write and
-defers push to a background timer (`MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S`,
-default 30 s). After the idle period elapses with no writes, all accumulated
-local commits are pushed in a single `git push`. On shutdown,
-`Vault.close()` flushes any pending push.
+In managed/legacy push-enabled modes, `GitWriteStrategy` commits per **tool
+call** and defers push to a background timer
+(`MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S`, default 30 s). After the idle period
+elapses with no writes, all accumulated local commits are pushed in a single
+`git push`. On shutdown, `Vault.close()` flushes any pending push.
+
+**Commit scoping (#1264)**: the commit boundary is the MCP tool call, not the
+file. One call that writes 2,595 files produces one commit, where per-file
+commits produced 2,595 and serialised every concurrent write behind them.
+
+There is no mode knob. #54 anticipated one, but the two boundaries differ only
+where a call touches many files: a call that wrote a single file still commits
+under that file's own path (`write: notes/one.md`), so ordinary writes read in
+`git log` exactly as they did before. What remains is the bulk case, which is
+the defect #1264 reports rather than a preference to configure.
+
+`CommitScopeMiddleware` (`_commit_scope.py`) binds a `CommitScope` —
+a process-unique token plus the tool name — for the duration of each
+`on_call_tool`, and `WriteCallbackDispatcher.fire` snapshots it into the queue
+item. The worker buffers writes by token and dispatches each group once, via
+the `on_write_batch` opt-in (`ACCEPTS_BATCH_ATTR`), producing one commit
+subject of the form `<tool>: N files` — or the single-file `<operation>: <path>`
+subject when the call staged exactly one path.
+
+Three properties this depends on:
+
+- **The scope is read in `fire`, never on the worker.** `fire` runs on the
+  request's `to_thread` worker, whose copied context carries the contextvar;
+  the dispatcher thread has no request context, so reading there would always
+  see `None` — the same constraint that governs `current_principal` (#1218).
+- **Grouping is keyed by token, not by queue position.** The queue is FIFO, but
+  a shared server interleaves concurrent tool calls, and position-based
+  grouping would fold two unrelated calls into one commit.
+- **A drain flushes open scopes.** `drain` is what the puller waits on before
+  merging (#571); returning with a group still buffered would let the merge run
+  over writes that are on disk but in no commit.
+
+A write with no owning tool call — a background or startup write — still
+commits on its own. A callback that does not set `ACCEPTS_BATCH_ATTR` is never
+buffered at all: `fire` attaches the scope only for a callback that can consume
+a batch, so a third-party callback keeps both its previous contract and its
+previous timing rather than having its writes held back for a grouping it
+cannot receive. Staging stays per item and scoped: a batch never widens
+what a delete or rename sweeps in; only the commit is shared.
 
 Startup recovery: `GitWriteStrategy` checks for unpushed local commits
 (`git log origin/<branch>..HEAD`) on first invocation and pushes them before

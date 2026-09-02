@@ -155,6 +155,7 @@ def make_server(
     # transforms, mode toggles, alternative middleware, additional registrations);
     # kept across copier update. Leave empty for projects that don't customise
     # make_server() beyond the standard scaffold.
+    from markdown_vault_mcp._commit_scope import CommitScopeMiddleware
     from markdown_vault_mcp._http_logging import quiet_http_loggers
     from markdown_vault_mcp._icons import _SERVER_ICON
     from markdown_vault_mcp._instructions import contribute_instructions
@@ -162,6 +163,12 @@ def make_server(
     from markdown_vault_mcp.domain import set_pending_config
 
     is_read_only = config.read_only
+
+    # Group each tool call's writes into one commit (#1264). Registered even on
+    # a read-only or non-git vault: the middleware only binds a contextvar and
+    # closes the scope afterward, and the dispatcher ignores scopes when no
+    # write callback is configured, so the cost is a contextvar set per call.
+    mcp.add_middleware(CommitScopeMiddleware())
 
     # Config-dependent prompts (create_from_template + user prompts): registered
     # here, not at the template-mandated no-arg register_prompts(mcp) above, so

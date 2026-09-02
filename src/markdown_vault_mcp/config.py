@@ -102,9 +102,10 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Set to true to refuse a write that would overwrite an "
-                "existing file when no if_match etag is supplied. Deliberate "
-                "replacement (read first, pass if_match) still works, and "
-                "edit / append / delete / rename are unaffected."
+                "existing file when no if_match etag is supplied. "
+                "Deliberate replacement still works: read the file first, "
+                "then pass if_match. Unaffected: edit, append, delete, "
+                "rename."
             ),
             "tags": ("vault", "readme"),
         },
@@ -293,14 +294,15 @@ class ProjectConfig:
             "help": (
                 "How the okf_verify tool attributes a human review. This "
                 "applies only when OKF_WRITE is on, which gates the tool. With "
-                "elicit (the default), okf_verify asks the human to confirm the "
-                "review through an MCP elicitation and records the attestation "
-                "only on an affirmative reply. It fails closed when the client "
-                "cannot elicit or the human declines, so a model that holds the "
-                "human's token cannot self-attest. Use trust-auth to attribute "
-                "to the authenticated caller with no confirmation (safe only "
-                "when the sole caller is a human-driven UI), or off to hide the "
-                "tool so attestation happens through external tooling. A "
+                "elicit (the default), okf_verify asks the human to confirm "
+                "the review through an MCP elicitation, then records the "
+                "attestation only on an affirmative reply. It fails closed "
+                "when the client cannot elicit or the human declines, so a "
+                "model holding the human's token cannot self-attest. Set "
+                "trust-auth instead to attribute to the authenticated caller "
+                "with no confirmation, which is safe only when the sole "
+                "caller is a human-driven UI. Set off to hide the tool, "
+                "leaving attestation to external tooling. A "
                 "non-default value with OKF_WRITE off is a config error."
             ),
             "tags": ("content",),
