@@ -1890,6 +1890,7 @@ def _stage_and_commit(
         root,
         f"{operation}: {rel_path}",
         _CommitIdentity(commit_name, commit_email, author_name, author_email),
+        scope,
     )
 
     logger.info("Git: committed %s (%s)", rel_path, operation)
@@ -1927,8 +1928,9 @@ def _stage_and_commit_batch(
     Staging is per item, using the same scoped rules as a single write, so a
     batch never widens what gets swept in: a delete still stages only its own
     path, and a rename still stages exactly its two. Only the commit is shared,
-    and the no-diff check that guards it, which asks about the union of the
-    pathspecs the items reported (#1249).
+    along with the no-diff check that guards it and the pathspec the commit is
+    scoped to, both taken from the union of what the items reported
+    (#1249, #1273).
 
     A one-item batch delegates to :func:`_stage_and_commit` instead, so the
     commit subject stays that file's own path rather than becoming the
@@ -1985,12 +1987,13 @@ def _stage_and_commit_batch(
         return
 
     # Skip commit if staging produced no diff (e.g. rewriting identical bytes).
-    if _index_matches_head(root, [] if whole_repo else scope):
+    commit_scope = [] if whole_repo else scope
+    if _index_matches_head(root, commit_scope):
         logger.debug("git_batch_no_diff tool=%s", tool_name)
         return
 
     noun = "file" if staged == 1 else "files"
-    _commit_staged(root, f"{tool_name}: {staged} {noun}", identity)
+    _commit_staged(root, f"{tool_name}: {staged} {noun}", identity, commit_scope)
     logger.info("git_batch_committed tool=%s files=%s", tool_name, staged)
 
 
@@ -1998,17 +2001,43 @@ def _commit_staged(
     root: str,
     commit_msg: str,
     identity: _CommitIdentity,
+    pathspec: Sequence[str],
 ) -> None:
-    """Commit whatever is staged, under the resolved committer/author identity.
+    """Commit the operation's own paths, under the resolved identity.
 
     Extracted so the single-write and batched commit paths share one copy of
     the identity resolution; the sanitisation below is a commit-object header
     injection guard, and two copies could drift apart silently.
 
+    ``git commit`` without a pathspec commits the **whole index**, so a write
+    that had a diff of its own still carried an operator's unrelated staged
+    work into its commit and pushed it (#1273). Naming the operation's paths
+    makes it a *partial* commit, which leaves every other index entry alone.
+
+    Two consequences of a partial commit are deliberate:
+
+    - It records the named paths' **working-tree** content rather than what
+      was staged a moment ago. An external edit landing in that window is
+      committed instead of left dirty, and an external delete in that window
+      records a deletion — in both cases the repository ends up describing
+      what is actually on disk, which is what the vault is mirroring.
+    - Git refuses it outright while a merge is in progress
+      (``cannot do a partial commit during a merge``). That is the better
+      failure: the whole-index form would have swept the operator's entire
+      in-progress merge into a commit titled ``write: <note>``. The write is
+      on disk, the ``CalledProcessError`` is logged by the caller, and the
+      operator's own merge commit carries the staged file. A conflicted
+      *rebase* is not affected — a partial commit succeeds there, where the
+      whole-index form fails on "unmerged files".
+
     Args:
         root: Git repository root, as a string for ``git -C``.
         commit_msg: The commit subject.
         identity: Committer and author identity for the commit.
+        pathspec: The paths this operation staged. **Empty commits the whole
+            index**, matching git's own reading of an empty pathspec; only
+            the unscoped legacy rename branch produces it, and it has no
+            narrower truth to offer.
     """
     commit_name = identity.commit_name
     commit_email = identity.commit_email
@@ -2043,6 +2072,10 @@ def _commit_staged(
     if eff_author_name != san_commit_name or eff_author_email != san_commit_email:
         author_args = ["--author", f"{eff_author_name} <{eff_author_email}>"]
 
+    # ``--only`` with no paths is rejected outside ``--amend``, so the
+    # unscoped branch keeps the historic whole-index invocation.
+    scope_args = ["--only", "--", *pathspec] if pathspec else []
+
     subprocess.run(
         [
             "git",
@@ -2056,6 +2089,7 @@ def _commit_staged(
             "-m",
             commit_msg,
             *author_args,
+            *scope_args,
         ],
         capture_output=True,
         text=True,
