@@ -4865,6 +4865,39 @@ class TestGetFileAtRef:
         assert content.startswith("---")
         assert "\ufeff" not in content
 
+    def test_undecodable_log_output_falls_back_to_the_current_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A path git reports in bytes that are not UTF-8 degrades, not raises.
+
+        The rename walk is an optimisation over "assume the name never
+        changed"; when it cannot read the log it says so by returning nothing,
+        and the caller falls back to the current name.
+        """
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "note.md").write_text("# v1\n")
+        first = self._commit(repo, "add note")
+        (repo / "note.md").write_text("# v2\n")
+        self._commit(repo, "edit note")
+
+        real_run = subprocess.run
+
+        def fake_run(cmd: list[str], **kwargs: object) -> object:
+            if "log" in cmd:
+                completed = real_run(cmd, **kwargs)  # type: ignore[arg-type]
+                completed.stdout = b"\xff\xfe not utf-8"
+                return completed
+            return real_run(cmd, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(query_module.subprocess, "run", fake_run)
+        content, historical = GitWriteStrategy().get_file_at_ref(
+            repo, repo / "note.md", first
+        )
+
+        assert content == "# v1\n"
+        assert historical == "note.md"
+
     def test_unreadable_log_falls_back_to_the_current_name(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -7056,3 +7089,44 @@ class TestTheExcludeProbeItself:
             assert _ignored_paths(str(git_repo), (git_repo / "x.md",)) == set()
 
         assert any("git_check_ignore_failed" in r.message for r in caplog.records)
+
+
+class TestParseZLogPaths:
+    """Edges of the NUL-delimited ``git log`` parser (#1137).
+
+    Driven directly rather than through git: the shapes below are what git
+    emits for commits the rename walk does not care about, and the parser has
+    to step over them rather than mis-read them as paths.
+    """
+
+    def test_orders_newest_first_so_the_last_pair_is_the_oldest(self) -> None:
+        """The walk reads the oldest pair, so the ordering is load-bearing."""
+        raw = (
+            "\x1es1\x00h\x00i\x00m\x00\nnew.md\x00\x1es2\x00h\x00i\x00m\x00\nold.md\x00"
+        )
+
+        assert query_module._parse_z_log_paths(raw) == [
+            ("s1", "new.md"),
+            ("s2", "old.md"),
+        ]
+
+    def test_keeps_a_path_that_begins_with_a_newline(self) -> None:
+        """Only git's one separator newline is dropped, never the path's own."""
+        raw = "\x1esha\x00h\x00i\x00m\x00\n\nfoo.md\x00"
+
+        assert query_module._parse_z_log_paths(raw) == [("sha", "\nfoo.md")]
+
+    def test_takes_only_the_followed_file_from_a_multi_file_commit(self) -> None:
+        """``--follow`` with a pathspec lists one file; extras are not paths."""
+        raw = "\x1esha\x00h\x00i\x00m\x00\na.md\x00b.md\x00"
+
+        assert query_module._parse_z_log_paths(raw) == [("sha", "a.md")]
+
+    @pytest.mark.parametrize(
+        "raw",
+        ["", "\x1esha\x00h\x00i\x00m\x00", "\x1e\x00h\x00i\x00m\x00\na.md\x00"],
+        ids=["empty", "header-without-a-name-list", "header-without-a-sha"],
+    )
+    def test_skips_a_block_that_names_nothing(self, raw: str) -> None:
+        """A block the walk cannot use is stepped over, not guessed at."""
+        assert query_module._parse_z_log_paths(raw) == []
