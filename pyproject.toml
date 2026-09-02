@@ -82,7 +82,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # PROJECT-EXTRAS-START — add domain-specific optional-dependency groups below; kept across copier update
-mcp = ["fastmcp>=3.0,<4"]
+mcp = ["fastmcp>=4,<5"]
 # numpy carries no bound here on purpose: the <2.5 ceiling lives in
 # [tool.uv] constraint-dependencies below (single bound per package, per
 # scripts/check_pins.py), where Renovate's range rewriting cannot reach it
@@ -94,7 +94,7 @@ file-watcher = ["watchdog>=4.0"]
 # LLM-backed summarize tool (OpenAI-compatible chat-completions backend:
 # OpenAI, Ollama, Anthropic's compat endpoint, vLLM, ...).
 summarize = ["openai>=1.45"]
-all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0", "openai>=1.45"]
+all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0", "openai>=1.45"]
 # Pulls debugpy transitively via fastmcp-pvl-core's [debug] extra.  The
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.
