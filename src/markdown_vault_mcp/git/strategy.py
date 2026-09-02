@@ -1648,8 +1648,13 @@ def _is_tracked(root: str, path: Path) -> bool:
     return bool(result.stdout.strip())
 
 
-def _is_ignored(root: str, path: Path) -> bool:
-    """Return whether git's exclude rules would refuse to add *path*.
+def _ignored_paths(root: str, paths: Sequence[Path]) -> set[str]:
+    """Return which of *paths* git's exclude rules would refuse to add.
+
+    Asked once for every path rather than once per path (#1250):
+    :func:`_stage_rename` needs the answer for both sides of a rename, and
+    ``move_folder`` fires it once per moved file, so process spawn — not the
+    rule matching — dominates a large reorganization.
 
     ``--no-index`` is deliberate. Without it ``git check-ignore`` answers
     "not ignored" for anything already in the index, but ``git add`` refuses
@@ -1657,20 +1662,48 @@ def _is_ignored(root: str, path: Path) -> bool:
     is tracked* — so the default answer would not match the rule this probe
     exists to predict.
 
+    The paths go over ``--stdin`` with ``-z`` rather than as arguments:
+    ``-z`` is accepted *only* with ``--stdin`` (``git`` exits with
+    ``fatal: -z only makes sense with --stdin`` otherwise), and the
+    newline-delimited reply it would otherwise produce is ambiguous for a
+    filename containing a newline. Git echoes each ignored path back
+    **verbatim**, so the strings returned here compare equal to the strings
+    that were sent.
+
+    Git defines exactly two answers: 0 for "some of them" and 1 for "none",
+    so 1 is an ordinary negative reply rather than a failure. Every other
+    code is a failure and is answered as "none excluded" — the negative code
+    POSIX reports for a signal included, which is why the guard tests
+    membership rather than ordering.
+
     Args:
         root: Git repository root, as a string.
-        path: Absolute path to probe.
+        paths: Absolute paths to probe.
 
     Returns:
-        ``True`` when the path matches an exclude rule.
+        The subset of ``str(path)`` values matching an exclude rule.
     """
+    if not paths:
+        return set()
     result = subprocess.run(
-        ["git", "-C", root, "check-ignore", "--no-index", "-q", "--", str(path)],
+        ["git", "-C", root, "check-ignore", "--no-index", "-z", "--stdin"],
+        input="".join(f"{path}\0" for path in paths),
         capture_output=True,
         text=True,
         check=False,
     )
-    return result.returncode == 0
+    if result.returncode not in (0, 1):
+        # Warned rather than traced: when the paths turn out not to be excluded
+        # after all, the ``git add`` that follows succeeds and this line is the
+        # only record that the filter answered from a failure rather than from
+        # the exclude rules. See the docstring for why the test is membership.
+        logger.warning(
+            "git_check_ignore_failed rc=%s stderr=%s",
+            result.returncode,
+            (result.stderr or "").strip(),
+        )
+        return set()
+    return {entry for entry in result.stdout.split("\0") if entry}
 
 
 def _stage_rename(root: str, path: Path, old_path: Path | None) -> list[str] | None:
@@ -1727,17 +1760,18 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> list[str] | N
         )
         return []
 
+    ignored = _ignored_paths(root, (old_path, path))
     pathspec: list[str] = []
     deletions: list[str] = []
     if not _is_tracked(root, old_path):
         logger.debug("git_stage_rename_old_untracked old_path=%s", old_path)
-    elif _is_ignored(root, old_path):
+    elif str(old_path) in ignored:
         logger.debug("git_stage_rename_old_tracked_but_ignored old_path=%s", old_path)
         deletions.append(str(old_path))
     else:
         pathspec.append(str(old_path))
 
-    if _is_ignored(root, path):
+    if str(path) in ignored:
         logger.debug("git_stage_rename_new_ignored path=%s", path)
     else:
         pathspec.append(str(path))
