@@ -952,7 +952,14 @@ def get_file_at_ref(
         # path outside the vault. Serving it would hand the caller content the
         # vault does not govern. At *ref* the note simply was not in the
         # vault, and that is what the caller is told.
-        if not historical.startswith(vault_prefix):
+        #
+        # Phrased as the vault's own ``is_relative_to`` confinement idiom
+        # rather than as a ``vault_prefix`` string test: the prefix is empty
+        # both when the vault IS the git root and when the two cannot be
+        # related at all, so a prefix test would wave the second case through.
+        # A guard that decides confinement must not fail open on a value it
+        # shares with the ordinary case.
+        if not (git_root / historical).is_relative_to(repo_path.resolve()):
             raise ValueError(
                 f"Note {cur_rel!r} was not inside the vault at revision "
                 f"{ref!r}: it lived at {historical!r}, outside it"

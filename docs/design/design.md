@@ -2344,6 +2344,14 @@ itself written but not yet committed, `previous_revision` names the last
 is not recoverable from git at all, which is a property of write-through, not
 of this field.
 
+The breadcrumb read is therefore **best-effort, and never fails the write it
+annotates**. The absent cases do not all look alike from the git layer: no git
+and an uncommitted note both come back as an empty history, while a repository
+whose branch carries no commit at all makes `git log` exit non-zero, which the
+tool catches and logs rather than surfacing. A diagnostic that could abort the
+operation it describes would be worse than no diagnostic — and the case it
+would abort is the first write to a freshly initialised repository.
+
 `ReaderFacet.read_revision` is the one read method that composes two
 collaborators instead of delegating 1:1: `GitQueryManager.get_version`
 produces the historical bytes (git only) and `DocumentManager.note_at_revision`
@@ -2351,7 +2359,22 @@ shapes them (parsing only, no I/O and no index — a revision may predate the
 note's current path, or hold a note that no longer exists). The shared shaping
 rules live in `scanner.parse_markdown_text`, which `parse_note` also calls, so
 historical content resolves frontmatter, body, and title exactly as a note on
-disk does — the BOM strip included, so a BOM-prefixed revision's frontmatter is recognised. `max_note_read_bytes` and `section=` both still apply, and with the same relationship they have on a current read: the cap governs whole-document reads only, so narrowing to `section=` is a real route out of an oversized revision rather than advice the cap would then refuse.
+disk does — the BOM strip included, so a BOM-prefixed revision's frontmatter
+is recognised rather than hidden behind a `\ufeff` sitting before the `---`.
+`max_note_read_bytes` and `section=` both still apply, and with the same
+relationship they have on a current read: the cap governs whole-document reads
+only, so narrowing to `section=` is a real route out of an oversized revision
+rather than advice the cap would then refuse.
+
+The two readers agree on *content* and not on *availability*, and the
+difference runs the useful way. `DocumentManager._read_section` resolves the
+note through the FTS index before reading it, so a working-tree section read
+fails on a cold index; `note_at_revision` extracts from the blob it was handed
+and answers regardless. A revision read needs no index at all, which is what
+lets it serve a note the index has never seen — one deleted, or renamed away,
+or predating the current build. `TestParityWithTheWorkingTreeRead` pins the
+content agreement, and takes an index barrier first precisely because the
+availability agreement does not hold.
 
 Unlike `get_history` / `get_diff`, which return empty results on a vault with
 no git backing, `get_version` **raises** there: an empty answer is

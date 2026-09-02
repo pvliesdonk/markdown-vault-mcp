@@ -114,6 +114,34 @@ def plain_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return vault
 
 
+@pytest.fixture
+def bom_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A committed, unmodified note whose bytes exercise the shaping rules.
+
+    Carries a UTF-8 BOM, frontmatter, and a section, so a single read of it
+    covers decode, frontmatter parsing, title resolution, and extraction. The
+    working tree matches the commit, which is what makes the two readers
+    comparable.
+    """
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    _git(vault, "init")
+    _git(vault, "config", "user.email", "test@test.com")
+    _git(vault, "config", "user.name", "Test")
+    (vault / "note.md").write_bytes(
+        "\ufeff---\ntitle: Bommy\n---\n# Bommy\n\n## Detail\n\nthe detail body\n".encode()
+    )
+    _commit_all(vault, "add note")
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "0")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S", "0")
+    return vault
+
+
 def _data(result: Any) -> Any:
     """Return a tool result's structured payload."""
     return result.data
@@ -397,3 +425,100 @@ class TestReadAtRevision:
                 await client.call_tool(
                     "read", {"path": "note.md", "revision": "0" * 40}
                 )
+
+
+class TestParityWithTheWorkingTreeRead:
+    """A revision read and a working-tree read of the same bytes agree.
+
+    The revision path is a second reader: it acquires bytes from git rather
+    than from disk, then shapes them. Every invariant the on-disk reader
+    already encodes has to be carried across, and the review round on #1281
+    found four that had not been — the BOM strip, the cap's relationship to
+    ``section=``, path confinement, and tolerance of a failed git call. Those
+    were four patches to one gap.
+
+    These pin the gap itself: for a note whose working tree still matches its
+    newest commit, the two readers must produce the same document. A future
+    invariant dropped on the way across fails here rather than in review.
+    """
+
+    async def test_same_bytes_shape_the_same_document(self, bom_vault: Path) -> None:
+        """Frontmatter, title, and body survive both routes identically.
+
+        The BOM is the load-bearing part: the on-disk reader strips it before
+        parsing (#673), and a revision reader that did not would return a note
+        whose frontmatter block sits behind a ``\ufeff`` and goes unparsed.
+        """
+        head = _git(bom_vault, "rev-parse", "HEAD").strip()
+
+        server = make_server()
+        async with Client(server) as client:
+            current = _data(await client.call_tool("read", {"path": "note.md"}))
+            historical = _data(
+                await client.call_tool("read", {"path": "note.md", "revision": head})
+            )
+
+        assert historical["content"] == current["content"]
+        assert historical["frontmatter"] == current["frontmatter"]
+        assert historical["title"] == current["title"]
+        assert historical["folder"] == current["folder"]
+        assert current["frontmatter"] == {"title": "Bommy"}
+
+    async def test_same_section_comes_back_from_both(self, bom_vault: Path) -> None:
+        """``section=`` narrows identically on both routes, once the index is up.
+
+        The barrier below is not ceremony. A working-tree section read resolves
+        the note through the FTS index first, so it fails on a cold index; the
+        revision read shapes the section straight from the blob and answers
+        either way. The two agree on *content*, and this pins that — but they
+        do not agree on when they can answer, which is why the parity is
+        asserted after the index is ready rather than asserted unconditionally.
+        """
+        head = _git(bom_vault, "rev-parse", "HEAD").strip()
+
+        server = make_server()
+        async with Client(server) as client:
+            await client.call_tool("list_documents", {"wait_for_pending_writes": True})
+            current = _data(
+                await client.call_tool("read", {"path": "note.md", "section": "Detail"})
+            )
+            historical = _data(
+                await client.call_tool(
+                    "read",
+                    {"path": "note.md", "revision": head, "section": "Detail"},
+                )
+            )
+
+        assert historical["content"] == current["content"]
+        assert historical["frontmatter"] == current["frontmatter"] == {}
+
+    async def test_the_read_cap_governs_both_the_same_way(
+        self, bom_vault: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Whole-document reads are capped on both routes; section reads are not.
+
+        The asymmetry is the point: the cap's own error sends the caller to
+        ``section=``, so a route that capped section reads too would refuse
+        the recovery it had just recommended.
+        """
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES", "32")
+        head = _git(bom_vault, "rev-parse", "HEAD").strip()
+
+        server = make_server()
+        async with Client(server) as client:
+            with pytest.raises(ToolError, match="MAX_NOTE_READ_BYTES"):
+                await client.call_tool("read", {"path": "note.md"})
+            with pytest.raises(ToolError, match="MAX_NOTE_READ_BYTES"):
+                await client.call_tool("read", {"path": "note.md", "revision": head})
+
+            current = _data(
+                await client.call_tool("read", {"path": "note.md", "section": "Detail"})
+            )
+            historical = _data(
+                await client.call_tool(
+                    "read",
+                    {"path": "note.md", "revision": head, "section": "Detail"},
+                )
+            )
+
+        assert historical["content"] == current["content"]

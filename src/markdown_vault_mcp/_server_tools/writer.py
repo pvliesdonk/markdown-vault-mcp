@@ -253,11 +253,12 @@ def register(mcp: FastMCP) -> None:
         # commit rather than HEAD keeps it on a revision the note is present
         # in, except where that commit is the one that deleted it — the
         # recovering read then fails loudly rather than serving other content.
-        # An empty history (no git, or a note not yet committed) yields no
-        # breadcrumb at all.
-        # Best-effort by design: a repository whose branch has no commit yet
-        # makes ``git log`` exit non-zero, and a breadcrumb is never worth
-        # failing the write it annotates. The write proceeds without one.
+        #
+        # Best-effort, and never worth failing the write it annotates. The two
+        # ways a breadcrumb goes missing do not look alike: no git and an
+        # uncommitted note both return an empty history, while a repository
+        # whose branch has no commit at all makes ``git log`` exit non-zero.
+        # Both end the same way here — the write proceeds without one.
         try:
             previous = await asyncio.to_thread(vault.reader.get_history, path, limit=1)
         except ValueError as exc:
