@@ -818,6 +818,42 @@ def _per_commit_diffs(
     return diffs
 
 
+def _parse_z_log_paths(raw: str) -> list[tuple[str, str]]:
+    """Parse ``git log --name-only -z`` output into ``(sha, path)`` pairs.
+
+    One block per commit, newest first, each laid out as::
+
+        \x1e<sha>\x00<short>\x00<iso>\x00<subject>\x00\n<path>\x00
+
+    The single newline between the subject's terminator and the first path is
+    git's separator between the commit header and its name list, and is the
+    only newline this format inserts — which is what makes a path containing
+    one recoverable. Splitting on ``\x00`` and dropping exactly that one
+    leading newline is therefore the whole parse: no ``splitlines()``, no
+    ``strip()``, both of which would corrupt a path that holds whitespace.
+
+    Args:
+        raw: Decoded stdout of the ``git log`` call.
+
+    Returns:
+        ``(sha, path)`` for every commit that listed one, newest first.
+        Commits whose block carries no name entry are skipped, since this
+        exists to answer "what was the file called here".
+    """
+    pairs: list[tuple[str, str]] = []
+    for block in raw.split(_HISTORY_SENTINEL):
+        if not block:
+            continue
+        fields = block.split("\0")
+        # [sha, short, iso, subject, "\n" + first path, *more paths, ""]
+        if len(fields) < 5 or not fields[0]:
+            continue
+        first_path = fields[4].removeprefix("\n")
+        if first_path:
+            pairs.append((fields[0], first_path))
+    return pairs
+
+
 def _path_at_ref_via_follow(
     git_root: Path, ref: str, cur_rel: str, env: dict[str, str] | None
 ) -> str | None:
@@ -830,6 +866,11 @@ def _path_at_ref_via_follow(
     under the similarity threshold and reads as an unrelated delete plus add —
     exactly the shape an overwrite-then-move produces, which is the shape this
     has to survive.
+
+    Paths come back NUL-delimited (``-z``) rather than in git's default
+    line-oriented rendering, which quotes and octal-escapes any path holding a
+    non-ASCII character, newline, tab, or quote — a form that reads back as a
+    literal filename and never resolves.
 
     The oldest commit in ``ref..HEAD`` that touched the file is the one that
     settles the question: nothing touched the file between *ref* and it, so
@@ -853,40 +894,42 @@ def _path_at_ref_via_follow(
         log_result = subprocess.run(
             [
                 "git",
-                # Without this git octal-escapes and quotes any non-ASCII path
-                # ("r\303\251sum\303\251.md"), which would then be fed back
-                # to ``git show`` as a literal filename and never resolve.
-                "-c",
-                "core.quotePath=false",
                 "-C",
                 str(git_root),
                 "log",
                 "--follow",
                 f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
                 "--name-only",
+                # -z emits every path raw and NUL-terminated. Without it git
+                # renders a path it considers unusual — non-ASCII, or holding
+                # a newline, tab, or quote — as a double-quoted, octal-escaped
+                # token, which is then read back as a literal filename that
+                # ``git show`` cannot resolve. There is no subset of that
+                # rendering worth parsing.
+                "-z",
                 f"{ref}..HEAD",
                 "--",
                 cur_rel,
             ],
             capture_output=True,
-            text=True,
             check=True,
             env=env,
         )
     except subprocess.CalledProcessError:
         return None
 
-    parsed = [
-        block
-        for block in (
-            _parse_log_block(raw, cur_rel)
-            for raw in log_result.stdout.split(_HISTORY_SENTINEL)
-        )
-        if block is not None
-    ]
+    # Decoded here rather than via ``text=True``: universal-newline
+    # translation would rewrite a CR inside a path, and the whole point of
+    # -z is that the path arrives byte-exact.
+    try:
+        raw = log_result.stdout.decode()
+    except UnicodeDecodeError:
+        return None
+
+    parsed = _parse_z_log_paths(raw)
     if not parsed:
         return None
-    oldest_sha, _short, _ts, _msg, oldest_path = parsed[-1]
+    oldest_sha, oldest_path = parsed[-1]
     renamed_from = resolve_path_at_ref(
         git_root, f"{oldest_sha}^", oldest_path, env, to_ref=oldest_sha
     )
@@ -960,9 +1003,15 @@ def get_file_at_ref(
         # A guard that decides confinement must not fail open on a value it
         # shares with the ordinary case.
         if not (git_root / historical).is_relative_to(repo_path.resolve()):
+            # Named vault-relative, as every other identity this surface
+            # reports is. Echoing the git-root-relative form would hand a
+            # caller who asked for "note.md" a refusal about "vault/note.md",
+            # a path they never used — on a nested vault, which is the only
+            # arrangement that reaches this branch at all.
             raise ValueError(
-                f"Note {cur_rel!r} was not inside the vault at revision "
-                f"{ref!r}: it lived at {historical!r}, outside it"
+                f"Note {_strip_vault_prefix(cur_rel, vault_prefix)!r} was not "
+                f"inside the vault at revision {ref!r}: it lived at "
+                f"{historical!r}, outside it"
             )
         try:
             result = subprocess.run(

@@ -4795,32 +4795,53 @@ class TestGetFileAtRef:
         )
         self._commit(repo, "move into the vault")
 
-        with pytest.raises(ValueError, match="was not inside the vault"):
+        with pytest.raises(ValueError) as excinfo:
             GitWriteStrategy().get_file_at_ref(vault, vault / "note.md", first)
 
-    def test_resolves_a_rename_between_non_ascii_names(self, tmp_path: Path) -> None:
-        """Git quotes non-ASCII paths unless told not to.
+        # Vault-relative on both sides of the message: the caller asked for
+        # "note.md" and must not be answered about "vault/note.md", a path
+        # they never used.
+        assert "'note.md' was not inside the vault" in str(excinfo.value)
+        assert "'private/note.md'" in str(excinfo.value)
 
-        Left quoted, the octal-escaped name goes back to ``git show`` as a
-        literal filename and never resolves.
+    @pytest.mark.parametrize(
+        ("old_name", "new_name"),
+        [
+            ("old\nname.md", "new\nname.md"),
+            ("old\tname.md", "new\tname.md"),
+            ('old"name.md', 'new"name.md'),
+            ("café.md", "résumé.md"),
+        ],
+        ids=["newline", "tab", "quote", "non-ascii"],
+    )
+    def test_resolves_a_rename_between_awkward_names(
+        self, tmp_path: Path, old_name: str, new_name: str
+    ) -> None:
+        """Every path git would otherwise quote still resolves.
+
+        Git renders a path holding a newline, tab, quote, or non-ASCII
+        character as a double-quoted, octal-escaped token in its default
+        line-oriented output. Read back as a literal filename, none of them
+        resolve — which is why the rename walk asks for NUL-delimited paths
+        instead of parsing that rendering.
         """
         repo = tmp_path / "repo"
         self._init_repo(repo)
-        (repo / "café.md").write_text("# première version\n")
+        (repo / old_name).write_text("# the original\n")
         first = self._commit(repo, "add note")
         subprocess.run(
-            ["git", "-C", str(repo), "mv", "café.md", "résumé.md"],
+            ["git", "-C", str(repo), "mv", old_name, new_name],
             capture_output=True,
             check=True,
         )
         self._commit(repo, "rename note")
 
         content, historical = GitWriteStrategy().get_file_at_ref(
-            repo, repo / "résumé.md", first
+            repo, repo / new_name, first
         )
 
-        assert content == "# première version\n"
-        assert historical == "café.md"
+        assert content == "# the original\n"
+        assert historical == old_name
 
     def test_strips_a_leading_byte_order_mark(self, tmp_path: Path) -> None:
         """A BOM-prefixed revision parses like the same note on disk (#673).
