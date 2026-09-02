@@ -2468,8 +2468,10 @@ the moved subtree, and spawning the process costs more than matching the rules
 does. The paths go over `--stdin` with `-z`: `-z` is accepted only with
 `--stdin`, and the newline-delimited reply it would otherwise produce is
 ambiguous for a filename containing a newline. Git answers with the excluded
-subset, echoing each path back verbatim, and exit code 1 means "none of them"
-rather than a failure.
+subset, echoing each path back verbatim. It defines exactly two exit codes —
+0 for "some of them" and 1 for "none" — so 1 is an ordinary negative reply and
+not a failure, while every other code is one, the negative code a signal
+produces included.
 
 Two consequences of that filter are load-bearing. A **tracked** path an exclude
 rule covers is still staged, with `git add -u` rather than `-A`: its deletion is

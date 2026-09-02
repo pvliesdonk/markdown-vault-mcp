@@ -1693,16 +1693,10 @@ def _ignored_paths(root: str, paths: Sequence[Path]) -> set[str]:
         check=False,
     )
     if result.returncode not in (0, 1):
-        # 0 and 1 are the two answers git defines — "some" and "none of them";
-        # 1 is the ordinary negative answer, not a failure. Anything else is,
-        # including the *negative* code POSIX reports for a signal, which an
-        # ordered ``> 1`` test would let through into the parse. Report no
-        # exclusions, exactly as the single-path probe did, and let the
-        # ``git add`` that follows surface the underlying problem with its own
-        # stderr. Warned rather than traced: when the paths turn out not to be
-        # excluded after all, that ``git add`` succeeds and this is the only
-        # record that the filter answered from a failure rather than from the
-        # exclude rules.
+        # Warned rather than traced: when the paths turn out not to be excluded
+        # after all, the ``git add`` that follows succeeds and this line is the
+        # only record that the filter answered from a failure rather than from
+        # the exclude rules. See the docstring for why the test is membership.
         logger.warning(
             "git_check_ignore_failed rc=%s stderr=%s",
             result.returncode,
