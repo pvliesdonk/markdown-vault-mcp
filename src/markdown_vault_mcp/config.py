@@ -698,7 +698,8 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Watch the vault for external filesystem changes; "
-                "auto-disabled when git pull or the webhook is active. "
+                "auto-disabled when git pull is active or a webhook can "
+                "deliver (HTTP/SSE transports only). "
                 "Requires the file-watcher extra."
             ),
             "tags": ("sync", "readme"),

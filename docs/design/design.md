@@ -1050,8 +1050,9 @@ chain into `FlushDirtyEmbeddings` and both flush before the sentinel
 ends the worker loop.
 
 **File watcher scoping (#823/#828/#830).** When the file watcher is
-active (neither git pull nor a webhook is configured), it does not place a
-single recursive watch on `source_dir`, which on a home-directory vault
+active (neither git pull nor a webhook that can deliver on this
+transport), it does not place a single recursive watch on `source_dir`,
+which on a home-directory vault
 would register an OS-level recursive stream over every unrelated subtree
 (and, on macOS, trigger repeated TCC consent prompts). Instead it derives
 its watch roots: each non-excluded immediate child directory of
@@ -3867,7 +3868,9 @@ The webhook handler treats it as such, answering 200 so the host records the
 delivery rather than spending its full retry budget on every push, and logs a
 warning naming the misconfiguration; `register_webhook_routes` logs the same
 warning once at startup, when any webhook credential is set with neither
-`GIT_REPO_URL` nor `GIT_TOKEN`. The handler also wraps `force_pull` so no
+`GIT_REPO_URL` nor `GIT_TOKEN` — a route that mounts and answers, with nothing
+to pull, which is a different inertness from the transport that mounts no route
+at all (#1263, below). The handler also wraps `force_pull` so no
 exception escapes as an unhandled 500 — its documented outcome set is
 401 / 200 / 503. The
 `git_sync` tool cannot reach any of this: `_resolve_managed_strategy` refuses
@@ -3926,10 +3929,33 @@ is what lets a live webhook migrate; `server.py` logs a warning at startup
 when the plain token is the only credential, so the weaker choice is visible
 rather than silent.
 
-The file-watcher gate asks `SyncConfig.webhook_configured` rather than naming
-a provider. The hazard it guards — a watcher scanning a tree mid-checkout —
-does not care which host triggered the pull, and a gate that named only
-GitHub would have let the watcher run alongside GitLab-driven checkouts.
+The file-watcher gate asks `webhook_routes_active(config, transport)` rather
+than naming a provider. The hazard it guards — a watcher scanning a tree
+mid-checkout — does not care which host triggered the pull, and a gate that
+named only GitHub would have let the watcher run alongside GitLab-driven
+checkouts.
+
+**A credential is not a delivery (#1263).** The gate used to read
+`SyncConfig.webhook_configured` directly, which made a *configured* webhook and
+a *live* one the same thing. They are not: `register_webhook_routes` mounts
+nothing under stdio, because there is no HTTP server to receive a POST. A stdio
+deployment with a webhook credential and no `GIT_REPO_URL` therefore had no
+external-change detection at all — no route to deliver to, no pull loop, and a
+watcher that had stood down for the credential. Both sites now read one
+predicate, `webhook_routes_active`, fed the same transport: the mounting
+decision and the gate cannot disagree about whether a delivery can arrive,
+which is the shape the original bug took. The transport reaches the gate
+through `set_pending_transport`, staged by `make_server` alongside the config
+(#609) — it is a `make_server` argument rather than a config field, since the
+CLI's `--transport` flag shadows any env value, and the no-arg `Service()` the
+template's lifespan constructs cannot recover it from `ProjectConfig`. Like the
+staged config it is not cleared on read, so a ref-counted lifespan re-entry
+rebuilds the same way. The inert credential is still worth saying out loud, so
+`register_webhook_routes` logs `webhook_transport_inert` once at startup before
+returning. Consequence, and parity rather than a new hazard: a stdio deployment
+in managed git mode with `GIT_PULL_INTERVAL_S=0` now runs the watcher while a
+`git_sync` call can rewrite the tree — exactly what the same deployment without
+a webhook credential already did.
 
 **Tracking-independent remote ref**: all sync operations (startup unpushed
 check, periodic `sync_once`, interactive `force_pull`/`force_push`, and the

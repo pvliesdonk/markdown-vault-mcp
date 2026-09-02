@@ -44,10 +44,31 @@ _vault_singleton: Vault | None = None
 _pending_config: ProjectConfig | None = None
 
 
+# Transport handoff: the transport is a make_server() argument, not a config
+# field — the CLI's ``--transport`` flag is authoritative and shadows any env
+# value — so the no-arg ``Service()`` cannot recover it from ProjectConfig.
+# Staged the same way as _pending_config above, and NOT cleared on read for the
+# same ref-counted-lifespan-re-entry reason. Service.start needs it to ask
+# whether a configured webhook can actually deliver on this transport before
+# standing the file watcher down (#1263); the default matches make_server's.
+_pending_transport: str = "stdio"
+
+
 def set_pending_config(config: ProjectConfig | None) -> None:
     """Stage the config for the no-arg :class:`Service` construction (#609)."""
     global _pending_config
     _pending_config = config
+
+
+def set_pending_transport(transport: str) -> None:
+    """Stage the transport for the no-arg :class:`Service` construction (#1263).
+
+    Args:
+        transport: The resolved transport name ``make_server`` was called with
+            (``"stdio"`` / ``"http"`` / ``"sse"``).
+    """
+    global _pending_transport
+    _pending_transport = transport
 
 
 def set_vault_singleton(vault: Vault | None) -> None:
@@ -90,16 +111,22 @@ class Service:
     """Owns the Vault lifecycle: build, boot index/embeddings jobs, file watcher.
 
     Constructed no-args by the template's ``server_lifespan``; resolves config
-    from the config make_server staged (#609), falling back to an env read only
-    if none was staged. Tests may pass a pre-built ``config``.
+    from the config make_server staged (#609) and the transport it staged
+    (#1263), falling back to an env read only if no config was staged. Tests
+    may pass a pre-built ``config`` and an explicit ``transport``.
     """
 
-    def __init__(self, config: ProjectConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: ProjectConfig | None = None,
+        transport: str | None = None,
+    ) -> None:
         # Prefer an explicit config, then the one make_server staged (#609), then
         # a fresh env read. The staged config is NOT cleared: a ref-counted
         # lifespan re-entry constructs a new Service() and must rebuild from the
         # same config, not re-read env.
         self._config = config or _pending_config or ProjectConfig.from_env()
+        self._transport = transport if transport is not None else _pending_transport
         self._vault: Vault | None = None
         self._file_watcher: VaultFileWatcher | None = None
 
@@ -184,6 +211,7 @@ class Service:
             VaultFileWatcher,
             should_start_file_watcher,
         )
+        from markdown_vault_mcp._webhooks import webhook_routes_active
         from markdown_vault_mcp.exceptions import IndexUnavailableError
 
         # Use the *resolved* pull interval from the git assembly, not
@@ -192,10 +220,17 @@ class Service:
         # interval when a sync-enabled git strategy is configured.
         git_pull_active = instances.git_pull_interval_s > 0
 
+        # Ask whether a webhook can actually deliver, not merely whether its
+        # credentials are set: under stdio no route is mounted, so standing the
+        # watcher down for it would leave no external-change detection at all
+        # (#1263). Same predicate register_webhook_routes mounts on, fed the
+        # same transport make_server was called with.
+        webhook_active = webhook_routes_active(config, self._transport)
+
         if should_start_file_watcher(
             config.sync.file_watcher_enabled,
             git_pull_active,
-            config.sync.webhook_configured,
+            webhook_active,
         ):
 
             def _on_file_change() -> None:

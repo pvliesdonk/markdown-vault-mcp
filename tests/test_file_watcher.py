@@ -47,12 +47,15 @@ from markdown_vault_mcp._file_watcher import (
 )
 
 
-def _make_test_lifespan(config: object) -> object:
+def _make_test_lifespan(config: object, transport: str = "stdio") -> object:
     """A config-driven lifespan wrapping the domain ``Service`` (#902).
 
-    The production ``server_lifespan`` is no-arg (``Service()`` reads env); these
-    integration tests need a specific config, so they drive ``Service(config)``
-    through an equivalent async context manager yielding the same context shape.
+    The production ``server_lifespan`` is no-arg (``Service()`` reads env and
+    the staged transport); these integration tests need a specific config, so
+    they drive ``Service(config, transport)`` through an equivalent async
+    context manager yielding the same context shape. The transport is passed
+    explicitly rather than left to the module-level staged default, so the
+    webhook gate (#1263) is exercised against a value this test set.
     """
     from contextlib import asynccontextmanager
 
@@ -60,7 +63,7 @@ def _make_test_lifespan(config: object) -> object:
 
     @asynccontextmanager
     async def _lifespan(_mcp: object):  # type: ignore[no-untyped-def]
-        service = Service(config)  # type: ignore[arg-type]
+        service = Service(config, transport=transport)  # type: ignore[arg-type]
         await service.start()
         try:
             yield {"vault": service.vault, "service": service}
@@ -1278,7 +1281,11 @@ def test_source_dir_under_symlinked_prefix_delivers_events(tmp_path: Path) -> No
 
 
 def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
-    """The lifespan does not start the watcher when a webhook secret is configured."""
+    """The lifespan does not start the watcher when a live webhook is configured.
+
+    HTTP transport, so the credential actually mounts a route and the webhook
+    owns the reindex cadence.
+    """
     import asyncio
 
     from markdown_vault_mcp.config import ProjectConfig
@@ -1290,13 +1297,49 @@ def test_lifespan_skips_watcher_when_webhook_active(tmp_path: Path) -> None:
         read_only=False,
         github_webhook_secret="shhh",
     )
-    lifespan_fn = _make_test_lifespan(config)
+    lifespan_fn = _make_test_lifespan(config, transport="http")
 
     async def _run() -> None:
         with patch.object(VaultFileWatcher, "start") as mock_start:
             async with lifespan_fn(None) as ctx:  # type: ignore[arg-type]
                 assert ctx["vault"] is not None
                 mock_start.assert_not_called()
+
+    asyncio.run(_run())
+
+
+def test_lifespan_starts_watcher_when_webhook_cannot_deliver_on_stdio(
+    tmp_path: Path,
+) -> None:
+    """A webhook credential under stdio does not stand the watcher down (#1263).
+
+    ``register_webhook_routes`` mounts nothing under stdio, so no delivery can
+    arrive; with no git pull loop either, standing the watcher down would leave
+    the deployment with no external-change detection at all. The gate now asks
+    whether a webhook can deliver on *this* transport, not merely whether a
+    credential is set.
+    """
+    import asyncio
+
+    from markdown_vault_mcp.config import ProjectConfig
+
+    (tmp_path / "note.md").write_text("# note\n\nbody", encoding="utf-8")
+
+    config = ProjectConfig(
+        source_dir=tmp_path,
+        read_only=False,
+        github_webhook_secret="shhh",
+    )
+    lifespan_fn = _make_test_lifespan(config, transport="stdio")
+
+    async def _run() -> None:
+        with (
+            patch.object(VaultFileWatcher, "start") as mock_start,
+            patch.object(VaultFileWatcher, "stop"),
+        ):
+            async with lifespan_fn(None) as ctx:  # type: ignore[arg-type]
+                assert ctx["vault"] is not None
+                mock_start.assert_called_once()
 
     asyncio.run(_run())
 

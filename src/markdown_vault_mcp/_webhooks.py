@@ -17,6 +17,9 @@ Integration points
 ------------------
 - :func:`register_webhook_routes` — the whole mounting decision; the one
   call ``server.py``'s wiring block makes.
+- :func:`webhook_routes_active` — the predicate behind that decision, shared
+  with the file-watcher gate so both agree on whether a delivery can arrive
+  at all (#1263).
 - :func:`github_provider` / :func:`gitlab_provider` — build a provider from
   configured credentials.
 - :func:`make_webhook_handler` — handler factory; produces the callable
@@ -579,16 +582,37 @@ def make_webhook_handler(provider: WebhookProvider) -> Callable[[Request], Any]:
     return handle
 
 
+def webhook_routes_active(config: Any, transport: str) -> bool:
+    """Return True when push-webhook routes are mounted on this transport.
+
+    The one answer to "can a webhook delivery actually arrive here?", asked by
+    :func:`register_webhook_routes` before it mounts anything and by the
+    file-watcher gate before it stands down (#1263). Both used to answer it
+    separately — the mounting site knew the transport and the gate did not, so
+    a credential set under stdio mounted no route yet still disabled the
+    watcher, leaving no external-change detection at all.
+
+    Args:
+        config: The project configuration; ``config.sync.webhook_configured``
+            supplies the credential half.
+        transport: The resolved transport name, as passed to ``make_server``.
+
+    Returns:
+        ``True`` when credentials are set *and* the transport can serve HTTP.
+    """
+    return bool(config.sync.webhook_configured) and transport != "stdio"
+
+
 def register_webhook_routes(mcp: Any, config: Any, transport: str) -> None:
     """Mount each host's webhook route when its credentials are configured.
 
-    Owns the whole decision — which routes exist, and the two startup
+    Owns the whole decision — which routes exist, and the three startup
     warnings about credentials that are set but weak or inert — so
     ``server.py``'s wiring block makes one call rather than growing a second
     host's worth of branching.
 
     Nothing is mounted under stdio: there is no HTTP server to receive a POST,
-    so the credentials have no effect there.
+    so the credentials have no effect there and a warning says so.
 
     Args:
         mcp: The ``FastMCP`` server to mount routes on.
@@ -596,7 +620,21 @@ def register_webhook_routes(mcp: Any, config: Any, transport: str) -> None:
             credentials and ``config.git`` the managed-remote check.
         transport: The resolved transport name.
     """
-    if not config.sync.webhook_configured or transport == "stdio":
+    if not webhook_routes_active(config, transport):
+        if config.sync.webhook_configured:
+            # Credentials set on a transport with no HTTP server to receive a
+            # POST: no route mounts, so nothing can trigger a pull. Since
+            # #1263 the file watcher covers change detection here rather than
+            # standing down for a webhook that cannot deliver, but the
+            # credential itself is still inert and the operator should hear it
+            # once at startup rather than infer it from silence.
+            logger.warning(
+                "webhook_transport_inert: webhook credentials are set but "
+                "transport=%s serves no HTTP routes, so no push delivery can "
+                "arrive — run with --transport http to enable the endpoints, "
+                "or unset the credentials",
+                transport,
+            )
         return
 
     if config.git.repo_url is None and config.git.token is None:

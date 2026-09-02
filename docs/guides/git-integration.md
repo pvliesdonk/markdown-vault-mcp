@@ -158,11 +158,17 @@ Keep `GIT_PULL_INTERVAL_S` enabled. The webhook narrows the staleness
 window; the loop is what catches the deliveries the webhook loses.
 
 !!! note "The file watcher steps aside"
-    Setting any webhook credential disables the filesystem watcher, the
-    same way `GIT_PULL_INTERVAL_S > 0` does. Git rewrites the working tree
-    during a checkout, and a watcher firing mid-checkout would scan a
-    partial tree. Reindexing stays driven by the webhook and the periodic
-    loop. See [File Watcher](../configuration.md#file-watcher).
+    A webhook credential on an HTTP or SSE transport disables the filesystem
+    watcher, the same way `GIT_PULL_INTERVAL_S > 0` does. Git rewrites the
+    working tree during a checkout, and a watcher firing mid-checkout would
+    scan a partial tree. Reindexing stays driven by the webhook and the
+    periodic loop. See [File Watcher](../configuration.md#file-watcher).
+
+    The endpoints exist only on those transports. Under `--transport stdio`
+    the credential mounts no route, so the watcher stays on and the server
+    logs a `webhook_transport_inert` warning at startup: nothing can deliver
+    to that deployment, and the watcher is what keeps external edits
+    visible.
 
 The variables themselves are listed under
 [Change detection](../configuration.md#change-detection) in the

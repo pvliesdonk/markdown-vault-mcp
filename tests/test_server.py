@@ -530,6 +530,44 @@ class TestGitHubWebhookWiring:
         assert "/github-webhook" not in _route_paths(server)
 
     @pytest.mark.usefixtures("_mcp_env")
+    def test_stdio_secret_warns_that_the_credential_is_inert(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A credential that mounts no route on this transport is announced (#1263).
+
+        Since #1263 the file watcher keeps running here rather than standing
+        down for a webhook that cannot deliver, so change detection is intact —
+        but the credential itself still does nothing, and saying so once at
+        startup beats leaving the operator to infer it from an endpoint that
+        never answers.
+        """
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", "s3cret")
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_REPO_URL", raising=False)
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_TOKEN", raising=False)
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp._webhooks"):
+            server = make_server(transport="stdio")
+
+        assert "/github-webhook" not in _route_paths(server)
+        assert "webhook_transport_inert" in caplog.text
+        # The no-remote warning is about a mounted route whose deliveries have
+        # nothing to pull; under stdio there is no route to deliver to, so only
+        # the transport warning fires.
+        assert "webhook_inert:" not in caplog.text
+
+    @pytest.mark.usefixtures("_mcp_env")
+    def test_no_transport_warning_without_a_secret_on_stdio(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """stdio without credentials is the ordinary case, not a misconfiguration."""
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET", raising=False)
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp._webhooks"):
+            make_server(transport="stdio")
+
+        assert "webhook_transport_inert" not in caplog.text
+
+    @pytest.mark.usefixtures("_mcp_env")
     def test_webhook_route_absent_without_secret(self) -> None:
         server = make_server(transport="http")
         assert "/github-webhook" not in _route_paths(server)
@@ -4442,3 +4480,70 @@ async def test_lifespan_uses_provided_config_not_a_second_env_read(
         # the staged config must still be honoured (no from_env re-read).
         async with Client(server):
             assert get_vault_singleton() is not None
+
+
+@pytest.mark.usefixtures("_mcp_env")
+async def test_stdio_webhook_credential_leaves_the_file_watcher_running(
+    tmp_path: Path,
+) -> None:
+    """The transport reaches the file-watcher gate through make_server (#1263).
+
+    End-to-end over the staging seam: the transport is a make_server argument,
+    not a config field, so the ``Service`` the template's no-arg lifespan
+    constructs can only learn it from the staging call. Under stdio the
+    credential mounts no route, so the watcher must keep running — otherwise
+    this deployment has no external-change detection at all. Entered twice: a
+    ref-counted lifespan re-entry builds a fresh ``Service()``, which must see
+    the staged transport too.
+    """
+    from fastmcp import Client
+
+    from markdown_vault_mcp._file_watcher import VaultFileWatcher
+    from markdown_vault_mcp.config import ProjectConfig
+
+    (tmp_path / "note.md").write_text("# n\n\nbody", encoding="utf-8")
+    config = ProjectConfig(
+        source_dir=tmp_path, read_only=False, github_webhook_secret="s3cret"
+    )
+    server = make_server(transport="stdio", config=config)
+
+    with (
+        patch.object(VaultFileWatcher, "start") as mock_start,
+        patch.object(VaultFileWatcher, "stop"),
+    ):
+        async with Client(server):
+            pass
+        async with Client(server):
+            pass
+
+    assert mock_start.call_count == 2
+
+
+@pytest.mark.usefixtures("_mcp_env")
+async def test_http_webhook_credential_stands_the_file_watcher_down(
+    tmp_path: Path,
+) -> None:
+    """The same credential on HTTP does mount a route, so the watcher stays off.
+
+    The other half of the #1263 gate: the webhook owns the reindex cadence
+    here, and a watcher scanning mid-checkout is the hazard #558 guards.
+    """
+    from fastmcp import Client
+
+    from markdown_vault_mcp._file_watcher import VaultFileWatcher
+    from markdown_vault_mcp.config import ProjectConfig
+
+    (tmp_path / "note.md").write_text("# n\n\nbody", encoding="utf-8")
+    config = ProjectConfig(
+        source_dir=tmp_path, read_only=False, github_webhook_secret="s3cret"
+    )
+    server = make_server(transport="http", config=config)
+
+    with (
+        patch.object(VaultFileWatcher, "start") as mock_start,
+        patch.object(VaultFileWatcher, "stop"),
+    ):
+        async with Client(server):
+            pass
+
+    mock_start.assert_not_called()
