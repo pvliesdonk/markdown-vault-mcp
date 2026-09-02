@@ -399,6 +399,19 @@ def _subjects(repo: Path) -> list[str]:
     return out.stdout.splitlines()
 
 
+def _staged_paths(repo: Path) -> set[str]:
+    """Paths whose index entry differs from HEAD."""
+    import subprocess
+
+    out = subprocess.run(
+        ["git", "-C", str(repo), "diff", "--cached", "--name-only"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return {line for line in out.stdout.splitlines() if line}
+
+
 def _files_in_head(repo: Path) -> set[str]:
     import subprocess
 
@@ -541,6 +554,86 @@ class TestBatchCommitsForReal:
         strategy.close()
 
         assert len(_subjects(repo)) == before
+
+    def test_a_batch_that_stages_nothing_leaves_staged_work_alone(
+        self, tmp_path: Path
+    ) -> None:
+        """#1249: the batch's no-diff check must ask only about its own paths.
+
+        Repository-wide, it saw the operator's deliberately-uncommitted work
+        and committed it under this tool call's message.
+        """
+        import subprocess
+
+        repo = _repo(tmp_path)
+        (repo / "second.md").write_text("# Second\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "-A"], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "second"],
+            capture_output=True,
+            check=True,
+        )
+        (repo / "operator.md").write_text("# Theirs\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "--", str(repo / "operator.md")],
+            capture_output=True,
+            check=True,
+        )
+        strategy = self._strategy(repo)
+        before = len(_subjects(repo))
+
+        strategy.on_write_batch(
+            [
+                (repo / "note.md", "write", None, None),
+                (repo / "second.md", "write", None, None),
+            ],
+            "okf_convert_links",
+        )
+        strategy.close()
+
+        assert len(_subjects(repo)) == before
+        assert _staged_paths(repo) == {"operator.md"}
+
+    def test_an_unscoped_rename_widens_the_batch_check_back_to_the_repository(
+        self, tmp_path: Path
+    ) -> None:
+        """A caller predating #894 stages repository-wide, so it reports no pathspec.
+
+        Narrowing the check to the paths the *other* items reported would then
+        miss the rename entirely and skip a commit that has to happen.
+        """
+        import subprocess
+
+        repo = _repo(tmp_path)
+        (repo / "second.md").write_text("# Second\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "-A"], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "second"],
+            capture_output=True,
+            check=True,
+        )
+        strategy = self._strategy(repo)
+        before = len(_subjects(repo))
+
+        (repo / "note.md").rename(repo / "moved.md")
+        strategy.on_write_batch(
+            [
+                (repo / "moved.md", "rename", None, None),
+                (repo / "second.md", "write", None, None),
+            ],
+            "move_folder",
+        )
+        strategy.close()
+
+        assert len(_subjects(repo)) == before + 1
+        # An empty staged set means both sides of the rename reached the
+        # commit, the departure as well as the arrival.
+        assert _staged_paths(repo) == set()
+        assert "moved.md" in _files_in_head(repo)
 
     def test_a_delete_in_a_batch_stages_its_own_removal(self, tmp_path: Path) -> None:
         repo = _repo(tmp_path)

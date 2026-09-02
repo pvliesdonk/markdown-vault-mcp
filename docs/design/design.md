@@ -2467,10 +2467,30 @@ rule covers is still staged, with `git add -u` rather than `-A`: its deletion is
 real, dropping it would leave git serving content the vault no longer has there,
 and `-u` acts on tracked files only, so the exclude rules never apply to it.
 And when the filter leaves nothing at all to stage, `_stage_rename` reports that
-to its caller, which skips the commit rather than falling through — the
-`git diff --cached --quiet` check below it is repository-wide, so an operator's
-own staged work would otherwise be committed under the rename's message and
-pushed, the very leak this section exists to prevent.
+to its caller, which skips the commit rather than falling through — there is no
+pathspec to ask a diff check about when nothing was staged, and the historic
+repository-wide check would have committed an operator's own staged work under
+the rename's message and pushed it, the very leak this section exists to
+prevent.
+
+**Scoping the commit decision, not just the staging (#1249).** Staging being
+scoped was only half of it: `git diff --cached --quiet` without a pathspec
+answers "does the index differ from `HEAD` anywhere", which is not the question
+a commit decision asks. Whenever an operation's own `git add` ran but recorded
+nothing — a byte-identical write is the clearest case — that check saw an
+operator's deliberately-uncommitted work and committed it. `_stage_one`
+therefore returns **the pathspec it staged** rather than a boolean, and
+`_index_matches_head` asks the question scoped to it. The batched path unions
+its items' pathspecs. Two conventions carry the tri-state: `None` means nothing
+was staged and the caller must not commit at all, and an **empty** pathspec is
+git's own spelling of "the whole repository", returned only by the unscoped
+`old_path is None` rename branch whose staging really is repository-wide — a
+batch containing one widens its own check back to match, or a rename that
+reported no pathspec would be dropped from the check and its commit skipped.
+
+The commit itself is still repository-wide: `git commit` takes no pathspec, so
+a write that *does* have a diff of its own carries any unrelated staged work
+along with it (#1273).
 
 **Write identity: the `Principal` value (#1160, fixes #1218).** "Who is
 acting" is resolved **once, at the MCP tool edge**, into a frozen

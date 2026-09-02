@@ -1673,7 +1673,7 @@ def _is_ignored(root: str, path: Path) -> bool:
     return result.returncode == 0
 
 
-def _stage_rename(root: str, path: Path, old_path: Path | None) -> bool:
+def _stage_rename(root: str, path: Path, old_path: Path | None) -> list[str] | None:
     """Stage both sides of a rename without touching anything else (#894).
 
     ``git add -A`` over an explicit pathspec records the old path's
@@ -1704,10 +1704,12 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> bool:
             function fixes.
 
     Returns:
-        Whether anything was staged. ``False`` means both sides were ignored
-        and untrackable, so there is nothing for this operation to commit —
-        the caller must not fall through to a repository-wide diff check,
-        which would commit whatever the operator happened to have staged.
+        The pathspec that was staged, or ``None`` when both sides were ignored
+        and untrackable — there is then nothing for this operation to commit,
+        and the caller must not fall through to a diff check at all. An
+        **empty** list is git's own spelling of "the whole repository" and is
+        returned only by the unscoped *old_path is None* branch, whose
+        staging really is repository-wide.
     """
     if old_path is None:
         logger.debug("git_stage_rename_unscoped path=%s", path)
@@ -1723,7 +1725,7 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> bool:
             text=True,
             check=True,
         )
-        return True
+        return []
 
     pathspec: list[str] = []
     deletions: list[str] = []
@@ -1748,7 +1750,10 @@ def _stage_rename(root: str, path: Path, old_path: Path | None) -> bool:
                 text=True,
                 check=True,
             )
-    return bool(deletions or pathspec)
+    staged = deletions + pathspec
+    if not staged:
+        return None
+    return staged
 
 
 def _stage_one(
@@ -1756,7 +1761,7 @@ def _stage_one(
     path: Path,
     operation: WriteOperation,
     old_path: Path | None,
-) -> bool:
+) -> list[str] | None:
     """Stage one write's paths, scoped to what that operation touched.
 
     Extracted so the single-write and batched commit paths stage identically;
@@ -1769,9 +1774,12 @@ def _stage_one(
         old_path: For a rename, the absolute path the file moved from.
 
     Returns:
-        ``False`` when a rename had nothing stageable, so the caller can bail
-        out rather than committing whatever else happened to be staged.
-        ``True`` otherwise.
+        The pathspec that was staged, for the caller to scope its
+        "did anything actually change" check to (#1249), or ``None`` when a
+        rename had nothing stageable — the caller must then bail out rather
+        than committing whatever else happened to be staged. An **empty**
+        list means the staging was repository-wide, which is git's own
+        spelling of the same pathspec.
     """
     if operation == "delete":
         # File already removed from disk; stage the deletion.
@@ -1782,9 +1790,10 @@ def _stage_one(
             check=True,
         )
     elif operation == "rename":
-        if not _stage_rename(root, path, old_path):
+        staged = _stage_rename(root, path, old_path)
+        if staged is None:
             logger.debug("git_stage_rename_noop path=%s", path)
-            return False
+        return staged
     else:
         subprocess.run(
             ["git", "-C", root, "add", "--", str(path)],
@@ -1792,7 +1801,34 @@ def _stage_one(
             text=True,
             check=True,
         )
-    return True
+    return [str(path)]
+
+
+def _index_matches_head(root: str, pathspec: Sequence[str]) -> bool:
+    """Return whether nothing is staged *within pathspec* (#1249).
+
+    The question a commit decision has to ask is "did this operation stage
+    anything", not "does the index differ from HEAD anywhere". Asking the
+    repository-wide form let an operation that staged nothing of its own —
+    a byte-identical write, a delete of an already-deleted path — see the
+    operator's deliberately-uncommitted staged work and commit it under the
+    operation's message.
+
+    Args:
+        root: Git repository root, as a string for ``git -C``.
+        pathspec: The paths the operation staged. **Empty means the whole
+            repository**, matching git's own reading of an empty pathspec;
+            only the unscoped legacy rename branch produces it.
+
+    Returns:
+        ``True`` when the index matches ``HEAD`` across *pathspec*, so there
+        is nothing for this operation to commit.
+    """
+    result = subprocess.run(
+        ["git", "-C", root, "diff", "--cached", "--quiet", "--", *pathspec],
+        capture_output=True,
+    )
+    return result.returncode == 0
 
 
 def _stage_and_commit(
@@ -1831,11 +1867,10 @@ def _stage_and_commit(
     """
     root = str(git_root)
 
-    if not _stage_one(root, path, operation, old_path):
-        # Nothing this operation touched is stageable. Returning here
-        # rather than falling through matters: the diff check below is
-        # repository-wide, so an operator's unrelated staged work would
-        # otherwise be committed under this rename's message and pushed.
+    scope = _stage_one(root, path, operation, old_path)
+    if scope is None:
+        # Nothing this operation touched is stageable, so there is no
+        # pathspec to ask about and nothing here to commit.
         return
 
     # Generate commit message from operation and relative path.
@@ -1845,11 +1880,7 @@ def _stage_and_commit(
         rel_path = path
 
     # Skip commit if staging produced no diff (e.g. writing identical content).
-    check_result = subprocess.run(
-        ["git", "-C", root, "diff", "--cached", "--quiet"],
-        capture_output=True,
-    )
-    if check_result.returncode == 0:
+    if _index_matches_head(root, scope):
         logger.debug(
             "Git: nothing staged for %s (%s), skipping commit", rel_path, operation
         )
@@ -1928,26 +1959,31 @@ def _stage_and_commit_batch(
 
     root = str(git_root)
     staged = 0
+    scope: list[str] = []
+    whole_repo = False
     for path, operation, old_path, _principal in items:
         try:
-            if _stage_one(root, path, operation, old_path):
-                staged += 1
+            item_scope = _stage_one(root, path, operation, old_path)
         except subprocess.CalledProcessError:
             # One unstageable path must not cost the rest of the batch its
             # commit — the files are already written to disk either way.
             logger.error(
                 "git_stage_failed path=%s op=%s", path, operation, exc_info=True
             )
+            continue
+        if item_scope is None:
+            continue
+        staged += 1
+        # An empty item scope is the unscoped legacy rename, which stages
+        # repository-wide; the batch's check can be no narrower than that.
+        whole_repo = whole_repo or not item_scope
+        scope.extend(item_scope)
     if staged == 0:
         logger.debug("git_batch_nothing_staged tool=%s count=%s", tool_name, len(items))
         return
 
     # Skip commit if staging produced no diff (e.g. rewriting identical bytes).
-    check_result = subprocess.run(
-        ["git", "-C", root, "diff", "--cached", "--quiet"],
-        capture_output=True,
-    )
-    if check_result.returncode == 0:
+    if _index_matches_head(root, [] if whole_repo else scope):
         logger.debug("git_batch_no_diff tool=%s", tool_name)
         return
 
