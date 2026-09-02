@@ -2462,6 +2462,15 @@ file "not ignored", but `git add` still refuses to name a tracked file living
 under an ignored directory, so only `--no-index` predicts the rule the filter
 exists to satisfy.
 
+Both sides are asked in **one** call, not one each (#1250). `move_folder` fires
+a rename callback per moved file, so the probe count scales with the size of
+the moved subtree, and spawning the process costs more than matching the rules
+does. The paths go over `--stdin` with `-z`: `-z` is accepted only with
+`--stdin`, and the newline-delimited reply it would otherwise produce is
+ambiguous for a filename containing a newline. Git answers with the excluded
+subset, echoing each path back verbatim, and exit code 1 means "none of them"
+rather than a failure.
+
 Two consequences of that filter are load-bearing. A **tracked** path an exclude
 rule covers is still staged, with `git add -u` rather than `-A`: its deletion is
 real, dropping it would leave git serving content the vault no longer has there,

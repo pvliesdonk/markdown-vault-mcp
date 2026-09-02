@@ -6582,3 +6582,154 @@ class TestCommitsAreScopedToTheOperation:
 
         assert _head(git_repo) != head_before
         assert "new.md" in _commit_files(git_repo)
+
+
+# ---------------------------------------------------------------------------
+# batched exclude probe (#1250)
+# ---------------------------------------------------------------------------
+
+
+class TestTheExcludeProbeIsAskedOnce:
+    """Both sides of a rename are one ``check-ignore`` call, not two.
+
+    ``move_folder`` fires a rename callback per moved file, so the probe count
+    scales with subtree size and process spawn dominates the rule matching.
+    """
+
+    @staticmethod
+    def _seed(repo: Path) -> None:
+        """Commit a note, a ``.gitignore``, and a tracked file inside ``cache/``."""
+        (repo / ".gitignore").write_text(".DS_Store\ncache/\n", encoding="utf-8")
+        (repo / "note.md").write_text("# Note\n", encoding="utf-8")
+        legacy = repo / "cache" / "legacy.md"
+        legacy.parent.mkdir()
+        legacy.write_text("# Legacy\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "."], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "-f", "--", str(legacy)],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "seed"],
+            capture_output=True,
+            check=True,
+        )
+
+    @staticmethod
+    def _count_check_ignore(repo: Path, old: Path, new: Path) -> int:
+        """Run one rename through the strategy, counting ``check-ignore`` spawns."""
+        from unittest import mock
+
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        real_run = subprocess.run
+        calls = 0
+
+        def _counting(cmd, *args, **kwargs):  # type: ignore[no-untyped-def]
+            nonlocal calls
+            if isinstance(cmd, list) and "check-ignore" in cmd:
+                calls += 1
+            return real_run(cmd, *args, **kwargs)
+
+        with mock.patch("markdown_vault_mcp.git.strategy.subprocess.run", _counting):
+            _stage_and_commit(repo, new, "rename", old_path=old)
+        return calls
+
+    def test_an_ordinary_rename_probes_once(self, git_repo: Path) -> None:
+        """Neither side is excluded, and the answer for both costs one call."""
+        self._seed(git_repo)
+
+        old_abs = git_repo / "note.md"
+        new_abs = git_repo / "moved.md"
+        old_abs.rename(new_abs)
+
+        assert self._count_check_ignore(git_repo, old_abs, new_abs) == 1
+        assert _commit_files(git_repo) == {"note.md", "moved.md"}
+
+    def test_one_call_answers_for_both_sides_at_once(self, git_repo: Path) -> None:
+        """The awkward case: old tracked-but-ignored, new ignored, one probe.
+
+        Batching must not lose the per-path resolution — the deletion is still
+        recorded and the ignored destination still stays out of the repository.
+        """
+        self._seed(git_repo)
+
+        old_abs = git_repo / "cache" / "legacy.md"
+        new_abs = git_repo / "cache" / "moved.md"
+        old_abs.rename(new_abs)
+
+        assert self._count_check_ignore(git_repo, old_abs, new_abs) == 1
+        assert _commit_files(git_repo) == {"cache/legacy.md"}
+        assert "cache/moved.md" not in _tracked_files(git_repo)
+
+
+class TestTheExcludeProbeItself:
+    """``_ignored_paths`` reports a subset, keyed by the strings it was given."""
+
+    def test_it_reports_only_the_excluded_paths(self, git_repo: Path) -> None:
+        """A mixed batch comes back as the excluded subset, verbatim."""
+        from markdown_vault_mcp.git.strategy import _ignored_paths
+
+        (git_repo / ".gitignore").write_text("cache/\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(git_repo), "add", "."], capture_output=True, check=True
+        )
+
+        excluded = git_repo / "cache" / "junk.md"
+        kept = git_repo / "note.md"
+
+        assert _ignored_paths(str(git_repo), (excluded, kept)) == {str(excluded)}
+
+    def test_a_tracked_file_under_an_ignored_directory_still_counts(
+        self, git_repo: Path
+    ) -> None:
+        """``--no-index`` is load-bearing: ``git add`` refuses it even so.
+
+        The index-aware default would call this file "not ignored", and the
+        staging that trusts the answer would then fail its whole invocation.
+        """
+        from markdown_vault_mcp.git.strategy import _ignored_paths
+
+        (git_repo / ".gitignore").write_text("cache/\n", encoding="utf-8")
+        legacy = git_repo / "cache" / "legacy.md"
+        legacy.parent.mkdir()
+        legacy.write_text("# Legacy\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(git_repo), "add", "-f", "--", str(legacy)],
+            capture_output=True,
+            check=True,
+        )
+
+        assert _ignored_paths(str(git_repo), (legacy,)) == {str(legacy)}
+
+    def test_no_paths_asks_git_nothing(self, git_repo: Path) -> None:
+        """The empty batch is answered without a subprocess."""
+        from unittest import mock
+
+        from markdown_vault_mcp.git.strategy import _ignored_paths
+
+        with mock.patch("markdown_vault_mcp.git.strategy.subprocess.run") as run_mock:
+            assert _ignored_paths(str(git_repo), ()) == set()
+        run_mock.assert_not_called()
+
+    def test_a_failing_probe_reports_no_exclusions(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Exit 1 means "none"; above that is a failure, answered the same way.
+
+        Reporting an exclusion nobody asked for would drop a real path from
+        the staging pathspec; reporting none lets the ``git add`` that follows
+        fail loudly with git's own stderr.
+        """
+        from markdown_vault_mcp.git.strategy import _ignored_paths
+
+        not_a_repo = tmp_path / "plain"
+        not_a_repo.mkdir()
+
+        with caplog.at_level(logging.DEBUG):
+            assert _ignored_paths(str(not_a_repo), (not_a_repo / "x.md",)) == set()
+
+        assert any("git_check_ignore_failed" in r.message for r in caplog.records)
