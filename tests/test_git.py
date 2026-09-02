@@ -6282,10 +6282,12 @@ class TestRenameStagingSkipsIgnoredPaths:
     ) -> None:
         """Codex P1: skipping the ``git add`` must skip the commit too.
 
-        The diff check in ``_stage_and_commit`` is repository-wide. With
-        nothing staged for this operation, it saw the operator's own staged
-        work and committed it under the rename's message — the exact class of
-        leak #894 exists to prevent, through a new door.
+        With nothing staged for this operation, ``_stage_and_commit`` used to
+        fall through to a repository-wide diff check, see the operator's own
+        staged work and commit it under the rename's message — the exact class
+        of leak #894 exists to prevent, through a new door. Bailing out is
+        still what happens here: there is no pathspec to scope a check to
+        when nothing was staged at all.
         """
         import subprocess
 
@@ -6448,3 +6450,58 @@ def _tracked_files(repo: Path) -> set[str]:
         check=True,
     )
     return {line for line in out.stdout.splitlines() if line.strip()}
+
+
+# ---------------------------------------------------------------------------
+# scoped commit checks (#1249)
+# ---------------------------------------------------------------------------
+
+
+class TestTheCommitCheckIsScopedToTheOperation:
+    """A write that stages nothing must not commit the operator's staged work.
+
+    ``git diff --cached --quiet`` without a pathspec answers "does the index
+    differ from HEAD anywhere", which is not the question a commit decision
+    asks. An operation whose own ``git add`` stages nothing then saw the
+    operator's deliberately-uncommitted work and committed it under the
+    operation's message.
+    """
+
+    @staticmethod
+    def _stage_operator_work(repo: Path) -> None:
+        """Leave a staged-but-uncommitted change of the operator's own behind."""
+        import subprocess
+
+        (repo / "operator.md").write_text("# Theirs\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "--", str(repo / "operator.md")],
+            capture_output=True,
+            check=True,
+        )
+
+    def test_a_byte_identical_write_leaves_staged_work_alone(
+        self, git_repo: Path
+    ) -> None:
+        """The staging succeeds and records nothing, so there is nothing to commit."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        self._stage_operator_work(git_repo)
+        head_before = _head(git_repo)
+
+        # README.md is already committed with exactly these bytes.
+        (git_repo / "README.md").write_text("# Test\n", encoding="utf-8")
+        _stage_and_commit(git_repo, git_repo / "README.md", "write")
+
+        assert _head(git_repo) == head_before
+        assert _worktree_status(git_repo) == {"A  operator.md"}
+
+    def test_a_real_write_still_commits(self, git_repo: Path) -> None:
+        """The scoped check must not suppress a commit that has a diff of its own."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        head_before = _head(git_repo)
+        (git_repo / "new.md").write_text("# New\n", encoding="utf-8")
+        _stage_and_commit(git_repo, git_repo / "new.md", "write")
+
+        assert _head(git_repo) != head_before
+        assert "new.md" in _commit_files(git_repo)
