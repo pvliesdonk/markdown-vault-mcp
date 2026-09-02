@@ -748,6 +748,37 @@ class TestBatchCommitsForReal:
 
         assert any("git_batch_failed" in r.message for r in caplog.records)
 
+    def test_an_ignored_rename_drops_out_of_the_batch(self, tmp_path: Path) -> None:
+        """Both sides ignored: nothing staged, so it neither errors nor counts."""
+        import subprocess
+
+        repo = _repo(tmp_path)
+        (repo / ".gitignore").write_text(".DS_Store\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "-A"], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "ignore"],
+            capture_output=True,
+            check=True,
+        )
+        strategy = self._strategy(repo)
+
+        (repo / "b").mkdir()
+        (repo / "b" / ".DS_Store").write_bytes(b"junk")
+        (repo / "kept.md").write_text("# Kept\n", encoding="utf-8")
+        strategy.on_write_batch(
+            [
+                (repo / "b" / ".DS_Store", "rename", repo / "a" / ".DS_Store", None),
+                (repo / "kept.md", "write", None, None),
+            ],
+            "move_folder",
+        )
+        strategy.close()
+
+        assert _subjects(repo)[0] == "move_folder: 1 file"
+        assert _files_in_head(repo) == {"kept.md"}
+
     def test_a_batch_where_nothing_stages_commits_nothing(self, tmp_path: Path) -> None:
         """Every path unstageable: no commit, and no crash."""
         repo = _repo(tmp_path)
