@@ -295,6 +295,18 @@ Stop background tasks (e.g. git pull loop) without closing the vault.
 
 Safe to call multiple times. A no-op if no pull loop was started. The SQLite connection and write callback remain open; only the pull loop thread is signalled to stop.
 
+### `end_commit_scope(scope)`
+
+Close a tool call's commit scope, grouping its writes into one commit.
+
+Called by :class:`~markdown_vault_mcp._commit_scope.CommitScopeMiddleware` when a tool call returns. Never blocks: the marker is queued behind the writes that call fired, and the dispatcher flushes it in order.
+
+Parameters:
+
+| Name    | Type          | Description         | Default    |
+| ------- | ------------- | ------------------- | ---------- |
+| `scope` | `CommitScope` | The scope to close. | *required* |
+
 ### `close()`
 
 Release resources held by the vault.

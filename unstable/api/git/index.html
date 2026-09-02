@@ -1759,6 +1759,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteStrategy.on_write_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        on_write_batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.git.GitWriteStrategy.__call__" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2166,6 +2177,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteStrategy.on_write_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        on_write_batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.git.GitWriteStrategy.__call__" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2401,13 +2423,19 @@
 
 
 
-        <p>Stateful git strategy: commit per write, deferred push.</p>
+        <p>Stateful git strategy: commit per tool call, deferred push.</p>
 <p>On each callback invocation:</p>
 <ol>
 <li>Stages the changed file (<code>git add</code> or <code>git add -u</code> for deletes).</li>
 <li>Commits with an auto-generated message (<code>"operation: path"</code>).</li>
 <li>Resets the push timer — push fires after <code>push_delay_s</code> of idle.</li>
 </ol>
+<p>Writes fired by one MCP tool call are grouped by the dispatcher (#1264)
+and arrive at :meth:<code>on_write_batch</code>, which stages every path the same
+scoped way and commits them once as <code>"&lt;tool&gt;: N files"</code>. A call that
+touched a single file commits under that file's own path instead, so
+ordinary writes read in <code>git log</code> exactly as they always have. A write
+with no owning tool call takes the per-write path above.</p>
 <p>Push is deferred to a background <code>threading.Timer</code> that resets on
 each write.  When the timer fires (no writes for <code>push_delay_s</code>),
 all accumulated local commits are pushed in a single <code>git push</code>.</p>
@@ -2722,6 +2750,76 @@ private attribute before the promotion.</p>
     <div class="doc doc-contents ">
 
         <p>Validate startup git settings for token-authenticated workflows.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.git.GitWriteStrategy.on_write_batch" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">on_write_batch</span><span class="p">(</span><span class="n">items</span><span class="p">,</span> <span class="n">tool_name</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.git.GitWriteStrategy.on_write_batch" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Commit every write from one tool call as a single commit.</p>
+<p>Mirrors :meth:<code>__call__</code>'s guards and push scheduling; only the commit
+boundary differs, and for a call that wrote a single file not even
+that — see :func:<code>_stage_and_commit_batch</code>. The author identity is
+taken from the first item's principal: one tool call has one acting
+principal, so the items cannot legitimately disagree.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>items</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Sequence">Sequence</span>[<span title="markdown_vault_mcp.types.WriteBatchItem">WriteBatchItem</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The tool call's writes, in the order they were fired.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>tool_name</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The MCP tool that produced them.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>

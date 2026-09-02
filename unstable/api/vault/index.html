@@ -1918,6 +1918,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.end_commit_scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        end_commit_scope
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.vault.Vault.close" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2435,6 +2446,17 @@
     <span class="md-ellipsis">
       
         stop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.end_commit_scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        end_commit_scope
       
     </span>
   </a>
@@ -4335,6 +4357,59 @@ longer wraps <code>pause_writes</code> itself.</p>
 <p>Safe to call multiple times.  A no-op if no pull loop was started.
 The SQLite connection and write callback remain open; only the pull
 loop thread is signalled to stop.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.vault.Vault.end_commit_scope" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">end_commit_scope</span><span class="p">(</span><span class="n">scope</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.vault.Vault.end_commit_scope" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Close a tool call's commit scope, grouping its writes into one commit.</p>
+<p>Called by
+:class:<code>~markdown_vault_mcp._commit_scope.CommitScopeMiddleware</code> when a
+tool call returns. Never blocks: the marker is queued behind the writes
+that call fired, and the dispatcher flushes it in order.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>scope</code>
+            </td>
+            <td>
+                  <code><span title="markdown_vault_mcp._commit_scope.CommitScope">CommitScope</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The scope to close.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>

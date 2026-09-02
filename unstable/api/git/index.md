@@ -34,13 +34,15 @@ vault.close()
 
 ## `GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, commit_name_claim=None, commit_email_claim=None, git_lfs=True, repo_path=None)`
 
-Stateful git strategy: commit per write, deferred push.
+Stateful git strategy: commit per tool call, deferred push.
 
 On each callback invocation:
 
 1. Stages the changed file (`git add` or `git add -u` for deletes).
 1. Commits with an auto-generated message (`"operation: path"`).
 1. Resets the push timer — push fires after `push_delay_s` of idle.
+
+Writes fired by one MCP tool call are grouped by the dispatcher (#1264) and arrive at :meth:`on_write_batch`, which stages every path the same scoped way and commits them once as `"<tool>: N files"`. A call that touched a single file commits under that file's own path instead, so ordinary writes read in `git log` exactly as they always have. A write with no owning tool call takes the per-write path above.
 
 Push is deferred to a background `threading.Timer` that resets on each write. When the timer fires (no writes for `push_delay_s`), all accumulated local commits are pushed in a single `git push`.
 
@@ -82,6 +84,19 @@ Part of the :class:`~markdown_vault_mcp.git.interfaces.Syncer` seam (#1229): the
 ### `validate_startup(repo_path)`
 
 Validate startup git settings for token-authenticated workflows.
+
+### `on_write_batch(items, tool_name)`
+
+Commit every write from one tool call as a single commit.
+
+Mirrors :meth:`__call__`'s guards and push scheduling; only the commit boundary differs, and for a call that wrote a single file not even that — see :func:`_stage_and_commit_batch`. The author identity is taken from the first item's principal: one tool call has one acting principal, so the items cannot legitimately disagree.
+
+Parameters:
+
+| Name        | Type                       | Description                                           | Default    |
+| ----------- | -------------------------- | ----------------------------------------------------- | ---------- |
+| `items`     | `Sequence[WriteBatchItem]` | The tool call's writes, in the order they were fired. | *required* |
+| `tool_name` | `str`                      | The MCP tool that produced them.                      | *required* |
 
 ### `__call__(path, content, operation, *, old_path=None, principal=None)`
 

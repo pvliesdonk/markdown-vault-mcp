@@ -2470,8 +2470,8 @@
 variables carry the <code>MARKDOWN_VAULT_MCP_</code> prefix; a few third-party variables
 (<code>FASTMCP_*</code>, <code>PUID</code>/<code>PGID</code>) keep their upstream names.</p>
 <p>This page is the complete reference: every variable the server reads appears
-in exactly one table below. The tables come from the same source as
-<code>.env.example</code>, the packaged env files, and the
+in exactly one table below. One source generates these tables, <code>.env.example</code>
+and the packaged env files, alongside the
 <a href="../configuration-generator/">configuration generator</a>, so the four cannot
 disagree. The README carries a hand-picked subset of these variables as its
 quick entry point.</p>
@@ -2986,7 +2986,7 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td><code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING</code></td>
 <td><code>false</code></td>
 <td>No</td>
-<td>Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement (read first, pass if_match) still works, and edit / append / delete / rename are unaffected.</td>
+<td>Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename.</td>
 </tr>
 </tbody>
 </table>
@@ -3237,7 +3237,7 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td><code>MARKDOWN_VAULT_MCP_OKF_VERIFY</code></td>
 <td><code>elicit</code></td>
 <td>No</td>
-<td>How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation and records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model that holds the human's token cannot self-attest. Use trust-auth to attribute to the authenticated caller with no confirmation (safe only when the sole caller is a human-driven UI), or off to hide the tool so attestation happens through external tooling. A non-default value with OKF_WRITE off is a config error.</td>
+<td>How the okf_verify tool attributes a human review. This applies only when OKF_WRITE is on, which gates the tool. With elicit (the default), okf_verify asks the human to confirm the review through an MCP elicitation, then records the attestation only on an affirmative reply. It fails closed when the client cannot elicit or the human declines, so a model holding the human's token cannot self-attest. Set trust-auth instead to attribute to the authenticated caller with no confirmation, which is safe only when the sole caller is a human-driven UI. Set off to hide the tool, leaving attestation to external tooling. A non-default value with OKF_WRITE off is a config error.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS</code></td>
