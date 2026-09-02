@@ -2309,11 +2309,16 @@ pull raised out of the handler.</p>
 window; the loop is what catches the deliveries the webhook loses.</p>
 <div class="admonition note">
 <p class="admonition-title">The file watcher steps aside</p>
-<p>Setting any webhook credential disables the filesystem watcher, the
-same way <code>GIT_PULL_INTERVAL_S &gt; 0</code> does. Git rewrites the working tree
-during a checkout, and a watcher firing mid-checkout would scan a
-partial tree. Reindexing stays driven by the webhook and the periodic
-loop. See <a href="../../configuration/#file-watcher">File Watcher</a>.</p>
+<p>A webhook credential on an HTTP or SSE transport disables the filesystem
+watcher, the same way <code>GIT_PULL_INTERVAL_S &gt; 0</code> does. Git rewrites the
+working tree during a checkout, and a watcher firing mid-checkout would
+scan a partial tree. Reindexing stays driven by the webhook and the
+periodic loop. See <a href="../../configuration/#file-watcher">File Watcher</a>.</p>
+<p>The endpoints exist only on those transports. Under <code>--transport stdio</code>
+the credential mounts no route, so the watcher stays on and the server
+logs a <code>webhook_transport_inert</code> warning at startup: nothing can deliver
+to that deployment, and the watcher is what keeps external edits
+visible.</p>
 </div>
 <p>The variables themselves are listed under
 <a href="../../configuration/#change-detection">Change detection</a> in the

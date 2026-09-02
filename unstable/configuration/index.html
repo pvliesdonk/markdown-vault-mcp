@@ -2922,8 +2922,11 @@ when the source directory is already a repository, and plain filesystem mode.
 Token-authenticated remotes must use HTTPS. A GitHub webhook can trigger an
 immediate pull and reindex in managed mode; periodic pull remains a fallback.</p>
 <p>The filesystem watcher is enabled by default when neither periodic git pull nor
-the webhook owns change detection. Those mechanisms disable the watcher to
-avoid scanning a partially updated checkout. On macOS, set
+a live webhook owns change detection. Those mechanisms disable the watcher to
+avoid scanning a partially updated checkout. A webhook credential counts only
+where its endpoint exists: under <code>--transport stdio</code> there is no HTTP server to
+receive a delivery, so the watcher keeps running rather than leaving that
+deployment with no change detection at all. On macOS, set
 <code>FILE_WATCHER_ROOT_FLOOR=false</code> for a home-rooted vault if FSEvents causes
 repeated privacy prompts; root-level notes then rely on explicit scans.</p>
 <h3 id="content-and-transfer">Content and transfer<a class="headerlink" href="#content-and-transfer" title="Permanent link">&para;</a></h3>
@@ -3414,7 +3417,7 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td><code>MARKDOWN_VAULT_MCP_FILE_WATCHER</code></td>
 <td><code>true</code></td>
 <td>No</td>
-<td>Watch the vault for external filesystem changes; auto-disabled when git pull or the webhook is active. Requires the file-watcher extra.</td>
+<td>Watch the vault for external filesystem changes; auto-disabled when git pull is active or a webhook can deliver (HTTP/SSE transports only). Requires the file-watcher extra.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_FILE_WATCHER_DEBOUNCE_S</code></td>
