@@ -21,8 +21,6 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.okf import OKF_INDEXED_FIELDS
-
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
@@ -220,6 +218,11 @@ class VaultSettings:
         Returns:
             The effective field list (possibly empty, never ``None``).
         """
+        # Imported here rather than at module scope: `markdown_vault_mcp.okf`
+        # imports `python-frontmatter`, which is outside the config import
+        # floor this module is bound by (see `_assembly`'s module docstring).
+        from markdown_vault_mcp.okf import OKF_INDEXED_FIELDS
+
         fields = list(self.indexed_frontmatter_fields or [])
         if okf_active:
             fields.extend(key for key in OKF_INDEXED_FIELDS if key not in fields)
