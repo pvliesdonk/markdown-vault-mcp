@@ -1043,6 +1043,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#queries-and-documents-are-embedded-differently" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Queries and documents are embedded differently
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#verify_3" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2423,6 +2434,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#queries-and-documents-are-embedded-differently" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Queries and documents are embedded differently
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#verify_3" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2807,6 +2829,21 @@ curl<span class="w"> </span>https://api.openai.com/v1/embeddings<span class="w">
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_VOYAGE_MODEL</span><span class="o">=</span>voyage-4-large
 </code></pre></div>
 <p>The default is <code>voyage-4</code>, the balanced member of the family; <code>voyage-4-large</code> trades cost for retrieval quality and <code>voyage-4-lite</code> trades quality for cost. The voyage-4 and voyage-3.5 families take 32,000 tokens of input and return 1024-dimensional vectors by default. Changing the model re-embeds the vault once on the next startup.</p>
+<h3 id="queries-and-documents-are-embedded-differently">Queries and documents are embedded differently<a class="headerlink" href="#queries-and-documents-are-embedded-differently" title="Permanent link">&para;</a></h3>
+<p>Voyage's models are tuned for retrieval, and the vendor asks callers to say
+which side of a search each text is on. The server does: notes are embedded as
+<code>input_type: document</code> and search queries as <code>input_type: query</code>, which makes
+Voyage prepend its own retrieval prompt to each. Nothing to configure: it is
+how the <code>voyage</code> provider embeds.</p>
+<div class="admonition note">
+<p class="admonition-title">Voyage vaults re-embed once on upgrade</p>
+<p>Vaults embedded before this behavior existed hold vectors Voyage produced
+with no <code>input_type</code> at all. Those sit in a different space from the typed
+ones, so the vector sidecar's identity check fails on the first startup
+after the upgrade and the vault re-embeds itself once, exactly as it does
+after a model change. The rebuild is automatic; it costs one pass of Voyage
+API calls over the vault.</p>
+</div>
 <div class="admonition note">
 <p class="admonition-title">Voyage must be selected explicitly</p>
 <p>Unlike the other three, <code>voyage</code> is not in the auto-detection chain. A <code>VOYAGE_API_KEY</code> exported for some other tool would otherwise take over an existing index and force a full re-embed.</p>
@@ -2872,17 +2909,24 @@ whose base64 default is widely accepted. This narrow request shape is why
 strict endpoints work: Voyage answers HTTP 400 to <code>dimensions</code>, to <code>user</code>,
 and to <code>encoding_format="float"</code>. An endpoint that requires a
 field outside <code>model</code> and <code>input</code> cannot be driven this way.</p>
+<p>The one addition is vendor-specific and reached only through a named provider:
+<a href="#voyage-ai"><code>voyage</code></a> also sends <code>input_type</code>. Driving Voyage through this
+<code>openai</code> recipe instead sends no <code>input_type</code>, so it does not get the
+query/document asymmetry. That is one more reason to prefer the named
+provider.</p>
 <h3 id="caveats-worth-knowing">Caveats worth knowing<a class="headerlink" href="#caveats-worth-knowing" title="Permanent link">&para;</a></h3>
 <div class="admonition warning">
 <p class="admonition-title">Changing only the base URL is invisible to the index</p>
-<p>The vector sidecar records the provider name and the model name, and a
-mismatch on startup re-embeds the vault automatically. Both values stay
-<code>openai</code> and your configured model string no matter which vendor serves
-them, so aiming <code>OPENAI_BASE_URL</code> at a different vendor while keeping
-the same model name goes undetected: vectors from two different models
-end up in one index, and search quality degrades quietly. Force the rebuild
-yourself by deleting the two sidecar files beside <code>EMBEDDINGS_PATH</code>
-(the <code>.npy</code> matrix and the <code>.json</code> metadata) and restarting.</p>
+<p>The vector sidecar records the provider name, the model name, and how
+that provider embeds, and a mismatch on startup re-embeds the vault
+automatically. Under this recipe the first two stay <code>openai</code> and your
+configured model string no matter which vendor serves them, and the
+third is always empty, so aiming <code>OPENAI_BASE_URL</code> at a different vendor
+while keeping the same model name goes undetected: vectors from two
+different models end up in one index, and search quality degrades
+quietly. Force the rebuild yourself by deleting the two sidecar files
+beside <code>EMBEDDINGS_PATH</code> (the <code>.npy</code> matrix and the <code>.json</code> metadata)
+and restarting.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Unknown context length falls back to a 1500-character chunk cap</p>

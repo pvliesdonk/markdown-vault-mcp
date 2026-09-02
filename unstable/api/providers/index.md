@@ -27,6 +27,17 @@ Override with `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai|voyage|ollama|fastem
 
 `voyage` is a preset over the same OpenAI-compatible transport, pinned to `https://api.voyageai.com/v1` and configured with `VOYAGE_API_KEY` and `MARKDOWN_VAULT_MCP_VOYAGE_MODEL`. It is never auto-detected: select it explicitly.
 
+## Documents and Queries
+
+`EmbeddingProvider` has two embedding doors. `embed()` is the document side, used everywhere text is embedded for storage; `embed_query()` is the search side. Only `embed()` is abstract. `embed_query()` defaults to it, so a provider whose model draws no query/document distinction writes nothing extra and embeds both sides identically.
+
+```
+vectors = provider.embed(["a stored note"])       # index side
+query_vector = provider.embed_query(["a search"])  # search side
+```
+
+`VoyageProvider` overrides both, sending Voyage's `input_type` parameter so the vendor prepends its document or query retrieval prompt. Because that changes the embedding space, it also reports a non-empty `provider_variant`, which the vector sidecar records next to the provider and model names.
+
 ## API Reference
 
 ## `EmbeddingProvider`
@@ -34,6 +45,20 @@ Override with `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=openai|voyage|ollama|fastem
 Bases: `ABC`
 
 Abstract base class for embedding providers.
+
+Retrieval-tuned models embed the two sides of a search asymmetrically — a stored *document* and a *query* against it get different treatment — so the class has two embedding doors: :meth:`embed` for the indexing side and :meth:`embed_query` for the search side. Only :meth:`embed` is abstract; :meth:`embed_query` defaults to it, so a provider whose model has no such distinction (and any subclass written before the split) stays symmetric with nothing to implement (#1135).
+
+### `provider_variant`
+
+Identity token for the embedding space this provider produces.
+
+Persisted alongside `provider_name`/`model_name` in the vector sidecar so that a change in *how* a provider embeds — not which provider or model it is — is caught at load and routed to the same rebuild as a model change. Defaults to `""`: one provider plus one model means one embedding space.
+
+Returns:
+
+| Type  | Description                                                 |
+| ----- | ----------------------------------------------------------- |
+| `str` | A stable token, or "" when the provider has a single space. |
 
 ### `dimension`
 
@@ -61,13 +86,33 @@ Returns None when the limit cannot be determined; callers fall back to a conserv
 
 ### `embed(texts)`
 
-Embed a batch of texts.
+Embed a batch of texts for storage in the index.
+
+This is the document side of retrieval. Query text goes through :meth:`embed_query` instead.
 
 Parameters:
 
 | Name    | Type        | Description               | Default    |
 | ------- | ----------- | ------------------------- | ---------- |
 | `texts` | `list[str]` | List of strings to embed. | *required* |
+
+Returns:
+
+| Type                | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| `list[list[float]]` | List of embedding vectors, one per input text. |
+
+### `embed_query(texts)`
+
+Embed a batch of search queries.
+
+Defaults to :meth:`embed` — symmetric embedding, which is correct for every model that draws no query/document distinction. Providers whose models do (Voyage) override this.
+
+Parameters:
+
+| Name    | Type        | Description                     | Default    |
+| ------- | ----------- | ------------------------------- | ---------- |
+| `texts` | `list[str]` | List of query strings to embed. | *required* |
 
 Returns:
 
@@ -234,6 +279,8 @@ Voyage serves `/v1/embeddings` in the OpenAI request/response shape, so this is 
 
 Voyage rejects OpenAI request fields it does not implement: `dimensions` and `user` are answered with HTTP 400, and `encoding_format="float"` with "accepted values are 'base64'". The shared transport sends only `model` and `input` and leaves `encoding_format` to the `openai` SDK, whose base64 default Voyage accepts — so no request shaping is needed here, but none of those three fields may start being sent either.
 
+`input_type` is the one extra field this provider does send (#1135). It is Voyage's own parameter rather than an OpenAI one, which is why the transport passes it as `extra_body` and only when a caller asks for it: OpenAI and Ollama would answer it with the same HTTP 400 as the three fields above.
+
 Parameters:
 
 | Name      | Type    | Description                                              | Default    |
@@ -271,6 +318,12 @@ Returns:
 | ----- | ------------------------------------------- |
 | `int` | Integer dimension of each embedding vector. |
 
+### `provider_variant`
+
+Identity token for Voyage's typed embedding space.
+
+Voyage prepends a different retrieval prompt per `input_type`, so vectors written before #1135 (sent untyped) sit in a different space from the ones this provider writes now. The token differs from the `""` a pre-#1135 sidecar reads back as, so an existing Voyage vault fails the identity check on first load and re-embeds once.
+
 ### `context_length`
 
 Return the model's context length from the known-model table.
@@ -279,13 +332,39 @@ Returns None for models absent from the table; callers fall back to a conservati
 
 ### `embed(texts)`
 
-Embed a batch of texts via Voyage's Embeddings API.
+Embed a batch of documents via Voyage's Embeddings API.
+
+Sends `input_type="document"`, which makes Voyage prepend its document retrieval prompt.
 
 Parameters:
 
 | Name    | Type        | Description               | Default    |
 | ------- | ----------- | ------------------------- | ---------- |
 | `texts` | `list[str]` | List of strings to embed. | *required* |
+
+Returns:
+
+| Type                | Description                               |
+| ------------------- | ----------------------------------------- |
+| `list[list[float]]` | List of embedding vectors in input order. |
+
+Raises:
+
+| Type           | Description                      |
+| -------------- | -------------------------------- |
+| `RuntimeError` | If the embeddings request fails. |
+
+### `embed_query(texts)`
+
+Embed a batch of search queries via Voyage's Embeddings API.
+
+Sends `input_type="query"`, which makes Voyage prepend its query retrieval prompt — the other half of the asymmetry :meth:`embed` supplies.
+
+Parameters:
+
+| Name    | Type        | Description                     | Default    |
+| ------- | ----------- | ------------------------------- | ---------- |
+| `texts` | `list[str]` | List of query strings to embed. | *required* |
 
 Returns:
 
