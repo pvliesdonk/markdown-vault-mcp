@@ -6,8 +6,10 @@ intercepts them.
 
 The ``git_root`` parameter is pre-resolved by the caller (typically via
 :meth:`GitWriteStrategy._ensure_git_root`, which memoises the result).  Passing
-``None`` to the two query entry points (:func:`get_file_history` /
+``None`` to the log-shaped entry points (:func:`get_file_history` /
 :func:`get_file_diff`) is a no-op: they return an empty result immediately.
+:func:`get_file_at_ref` is the exception and raises instead — an empty answer
+there would read as "the file was empty at that revision" (#1137).
 (:func:`resolve_path_at_ref` is an internal helper and requires a resolved
 ``git_root``.)  This keeps git-root discovery out of these functions so that tests
 can prime the cache on the
@@ -246,21 +248,32 @@ def _history_log_output(cmd: list[str], env: dict[str, str] | None) -> str:
     return result.stdout
 
 
+def _strip_vault_prefix(path: str, vault_prefix: str) -> str:
+    """Return *path* with *vault_prefix* removed, if it carries one.
+
+    Args:
+        path: A repository-relative path as git reported it.
+        vault_prefix: The prefix from :func:`_vault_prefix`, possibly empty.
+
+    Returns:
+        The vault-relative path.
+    """
+    if vault_prefix and path.startswith(vault_prefix):
+        return path[len(vault_prefix) :]
+    return path
+
+
 def _vault_relative_paths(lines: list[str], vault_prefix: str) -> list[str]:
     """Normalise ``--name-only`` path lines to vault-relative paths.
 
     Blank lines are dropped; *vault_prefix* (when non-empty) is stripped from
     each remaining line so callers always receive vault-relative paths.
     """
-    paths: list[str] = []
-    for ln in lines:
-        ln = ln.strip()
-        if not ln:
-            continue
-        if vault_prefix and ln.startswith(vault_prefix):
-            ln = ln[len(vault_prefix) :]
-        paths.append(ln)
-    return paths
+    return [
+        _strip_vault_prefix(stripped, vault_prefix)
+        for ln in lines
+        if (stripped := ln.strip())
+    ]
 
 
 def _parse_history_block(
@@ -802,3 +815,149 @@ def _per_commit_diffs(
             )
         )
     return diffs
+
+
+def _path_at_ref_via_follow(
+    git_root: Path, ref: str, cur_rel: str, env: dict[str, str] | None
+) -> str | None:
+    """Return the name *cur_rel* carried at *ref*, or ``None`` if unchanged.
+
+    Resolves renames by walking ``git log --follow`` over ``ref..HEAD``
+    rather than by asking :func:`resolve_path_at_ref` to spot a rename in the
+    whole-range diff.  The range diff compares the blob at *ref* with the blob
+    at ``HEAD``, so a note that was both rewritten and renamed since falls
+    under the similarity threshold and reads as an unrelated delete plus add —
+    exactly the shape an overwrite-then-move produces, which is the shape this
+    has to survive.
+
+    The oldest commit in ``ref..HEAD`` that touched the file is the one that
+    settles the question: nothing touched the file between *ref* and it, so
+    its name at that point is its name at *ref* — unless that commit is itself
+    the rename, in which case ``--follow`` reports the *new* name and the old
+    one comes from resolving that single commit against its parent (the same
+    move :func:`get_file_diff`'s per-commit path makes).
+
+    Args:
+        git_root: Pre-resolved git repository root.
+        ref: The revision to resolve the name at.
+        cur_rel: The file's current repository-relative path.
+        env: Environment for the git subprocesses.
+
+    Returns:
+        The repository-relative path at *ref*, or ``None`` when the file was
+        not touched between *ref* and ``HEAD`` (its name did not change) or
+        the log could not be read.
+    """
+    try:
+        log_result = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(git_root),
+                "log",
+                "--follow",
+                f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
+                "--name-only",
+                f"{ref}..HEAD",
+                "--",
+                cur_rel,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env,
+        )
+    except subprocess.CalledProcessError:
+        return None
+
+    parsed = [
+        block
+        for block in (
+            _parse_log_block(raw, cur_rel)
+            for raw in log_result.stdout.split(_HISTORY_SENTINEL)
+        )
+        if block is not None
+    ]
+    if not parsed:
+        return None
+    oldest_sha, _short, _ts, _msg, oldest_path = parsed[-1]
+    renamed_from = resolve_path_at_ref(
+        git_root, f"{oldest_sha}^", oldest_path, env, to_ref=oldest_sha
+    )
+    return renamed_from or oldest_path
+
+
+def get_file_at_ref(
+    git_root: Path | None,
+    repo_path: Path,
+    path: Path,
+    ref: str,
+    *,
+    token: str | None,
+    username: str,
+) -> tuple[str, str]:
+    """Return the text of *path* as it stood at *ref*, and the path it had there.
+
+    Rename-aware through :func:`_path_at_ref_via_follow`, so a note renamed
+    since *ref* is still found under the name it carried there.
+
+    Args:
+        git_root: Pre-resolved git repository root, or ``None`` if the vault
+            is not inside a git repository.
+        repo_path: Absolute path of the vault root.  Used to report the
+            historical path vault-relative, as ``get_file_history`` does for
+            its changed paths, even when the git root is a parent of the
+            vault.
+        path: Absolute path of the file to read, at its current name.
+        ref: The commit to read the file at.
+        token: Personal access token for authenticated git operations, or
+            ``None`` for unauthenticated access.
+        username: Git username for authenticated operations.
+
+    Returns:
+        ``(content, historical_path)`` — the file's full text at *ref*, and
+        the vault-relative path it had at that revision (equal to the current
+        vault-relative path when no rename intervened).
+
+    Raises:
+        ValueError: If the vault is not inside a git repository, *path* lies
+            outside *git_root*, *ref* is unknown, the file did not exist at
+            *ref*, or its bytes at *ref* are not valid UTF-8.
+    """
+    if git_root is None:
+        raise ValueError(
+            "Reading a revision requires a git-backed vault; this vault's "
+            "source directory is not inside a git repository"
+        )
+    try:
+        cur_rel = path.resolve().relative_to(git_root).as_posix()
+    except ValueError as exc:
+        raise ValueError(f"Path {path} is outside the git repository") from exc
+
+    env = git_env(token, username)
+    try:
+        historical = _path_at_ref_via_follow(git_root, ref, cur_rel, env) or cur_rel
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(git_root), "show", f"{ref}:{historical}"],
+                capture_output=True,
+                check=True,
+                env=env,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise ValueError(
+                f"Could not read {historical!r} at revision {ref!r}: unknown "
+                "revision, or the file did not exist at it"
+            ) from exc
+    finally:
+        cleanup_git_env(env)
+
+    # Bytes, not text=True: a blob that is not valid UTF-8 must fail loudly
+    # here rather than reach the caller mangled by replacement characters.
+    try:
+        content = result.stdout.decode()
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"Content of {historical!r} at revision {ref!r} is not valid UTF-8"
+        ) from exc
+    return content, _strip_vault_prefix(historical, _vault_prefix(git_root, repo_path))

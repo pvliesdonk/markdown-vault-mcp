@@ -83,7 +83,7 @@ markdown-vault-mcp (new package)
 |   +-- index.py      -- IndexManager: build_index, reindex, dirty-path FTS refresh
 |   +-- embeddings.py -- EmbeddingsManager: vector lifecycle (composed into IndexManager, #1157)
 |   +-- document.py   -- DocumentManager: CRUD, attachments, path validation
-|   +-- git_query.py  -- GitQueryManager: git history/diff reads (#610)
+|   +-- git_query.py  -- GitQueryManager: git history/diff/revision reads (#610)
 +-- indexing/
 |   +-- index_writer.py -- IndexWriter: single-owner FIFO writer thread + jobs/runners
 |   +-- readiness.py  -- ReadinessState: build-readiness state machine (#576)
@@ -1780,6 +1780,20 @@ class NoteContent:
     etag: str                         # SHA256 hex of raw file bytes; use as if_match
 
 @dataclass
+class RevisionContent:
+    """A document at one git revision, returned by read_revision() (#1137)."""
+    path: str                         # the note's identity today
+    revision: str                     # the commit, echoed back as supplied
+    historical_path: str              # the path it carried at `revision`
+    content: str                      # raw markdown at that revision
+    frontmatter: dict[str, Any]       # {} for a section read
+    title: str
+    folder: str
+    # No modified_at and no etag: both describe the current file. A stale
+    # etag fed back as if_match would look like proof of a read the caller
+    # never made, so none is offered.
+
+@dataclass
 class NoteInfo:
     """Summary info for a document, returned by list_documents()."""
     path: str
@@ -2148,7 +2162,7 @@ operations to them. No manager holds a back-reference to Vault.
 | ``IndexManager`` | build_index, reindex, process_dirty_paths; thin delegations for build_embeddings, embeddings_status, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy, composed ``EmbeddingsManager`` (no lock; driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
 | ``EmbeddingsManager`` | Vector lifecycle: cold build, boot convergence, inline reindex embedding, deferred flush, embeddings_status (#1157) | ``FTSIndex``, ``source_dir``, embedding config, get/set-vectors callables, injected ``_is_path_excluded`` / ``_discover_indexable_candidates`` callables (#736 precedent); constructed by ``IndexManager``, not wired from ``Vault`` |
 | ``DocumentManager`` | read, write, edit, append, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only; see #559), ``mark_paths_dirty`` hook, callbacks |
-| ``GitQueryManager`` | Git history / diff reads (read-only, #610) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir`` |
+| ``GitQueryManager`` | Git history / diff / content-at-revision reads (read-only, #610) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir`` |
 
 Each manager receives its dependencies as constructor arguments. This enables
 isolated unit testing and clear dependency boundaries. Pure utility functions
@@ -2163,7 +2177,7 @@ root already owns:
 
 | Facet | Surface | Collaborators |
 |-|-|-|
-| ``ReaderFacet`` | search, read, get_metadata, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
+| ``ReaderFacet`` | search, read, read_revision, get_metadata, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
 | ``WriterFacet`` | write, edit, append, delete, rename, write_attachment | ``DocumentManager`` |
 | ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path, neighborhood/hub graph views (#880) | ``LinkManager``, ``SearchManager``, ``require_built`` |
 | ``IndexFacet`` | build/reindex/embeddings (sync + async), readiness, writer status, embeddings_status | ``IndexWriteCoordinator`` (public subset only), ``IndexManager`` (embeddings_status) |
@@ -2302,6 +2316,53 @@ regeneration and link conversion) passes `write(..., allow_overwrite=True)`.
 The flag governs what a client can do to content it has not read; it is not a
 lock on the files themselves, and `allow_overwrite` is not reachable from the
 `write` tool.
+
+**Overwrite recovery (#1137)**: the guard above makes an overwrite
+deliberate; this makes one reversible from the same seat it was made from. The
+`write` tool reads the note's newest commit **before** writing and returns it
+as `previous_revision` on a `.md` overwrite; `read(path, revision=<sha>)`
+reads the content back through `ReaderFacet.read_revision`.
+
+The ordering and the choice of commit both follow from the write callback
+being asynchronous (`WriteCallbackDispatcher`, one commit per `CommitScope`).
+Reading afterwards would race the write's own commit, which may or may not
+have landed by then. And HEAD — even read beforehand — is the wrong commit to
+name: on a vault whose queue is still draining, HEAD can predate the note's
+creation, so the breadcrumb would point at a revision the note is absent from.
+The note's own newest commit holds it in every case but one — where that
+commit is the deletion of a note since recreated by a write still in the queue,
+and the recovering read then fails loudly rather than serving other content.
+Threading the commit SHA back out of the `Versioner` callback would be more
+precise still, but it would rethread the #1229 seam and make every write wait
+on its commit.
+
+Two consequences are inherent rather than defects. The breadcrumb is absent
+when the note has no commit yet (including a vault with no git write-through),
+because there is nothing to name. And when the content being replaced was
+itself written but not yet committed, `previous_revision` names the last
+*committed* version rather than that one — content that never reached a commit
+is not recoverable from git at all, which is a property of write-through, not
+of this field.
+
+`ReaderFacet.read_revision` is the one read method that composes two
+collaborators instead of delegating 1:1: `GitQueryManager.get_version`
+produces the historical bytes (git only) and `DocumentManager.note_at_revision`
+shapes them (parsing only, no I/O and no index — a revision may predate the
+note's current path, or hold a note that no longer exists). The shared shaping
+rules live in `scanner.parse_markdown_text`, which `parse_note` also calls, so
+historical content resolves frontmatter, body, and title exactly as a note on
+disk does. `max_note_read_bytes` and `section=` both still apply.
+
+Unlike `get_history` / `get_diff`, which return empty results on a vault with
+no git backing, `get_version` **raises** there: an empty answer is
+indistinguishable from "the note was empty at that revision", and a caller
+about to restore content must not be handed that ambiguity. Revision reads are
+`.md`-only — a revision read returns text, and attachment blobs are binary —
+so the `previous_revision` breadcrumb is emitted for note overwrites only,
+rather than pointing at a revision the caller has no way to read. Restoring is
+an ordinary `write` (index, OKF `log.md` upkeep, auto-commit); no `restore`
+tool exists, and none may bypass the write pipeline with a bare
+`git checkout`.
 
 **`edit()` behavior**: supports three modes: (1) exact match: reads file,
 verifies `old_text` exists exactly once, replaces with `new_text`; (2) line-range:
@@ -3814,8 +3875,8 @@ pull/write paths (`_force_pull_rebase_fallback` requires the lock held;
 also expressed as protocols, so each consumer depends on the surface it uses
 rather than on the concrete class:
 
-- `HistorySource` — `get_file_history` / `get_file_diff`. `GitQueryManager`
-  depends on this and nothing else.
+- `HistorySource` — `get_file_history` / `get_file_diff` /
+  `get_file_at_ref`. `GitQueryManager` depends on this and nothing else.
 - `Syncer` — pull/push (`force_pull`, `force_push`, `sync_once`), the loop
   lifecycle (`start`/`stop`/`flush`/`close`/`set_write_quiescer`), and the
   repository reads the `git_sync` tool needs (`is_managed`,
@@ -4016,12 +4077,13 @@ resolves, the operation reports `no_remote` and is skipped.
 
 Safety branch mode for push failures is tracked separately (see #119).
 
-**Git history queries**: `GitWriteStrategy` exposes two read-only methods for querying the git commit log without modifying any state:
+**Git history queries**: `GitWriteStrategy` exposes three read-only methods for querying git without modifying any state:
 
 - `get_file_history(repo_path, path, since, limit, until=None, *, is_dir=False)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note, a folder subtree, or the entire vault. Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. A single-file query uses `--follow` (rename-tracking) and returns no per-commit paths; a directory query (`is_dir=True`, dispatched by `GitQueryManager.get_history` when `path` resolves to a real directory) drops `--follow` and scopes to `git log --name-only -- <dir>`, and vault-wide queries append `--name-only` — both populate each commit's changed file paths (git scopes the `--name-only` output to the directory pathspec, so no sibling files leak in). Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary.
 - `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)`: runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,40}`), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant, meaning a commit whose committer date equals the timestamp is the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked, useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. `CalledProcessError` from an unknown ref is re-raised as `ValueError`.
 
-Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for credential forwarding and cleanup. Path arguments are always validated via `Vault._validate_path()` before being passed to the git layer. No shell injection is possible because all subprocess calls use list arguments with `shell=False`.
+- `get_file_at_ref(repo_path, path, ref)`: returns the file's text at `ref` and the vault-relative path it carried there. Rename-aware through the same `resolve_path_at_ref(git_root, ref, cur_rel, env)` helper the diff path uses, so the caller passes the note's *current* path. `git show <ref>:<historical>` is captured as bytes, not text, so a blob that is not valid UTF-8 raises `ValueError` instead of arriving mangled by replacement characters; an unknown ref or a path absent at `ref` raises `ValueError` the same way.
+All three methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for credential forwarding and cleanup. Path arguments are always validated via `Vault._validate_path()` before being passed to the git layer. No shell injection is possible because all subprocess calls use list arguments with `shell=False`.
 
 **MCP response envelope**: the MCP wrappers for `get_history` and `get_diff(per_commit=True)` return a `{"commits": [...], "total": N}` envelope rather than a bare list, so the structured payload is self-describing on the wire. FastMCP otherwise auto-wraps list-typed tool returns under a synthetic `"result"` key (`x-fastmcp-wrap-result: true` in the output schema), which forces clients re-reading persisted MCP content to know FastMCP's wrapping convention to find the data. The Python façade (`ReaderFacet.get_history`, `ReaderFacet.get_diff`) stays list-returning; only the MCP-tool wrapper transforms to the envelope. `get_diff(per_commit=False)` keeps its existing `{"diff": str}` shape since it is already self-describing.
 

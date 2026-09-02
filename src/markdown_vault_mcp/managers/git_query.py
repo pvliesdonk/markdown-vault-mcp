@@ -1,8 +1,9 @@
-"""Git history/diff query manager.
+"""Git history/diff/revision query manager.
 
-Handles read-only git queries (commit history, diffs) with dependency
-injection — receives a :class:`~markdown_vault_mcp.git.HistorySource`
-(or ``None`` when the vault is not a git repository) and the ``source_dir``,
+Handles read-only git queries (commit history, diffs, a note's content at a
+revision) with dependency injection — receives a
+:class:`~markdown_vault_mcp.git.HistorySource` (or ``None`` when the vault is
+not a git repository) and the ``source_dir``,
 with no back-reference to :class:`Vault`. Sibling to
 :class:`~markdown_vault_mcp.managers.link.LinkManager`. Extracted from
 ``Vault`` (#610) so the read facet stays thin.
@@ -28,18 +29,42 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.types import CommitDiff, HistoryEntry
 
 
+def _require_sha(value: str, label: str) -> None:
+    """Reject anything but a plain commit SHA.
+
+    Symbolic revisions (``HEAD~1``, branch names, ``:/message``) are refused
+    rather than passed to git: every SHA reaching these queries comes from
+    ``get_history`` or a write result, and accepting expressions would widen
+    what the caller can ask git to resolve for no gain.
+
+    Args:
+        value: The candidate revision.
+        label: How to name it in the error (the callers spell it
+            differently).
+
+    Raises:
+        ValueError: If *value* is not 4-40 lowercase hex digits.
+    """
+    if not re.fullmatch(r"[0-9a-f]{4,40}", value):
+        raise ValueError(
+            f"Invalid {label} {value!r}: must be 4-40 lowercase hex digits"
+        )
+
+
 class GitQueryManager:
-    """Read-only git history/diff queries, backed by a ``HistorySource``.
+    """Read-only git history, diff, and revision queries, over a ``HistorySource``.
 
     Depends on the narrowest of the three versioning facets (#1229): this
-    manager calls ``get_file_history`` and ``get_file_diff`` and nothing else,
-    so it is coupled to neither the commit nor the sync surface.
+    manager calls ``get_file_history``, ``get_file_diff`` and
+    ``get_file_at_ref`` and nothing else, so it is coupled to neither the
+    commit nor the sync surface.
     ``GitWriteStrategy`` is the implementation the git-backed vault supplies.
 
     Args:
         git_strategy: The history source to query, or ``None`` when the vault's
-            source directory is not inside a git repository (queries then
-            return empty results rather than raising).
+            source directory is not inside a git repository. :meth:`get_history`
+            and :meth:`get_diff` then return empty results rather than raising;
+            :meth:`get_version` is the deliberate exception and raises.
         source_dir: Absolute path to the vault root directory.
         attachment_extensions: Allowed attachment file extensions, in any
             case and with or without leading dots (e.g. ``["png", "pdf"]``).
@@ -129,6 +154,52 @@ class GitQueryManager:
             self._source_dir, abs_path, since, limit, until=until, is_dir=is_dir
         )
 
+    def get_version(self, path: str, revision: str) -> tuple[str, str]:
+        """Return a note's content at *revision*, and the path it had there.
+
+        Unlike :meth:`get_history` and :meth:`get_diff`, a vault with no git
+        backing **raises** rather than degrading to an empty result: an empty
+        answer here is indistinguishable from "the note was empty at that
+        revision", and a caller about to restore content must not be handed
+        that ambiguity (#1137).
+
+        Notes only.  Attachments are readable through :meth:`get_history` and
+        :meth:`get_diff`, but their bytes are binary and this returns text.
+
+        Args:
+            path: Vault-relative path of the note, at its *current* name.
+                Renames are resolved back to the name it carried at
+                *revision*.
+            revision: Commit SHA, 4-40 lowercase hex digits.  Symbolic
+                revisions (``HEAD~1``, branch names) are rejected: this is
+                fed commit SHAs from ``get_history`` and the ``write``
+                result's ``previous_revision``.
+
+        Returns:
+            ``(content, historical_path)`` — the note's full raw text at
+            *revision* (frontmatter included) and the vault-relative path it
+            carried there.
+
+        Raises:
+            ValueError: If the vault is not git-backed, *path* is not a
+                ``.md`` note or escapes the vault, *revision* is not a plain
+                SHA, or the note did not exist at *revision*.
+        """
+        if self._git_strategy is None:
+            raise ValueError(
+                f"Cannot read {path!r} at revision {revision!r}: this vault "
+                "is not git-backed, so it has no revision history"
+            )
+        if not is_note(path):
+            raise ValueError(
+                f"Reading at a revision is supported for .md notes only, not {path!r}"
+            )
+        abs_path = validate_history_path(
+            path, self._source_dir, self._attachment_extensions
+        )
+        _require_sha(revision, "revision")
+        return self._git_strategy.get_file_at_ref(self._source_dir, abs_path, revision)
+
     def get_diff(
         self,
         path: str,
@@ -195,10 +266,8 @@ class GitQueryManager:
             path, self._source_dir, self._attachment_extensions
         )
 
-        if since_sha is not None and not re.fullmatch(r"[0-9a-f]{4,40}", since_sha):
-            raise ValueError(
-                f"Invalid SHA {since_sha!r}: must be 4-40 lowercase hex digits"
-            )
+        if since_sha is not None:
+            _require_sha(since_sha, "SHA")
 
         return self._git_strategy.get_file_diff(
             self._source_dir,

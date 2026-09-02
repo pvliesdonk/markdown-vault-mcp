@@ -1063,6 +1063,42 @@ def _extract_wikilinks(clean: str, source_path: str) -> list[LinkInfo]:
     return links
 
 
+def parse_markdown_text(
+    text: str,
+    path: Path,
+    *,
+    title_field: str = "title",
+) -> tuple[dict[str, Any], str, str]:
+    """Split markdown *text* into frontmatter, body, and resolved title.
+
+    The in-memory half of :func:`parse_note`, which calls it after reading and
+    decoding the file.  Split out so content that never came from the working
+    tree — a blob read out of git history (#1137) — is shaped by exactly the
+    same rules as a note on disk.
+
+    Args:
+        text: Full markdown text, frontmatter included, already decoded.
+        path: Path the text belongs to.  Used only for the filename title
+            fallback, so a historical path is the right thing to pass for
+            historical content.
+        title_field: Frontmatter key consulted first when resolving the title
+            (see :func:`_resolve_title`).
+
+    Returns:
+        ``(frontmatter, body, title)`` — the parsed YAML header (empty dict
+        when there is none), the body with that header stripped, and the
+        resolved title.
+
+    Raises:
+        yaml.YAMLError: If the frontmatter block is not parseable.
+    """
+    # python-frontmatter strips the YAML block and returns the body separately.
+    post = frontmatter.loads(text)
+    metadata: dict[str, Any] = dict(post.metadata)
+    body: str = post.content
+    return metadata, body, _resolve_title(metadata, body, path, title_field)
+
+
 def parse_note(
     path: Path,
     source_dir: Path,
@@ -1103,12 +1139,7 @@ def parse_note(
     # UnicodeDecodeError — propagated to caller.
     text = decode_utf8(raw_bytes)
 
-    # python-frontmatter strips the YAML block and returns the body separately.
-    post = frontmatter.loads(text)
-    metadata: dict[str, Any] = dict(post.metadata)
-    body: str = post.content
-
-    title = _resolve_title(metadata, body, path, title_field)
+    metadata, body, title = parse_markdown_text(text, path, title_field=title_field)
 
     # Relative path from source_dir, always using forward slashes.
     rel_path = path.relative_to(source_dir)

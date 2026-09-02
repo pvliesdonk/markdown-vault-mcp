@@ -45,8 +45,9 @@ class HistorySource(Protocol):
     """Read-only access to a document's revision history.
 
     The narrowest of the three facets: ``GitQueryManager`` depends on this and
-    nothing else, so a backend that can answer "what changed, and when" is
-    enough to serve the history and diff tools.
+    nothing else, so a backend that can answer "what changed, when, and what
+    the content was" is enough to serve the history, diff, and
+    read-at-revision tools.
     """
 
     def get_file_history(
@@ -105,6 +106,25 @@ class HistorySource(Protocol):
         Returns:
             A unified diff when *per_commit* is false, else one entry per
             commit.
+        """
+        ...
+
+    def get_file_at_ref(self, repo_path: Path, path: Path, ref: str) -> tuple[str, str]:
+        """Return the text of *path* at *ref*, and the path it had there.
+
+        Args:
+            repo_path: The vault root, inside the working tree: it locates
+                the tree, and the returned path is reported relative to it.
+            path: The file to read, at its current path.
+            ref: The revision to read the file at.
+
+        Returns:
+            The file's text at *ref*, and the path it carried at that
+            revision, relative to *repo_path* (renames are resolved).
+
+        Raises:
+            ValueError: When the revision is unknown, the file did not exist
+                at it, or its bytes are not decodable.
         """
         ...
 

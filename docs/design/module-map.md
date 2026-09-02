@@ -35,7 +35,7 @@ src/markdown_vault_mcp/
     artifacts.py       -- ArtifactStore: validate/size/read/write/unlink/move for non-.md artifacts over the manager's shared lock + notifier (#1235); internal collaborator, not re-exported
     _write_notifier.py -- WriteNotifier: single owner of write-callback dispatch shape incl. the old_path opt-in probe (#894, #1235)
     _write_kernel.py   -- atomic_write / check_if_match / umask cache: the pure write primitives both the note and artifact paths use (#1235)
-    git_query.py       -- GitQueryManager: git history/diff reads (#610)
+    git_query.py       -- GitQueryManager: git history/diff/revision reads (#610)
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation, log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
@@ -60,7 +60,7 @@ src/markdown_vault_mcp/
     bootstrap.py       -- RepoBootstrap: managed-clone bootstrap, remote-protocol validation, memoised git-root discovery (#893)
     push_scheduler.py  -- PushScheduler: deferred-push timer + pending-flag mechanics and push execution (#893)
     conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
-    query.py           -- read-only git history/diff queries; lock-free pure functions
+    query.py           -- read-only git history/diff/content-at-revision queries; lock-free pure functions
     types.py           -- PullResult/PushResult + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking
   interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex/VectorStore: the search/index storage seam (#1230)

@@ -195,7 +195,11 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             Dict with path (str) and created (bool — true if new file,
-            false if overwrite). For .md files, may include 'conventions':
+            false if overwrite). Overwriting a .md note on a git-backed vault
+            also returns 'previous_revision' (str): the note's newest commit
+            before this write, holding the content it replaced. Recover it
+            with read(path, revision=<that sha>).
+            For .md files, may include 'conventions':
             the user's authoring conventions for the target folder
             (root-first list of {folder, path, content}). When present,
             verify the note you just wrote complies — e.g. self-containment
@@ -244,6 +248,14 @@ def register(mcp: FastMCP) -> None:
                     vault.writer.write_attachment, path, raw_bytes, if_match=if_match
                 )
             return asdict(result)
+        # Read the recovery breadcrumb before writing: afterwards this note's
+        # newest commit may already be the write's own. Naming the note's last
+        # commit rather than HEAD keeps it on a revision the note is present
+        # in, except where that commit is the one that deleted it — the
+        # recovering read then fails loudly rather than serving other content.
+        # An empty history (no git, or a note not yet committed) yields no
+        # breadcrumb at all.
+        previous = await asyncio.to_thread(vault.reader.get_history, path, limit=1)
         # Bind the caller's Principal plus the OKF provenance actor for the
         # enforced-write layer (#964, #1160). The OKF intent is a no-op unless
         # OKF_WRITE is on; both values ride contextvars into the to_thread
@@ -257,7 +269,10 @@ def register(mcp: FastMCP) -> None:
                 frontmatter=frontmatter,
                 if_match=if_match,
             )
-        return await attach_conventions(vault, asdict(result), path)
+        data = asdict(result)
+        if not result.created and previous:
+            data["previous_revision"] = previous[0].sha
+        return await attach_conventions(vault, data, path)
 
     @mcp.tool(
         tags={"write"},

@@ -26,6 +26,7 @@ class _RecordingStrategy:
         self.history_is_dir: list[bool] = []
         self.diff_calls: list[tuple[Any, ...]] = []
         self.diff_kwargs: list[dict[str, Any]] = []
+        self.at_ref_calls: list[tuple[Any, ...]] = []
 
     def get_file_history(
         self,
@@ -58,6 +59,12 @@ class _RecordingStrategy:
         self.diff_kwargs.append({"summarize_binary": summarize_binary})
         return ["CD"] if per_commit else "DIFF"
 
+    def get_file_at_ref(
+        self, source_dir: Path, abs_path: Path, ref: str
+    ) -> tuple[str, str]:
+        self.at_ref_calls.append((source_dir, abs_path, ref))
+        return "CONTENT", "old/name.md"
+
 
 class TestNoGitStrategy:
     def test_get_history_returns_empty(self, tmp_path: Path) -> None:
@@ -69,6 +76,47 @@ class TestNoGitStrategy:
         mgr = GitQueryManager(None, tmp_path)
         assert mgr.get_diff("note.md") == ""
         assert mgr.get_diff("note.md", per_commit=True) == []
+
+    def test_get_version_raises_instead_of_degrading(self, tmp_path: Path) -> None:
+        """The one query that refuses to answer empty without git (#1137).
+
+        An empty string here would read as "the note was empty at that
+        revision", which a caller about to restore content must never be
+        handed.
+        """
+        mgr = GitQueryManager(None, tmp_path)
+        with pytest.raises(ValueError, match="not git-backed"):
+            mgr.get_version("note.md", "abcd1234")
+
+
+class TestGetVersionValidation:
+    def test_attachment_path_rejected(self, tmp_path: Path) -> None:
+        """Revision reads return text, so attachments are out of scope."""
+        mgr = GitQueryManager(_RecordingStrategy(), tmp_path)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="\\.md notes only"):
+            mgr.get_version("assets/x.png", "abcd1234")
+
+    def test_malformed_revision_rejected(self, tmp_path: Path) -> None:
+        mgr = GitQueryManager(_RecordingStrategy(), tmp_path)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="Invalid revision"):
+            mgr.get_version("note.md", "HEAD~1")
+
+    def test_traversal_rejected(self, tmp_path: Path) -> None:
+        mgr = GitQueryManager(_RecordingStrategy(), tmp_path)  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            mgr.get_version("../outside.md", "abcd1234")
+
+    def test_forwards_absolute_path_and_revision(self, tmp_path: Path) -> None:
+        strategy = _RecordingStrategy()
+        mgr = GitQueryManager(strategy, tmp_path)  # type: ignore[arg-type]
+
+        assert mgr.get_version("notes/a.md", "abcd1234") == (
+            "CONTENT",
+            "old/name.md",
+        )
+        assert strategy.at_ref_calls == [
+            (tmp_path, tmp_path / "notes" / "a.md", "abcd1234")
+        ]
 
 
 class TestGetDiffValidation:

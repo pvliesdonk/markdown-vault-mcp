@@ -279,6 +279,43 @@ class NoteContent:
 
 
 @dataclass
+class RevisionContent:
+    """A document as it stood at one git revision (#1137).
+
+    Deliberately not a :class:`NoteContent`: a historical revision has no
+    ``modified_at`` and no ``etag``.  Serving a stale etag would be worse
+    than serving none — fed back as ``if_match`` it would look like proof of
+    a read the caller never made of the *current* file.  A restoring write
+    must take its etag from a current :meth:`read`.
+
+    Attributes:
+        path: Relative path the caller asked about — the note's identity
+            today, not necessarily at *revision*.
+        revision: The commit the content was read at, echoed back exactly as
+            supplied (abbreviated SHAs are not expanded).
+        historical_path: Relative path the note carried at *revision*.  Equal
+            to ``path`` unless a rename intervened.
+        content: Raw file content at *revision*, frontmatter included — or the
+            section body when the read was scoped to one.  Suitable as the
+            ``content`` argument of a restoring ``write`` (with no separate
+            ``frontmatter``, which would otherwise be emitted twice).
+        frontmatter: Parsed YAML frontmatter at *revision*; ``{}`` for a
+            section read, matching :meth:`read`'s section behaviour.
+        title: Document title at *revision*, resolved from frontmatter, the
+            first H1, or the historical filename.
+        folder: Parent folder of ``path`` (empty string at the vault root).
+    """
+
+    path: str
+    revision: str
+    historical_path: str
+    content: str
+    frontmatter: dict[str, Any]
+    title: str
+    folder: str
+
+
+@dataclass
 class NoteInfo:
     """Summary info for a document, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.list_documents`.
 

@@ -16,7 +16,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | Tool | Title | Category | Description |
 |------|-------|----------|-------------|
 | [`search`](#search) | Search Vault | Read | Hybrid full-text + semantic search with optional frontmatter filters |
-| [`read`](#read) | Read Note | Read | Read a document or attachment by relative path |
+| [`read`](#read) | Read Note | Read | Read a document or attachment by relative path, optionally at an earlier revision |
 | [`list_documents`](#list_documents) | List Documents | Read | List indexed documents and optionally attachments |
 | [`list_folders`](#list_folders) | List Folders | Read | List all folder paths in the vault |
 | [`list_tags`](#list_tags) | List Tags | Read | List all unique frontmatter tag values |
@@ -119,6 +119,7 @@ Read the full content of a document or attachment by path. When combined with se
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative path to the document or attachment (such as `"Journal/note.md"` or `"assets/diagram.pdf"`) |
+| `revision` | string | `null` | Commit SHA (4-40 lowercase hex digits) to read the note at instead of the working tree. See [Reading an earlier revision](#reading-an-earlier-revision). |
 | `section` | string | `null` | Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk, so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the `heading` field from a `search` result. Matching collapses internal whitespace on both sides: `"1.3.  Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty. |
 
 !!! tip "Recovering the full section after search"
@@ -161,6 +162,54 @@ partial markdown reads (see the tip above).
       "modified_at": 1741564800.0
     }
     ```
+
+=== "At a revision"
+
+    ```json
+    {
+      "path": "Journal/note.md",
+      "revision": "9c0a3b2d",
+      "historical_path": "Inbox/note.md",
+      "content": "---\ntitle: My Note\n---\n\nThe body as it stood then...",
+      "frontmatter": {"title": "My Note"},
+      "title": "My Note",
+      "folder": "Journal"
+    }
+    ```
+
+#### Reading an earlier revision
+
+On a vault with [git write-through](../configuration.md#git-sync), `revision` returns
+a note as it stood at one commit, so content an overwrite replaced stays
+reachable from the same seat the overwrite was made from. Pass the
+`previous_revision` from that [`write`](#write) result, or a `sha` from
+[`get_history`](#get_history).
+
+The read is rename-aware: pass the note's path **as it is today** and the
+server resolves the name it carried at that revision, reporting it as
+`historical_path`.
+
+Recovery is two steps, because restoring is an ordinary write:
+
+```text
+read(path, revision=<sha>)          → the replaced content
+read(path)                          → the current etag
+write(path, content=<what you read back>, if_match=<that etag>)
+```
+
+Pass the recovered `content` on its own, with no separate `frontmatter`
+argument: it is the whole file, YAML header included.
+
+The revision read differs from a working-tree read in four ways:
+
+- It requires a git-backed vault, and a `.md` path. Either one missing is an
+  error rather than a quiet fall-back to current content, which would be
+  indistinguishable from a successful recovery.
+- It carries no `etag` and no `modified_at`. Both describe the current file.
+- It answers even when the note no longer exists in the working tree.
+- `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES` still applies, and `section=`
+  works the same way, so a large historical note can be read one section at
+  a time.
 
 ### `list_documents`
 
@@ -343,6 +392,14 @@ LLM's own output budget. The `content_base64` parameter (binary) inflates
 by ~33%.
 
 **Returns:** `{"path": "Journal/note.md", "created": true}`
+
+Overwriting a `.md` note on a git-backed vault also returns
+`previous_revision`: the note's newest commit as of just before the write,
+which is where the content the write replaced still lives. Read it back with
+[`read(path, revision=<that sha>)`](#reading-an-earlier-revision). The field is
+absent when the write created the file, and when the note has no commit to
+name (on a vault without git write-through, or for a note whose own creation
+has not been committed yet).
 
 For `.md` files, the response may also include a `conventions` list: the
 [folder conventions](#get_conventions) that apply to the target folder
@@ -938,6 +995,10 @@ List commits that touched a note, attachment, or folder (or the whole vault) wit
 | `paths_changed` | list[string] | Files touched by the commit. Populated for vault-wide queries (`path=null`) and folder queries (the subtree files the commit touched); always empty for single-note queries, since the path is already determined by the query arguments (callers know which file the commit touched without needing it echoed back). |
 
 **Raises:** `ToolError` if `path` is invalid or uses an unsupported extension.
+
+A `sha` from this list is what [`read`](#reading-an-earlier-revision) takes as
+its `revision`, so a note's content at any listed commit is one further call
+away.
 
 ### `get_diff`
 

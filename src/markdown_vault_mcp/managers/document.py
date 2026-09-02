@@ -33,6 +33,7 @@ from markdown_vault_mcp.managers.artifacts import ArtifactPolicy, ArtifactStore
 from markdown_vault_mcp.scanner import (
     extract_section,
     list_section_headings,
+    parse_markdown_text,
     parse_note,
 )
 from markdown_vault_mcp.types import (
@@ -42,6 +43,7 @@ from markdown_vault_mcp.types import (
     MoveFolderResult,
     NoteContent,
     RenameResult,
+    RevisionContent,
     SubtreeToc,
     TocEntry,
     WriteCallback,
@@ -448,6 +450,122 @@ class DocumentManager:
             frontmatter={},  # section reads do not synthesise frontmatter
             modified_at=doc_row["modified_at"],
             etag="",  # ETag is whole-file; not meaningful for a section
+        )
+
+    def note_at_revision(
+        self,
+        path: str,
+        revision: str,
+        content: str,
+        *,
+        historical_path: str,
+        section: str | None = None,
+    ) -> RevisionContent:
+        """Shape already-retrieved historical content into a result (#1137).
+
+        Pure: *content* is the blob some versioning backend already produced,
+        so this touches no working tree and consults no index — a revision may
+        predate the note's current path, or hold a note that no longer exists.
+        The ``max_note_read_bytes`` cap still applies: a historical revision
+        costs the caller's context exactly what a current read would.
+
+        Args:
+            path: Vault-relative path the caller asked about (the note's
+                identity today).
+            revision: The revision *content* was read at, echoed into the
+                result.
+            content: Full raw file content at *revision*, frontmatter
+                included.
+            historical_path: Vault-relative path the note carried at
+                *revision*; the filename title fallback resolves against it.
+            section: When provided, return only that section's body, matching
+                :meth:`read`'s ``section=`` semantics (frontmatter then comes
+                back empty). ``None`` returns the whole file.
+
+        Returns:
+            A :class:`~markdown_vault_mcp.types.RevisionContent`.
+
+        Raises:
+            ValueError: If *content* exceeds ``max_note_read_bytes``, its
+                frontmatter is not parseable, or *section* is empty or names
+                a heading the revision does not contain.
+        """
+        size_bytes = len(content.encode())
+        if 0 < self._max_note_read_bytes < size_bytes:
+            raise ValueError(
+                f"Document {path!r} at revision {revision!r} is {size_bytes} "
+                f"bytes ({size_bytes / 1024:.1f} KB), exceeds "
+                f"MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES "
+                f"({self._max_note_read_bytes} bytes / "
+                f"{self._max_note_read_bytes / 1024:.0f} KB). "
+                f"Use read({path!r}, revision={revision!r}, section=...) for "
+                f"partial reads, or increase "
+                f"MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES if you need the "
+                f"full document in context."
+            )
+
+        try:
+            frontmatter_data, _body, title = parse_markdown_text(
+                content,
+                Path(historical_path),
+                title_field=self._title_field,
+            )
+        except yaml.YAMLError as exc:
+            raise ValueError(
+                f"Frontmatter of {path!r} at revision {revision!r} is not parseable"
+            ) from exc
+
+        body = content
+        if section is not None:
+            frontmatter_data = {}  # section reads do not synthesise frontmatter
+            body = self._revision_section(content, section, path, revision)
+
+        folder = str(Path(path).parent)
+        if folder == ".":
+            folder = ""
+        return RevisionContent(
+            path=path,
+            revision=revision,
+            historical_path=historical_path,
+            content=body,
+            frontmatter=frontmatter_data,
+            title=title,
+            folder=folder,
+        )
+
+    @staticmethod
+    def _revision_section(content: str, section: str, path: str, revision: str) -> str:
+        """Extract one section from historical *content*.
+
+        Args:
+            content: Full raw file content at *revision*.
+            section: Heading to match.
+            path: Vault-relative path, used in the error.
+            revision: The revision, used in the error.
+
+        Returns:
+            The section body.
+
+        Raises:
+            ValueError: If *section* is empty or the revision has no such
+                heading.
+        """
+        heading = section.strip()
+        if not heading:
+            raise ValueError("section must be a non-empty heading or None")
+        extracted = extract_section(content, heading)
+        if extracted is not None:
+            return extracted
+        available = list(dict.fromkeys(list_section_headings(content)))[:10]
+        suggestion = (
+            " — available headings at that revision include: "
+            + ", ".join(repr(h) for h in available)
+            if available
+            else " (the document had no headings at that revision)"
+        )
+        raise ValueError(
+            f"Section '{heading}' not found in {path} at revision "
+            f"{revision}{suggestion}"
         )
 
     def attachment_size(self, path: str) -> int:

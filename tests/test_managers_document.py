@@ -1116,3 +1116,148 @@ def test_write_marks_path_dirty_via_vault(tmp_path: Path) -> None:
         assert "new.md" in col._coordinator.writer.snapshot_dirty_paths()
     finally:
         col.close()
+
+
+class TestNoteAtRevision:
+    """Shaping of historical content into a RevisionContent (#1137).
+
+    Pure by construction: none of these touch the working tree or the index,
+    which is the point — a revision may hold a note that no longer exists.
+    """
+
+    def test_shapes_frontmatter_title_and_folder(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        result = doc_mgr.note_at_revision(
+            "sub/gamma.md",
+            "abcd1234",
+            "---\ntitle: Historical\n---\n# Heading\n\nBody.\n",
+            historical_path="sub/gamma.md",
+        )
+
+        assert result.path == "sub/gamma.md"
+        assert result.revision == "abcd1234"
+        assert result.historical_path == "sub/gamma.md"
+        assert result.content == "---\ntitle: Historical\n---\n# Heading\n\nBody.\n"
+        assert result.frontmatter == {"title": "Historical"}
+        assert result.title == "Historical"
+        assert result.folder == "sub"
+
+    def test_root_level_note_has_empty_folder(self, doc_mgr: DocumentManager) -> None:
+        result = doc_mgr.note_at_revision(
+            "alpha.md", "abcd1234", "# Alpha\n", historical_path="alpha.md"
+        )
+
+        assert result.folder == ""
+
+    def test_title_falls_back_to_the_historical_filename(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        """A note with no frontmatter title and no H1 is named by the path it had."""
+        result = doc_mgr.note_at_revision(
+            "renamed.md", "abcd1234", "just a body\n", historical_path="original.md"
+        )
+
+        assert result.title == "original"
+
+    def test_shapes_a_note_absent_from_the_working_tree(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        """No file needs to exist: the content is the caller's, not the disk's."""
+        result = doc_mgr.note_at_revision(
+            "deleted/gone.md", "abcd1234", "# Gone\n", historical_path="deleted/gone.md"
+        )
+
+        assert result.content == "# Gone\n"
+        assert result.title == "Gone"
+
+    def test_section_returns_that_section_and_no_frontmatter(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        result = doc_mgr.note_at_revision(
+            "sub/gamma.md",
+            "abcd1234",
+            "---\ntitle: Gamma\n---\n# Gamma\n\n## Section One\n\nContent.\n",
+            historical_path="sub/gamma.md",
+            section="Section One",
+        )
+
+        assert result.content.strip() == "Content."
+        assert result.frontmatter == {}
+        assert result.title == "Gamma"
+
+    def test_missing_section_lists_the_revisions_own_headings(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        with pytest.raises(ValueError, match="Section One"):
+            doc_mgr.note_at_revision(
+                "sub/gamma.md",
+                "abcd1234",
+                "# Gamma\n\n## Section One\n\nContent.\n",
+                historical_path="sub/gamma.md",
+                section="Nowhere",
+            )
+
+    def test_missing_section_in_a_headingless_revision(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        with pytest.raises(ValueError, match="no headings at that revision"):
+            doc_mgr.note_at_revision(
+                "alpha.md",
+                "abcd1234",
+                "plain body\n",
+                historical_path="alpha.md",
+                section="Nowhere",
+            )
+
+    def test_blank_section_rejected(self, doc_mgr: DocumentManager) -> None:
+        with pytest.raises(ValueError, match="non-empty heading"):
+            doc_mgr.note_at_revision(
+                "alpha.md",
+                "abcd1234",
+                "# Alpha\n",
+                historical_path="alpha.md",
+                section="   ",
+            )
+
+    def test_unparseable_frontmatter_raises(self, doc_mgr: DocumentManager) -> None:
+        with pytest.raises(ValueError, match="not parseable"):
+            doc_mgr.note_at_revision(
+                "alpha.md",
+                "abcd1234",
+                "---\ntitle: [unclosed\n---\n\nbody\n",
+                historical_path="alpha.md",
+            )
+
+    def test_oversized_revision_hits_the_same_read_cap(self, doc_vault: Path) -> None:
+        """A historical note costs the caller's context what a current one does."""
+        mgr = DocumentManager(
+            fts=FTSIndex(db_path=":memory:"),
+            source_dir=doc_vault,
+            write_lock=threading.RLock(),
+            chunk_strategy=HeadingChunker(),
+            max_note_read_bytes=32,
+        )
+
+        with pytest.raises(ValueError, match="MAX_NOTE_READ_BYTES"):
+            mgr.note_at_revision(
+                "alpha.md",
+                "abcd1234",
+                "x" * 100,
+                historical_path="alpha.md",
+            )
+
+    def test_cap_of_zero_disables_the_check(self, doc_vault: Path) -> None:
+        mgr = DocumentManager(
+            fts=FTSIndex(db_path=":memory:"),
+            source_dir=doc_vault,
+            write_lock=threading.RLock(),
+            chunk_strategy=HeadingChunker(),
+            max_note_read_bytes=0,
+        )
+
+        result = mgr.note_at_revision(
+            "alpha.md", "abcd1234", "x" * 100, historical_path="alpha.md"
+        )
+
+        assert len(result.content) == 100

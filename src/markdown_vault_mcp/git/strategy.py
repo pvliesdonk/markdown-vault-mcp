@@ -1569,6 +1569,32 @@ class GitWriteStrategy:
             summarize_binary=summarize_binary,
         )
 
+    def get_file_at_ref(self, repo_path: Path, path: Path, ref: str) -> tuple[str, str]:
+        """Return the text of *path* at *ref*, and the path it had there.
+
+        Args:
+            repo_path: Path inside the git repository (used to locate the root).
+            path: Absolute path of the file to read, at its current name.
+            ref: The commit to read the file at.
+
+        Returns:
+            ``(content, historical_path)`` — the file's text at *ref* and the
+            repository-relative path it carried there (renames resolved).
+
+        Raises:
+            ValueError: If the vault is not inside a git repository, *ref* is
+                unknown, the file did not exist at *ref*, or its bytes at
+                *ref* are not valid UTF-8.
+        """
+        return query.get_file_at_ref(
+            self._ensure_git_root(repo_path),
+            repo_path,
+            path,
+            ref,
+            token=self._token,
+            username=self._username,
+        )
+
 
 def git_write_strategy(
     token: str | None = None,

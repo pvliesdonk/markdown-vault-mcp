@@ -1,9 +1,11 @@
 """Reader facet: the read-only query surface (#604).
 
 A thin view exposing search, document reads, listing, table-of-contents,
-similarity, recent, context, stats, attachment reads, and git history/diff.
-Each method delegates 1:1 to one collaborator (:class:`SearchManager`,
-:class:`DocumentManager`, or :class:`GitQueryManager`); the bucket-3 methods
+similarity, recent, context, stats, attachment reads, and git
+history/diff/read-at-revision. Each method delegates 1:1 to one collaborator
+(:class:`SearchManager`, :class:`DocumentManager`, or
+:class:`GitQueryManager`) — except :meth:`ReaderFacet.read_revision`, which
+composes the last two because neither owns both halves; the bucket-3 methods
 (:meth:`ReaderFacet.get_toc`,
 :meth:`ReaderFacet.get_similar`, :meth:`ReaderFacet.get_context`) gate on the index-readiness callback
 first. Part of the ``vault.py`` facade decomposition (#576); reached via
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
         NoteContent,
         NoteContext,
         NoteInfo,
+        RevisionContent,
         SubtreeToc,
         TocEntry,
         VaultStats,
@@ -148,6 +151,48 @@ class ReaderFacet:
             if the file does not exist.
         """
         return self._doc_mgr.read(path, section=section)
+
+    def read_revision(
+        self, path: str, revision: str, *, section: str | None = None
+    ) -> RevisionContent:
+        """Read a note's content as it stood at one git revision (#1137).
+
+        The one read method that composes two collaborators rather than
+        delegating 1:1: ``GitQueryManager`` produces the historical bytes and
+        ``DocumentManager`` shapes them by the same rules it applies to a note
+        on disk. Neither owns both halves, and the facet is where they meet.
+
+        Read-only and lock-free like the other git queries. Unlike them it
+        raises on a vault with no git backing instead of degrading to an
+        empty result — see
+        :meth:`~markdown_vault_mcp.managers.git_query.GitQueryManager.get_version`.
+
+        Args:
+            path: Relative path of the note, at its *current* name; a rename
+                between *revision* and now is resolved.
+            revision: Commit SHA (4-40 lowercase hex digits), e.g. from
+                :meth:`get_history` or a write result's ``previous_revision``.
+            section: When provided, return only that section's body, as
+                :meth:`read` does. ``None`` returns the whole file.
+
+        Returns:
+            A :class:`~markdown_vault_mcp.types.RevisionContent`.
+
+        Raises:
+            ValueError: If the vault is not git-backed, *path* is not a
+                ``.md`` note, *revision* is not a plain SHA or is unknown, the
+                note did not exist at it, the content exceeds
+                ``max_note_read_bytes``, or *section* names a heading the
+                revision does not contain.
+        """
+        content, historical_path = self._git_query_mgr.get_version(path, revision)
+        return self._doc_mgr.note_at_revision(
+            path,
+            revision,
+            content,
+            historical_path=historical_path,
+            section=section,
+        )
 
     def get_metadata(self, path: str) -> DocumentMeta | None:
         """Return indexed metadata (title/folder/frontmatter) without a read.

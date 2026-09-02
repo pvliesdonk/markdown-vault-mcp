@@ -21,6 +21,7 @@ from markdown_vault_mcp.git import (
     conflict,
     git_write_strategy,
 )
+from markdown_vault_mcp.git import query as query_module
 
 
 def _write_conflict_files(
@@ -4595,6 +4596,207 @@ def test_resolve_path_at_ref_to_ref_resolves_single_commit_rename(
         text=True,
     ).stdout.strip()
     assert resolve_path_at_ref(repo, f"{sha}^", "y.txt", None, to_ref=sha) == "x.txt"
+
+
+class TestGetFileAtRef:
+    """Tests for GitWriteStrategy.get_file_at_ref() (#1137)."""
+
+    def _init_repo(self, repo: Path) -> None:
+        """Initialise a repo with a committer identity."""
+        repo.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "init"], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.email", "test@test.com"],
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "user.name", "Test"],
+            capture_output=True,
+            check=True,
+        )
+
+    def _commit(self, repo: Path, message: str) -> str:
+        """Stage everything, commit, and return the resulting SHA."""
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "-A"], capture_output=True, check=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", message],
+            capture_output=True,
+            check=True,
+        )
+        return subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+    def test_returns_content_at_earlier_commit(self, tmp_path: Path) -> None:
+        """The blob at the given commit comes back, not the working tree."""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "note.md").write_text("# v1\n")
+        first = self._commit(repo, "add note")
+        (repo / "note.md").write_text("# v2\n")
+        self._commit(repo, "edit note")
+
+        content, historical = GitWriteStrategy().get_file_at_ref(
+            repo, repo / "note.md", first
+        )
+
+        assert content == "# v1\n"
+        assert historical == "note.md"
+
+    def test_resolves_a_rename_that_also_rewrote_the_note(self, tmp_path: Path) -> None:
+        """Overwrite-then-rename still resolves the note's earlier name.
+
+        The whole-range diff cannot see this as a rename: the blob at the
+        reference commit and the blob at HEAD share nothing, so git reports a
+        delete plus an add. The ``--follow`` walk resolves it per commit
+        instead, which is why it is the mechanism here.
+        """
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "note.md").write_text("# Original\n\nthe first body\n")
+        first = self._commit(repo, "add note")
+        (repo / "note.md").write_text("wholly different\n")
+        self._commit(repo, "overwrite note")
+        subprocess.run(
+            ["git", "-C", str(repo), "mv", "note.md", "moved.md"],
+            capture_output=True,
+            check=True,
+        )
+        self._commit(repo, "rename note")
+
+        content, historical = GitWriteStrategy().get_file_at_ref(
+            repo, repo / "moved.md", first
+        )
+
+        assert content == "# Original\n\nthe first body\n"
+        assert historical == "note.md"
+
+    def test_reads_a_note_deleted_since(self, tmp_path: Path) -> None:
+        """A note gone from the working tree is still readable at a revision."""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "note.md").write_text("# Gone\n")
+        first = self._commit(repo, "add note")
+        (repo / "note.md").unlink()
+        self._commit(repo, "delete note")
+
+        content, historical = GitWriteStrategy().get_file_at_ref(
+            repo, repo / "note.md", first
+        )
+
+        assert content == "# Gone\n"
+        assert historical == "note.md"
+
+    def test_historical_path_is_vault_relative_for_a_nested_vault(
+        self, tmp_path: Path
+    ) -> None:
+        """A vault below the git root reports paths without the vault prefix."""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        vault = repo / "vault"
+        vault.mkdir()
+        (vault / "note.md").write_text("# Nested\n")
+        first = self._commit(repo, "add nested note")
+        (vault / "note.md").write_text("# Nested v2\n")
+        self._commit(repo, "edit nested note")
+
+        content, historical = GitWriteStrategy().get_file_at_ref(
+            vault, vault / "note.md", first
+        )
+
+        assert content == "# Nested\n"
+        assert historical == "note.md"
+
+    def test_unknown_revision_raises(self, tmp_path: Path) -> None:
+        """A SHA that is not in the repository is a ValueError."""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "note.md").write_text("# v1\n")
+        self._commit(repo, "add note")
+
+        with pytest.raises(ValueError, match="unknown revision"):
+            GitWriteStrategy().get_file_at_ref(repo, repo / "note.md", "0" * 40)
+
+    def test_path_absent_at_revision_raises(self, tmp_path: Path) -> None:
+        """A note created after the revision cannot be read at it."""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "first.md").write_text("# First\n")
+        first = self._commit(repo, "add first")
+        (repo / "later.md").write_text("# Later\n")
+        self._commit(repo, "add later")
+
+        with pytest.raises(ValueError, match="did not exist"):
+            GitWriteStrategy().get_file_at_ref(repo, repo / "later.md", first)
+
+    def test_non_utf8_blob_raises_rather_than_mangling(self, tmp_path: Path) -> None:
+        """Undecodable bytes fail loudly instead of arriving with replacements."""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "note.md").write_bytes(b"# caf\xe9\n")
+        first = self._commit(repo, "add latin-1 note")
+        (repo / "note.md").write_text("# clean\n")
+        self._commit(repo, "replace with utf-8")
+
+        with pytest.raises(ValueError, match="not valid UTF-8"):
+            GitWriteStrategy().get_file_at_ref(repo, repo / "note.md", first)
+
+    def test_no_git_repository_raises(self, tmp_path: Path) -> None:
+        """A vault outside a repository raises rather than answering empty.
+
+        The history and diff queries degrade to empty results here; this one
+        must not, because an empty answer reads as "the note was empty then".
+        """
+        plain = tmp_path / "plain"
+        plain.mkdir()
+
+        with pytest.raises(ValueError, match="not inside a git repository"):
+            GitWriteStrategy().get_file_at_ref(plain, plain / "note.md", "abcd")
+
+    def test_path_outside_the_repository_raises(self, tmp_path: Path) -> None:
+        """A path resolving outside the git root is rejected before git runs."""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "note.md").write_text("# v1\n")
+        first = self._commit(repo, "add note")
+        outside = tmp_path / "elsewhere" / "note.md"
+
+        with pytest.raises(ValueError, match="outside the git repository"):
+            GitWriteStrategy().get_file_at_ref(repo, outside, first)
+
+    def test_unreadable_log_falls_back_to_the_current_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A failing rename walk leaves the current path in place, not an error."""
+        repo = tmp_path / "repo"
+        self._init_repo(repo)
+        (repo / "note.md").write_text("# v1\n")
+        first = self._commit(repo, "add note")
+        (repo / "note.md").write_text("# v2\n")
+        self._commit(repo, "edit note")
+
+        real_run = subprocess.run
+
+        def fake_run(cmd: list[str], **kwargs: object) -> object:
+            if "log" in cmd:
+                raise subprocess.CalledProcessError(1, cmd)
+            return real_run(cmd, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(query_module.subprocess, "run", fake_run)
+        content, historical = GitWriteStrategy().get_file_at_ref(
+            repo, repo / "note.md", first
+        )
+
+        assert content == "# v1\n"
+        assert historical == "note.md"
 
 
 class TestGetFileHistoryVaultScope:

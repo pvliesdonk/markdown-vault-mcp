@@ -144,7 +144,7 @@ def validate_path(path: str, source_dir: Path) -> Path:
 def validate_history_path(
     path: str, source_dir: Path, attachment_extensions: frozenset[str]
 ) -> Path:
-    """Resolve a vault-relative path for read-only git history/diff queries.
+    """Resolve a vault-relative path for read-only git history, diff, and revision queries.
 
     Unlike :func:`validate_path` (which is strictly ``.md`` and is used by the
     write/edit/read paths), this accepts a ``.md`` note OR a path whose suffix
