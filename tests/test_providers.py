@@ -407,12 +407,12 @@ class TestVoyageProvider:
 
         (kwargs,) = captured["create_calls"]
         assert set(kwargs) == {"model", "input", "extra_body"}
-        assert kwargs["extra_body"] == {"input_type": "document"}
+        assert set(kwargs["extra_body"]) == {"input_type"}
 
     def test_embed_sends_document_input_type(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The indexing door asks Voyage for the document retrieval prompt."""
+        """The indexing door sends ``input_type: document``."""
         captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
         VoyageProvider(api_key="pa-test").embed(["a note"])
 
@@ -422,7 +422,7 @@ class TestVoyageProvider:
     def test_embed_query_sends_query_input_type(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The search door asks Voyage for the query retrieval prompt."""
+        """The search door sends ``input_type: query``."""
         captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
         result = VoyageProvider(api_key="pa-test").embed_query(["a question"])
 
