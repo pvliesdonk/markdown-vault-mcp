@@ -42,6 +42,48 @@ class VectorIndexCorruptError(RuntimeError):
     """
 
 
+def _check_persisted_identity(
+    *,
+    path: Path,
+    index_meta: dict[str, Any],
+    provider: EmbeddingProvider,
+) -> None:
+    """Raise if a sidecar's ``index_metadata`` names a different embedding space.
+
+    Three fields make up that identity: the provider, its model, and the
+    provider's :attr:`~markdown_vault_mcp.providers.EmbeddingProvider.provider_variant`
+    — how that provider embeds, which for Voyage changed when typed
+    ``input_type`` requests arrived (#1135). A sidecar written before the
+    variant existed carries no key and reads back as ``""``, which is what
+    every provider without a variant reports, so only the providers that
+    grew one see a mismatch.
+
+    Args:
+        path: Sidecar base path, for the error message.
+        index_meta: The persisted ``index_metadata`` mapping.
+        provider: The provider the index is being loaded against.
+
+    Raises:
+        VectorIndexCompatibilityError: On any identity mismatch.
+    """
+    persisted = (
+        index_meta.get("provider"),
+        index_meta.get("model"),
+        index_meta.get("provider_variant") or "",
+    )
+    expected = (provider.provider_name, provider.model_name, provider.provider_variant)
+    if persisted != expected:
+        raise VectorIndexCompatibilityError(
+            "Embedding identity mismatch for persisted index at "
+            f"{path}: stored provider={persisted[0]!r}, "
+            f"stored model={persisted[1]!r}, "
+            f"stored variant={persisted[2]!r}, "
+            f"current provider={expected[0]!r}, "
+            f"current model={expected[1]!r}, "
+            f"current variant={expected[2]!r}."
+        )
+
+
 class VectorIndex:
     """Cosine-similarity vector index backed by numpy.
 
@@ -72,7 +114,8 @@ class VectorIndex:
         """Initialise an empty VectorIndex.
 
         Args:
-            provider: Embedding provider used for query embedding.
+            provider: Embedding provider used to embed stored texts
+                (:meth:`add`) and queries (:meth:`search`).
             embed_text_format: Embedding-text format token persisted by
                 :meth:`save`.
 
@@ -122,8 +165,9 @@ class VectorIndex:
         Raises:
             ImportError: If ``numpy`` is not installed.
             FileNotFoundError: If either sidecar file is missing.
-            VectorIndexCompatibilityError: If the persisted provider/model or
-                embedding-text format does not match the current one.
+            VectorIndexCompatibilityError: If the persisted provider,
+                model, provider variant, or embedding-text format does not
+                match the current one.
             VectorIndexCorruptError: If the embeddings and metadata sidecars
                 disagree on row count (an incomplete atomic save).
         """
@@ -141,8 +185,6 @@ class VectorIndex:
             payload = json.load(fh)
 
         metadata: list[dict[str, Any]]
-        expected_provider = provider.provider_name
-        expected_model = provider.model_name
         persisted_format = "v1"
         if isinstance(payload, list):
             metadata = payload
@@ -153,22 +195,12 @@ class VectorIndex:
         else:
             metadata = payload.get("rows", [])
             index_meta = payload.get("index_metadata", {})
-            persisted_provider = index_meta.get("provider")
-            persisted_model = index_meta.get("model")
             # A sidecar written before embedding-text enrichment carries no
             # format key; it holds raw-content vectors, i.e. format v1.
             persisted_format = index_meta.get("embed_text_format") or "v1"
-            if (
-                persisted_provider != expected_provider
-                or persisted_model != expected_model
-            ):
-                raise VectorIndexCompatibilityError(
-                    "Embedding provider/model mismatch for persisted index at "
-                    f"{path}: stored provider={persisted_provider!r}, "
-                    f"stored model={persisted_model!r}, "
-                    f"current provider={expected_provider!r}, "
-                    f"current model={expected_model!r}."
-                )
+            _check_persisted_identity(
+                path=path, index_meta=index_meta, provider=provider
+            )
 
         if (
             expected_embed_text_format is not None
@@ -399,7 +431,7 @@ class VectorIndex:
             self.count,
         )
 
-        raw = self._provider.embed([query])
+        raw = self._provider.embed_query([query])
         q_vec = np.array(raw[0], dtype=np.float32)
 
         norm = np.linalg.norm(q_vec)
@@ -567,6 +599,7 @@ class VectorIndex:
             "index_metadata": {
                 "provider": self._provider.provider_name,
                 "model": self._provider.model_name,
+                "provider_variant": self._provider.provider_variant,
                 "dimension": (
                     int(self._embeddings.shape[1]) if self._embeddings.ndim == 2 else 0
                 ),

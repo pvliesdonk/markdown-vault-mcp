@@ -85,8 +85,10 @@ class _OpenAICompatEmbeddings:
     """Shared OpenAI-compatible embeddings transport (official openai SDK).
 
     Owns the SDK client, the ``embeddings.create`` call, input-order
-    restoration, and error mapping. :class:`OpenAIProvider` and
-    :class:`OllamaProvider` are thin presets over this one code path.
+    restoration, and error mapping. :class:`OpenAIProvider`,
+    :class:`OllamaProvider` and :class:`VoyageProvider` are thin presets over
+    this one code path; the ``input_type`` parameter below is Voyage's one
+    accommodation in it (#1135), as ``_PLACEHOLDER_API_KEY`` is Ollama's.
 
     Args:
         api_key: API key, or ``None`` for keyless endpoints (a placeholder
@@ -122,11 +124,18 @@ class _OpenAICompatEmbeddings:
         self._model = model
         self._label = label
 
-    def embed(self, texts: list[str]) -> list[list[float]]:
+    def embed(
+        self, texts: list[str], *, input_type: str | None = None
+    ) -> list[list[float]]:
         """Embed a batch of texts, returning vectors in input order.
 
         Args:
             texts: List of strings to embed.
+            input_type: Optional Voyage ``input_type`` value (``"document"``
+                or ``"query"``). Sent as an extra request field only when not
+                ``None`` — OpenAI and Ollama answer unknown fields with an
+                HTTP 400, so the default keeps their request body exactly
+                ``{model, input}``.
 
         Returns:
             List of embedding vectors, one per input text.
@@ -135,7 +144,16 @@ class _OpenAICompatEmbeddings:
             RuntimeError: If the embeddings request fails.
         """
         try:
-            response = self._client.embeddings.create(model=self._model, input=texts)
+            if input_type is None:
+                response = self._client.embeddings.create(
+                    model=self._model, input=texts
+                )
+            else:
+                response = self._client.embeddings.create(
+                    model=self._model,
+                    input=texts,
+                    extra_body={"input_type": input_type},
+                )
         except self._openai.OpenAIError as exc:
             raise RuntimeError(
                 f"{self._label} embeddings request failed: {exc}"
@@ -146,11 +164,23 @@ class _OpenAICompatEmbeddings:
 
 
 class EmbeddingProvider(ABC):
-    """Abstract base class for embedding providers."""
+    """Abstract base class for embedding providers.
+
+    Retrieval-tuned models embed the two sides of a search asymmetrically —
+    a stored *document* and a *query* against it get different treatment —
+    so the class has two embedding doors: :meth:`embed` for the indexing
+    side and :meth:`embed_query` for the search side. Only :meth:`embed` is
+    abstract; :meth:`embed_query` defaults to it, so a provider whose model
+    has no such distinction (and any subclass written before the split)
+    stays symmetric with nothing to implement (#1135).
+    """
 
     @abstractmethod
     def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embed a batch of texts.
+        """Embed a batch of texts for storage in the index.
+
+        This is the document side of retrieval. Query text goes through
+        :meth:`embed_query` instead.
 
         Args:
             texts: List of strings to embed.
@@ -159,6 +189,36 @@ class EmbeddingProvider(ABC):
             List of embedding vectors, one per input text.
         """
         ...
+
+    def embed_query(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of search queries.
+
+        Defaults to :meth:`embed` — symmetric embedding, which is correct
+        for every model that draws no query/document distinction. Providers
+        whose models do (Voyage) override this.
+
+        Args:
+            texts: List of query strings to embed.
+
+        Returns:
+            List of embedding vectors, one per input text.
+        """
+        return self.embed(texts)
+
+    @property
+    def provider_variant(self) -> str:
+        """Identity token for the embedding space this provider produces.
+
+        Persisted alongside ``provider_name``/``model_name`` in the vector
+        sidecar so that a change in *how* a provider embeds — not which
+        provider or model it is — is caught at load and routed to the same
+        rebuild as a model change. Defaults to ``""``: one provider plus one
+        model means one embedding space.
+
+        Returns:
+            A stable token, or ``""`` when the provider has a single space.
+        """
+        return ""
 
     @property
     @abstractmethod
@@ -531,6 +591,12 @@ class VoyageProvider(EmbeddingProvider):
     SDK, whose base64 default Voyage accepts — so no request shaping is needed
     here, but none of those three fields may start being sent either.
 
+    ``input_type`` is the one extra field this provider does send (#1135).
+    It is Voyage's own parameter rather than an OpenAI one, which is why the
+    transport passes it as ``extra_body`` and only when a caller asks for it:
+    OpenAI and Ollama would answer it with the same HTTP 400 as the three
+    fields above.
+
     Args:
         api_key: Voyage API key for authentication.
         model: Embedding model name.
@@ -575,8 +641,35 @@ class VoyageProvider(EmbeddingProvider):
 
         logger.debug("VoyageProvider initialised: model=%s", self._model)
 
+    def _embed(self, texts: list[str], input_type: str) -> list[list[float]]:
+        """Embed *texts* with an explicit Voyage ``input_type``.
+
+        Both public doors route here so the dimension cache is filled once,
+        whichever side embedded first.
+
+        Args:
+            texts: List of strings to embed.
+            input_type: ``"document"`` or ``"query"``.
+
+        Returns:
+            List of embedding vectors in input order.
+
+        Raises:
+            RuntimeError: If the embeddings request fails.
+        """
+        embeddings = self._compat.embed(texts, input_type=input_type)
+
+        # Cache dimension from first successful call.
+        if self._dimension is None and embeddings:
+            self._dimension = len(embeddings[0])
+
+        return embeddings
+
     def embed(self, texts: list[str]) -> list[list[float]]:
-        """Embed a batch of texts via Voyage's Embeddings API.
+        """Embed a batch of documents via Voyage's Embeddings API.
+
+        Sends ``input_type="document"``, which makes Voyage prepend its
+        document retrieval prompt.
 
         Args:
             texts: List of strings to embed.
@@ -587,13 +680,25 @@ class VoyageProvider(EmbeddingProvider):
         Raises:
             RuntimeError: If the embeddings request fails.
         """
-        embeddings = self._compat.embed(texts)
+        return self._embed(texts, "document")
 
-        # Cache dimension from first successful call.
-        if self._dimension is None and embeddings:
-            self._dimension = len(embeddings[0])
+    def embed_query(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of search queries via Voyage's Embeddings API.
 
-        return embeddings
+        Sends ``input_type="query"``, which makes Voyage prepend its query
+        retrieval prompt — the other half of the asymmetry :meth:`embed`
+        supplies.
+
+        Args:
+            texts: List of query strings to embed.
+
+        Returns:
+            List of embedding vectors in input order.
+
+        Raises:
+            RuntimeError: If the embeddings request fails.
+        """
+        return self._embed(texts, "query")
 
     @property
     def dimension(self) -> int:
@@ -616,6 +721,18 @@ class VoyageProvider(EmbeddingProvider):
     @property
     def provider_name(self) -> str:
         return "voyage"
+
+    @property
+    def provider_variant(self) -> str:
+        """Identity token for Voyage's typed embedding space.
+
+        Voyage prepends a different retrieval prompt per ``input_type``, so
+        vectors written before #1135 (sent untyped) sit in a different space
+        from the ones this provider writes now. The token differs from the
+        ``""`` a pre-#1135 sidecar reads back as, so an existing Voyage vault
+        fails the identity check on first load and re-embeds once.
+        """
+        return "input_type"
 
     @property
     def model_name(self) -> str:

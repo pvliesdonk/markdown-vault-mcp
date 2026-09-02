@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.managers.index import IndexManager
+from markdown_vault_mcp.providers import EmbeddingProvider
 from markdown_vault_mcp.scanner import HeadingChunker
 from markdown_vault_mcp.tracker import ChangeTracker
 from markdown_vault_mcp.types import IndexStats, ReindexResult
@@ -2256,11 +2257,13 @@ class TestReindexSkipReasons:
 # ---------------------------------------------------------------------------
 
 
-class _CapturingProvider:
-    """Deterministic provider that records every embedded text."""
+class _CapturingProvider(EmbeddingProvider):
+    """Deterministic provider that records every embedded text.
 
-    provider_name = "capturing"
-    model_name = "capturing-model"
+    Implements only the abstract surface; the indexing paths below therefore
+    exercise a provider that predates the query/document split. The query
+    door's default is pinned in ``tests/test_providers.py``.
+    """
 
     def __init__(self) -> None:
         self.texts: list[str] = []
@@ -2268,6 +2271,22 @@ class _CapturingProvider:
     def embed(self, texts: list[str]) -> list[list[float]]:
         self.texts.extend(texts)
         return [[1.0, 0.0] for _ in texts]
+
+    @property
+    def dimension(self) -> int:
+        return 2
+
+    @property
+    def provider_name(self) -> str:
+        return "capturing"
+
+    @property
+    def model_name(self) -> str:
+        return "capturing-model"
+
+    @property
+    def context_length(self) -> int | None:
+        return None
 
 
 def _enriched_vault(tmp_path: Path) -> Path:

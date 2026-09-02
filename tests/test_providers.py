@@ -395,18 +395,70 @@ class TestVoyageProvider:
     def test_embed_sends_no_params_voyage_rejects(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Only ``model``/``input`` go on the wire.
+        """Only ``model``, ``input`` and ``input_type`` reach Voyage.
 
         Voyage answers ``dimensions`` and ``user`` with HTTP 400 and rejects
         ``encoding_format="float"`` outright, so the request must carry neither
         — ``encoding_format`` is left to the SDK, whose base64 default Voyage
-        accepts.
+        accepts. ``input_type`` travels as the SDK's ``extra_body`` kwarg,
+        which the client merges into the JSON body, so pinning the kwarg set
+        here pins the request body.
         """
         captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
         VoyageProvider(api_key="pa-test").embed(["hello"])
 
         (kwargs,) = captured["create_calls"]
-        assert set(kwargs) == {"model", "input"}
+        assert set(kwargs) == {"model", "input", "extra_body"}
+        assert set(kwargs["extra_body"]) == {"input_type"}
+
+    def test_embed_sends_document_input_type(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The indexing door sends ``input_type: document``."""
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
+        VoyageProvider(api_key="pa-test").embed(["a note"])
+
+        (kwargs,) = captured["create_calls"]
+        assert kwargs["extra_body"] == {"input_type": "document"}
+
+    def test_embed_query_sends_query_input_type(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The search door sends ``input_type: query``."""
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
+        result = VoyageProvider(api_key="pa-test").embed_query(["a question"])
+
+        (kwargs,) = captured["create_calls"]
+        assert kwargs["input"] == ["a question"]
+        assert kwargs["extra_body"] == {"input_type": "query"}
+        assert result == [[0.1]]
+
+    def test_embed_query_maps_sdk_error_to_runtime_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The query door maps transport failures exactly as ``embed`` does."""
+        _install_fake_openai(monkeypatch, raise_error=True)
+        provider = VoyageProvider(api_key="pa-test")
+        with pytest.raises(RuntimeError, match="VoyageProvider embeddings request"):
+            provider.embed_query(["hello"])
+
+    def test_embed_query_fills_the_shared_dimension_cache(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A query-first provider caches the dimension, sparing a paid probe."""
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1] * 1024])
+        provider = VoyageProvider(api_key="pa-test")
+
+        provider.embed_query(["hello"])
+        assert provider.dimension == 1024
+        assert len(captured["create_calls"]) == 1
+
+    def test_provider_variant_marks_the_typed_embedding_space(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Voyage reports a variant, so pre-#1135 untyped sidecars re-embed."""
+        _install_fake_openai(monkeypatch)
+        assert VoyageProvider(api_key="pa-test").provider_variant == "input_type"
 
     def test_custom_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
         captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
@@ -656,6 +708,80 @@ def test_embedding_provider_requires_context_length():
     from markdown_vault_mcp.providers import EmbeddingProvider
 
     assert "context_length" in EmbeddingProvider.__abstractmethods__
+
+
+class TestAsymmetricEmbeddingSurface:
+    """The two embedding doors and the identity token that guards them (#1135)."""
+
+    def test_subclass_implementing_only_embed_stays_instantiable(self) -> None:
+        """``embed_query``/``provider_variant`` are concrete, so the abstract set is unchanged.
+
+        This is the compatibility claim for downstream subclasses: adding the
+        query door must not make an existing implementation abstract.
+        """
+        from markdown_vault_mcp.providers import EmbeddingProvider
+
+        assert "embed_query" not in EmbeddingProvider.__abstractmethods__
+        assert "provider_variant" not in EmbeddingProvider.__abstractmethods__
+
+    def test_default_embed_query_delegates_to_embed(self) -> None:
+        """A provider with no query/document distinction embeds both sides alike."""
+        from markdown_vault_mcp.providers import EmbeddingProvider
+
+        class _Symmetric(EmbeddingProvider):
+            def __init__(self) -> None:
+                self.calls: list[list[str]] = []
+
+            def embed(self, texts: list[str]) -> list[list[float]]:
+                self.calls.append(texts)
+                return [[1.0] for _ in texts]
+
+            @property
+            def dimension(self) -> int:
+                return 1
+
+            @property
+            def provider_name(self) -> str:
+                return "symmetric"
+
+            @property
+            def model_name(self) -> str:
+                return "m"
+
+            @property
+            def context_length(self) -> int | None:
+                return None
+
+        provider = _Symmetric()
+        assert provider.embed_query(["q"]) == [[1.0]]
+        assert provider.calls == [["q"]]
+        assert provider.provider_variant == ""
+
+    @pytest.mark.parametrize("door", ["embed", "embed_query"])
+    def test_openai_sends_no_input_type_on_either_door(
+        self, monkeypatch: pytest.MonkeyPatch, door: str
+    ) -> None:
+        """OpenAI answers unknown request fields with HTTP 400, so neither door may add one."""
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
+        provider = OpenAIProvider(api_key="sk-test")
+        getattr(provider, door)(["hello"])
+
+        (kwargs,) = captured["create_calls"]
+        assert set(kwargs) == {"model", "input"}
+        assert provider.provider_variant == ""
+
+    @pytest.mark.parametrize("door", ["embed", "embed_query"])
+    def test_ollama_sends_no_input_type_on_either_door(
+        self, monkeypatch: pytest.MonkeyPatch, door: str
+    ) -> None:
+        """Ollama's OpenAI-compatible endpoint is equally strict about unknown fields."""
+        captured = _install_fake_openai(monkeypatch, vectors=[[0.1]])
+        provider = OllamaProvider(host="http://localhost:11434", model="bge-m3:latest")
+        getattr(provider, door)(["hello"])
+
+        (kwargs,) = captured["create_calls"]
+        assert set(kwargs) == {"model", "input"}
+        assert provider.provider_variant == ""
 
 
 def test_ollama_context_length_parses_api_show(monkeypatch):

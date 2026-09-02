@@ -34,6 +34,24 @@ For OpenAI-compatible APIs, set `OPENAI_BASE_URL` and
 `MARKDOWN_VAULT_MCP_VOYAGE_MODEL`. It is never auto-detected: select it
 explicitly.
 
+## Documents and Queries
+
+`EmbeddingProvider` has two embedding doors. `embed()` is the document side,
+used everywhere text is embedded for storage; `embed_query()` is the search
+side. Only `embed()` is abstract. `embed_query()` defaults to it, so a
+provider whose model draws no query/document distinction writes nothing
+extra and embeds both sides identically.
+
+```python
+vectors = provider.embed(["a stored note"])       # index side
+query_vector = provider.embed_query(["a search"])  # search side
+```
+
+`VoyageProvider` overrides both, sending Voyage's `input_type` parameter so
+the vendor prepends its document or query retrieval prompt. Because that
+changes the embedding space, it also reports a non-empty `provider_variant`,
+which the vector sidecar records next to the provider and model names.
+
 ## API Reference
 
 <!-- vale off -->

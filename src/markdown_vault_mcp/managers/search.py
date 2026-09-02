@@ -167,8 +167,9 @@ class SearchManager:
             :meth:`okf_stats`. ``None`` keeps every OKF surface inert.
         rebuild_embeddings: Callback to rebuild all embeddings from scratch.
             Invoked by ``_load_vectors`` on any unrecoverable sidecar fault —
-            a provider/model mismatch, an embedding-text format mismatch, a
-            row-count mismatch, or a truncated/zero-byte/incomplete sidecar.
+            an embedding-identity mismatch (provider, model, or provider
+            variant), an embedding-text format mismatch, a row-count
+            mismatch, or a truncated/zero-byte/incomplete sidecar.
         folder_weights: Folder-prefix score multipliers applied to every
             search mode just before file grouping.  ``None`` disables the
             boost.

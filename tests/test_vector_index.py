@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from markdown_vault_mcp.providers import EmbeddingProvider
 from markdown_vault_mcp.vector_index import VectorIndex, VectorIndexCompatibilityError
 
 if TYPE_CHECKING:
@@ -55,6 +56,69 @@ def _make_meta(path: str, heading: str | None = None) -> dict:
         "heading": heading,
         "content": f"Content for {path} section {heading}",
     }
+
+
+class _VariantProvider(EmbeddingProvider):
+    """Wrap a provider, overriding only its ``provider_variant`` token."""
+
+    def __init__(self, inner: MockEmbeddingProvider, variant: str) -> None:
+        self._inner = inner
+        self._variant = variant
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return self._inner.embed(texts)
+
+    @property
+    def provider_variant(self) -> str:
+        return self._variant
+
+    @property
+    def dimension(self) -> int:
+        return self._inner.dimension
+
+    @property
+    def provider_name(self) -> str:
+        return self._inner.provider_name
+
+    @property
+    def model_name(self) -> str:
+        return self._inner.model_name
+
+    @property
+    def context_length(self) -> int | None:
+        return self._inner.context_length
+
+
+class _DoorRecordingProvider(EmbeddingProvider):
+    """Wrap a provider, recording which embedding door each call came through."""
+
+    def __init__(self, inner: MockEmbeddingProvider) -> None:
+        self._inner = inner
+        self.doors: list[tuple[str, list[str]]] = []
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.doors.append(("embed", list(texts)))
+        return self._inner.embed(texts)
+
+    def embed_query(self, texts: list[str]) -> list[list[float]]:
+        self.doors.append(("embed_query", list(texts)))
+        return self._inner.embed(texts)
+
+    @property
+    def dimension(self) -> int:
+        return self._inner.dimension
+
+    @property
+    def provider_name(self) -> str:
+        return self._inner.provider_name
+
+    @property
+    def model_name(self) -> str:
+        return self._inner.model_name
+
+    @property
+    def context_length(self) -> int | None:
+        return self._inner.context_length
 
 
 # ---------------------------------------------------------------------------
@@ -912,3 +976,120 @@ class TestEmbedTextFormatToken:
         index.save(base)
         loaded = VectorIndex.load(base, mock_provider)
         assert loaded.count == 1
+
+
+class TestProviderVariantIdentity:
+    """The third identity component in the sidecar (#1135)."""
+
+    def test_variant_roundtrips_through_the_sidecar(
+        self, mock_provider: MockEmbeddingProvider, tmp_path: Path
+    ) -> None:
+        """A provider reporting a variant stamps it into ``index_metadata``."""
+        provider = _VariantProvider(mock_provider, "input_type")
+        index = VectorIndex(provider)
+        index.add(["text"], [_make_meta("a.md")])
+        base = tmp_path / "embeddings"
+        index.save(base)
+
+        payload = json.loads((tmp_path / "embeddings.json").read_text("utf-8"))
+        assert payload["index_metadata"]["provider_variant"] == "input_type"
+        assert VectorIndex.load(base, provider).count == 1
+
+    def test_default_variant_is_empty(
+        self, mock_provider: MockEmbeddingProvider, tmp_path: Path
+    ) -> None:
+        """A provider with one embedding space stamps the empty token."""
+        index = VectorIndex(mock_provider)
+        index.add(["text"], [_make_meta("a.md")])
+        base = tmp_path / "embeddings"
+        index.save(base)
+
+        payload = json.loads((tmp_path / "embeddings.json").read_text("utf-8"))
+        assert payload["index_metadata"]["provider_variant"] == ""
+
+    def test_untyped_sidecar_fails_the_check_for_a_variant_provider(
+        self, mock_provider: MockEmbeddingProvider, tmp_path: Path
+    ) -> None:
+        """The upgrade case: vectors written before the variant must re-embed.
+
+        Same provider, same model, but the stored vectors sit in the untyped
+        space, so the load must fail into the caller's rebuild path rather
+        than serve a mixed index.
+        """
+        index = VectorIndex(mock_provider)
+        index.add(["text"], [_make_meta("a.md")])
+        base = tmp_path / "embeddings"
+        index.save(base)
+        json_path = tmp_path / "embeddings.json"
+        payload = json.loads(json_path.read_text("utf-8"))
+        del payload["index_metadata"]["provider_variant"]
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with pytest.raises(VectorIndexCompatibilityError, match="variant"):
+            VectorIndex.load(base, _VariantProvider(mock_provider, "input_type"))
+
+    def test_absent_variant_key_still_loads_for_a_variantless_provider(
+        self, mock_provider: MockEmbeddingProvider, tmp_path: Path
+    ) -> None:
+        """Every pre-upgrade sidecar keeps loading: absent key reads as ``""``."""
+        index = VectorIndex(mock_provider)
+        index.add(["text"], [_make_meta("a.md")])
+        base = tmp_path / "embeddings"
+        index.save(base)
+        json_path = tmp_path / "embeddings.json"
+        payload = json.loads(json_path.read_text("utf-8"))
+        del payload["index_metadata"]["provider_variant"]
+        json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+        assert VectorIndex.load(base, mock_provider).count == 1
+
+    def test_variant_change_reports_both_tokens(
+        self, mock_provider: MockEmbeddingProvider, tmp_path: Path
+    ) -> None:
+        """The error names stored and current variants, so the log explains the rebuild."""
+        index = VectorIndex(_VariantProvider(mock_provider, "old"))
+        index.add(["text"], [_make_meta("a.md")])
+        base = tmp_path / "embeddings"
+        index.save(base)
+
+        with pytest.raises(VectorIndexCompatibilityError) as excinfo:
+            VectorIndex.load(base, _VariantProvider(mock_provider, "new"))
+        assert "stored variant='old'" in str(excinfo.value)
+        assert "current variant='new'" in str(excinfo.value)
+
+
+class TestQueryEmbeddingDoor:
+    """``search`` embeds through the query door, ``add`` through the document one."""
+
+    def test_search_embeds_the_query_through_embed_query(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        provider = _DoorRecordingProvider(mock_provider)
+        index = VectorIndex(provider)
+        index.add(["alpha", "beta"], [_make_meta("a.md"), _make_meta("b.md")])
+        provider.doors.clear()
+
+        index.search("alpha", limit=1)
+
+        assert provider.doors == [("embed_query", ["alpha"])]
+
+    def test_add_embeds_documents_through_embed(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        provider = _DoorRecordingProvider(mock_provider)
+        VectorIndex(provider).add(["alpha"], [_make_meta("a.md")])
+
+        assert provider.doors == [("embed", ["alpha"])]
+
+    def test_search_by_path_reuses_stored_vectors(
+        self, mock_provider: MockEmbeddingProvider
+    ) -> None:
+        """Similarity from a stored document embeds nothing — neither door is used."""
+        provider = _DoorRecordingProvider(mock_provider)
+        index = VectorIndex(provider)
+        index.add(["alpha", "beta"], [_make_meta("a.md"), _make_meta("b.md")])
+        provider.doors.clear()
+
+        index.search_by_path("a.md", limit=1)
+
+        assert provider.doors == []

@@ -2699,11 +2699,35 @@ sidecar records ``voyage`` as its provider identity. Unlike the other three,
 for an unrelated tool must not silently take over an index and force a
 re-embed.
 
+**Asymmetric embedding (#1135)**: retrieval-tuned models treat a stored
+document and a query against it differently, so the ABC has two embedding
+doors — ``embed`` (documents, the indexing side) and ``embed_query`` (the
+search side). Only ``embed`` is abstract; ``embed_query`` defaults to it, so a
+provider whose model draws no distinction — and any subclass written before
+the split — stays symmetric with nothing to implement, which is why this was
+an additive ``feat`` rather than an ABC break. ``VoyageProvider`` overrides
+both, sending Voyage's ``input_type`` (``"document"`` / ``"query"``) as
+``extra_body`` through the shared transport, which omits the field entirely
+unless a caller asks for it — OpenAI and Ollama answer unknown request fields
+with the same HTTP 400 as the three above. ``VectorIndex.search`` is the only
+query-side call site; every other embedding call is document-side.
+
+Typed vectors sit in a different space from the untyped ones a pre-#1135
+Voyage vault holds, so the provider also reports a ``provider_variant``
+token (``""`` by default, ``"input_type"`` for Voyage) that joins
+``provider``/``model`` as a third identity component in the vector sidecar's
+``index_metadata``. An absent key reads back as ``""``, so vaults on the other
+three providers keep loading warm while an existing Voyage vault fails the
+check once and takes the same ``build_embeddings(force=True)`` self-heal a
+model change takes. This is the vector sidecar's own identity mechanism, not
+the FTS one: ``INDEX_SEMANTICS_VERSION`` governs how a note's stored *rows*
+derive from its bytes, and those are untouched here.
+
 **Acceptance bar for named provider presets (#1134)**: a named
 ``EMBEDDING_PROVIDER`` value is reserved for a vendor whose API has behavior the
 generic OpenAI-compatible transport cannot express. Voyage clears it on two
 counts — the strict request-shape rejections above, and the query/document
-``input_type`` asymmetry that needs a per-call ABC parameter (#1135); Ollama
+``input_type`` asymmetry now implemented in ``embed``/``embed_query`` (#1135); Ollama
 clears it as a local runtime with no API key, a CPU-only mode, and native
 context-length and reachability probes. Every other OpenAI-compatible endpoint
 (Jina, Mistral, SiliconFlow, LiteLLM, vLLM, Text Embeddings Inference, gateway
