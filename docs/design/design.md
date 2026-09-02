@@ -3890,7 +3890,8 @@ handshake event at all. Each host still gets its own route
 (`/github-webhook`, `/gitlab-webhook`), mounted only when that host's
 credentials are set; the routes are separate because the credentials are, not
 because the logic is. `register_webhook_routes` owns that whole decision — the
-gates and both startup warnings — so `server.py`'s wiring block makes one call
+gates and every startup warning about a credential that is set but weak or
+inert — so `server.py`'s wiring block makes one call
 instead of carrying a second host's worth of branching.
 
 GitLab needs two credential fields rather than one, because it has two

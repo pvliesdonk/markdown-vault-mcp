@@ -606,8 +606,8 @@ def webhook_routes_active(config: Any, transport: str) -> bool:
 def register_webhook_routes(mcp: Any, config: Any, transport: str) -> None:
     """Mount each host's webhook route when its credentials are configured.
 
-    Owns the whole decision — which routes exist, and the three startup
-    warnings about credentials that are set but weak or inert — so
+    Owns the whole decision — which routes exist, and every startup
+    warning about a credential that is set but weak or inert — so
     ``server.py``'s wiring block makes one call rather than growing a second
     host's worth of branching.
 
