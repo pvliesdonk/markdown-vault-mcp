@@ -1731,6 +1731,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_revision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read_revision
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.get_metadata" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2613,6 +2624,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_revision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read_revision
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.facets.reader.ReaderFacet.get_metadata" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3274,7 +3296,7 @@ reached through the <code>reader</code> / <code>writer</code> / <code>graph</cod
 </code></pre></div>
 <h2 id="readerfacet">ReaderFacet<a class="headerlink" href="#readerfacet" title="Permanent link">&para;</a></h2>
 <p>Search, read, listing, table-of-contents, similarity, context, history/diff,
-and attachment reads.</p>
+revision reads, and attachment reads.</p>
 <!-- vale off -->
 
 
@@ -3350,7 +3372,7 @@ queries.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Git history / diff reads.</p>
+                <p>Git history / diff / revision reads.</p>
               </div>
             </td>
             <td>
@@ -3811,6 +3833,190 @@ a <code>search</code> result unchanged for guaranteed match. <code>None</code>
             <td>
               <div class="doc-md-description">
                 <p>if the file does not exist.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.facets.reader.ReaderFacet.read_revision" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_revision</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">revision</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">section</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.facets.reader.ReaderFacet.read_revision" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Read a document's content as it stood at a git revision (#1137).</p>
+<p>Resolution is by note, not by path: pass the path the note has today,
+and git's own add/rename records are walked back to <em>revision</em>.  Where
+they do not connect the two — a name since reused by a different note,
+a delete-and-recreate, a rename git cannot detect — this raises rather
+than returning content that belongs to another note.</p>
+<p>A note that no longer exists on disk is still readable this way, which
+is how a deleted note is recovered.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Relative document path as it is named today.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>revision</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Commit SHA, from :meth:<code>get_history</code> or from an
+overwriting :meth:<code>WriterFacet.write</code>'s <code>previous_revision</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>section</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When provided, return only that section of the historical
+content, matched as :meth:<code>read</code> matches it on disk.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>A</code></td>            <td>
+                  <code><a class="autorefs autorefs-internal" title="RevisionContent(path, historical_path, revision, content)
+
+  
+      dataclass
+   (markdown_vault_mcp.types.RevisionContent)" href="../types/#markdown_vault_mcp.types.RevisionContent">RevisionContent</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>class:<code>~markdown_vault_mcp.types.RevisionContent</code>.  Unlike</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><a class="autorefs autorefs-internal" title="RevisionContent(path, historical_path, revision, content)
+
+  
+      dataclass
+   (markdown_vault_mcp.types.RevisionContent)" href="../types/#markdown_vault_mcp.types.RevisionContent">RevisionContent</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>meth:<code>read</code> it carries no <code>etag</code>: that describes the note as it</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><a class="autorefs autorefs-internal" title="RevisionContent(path, historical_path, revision, content)
+
+  
+      dataclass
+   (markdown_vault_mcp.types.RevisionContent)" href="../types/#markdown_vault_mcp.types.RevisionContent">RevisionContent</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>is now, and feeding one from a revision read back as <code>if_match</code></p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><a class="autorefs autorefs-internal" title="RevisionContent(path, historical_path, revision, content)
+
+  
+      dataclass
+   (markdown_vault_mcp.types.RevisionContent)" href="../types/#markdown_vault_mcp.types.RevisionContent">RevisionContent</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>would assert a read the caller never made.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the vault is not git-backed, <em>revision</em> is unusable,
+<em>path</em> is not a note, the note's identity cannot be traced to
+that revision, or the content there is unreadable.</p>
               </div>
             </td>
           </tr>
@@ -5570,7 +5776,7 @@ type.</p>
 
 
 <h2 id="markdown_vault_mcp.facets.writer.WriterFacet" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">WriterFacet</span><span class="p">(</span><span class="n">doc_mgr</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">okf_migrate</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">convention_maintainer</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">WriterFacet</span><span class="p">(</span><span class="n">doc_mgr</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">okf_migrate</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">convention_maintainer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">previous_revision</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.writer.WriterFacet" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -5641,6 +5847,30 @@ the <code>okf_*</code> migration methods unavailable.</p>
 maintainer (#964); <code>None</code> (the default, and whenever
 <code>OKF_WRITE</code> is off) disables <code>log.md</code> / <code>index.md</code>
 upkeep on <code>write</code> / <code>edit</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>previous_revision</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span>[[<span title="str">str</span>], <span title="str">str</span> | None] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Resolves the revision holding a note's current
+content, for the overwrite breadcrumb (#1137).  <code>None</code> (the
+default, and on a vault without git) omits the breadcrumb.
+Wired here rather than inside
+:class:<code>~markdown_vault_mcp.managers.document.DocumentManager</code>
+deliberately: that class is also the server's own maintenance
+write path (OKF link conversion rewrites thousands of notes in
+one call), and a git probe per file there would spend several
+subprocesses each on a result nobody reads.</p>
               </div>
             </td>
             <td>
@@ -5997,7 +6227,7 @@ modifications.  Pass <code>None</code> (default) to skip the check.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created)
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
 
   
       dataclass
@@ -6005,7 +6235,49 @@ modifications.  Pass <code>None</code> (default) to skip the check.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>class:<code>~markdown_vault_mcp.types.WriteResult</code>.</p>
+                <p>class:<code>~markdown_vault_mcp.types.WriteResult</code>.  On an overwrite of</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
+
+  
+      dataclass
+   (markdown_vault_mcp.types.WriteResult)" href="../types/#markdown_vault_mcp.types.WriteResult">WriteResult</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>a committed note in a git-backed vault, its <code>previous_revision</code></p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
+
+  
+      dataclass
+   (markdown_vault_mcp.types.WriteResult)" href="../types/#markdown_vault_mcp.types.WriteResult">WriteResult</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>names the commit holding the replaced content, readable back with</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
+
+  
+      dataclass
+   (markdown_vault_mcp.types.WriteResult)" href="../types/#markdown_vault_mcp.types.WriteResult">WriteResult</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>meth:<code>~markdown_vault_mcp.facets.reader.ReaderFacet.read_revision</code>.</p>
               </div>
             </td>
           </tr>
@@ -6407,7 +6679,7 @@ when the file does not already end with one.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created)
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
 
   
       dataclass
@@ -7004,7 +7276,7 @@ partially moved with the index unchanged; reindex recovers.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created)
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
 
   
       dataclass

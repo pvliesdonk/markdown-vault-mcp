@@ -1809,6 +1809,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.types.RevisionContent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RevisionContent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#markdown_vault_mcp.types.NoteInfo" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2251,6 +2262,17 @@
     <span class="md-ellipsis">
       
         NoteContent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.types.RevisionContent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RevisionContent
       
     </span>
   </a>
@@ -2720,6 +2742,123 @@
             <td>
               <div class="doc-md-description">
                 <p>Opaque hash of file content for optimistic concurrency checks.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.types.RevisionContent" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">RevisionContent</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">historical_path</span><span class="p">,</span> <span class="n">revision</span><span class="p">,</span> <span class="n">content</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.types.RevisionContent" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>A note's content at a git revision, returned by :meth:<code>~markdown_vault_mcp.facets.reader.ReaderFacet.read_revision</code>.</p>
+<p>Deliberately carries neither <code>etag</code> nor <code>modified_at</code>: both describe
+the note as it is <em>now</em>, and an etag taken from a revision read and fed
+back as <code>if_match</code> would assert a read of the current file that the
+caller never made.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.RevisionContent.path">path</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Relative path the note has today — the one the caller asked for.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.RevisionContent.historical_path">historical_path</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Relative path the note carried at <em>revision</em>.  Differs
+from <code>path</code> when the note has been renamed since.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.RevisionContent.revision">revision</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The commit the content was read from.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.RevisionContent.content">content</span></code></td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Raw markdown at that revision, frontmatter included — or, when
+a section was requested, just that section's body, matching what a
+section read of the note on disk returns.  Either way this is the
+committed blob, so a repository with <code>core.autocrlf</code> or an
+<code>eol</code> attribute returns the normalised form rather than whatever
+line endings the file had on disk.</p>
               </div>
             </td>
           </tr>
@@ -4566,7 +4705,7 @@ exactly one section (chunks_per_file=1 by default).</p>
 
 
 <h2 id="markdown_vault_mcp.types.WriteResult" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">WriteResult</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">created</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">WriteResult</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">created</span><span class="p">,</span> <span class="n">previous_revision</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -4611,6 +4750,31 @@ exactly one section (chunks_per_file=1 by default).</p>
             <td>
               <div class="doc-md-description">
                 <p><code>True</code> if the document was newly created; <code>False</code> if overwritten.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.WriteResult.previous_revision">previous_revision</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Set only by an overwriting
+:meth:<code>~markdown_vault_mcp.facets.writer.WriterFacet.write</code>; every
+other producer of this result — <code>append</code>, <code>write_attachment</code>,
+and direct <code>DocumentManager</code> writes — leaves it <code>None</code>.  On a
+git-backed vault it names the commit holding the content the write
+replaced, the route back to it via
+:meth:<code>~markdown_vault_mcp.facets.reader.ReaderFacet.read_revision</code>.
+<code>None</code> whenever no commit <em>provably</em> holds it: a create, a vault
+without git, a note not committed yet, or a working copy that had
+already moved on from its newest commit. Content that never
+reached a commit is not recoverable from git, and a breadcrumb is
+withheld rather than pointing at an older revision that would look
+like the replaced content without being it.</p>
+<p>The probe and the write share the vault's write lock, so no other
+vault writer can change which note occupies the path in between.</p>
               </div>
             </td>
           </tr>

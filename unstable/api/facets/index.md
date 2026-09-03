@@ -25,7 +25,7 @@ vault.index.reindex()
 
 ## ReaderFacet
 
-Search, read, listing, table-of-contents, similarity, context, history/diff, and attachment reads.
+Search, read, listing, table-of-contents, similarity, context, history/diff, revision reads, and attachment reads.
 
 ## `ReaderFacet(*, search_mgr, doc_mgr, git_query_mgr, require_built, okf_audit=None)`
 
@@ -39,7 +39,7 @@ Parameters:
 | --------------- | -------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `search_mgr`    | `SearchManager`                  | Search / list / similarity / context / recent / stats queries. | *required*                                                                                  |
 | `doc_mgr`       | `DocumentManager`                | Document and attachment reads, table-of-contents.              | *required*                                                                                  |
-| `git_query_mgr` | `GitQueryManager`                | Git history / diff reads.                                      | *required*                                                                                  |
+| `git_query_mgr` | `GitQueryManager`                | Git history / diff / revision reads.                           | *required*                                                                                  |
 | `require_built` | `Callable[[], None]`             | Index-readiness gate for the bucket-3 methods.                 | *required*                                                                                  |
 | `okf_audit`     | \`Callable\[[], OkfAuditReport\] | None\`                                                         | Bound OKF conformance audit (#962), or None when the composition root does not provide one. |
 
@@ -108,6 +108,37 @@ Returns:
 | ---- | ------------- | ----------- |
 | `A`  | \`NoteContent | None\`      |
 |      | \`NoteContent | None\`      |
+
+### `read_revision(path, revision, *, section=None)`
+
+Read a document's content as it stood at a git revision (#1137).
+
+Resolution is by note, not by path: pass the path the note has today, and git's own add/rename records are walked back to *revision*. Where they do not connect the two — a name since reused by a different note, a delete-and-recreate, a rename git cannot detect — this raises rather than returning content that belongs to another note.
+
+A note that no longer exists on disk is still readable this way, which is how a deleted note is recovered.
+
+Parameters:
+
+| Name       | Type  | Description                                                                                            | Default                                                                                                      |
+| ---------- | ----- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `path`     | `str` | Relative document path as it is named today.                                                           | *required*                                                                                                   |
+| `revision` | `str` | Commit SHA, from :meth:get_history or from an overwriting :meth:WriterFacet.write's previous_revision. | *required*                                                                                                   |
+| `section`  | \`str | None\`                                                                                                 | When provided, return only that section of the historical content, matched as :meth:read matches it on disk. |
+
+Returns:
+
+| Name | Type              | Description                                                   |
+| ---- | ----------------- | ------------------------------------------------------------- |
+| `A`  | `RevisionContent` | class:~markdown_vault_mcp.types.RevisionContent. Unlike       |
+|      | `RevisionContent` | meth:read it carries no etag: that describes the note as it   |
+|      | `RevisionContent` | is now, and feeding one from a revision read back as if_match |
+|      | `RevisionContent` | would assert a read the caller never made.                    |
+
+Raises:
+
+| Type         | Description                                                                                                                                                          |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ValueError` | If the vault is not git-backed, revision is unusable, path is not a note, the note's identity cannot be traced to that revision, or the content there is unreadable. |
 
 ### `get_metadata(path)`
 
@@ -398,7 +429,7 @@ Delegates to :meth:`DocumentManager.read_attachment`.
 
 Create, edit, append, delete, rename, and attachment writes.
 
-## `WriterFacet(doc_mgr, *, okf_migrate=None, convention_maintainer=None)`
+## `WriterFacet(doc_mgr, *, okf_migrate=None, convention_maintainer=None, previous_revision=None)`
 
 Document-mutation operations, backed by :class:`DocumentManager`.
 
@@ -411,6 +442,7 @@ Parameters:
 | `doc_mgr`               | `DocumentManager`      | The shared :class:DocumentManager owned by the root. | *required*                                                                                                                                                |
 | `okf_migrate`           | \`OkfMigrationManager  | None\`                                               | The OKF migration manager (#963); None leaves the okf\_\* migration methods unavailable.                                                                  |
 | `convention_maintainer` | \`ConventionMaintainer | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit. |
+| `previous_revision`     | \`Callable\[[str], str | None\]                                               | None\`                                                                                                                                                    |
 
 ### `okf_convert_links(*, folder=None)`
 
@@ -477,9 +509,12 @@ Parameters:
 
 Returns:
 
-| Type          | Description                                  |
-| ------------- | -------------------------------------------- |
-| `WriteResult` | class:~markdown_vault_mcp.types.WriteResult. |
+| Type          | Description                                                       |
+| ------------- | ----------------------------------------------------------------- |
+| `WriteResult` | class:~markdown_vault_mcp.types.WriteResult. On an overwrite of   |
+| `WriteResult` | a committed note in a git-backed vault, its previous_revision     |
+| `WriteResult` | names the commit holding the replaced content, readable back with |
+| `WriteResult` | meth:~markdown_vault_mcp.facets.reader.ReaderFacet.read_revision. |
 
 Raises:
 

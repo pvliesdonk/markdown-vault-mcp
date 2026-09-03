@@ -24,6 +24,21 @@ Attributes:
 | `modified_at` | `float`          | Last-modified time as a Unix timestamp float.                 |
 | `etag`        | \`str            | None\`                                                        |
 
+## `RevisionContent(path, historical_path, revision, content)`
+
+A note's content at a git revision, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_revision`.
+
+Deliberately carries neither `etag` nor `modified_at`: both describe the note as it is *now*, and an etag taken from a revision read and fed back as `if_match` would assert a read of the current file that the caller never made.
+
+Attributes:
+
+| Name              | Type  | Description                                                                                                                                                                                                                                                                                                                                                   |
+| ----------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`            | `str` | Relative path the note has today — the one the caller asked for.                                                                                                                                                                                                                                                                                              |
+| `historical_path` | `str` | Relative path the note carried at revision. Differs from path when the note has been renamed since.                                                                                                                                                                                                                                                           |
+| `revision`        | `str` | The commit the content was read from.                                                                                                                                                                                                                                                                                                                         |
+| `content`         | `str` | Raw markdown at that revision, frontmatter included — or, when a section was requested, just that section's body, matching what a section read of the note on disk returns. Either way this is the committed blob, so a repository with core.autocrlf or an eol attribute returns the normalised form rather than whatever line endings the file had on disk. |
+
 ## `NoteInfo(path, title, folder, frontmatter, modified_at, kind='note', content_chars=0)`
 
 Summary info for a document, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.list_documents`.
@@ -231,16 +246,17 @@ Attributes:
 
 ## Operation Results
 
-## `WriteResult(path, created)`
+## `WriteResult(path, created, previous_revision=None)`
 
 Result of a write operation.
 
 Attributes:
 
-| Name      | Type   | Description                                                   |
-| --------- | ------ | ------------------------------------------------------------- |
-| `path`    | `str`  | Relative path of the document that was written.               |
-| `created` | `bool` | True if the document was newly created; False if overwritten. |
+| Name                | Type   | Description                                                   |
+| ------------------- | ------ | ------------------------------------------------------------- |
+| `path`              | `str`  | Relative path of the document that was written.               |
+| `created`           | `bool` | True if the document was newly created; False if overwritten. |
+| `previous_revision` | \`str  | None\`                                                        |
 
 ## `EditResult(path, replacements, match_type='exact')`
 

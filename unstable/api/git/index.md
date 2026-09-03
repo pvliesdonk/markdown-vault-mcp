@@ -325,6 +325,49 @@ Raises:
 | ------------ | ------------------------------------------------------------------------------------------------------- |
 | `ValueError` | If ref is not found in history, since_timestamp cannot be resolved, or a git subprocess exits non-zero. |
 
+### `get_file_at_ref(query_)`
+
+Return a note's content as it stood at a revision (#1137).
+
+Resolution is by note identity, walked out of git's own add and rename records; where those records do not reach the revision asked for, this raises rather than returning another note's content.
+
+Parameters:
+
+| Name     | Type            | Description                                       | Default    |
+| -------- | --------------- | ------------------------------------------------- | ---------- |
+| `query_` | `RevisionQuery` | The note, revision, and read cap being asked for. | *required* |
+
+Returns:
+
+| Type              | Description                                                 |
+| ----------------- | ----------------------------------------------------------- |
+| `RevisionContent` | The content and the path the note carried at that revision. |
+
+Raises:
+
+| Type         | Description                                                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ValueError` | If the vault is not git-backed, the revision is not an ancestor of HEAD, the note's identity cannot be traced to it, or the content is unreadable as a note. |
+
+### `committed_revision(repo_path, path)`
+
+Return the commit whose stored content for *path* is what is on disk.
+
+Parameters:
+
+| Name        | Type   | Description                     | Default    |
+| ----------- | ------ | ------------------------------- | ---------- |
+| `repo_path` | `Path` | Path inside the git repository. | *required* |
+| `path`      | `Path` | Absolute path of the note.      | *required* |
+
+Returns:
+
+| Type  | Description |
+| ----- | ----------- |
+| \`str | None\`      |
+| \`str | None\`      |
+| \`str | None\`      |
+
 ## `git_write_strategy(token=None, push_delay_s=0, git_lfs=True)`
 
 Create a :class:`GitWriteStrategy` callback.

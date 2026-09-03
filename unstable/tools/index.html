@@ -1259,6 +1259,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="read">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reading-an-earlier-revision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading an earlier revision
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -2535,6 +2552,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="read">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reading-an-earlier-revision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reading an earlier revision
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -3510,7 +3544,13 @@
 <td><code>section</code></td>
 <td>string</td>
 <td><code>null</code></td>
-<td>Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk, so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the <code>heading</code> field from a <code>search</code> result. Matching collapses internal whitespace on both sides: <code>"1.3.  Reducing..."</code> (two spaces) matches a stored <code>"1.3. Reducing..."</code> (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty.</td>
+<td>Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk (or from the revision's stored content when <code>revision</code> is also given), so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the <code>heading</code> field from a <code>search</code> result. Matching collapses internal whitespace on both sides: <code>"1.3.  Reducing..."</code> (two spaces) matches a stored <code>"1.3. Reducing..."</code> (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty.</td>
+</tr>
+<tr>
+<td><code>revision</code></td>
+<td>string</td>
+<td><code>null</code></td>
+<td>Read the note as it stood at that commit rather than on disk. A commit SHA from <code>get_history</code>, or the <code>previous_revision</code> a <code>write</code> returns. Git-backed vaults and <code>.md</code> notes only. Pass <code>path</code> as the note is named today; renames are followed, and the response reports the <code>historical_path</code> the note carried then. Combines with <code>section</code>, which then selects from the historical content.</td>
 </tr>
 </tbody>
 </table>
@@ -3528,7 +3568,7 @@ budget. Reads above <code>MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES</code> (default
 1 MB for binaries) raise an error; use <code>section=result["heading"]</code> for
 partial markdown reads (see the tip above).</p>
 <p><strong>Returns:</strong></p>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Markdown document</label><label for="__tabbed_1_2">Attachment</label></div>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:3"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Markdown document</label><label for="__tabbed_1_2">Attachment</label><label for="__tabbed_1_3">At a revision</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
@@ -3552,8 +3592,38 @@ partial markdown reads (see the tip above).</p>
 <span class="p">}</span>
 </code></pre></div>
 </div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Journal/note.md"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"historical_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Journal/old-name.md"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"revision"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9f2c1ab..."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"---\ntitle: My Note\n---\n\nThe note body as it was..."</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>content</code> is the whole raw file at that revision, or just one section's body when <code>section</code> is given as well. As on disk, a <code>section</code> read is exempt from <code>MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES</code>, so it remains the way to read part of a note too large to return whole. No <code>etag</code> and no <code>modified_at</code>: both describe the note as it is now, and an etag taken from a revision read would assert a read of the current file that never happened. No <code>okf</code> block either, for the same reason.</p>
 </div>
 </div>
+</div>
+<h4 id="reading-an-earlier-revision">Reading an earlier revision<a class="headerlink" href="#reading-an-earlier-revision" title="Permanent link">&para;</a></h4>
+<p>On a git-backed vault, <code>revision</code> turns <code>read</code> into the way back from an overwrite. A <code>write</code> that replaces an existing note returns <code>previous_revision</code>; that SHA, passed to <code>read</code>, returns exactly what the write replaced:</p>
+<div class="highlight"><pre><span></span><code>write(path, content=...)              → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")        → the replaced content
+read(path)                            → the current etag
+write(path, content=&lt;what you read&gt;, if_match=&lt;that etag&gt;)
+</code></pre></div>
+<p>The content comes back as the whole raw file, frontmatter included, and <code>write</code> stores it verbatim when no <code>frontmatter</code> argument is given, so the last step restores the note byte for byte.</p>
+<p><strong>It resolves the note, not the path.</strong> Pass the name the note has today; a rename since that revision is followed, and <code>historical_path</code> reports the name it carried. Where git's records do not connect the two, <code>read</code> <strong>fails rather than returning content</strong>, because the next thing a caller does with it is write it back. It fails when:</p>
+<ul>
+<li>a different note has since taken over the name (the content stored under it then is not this note's);</li>
+<li>the note was deleted and a new one created at the same path;</li>
+<li>a rename also rewrote the note so heavily that git records an unrelated add;</li>
+<li>the note on disk was never committed, so git has nothing recording its identity;</li>
+<li>the revision is not an ancestor of the current history, such as a SHA from a branch that history has since moved off;</li>
+<li>the note lived outside the vault at that revision, having been renamed in from elsewhere in the repository (its content there is not the vault's to return);</li>
+<li>git stores the note in LFS at that revision, where the repository holds a pointer rather than the note's text.</li>
+</ul>
+<p>A note that has since been <strong>deleted</strong> is still readable at a revision that has it; that is how a deleted note is recovered.</p>
+<p><code>previous_revision</code> is absent whenever no commit provably holds the replaced content: a newly created note, a vault without git, or content that was never committed (two writes in quick succession, where the first one's content never reached a commit). Content that never reached a commit is not recoverable from git at all.</p>
 <h3 id="list_documents"><code>list_documents</code><a class="headerlink" href="#list_documents" title="Permanent link">&para;</a></h3>
 <p>List documents (and optionally attachments) in the vault.</p>
 <p><strong>Parameters:</strong></p>
@@ -3784,6 +3854,7 @@ active. Each is noted on its own entry below.</p>
 LLM's own output budget. The <code>content_base64</code> parameter (binary) inflates
 by ~33%.</p>
 <p><strong>Returns:</strong> <code>{"path": "Journal/note.md", "created": true}</code></p>
+<p>On a git-backed vault, an overwrite also carries <code>previous_revision</code>: the commit holding the content this write replaced. Pass it to <a href="#read"><code>read</code></a> as <code>revision=</code> to get that content back. See <a href="#reading-an-earlier-revision">Reading an earlier revision</a>. The key is <strong>absent</strong>, not null, when no commit provably holds the replaced content: a newly created note, a vault without git, or content that was never committed.</p>
 <p>For <code>.md</code> files, the response may also include a <code>conventions</code> list: the
 <a href="#get_conventions">folder conventions</a> that apply to the target folder
 (root-first <code>{folder, path, content}</code> entries; omitted when none apply).
@@ -4840,7 +4911,7 @@ front.</p>
 <tr>
 <td><code>sha</code></td>
 <td>string</td>
-<td>Full commit SHA, in the repository's hash algorithm (40 hex digits under SHA-1, 64 under SHA-256)</td>
+<td>Full commit SHA, in the repository's hash algorithm (40 hex digits under SHA-1, 64 under SHA-256). Pass one to <a href="#read"><code>read</code></a> as <code>revision=</code> to read the note as it stood there</td>
 </tr>
 <tr>
 <td><code>short_sha</code></td>

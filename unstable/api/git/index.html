@@ -1923,6 +1923,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteStrategy.get_file_at_ref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_file_at_ref
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteStrategy.committed_revision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        committed_revision
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2335,6 +2357,28 @@
     <span class="md-ellipsis">
       
         get_file_diff
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteStrategy.get_file_at_ref" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_file_at_ref
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteStrategy.committed_revision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        committed_revision
       
     </span>
   </a>
@@ -4017,6 +4061,218 @@ walked to the <em>limit</em> most recent ones (clamped to
               <div class="doc-md-description">
                 <p>If <em>ref</em> is not found in history, <em>since_timestamp</em>
 cannot be resolved, or a git subprocess exits non-zero.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.git.GitWriteStrategy.get_file_at_ref" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">get_file_at_ref</span><span class="p">(</span><span class="n">query_</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.git.GitWriteStrategy.get_file_at_ref" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return a note's content as it stood at a revision (#1137).</p>
+<p>Resolution is by note identity, walked out of git's own add and rename
+records; where those records do not reach the revision asked for, this
+raises rather than returning another note's content.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>query_</code>
+            </td>
+            <td>
+                  <code><span title="markdown_vault_mcp.git.types.RevisionQuery">RevisionQuery</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The note, revision, and read cap being asked for.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="RevisionContent(path, historical_path, revision, content)
+
+  
+      dataclass
+   (markdown_vault_mcp.types.RevisionContent)" href="../types/#markdown_vault_mcp.types.RevisionContent">RevisionContent</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The content and the path the note carried at that revision.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the vault is not git-backed, the revision is not an
+ancestor of HEAD, the note's identity cannot be traced to it,
+or the content is unreadable as a note.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.git.GitWriteStrategy.committed_revision" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">committed_revision</span><span class="p">(</span><span class="n">repo_path</span><span class="p">,</span> <span class="n">path</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.git.GitWriteStrategy.committed_revision" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the commit whose stored content for <em>path</em> is what is on disk.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>repo_path</code>
+            </td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Path inside the git repository.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>path</code>
+            </td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Absolute path of the note.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The commit SHA, or <code>None</code> when the note has no commit yet, the</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>working copy has moved on from its newest one, or git cannot be</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>consulted.</p>
               </div>
             </td>
           </tr>
