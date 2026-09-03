@@ -4,14 +4,21 @@ Covers the git-strategy-None fallbacks, the get_diff argument validation
 branches (exactly-one-of since_sha/since_timestamp, SHA format) — previously
 only reachable via the MCP tool layer — and the forwarding contract, using a
 recording fake strategy so no real git repo is needed.
+
+One class is the exception: :class:`TestSha256Repository` drives a real
+``--object-format=sha256`` repository, because the claim it pins — that a SHA
+``get_history`` returned is one ``get_diff`` accepts — is only observable when
+git itself mints the object IDs (#1284).
 """
 
 from __future__ import annotations
 
+import subprocess
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.managers.git_query import GitQueryManager
 
 if TYPE_CHECKING:
@@ -86,6 +93,39 @@ class TestGetDiffValidation:
         mgr = GitQueryManager(_RecordingStrategy(), tmp_path)  # type: ignore[arg-type]
         with pytest.raises(ValueError, match="Invalid SHA"):
             mgr.get_diff("note.md", since_sha="XYZ!")
+
+    def test_sha256_length_sha_is_accepted(self, tmp_path: Path) -> None:
+        """A 64-hex object ID reaches the strategy instead of being rejected (#1284)."""
+        strat = _RecordingStrategy()
+        mgr = GitQueryManager(strat, tmp_path)  # type: ignore[arg-type]
+        sha = "a" * 64
+        assert mgr.get_diff("note.md", since_sha=sha) == "DIFF"
+        assert strat.diff_calls[0][2] == sha
+
+    def test_sha_longer_than_any_object_id_raises(self, tmp_path: Path) -> None:
+        """65 hex digits is not an object ID in either hash algorithm."""
+        mgr = GitQueryManager(_RecordingStrategy(), tmp_path)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="Invalid SHA"):
+            mgr.get_diff("note.md", since_sha="a" * 65)
+
+    @pytest.mark.parametrize(
+        "since_sha",
+        ["HEAD~1", "@{upstream}", "--all", "-x", "ABCDEF", "abcd def", "main"],
+    )
+    def test_non_object_id_input_never_reaches_git(
+        self, tmp_path: Path, since_sha: str
+    ) -> None:
+        """Widening the bound to 64 keeps the shape check, not just the length.
+
+        The validator's job is to keep caller-supplied text out of the git
+        argv: a revision expression, an option-looking string and an uppercase
+        digit are all rejected before the strategy is called.
+        """
+        strat = _RecordingStrategy()
+        mgr = GitQueryManager(strat, tmp_path)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="Invalid SHA"):
+            mgr.get_diff("note.md", since_sha=since_sha)
+        assert strat.diff_calls == []
 
 
 class TestForwarding:
@@ -277,3 +317,61 @@ class TestHistoryQueryHelpers:
         vault.mkdir()
         assert _vault_prefix(tmp_path, vault) == "vault/"
         assert _vault_prefix(tmp_path, tmp_path) == ""
+
+
+class TestSha256Repository:
+    """A SHA-256 repository's object IDs survive the round trip (#1284).
+
+    The rest of this module fakes the strategy; here git mints the IDs, because
+    the defect was a width assumption about what git returns.
+    """
+
+    def _sha256_repo(self, tmp_path: Path) -> Path:
+        """Build a two-commit repo with 64-hex object IDs, or skip."""
+        repo = tmp_path / "sha256"
+        repo.mkdir()
+        init = subprocess.run(
+            ["git", "-C", str(repo), "init", "--object-format=sha256"],
+            capture_output=True,
+            text=True,
+        )
+        if init.returncode != 0:
+            pytest.skip(
+                "local git does not support --object-format=sha256: "
+                f"{(init.stderr or '').strip()}"
+            )
+        for key, value in (("user.email", "t@example.com"), ("user.name", "T")):
+            subprocess.run(
+                ["git", "-C", str(repo), "config", key, value],
+                check=True,
+                capture_output=True,
+            )
+        note = repo / "note.md"
+        for body, message in (("# v1\n", "add"), ("# v2\n", "edit")):
+            note.write_text(body)
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-m", message],
+                check=True,
+                capture_output=True,
+            )
+        return repo
+
+    def test_history_sha_is_accepted_by_get_diff(self, tmp_path: Path) -> None:
+        """The SHA get_history returns is one get_diff accepts, 64 hex digits and all."""
+        repo = self._sha256_repo(tmp_path)
+        mgr = GitQueryManager(GitWriteStrategy(), repo)
+
+        history = mgr.get_history("note.md", limit=2)
+        assert len(history) == 2
+        oldest = history[-1].sha
+        # The premise of the test: this repo really does mint 64-hex IDs, so a
+        # 40-digit ceiling would reject every SHA the vault can offer a caller.
+        assert len(oldest) == 64
+
+        diff = mgr.get_diff("note.md", since_sha=oldest)
+        assert isinstance(diff, str)
+        assert "-# v1" in diff
+        assert "+# v2" in diff
