@@ -67,10 +67,12 @@ def _split_z_block(block: str, field_count: int) -> tuple[list[str], list[str]] 
     then — when a file list follows — emits a single ``\\n`` before the first
     path and terminates every path with NUL.  So a block reads
     ``field1\\0...fieldN\\0`` optionally followed by ``\\npath1\\0path2\\0``.
-    Paths arrive as git recorded them: ``-z`` suppresses the octal-escaped,
-    double-quoted rendering ``core.quotePath`` produces for non-ASCII names,
-    and unlike ``-c core.quotePath=false`` it also covers the names git quotes
-    unconditionally (a double quote, tab, or newline in the path).
+    Paths arrive as git recorded them rather than octal-escaped: ``-z``
+    suppresses the double-quoted rendering ``core.quotePath`` produces for
+    non-ASCII names, and unlike ``-c core.quotePath=false`` it also covers the
+    names git quotes unconditionally (a double quote, tab, or newline in the
+    path).  A lone carriage return is the one byte still rewritten, by the
+    text-mode pipe rather than by git (#1290).
 
     Exactly one trailing empty token is dropped — the one git's final NUL
     creates — rather than every trailing empty, because a commit with an empty
@@ -726,9 +728,10 @@ def _parse_log_block(block: str, rel_fallback: str) -> tuple[str, ...] | None:
         for an empty or malformed block.  *commit_path* is the path the
         file had at that commit (the old name for pre-rename commits,
         thanks to ``--follow``), falling back to *rel_fallback* when the
-        block carries no path.  It is the name git recorded, byte for byte,
-        so it can be handed straight back to git as a pathspec (see
-        :func:`_split_z_block`).
+        block carries no path.  It is the name git recorded rather than
+        git's quoted rendering of it, so it can be handed straight back as a
+        pathspec (see :func:`_split_z_block`, and #1290 for the lone carriage
+        return that is still rewritten in transit).
     """
     split = _split_z_block(block, 4)
     if split is None:
