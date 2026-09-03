@@ -71,8 +71,9 @@ def _split_z_block(block: str, field_count: int) -> tuple[list[str], list[str]] 
     suppresses the double-quoted rendering ``core.quotePath`` produces for
     non-ASCII names, and unlike ``-c core.quotePath=false`` it also covers the
     names git quotes unconditionally (a double quote, tab, or newline in the
-    path).  A lone carriage return is the one byte still rewritten, by the
-    text-mode pipe rather than by git (#1290).
+    path).  Carriage returns are the exception, and the text-mode pipe rather
+    than git is what rewrites them: a lone ``\r`` is translated, and a
+    ``\r\n`` pair collapses to a single byte (#1290).
 
     Exactly one trailing empty token is dropped — the one git's final NUL
     creates — rather than every trailing empty, because a commit with an empty
@@ -730,8 +731,8 @@ def _parse_log_block(block: str, rel_fallback: str) -> tuple[str, ...] | None:
         thanks to ``--follow``), falling back to *rel_fallback* when the
         block carries no path.  It is the name git recorded rather than
         git's quoted rendering of it, so it can be handed straight back as a
-        pathspec (see :func:`_split_z_block`, and #1290 for the lone carriage
-        return that is still rewritten in transit).
+        pathspec (see :func:`_split_z_block`, and #1290 for the carriage
+        returns still rewritten in transit).
     """
     split = _split_z_block(block, 4)
     if split is None:
