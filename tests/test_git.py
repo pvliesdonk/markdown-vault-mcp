@@ -6963,7 +6963,9 @@ class TestZBlockFraming:
 
         # `git log -z` on a commit with an empty message: the subject field is
         # empty, and git's own terminator adds one more empty token.
-        header, paths = _split_z_block("sha\0short\0ts\0author\0\0", 5)  # type: ignore[misc]
+        split = _split_z_block("sha\0short\0ts\0author\0\0", 5)
+        assert split is not None
+        header, paths = split
         assert header == ["sha", "short", "ts", "author", ""]
         assert paths == []
 
@@ -6971,7 +6973,9 @@ class TestZBlockFraming:
         """Exactly one newline separates the header from the file list."""
         from markdown_vault_mcp.git.query import _split_z_block
 
-        header, paths = _split_z_block("sha\0short\0ts\0author\0subj\0\n\nlead.md\0", 5)  # type: ignore[misc]
+        split = _split_z_block("sha\0short\0ts\0author\0subj\0\n\nlead.md\0", 5)
+        assert split is not None
+        header, paths = split
         assert header[-1] == "subj"
         assert paths == ["\nlead.md"]
 

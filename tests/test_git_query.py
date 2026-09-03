@@ -304,6 +304,21 @@ class TestHistoryQueryHelpers:
         assert no_paths is not None
         assert no_paths.paths_changed == []
 
+    def test_vault_relative_paths_drops_an_empty_token(self) -> None:
+        """An empty token never becomes a bare-prefix path entry (#1282).
+
+        ``_split_z_block`` removes the one empty token git's final NUL leaves,
+        so this guards a stream that is malformed rather than merely framed
+        differently — an empty entry in ``paths_changed`` would read as a note
+        at the vault root with no name.
+        """
+        from markdown_vault_mcp.git.query import _vault_relative_paths
+
+        assert _vault_relative_paths(["vault/a.md", "", "vault/b.md"], "vault/") == [
+            "a.md",
+            "b.md",
+        ]
+
     def test_vault_prefix_outside_git_root_is_empty(self, tmp_path: Path) -> None:
         """A repo_path not under git_root yields no prefix to strip."""
         from markdown_vault_mcp.git.query import _vault_prefix
