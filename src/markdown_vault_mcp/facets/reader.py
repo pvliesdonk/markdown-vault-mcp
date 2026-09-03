@@ -1,7 +1,8 @@
 """Reader facet: the read-only query surface (#604).
 
 A thin view exposing search, document reads, listing, table-of-contents,
-similarity, recent, context, stats, attachment reads, and git history/diff.
+similarity, recent, context, stats, attachment reads, and git history, diff
+and revision reads.
 Each method delegates 1:1 to one collaborator (:class:`SearchManager`,
 :class:`DocumentManager`, or :class:`GitQueryManager`); the bucket-3 methods
 (:meth:`ReaderFacet.get_toc`,
@@ -57,7 +58,7 @@ class ReaderFacet:
             search_mgr: Search / list / similarity / context / recent / stats
                 queries.
             doc_mgr: Document and attachment reads, table-of-contents.
-            git_query_mgr: Git history / diff reads.
+            git_query_mgr: Git history / diff / revision reads.
             require_built: Index-readiness gate for the bucket-3 methods.
             okf_audit: Bound OKF conformance audit (#962), or ``None`` when
                 the composition root does not provide one.

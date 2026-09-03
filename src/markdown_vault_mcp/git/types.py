@@ -1,4 +1,4 @@
-"""Result types and reason constants for git pull/push operations."""
+"""Result types, reason constants, and query inputs for the git layer."""
 
 from __future__ import annotations
 

@@ -1,13 +1,14 @@
 """Narrow protocols for the versioned-filestore seam (#1229).
 
-``GitWriteStrategy`` carries three concerns that its consumers want in
-different combinations: **history** (log/diff), **syncing** (pull/push), and
-**versioning** (the per-write commit).  ``GitQueryManager`` reads history and
+``GitWriteStrategy`` carries several concerns that its consumers want in
+different combinations: **history** (log/diff), **revision reads** (a note's
+content at a commit), **syncing** (pull/push), and **versioning** (the
+per-write commit).  ``GitQueryManager`` reads history and
 nothing else; the webhook pulls and nothing else; the write path commits and
 syncs.  These protocols make that split explicit so each consumer depends on
 the surface it actually uses.
 
-Deliberately **one implementation object, three interfaces** — not three
+Deliberately **one implementation object, several interfaces** — not several
 objects.  ``GitWriteStrategy`` composes ``RepoBootstrap`` and ``PushScheduler``
 over a single shared :class:`threading.Lock`, and :meth:`Vault.close` tells the
 commit callback from the store by object identity (``on_write is
@@ -50,9 +51,11 @@ __all__ = [
 class HistorySource(Protocol):
     """Read-only access to a document's revision history.
 
-    The narrowest of the three facets: ``GitQueryManager`` depends on this and
-    nothing else, so a backend that can answer "what changed, and when" is
-    enough to serve the history and diff tools.
+    The narrowest versioning facet: a backend that can answer "what changed,
+    and when" is enough to serve the history and diff tools on its own.  It
+    deliberately says nothing about reading a note's *content* at a commit —
+    that is :class:`RevisionReader`, which ``GitQueryManager`` gates
+    separately.
     """
 
     def get_file_history(

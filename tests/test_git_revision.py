@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.exceptions import ReadOnlyError
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.types import RevisionQuery
 from markdown_vault_mcp.vault import Vault
@@ -751,5 +752,26 @@ class TestHistoricalSections:
                 vault.reader.read_revision("note.md", broken, section="Head")
             # The whole note at that revision is still readable.
             assert "unclosed" in vault.reader.read_revision("note.md", broken).content
+        finally:
+            vault.close()
+
+
+class TestReadOnlyVault:
+    """A refused write refuses before it spends anything on a breadcrumb."""
+
+    def test_read_only_write_raises_without_probing(self, tmp_path: Path) -> None:
+        repo = tmp_path / "vault"
+        _init(repo)
+        _write(repo, "note.md", "# v1\n")
+        _commit(repo, "seed")
+        strategy = GitWriteStrategy(push_delay_s=0)
+        vault = Vault(source_dir=repo, git_strategy=strategy, on_write=strategy)
+        vault.index.build_index()
+        calls: list[str] = []
+        vault._writer_facet._previous_revision = lambda path: calls.append(path)  # type: ignore[assignment,func-returns-value]
+        try:
+            with pytest.raises(ReadOnlyError):
+                vault.writer.write("note.md", "# nope\n")
+            assert calls == []
         finally:
             vault.close()

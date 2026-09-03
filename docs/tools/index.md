@@ -119,8 +119,8 @@ Read the full content of a document or attachment by path. When combined with se
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative path to the document or attachment (such as `"Journal/note.md"` or `"assets/diagram.pdf"`) |
-| `section` | string | `null` | Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk, so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the `heading` field from a `search` result. Matching collapses internal whitespace on both sides: `"1.3.  Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty. |
-| `revision` | string | `null` | Read the note as it stood at that commit rather than on disk. A commit SHA from `get_history`, or the `previous_revision` a `write` returns. Git-backed vaults and `.md` notes only. Pass `path` as the note is named today; renames are followed, and the response reports the `historical_path` the note carried then. |
+| `section` | string | `null` | Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk (or from the revision's stored content when `revision` is also given), so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the `heading` field from a `search` result. Matching collapses internal whitespace on both sides: `"1.3.  Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty. |
+| `revision` | string | `null` | Read the note as it stood at that commit rather than on disk. A commit SHA from `get_history`, or the `previous_revision` a `write` returns. Git-backed vaults and `.md` notes only. Pass `path` as the note is named today; renames are followed, and the response reports the `historical_path` the note carried then. Combines with `section`, which then selects from the historical content. |
 
 !!! tip "Recovering the full section after search"
     When `search` returns a snippet result, pass `result["heading"]` as the `section` parameter to recover the complete section: `read(path=result["path"], section=result["heading"])`. If the document has no sub-headings (preamble content), omit `section` to read the whole document.
@@ -174,7 +174,7 @@ partial markdown reads (see the tip above).
     }
     ```
 
-    No `etag` and no `modified_at`: both describe the note as it is now, and an etag taken from a revision read would assert a read of the current file that never happened. No `okf` block either, for the same reason.
+    `content` is the whole raw file at that revision, or just one section's body when `section` is given as well. No `etag` and no `modified_at`: both describe the note as it is now, and an etag taken from a revision read would assert a read of the current file that never happened. No `okf` block either, for the same reason.
 
 #### Reading an earlier revision
 

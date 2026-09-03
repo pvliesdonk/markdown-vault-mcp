@@ -292,8 +292,10 @@ class RevisionContent:
         historical_path: Relative path the note carried at *revision*.  Differs
             from ``path`` when the note has been renamed since.
         revision: The commit the content was read from.
-        content: Raw markdown at that revision, frontmatter included.  This is
-            the committed blob, so a repository with ``core.autocrlf`` or an
+        content: Raw markdown at that revision, frontmatter included — or, when
+            a section was requested, just that section's body, matching what a
+            section read of the note on disk returns.  Either way this is the
+            committed blob, so a repository with ``core.autocrlf`` or an
             ``eol`` attribute returns the normalised form rather than whatever
             line endings the file had on disk.
     """
@@ -337,8 +339,12 @@ class WriteResult:
     Attributes:
         path: Relative path of the document that was written.
         created: ``True`` if the document was newly created; ``False`` if overwritten.
-        previous_revision: On a git-backed vault, the commit holding the
-            content this write replaced — the route back to it, via
+        previous_revision: Set only by an overwriting
+            :meth:`~markdown_vault_mcp.facets.writer.WriterFacet.write`; every
+            other producer of this result — ``append``, ``write_attachment``,
+            and direct ``DocumentManager`` writes — leaves it ``None``.  On a
+            git-backed vault it names the commit holding the content the write
+            replaced, the route back to it via
             :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_revision`.
             ``None`` whenever no commit *provably* holds it: a create, a vault
             without git, a note not committed yet, or a working copy that had

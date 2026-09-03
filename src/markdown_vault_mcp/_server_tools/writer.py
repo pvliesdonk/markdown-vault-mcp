@@ -152,9 +152,8 @@ def _write_payload(result: WriteResult) -> dict[str, Any]:
     git-backed vault whose replaced content is provably in a commit (#1137).
     Every other producer of this result type — ``append``,
     ``write_attachment``, ``fetch`` — leaves it ``None``, and a permanently
-    null key on those responses is surface the client surface budget does not
-    owe them.  Absent means "no route back", the same as null would, without
-    the noise.
+    null key on those responses spends client context on nothing.  Absent says
+    "no route back" just as well as null does, without the noise.
     """
     data = asdict(result)
     if data.get("previous_revision") is None:

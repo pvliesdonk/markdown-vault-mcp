@@ -5,14 +5,19 @@ module-qualified (``subprocess.run``) so the test suite's global monkeypatch sti
 intercepts them.
 
 The ``git_root`` parameter is pre-resolved by the caller (typically via
-:meth:`GitWriteStrategy._ensure_git_root`, which memoises the result).  Passing
-``None`` to the two query entry points (:func:`get_file_history` /
-:func:`get_file_diff`) is a no-op: they return an empty result immediately.
-(:func:`resolve_path_at_ref` is an internal helper and requires a resolved
-``git_root``.)  This keeps git-root discovery out of these functions so that tests
-can prime the cache on the
-strategy instance and then patch ``subprocess.run`` without the patch also
-interfering with the discovery call.
+:meth:`GitWriteStrategy._ensure_git_root`, which memoises the result).  This
+keeps git-root discovery out of these functions so that tests can prime the
+cache on the strategy instance and then patch ``subprocess.run`` without the
+patch also interfering with the discovery call.
+
+Each public entry point states what a ``None`` ``git_root`` means for it, and
+they deliberately differ: the history and diff queries return an empty result,
+because "no git" and "nothing changed" are equally uninteresting to a caller
+browsing history; :func:`get_file_at_ref` raises, because an empty string is
+indistinguishable from a note that was empty at that revision and its caller is
+about to write the result back; :func:`committed_revision` returns ``None``,
+which is what it returns for every other unanswerable case.  Internal helpers
+(:func:`resolve_path_at_ref` among them) require a resolved ``git_root``.
 """
 
 from __future__ import annotations
@@ -426,9 +431,11 @@ def resolve_path_at_ref(
     # Stream: <status>\0<path>\0 — R*/C* records add a second path
     # (\0<old>\0<new>\0).  Copies (C*) are skipped, not resolved (a copy is
     # an add, not a rename); the branch keeps the parser in sync if git ever
-    # emits one (e.g. if ``--find-copies`` were added in future).  Without
-    # ``--find-copies`` / ``--find-copies-harder`` git does not emit C* records,
-    # so this branch is defensive dead-code today.
+    # emits one.  This *particular* invocation — a plain ``git diff`` with
+    # neither ``--find-copies`` nor ``--follow`` — does not produce C* records,
+    # so the branch is defensive here.  It is not a claim about git in general:
+    # the ``--follow`` walk behind :func:`get_file_at_ref` does see them, and
+    # treats a copy as a birth rather than a lineage.
     items = result.stdout.split("\0")[:-1]
     i = 0
     while i < len(items):
@@ -822,7 +829,11 @@ _SYMLINK_MODE = "120000"
 # Rename-detection threshold for the revision walk.  Matches
 # ``resolve_path_at_ref``'s 30% (#338): at git's 50% default, a rename that
 # also rewrote half the note reports as an unrelated add plus delete, which
-# this walk is obliged to refuse.
+# this walk is obliged to refuse.  Passing it explicitly also overrides the
+# operator's ``diff.renames`` (verified for true/false/copies), so rename
+# detection is on regardless of their config — the same reason the limit
+# below is pinned.  Copy detection is a different matter: ``--follow`` turns
+# it on by itself, so ``C`` records reach the walk and are handled there.
 _RENAME_THRESHOLD = "--find-renames=30"
 
 # Rename-detection is capped per commit; a commit renaming more files than the
@@ -911,8 +922,6 @@ def _path_at_ref(raw: str, cur_rel: str, ref: str) -> str:
     Walks git's own records newest-first, carrying the path currently being
     tracked.  Every outcome maps to something git recorded:
 
-    * ``R old new`` where *new* is tracked — the note was renamed; keep going
-      from *old*.
     * ``R old new`` where *new* is tracked — the note was renamed; keep going
       from *old*.
     * ``A`` on the tracked path — git is saying the file there was created

@@ -1,7 +1,8 @@
-"""Git history/diff query manager.
+"""Git history, diff, and revision-read query manager.
 
-Handles read-only git queries (commit history, diffs) with dependency
-injection — receives a :class:`~markdown_vault_mcp.git.HistorySource`
+Handles read-only git queries (commit history, diffs, a note's content at a
+revision) with dependency injection — receives a
+:class:`~markdown_vault_mcp.git.HistorySource`
 (or ``None`` when the vault is not a git repository) and the ``source_dir``,
 with no back-reference to :class:`Vault`. Sibling to
 :class:`~markdown_vault_mcp.managers.link.LinkManager`. Extracted from
@@ -46,17 +47,19 @@ _SHA_RE = r"[0-9a-f]{4,64}"
 
 
 class GitQueryManager:
-    """Read-only git history/diff queries, backed by a ``HistorySource``.
+    """Read-only git history, diff, and revision queries.
 
-    Depends on the narrowest of the three versioning facets (#1229): this
-    manager calls ``get_file_history`` and ``get_file_diff`` and nothing else,
-    so it is coupled to neither the commit nor the sync surface.
+    Holds a ``HistorySource`` for history and diff, and gates the revision
+    surface on a separate ``isinstance`` check against ``RevisionReader``
+    (#1229, #1137) — so it stays coupled to neither the commit nor the sync
+    surface, and a backend offering only history is still a usable one.
     ``GitWriteStrategy`` is the implementation the git-backed vault supplies.
 
     Args:
         git_strategy: The history source to query, or ``None`` when the vault's
-            source directory is not inside a git repository (queries then
-            return empty results rather than raising).
+            source directory is not inside a git repository.  History and diff
+            queries then return empty results; :meth:`read_at_revision` raises
+            instead, for the reason given there.
         source_dir: Absolute path to the vault root directory.
         attachment_extensions: Allowed attachment file extensions, in any
             case and with or without leading dots (e.g. ``["png", "pdf"]``).
@@ -341,7 +344,7 @@ class GitQueryManager:
                 return None
             return self._git_strategy.committed_revision(self._source_dir, abs_path)
         except (ValueError, OSError, subprocess.SubprocessError):
-            logger.debug("previous_revision unavailable for %s", path, exc_info=True)
+            logger.debug("previous_revision_unavailable path=%s", path, exc_info=True)
             return None
 
 

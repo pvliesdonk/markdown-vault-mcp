@@ -60,8 +60,8 @@ class WriterFacet:
                 :class:`~markdown_vault_mcp.managers.document.DocumentManager`
                 deliberately: that class is also the server's own maintenance
                 write path (OKF link conversion rewrites thousands of notes in
-                one call), and a git probe per file there would cost two
-                subprocesses each for a result nobody reads.
+                one call), and a git probe per file there would spend several
+                subprocesses each on a result nobody reads.
         """
         self._doc_mgr = doc_mgr
         self._okf_migrate = okf_migrate
@@ -162,9 +162,16 @@ class WriterFacet:
         Probed before the overwrite; the resolver skips a path that is not on
         disk, so a create costs no git calls and the result is discarded
         anyway when the write turns out to have created the note.
+
+        The read-only check comes first so a vault that is going to refuse the
+        write refuses it without spending git subprocesses on a breadcrumb for
+        a write that will not happen.  It raises the same
+        :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError` the write itself
+        would, just sooner.
         """
         if self._previous_revision is None:
             return None
+        self._doc_mgr.ensure_writable()
         return self._previous_revision(path)
 
     def edit(

@@ -61,7 +61,7 @@ src/markdown_vault_mcp/
     push_scheduler.py  -- PushScheduler: deferred-push timer + pending-flag mechanics and push execution (#893)
     conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
-    types.py           -- PullResult/PushResult + pull/push reason-code constants
+    types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking
   interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex/VectorStore: the search/index storage seam (#1230)
   fts_index.py         -- SQLite FTS5 schema, BM25 search

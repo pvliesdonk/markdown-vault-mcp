@@ -83,7 +83,7 @@ markdown-vault-mcp (new package)
 |   +-- index.py      -- IndexManager: build_index, reindex, dirty-path FTS refresh
 |   +-- embeddings.py -- EmbeddingsManager: vector lifecycle (composed into IndexManager, #1157)
 |   +-- document.py   -- DocumentManager: CRUD, attachments, path validation
-|   +-- git_query.py  -- GitQueryManager: git history/diff reads (#610)
+|   +-- git_query.py  -- GitQueryManager: git history/diff/revision reads (#610, #1137)
 +-- indexing/
 |   +-- index_writer.py -- IndexWriter: single-owner FIFO writer thread + jobs/runners
 |   +-- readiness.py  -- ReadinessState: build-readiness state machine (#576)
@@ -1802,7 +1802,7 @@ class RevisionContent:
     path: str                         # the note's path today
     historical_path: str              # the path it carried at that revision
     revision: str
-    content: str                      # raw file, frontmatter included
+    content: str                      # raw file incl. frontmatter, or one section's body
 
 @dataclass
 class EditResult:
@@ -2157,7 +2157,7 @@ operations to them. No manager holds a back-reference to Vault.
 | ``IndexManager`` | build_index, reindex, process_dirty_paths; thin delegations for build_embeddings, embeddings_status, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy, composed ``EmbeddingsManager`` (no lock; driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
 | ``EmbeddingsManager`` | Vector lifecycle: cold build, boot convergence, inline reindex embedding, deferred flush, embeddings_status (#1157) | ``FTSIndex``, ``source_dir``, embedding config, get/set-vectors callables, injected ``_is_path_excluded`` / ``_discover_indexable_candidates`` callables (#736 precedent); constructed by ``IndexManager``, not wired from ``Vault`` |
 | ``DocumentManager`` | read, write, edit, append, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only; see #559), ``mark_paths_dirty`` hook, callbacks |
-| ``GitQueryManager`` | Git history / diff reads (read-only, #610) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir`` |
+| ``GitQueryManager`` | Git history / diff / revision reads (read-only, #610, #1137) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir``, ``max_note_read_bytes`` |
 
 Each manager receives its dependencies as constructor arguments. This enables
 isolated unit testing and clear dependency boundaries. Pure utility functions
@@ -3838,11 +3838,11 @@ rather than on the concrete class:
 - `Versioner` — the per-write commit; structurally the same shape as
   `PrincipalAwareWriteCallback`, restated so the module needs no runtime
   import beyond `typing`.
-- `VersionedStore` — all three, which is what `Vault` holds.
+- `VersionedStore` — all of them, which is what `Vault` holds.
 
 `GitWriteStrategy` remains the single object implementing all of them, and is
 still wired as both `git_strategy` and `on_write`; `Vault.close()` compares
-the two by identity to avoid closing one object twice. Splitting into three
+the two by identity to avoid closing one object twice. Splitting into separate
 *objects* is deliberately not done — the collaborators share one lock, and
 that identity check depends on there being one object.
 

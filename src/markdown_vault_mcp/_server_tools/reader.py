@@ -220,7 +220,8 @@ def register(mcp: FastMCP) -> None:
             revision: Read the note as it stood at that commit instead of on
                 disk (git-backed vaults, .md only). A sha from 'get_history'
                 or a write result's 'previous_revision'. Pass *path* as the
-                note is named today; renames are followed.
+                note is named today; renames are followed. Composes with
+                section=.
 
         Returns:
             For .md: dict with path, title, folder, content (the full raw
@@ -239,9 +240,10 @@ def register(mcp: FastMCP) -> None:
             The 'etag' value can be passed as 'if_match' to write, edit,
             delete, or rename to guard against concurrent modifications.
             With revision=: dict with path, historical_path (the name the note
-            carried at that revision), revision, and content. No etag and no
-            modified_at — both describe the note as it is now — and no 'okf'
-            block, for the same reason.
+            carried at that revision), revision, and content — the whole raw
+            file, or just one section's body when section= is also given. No
+            etag and no modified_at (both describe the note as it is now), and
+            no 'okf' block for the same reason.
 
         Raises:
             ValueError: If no file exists at the given path, the extension is
