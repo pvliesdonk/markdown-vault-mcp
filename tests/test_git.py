@@ -2043,9 +2043,10 @@ class TestGitSyncOnce:
         def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
             nonlocal call_count
             call_count += 1
-            # diff --name-only --diff-filter=U: always return a conflicting file.
+            # diff --name-only -z --diff-filter=U: always return a conflicting
+            # file, NUL-terminated as the -z stream frames it.
             if "--diff-filter=U" in cmd:
-                return SimpleNamespace(returncode=0, stdout="README.md\n", stderr="")
+                return SimpleNamespace(returncode=0, stdout="README.md\0", stderr="")
             # git show REBASE_HEAD:README.md: return fake MCP content.
             if "show" in cmd:
                 return SimpleNamespace(
@@ -6761,3 +6762,222 @@ class TestTheExcludeProbeItself:
             assert _ignored_paths(str(git_repo), (git_repo / "x.md",)) == set()
 
         assert any("git_check_ignore_failed" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Paths git would otherwise quote (#1282)
+# ---------------------------------------------------------------------------
+
+
+def _commit_all(repo: Path, message: str) -> str:
+    """Stage everything in *repo*, commit it, and return the resulting SHA."""
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "-A"], capture_output=True, check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-m", message],
+        capture_output=True,
+        check=True,
+    )
+    return subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+class TestQuotedPathsInLogReaders:
+    """Names git renders octal-escaped under ``core.quotePath`` (#1282).
+
+    Git quotes a non-ASCII path component by default, and quotes a path
+    holding a double quote or a tab whatever ``core.quotePath`` says.  Both
+    readers here run under ``-z``, so neither rendering reaches a caller.
+    """
+
+    @staticmethod
+    def _repo(tmp_path: Path) -> Path:
+        repo = tmp_path / "vault"
+        repo.mkdir()
+        for args in (
+            ["init", "-q", "."],
+            ["config", "user.email", "test@example.com"],
+            ["config", "user.name", "Test"],
+        ):
+            subprocess.run(
+                ["git", "-C", str(repo), *args], capture_output=True, check=True
+            )
+        return repo
+
+    def test_vault_history_reports_usable_non_ascii_paths(self, tmp_path: Path) -> None:
+        """paths_changed carries the raw name, not git's octal-escaped quoting."""
+        repo = self._repo(tmp_path)
+        (repo / "café.md").write_text("# v1\n")
+        _commit_all(repo, "add: café")
+        subprocess.run(
+            ["git", "-C", str(repo), "mv", "café.md", "résumé.md"],
+            capture_output=True,
+            check=True,
+        )
+        (repo / "résumé.md").write_text("# v2\n")
+        _commit_all(repo, "rename+edit")
+
+        strategy = GitWriteStrategy()
+        entries = strategy.get_file_history(repo, path=None, since=None, limit=10)
+
+        assert entries[0].paths_changed == ["café.md", "résumé.md"]
+        assert entries[1].paths_changed == ["café.md"]
+        # The point of the raw form: a caller can hand it straight back to git.
+        assert (repo / entries[0].paths_changed[1]).exists()
+
+    def test_history_survives_a_quote_or_tab_in_the_name(self, tmp_path: Path) -> None:
+        """Names git quotes regardless of ``core.quotePath`` come back intact.
+
+        This is what ``-z`` buys over ``-c core.quotePath=false``, which leaves
+        these three quoted.
+        """
+        repo = self._repo(tmp_path)
+        names = ['quo"te.md', "ta\tb.md", "new\nline.md"]
+        for name in names:
+            (repo / name).write_text("x\n")
+        _commit_all(repo, "add: awkward names")
+
+        strategy = GitWriteStrategy()
+        entries = strategy.get_file_history(repo, path=None, since=None, limit=10)
+
+        assert sorted(entries[0].paths_changed) == sorted(names)
+
+    def test_per_commit_diff_of_a_renamed_non_ascii_note_is_not_empty(
+        self, tmp_path: Path
+    ) -> None:
+        """The reported symptom: a commit that rewrote the note diffed to ''.
+
+        The per-commit walk reuses each log block's path as that commit's
+        pathspec, so a quoted path there means the diff targets a file git
+        does not have.
+        """
+        repo = self._repo(tmp_path)
+        (repo / "café.md").write_text("# Note\n\nline one\nline two\nline three\n")
+        first = _commit_all(repo, "add: café")
+        subprocess.run(
+            ["git", "-C", str(repo), "mv", "café.md", "résumé.md"],
+            capture_output=True,
+            check=True,
+        )
+        (repo / "résumé.md").write_text(
+            "# Note\n\nline one\nline two changed\nline three\n"
+        )
+        _commit_all(repo, "rename+edit")
+
+        strategy = GitWriteStrategy()
+        diffs = strategy.get_file_diff(repo, repo / "résumé.md", first, per_commit=True)
+
+        assert len(diffs) == 1
+        assert "+line two changed" in diffs[0].diff
+        # And the patch names both sides readably rather than octal-escaped.
+        assert "a/café.md" in diffs[0].diff
+        assert "b/résumé.md" in diffs[0].diff
+
+    def test_range_diff_names_a_non_ascii_note_readably(self, tmp_path: Path) -> None:
+        """The single-range patch body is readable too, not octal-escaped."""
+        repo = self._repo(tmp_path)
+        (repo / "café.md").write_text("# v1\n")
+        first = _commit_all(repo, "add: café")
+        (repo / "café.md").write_text("# v2\n")
+        _commit_all(repo, "edit: café")
+
+        strategy = GitWriteStrategy()
+        diff = strategy.get_file_diff(repo, repo / "café.md", first, per_commit=False)
+
+        assert "a/café.md" in diff
+        assert "\\303\\251" not in diff
+
+
+class TestConflictPathsAreUsable:
+    """The conflicted-file reader is the same class of bug (#1282).
+
+    ``git diff --name-only --diff-filter=U`` quotes a non-ASCII name too, and
+    every command the resolver runs afterwards is handed that rendering: the
+    ``git show REBASE_HEAD:<path>`` read silently skips the file, and the
+    ``git checkout --ours`` that follows runs with ``check=True``.
+    """
+
+    def test_a_non_ascii_conflict_is_resolved_and_saved(
+        self,
+        tmp_path: Path,
+        git_repo_with_remote: tuple[Path, Path],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A conflict on ``journée.md`` resolves and its MCP version is saved."""
+        work, bare = git_repo_with_remote
+        note = "journée.md"
+
+        # Seed the note on both sides so the two edits below actually collide.
+        (work / note).write_text("# base\n")
+        _commit_all(work, "add: journée")
+        subprocess.run(
+            ["git", "-C", str(work), "push"], check=True, capture_output=True
+        )
+
+        (work / note).write_text("# local diverge\n")
+        _commit_all(work, "local diverge")
+
+        other = tmp_path / "other"
+        subprocess.run(
+            ["git", "clone", str(bare), str(other)], check=True, capture_output=True
+        )
+        for args in (
+            ["config", "user.email", "test@test.com"],
+            ["config", "user.name", "Test"],
+        ):
+            subprocess.run(
+                ["git", "-C", str(other), *args], check=True, capture_output=True
+            )
+        (other / note).write_text("# remote diverge\n")
+        _commit_all(other, "remote diverge")
+        subprocess.run(
+            ["git", "-C", str(other), "push"], check=True, capture_output=True
+        )
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
+            assert strategy.sync_once(work) is True
+
+        # Upstream won the note itself, and the MCP version was preserved
+        # beside it — neither happens if the resolver was handed a quoted path.
+        assert "# remote diverge" in (work / note).read_text()
+        saved = list(work.glob("journée.conflict-mcp-*.md"))
+        assert len(saved) == 1
+        assert "# local diverge" in saved[0].read_text()
+        assert not any(
+            "could not read MCP version" in r.message for r in caplog.records
+        )
+
+
+class TestZBlockFraming:
+    """Framing traps in :func:`_split_z_block` that only bite at the edges."""
+
+    def test_an_empty_subject_is_a_field_not_padding(self) -> None:
+        """Only one trailing empty token is git's; the rest are real fields."""
+        from markdown_vault_mcp.git.query import _split_z_block
+
+        # `git log -z` on a commit with an empty message: the subject field is
+        # empty, and git's own terminator adds one more empty token.
+        header, paths = _split_z_block("sha\0short\0ts\0author\0\0", 5)  # type: ignore[misc]
+        assert header == ["sha", "short", "ts", "author", ""]
+        assert paths == []
+
+    def test_a_leading_newline_in_a_filename_survives(self) -> None:
+        """Exactly one newline separates the header from the file list."""
+        from markdown_vault_mcp.git.query import _split_z_block
+
+        header, paths = _split_z_block("sha\0short\0ts\0author\0subj\0\n\nlead.md\0", 5)  # type: ignore[misc]
+        assert header[-1] == "subj"
+        assert paths == ["\nlead.md"]
+
+    def test_a_short_block_is_rejected(self) -> None:
+        """Fewer header fields than the format promised is malformed."""
+        from markdown_vault_mcp.git.query import _split_z_block
+
+        assert _split_z_block("", 5) is None
+        assert _split_z_block("sha\0short\0", 5) is None

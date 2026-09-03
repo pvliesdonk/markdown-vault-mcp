@@ -285,11 +285,14 @@ class TestHistoryQueryHelpers:
         )
 
     def test_parse_history_block_strips_vault_prefix(self) -> None:
-        """collect_paths=True normalises path lines to vault-relative form."""
+        """collect_paths=True normalises path tokens to vault-relative form."""
         from markdown_vault_mcp.git.query import _parse_history_block
 
+        # `git log -z` framing: five NUL-terminated header fields, then a
+        # single newline, then the NUL-terminated paths (#1282).
         block = (
-            "sha\x00short\x00ts\x00An Author <a@b>\x00msg\nvault/note.md\n\nother.md"
+            "sha\x00short\x00ts\x00An Author <a@b>\x00msg\x00"
+            "\nvault/note.md\x00other.md\x00"
         )
         entry = _parse_history_block(block, "vault/", collect_paths=True)
         assert entry is not None

@@ -675,8 +675,9 @@ class TestForceMethodsErrorBranches:
             if not isinstance(args, list):
                 return real_run(args, **kwargs)
             if "diff" in args and "--diff-filter=U" in args:
+                # -z frames the conflicting paths by NUL, not by newline.
                 return _real_subprocess.CompletedProcess(
-                    args=args, returncode=0, stdout="README.md\n", stderr=""
+                    args=args, returncode=0, stdout="README.md\0", stderr=""
                 )
             if "show" in args and any(
                 isinstance(a, str) and a.startswith("REBASE_HEAD:") for a in args
