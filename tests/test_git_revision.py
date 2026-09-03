@@ -660,3 +660,96 @@ class TestWithoutGit:
             assert vault.writer.write("note.md", "# New\n").previous_revision is None
         finally:
             vault.close()
+
+
+class TestWalkRules:
+    """The record-walk rules, exercised directly on git's record stream.
+
+    A malformed or unfamiliar record stream is exactly where a walk is
+    tempted to carry on and answer anyway, so the rules get their own tests
+    rather than only the shapes that happen to produce them.
+    """
+
+    def test_unrecognised_record_refuses(self) -> None:
+        """An unfamiliar status is not evidence of continuity."""
+        from markdown_vault_mcp.git.query import _path_at_ref
+
+        stream = "\x1eSHA\0\nU\0note.md\0"
+        with pytest.raises(ValueError, match="does not establish"):
+            _path_at_ref(stream, "note.md", "abc123")
+
+    def test_record_for_another_path_refuses(self) -> None:
+        """A record about a file the walk is not tracking proves nothing."""
+        from markdown_vault_mcp.git.query import _path_at_ref
+
+        stream = "\x1eSHA\0\nM\0other.md\0"
+        with pytest.raises(ValueError, match="does not establish"):
+            _path_at_ref(stream, "note.md", "abc123")
+
+    def test_truncated_record_ends_the_walk(self) -> None:
+        """A rename record missing its second path is dropped, not guessed at."""
+        from markdown_vault_mcp.git.query import _iter_name_status
+
+        assert list(_iter_name_status("\x1eSHA\0\nR100\0only-one-path\0")) == []
+
+    def test_edits_and_deletes_carry_the_identity_forward(self) -> None:
+        """The walk survives the record classes that keep a note's identity."""
+        from markdown_vault_mcp.git.query import _path_at_ref
+
+        stream = "\x1eA\0\nM\0new.md\0\x1eB\0\nR100\0old.md\0new.md\0"
+        assert _path_at_ref(stream, "new.md", "abc123") == "old.md"
+
+
+class TestBreadcrumbNeverFailsAWrite:
+    """A write must not fail over a breadcrumb it could not compute."""
+
+    def test_git_failure_is_swallowed(self, git_vault: Vault) -> None:
+        """A probe that raises yields no breadcrumb, and the write still lands."""
+
+        def exploding(*_args: object, **_kwargs: object) -> str | None:
+            raise subprocess.SubprocessError("git exploded")
+
+        git_vault._git_query_mgr._git_strategy.committed_revision = exploding  # type: ignore[union-attr]
+        result = git_vault.writer.write("note.md", "# Written anyway\n")
+
+        assert result.previous_revision is None
+        assert (git_vault.source_dir / "note.md").read_text() == "# Written anyway\n"
+
+
+class TestHistoricalSections:
+    """Section selection over content that is no longer on disk."""
+
+    def test_empty_section_is_rejected(self, git_vault: Vault) -> None:
+        overwrite = git_vault.writer.write("note.md", "# Clobbered\n")
+        assert overwrite.previous_revision is not None
+
+        with pytest.raises(ValueError, match="non-empty heading"):
+            git_vault.reader.read_revision(
+                "note.md", overwrite.previous_revision, section="   "
+            )
+
+    def test_malformed_historical_frontmatter(self, tmp_path: Path) -> None:
+        """Frontmatter that no longer parses is an error the caller can act on.
+
+        The note is fine today; only the revision being asked for is broken,
+        so nothing on disk warns the caller.
+        """
+        repo = tmp_path / "vault"
+        _init(repo)
+        _write(repo, "note.md", "---\ntitle: [unclosed\n---\n\n# Head\n\nbody\n")
+        broken = _commit(repo, "seed with broken frontmatter")
+        _write(repo, "note.md", "---\ntitle: fine\n---\n\n# Head\n\nbody\n")
+        _commit(repo, "fix the frontmatter")
+
+        strategy = GitWriteStrategy(push_delay_s=0)
+        vault = Vault(
+            source_dir=repo, git_strategy=strategy, on_write=strategy, read_only=False
+        )
+        vault.index.build_index()
+        try:
+            with pytest.raises(ValueError, match="malformed frontmatter"):
+                vault.reader.read_revision("note.md", broken, section="Head")
+            # The whole note at that revision is still readable.
+            assert "unclosed" in vault.reader.read_revision("note.md", broken).content
+        finally:
+            vault.close()

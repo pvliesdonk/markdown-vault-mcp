@@ -896,7 +896,10 @@ def _iter_name_status(raw: str) -> Iterator[tuple[str, list[str]]]:
             continue
         wanted = 2 if status[0] in ("R", "C") else 1
         paths = tokens[i + 1 : i + 1 + wanted]
-        if len(paths) < wanted:
+        if len(paths) < wanted or not all(paths):
+            # A short record, or one whose path slot is the stream's trailing
+            # empty token: either way the record is incomplete, and half a
+            # rename is not something to reason about.
             return
         yield status, paths
         i += 1 + wanted
