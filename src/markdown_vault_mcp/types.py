@@ -685,7 +685,8 @@ class HistoryEntry:
     """A commit that touched a note or the vault, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.get_history`.
 
     Attributes:
-        sha: Full 40-character commit SHA.
+        sha: Full commit SHA, in the repository's hash algorithm (40 hex
+            digits under SHA-1, 64 under SHA-256).
         short_sha: Abbreviated 7-character SHA.
         timestamp: ISO 8601 commit timestamp.
         author: Commit author name and email.
@@ -710,7 +711,8 @@ class CommitDiff:
     """A per-commit diff entry, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.get_diff` when ``per_commit=True``.
 
     Attributes:
-        sha: Full 40-character commit SHA.
+        sha: Full commit SHA, in the repository's hash algorithm (40 hex
+            digits under SHA-1, 64 under SHA-256).
         short_sha: Abbreviated 7-character SHA.
         timestamp: ISO 8601 commit timestamp.
         message: First line of the commit message.

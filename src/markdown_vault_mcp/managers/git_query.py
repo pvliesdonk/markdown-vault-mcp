@@ -28,6 +28,15 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.types import CommitDiff, HistoryEntry
 
 
+#: Accepted shape of a caller-supplied commit SHA: a full or abbreviated object
+#: ID, in either hash algorithm git supports.  The upper bound is 64 rather than
+#: 40 because a repository created with ``git init --object-format=sha256``
+#: yields 64-hex commit IDs, which is what ``get_history`` hands the caller
+#: there (#1284).  The check exists to keep caller input out of the git argv,
+#: not to prove the object exists — git reports an unknown ref itself.
+_SHA_RE = r"[0-9a-f]{4,64}"
+
+
 class GitQueryManager:
     """Read-only git history/diff queries, backed by a ``HistorySource``.
 
@@ -195,9 +204,9 @@ class GitQueryManager:
             path, self._source_dir, self._attachment_extensions
         )
 
-        if since_sha is not None and not re.fullmatch(r"[0-9a-f]{4,40}", since_sha):
+        if since_sha is not None and not re.fullmatch(_SHA_RE, since_sha):
             raise ValueError(
-                f"Invalid SHA {since_sha!r}: must be 4-40 lowercase hex digits"
+                f"Invalid SHA {since_sha!r}: must be 4-64 lowercase hex digits"
             )
 
         return self._git_strategy.get_file_diff(

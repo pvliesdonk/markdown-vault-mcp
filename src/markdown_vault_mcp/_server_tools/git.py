@@ -240,7 +240,8 @@ def register(mcp: FastMCP) -> None:
 
             - commits (list[dict]): Commit entries, newest-first. Each entry
               contains:
-                - sha (str): Full 40-character commit SHA.
+                - sha (str): Full commit SHA (40 hex digits, or 64 in a
+                  SHA-256 repository).
                 - short_sha (str): 7-character abbreviated SHA.
                 - timestamp (str): ISO 8601 author timestamp.
                 - author (str): Author name and email, e.g. "Name <email>".
