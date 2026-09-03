@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # Reason codes returned in :class:`PullResult.reason` and
 # :class:`PushResult.reason`.  Defined as module-level constants so callers
@@ -182,3 +186,25 @@ class PushResult:
     remote_sha_after: str
     reason: str | None = None
     hint: str | None = None
+
+
+@dataclass(frozen=True)
+class RevisionQuery:
+    """What :func:`~markdown_vault_mcp.git.query.get_file_at_ref` is being asked for.
+
+    Bundled rather than passed as four parameters because the git-layer entry
+    point also needs credentials, and the combination crosses the argument
+    ceiling in ``AGENTS.md``.
+
+    Attributes:
+        repo_path: Absolute path of the vault root, used to report the
+            historical path back in vault-relative form.
+        path: Absolute path of the note as it is named today.
+        ref: The commit to read at.
+        max_bytes: Read cap in bytes; ``0`` disables it.
+    """
+
+    repo_path: Path
+    path: Path
+    ref: str
+    max_bytes: int

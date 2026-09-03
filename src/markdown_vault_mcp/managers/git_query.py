@@ -10,9 +10,15 @@ with no back-reference to :class:`Vault`. Sibling to
 
 from __future__ import annotations
 
+import logging
 import re
+import subprocess
 from typing import TYPE_CHECKING
 
+import yaml
+
+from markdown_vault_mcp.git import RevisionQuery, RevisionReader
+from markdown_vault_mcp.scanner import extract_section, list_section_headings
 from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
     is_note,
@@ -25,7 +31,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.git import HistorySource
-    from markdown_vault_mcp.types import CommitDiff, HistoryEntry
+    from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
+
+logger = logging.getLogger(__name__)
 
 
 #: Accepted shape of a caller-supplied commit SHA: a full or abbreviated object
@@ -56,6 +64,9 @@ class GitQueryManager:
             :data:`~markdown_vault_mcp.types.DEFAULT_ATTACHMENT_EXTENSIONS`.
             Passed to :func:`~markdown_vault_mcp.utils.validate_history_path`
             so that history/diff queries accept attachments as well as notes.
+        max_note_read_bytes: Read cap applied to a note fetched at a revision,
+            matching the cap :class:`~markdown_vault_mcp.managers.document.DocumentManager`
+            applies on disk.  ``0`` disables it.
     """
 
     def __init__(
@@ -63,12 +74,14 @@ class GitQueryManager:
         git_strategy: HistorySource | None,
         source_dir: Path,
         attachment_extensions: Sequence[str] | None = None,
+        max_note_read_bytes: int = 0,
     ) -> None:
         self._git_strategy = git_strategy
         self._source_dir = source_dir
         self._attachment_extensions = effective_attachment_extensions(
             attachment_extensions
         )
+        self._max_note_read_bytes = max_note_read_bytes
 
     def get_history(
         self,
@@ -219,3 +232,145 @@ class GitQueryManager:
             # True for any non-.md path; get_file_diff only emits --stat if git also reports it binary — text attachments fall through to a full diff.
             summarize_binary=not is_note(path),
         )
+
+    def _revision_reader(self) -> RevisionReader:
+        """Return the store's revision-read facet, or explain its absence.
+
+        Unlike :meth:`get_history` and :meth:`get_diff`, which degrade to an
+        empty result without git, this raises: an empty string is
+        indistinguishable from "the note was empty at that revision", and a
+        caller about to restore content must not have to guess which it got.
+
+        Raises:
+            ValueError: When the vault has no git backing, or its store cannot
+                serve revision reads.
+        """
+        if not isinstance(self._git_strategy, RevisionReader):
+            raise ValueError(
+                "Reading a note at a revision requires a git-backed vault; this "
+                "vault's source directory is not inside a git repository."
+            )
+        return self._git_strategy
+
+    def read_at_revision(
+        self, path: str, revision: str, *, section: str | None = None
+    ) -> RevisionContent:
+        """Return a note's content as it stood at *revision*.
+
+        Resolution is by note, not by path: pass the path the note has today
+        and git's own add/rename records are walked back.  Where they do not
+        connect the note to that revision — a name since reused by a different
+        note, a delete-and-recreate, a rename git cannot detect — this raises
+        rather than returning content belonging to another note.
+
+        Args:
+            path: Vault-relative path of the note as it is named today.
+                A note that no longer exists on disk is still readable, which
+                is how a deleted note is recovered.
+            revision: Commit SHA, as returned by :meth:`get_history` or by an
+                overwriting write's ``previous_revision``.
+            section: When provided, return only that section of the historical
+                content, matched exactly as
+                :meth:`~markdown_vault_mcp.managers.document.DocumentManager.read`
+                matches it on disk.
+
+        Returns:
+            A :class:`~markdown_vault_mcp.types.RevisionContent`.
+
+        Raises:
+            ValueError: If the vault is not git-backed, *revision* is not a
+                SHA or is not an ancestor of HEAD, *path* is not a ``.md``
+                note or escapes the vault, the note's identity cannot be
+                traced to that revision, or its content there is unreadable.
+        """
+        reader = self._revision_reader()
+        if not is_note(path):
+            raise ValueError(
+                f"Revision reads are for markdown notes; {path!r} is an "
+                "attachment, whose content at a revision is binary. Use "
+                "'get_history' and 'get_diff' to inspect its history."
+            )
+        if not re.fullmatch(_SHA_RE, revision):
+            raise ValueError(
+                f"Invalid revision {revision!r}: must be 4-64 lowercase hex "
+                "digits. Pass a SHA from 'get_history' or from a write "
+                "result's 'previous_revision'."
+            )
+        abs_path = validate_history_path(
+            path, self._source_dir, self._attachment_extensions
+        )
+        content = reader.get_file_at_ref(
+            RevisionQuery(
+                repo_path=self._source_dir,
+                path=abs_path,
+                ref=revision,
+                max_bytes=self._max_note_read_bytes,
+            )
+        )
+        if section is None:
+            return content
+        content.content = _section_of(content, section)
+        return content
+
+    def committed_revision(self, path: str) -> str | None:
+        """Return the revision holding what is on disk for *path* right now.
+
+        The breadcrumb an overwriting write hands back, read *before* the
+        write lands.  Returns ``None`` rather than raising for every reason it
+        might not be answerable — no git, no commit for the note yet, a
+        working copy that has moved on, or git itself failing — because a
+        write must never fail over a breadcrumb it could not compute.
+
+        Args:
+            path: Vault-relative path of the note.
+
+        Returns:
+            The commit SHA, or ``None`` when no revision provably holds the
+            content currently on disk.
+        """
+        if not isinstance(self._git_strategy, RevisionReader):
+            return None
+        try:
+            abs_path = validate_history_path(
+                path, self._source_dir, self._attachment_extensions
+            )
+            # A note not on disk is being created, not overwritten: nothing is
+            # replaced, and probing would walk the whole history to learn that
+            # a never-seen path has no commit.
+            if not abs_path.is_file():
+                return None
+            return self._git_strategy.committed_revision(self._source_dir, abs_path)
+        except (ValueError, OSError, subprocess.SubprocessError):
+            logger.debug("previous_revision unavailable for %s", path, exc_info=True)
+            return None
+
+
+def _section_of(content: RevisionContent, section: str) -> str:
+    """Return one section of a historical note, or explain why it is not there.
+
+    Frontmatter is parsed to find the body, so a revision whose frontmatter
+    was malformed surfaces as a caller-visible error rather than a YAML
+    exception escaping the read.
+
+    Raises:
+        ValueError: If *section* is empty, the historical frontmatter cannot be
+            parsed, or no heading matches.
+    """
+    if not section.strip():
+        raise ValueError("section must be a non-empty heading")
+    try:
+        body = extract_section(content.content, section.strip())
+        headings = list_section_headings(content.content)
+    except yaml.YAMLError as exc:
+        raise ValueError(
+            f"{content.historical_path!r} had malformed frontmatter at revision "
+            f"{content.revision!r}, so its sections cannot be resolved. Read the "
+            "whole note at that revision instead."
+        ) from exc
+    if body is None:
+        suggestions = ", ".join(repr(h) for h in headings[:10]) or "none"
+        raise ValueError(
+            f"Section {section!r} not found at revision {content.revision!r}. "
+            f"Headings there: {suggestions}"
+        )
+    return body

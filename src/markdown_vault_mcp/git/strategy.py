@@ -29,9 +29,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp._identity import Principal
+    from markdown_vault_mcp.git.types import RevisionQuery
     from markdown_vault_mcp.types import (
         CommitDiff,
         HistoryEntry,
+        RevisionContent,
         WriteBatchItem,
         WriteOperation,
     )
@@ -1567,6 +1569,50 @@ class GitWriteStrategy:
             token=self._token,
             username=self._username,
             summarize_binary=summarize_binary,
+        )
+
+    def get_file_at_ref(self, query_: RevisionQuery) -> RevisionContent:
+        """Return a note's content as it stood at a revision (#1137).
+
+        Resolution is by note identity, walked out of git's own add and rename
+        records; where those records do not reach the revision asked for, this
+        raises rather than returning another note's content.
+
+        Args:
+            query_: The note, revision, and read cap being asked for.
+
+        Returns:
+            The content and the path the note carried at that revision.
+
+        Raises:
+            ValueError: If the vault is not git-backed, the revision is not an
+                ancestor of HEAD, the note's identity cannot be traced to it,
+                or the content is unreadable as a note.
+        """
+        return query.get_file_at_ref(
+            self._ensure_git_root(query_.repo_path),
+            query_,
+            token=self._token,
+            username=self._username,
+        )
+
+    def committed_revision(self, repo_path: Path, path: Path) -> str | None:
+        """Return the commit whose stored content for *path* is what is on disk.
+
+        Args:
+            repo_path: Path inside the git repository.
+            path: Absolute path of the note.
+
+        Returns:
+            The commit SHA, or ``None`` when the note has no commit yet, the
+            working copy has moved on from its newest one, or git cannot be
+            consulted.
+        """
+        return query.committed_revision(
+            self._ensure_git_root(repo_path),
+            path,
+            token=self._token,
+            username=self._username,
         )
 
 

@@ -29,11 +29,17 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp._identity import Principal
-    from markdown_vault_mcp.git.types import PullResult, PushResult
-    from markdown_vault_mcp.types import CommitDiff, HistoryEntry, WriteOperation
+    from markdown_vault_mcp.git.types import PullResult, PushResult, RevisionQuery
+    from markdown_vault_mcp.types import (
+        CommitDiff,
+        HistoryEntry,
+        RevisionContent,
+        WriteOperation,
+    )
 
 __all__ = [
     "HistorySource",
+    "RevisionReader",
     "Syncer",
     "VersionedStore",
     "Versioner",
@@ -105,6 +111,46 @@ class HistorySource(Protocol):
         Returns:
             A unified diff when *per_commit* is false, else one entry per
             commit.
+        """
+        ...
+
+
+@runtime_checkable
+class RevisionReader(Protocol):
+    """Reads a note's content at a revision, and names the revision it has.
+
+    Separate from :class:`HistorySource` rather than folded into it, for the
+    reason that split exists at all (#1229): a backend able to answer "what
+    changed, and when" need not be able to hand back the bytes a note held at
+    a given commit, and widening the history facet would make the narrower
+    capability inexpressible.  Consumers gate on this protocol.
+    """
+
+    def get_file_at_ref(self, query: RevisionQuery) -> RevisionContent:
+        """Return a note's content at a revision, resolved by note identity.
+
+        Args:
+            query: The note, revision, and read cap being asked for.
+
+        Returns:
+            The content and the path the note carried at that revision.
+
+        Raises:
+            ValueError: When the store cannot establish that the note the
+                caller named existed at that revision.
+        """
+        ...
+
+    def committed_revision(self, repo_path: Path, path: Path) -> str | None:
+        """Return the revision whose stored content is what is on disk now.
+
+        Args:
+            repo_path: The working tree the note lives in.
+            path: Absolute path of the note.
+
+        Returns:
+            The revision identifier, or ``None`` when the note has none or the
+            working copy has moved on from it.
         """
         ...
 
@@ -274,8 +320,8 @@ class Versioner(Protocol):
 
 
 @runtime_checkable
-class VersionedStore(HistorySource, Syncer, Versioner, Protocol):
-    """All three facets on one object — what :class:`Vault` actually holds.
+class VersionedStore(HistorySource, RevisionReader, Syncer, Versioner, Protocol):
+    """Every facet on one object — what :class:`Vault` actually holds.
 
     The vault receives the same object twice: as ``git_strategy`` for history
     and syncing, and as ``on_write`` for the commit.  That is deliberate, and

@@ -4066,6 +4066,112 @@ class TestGitToolsUntilParam:
         assert past_data["total"] == 0
 
 
+class TestReadAtRevisionTool:
+    """`read(revision=...)` and the breadcrumb that points a caller at it (#1137)."""
+
+    @pytest.fixture(autouse=True)
+    def _setup(self, _mcp_env_git: None) -> None:
+        pass
+
+    async def test_reads_the_note_as_it_was(self) -> None:
+        """A sha from get_history is a sha read accepts."""
+        server = make_server()
+        async with Client(server) as client:
+            history = _parse_tool_data(
+                await client.call_tool("get_history", {"path": "alpha.md"})
+            )
+            first = history["commits"][-1]["sha"]
+            result = _parse_tool_data(
+                await client.call_tool("read", {"path": "alpha.md", "revision": first})
+            )
+        assert result["content"] == "# Alpha\n\nVersion 1.\n"
+        assert result["historical_path"] == "alpha.md"
+        assert result["revision"] == first
+        # Neither field describes the note at that revision, and an etag from
+        # here fed back as if_match would assert a read never made.
+        assert "etag" not in result
+        assert "modified_at" not in result
+
+    async def test_overwrite_names_the_replaced_revision(self) -> None:
+        """The write result carries the route back to what it replaced."""
+        server = make_server()
+        async with Client(server) as client:
+            written = _parse_tool_data(
+                await client.call_tool(
+                    "write", {"path": "alpha.md", "content": "# Alpha\n\nClobbered.\n"}
+                )
+            )
+            assert written["created"] is False
+            recovered = _parse_tool_data(
+                await client.call_tool(
+                    "read",
+                    {"path": "alpha.md", "revision": written["previous_revision"]},
+                )
+            )
+        assert recovered["content"] == "# Alpha\n\nVersion 2.\n"
+
+    async def test_created_note_carries_no_breadcrumb_key(self) -> None:
+        """Absent, not null: a create replaced nothing."""
+        server = make_server()
+        async with Client(server) as client:
+            written = _parse_tool_data(
+                await client.call_tool(
+                    "write", {"path": "brand-new.md", "content": "# New\n"}
+                )
+            )
+        assert written["created"] is True
+        assert "previous_revision" not in written
+
+    async def test_append_result_is_unchanged(self) -> None:
+        """`append` shares the result type but never sets the field."""
+        server = make_server()
+        async with Client(server) as client:
+            appended = _parse_tool_data(
+                await client.call_tool(
+                    "append", {"path": "alpha.md", "content": "more\n"}
+                )
+            )
+        assert "previous_revision" not in appended
+
+    async def test_attachment_path_is_refused(self) -> None:
+        """A revision read returns text; attachment content at one is binary."""
+        server = make_server()
+        async with Client(server) as client:
+            with pytest.raises(ToolError, match="markdown notes"):
+                await client.call_tool(
+                    "read", {"path": "assets/x.png", "revision": "a" * 40}
+                )
+
+    async def test_reused_name_is_refused_through_the_tool(
+        self, git_vault: Path
+    ) -> None:
+        """The refusal reaches the client as an error, not another note's text."""
+        import subprocess
+
+        server = make_server()
+        async with Client(server) as client:
+            history = _parse_tool_data(
+                await client.call_tool("get_history", {"path": "alpha.md"})
+            )
+            first = history["commits"][-1]["sha"]
+            vault = git_vault
+            for args in (
+                ["mv", "alpha.md", "beta.md"],
+                ["commit", "-m", "rename: alpha.md"],
+            ):
+                subprocess.run(
+                    ["git", "-C", str(vault), *args], capture_output=True, check=True
+                )
+            (vault / "alpha.md").write_text("# Alpha\n\nA different note.\n")
+            for args in (["add", "."], ["commit", "-m", "write: alpha.md"]):
+                subprocess.run(
+                    ["git", "-C", str(vault), *args], capture_output=True, check=True
+                )
+
+            with pytest.raises(ToolError, match="did not exist at that revision"):
+                await client.call_tool("read", {"path": "alpha.md", "revision": first})
+
+
 class TestIndexStaleSignal:
     """Tests for the writer-state staleness signal carried in ``_meta``.
 

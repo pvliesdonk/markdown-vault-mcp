@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         NoteContent,
         NoteContext,
         NoteInfo,
+        RevisionContent,
         SubtreeToc,
         TocEntry,
         VaultStats,
@@ -148,6 +149,40 @@ class ReaderFacet:
             if the file does not exist.
         """
         return self._doc_mgr.read(path, section=section)
+
+    def read_revision(
+        self, path: str, revision: str, *, section: str | None = None
+    ) -> RevisionContent:
+        """Read a document's content as it stood at a git revision (#1137).
+
+        Resolution is by note, not by path: pass the path the note has today,
+        and git's own add/rename records are walked back to *revision*.  Where
+        they do not connect the two — a name since reused by a different note,
+        a delete-and-recreate, a rename git cannot detect — this raises rather
+        than returning content that belongs to another note.
+
+        A note that no longer exists on disk is still readable this way, which
+        is how a deleted note is recovered.
+
+        Args:
+            path: Relative document path as it is named today.
+            revision: Commit SHA, from :meth:`get_history` or from an
+                overwriting :meth:`WriterFacet.write`'s ``previous_revision``.
+            section: When provided, return only that section of the historical
+                content, matched as :meth:`read` matches it on disk.
+
+        Returns:
+            A :class:`~markdown_vault_mcp.types.RevisionContent`.  Unlike
+            :meth:`read` it carries no ``etag``: that describes the note as it
+            is now, and feeding one from a revision read back as ``if_match``
+            would assert a read the caller never made.
+
+        Raises:
+            ValueError: If the vault is not git-backed, *revision* is unusable,
+                *path* is not a note, the note's identity cannot be traced to
+                that revision, or the content there is unreadable.
+        """
+        return self._git_query_mgr.read_at_revision(path, revision, section=section)
 
     def get_metadata(self, path: str) -> DocumentMeta | None:
         """Return indexed metadata (title/folder/frontmatter) without a read.

@@ -120,6 +120,7 @@ Read the full content of a document or attachment by path. When combined with se
 |-----------|------|---------|-------------|
 | `path` | string | required | Relative path to the document or attachment (such as `"Journal/note.md"` or `"assets/diagram.pdf"`) |
 | `section` | string | `null` | Optional heading selecting one section. The whole section is returned (every paragraph, list, and sub-section from the heading up to the next heading at the same or higher level), reconstructed from the document on disk, so a section longer than the chunk budget comes back intact rather than truncated to its first chunk. Pass the `heading` field from a `search` result. Matching collapses internal whitespace on both sides: `"1.3.  Reducing..."` (two spaces) matches a stored `"1.3. Reducing..."` (one space) and vice versa. On miss, the error lists the document's actual headings so callers can recover. Raises an error if the heading is not found or is empty. |
+| `revision` | string | `null` | Read the note as it stood at that commit rather than on disk. A commit SHA from `get_history`, or the `previous_revision` a `write` returns. Git-backed vaults and `.md` notes only. Pass `path` as the note is named today; renames are followed, and the response reports the `historical_path` the note carried then. |
 
 !!! tip "Recovering the full section after search"
     When `search` returns a snippet result, pass `result["heading"]` as the `section` parameter to recover the complete section: `read(path=result["path"], section=result["heading"])`. If the document has no sub-headings (preamble content), omit `section` to read the whole document.
@@ -161,6 +162,44 @@ partial markdown reads (see the tip above).
       "modified_at": 1741564800.0
     }
     ```
+
+=== "At a revision"
+
+    ```json
+    {
+      "path": "Journal/note.md",
+      "historical_path": "Journal/old-name.md",
+      "revision": "9f2c1ab...",
+      "content": "---\ntitle: My Note\n---\n\nThe note body as it was..."
+    }
+    ```
+
+    No `etag` and no `modified_at`: both describe the note as it is now, and an etag taken from a revision read would assert a read of the current file that never happened. No `okf` block either, for the same reason.
+
+#### Reading an earlier revision
+
+On a git-backed vault, `revision` turns `read` into the way back from an overwrite. A `write` that replaces an existing note returns `previous_revision`; that SHA, passed to `read`, returns exactly what the write replaced:
+
+```text
+write(path, content=...)              → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")        → the replaced content
+read(path)                            → the current etag
+write(path, content=<what you read>, if_match=<that etag>)
+```
+
+The content comes back as the whole raw file, frontmatter included, and `write` stores it verbatim when no `frontmatter` argument is given, so the last step restores the note byte for byte.
+
+**It resolves the note, not the path.** Pass the name the note has today; a rename since that revision is followed, and `historical_path` reports the name it carried. Where git's records do not connect the two, `read` **fails rather than returning content**, because the next thing a caller does with it is write it back. It fails when:
+
+- a different note has since taken over the name (the content stored under it then is not this note's);
+- the note was deleted and a new one created at the same path;
+- a rename also rewrote the note so heavily that git records an unrelated add;
+- the note on disk was never committed, so git has nothing recording its identity;
+- the revision is not an ancestor of the current history, such as a SHA from a branch that history has since moved off.
+
+A note that has since been **deleted** is still readable at a revision that has it; that is how a deleted note is recovered.
+
+`previous_revision` is absent whenever no commit provably holds the replaced content: a newly created note, a vault without git, or content that was never committed (two writes in quick succession, where the first one's content never reached a commit). Content that never reached a commit is not recoverable from git at all.
 
 ### `list_documents`
 
@@ -343,6 +382,8 @@ LLM's own output budget. The `content_base64` parameter (binary) inflates
 by ~33%.
 
 **Returns:** `{"path": "Journal/note.md", "created": true}`
+
+On a git-backed vault, an overwrite also carries `previous_revision`: the commit holding the content this write replaced. Pass it to [`read`](#read) as `revision=` to get that content back. See [Reading an earlier revision](#reading-an-earlier-revision). The key is **absent**, not null, when no commit provably holds the replaced content: a newly created note, a vault without git, or content that was never committed.
 
 For `.md` files, the response may also include a `conventions` list: the
 [folder conventions](#get_conventions) that apply to the target folder
@@ -930,7 +971,7 @@ List commits that touched a note, attachment, or folder (or the whole vault) wit
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `sha` | string | Full commit SHA, in the repository's hash algorithm (40 hex digits under SHA-1, 64 under SHA-256) |
+| `sha` | string | Full commit SHA, in the repository's hash algorithm (40 hex digits under SHA-1, 64 under SHA-256). Pass one to [`read`](#read) as `revision=` to read the note as it stood there |
 | `short_sha` | string | 7-character abbreviated SHA |
 | `timestamp` | string | ISO 8601 author timestamp |
 | `author` | string | Author name and email |
