@@ -376,7 +376,7 @@ Attributes:
 
 | Name            | Type        | Description                                                                                                                                                                                                                                               |
 | --------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sha`           | `str`       | Full 40-character commit SHA.                                                                                                                                                                                                                             |
+| `sha`           | `str`       | Full commit SHA, in the repository's hash algorithm (40 hex digits under SHA-1, 64 under SHA-256).                                                                                                                                                        |
 | `short_sha`     | `str`       | Abbreviated 7-character SHA.                                                                                                                                                                                                                              |
 | `timestamp`     | `str`       | ISO 8601 commit timestamp.                                                                                                                                                                                                                                |
 | `author`        | `str`       | Commit author name and email.                                                                                                                                                                                                                             |
@@ -389,13 +389,13 @@ A per-commit diff entry, returned by :meth:`~markdown_vault_mcp.facets.reader.Re
 
 Attributes:
 
-| Name        | Type  | Description                       |
-| ----------- | ----- | --------------------------------- |
-| `sha`       | `str` | Full 40-character commit SHA.     |
-| `short_sha` | `str` | Abbreviated 7-character SHA.      |
-| `timestamp` | `str` | ISO 8601 commit timestamp.        |
-| `message`   | `str` | First line of the commit message. |
-| `diff`      | `str` | Unified diff text for the commit. |
+| Name        | Type  | Description                                                                                        |
+| ----------- | ----- | -------------------------------------------------------------------------------------------------- |
+| `sha`       | `str` | Full commit SHA, in the repository's hash algorithm (40 hex digits under SHA-1, 64 under SHA-256). |
+| `short_sha` | `str` | Abbreviated 7-character SHA.                                                                       |
+| `timestamp` | `str` | ISO 8601 commit timestamp.                                                                         |
+| `message`   | `str` | First line of the commit message.                                                                  |
+| `diff`      | `str` | Unified diff text for the commit.                                                                  |
 
 ## Callbacks
 
