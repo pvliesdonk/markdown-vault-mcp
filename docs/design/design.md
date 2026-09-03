@@ -83,7 +83,7 @@ markdown-vault-mcp (new package)
 |   +-- index.py      -- IndexManager: build_index, reindex, dirty-path FTS refresh
 |   +-- embeddings.py -- EmbeddingsManager: vector lifecycle (composed into IndexManager, #1157)
 |   +-- document.py   -- DocumentManager: CRUD, attachments, path validation
-|   +-- git_query.py  -- GitQueryManager: git history/diff reads (#610)
+|   +-- git_query.py  -- GitQueryManager: git history/diff/revision reads (#610, #1137)
 +-- indexing/
 |   +-- index_writer.py -- IndexWriter: single-owner FIFO writer thread + jobs/runners
 |   +-- readiness.py  -- ReadinessState: build-readiness state machine (#576)
@@ -1794,6 +1794,15 @@ class WriteResult:
     """Result of a write operation."""
     path: str
     created: bool                     # True if new file, False if overwrite
+    previous_revision: str | None = None  # commit holding the replaced content (#1137)
+
+@dataclass
+class RevisionContent:
+    """A note's content at a git revision (#1137)."""
+    path: str                         # the note's path today
+    historical_path: str              # the path it carried at that revision
+    revision: str
+    content: str                      # raw file incl. frontmatter, or one section's body
 
 @dataclass
 class EditResult:
@@ -2148,7 +2157,7 @@ operations to them. No manager holds a back-reference to Vault.
 | ``IndexManager`` | build_index, reindex, process_dirty_paths; thin delegations for build_embeddings, embeddings_status, flush_dirty_embeddings | ``FTSIndex``, ``ChangeTracker``, ``source_dir``, chunk strategy, composed ``EmbeddingsManager`` (no lock; driven by the single-owner :class:`~markdown_vault_mcp.indexing.IndexWriter`, #559) |
 | ``EmbeddingsManager`` | Vector lifecycle: cold build, boot convergence, inline reindex embedding, deferred flush, embeddings_status (#1157) | ``FTSIndex``, ``source_dir``, embedding config, get/set-vectors callables, injected ``_is_path_excluded`` / ``_discover_indexable_candidates`` callables (#736 precedent); constructed by ``IndexManager``, not wired from ``Vault`` |
 | ``DocumentManager`` | read, write, edit, append, delete, rename, attachments, TOC | ``FTSIndex``, ``source_dir``, ``_file_write_lock`` (file-mutation atomicity only; see #559), ``mark_paths_dirty`` hook, callbacks |
-| ``GitQueryManager`` | Git history / diff reads (read-only, #610) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir`` |
+| ``GitQueryManager`` | Git history / diff / revision reads (read-only, #610, #1137) | ``GitWriteStrategy`` (or ``None`` when not a git repo), ``source_dir``, ``max_note_read_bytes`` |
 
 Each manager receives its dependencies as constructor arguments. This enables
 isolated unit testing and clear dependency boundaries. Pure utility functions
@@ -2163,8 +2172,8 @@ root already owns:
 
 | Facet | Surface | Collaborators |
 |-|-|-|
-| ``ReaderFacet`` | search, read, get_metadata, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
-| ``WriterFacet`` | write, edit, append, delete, rename, write_attachment | ``DocumentManager`` |
+| ``ReaderFacet`` | search, read, read_revision, get_metadata, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
+| ``WriterFacet`` | write, edit, append, delete, rename, write_attachment | ``DocumentManager``, ``previous_revision`` resolver (#1137) |
 | ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path, neighborhood/hub graph views (#880) | ``LinkManager``, ``SearchManager``, ``require_built`` |
 | ``IndexFacet`` | build/reindex/embeddings (sync + async), readiness, writer status, embeddings_status | ``IndexWriteCoordinator`` (public subset only), ``IndexManager`` (embeddings_status) |
 
@@ -3810,12 +3819,18 @@ locks were introduced — so the documented lock-ordering contracts of the
 pull/write paths (`_force_pull_rebase_fallback` requires the lock held;
 `_quiesce_writes` drains before the lock is taken) are unchanged.
 
-**Facet protocols (`git/interfaces.py`, #1229)**: the three concerns are
-also expressed as protocols, so each consumer depends on the surface it uses
+**Facet protocols (`git/interfaces.py`, #1229)**: the concerns are also
+expressed as protocols, so each consumer depends on the surface it uses
 rather than on the concrete class:
 
-- `HistorySource` — `get_file_history` / `get_file_diff`. `GitQueryManager`
-  depends on this and nothing else.
+- `HistorySource` — `get_file_history` / `get_file_diff`.
+- `RevisionReader` (#1137) — `get_file_at_ref` / `committed_revision`. Kept
+  separate from `HistorySource` for the reason that split exists at all: a
+  backend that can answer "what changed, and when" need not be able to hand
+  back the bytes a note held at a commit, and folding the two together would
+  make the narrower capability inexpressible. `GitQueryManager` holds a
+  `HistorySource` and gates the revision surface on an `isinstance` check
+  against this protocol.
 - `Syncer` — pull/push (`force_pull`, `force_push`, `sync_once`), the loop
   lifecycle (`start`/`stop`/`flush`/`close`/`set_write_quiescer`), and the
   repository reads the `git_sync` tool needs (`is_managed`,
@@ -3823,11 +3838,11 @@ rather than on the concrete class:
 - `Versioner` — the per-write commit; structurally the same shape as
   `PrincipalAwareWriteCallback`, restated so the module needs no runtime
   import beyond `typing`.
-- `VersionedStore` — all three, which is what `Vault` holds.
+- `VersionedStore` — all of them, which is what `Vault` holds.
 
 `GitWriteStrategy` remains the single object implementing all of them, and is
 still wired as both `git_strategy` and `on_write`; `Vault.close()` compares
-the two by identity to avoid closing one object twice. Splitting into three
+the two by identity to avoid closing one object twice. Splitting into separate
 *objects* is deliberately not done — the collaborators share one lock, and
 that identity check depends on there being one object.
 
@@ -4016,10 +4031,13 @@ resolves, the operation reports `no_remote` and is skipped.
 
 Safety branch mode for push failures is tracked separately (see #119).
 
-**Git history queries**: `GitWriteStrategy` exposes two read-only methods for querying the git commit log without modifying any state:
+**Git history queries**: `GitWriteStrategy` exposes read-only methods for querying the git commit log and reading historical content, none of which modify repository state:
 
 - `get_file_history(repo_path, path, since, limit, until=None, *, is_dir=False)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note, a folder subtree, or the entire vault. Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. A single-file query uses `--follow` (rename-tracking) and returns no per-commit paths; a directory query (`is_dir=True`, dispatched by `GitQueryManager.get_history` when `path` resolves to a real directory) drops `--follow` and scopes to `git log --name-only -- <dir>`, and vault-wide queries append `--name-only` — both populate each commit's changed file paths (git scopes the `--name-only` output to the directory pathspec, so no sibling files leak in). Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary.
 - `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)`: runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,64}` — the upper bound admits the 64-hex commit IDs a `--object-format=sha256` repository yields, #1284), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant, meaning a commit whose committer date equals the timestamp is the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked, useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. `CalledProcessError` from an unknown ref is re-raised as `ValueError`.
+
+- `get_file_at_ref(query)` (#1137): returns a note's content at a revision, resolved **by note rather than by path**. Git records paths, blobs, and add/rename events and nothing else, so identity is derived only from what it records: `git log -m --first-parent --follow --name-status -z --find-renames=30 <ref>..HEAD -- <path>` is walked newest-first carrying a tracked path. An `R old new` record whose *new* side is tracked moves the tracked path back; an `A` on the tracked path stops the walk and **raises**, because git is saying the file at that path was created within the range; a `C` (copy) raises for the same reason; `D`/`M`/`T` continue; any other record raises, since an unrecognised record is not evidence of continuity. `-m --first-parent` is load-bearing rather than decorative: a rename performed *while resolving a merge* belongs to no parent's diff, so a plain walk returns no records at all and the caller would fall through to trusting today's path at an old revision. `--find-renames=30` matches `resolve_path_at_ref`'s threshold (#338); the rename limit is pinned with `-c diff.renameLimit` so the boundary is a property of this code rather than of the operator's git config. Two checks bracket the walk: `merge-base --is-ancestor` (a revision on rebased-away history cannot anchor the range) and `ls-files` (a note on disk that git never tracked leaves no creation record to stop the walk, so the walk alone would return the *previous* file's bytes under the new note's name). The content lookup then deliberately avoids `<ref>:<path>`: that is a revision expression rather than a pathspec, and an unmatched one resolves to whatever else git can parse — for a note named `star*note.md` it returns the *commit*, after which `cat-file blob` fails on stderr with exit status **zero**, which reads back as an empty note. Instead `git ls-tree -l -z <ref> -- :(literal)<path>` yields the entry's mode, object id and size in one call; a symlink (mode `120000`, whose blob holds the link target rather than note content) or a non-blob entry is rejected there, the size is checked against `max_note_read_bytes` — except for a `section=` read, which is exempt exactly as the on-disk path is — and only then is the blob fetched by its own hash and decoded explicitly, so non-UTF-8 content is a `ValueError` rather than a decode error escaping the subprocess layer. A Git LFS pointer is refused rather than returned: the working tree holds real bytes only because the smudge filter ran at checkout, which this path does not go through, so restoring what git has here would write the pointer over the note. The path the walk resolves to must also lie beneath the vault prefix — the caller's path is confined by `validate_history_path`, but a repository can hold far more than the vault, and a note renamed in from outside carries a path from outside. Unlike its siblings this **raises** on a vault without git: an empty string is indistinguishable from "the note was empty at that revision", which a caller about to restore content must not be handed.
+- `committed_revision(repo_path, path)` (#1137): the overwrite breadcrumb. Returns the note's newest commit **only when the working copy still matches it** — the note must be tracked (`ls-files`) and `git diff --quiet <that commit> -- <path>` must be clean. The comparison is against the *named commit* rather than `HEAD` deliberately: the commit worker runs on its own thread and does not hold the vault's write lock, so a HEAD-relative check can answer about a commit the first probe never named. Returns `None` for every unanswerable case rather than raising, because a write must never fail over a breadcrumb. The probe and the write are held under the vault's re-entrant write lock by `WriterFacet` (`DocumentManager.write_scope()`), because a decision made from the current state is only true if nothing else writes the note between reading that state and acting on it: without it, a concurrent rename could put a *different* note at the path and the breadcrumb would name a commit belonging to a note this write never replaced. The bulk maintenance path calls `DocumentManager.write` directly and so pays neither the lock hold nor the probe.
 
 Both methods use the existing `_git_env()` / `_cleanup_git_env()` pattern for credential forwarding and cleanup. Path arguments are always validated via `Vault._validate_path()` before being passed to the git layer. No shell injection is possible because all subprocess calls use list arguments with `shell=False`.
 

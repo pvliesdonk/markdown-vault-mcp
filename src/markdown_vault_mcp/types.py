@@ -279,6 +279,34 @@ class NoteContent:
 
 
 @dataclass
+class RevisionContent:
+    """A note's content at a git revision, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_revision`.
+
+    Deliberately carries neither ``etag`` nor ``modified_at``: both describe
+    the note as it is *now*, and an etag taken from a revision read and fed
+    back as ``if_match`` would assert a read of the current file that the
+    caller never made.
+
+    Attributes:
+        path: Relative path the note has today — the one the caller asked for.
+        historical_path: Relative path the note carried at *revision*.  Differs
+            from ``path`` when the note has been renamed since.
+        revision: The commit the content was read from.
+        content: Raw markdown at that revision, frontmatter included — or, when
+            a section was requested, just that section's body, matching what a
+            section read of the note on disk returns.  Either way this is the
+            committed blob, so a repository with ``core.autocrlf`` or an
+            ``eol`` attribute returns the normalised form rather than whatever
+            line endings the file had on disk.
+    """
+
+    path: str
+    historical_path: str
+    revision: str
+    content: str
+
+
+@dataclass
 class NoteInfo:
     """Summary info for a document, returned by :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.list_documents`.
 
@@ -311,10 +339,27 @@ class WriteResult:
     Attributes:
         path: Relative path of the document that was written.
         created: ``True`` if the document was newly created; ``False`` if overwritten.
+        previous_revision: Set only by an overwriting
+            :meth:`~markdown_vault_mcp.facets.writer.WriterFacet.write`; every
+            other producer of this result — ``append``, ``write_attachment``,
+            and direct ``DocumentManager`` writes — leaves it ``None``.  On a
+            git-backed vault it names the commit holding the content the write
+            replaced, the route back to it via
+            :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_revision`.
+            ``None`` whenever no commit *provably* holds it: a create, a vault
+            without git, a note not committed yet, or a working copy that had
+            already moved on from its newest commit. Content that never
+            reached a commit is not recoverable from git, and a breadcrumb is
+            withheld rather than pointing at an older revision that would look
+            like the replaced content without being it.
+
+            The probe and the write share the vault's write lock, so no other
+            vault writer can change which note occupies the path in between.
     """
 
     path: str
     created: bool
+    previous_revision: str | None = None
 
 
 @dataclass

@@ -28,7 +28,7 @@ vault.index.reindex()
 ## ReaderFacet
 
 Search, read, listing, table-of-contents, similarity, context, history/diff,
-and attachment reads.
+revision reads, and attachment reads.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.facets.reader.ReaderFacet

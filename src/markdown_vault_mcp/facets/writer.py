@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from typing import Any
 
     from markdown_vault_mcp._okf_convention import ConventionMaintainer
@@ -40,6 +41,7 @@ class WriterFacet:
         *,
         okf_migrate: OkfMigrationManager | None = None,
         convention_maintainer: ConventionMaintainer | None = None,
+        previous_revision: Callable[[str], str | None] | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -51,10 +53,20 @@ class WriterFacet:
                 maintainer (#964); ``None`` (the default, and whenever
                 ``OKF_WRITE`` is off) disables ``log.md`` / ``index.md``
                 upkeep on ``write`` / ``edit``.
+            previous_revision: Resolves the revision holding a note's current
+                content, for the overwrite breadcrumb (#1137).  ``None`` (the
+                default, and on a vault without git) omits the breadcrumb.
+                Wired here rather than inside
+                :class:`~markdown_vault_mcp.managers.document.DocumentManager`
+                deliberately: that class is also the server's own maintenance
+                write path (OKF link conversion rewrites thousands of notes in
+                one call), and a git probe per file there would spend several
+                subprocesses each on a result nobody reads.
         """
         self._doc_mgr = doc_mgr
         self._okf_migrate = okf_migrate
         self._convention_maintainer = convention_maintainer
+        self._previous_revision = previous_revision
 
     def _migrate(self) -> OkfMigrationManager:
         """Return the migration manager or raise if it was not wired."""
@@ -118,7 +130,10 @@ class WriterFacet:
                 modifications.  Pass ``None`` (default) to skip the check.
 
         Returns:
-            :class:`~markdown_vault_mcp.types.WriteResult`.
+            :class:`~markdown_vault_mcp.types.WriteResult`.  On an overwrite of
+            a committed note in a git-backed vault, its ``previous_revision``
+            names the commit holding the replaced content, readable back with
+            :meth:`~markdown_vault_mcp.facets.reader.ReaderFacet.read_revision`.
 
         Raises:
             ReadOnlyError: If the vault is read-only.
@@ -129,12 +144,40 @@ class WriterFacet:
                 already exists while no *if_match* is supplied.
             ValueError: If *path* escapes the source directory.
         """
-        result = self._doc_mgr.write(
-            path, content, frontmatter=frontmatter, if_match=if_match
-        )
+        # Read before writing: the auto-commit is asynchronous, so afterwards
+        # the note's newest commit may already be this write's own.  Both steps
+        # hold the vault's (re-entrant) write lock, so no other writer can
+        # change which note occupies the path in between — otherwise the
+        # breadcrumb could name a commit belonging to a note this write did
+        # not replace.
+        with self._doc_mgr.write_scope():
+            breadcrumb = self._breadcrumb_for(path)
+            result = self._doc_mgr.write(
+                path, content, frontmatter=frontmatter, if_match=if_match
+            )
+            if not result.created:
+                result.previous_revision = breadcrumb
         if self._convention_maintainer is not None:
             self._convention_maintainer.maintain(path, "write")
         return result
+
+    def _breadcrumb_for(self, path: str) -> str | None:
+        """Return the revision holding *path*'s current content, if one does.
+
+        Probed before the overwrite; the resolver skips a path that is not on
+        disk, so a create costs no git calls and the result is discarded
+        anyway when the write turns out to have created the note.
+
+        The read-only check comes first so a vault that is going to refuse the
+        write refuses it without spending git subprocesses on a breadcrumb for
+        a write that will not happen.  It raises the same
+        :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError` the write itself
+        would, just sooner.
+        """
+        if self._previous_revision is None:
+            return None
+        self._doc_mgr.ensure_writable()
+        return self._previous_revision(path)
 
     def edit(
         self,

@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from markdown_vault_mcp.types import WriteResult
+
 from fastmcp import Context, FastMCP
 from fastmcp.dependencies import CurrentContext, Depends
 from fastmcp.exceptions import ToolError
@@ -143,6 +145,22 @@ async def _resolve_verify_mode_subject(*, mode: str, ctx: Context, path: str) ->
     return resolve_verify_subject()
 
 
+def _write_payload(result: WriteResult) -> dict[str, Any]:
+    """Serialise a write result, dropping a breadcrumb that is not there.
+
+    ``previous_revision`` is only ever set by an overwriting ``write`` on a
+    git-backed vault whose replaced content is provably in a commit (#1137).
+    Every other producer of this result type — ``append``,
+    ``write_attachment``, ``fetch`` — leaves it ``None``, and a permanently
+    null key on those responses spends client context on nothing.  Absent says
+    "no route back" just as well as null does, without the noise.
+    """
+    data = asdict(result)
+    if data.get("previous_revision") is None:
+        data.pop("previous_revision", None)
+    return data
+
+
 def register(mcp: FastMCP) -> None:
     """Register write/mutation tools on *mcp*."""
 
@@ -195,7 +213,14 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             Dict with path (str) and created (bool — true if new file,
-            false if overwrite). For .md files, may include 'conventions':
+            false if overwrite). On a git-backed vault, an overwrite also
+            carries 'previous_revision': the commit holding the content this
+            write just replaced. Read it back with
+            read(path, revision=<that sha>), then write it again with if_match
+            set to the etag from a plain read(path). The key is absent when no
+            commit provably holds the replaced content — a create, no git, or
+            content that was never committed (which git cannot recover at all).
+            For .md files, may include 'conventions':
             the user's authoring conventions for the target folder
             (root-first list of {folder, path, content}). When present,
             verify the note you just wrote complies — e.g. self-containment
@@ -243,7 +268,7 @@ def register(mcp: FastMCP) -> None:
                 result = await asyncio.to_thread(
                     vault.writer.write_attachment, path, raw_bytes, if_match=if_match
                 )
-            return asdict(result)
+            return _write_payload(result)
         # Bind the caller's Principal plus the OKF provenance actor for the
         # enforced-write layer (#964, #1160). The OKF intent is a no-op unless
         # OKF_WRITE is on; both values ride contextvars into the to_thread
@@ -257,7 +282,7 @@ def register(mcp: FastMCP) -> None:
                 frontmatter=frontmatter,
                 if_match=if_match,
             )
-        return await attach_conventions(vault, asdict(result), path)
+        return await attach_conventions(vault, _write_payload(result), path)
 
     @mcp.tool(
         tags={"write"},
@@ -423,7 +448,7 @@ def register(mcp: FastMCP) -> None:
                 if_match=if_match,
                 create_if_missing=create_if_missing,
             )
-        return await attach_conventions(vault, asdict(result), path)
+        return await attach_conventions(vault, _write_payload(result), path)
 
     @mcp.tool(
         tags={"write"},
@@ -794,7 +819,7 @@ def register(mcp: FastMCP) -> None:
         logger.info("fetch_saved bytes=%d path=%s", content_length, path)
 
         data = {
-            **asdict(result),
+            **_write_payload(result),
             "content_length": content_length,
             "content_type": content_type,
             "final_url": final_url,

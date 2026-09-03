@@ -176,6 +176,7 @@ def register(mcp: FastMCP) -> None:
     async def read(
         path: str,
         section: str | None = None,
+        revision: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
         """Read the full content of a document or attachment by path.
@@ -190,6 +191,12 @@ def register(mcp: FastMCP) -> None:
 
         To recover the full text of a specific section returned by 'search',
         pass section=heading (the value from the result's 'heading' field).
+
+        Pass revision=<sha> (git-backed vaults) to read the note as it stood at
+        that commit — the route back to content a 'write' replaced. Use a
+        write's 'previous_revision', or a sha from 'get_history'. To restore:
+        read again without revision= for a current etag, then 'write' with
+        if_match set to it.
 
         **Context cost:** every byte returned counts against the LLM's
         context budget. Reads above ``MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES``
@@ -210,6 +217,11 @@ def register(mcp: FastMCP) -> None:
                 comparison). Pass the ``heading`` value from a ``search``
                 result unchanged for guaranteed match. ``None`` (the default)
                 returns the whole document. Ignored for non-.md paths.
+            revision: Read the note as it stood at that commit instead of on
+                disk (git-backed vaults, .md only). A sha from 'get_history'
+                or a write result's 'previous_revision'. Pass *path* as the
+                note is named today; renames are followed. Composes with
+                section=.
 
         Returns:
             For .md: dict with path, title, folder, content (the full raw
@@ -227,13 +239,28 @@ def register(mcp: FastMCP) -> None:
             etag (SHA-256 hex str or null).
             The 'etag' value can be passed as 'if_match' to write, edit,
             delete, or rename to guard against concurrent modifications.
+            With revision=: dict with path, historical_path (the name the note
+            carried at that revision), revision, and content — the whole raw
+            file, or just one section's body when section= is also given. No
+            etag and no modified_at (both describe the note as it is now), and
+            no 'okf' block for the same reason.
 
         Raises:
             ValueError: If no file exists at the given path, the extension is
                 not in the attachment allowlist, the file exceeds
                 ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB``, or the requested
-                section heading is not found.
+                section heading is not found.  With ``revision``: if the vault
+                is not git-backed, the revision is unusable, the path is an
+                attachment, or git's records do not show the note existing at
+                that revision (a name later reused by a different note is
+                refused rather than answered with the other note's content).
         """
+        if revision is not None:
+            return asdict(
+                await asyncio.to_thread(
+                    vault.reader.read_revision, path, revision, section=section
+                )
+            )
         if not is_note(path):
             cap_mb = vault.max_attachment_size_mb
             if cap_mb > 0:

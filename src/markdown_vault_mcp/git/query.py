@@ -5,14 +5,19 @@ module-qualified (``subprocess.run``) so the test suite's global monkeypatch sti
 intercepts them.
 
 The ``git_root`` parameter is pre-resolved by the caller (typically via
-:meth:`GitWriteStrategy._ensure_git_root`, which memoises the result).  Passing
-``None`` to the two query entry points (:func:`get_file_history` /
-:func:`get_file_diff`) is a no-op: they return an empty result immediately.
-(:func:`resolve_path_at_ref` is an internal helper and requires a resolved
-``git_root``.)  This keeps git-root discovery out of these functions so that tests
-can prime the cache on the
-strategy instance and then patch ``subprocess.run`` without the patch also
-interfering with the discovery call.
+:meth:`GitWriteStrategy._ensure_git_root`, which memoises the result).  This
+keeps git-root discovery out of these functions so that tests can prime the
+cache on the strategy instance and then patch ``subprocess.run`` without the
+patch also interfering with the discovery call.
+
+Each public entry point states what a ``None`` ``git_root`` means for it, and
+they deliberately differ: the history and diff queries return an empty result,
+because "no git" and "nothing changed" are equally uninteresting to a caller
+browsing history; :func:`get_file_at_ref` raises, because an empty string is
+indistinguishable from a note that was empty at that revision and its caller is
+about to write the result back; :func:`committed_revision` returns ``None``,
+which is what it returns for every other unanswerable case.  Internal helpers
+(:func:`resolve_path_at_ref` among them) require a resolved ``git_root``.
 """
 
 from __future__ import annotations
@@ -20,9 +25,15 @@ from __future__ import annotations
 import logging
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.git._run import cleanup_git_env, git_env
-from markdown_vault_mcp.types import CommitDiff, HistoryEntry
+from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from markdown_vault_mcp.git.types import RevisionQuery
 
 logger = logging.getLogger(__name__)
 
@@ -420,9 +431,11 @@ def resolve_path_at_ref(
     # Stream: <status>\0<path>\0 — R*/C* records add a second path
     # (\0<old>\0<new>\0).  Copies (C*) are skipped, not resolved (a copy is
     # an add, not a rename); the branch keeps the parser in sync if git ever
-    # emits one (e.g. if ``--find-copies`` were added in future).  Without
-    # ``--find-copies`` / ``--find-copies-harder`` git does not emit C* records,
-    # so this branch is defensive dead-code today.
+    # emits one.  This *particular* invocation — a plain ``git diff`` with
+    # neither ``--find-copies`` nor ``--follow`` — does not produce C* records,
+    # so the branch is defensive here.  It is not a claim about git in general:
+    # the ``--follow`` walk behind :func:`get_file_at_ref` does see them, and
+    # treats a copy as a birth rather than a lineage.
     items = result.stdout.split("\0")[:-1]
     i = 0
     while i < len(items):
@@ -802,3 +815,512 @@ def _per_commit_diffs(
             )
         )
     return diffs
+
+
+# ---------------------------------------------------------------------------
+# Revision reads (#1137)
+# ---------------------------------------------------------------------------
+
+# First line of a Git LFS pointer file.  An LFS-tracked note's blob holds this
+# stand-in, not the note; the working tree gets the real bytes only because the
+# smudge filter ran at checkout, which a revision read does not go through.
+_LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1"
+
+# Git's file mode for a symlink.  The blob behind one holds the link *target*
+# as text, not the linked note's content, so a revision read refuses rather
+# than handing back a path string as though it were a note.
+_SYMLINK_MODE = "120000"
+
+# Rename-detection threshold for the revision walk.  Matches
+# ``resolve_path_at_ref``'s 30% (#338): at git's 50% default, a rename that
+# also rewrote half the note reports as an unrelated add plus delete, which
+# this walk is obliged to refuse.  Passing it explicitly also overrides the
+# operator's ``diff.renames`` (verified for true/false/copies), so rename
+# detection is on regardless of their config — the same reason the limit
+# below is pinned.  Copy detection is a different matter: ``--follow`` turns
+# it on by itself, so ``C`` records reach the walk and are handled there.
+_RENAME_THRESHOLD = "--find-renames=30"
+
+# Rename-detection is capped per commit; a commit renaming more files than the
+# cap degrades every rename to add+delete, which the walk refuses.  Pinning the
+# value keeps that boundary a property of this code rather than of whatever the
+# operator has in their git config.
+_RENAME_LIMIT = "diff.renameLimit=2000"
+
+
+def _revision_walk_output(
+    git_root: Path, ref: str, cur_rel: str, env: dict[str, str] | None
+) -> str:
+    """Return git's ``--name-status`` record stream for *cur_rel* over ``ref..HEAD``.
+
+    ``-m --first-parent`` is load-bearing, not decoration: a rename performed
+    *while resolving a merge* appears in no parent's diff, so a plain walk
+    returns no records at all and the caller would fall through to trusting
+    today's path at an old revision.  Restricting to the first parent and
+    asking for its diff surfaces that rename as an ordinary ``R`` record.
+
+    ``-z`` frames paths by NUL, so a path containing a space, a quote or a
+    newline survives intact and no ``core.quotePath`` unescaping is needed.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "-c",
+                _RENAME_LIMIT,
+                "-C",
+                str(git_root),
+                "log",
+                "-m",
+                "--first-parent",
+                "--follow",
+                "--name-status",
+                "-z",
+                _RENAME_THRESHOLD,
+                f"--format={_HISTORY_SENTINEL}%H",
+                f"{ref}..HEAD",
+                "--",
+                _literal(cur_rel),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(
+            f"Could not read history for revision {ref!r}: {(exc.stderr or '').strip()}"
+        ) from exc
+    return result.stdout
+
+
+def _iter_name_status(raw: str) -> Iterator[tuple[str, list[str]]]:
+    """Yield ``(status, paths)`` from a ``-z --name-status`` stream, newest first.
+
+    The stream interleaves ``\\x1e<sha>`` commit markers with records; a record
+    is a status token followed by one path, or two for ``R``/``C``.  Only the
+    status token is stripped of the newline git emits after a commit header —
+    path tokens are yielded byte-for-byte, since a leading newline is legal in
+    a filename.
+    """
+    tokens = raw.split("\0")
+    i = 0
+    while i < len(tokens):
+        status = tokens[i].lstrip("\n")
+        if not status or status.startswith(_HISTORY_SENTINEL):
+            i += 1
+            continue
+        wanted = 2 if status[0] in ("R", "C") else 1
+        paths = tokens[i + 1 : i + 1 + wanted]
+        if len(paths) < wanted or not all(paths):
+            # A short record, or one whose path slot is the stream's trailing
+            # empty token: either way the record is incomplete, and half a
+            # rename is not something to reason about.
+            return
+        yield status, paths
+        i += 1 + wanted
+
+
+def _path_at_ref(raw: str, cur_rel: str, ref: str) -> str:
+    """Resolve the path *cur_rel* had at *ref*, or refuse.
+
+    Walks git's own records newest-first, carrying the path currently being
+    tracked.  Every outcome maps to something git recorded:
+
+    * ``R old new`` where *new* is tracked — the note was renamed; keep going
+      from *old*.
+    * ``A`` on the tracked path — git is saying the file there was created
+      within the range, so the note the caller named did not exist at *ref*.
+    * ``C source new`` where *new* is tracked — git found the note's content
+      copied from somewhere else rather than carried forward, which is a birth
+      too, not a lineage.
+    * ``D`` / ``M`` / ``T`` — the note changed or was removed but its identity
+      is intact; keep going.
+    * Anything else — not a record class this walk understands, and an
+      unrecognised record is not evidence of continuity.
+
+    Raises:
+        ValueError: When the records do not connect the note to *ref*.
+    """
+    tracked = cur_rel
+    for status, paths in _iter_name_status(raw):
+        if status.startswith("R") and paths[-1] == tracked:
+            tracked = paths[0]
+        elif status.startswith("A") and paths[0] == tracked:
+            raise ValueError(
+                f"{tracked!r} was created after revision {ref!r}, so the note now "
+                "at that path did not exist at that revision. Anything stored "
+                "under that name then belongs to a different note; use "
+                "'get_history' to find a revision this note actually has."
+            )
+        elif status.startswith("C") and paths[-1] == tracked:
+            raise ValueError(
+                f"{tracked!r} appears as a copy of {paths[0]!r} rather than as a "
+                "continuation of it, so the note now at that path did not exist "
+                f"at that revision. Read {paths[0]!r} at {ref!r} instead if the "
+                "content you want is the one it was copied from."
+            )
+        elif status[0] not in ("D", "M", "T") or paths[0] != tracked:
+            raise ValueError(
+                f"Cannot follow {cur_rel!r} back to revision {ref!r}: git reports "
+                f"{status!r} for {paths[0]!r}, which does not establish that the "
+                "note is the same one. Use 'get_history' and 'get_diff' to inspect "
+                "the range directly."
+            )
+    return tracked
+
+
+def _require_ancestor(git_root: Path, ref: str, env: dict[str, str] | None) -> None:
+    """Refuse a revision that is not an ancestor of HEAD.
+
+    ``ref..HEAD`` enumerates what is reachable from HEAD but not from *ref*.
+    When *ref* sits on a discarded branch — after a rebase, a reset, or a SHA
+    copied from elsewhere — that set is not "the commits since *ref*", and the
+    walk's reasoning about creations and renames does not hold.
+    """
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "merge-base", "--is-ancestor", ref, "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise ValueError(
+            f"Revision {ref!r} is not an ancestor of the current HEAD (it may be "
+            "unknown, or on history that was rebased away), so this note's path "
+            "at that revision cannot be established."
+        )
+
+
+def _require_tracked(
+    git_root: Path, path: Path, cur_rel: str, env: dict[str, str] | None
+) -> None:
+    """Refuse when the note on disk is not the one git has been recording.
+
+    A note committed, deleted, and then recreated **untracked** leaves the walk
+    with a ``D`` record and no ``A``: nothing marks the current file's birth,
+    because git never saw it. Without this check the walk would return the
+    deleted note's content under the new note's name.  A path absent from disk
+    is the recover-a-deleted-note case and is left to the walk.
+    """
+    if not path.exists():
+        return
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "ls-files", "--", _literal(cur_rel)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if not result.stdout.strip():
+        raise ValueError(
+            f"{cur_rel!r} is not tracked by git, so it has no history: content "
+            "stored under that name at an earlier revision belongs to a "
+            "different file."
+        )
+
+
+def _require_inside_vault(historical: str, prefix: str, ref: str) -> None:
+    """Refuse a historical path that resolves outside the vault.
+
+    The caller's path is confined to the vault by ``validate_history_path``,
+    but the path the *walk* resolves to is confined by nothing: a git
+    repository can hold far more than the vault, and a note renamed in from
+    outside carries a repository-relative path from outside.  Reading that
+    blob would answer a vault query with content the vault never contained —
+    the containment guarantee every other read path enforces.  Where the vault
+    *is* the repository root the prefix is empty and nothing can fall outside
+    it.
+
+    Raises:
+        ValueError: If *historical* is not beneath *prefix*.
+    """
+    if prefix and not historical.startswith(prefix):
+        raise ValueError(
+            f"At revision {ref!r} this note lived at {historical!r}, outside the "
+            "vault. Its content there is not the vault's to return; use git "
+            "directly if you need history from outside the vault root."
+        )
+
+
+def _literal(path: str) -> str:
+    """Return *path* as a pathspec git will not interpret as a glob.
+
+    A note may legitimately be named ``star*note.md`` or ``brack[et].md``, and
+    a bare pathspec is a wildmatch pattern, so such a name would silently
+    select whichever sibling it happens to match.  ``:(literal)`` turns off
+    that interpretation.
+    """
+    return f":(literal){path}"
+
+
+def _tree_entry(
+    git_root: Path, ref: str, repo_rel: str, env: dict[str, str] | None
+) -> tuple[str, int]:
+    """Return ``(blob_sha, size)`` for *repo_rel* at *ref*.
+
+    Deliberately not ``git cat-file <ref>:<path>``.  That syntax is not a
+    pathspec but a revision expression, and git resolves an unmatched one to
+    whatever else it can parse: for a note named ``star*note.md`` it returns
+    the *commit* object, so a size check passes against the wrong object and
+    the subsequent blob read fails with a message on stderr and an exit status
+    of **zero** — which reads as an empty note.  Asking the tree instead keeps
+    the lookup a pathspec (glob-proof via :func:`_literal`) and yields the
+    mode, the object id, and the size in one call, with the blob then fetched
+    by its own hash.
+
+    Raises:
+        ValueError: If nothing is recorded at that path, or the entry is not a
+            regular file (a symlink's blob holds its target path, not note
+            content; a directory has no content to return).
+    """
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(git_root),
+            "ls-tree",
+            "-l",
+            "-z",
+            ref,
+            "--",
+            _literal(repo_rel),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    entry = result.stdout.split("\0")[0].strip() if result.returncode == 0 else ""
+    if not entry:
+        raise ValueError(
+            f"{repo_rel!r} is not present at revision {ref!r}"
+            f"{': ' + (result.stderr or '').strip() if result.stderr.strip() else '.'}"
+        )
+    # ``<mode> SP <type> SP <sha> SP* <size> TAB <path>`` — the path may hold
+    # anything, so split off the metadata by the single tab and no further.
+    meta = entry.split("\t", 1)[0].split()
+    if len(meta) != 4:
+        raise ValueError(f"Could not read {repo_rel!r} at revision {ref!r}.")
+    mode, kind, sha, size = meta
+    if mode == _SYMLINK_MODE:
+        raise ValueError(
+            f"{repo_rel!r} was a symlink at that revision; git stores its target "
+            "path rather than note content, so there is nothing to return."
+        )
+    if kind != "blob":
+        raise ValueError(
+            f"{repo_rel!r} was not a file at revision {ref!r} (git records a "
+            f"{kind}), so it has no content to return."
+        )
+    return sha, int(size)
+
+
+def _blob_text(
+    git_root: Path, sha: str, max_bytes: int, size: int, env: dict[str, str] | None
+) -> str:
+    """Return the text of blob *sha*, refusing it if *size* is over the cap.
+
+    The size comes from the tree entry, so an oversized historical note is
+    refused before it is materialised — the revision analogue of the
+    ``stat()`` :meth:`DocumentManager.read` does.  The blob is read as bytes
+    and decoded explicitly: a note that is not valid UTF-8 at that revision is
+    a caller-visible ``ValueError``, not a decode error escaping the
+    subprocess layer.
+
+    Raises:
+        ValueError: If the blob exceeds *max_bytes*, cannot be read, or does
+            not decode as UTF-8.
+    """
+    if 0 < max_bytes < size:
+        raise ValueError(
+            f"Note is {size} bytes at that revision, over the "
+            f"{max_bytes}-byte MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES limit."
+        )
+    blob = subprocess.run(
+        ["git", "-C", str(git_root), "cat-file", "blob", sha],
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    if blob.returncode != 0:
+        raise ValueError(f"Could not read object {sha} from git history.")
+    try:
+        text = blob.stdout.decode()
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            "Content at that revision is not valid UTF-8, so it cannot be "
+            "returned as a note."
+        ) from exc
+    if text.startswith(_LFS_POINTER_PREFIX):
+        raise ValueError(
+            "That revision stores this note in Git LFS, so git holds a pointer "
+            "rather than the note's text. Restoring what git has here would "
+            "write the pointer over the note. Fetch the LFS object and read it "
+            "directly."
+        )
+    return text
+
+
+def get_file_at_ref(
+    git_root: Path | None,
+    query: RevisionQuery,
+    *,
+    token: str | None,
+    username: str,
+) -> RevisionContent:
+    """Return a note's content as it stood at a revision, rename-aware.
+
+    Resolution is by *note*, not by path: the caller passes the path the note
+    has today and git's own add/rename records are walked back to *ref*.
+    Where those records do not connect the two — a name reused by a different
+    note, a delete-and-recreate, a rename git cannot detect — this raises
+    rather than returning content that belongs to some other note.  A caller
+    about to write the result back must never be handed a plausible wrong
+    answer.
+
+    Args:
+        git_root: Pre-resolved git repository root; ``None`` raises, since an
+            empty result is indistinguishable from "the note was empty then".
+        query: The note, revision, and read cap being asked for.
+        token: Git credential token, forwarded to the subprocess environment.
+        username: Git username for credential forwarding.
+
+    Returns:
+        A :class:`~markdown_vault_mcp.types.RevisionContent` carrying the
+        content and the vault-relative path the note had at that revision.
+
+    Raises:
+        ValueError: When the vault is not git-backed, the revision is unusable,
+            or the note's identity cannot be traced to it.
+    """
+    if git_root is None:
+        raise ValueError(
+            "Reading a note at a revision requires a git-backed vault; this "
+            "vault's source directory is not inside a git repository."
+        )
+    cur_rel = _repo_relative(git_root, query.path)
+    prefix = _vault_prefix(git_root, query.repo_path)
+    env = git_env(token, username)
+    try:
+        _require_ancestor(git_root, query.ref, env)
+        _require_tracked(git_root, query.path, cur_rel, env)
+        historical = _path_at_ref(
+            _revision_walk_output(git_root, query.ref, cur_rel, env),
+            cur_rel,
+            query.ref,
+        )
+        _require_inside_vault(historical, prefix, query.ref)
+        sha, size = _tree_entry(git_root, query.ref, historical, env)
+        content = _blob_text(git_root, sha, query.max_bytes, size, env)
+    finally:
+        cleanup_git_env(env)
+
+    return RevisionContent(
+        path=_strip_prefix(cur_rel, prefix),
+        historical_path=_strip_prefix(historical, prefix),
+        revision=query.ref,
+        content=content,
+    )
+
+
+def committed_revision(
+    git_root: Path | None,
+    path: Path,
+    *,
+    token: str | None,
+    username: str,
+) -> str | None:
+    """Return the newest commit whose blob for *path* is what is on disk now.
+
+    The breadcrumb an overwrite hands back has to name a commit that actually
+    holds the content being replaced, so both halves are checked: the note's
+    latest commit, and that the working tree still matches it.  The comparison
+    is against that **named commit** rather than ``HEAD`` — the commit worker
+    runs on its own thread and does not hold the vault's write lock, so a
+    ``HEAD``-relative check can answer about a commit this function never
+    named.
+
+    Returns:
+        The commit SHA, or ``None`` when the note has no commit yet, when the
+        working tree has moved on from its newest one, or when git cannot be
+        consulted.  ``None`` means "no breadcrumb", never "no such commit".
+    """
+    if git_root is None:
+        return None
+    env = git_env(token, username)
+    try:
+        rel = _repo_relative(git_root, path)
+        found = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(git_root),
+                "log",
+                "-1",
+                "--format=%H",
+                "--",
+                _literal(rel),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        sha = found.stdout.strip()
+        if found.returncode != 0 or not sha:
+            return None
+        tracked = subprocess.run(
+            ["git", "-C", str(git_root), "ls-files", "--", _literal(rel)],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        if not tracked.stdout.strip():
+            # git diff is blind to an untracked file, so without this a note
+            # recreated after a committed delete would "match" the commit that
+            # deleted it — a breadcrumb pointing at content that is not there.
+            return None
+        clean = subprocess.run(
+            ["git", "-C", str(git_root), "diff", "--quiet", sha, "--", _literal(rel)],
+            capture_output=True,
+            check=False,
+            env=env,
+        )
+        return sha if clean.returncode == 0 else None
+    finally:
+        cleanup_git_env(env)
+
+
+def _repo_relative(git_root: Path, path: Path) -> str:
+    """Return *path* as git sees it: relative to the repository root, posix.
+
+    Git reports and accepts repository-root-relative paths, while the vault's
+    own paths are relative to the vault root — which may sit below the git
+    root.  Comparing the two forms directly is the defect this function
+    exists to prevent: every rename and creation test in the walk would
+    silently never match.
+
+    Resolving also follows symlinks, deliberately: an on-disk read of a
+    symlinked note returns the target's content, so a revision read of one
+    reports the target's history rather than a second, divergent answer.
+
+    Raises:
+        ValueError: If *path* resolves outside the repository.
+    """
+    try:
+        return path.resolve().relative_to(git_root).as_posix()
+    except ValueError as exc:
+        raise ValueError(
+            f"{path.name!r} resolves outside the git repository, so it has no "
+            "history there."
+        ) from exc
+
+
+def _strip_prefix(repo_rel: str, prefix: str) -> str:
+    """Convert a repository-relative path back to a vault-relative one."""
+    return (
+        repo_rel[len(prefix) :] if prefix and repo_rel.startswith(prefix) else repo_rel
+    )

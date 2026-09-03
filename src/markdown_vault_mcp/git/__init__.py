@@ -34,6 +34,7 @@ from markdown_vault_mcp.git._run import (
 from markdown_vault_mcp.git.bootstrap import RepoBootstrap
 from markdown_vault_mcp.git.interfaces import (
     HistorySource,
+    RevisionReader,
     Syncer,
     VersionedStore,
     Versioner,
@@ -57,6 +58,7 @@ from markdown_vault_mcp.git.types import (
     PUSH_REASON_PUSH_FAILED,
     PullResult,
     PushResult,
+    RevisionQuery,
 )
 
 __all__ = [
@@ -76,6 +78,8 @@ __all__ = [
     "PushResult",
     "PushScheduler",
     "RepoBootstrap",
+    "RevisionQuery",
+    "RevisionReader",
     "Syncer",
     "VersionedStore",
     "Versioner",

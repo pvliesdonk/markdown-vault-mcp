@@ -1,13 +1,14 @@
 """Narrow protocols for the versioned-filestore seam (#1229).
 
-``GitWriteStrategy`` carries three concerns that its consumers want in
-different combinations: **history** (log/diff), **syncing** (pull/push), and
-**versioning** (the per-write commit).  ``GitQueryManager`` reads history and
+``GitWriteStrategy`` carries several concerns that its consumers want in
+different combinations: **history** (log/diff), **revision reads** (a note's
+content at a commit), **syncing** (pull/push), and **versioning** (the
+per-write commit).  ``GitQueryManager`` reads history and
 nothing else; the webhook pulls and nothing else; the write path commits and
 syncs.  These protocols make that split explicit so each consumer depends on
 the surface it actually uses.
 
-Deliberately **one implementation object, three interfaces** — not three
+Deliberately **one implementation object, several interfaces** — not several
 objects.  ``GitWriteStrategy`` composes ``RepoBootstrap`` and ``PushScheduler``
 over a single shared :class:`threading.Lock`, and :meth:`Vault.close` tells the
 commit callback from the store by object identity (``on_write is
@@ -29,11 +30,17 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp._identity import Principal
-    from markdown_vault_mcp.git.types import PullResult, PushResult
-    from markdown_vault_mcp.types import CommitDiff, HistoryEntry, WriteOperation
+    from markdown_vault_mcp.git.types import PullResult, PushResult, RevisionQuery
+    from markdown_vault_mcp.types import (
+        CommitDiff,
+        HistoryEntry,
+        RevisionContent,
+        WriteOperation,
+    )
 
 __all__ = [
     "HistorySource",
+    "RevisionReader",
     "Syncer",
     "VersionedStore",
     "Versioner",
@@ -44,9 +51,11 @@ __all__ = [
 class HistorySource(Protocol):
     """Read-only access to a document's revision history.
 
-    The narrowest of the three facets: ``GitQueryManager`` depends on this and
-    nothing else, so a backend that can answer "what changed, and when" is
-    enough to serve the history and diff tools.
+    The narrowest versioning facet: a backend that can answer "what changed,
+    and when" is enough to serve the history and diff tools on its own.  It
+    deliberately says nothing about reading a note's *content* at a commit —
+    that is :class:`RevisionReader`, which ``GitQueryManager`` gates
+    separately.
     """
 
     def get_file_history(
@@ -105,6 +114,46 @@ class HistorySource(Protocol):
         Returns:
             A unified diff when *per_commit* is false, else one entry per
             commit.
+        """
+        ...
+
+
+@runtime_checkable
+class RevisionReader(Protocol):
+    """Reads a note's content at a revision, and names the revision it has.
+
+    Separate from :class:`HistorySource` rather than folded into it, for the
+    reason that split exists at all (#1229): a backend able to answer "what
+    changed, and when" need not be able to hand back the bytes a note held at
+    a given commit, and widening the history facet would make the narrower
+    capability inexpressible.  Consumers gate on this protocol.
+    """
+
+    def get_file_at_ref(self, query: RevisionQuery) -> RevisionContent:
+        """Return a note's content at a revision, resolved by note identity.
+
+        Args:
+            query: The note, revision, and read cap being asked for.
+
+        Returns:
+            The content and the path the note carried at that revision.
+
+        Raises:
+            ValueError: When the store cannot establish that the note the
+                caller named existed at that revision.
+        """
+        ...
+
+    def committed_revision(self, repo_path: Path, path: Path) -> str | None:
+        """Return the revision whose stored content is what is on disk now.
+
+        Args:
+            repo_path: The working tree the note lives in.
+            path: Absolute path of the note.
+
+        Returns:
+            The revision identifier, or ``None`` when the note has none or the
+            working copy has moved on from it.
         """
         ...
 
@@ -274,8 +323,8 @@ class Versioner(Protocol):
 
 
 @runtime_checkable
-class VersionedStore(HistorySource, Syncer, Versioner, Protocol):
-    """All three facets on one object — what :class:`Vault` actually holds.
+class VersionedStore(HistorySource, RevisionReader, Syncer, Versioner, Protocol):
+    """Every facet on one object — what :class:`Vault` actually holds.
 
     The vault receives the same object twice: as ``git_strategy`` for history
     and syncing, and as ``on_write`` for the commit.  That is deliberate, and

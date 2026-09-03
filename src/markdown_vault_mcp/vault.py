@@ -565,11 +565,13 @@ class Vault:
 
         # 1. LinkManager (no deps)
         self._link_mgr = LinkManager(fts=self._fts, source_dir=self._source_dir)
-        # 1b. GitQueryManager (git history/diff reads; needs git_strategy + source_dir)
+        # 1b. GitQueryManager (git history/diff/revision reads; needs
+        #     git_strategy + source_dir + the note read cap)
         self._git_query_mgr = GitQueryManager(
             self._git_strategy,
             self._source_dir,
             attachment_extensions=self._attachment_extensions,
+            max_note_read_bytes=self._max_note_read_bytes,
         )
         # 2. IndexManager (needs fts, tracker — NOT search_mgr)
         #    get_vectors/set_vectors use late-binding lambdas that capture
@@ -733,6 +735,10 @@ class Vault:
             self._doc_mgr,
             okf_migrate=self._okf_migrate,
             convention_maintainer=self._okf_convention,
+            # The overwrite breadcrumb (#1137) reads git state, so it is the
+            # git-query manager's answer — bound here rather than handing the
+            # write facet the store itself.
+            previous_revision=self._git_query_mgr.committed_revision,
         )
         self._graph_facet = GraphFacet(
             link_mgr=self._link_mgr,
