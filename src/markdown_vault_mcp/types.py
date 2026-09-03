@@ -352,6 +352,12 @@ class WriteResult:
             reached a commit is not recoverable from git, and a breadcrumb is
             withheld rather than pointing at an older revision that would look
             like the replaced content without being it.
+
+            Bounded, not absolute: two library writes racing on one note can
+            leave this naming a revision one generation older than the content
+            actually replaced, since the probe runs outside the write lock.  It
+            can never name a revision of a *different* note, which is the
+            property that matters for a caller about to restore from it.
     """
 
     path: str

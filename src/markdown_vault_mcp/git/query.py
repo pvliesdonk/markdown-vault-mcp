@@ -1029,8 +1029,8 @@ def _literal(path: str) -> str:
 
 def _tree_entry(
     git_root: Path, ref: str, repo_rel: str, env: dict[str, str] | None
-) -> tuple[str, str, int]:
-    """Return ``(mode, blob_sha, size)`` for *repo_rel* at *ref*.
+) -> tuple[str, int]:
+    """Return ``(blob_sha, size)`` for *repo_rel* at *ref*.
 
     Deliberately not ``git cat-file <ref>:<path>``.  That syntax is not a
     pathspec but a revision expression, and git resolves an unmatched one to
@@ -1086,7 +1086,7 @@ def _tree_entry(
             f"{repo_rel!r} was not a file at revision {ref!r} (git records a "
             f"{kind}), so it has no content to return."
         )
-    return mode, sha, int(size)
+    return sha, int(size)
 
 
 def _blob_text(
@@ -1174,7 +1174,7 @@ def get_file_at_ref(
             cur_rel,
             query.ref,
         )
-        _mode, sha, size = _tree_entry(git_root, query.ref, historical, env)
+        sha, size = _tree_entry(git_root, query.ref, historical, env)
         content = _blob_text(git_root, sha, query.max_bytes, size, env)
     finally:
         cleanup_git_env(env)
