@@ -174,7 +174,7 @@ partial markdown reads (see the tip above).
     }
     ```
 
-    `content` is the whole raw file at that revision, or just one section's body when `section` is given as well. No `etag` and no `modified_at`: both describe the note as it is now, and an etag taken from a revision read would assert a read of the current file that never happened. No `okf` block either, for the same reason.
+    `content` is the whole raw file at that revision, or just one section's body when `section` is given as well. As on disk, a `section` read is exempt from `MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`, so it remains the way to read part of a note too large to return whole. No `etag` and no `modified_at`: both describe the note as it is now, and an etag taken from a revision read would assert a read of the current file that never happened. No `okf` block either, for the same reason.
 
 #### Reading an earlier revision
 
@@ -195,7 +195,9 @@ The content comes back as the whole raw file, frontmatter included, and `write` 
 - the note was deleted and a new one created at the same path;
 - a rename also rewrote the note so heavily that git records an unrelated add;
 - the note on disk was never committed, so git has nothing recording its identity;
-- the revision is not an ancestor of the current history, such as a SHA from a branch that history has since moved off.
+- the revision is not an ancestor of the current history, such as a SHA from a branch that history has since moved off;
+- the note lived outside the vault at that revision, having been renamed in from elsewhere in the repository (its content there is not the vault's to return);
+- git stores the note in LFS at that revision, where the repository holds a pointer rather than the note's text.
 
 A note that has since been **deleted** is still readable at a revision that has it; that is how a deleted note is recovered.
 

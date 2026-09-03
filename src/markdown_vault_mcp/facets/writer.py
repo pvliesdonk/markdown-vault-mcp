@@ -145,13 +145,18 @@ class WriterFacet:
             ValueError: If *path* escapes the source directory.
         """
         # Read before writing: the auto-commit is asynchronous, so afterwards
-        # the note's newest commit may already be this write's own.
-        breadcrumb = self._breadcrumb_for(path)
-        result = self._doc_mgr.write(
-            path, content, frontmatter=frontmatter, if_match=if_match
-        )
-        if not result.created:
-            result.previous_revision = breadcrumb
+        # the note's newest commit may already be this write's own.  Both steps
+        # hold the vault's (re-entrant) write lock, so no other writer can
+        # change which note occupies the path in between — otherwise the
+        # breadcrumb could name a commit belonging to a note this write did
+        # not replace.
+        with self._doc_mgr.write_scope():
+            breadcrumb = self._breadcrumb_for(path)
+            result = self._doc_mgr.write(
+                path, content, frontmatter=frontmatter, if_match=if_match
+            )
+            if not result.created:
+                result.previous_revision = breadcrumb
         if self._convention_maintainer is not None:
             self._convention_maintainer.maintain(path, "write")
         return result

@@ -307,7 +307,12 @@ class GitQueryManager:
                 repo_path=self._source_dir,
                 path=abs_path,
                 ref=revision,
-                max_bytes=self._max_note_read_bytes,
+                # A section read is exempt from the whole-note cap, matching
+                # DocumentManager.read, which returns the section before it
+                # ever stats the file. The cap exists to bound what reaches
+                # the model, and the escape hatch it points callers at is
+                # precisely `section=`.
+                max_bytes=0 if section is not None else self._max_note_read_bytes,
             )
         )
         if section is None:

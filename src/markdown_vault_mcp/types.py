@@ -353,11 +353,8 @@ class WriteResult:
             withheld rather than pointing at an older revision that would look
             like the replaced content without being it.
 
-            Bounded, not absolute: two library writes racing on one note can
-            leave this naming a revision one generation older than the content
-            actually replaced, since the probe runs outside the write lock.  It
-            can never name a revision of a *different* note, which is the
-            property that matters for a caller about to restore from it.
+            The probe and the write share the vault's write lock, so no other
+            vault writer can change which note occupies the path in between.
     """
 
     path: str

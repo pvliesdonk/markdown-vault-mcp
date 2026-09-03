@@ -7,6 +7,7 @@ and no back-reference to :class:`Vault`.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import shutil
 import sqlite3
@@ -75,7 +76,7 @@ from markdown_vault_mcp.utils.text import (
 
 if TYPE_CHECKING:
     import threading
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
     from markdown_vault_mcp.scanner import ChunkStrategy
@@ -180,6 +181,19 @@ class DocumentManager:
             raise ReadOnlyError(
                 "Vault is read-only; write operations are not permitted."
             )
+
+    @contextlib.contextmanager
+    def write_scope(self) -> Iterator[None]:
+        """Hold the write lock across a caller's own read-then-write sequence.
+
+        The lock is re-entrant, so a caller may hold it while calling a write
+        method that takes it again.  Public because a decision made *from* the
+        current state — the overwrite breadcrumb (#1137) reads which commit
+        holds what is on disk — is only true if nothing else writes the note
+        between reading that state and acting on it.
+        """
+        with self._file_write_lock:
+            yield
 
     def ensure_writable(self) -> None:
         """Raise :exc:`ReadOnlyError` if the vault is read-only.

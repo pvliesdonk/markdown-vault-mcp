@@ -507,6 +507,124 @@ class TestRefusesRatherThanGuess:
             )
 
 
+class TestReviewFindings:
+    """Shapes a reviewer found that the first round of tests did not (#1288)."""
+
+    def test_history_outside_the_vault_is_refused(self, tmp_path: Path) -> None:
+        """A note renamed in from outside the vault does not leak its old home.
+
+        The caller's path is confined to the vault by validation, but the path
+        the walk resolves to is confined by nothing — a repository can hold far
+        more than the vault. Answering a vault query with a blob from outside
+        it breaks the containment every other read path enforces.
+        """
+        _init(tmp_path)
+        vault = tmp_path / "vault"
+        _write(tmp_path, "outside-secret.md", "SECRET OUTSIDE THE VAULT\n")
+        _write(tmp_path, "vault/seed.md", "seed\n")
+        first = _commit(tmp_path, "add")
+        _git(tmp_path, "mv", "outside-secret.md", "vault/note.md")
+        _commit(tmp_path, "rename into the vault")
+
+        with pytest.raises(ValueError, match="outside the vault") as exc:
+            _read_at(tmp_path, "note.md", first, vault=vault)
+        assert "SECRET" not in str(exc.value)
+
+    def test_section_read_is_exempt_from_the_whole_note_cap(
+        self, tmp_path: Path
+    ) -> None:
+        """`section=` escapes the cap at a revision exactly as it does on disk.
+
+        The cap bounds what reaches the model and points callers at `section=`
+        as the way around it; a revision read that applied it anyway would take
+        that escape hatch away precisely where the note is too big to read.
+        """
+        repo = tmp_path / "vault"
+        _init(repo)
+        _write(
+            repo,
+            "note.md",
+            "# Head\n\n## Wanted\n\nsmall section\n\n## Filler\n\n"
+            + ("filler line\n" * 200),
+        )
+        first = _commit(repo, "seed")
+        strategy = GitWriteStrategy(push_delay_s=0)
+        vault = Vault(
+            source_dir=repo,
+            git_strategy=strategy,
+            on_write=strategy,
+            read_only=False,
+            max_note_read_bytes=100,
+        )
+        vault.index.build_index()
+        try:
+            on_disk = vault.reader.read("note.md", section="Wanted")
+            assert on_disk is not None
+            at_revision = vault.reader.read_revision("note.md", first, section="Wanted")
+            assert at_revision.content.strip() == on_disk.content.strip()
+
+            # The whole note at that revision is still over the cap.
+            with pytest.raises(ValueError, match="MAX_NOTE_READ_BYTES"):
+                vault.reader.read_revision("note.md", first)
+        finally:
+            vault.close()
+
+    def test_git_lfs_pointer_is_refused(self, tmp_path: Path) -> None:
+        """An LFS-tracked note's blob is a pointer, and restoring it is data loss.
+
+        The working tree holds real bytes only because the smudge filter ran at
+        checkout; a revision read does not go through it.
+        """
+        _init(tmp_path)
+        _write(
+            tmp_path,
+            "note.md",
+            "version https://git-lfs.github.com/spec/v1\n"
+            "oid sha256:1111111111111111111111111111111111111111111111111111111111111111\n"
+            "size 42\n",
+        )
+        first = _commit(tmp_path, "commit an LFS pointer")
+
+        with pytest.raises(ValueError, match="Git LFS"):
+            _read_at(tmp_path, "note.md", first)
+
+    def test_breadcrumb_and_write_share_the_lock(self, git_vault: Vault) -> None:
+        """The probe runs with the vault's write lock already held.
+
+        Without that, another caller can replace which note occupies the path
+        between the probe and the write, and the breadcrumb then names a
+        commit belonging to a note this write never replaced.
+        """
+        import threading
+
+        held: list[bool] = []
+        original = git_vault._writer_facet._previous_revision
+        assert original is not None
+
+        def probe_under_inspection(path: str) -> str | None:
+            # A non-blocking acquire from another thread fails only while this
+            # thread holds the lock; re-entrant locks would let *this* thread
+            # take it again regardless, so the check has to be off-thread.
+            def try_acquire() -> None:
+                got = git_vault._file_write_lock.acquire(blocking=False)
+                held.append(not got)
+                if got:
+                    git_vault._file_write_lock.release()
+
+            probe = threading.Thread(target=try_acquire)
+            probe.start()
+            probe.join(timeout=5)
+            return original(path)
+
+        git_vault._writer_facet._previous_revision = probe_under_inspection
+        result = git_vault.writer.write("note.md", "# mine\n")
+
+        assert held == [True], "the write lock was not held during the probe"
+        assert result.previous_revision is not None
+        replaced = git_vault.reader.read_revision("note.md", result.previous_revision)
+        assert "# Head" in replaced.content
+
+
 class TestCommittedRevision:
     """The breadcrumb probe: it names a commit only when it can prove one."""
 

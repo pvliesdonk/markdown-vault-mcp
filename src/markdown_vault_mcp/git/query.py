@@ -821,6 +821,11 @@ def _per_commit_diffs(
 # Revision reads (#1137)
 # ---------------------------------------------------------------------------
 
+# First line of a Git LFS pointer file.  An LFS-tracked note's blob holds this
+# stand-in, not the note; the working tree gets the real bytes only because the
+# smudge filter ran at checkout, which a revision read does not go through.
+_LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1"
+
 # Git's file mode for a symlink.  The blob behind one holds the link *target*
 # as text, not the linked note's content, so a revision read refuses rather
 # than handing back a path string as though it were a note.
@@ -1016,6 +1021,29 @@ def _require_tracked(
         )
 
 
+def _require_inside_vault(historical: str, prefix: str, ref: str) -> None:
+    """Refuse a historical path that resolves outside the vault.
+
+    The caller's path is confined to the vault by ``validate_history_path``,
+    but the path the *walk* resolves to is confined by nothing: a git
+    repository can hold far more than the vault, and a note renamed in from
+    outside carries a repository-relative path from outside.  Reading that
+    blob would answer a vault query with content the vault never contained —
+    the containment guarantee every other read path enforces.  Where the vault
+    *is* the repository root the prefix is empty and nothing can fall outside
+    it.
+
+    Raises:
+        ValueError: If *historical* is not beneath *prefix*.
+    """
+    if prefix and not historical.startswith(prefix):
+        raise ValueError(
+            f"At revision {ref!r} this note lived at {historical!r}, outside the "
+            "vault. Its content there is not the vault's to return; use git "
+            "directly if you need history from outside the vault root."
+        )
+
+
 def _literal(path: str) -> str:
     """Return *path* as a pathspec git will not interpret as a glob.
 
@@ -1119,12 +1147,20 @@ def _blob_text(
     if blob.returncode != 0:
         raise ValueError(f"Could not read object {sha} from git history.")
     try:
-        return blob.stdout.decode()
+        text = blob.stdout.decode()
     except UnicodeDecodeError as exc:
         raise ValueError(
             "Content at that revision is not valid UTF-8, so it cannot be "
             "returned as a note."
         ) from exc
+    if text.startswith(_LFS_POINTER_PREFIX):
+        raise ValueError(
+            "That revision stores this note in Git LFS, so git holds a pointer "
+            "rather than the note's text. Restoring what git has here would "
+            "write the pointer over the note. Fetch the LFS object and read it "
+            "directly."
+        )
+    return text
 
 
 def get_file_at_ref(
@@ -1165,6 +1201,7 @@ def get_file_at_ref(
             "vault's source directory is not inside a git repository."
         )
     cur_rel = _repo_relative(git_root, query.path)
+    prefix = _vault_prefix(git_root, query.repo_path)
     env = git_env(token, username)
     try:
         _require_ancestor(git_root, query.ref, env)
@@ -1174,12 +1211,12 @@ def get_file_at_ref(
             cur_rel,
             query.ref,
         )
+        _require_inside_vault(historical, prefix, query.ref)
         sha, size = _tree_entry(git_root, query.ref, historical, env)
         content = _blob_text(git_root, sha, query.max_bytes, size, env)
     finally:
         cleanup_git_env(env)
 
-    prefix = _vault_prefix(git_root, query.repo_path)
     return RevisionContent(
         path=_strip_prefix(cur_rel, prefix),
         historical_path=_strip_prefix(historical, prefix),
