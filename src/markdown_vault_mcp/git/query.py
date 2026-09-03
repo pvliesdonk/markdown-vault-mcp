@@ -875,7 +875,7 @@ def _revision_walk_output(
                 f"--format={_HISTORY_SENTINEL}%H",
                 f"{ref}..HEAD",
                 "--",
-                cur_rel,
+                _literal(cur_rel),
             ],
             capture_output=True,
             text=True,
@@ -1002,7 +1002,7 @@ def _require_tracked(
     if not path.exists():
         return
     result = subprocess.run(
-        ["git", "-C", str(git_root), "ls-files", "--", cur_rel],
+        ["git", "-C", str(git_root), "ls-files", "--", _literal(cur_rel)],
         capture_output=True,
         text=True,
         check=False,
@@ -1016,77 +1016,115 @@ def _require_tracked(
         )
 
 
-def _blob_text(
-    git_root: Path, spec: str, max_bytes: int, env: dict[str, str] | None
-) -> str:
-    """Return the text of the blob named by *spec* (``<ref>:<path>``).
+def _literal(path: str) -> str:
+    """Return *path* as a pathspec git will not interpret as a glob.
 
-    Checks the object's type and size before materialising it, the revision
-    analogue of the ``stat()`` :meth:`DocumentManager.read` does — so an
-    oversized historical note is refused rather than buffered whole.  The blob
-    is read as bytes and decoded explicitly: a note that is not valid UTF-8 at
-    that revision is a caller-visible ``ValueError``, not a decode error
-    escaping from the subprocess layer.
+    A note may legitimately be named ``star*note.md`` or ``brack[et].md``, and
+    a bare pathspec is a wildmatch pattern, so such a name would silently
+    select whichever sibling it happens to match.  ``:(literal)`` turns off
+    that interpretation.
+    """
+    return f":(literal){path}"
+
+
+def _tree_entry(
+    git_root: Path, ref: str, repo_rel: str, env: dict[str, str] | None
+) -> tuple[str, str, int]:
+    """Return ``(mode, blob_sha, size)`` for *repo_rel* at *ref*.
+
+    Deliberately not ``git cat-file <ref>:<path>``.  That syntax is not a
+    pathspec but a revision expression, and git resolves an unmatched one to
+    whatever else it can parse: for a note named ``star*note.md`` it returns
+    the *commit* object, so a size check passes against the wrong object and
+    the subsequent blob read fails with a message on stderr and an exit status
+    of **zero** — which reads as an empty note.  Asking the tree instead keeps
+    the lookup a pathspec (glob-proof via :func:`_literal`) and yields the
+    mode, the object id, and the size in one call, with the blob then fetched
+    by its own hash.
 
     Raises:
-        ValueError: If the object is missing, is a symlink, exceeds
-            *max_bytes*, or does not decode as UTF-8.
+        ValueError: If nothing is recorded at that path, or the entry is not a
+            regular file (a symlink's blob holds its target path, not note
+            content; a directory has no content to return).
     """
-    probe = subprocess.run(
-        ["git", "-C", str(git_root), "cat-file", "-s", spec],
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(git_root),
+            "ls-tree",
+            "-l",
+            "-z",
+            ref,
+            "--",
+            _literal(repo_rel),
+        ],
         capture_output=True,
         text=True,
         check=False,
         env=env,
     )
-    if probe.returncode != 0:
+    entry = result.stdout.split("\0")[0].strip() if result.returncode == 0 else ""
+    if not entry:
         raise ValueError(
-            f"Not present at that revision: {spec!r} ({(probe.stderr or '').strip()})"
+            f"{repo_rel!r} is not present at revision {ref!r}"
+            f"{': ' + (result.stderr or '').strip() if result.stderr.strip() else '.'}"
         )
-    size = int(probe.stdout.strip() or 0)
+    # ``<mode> SP <type> SP <sha> SP* <size> TAB <path>`` — the path may hold
+    # anything, so split off the metadata by the single tab and no further.
+    meta = entry.split("\t", 1)[0].split()
+    if len(meta) != 4:
+        raise ValueError(f"Could not read {repo_rel!r} at revision {ref!r}.")
+    mode, kind, sha, size = meta
+    if mode == _SYMLINK_MODE:
+        raise ValueError(
+            f"{repo_rel!r} was a symlink at that revision; git stores its target "
+            "path rather than note content, so there is nothing to return."
+        )
+    if kind != "blob":
+        raise ValueError(
+            f"{repo_rel!r} was not a file at revision {ref!r} (git records a "
+            f"{kind}), so it has no content to return."
+        )
+    return mode, sha, int(size)
+
+
+def _blob_text(
+    git_root: Path, sha: str, max_bytes: int, size: int, env: dict[str, str] | None
+) -> str:
+    """Return the text of blob *sha*, refusing it if *size* is over the cap.
+
+    The size comes from the tree entry, so an oversized historical note is
+    refused before it is materialised — the revision analogue of the
+    ``stat()`` :meth:`DocumentManager.read` does.  The blob is read as bytes
+    and decoded explicitly: a note that is not valid UTF-8 at that revision is
+    a caller-visible ``ValueError``, not a decode error escaping the
+    subprocess layer.
+
+    Raises:
+        ValueError: If the blob exceeds *max_bytes*, cannot be read, or does
+            not decode as UTF-8.
+    """
     if 0 < max_bytes < size:
         raise ValueError(
             f"Note is {size} bytes at that revision, over the "
             f"{max_bytes}-byte MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES limit."
         )
     blob = subprocess.run(
-        ["git", "-C", str(git_root), "cat-file", "blob", spec],
+        ["git", "-C", str(git_root), "cat-file", "blob", sha],
         capture_output=True,
         check=False,
         env=env,
     )
     if blob.returncode != 0:
-        raise ValueError(f"Could not read {spec!r} from git history.")
+        raise ValueError(f"Could not read object {sha} from git history.")
     try:
         return blob.stdout.decode()
     except UnicodeDecodeError as exc:
         raise ValueError(
-            f"Content at {spec!r} is not valid UTF-8, so it cannot be returned "
-            "as a note."
+            "Content at that revision is not valid UTF-8, so it cannot be "
+            "returned as a note."
         ) from exc
-
-
-def _require_regular_file(
-    git_root: Path, ref: str, repo_rel: str, env: dict[str, str] | None
-) -> None:
-    """Refuse a path that git stored as a symlink at *ref*.
-
-    Git keeps a symlink's *target path* in its blob, so reading one would hand
-    back a filename where the caller expects note text; a read on disk would
-    have followed the link instead.
-    """
-    result = subprocess.run(
-        ["git", "-C", str(git_root), "ls-tree", ref, "--", repo_rel],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-    if result.stdout.startswith(_SYMLINK_MODE):
-        raise ValueError(
-            f"{repo_rel!r} was a symlink at that revision; git stores its target "
-            "path rather than note content, so there is nothing to return."
-        )
 
 
 def get_file_at_ref(
@@ -1136,10 +1174,8 @@ def get_file_at_ref(
             cur_rel,
             query.ref,
         )
-        _require_regular_file(git_root, query.ref, historical, env)
-        content = _blob_text(
-            git_root, f"{query.ref}:{historical}", query.max_bytes, env
-        )
+        _mode, sha, size = _tree_entry(git_root, query.ref, historical, env)
+        content = _blob_text(git_root, sha, query.max_bytes, size, env)
     finally:
         cleanup_git_env(env)
 
@@ -1180,7 +1216,16 @@ def committed_revision(
     try:
         rel = _repo_relative(git_root, path)
         found = subprocess.run(
-            ["git", "-C", str(git_root), "log", "-1", "--format=%H", "--", rel],
+            [
+                "git",
+                "-C",
+                str(git_root),
+                "log",
+                "-1",
+                "--format=%H",
+                "--",
+                _literal(rel),
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -1190,7 +1235,7 @@ def committed_revision(
         if found.returncode != 0 or not sha:
             return None
         tracked = subprocess.run(
-            ["git", "-C", str(git_root), "ls-files", "--", rel],
+            ["git", "-C", str(git_root), "ls-files", "--", _literal(rel)],
             capture_output=True,
             text=True,
             check=False,
@@ -1202,7 +1247,7 @@ def committed_revision(
             # deleted it — a breadcrumb pointing at content that is not there.
             return None
         clean = subprocess.run(
-            ["git", "-C", str(git_root), "diff", "--quiet", sha, "--", rel],
+            ["git", "-C", str(git_root), "diff", "--quiet", sha, "--", _literal(rel)],
             capture_output=True,
             check=False,
             env=env,

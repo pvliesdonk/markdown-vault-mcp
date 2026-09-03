@@ -201,6 +201,32 @@ class TestResolvesTheNote:
 
         assert _read_at(tmp_path, "gone.md", first).content == "# Wanted\n"
 
+    @pytest.mark.parametrize("note", ["star*note.md", "brack[et].md", "-dash.md"])
+    def test_path_that_looks_like_a_glob_or_an_option(
+        self, tmp_path: Path, note: str
+    ) -> None:
+        """A note named like a pattern reads as itself, not as what it matches.
+
+        Two traps here, and the second is the dangerous one. A bare pathspec
+        is a wildmatch pattern, so ``star*note.md`` would select whichever
+        sibling it matched. And ``<ref>:<path>`` is a revision expression
+        rather than a pathspec: git resolves an unmatched one to whatever else
+        it can parse — for this name, the *commit* object — after which the
+        blob read fails on stderr with an exit status of zero, which reads
+        back as an empty note. Writing that over the note is what the
+        documented recovery route would then do.
+        """
+        _init(tmp_path)
+        _write(tmp_path, note, "THE PATTERN NOTE\n")
+        _write(tmp_path, "starDECOYnote.md", "A DECOY the pattern would match\n")
+        first = _commit(tmp_path, "add")
+        _write(tmp_path, "unrelated.md", "later\n")
+        _commit(tmp_path, "unrelated")
+
+        result = _read_at(tmp_path, note, first)
+        assert result.content == "THE PATTERN NOTE\n"
+        assert result.historical_path == note
+
     def test_non_ascii_path(self, tmp_path: Path) -> None:
         """Paths git would octal-escape survive: the walk is NUL-framed (#1282)."""
         _init(tmp_path)
@@ -338,6 +364,34 @@ class TestRefusesRatherThanGuess:
         with pytest.raises(ValueError, match="not tracked by git") as exc:
             _read_at(tmp_path, "a.md", first)
         assert "OLD note" not in str(exc.value)
+
+    def test_untracked_note_whose_name_is_a_pattern_matching_a_sibling(
+        self, tmp_path: Path
+    ) -> None:
+        """The untracked guard must not be satisfied by a *different* note.
+
+        ``git ls-files`` and ``git log`` glob their pathspecs (``ls-tree``
+        does not), so a note named ``n*te.md`` matches a tracked sibling
+        ``n!te.md``. Without literal pathspecs the guard sees that sibling,
+        concludes the note is tracked, and the walk goes on to hand back the
+        content of the note that was deleted from this path — under the new
+        note's name, which is the one failure this feature exists to prevent.
+        """
+        _init(tmp_path)
+        _write(tmp_path, "n!te.md", "DECOY, and tracked throughout\n")
+        _write(tmp_path, "n*te.md", "THE ORIGINAL at this path\n")
+        first = _commit(tmp_path, "add both")
+        # Literal magic here too: `git rm` globs its pathspec, so the bare
+        # name would take the decoy with it and leave nothing tracked, which
+        # would satisfy the guard for the wrong reason.
+        _git(tmp_path, "rm", "-q", "--", ":(literal)n*te.md")
+        _commit(tmp_path, "delete the pattern-named note")
+        assert _git(tmp_path, "ls-files").split() == ["n!te.md"]
+        _write(tmp_path, "n*te.md", "A NEW, untracked note reusing the name\n")
+
+        with pytest.raises(ValueError, match="not tracked by git") as exc:
+            _read_at(tmp_path, "n*te.md", first)
+        assert "THE ORIGINAL" not in str(exc.value)
 
     def test_rename_that_rewrote_the_note_entirely(self, tmp_path: Path) -> None:
         """Below any similarity threshold git reports an add; that is a refusal."""
