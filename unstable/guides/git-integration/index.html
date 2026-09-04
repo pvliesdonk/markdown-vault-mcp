@@ -847,6 +847,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#when-the-clone-stops-reaching-its-remote" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When the clone stops reaching its remote
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#unmanaged-commit-only-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2105,6 +2116,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#when-the-clone-stops-reaching-its-remote" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When the clone stops reaching its remote
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#unmanaged-commit-only-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2384,6 +2406,39 @@ the <a href="../../tools/#git_sync"><code>git_sync</code> tool reference</a>.</p
 <p><code>git_sync</code> is hidden when the deployment isn't in managed git mode (no
 <code>MARKDOWN_VAULT_MCP_GIT_REPO_URL</code> set) or when
 <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code>.</p>
+<h2 id="when-the-clone-stops-reaching-its-remote">When the clone stops reaching its remote<a class="headerlink" href="#when-the-clone-stops-reaching-its-remote" title="Permanent link">&para;</a></h2>
+<p>A clone can end up unable to send its commits: another writer pushed first
+and the rejection stands, or the histories diverged in a way the conflict
+resolver gave up on. Writes keep working (the commit lands, <code>read</code> serves it
+back), but nothing reaches the remote.</p>
+<p>Two things make that visible.</p>
+<p><strong>Every write tool says so.</strong> While the clone is not reaching its remote,
+each write result carries a <code>remote</code> object with <code>state</code>, <code>reason</code>, <code>since</code>,
+and a <code>detail</code> sentence for the caller to act on. See
+<a href="../../tools/#write-operations">the write-tools reference</a> for the shape
+and its limits. This is the signal for a client whose only route to the
+repository is this server: it says the content is committed locally only, so
+the client can keep its own copy instead of treating the note as saved.</p>
+<p><strong>The log records the transition, not the cycle.</strong> Entering that state logs
+once at <code>ERROR</code>:</p>
+<div class="highlight"><pre><span></span><code>ERROR markdown_vault_mcp.git.health: git_remote_unsynced kind=push reason=non_fast_forward ...
+</code></pre></div>
+<p>Recovery logs once at <code>INFO</code> (<code>git_remote_resynced</code>), carrying when the
+outage started. The per-attempt lines behind both conditions (a rejected
+push, and a pull that could not resolve the divergence) sit at <code>DEBUG</code>, where
+they keep the full git stderr for whoever is diagnosing the outage. Two kinds
+of failure stay loud, because neither is a cycle that repeats harmlessly: an
+unexpected exception on the push or resolve path, and a failure that can
+leave the working tree inconsistent (a rebase that would not abort, an
+upstream file that would not restore). Alert on the transition
+lines: a repeated warning every sync cycle is easy to scroll past, which is
+how the incident behind
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287">#1287</a> ran for
+hours before anyone noticed.</p>
+<p>Both signals clear on their own once a push succeeds, or once a pull
+reconciles the divergence that raised them. A successful pull does not clear
+a failed push: reading from the remote is no evidence that anything reached
+it.</p>
 <h2 id="unmanaged-commit-only-mode">Unmanaged / Commit-Only Mode<a class="headerlink" href="#unmanaged-commit-only-mode" title="Permanent link">&para;</a></h2>
 <p>Use unmanaged mode when another process controls pull/push, but you still want MCP writes committed locally.</p>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_SOURCE_DIR</span><span class="o">=</span>/data/vault

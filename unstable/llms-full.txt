@@ -808,6 +808,24 @@ The full enumeration of `pull.reason` and `push.reason` values lives in the [`gi
 
 `git_sync` is hidden when the deployment isn't in managed git mode (no `MARKDOWN_VAULT_MCP_GIT_REPO_URL` set) or when `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
 
+## When the clone stops reaching its remote
+
+A clone can end up unable to send its commits: another writer pushed first and the rejection stands, or the histories diverged in a way the conflict resolver gave up on. Writes keep working (the commit lands, `read` serves it back), but nothing reaches the remote.
+
+Two things make that visible.
+
+**Every write tool says so.** While the clone is not reaching its remote, each write result carries a `remote` object with `state`, `reason`, `since`, and a `detail` sentence for the caller to act on. See [the write-tools reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#write-operations) for the shape and its limits. This is the signal for a client whose only route to the repository is this server: it says the content is committed locally only, so the client can keep its own copy instead of treating the note as saved.
+
+**The log records the transition, not the cycle.** Entering that state logs once at `ERROR`:
+
+```
+ERROR markdown_vault_mcp.git.health: git_remote_unsynced kind=push reason=non_fast_forward ...
+```
+
+Recovery logs once at `INFO` (`git_remote_resynced`), carrying when the outage started. The per-attempt lines behind both conditions (a rejected push, and a pull that could not resolve the divergence) sit at `DEBUG`, where they keep the full git stderr for whoever is diagnosing the outage. Two kinds of failure stay loud, because neither is a cycle that repeats harmlessly: an unexpected exception on the push or resolve path, and a failure that can leave the working tree inconsistent (a rebase that would not abort, an upstream file that would not restore). Alert on the transition lines: a repeated warning every sync cycle is easy to scroll past, which is how the incident behind [#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287) ran for hours before anyone noticed.
+
+Both signals clear on their own once a push succeeds, or once a pull reconciles the divergence that raised them. A successful pull does not clear a failed push: reading from the remote is no evidence that anything reached it.
+
 ## Unmanaged / Commit-Only Mode
 
 Use unmanaged mode when another process controls pull/push, but you still want MCP writes committed locally.
@@ -4957,6 +4975,20 @@ Write tools are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`
 They are registered by default. Set the variable to `true` for a search-only vault; through 3.1 that was the default, so a server upgrading from 3.x without setting it gains these tools.
 
 Several of them carry a second gate that this flag does not lift: `git_sync` needs managed git mode, `create_upload_link` needs an HTTP transport with `BASE_URL`, and the `okf_*` tools need OKF semantics active. Each is noted on its own entry below.
+
+`remote`: the write is committed locally only
+
+On a git-backed vault that syncs with a remote, every write tool's result grows a `remote` object while the clone is not reaching that remote, after a rejected push or a divergence the conflict resolver could not reconcile:
+
+```
+{"state": "unsynced", "reason": "non_fast_forward",
+ "since": "2026-09-04T07:12:33+00:00",
+ "detail": "This vault's git clone has not reached its remote since ..."}
+```
+
+The write still succeeded and the commit is real; it cannot leave the host. A client that sees this should keep its own copy of what it wrote and tell the user, rather than treating the note as saved elsewhere. The key is **absent** (not null) whenever there is nothing to report: no git, no remote, or a clone that is reaching it.
+
+It reports the sync state known when the response was built, never the fate of that particular write: the commit runs off the request thread and the push is deferred, so the first write after a break can still answer clean and the next one warns. `git_sync` carries no such key, because it reports the sync outcome directly.
 
 ### `write`
 
@@ -9173,32 +9205,42 @@ Raises:
 
 ### `force_push(*, dry_run=False)`
 
-Push local commits to `origin` synchronously.
+Push local commits to `origin`, recording what the remote said.
 
-Never force-pushes — the underlying `git push origin` is a plain fast-forward push. When the remote has commits the local clone has not seen, the push is rejected and the returned :class:`PushResult` carries `reason="non_fast_forward"` plus a hint pointing at `git_sync(direction='pull')`. The caller is expected to reconcile via the pull path and then retry.
-
-Acquires :attr:`_lock` for the duration so the periodic pull loop and the per-write commit + deferred-push pipeline cannot race against the synchronous push. This blocks writes for the network round-trip; that is acceptable for the interactive `git_sync` tool and mirrors :meth:`force_pull`.
-
-`dry_run` is a no-op. Git has no safe local probe for "would this push be accepted by the remote": the only authoritative check is to actually attempt the push. Rather than silently substitute a misleading approximation, we surface this with `reason="dry_run_unsupported"` so callers can document the limitation.
+Holds the strategy-wide lock across both the push (:meth:`_push_locked`) and the recording of its outcome, so the interactive push feeds the same sync-health tracker as the deferred one (#1287) and cannot publish out of order against it (PR #1300). The two observe the same remote, so a caller warned about stranded writes stops being warned as soon as either of them lands.
 
 Parameters:
 
-| Name      | Type   | Description                                                                                | Default |
-| --------- | ------ | ------------------------------------------------------------------------------------------ | ------- |
-| `dry_run` | `bool` | When True, returns immediately without contacting the remote. See above for the rationale. | `False` |
+| Name      | Type   | Description              | Default |
+| --------- | ------ | ------------------------ | ------- |
+| `dry_run` | `bool` | See :meth:\_push_locked. | `False` |
 
 Returns:
 
-| Type         | Description                                        |
-| ------------ | -------------------------------------------------- |
-| `PushResult` | class:PushResult describing the operation. See the |
-| `PushResult` | reason field for the full enumeration of outcomes. |
+| Name  | Type         | Description                                    |
+| ----- | ------------ | ---------------------------------------------- |
+| `The` | `PushResult` | class:PushResult the push produced, unchanged. |
 
 Raises:
 
 | Type           | Description                                          |
 | -------------- | ---------------------------------------------------- |
 | `RuntimeError` | When the strategy was constructed without repo_path. |
+
+### `sync_health()`
+
+Report whether this clone is known not to be reaching its remote.
+
+Read without taking the strategy-wide lock, so a write response never blocks behind an in-flight pull.
+
+Returns:
+
+| Name | Type         | Description |
+| ---- | ------------ | ----------- |
+| `A`  | \`SyncHealth | None\`      |
+|      | \`SyncHealth | None\`      |
+|      | \`SyncHealth | None\`      |
+|      | \`SyncHealth | None\`      |
 
 ### `sync_once(repo_path)`
 

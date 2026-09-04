@@ -3816,6 +3816,27 @@ upgrading from 3.x without setting it gains these tools.</p>
 transport with <code>BASE_URL</code>, and the <code>okf_*</code> tools need OKF semantics
 active. Each is noted on its own entry below.</p>
 </div>
+<div class="admonition warning">
+<p class="admonition-title"><code>remote</code>: the write is committed locally only</p>
+<p>On a git-backed vault that syncs with a remote, every write tool's
+result grows a <code>remote</code> object while the clone is not reaching that
+remote, after a rejected push or a divergence the conflict resolver
+could not reconcile:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unsynced"</span><span class="p">,</span><span class="w"> </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"non_fast_forward"</span><span class="p">,</span>
+<span class="w"> </span><span class="nt">"since"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-09-04T07:12:33+00:00"</span><span class="p">,</span>
+<span class="w"> </span><span class="nt">"detail"</span><span class="p">:</span><span class="w"> </span><span class="s2">"This vault's git clone has not reached its remote since ..."</span><span class="p">}</span>
+</code></pre></div>
+<p>The write still succeeded and the commit is real; it cannot leave the
+host. A client that sees this should keep its own copy of what it wrote
+and tell the user, rather than treating the note as saved elsewhere. The
+key is <strong>absent</strong> (not null) whenever there is nothing to report: no git,
+no remote, or a clone that is reaching it.</p>
+<p>It reports the sync state known when the response was built, never the
+fate of that particular write: the commit runs off the request thread and
+the push is deferred, so the first write after a break can still answer
+clean and the next one warns. <code>git_sync</code> carries no such key, because it
+reports the sync outcome directly.</p>
+</div>
 <h3 id="write"><code>write</code><a class="headerlink" href="#write" title="Permanent link">&para;</a></h3>
 <p>Create or overwrite a document or attachment.</p>
 <p><strong>Parameters:</strong></p>

@@ -133,6 +133,24 @@ The full enumeration of `pull.reason` and `push.reason` values lives in the [`gi
 
 `git_sync` is hidden when the deployment isn't in managed git mode (no `MARKDOWN_VAULT_MCP_GIT_REPO_URL` set) or when `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
 
+## When the clone stops reaching its remote
+
+A clone can end up unable to send its commits: another writer pushed first and the rejection stands, or the histories diverged in a way the conflict resolver gave up on. Writes keep working (the commit lands, `read` serves it back), but nothing reaches the remote.
+
+Two things make that visible.
+
+**Every write tool says so.** While the clone is not reaching its remote, each write result carries a `remote` object with `state`, `reason`, `since`, and a `detail` sentence for the caller to act on. See [the write-tools reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#write-operations) for the shape and its limits. This is the signal for a client whose only route to the repository is this server: it says the content is committed locally only, so the client can keep its own copy instead of treating the note as saved.
+
+**The log records the transition, not the cycle.** Entering that state logs once at `ERROR`:
+
+```
+ERROR markdown_vault_mcp.git.health: git_remote_unsynced kind=push reason=non_fast_forward ...
+```
+
+Recovery logs once at `INFO` (`git_remote_resynced`), carrying when the outage started. The per-attempt lines behind both conditions (a rejected push, and a pull that could not resolve the divergence) sit at `DEBUG`, where they keep the full git stderr for whoever is diagnosing the outage. Two kinds of failure stay loud, because neither is a cycle that repeats harmlessly: an unexpected exception on the push or resolve path, and a failure that can leave the working tree inconsistent (a rebase that would not abort, an upstream file that would not restore). Alert on the transition lines: a repeated warning every sync cycle is easy to scroll past, which is how the incident behind [#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287) ran for hours before anyone noticed.
+
+Both signals clear on their own once a push succeeds, or once a pull reconciles the divergence that raised them. A successful pull does not clear a failed push: reading from the remote is no evidence that anything reached it.
+
 ## Unmanaged / Commit-Only Mode
 
 Use unmanaged mode when another process controls pull/push, but you still want MCP writes committed locally.

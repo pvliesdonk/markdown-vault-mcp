@@ -342,6 +342,20 @@ They are registered by default. Set the variable to `true` for a search-only vau
 
 Several of them carry a second gate that this flag does not lift: `git_sync` needs managed git mode, `create_upload_link` needs an HTTP transport with `BASE_URL`, and the `okf_*` tools need OKF semantics active. Each is noted on its own entry below.
 
+`remote`: the write is committed locally only
+
+On a git-backed vault that syncs with a remote, every write tool's result grows a `remote` object while the clone is not reaching that remote, after a rejected push or a divergence the conflict resolver could not reconcile:
+
+```
+{"state": "unsynced", "reason": "non_fast_forward",
+ "since": "2026-09-04T07:12:33+00:00",
+ "detail": "This vault's git clone has not reached its remote since ..."}
+```
+
+The write still succeeded and the commit is real; it cannot leave the host. A client that sees this should keep its own copy of what it wrote and tell the user, rather than treating the note as saved elsewhere. The key is **absent** (not null) whenever there is nothing to report: no git, no remote, or a clone that is reaching it.
+
+It reports the sync state known when the response was built, never the fate of that particular write: the commit runs off the request thread and the push is deferred, so the first write after a break can still answer clean and the next one warns. `git_sync` carries no such key, because it reports the sync outcome directly.
+
 ### `write`
 
 Create or overwrite a document or attachment.

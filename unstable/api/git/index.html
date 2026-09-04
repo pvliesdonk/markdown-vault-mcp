@@ -1836,6 +1836,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteStrategy.sync_health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sync_health
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.git.GitWriteStrategy.sync_once" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2269,6 +2280,17 @@
     <span class="md-ellipsis">
       
         force_push
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteStrategy.sync_health" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sync_health
       
     </span>
   </a>
@@ -3361,24 +3383,13 @@ that <em>would</em> have been pulled.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Push local commits to <code>origin</code> synchronously.</p>
-<p>Never force-pushes — the underlying <code>git push origin</code> is a plain
-fast-forward push.  When the remote has commits the local clone
-has not seen, the push is rejected and the returned
-:class:<code>PushResult</code> carries <code>reason="non_fast_forward"</code> plus a
-hint pointing at <code>git_sync(direction='pull')</code>.  The caller is
-expected to reconcile via the pull path and then retry.</p>
-<p>Acquires :attr:<code>_lock</code> for the duration so the periodic pull loop
-and the per-write commit + deferred-push pipeline cannot race
-against the synchronous push.  This blocks writes for the network
-round-trip; that is acceptable for the interactive <code>git_sync</code>
-tool and mirrors :meth:<code>force_pull</code>.</p>
-<p><code>dry_run</code> is a no-op.  Git has no safe local probe for "would
-this push be accepted by the remote": the only authoritative
-check is to actually attempt the push.  Rather than silently
-substitute a misleading approximation, we surface this with
-<code>reason="dry_run_unsupported"</code> so callers can document the
-limitation.</p>
+        <p>Push local commits to <code>origin</code>, recording what the remote said.</p>
+<p>Holds the strategy-wide lock across both the push (:meth:<code>_push_locked</code>)
+and the recording of its outcome, so the interactive push feeds the
+same sync-health tracker as the deferred one (#1287) and cannot
+publish out of order against it (PR #1300).  The two observe the same
+remote, so a caller warned about stranded writes stops being warned as
+soon as either of them lands.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -3401,8 +3412,7 @@ limitation.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>When <code>True</code>, returns immediately without contacting
-the remote.  See above for the rationale.</p>
+                <p>See :meth:<code>_push_locked</code>.</p>
               </div>
             </td>
             <td>
@@ -3417,28 +3427,18 @@ the remote.  See above for the rationale.</p>
     <table>
       <thead>
         <tr>
-          <th>Type</th>
+<th>Name</th>          <th>Type</th>
           <th>Description</th>
         </tr>
       </thead>
       <tbody>
           <tr class="doc-section-item">
-            <td>
+<td><code>The</code></td>            <td>
                   <code><span title="markdown_vault_mcp.git.types.PushResult">PushResult</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>class:<code>PushResult</code> describing the operation.  See the</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><span title="markdown_vault_mcp.git.types.PushResult">PushResult</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p><code>reason</code> field for the full enumeration of outcomes.</p>
+                <p>class:<code>PushResult</code> the push produced, unchanged.</p>
               </div>
             </td>
           </tr>
@@ -3463,6 +3463,79 @@ the remote.  See above for the rationale.</p>
               <div class="doc-md-description">
                 <p>When the strategy was constructed without
 <code>repo_path</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.git.GitWriteStrategy.sync_health" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">sync_health</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.git.GitWriteStrategy.sync_health" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Report whether this clone is known not to be reaching its remote.</p>
+<p>Read without taking the strategy-wide lock, so a write response never
+blocks behind an in-flight pull.</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+<th>Name</th>          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+<td><code>A</code></td>            <td>
+                  <code><span title="markdown_vault_mcp.git.health.SyncHealth">SyncHealth</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>class:<code>~markdown_vault_mcp.git.health.SyncHealth</code> while the</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="markdown_vault_mcp.git.health.SyncHealth">SyncHealth</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>clone is unsynced, or <code>None</code> when it is reaching its remote (or</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="markdown_vault_mcp.git.health.SyncHealth">SyncHealth</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>has never tried — a commit-only vault never pushes, so it never</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+<td></td>            <td>
+                  <code><span title="markdown_vault_mcp.git.health.SyncHealth">SyncHealth</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>reports anything).</p>
               </div>
             </td>
           </tr>

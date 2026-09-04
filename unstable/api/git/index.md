@@ -199,32 +199,42 @@ Raises:
 
 ### `force_push(*, dry_run=False)`
 
-Push local commits to `origin` synchronously.
+Push local commits to `origin`, recording what the remote said.
 
-Never force-pushes — the underlying `git push origin` is a plain fast-forward push. When the remote has commits the local clone has not seen, the push is rejected and the returned :class:`PushResult` carries `reason="non_fast_forward"` plus a hint pointing at `git_sync(direction='pull')`. The caller is expected to reconcile via the pull path and then retry.
-
-Acquires :attr:`_lock` for the duration so the periodic pull loop and the per-write commit + deferred-push pipeline cannot race against the synchronous push. This blocks writes for the network round-trip; that is acceptable for the interactive `git_sync` tool and mirrors :meth:`force_pull`.
-
-`dry_run` is a no-op. Git has no safe local probe for "would this push be accepted by the remote": the only authoritative check is to actually attempt the push. Rather than silently substitute a misleading approximation, we surface this with `reason="dry_run_unsupported"` so callers can document the limitation.
+Holds the strategy-wide lock across both the push (:meth:`_push_locked`) and the recording of its outcome, so the interactive push feeds the same sync-health tracker as the deferred one (#1287) and cannot publish out of order against it (PR #1300). The two observe the same remote, so a caller warned about stranded writes stops being warned as soon as either of them lands.
 
 Parameters:
 
-| Name      | Type   | Description                                                                                | Default |
-| --------- | ------ | ------------------------------------------------------------------------------------------ | ------- |
-| `dry_run` | `bool` | When True, returns immediately without contacting the remote. See above for the rationale. | `False` |
+| Name      | Type   | Description              | Default |
+| --------- | ------ | ------------------------ | ------- |
+| `dry_run` | `bool` | See :meth:\_push_locked. | `False` |
 
 Returns:
 
-| Type         | Description                                        |
-| ------------ | -------------------------------------------------- |
-| `PushResult` | class:PushResult describing the operation. See the |
-| `PushResult` | reason field for the full enumeration of outcomes. |
+| Name  | Type         | Description                                    |
+| ----- | ------------ | ---------------------------------------------- |
+| `The` | `PushResult` | class:PushResult the push produced, unchanged. |
 
 Raises:
 
 | Type           | Description                                          |
 | -------------- | ---------------------------------------------------- |
 | `RuntimeError` | When the strategy was constructed without repo_path. |
+
+### `sync_health()`
+
+Report whether this clone is known not to be reaching its remote.
+
+Read without taking the strategy-wide lock, so a write response never blocks behind an in-flight pull.
+
+Returns:
+
+| Name | Type         | Description |
+| ---- | ------------ | ----------- |
+| `A`  | \`SyncHealth | None\`      |
+|      | \`SyncHealth | None\`      |
+|      | \`SyncHealth | None\`      |
+|      | \`SyncHealth | None\`      |
 
 ### `sync_once(repo_path)`
 
