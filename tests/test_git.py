@@ -1114,7 +1114,9 @@ class TestTokenRedactionInLogs:
 
         with (
             patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=fake_exc),
-            caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
+            # The per-attempt line sits at DEBUG since #1287: the transition
+            # into the unsynced state is what gets logged loudly, once.
+            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"),
         ):
             strategy._push_scheduler.do_push_safe()
 
@@ -1180,7 +1182,7 @@ class TestTokenRedactionInLogs:
 
         with (
             patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=fake_exc),
-            caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
+            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"),
         ):
             strategy._push_scheduler.push_if_unpushed()
 

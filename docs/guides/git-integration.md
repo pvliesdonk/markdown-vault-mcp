@@ -241,6 +241,43 @@ the [`git_sync` tool reference](../tools/index.md#git_sync).
 `MARKDOWN_VAULT_MCP_GIT_REPO_URL` set) or when
 `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
 
+## When the clone stops reaching its remote
+
+A clone can end up unable to send its commits: another writer pushed first
+and the rejection stands, or the histories diverged in a way the conflict
+resolver gave up on. Writes keep working (the commit lands, `read` serves it
+back), but nothing reaches the remote.
+
+Two things make that visible.
+
+**Every write tool says so.** While the clone is not reaching its remote,
+each write result carries a `remote` object with `state`, `reason`, `since`,
+and a `detail` sentence for the caller to act on. See
+[the write-tools reference](../tools/index.md#write-operations) for the shape
+and its limits. This is the signal for a client whose only route to the
+repository is this server: it says the content is committed locally only, so
+the client can keep its own copy instead of treating the note as saved.
+
+**The log records the transition, not the cycle.** Entering that state logs
+once at `ERROR`:
+
+```
+ERROR markdown_vault_mcp.git.health: git_remote_unsynced kind=push reason=non_fast_forward ...
+```
+
+Recovery logs once at `INFO` (`git_remote_resynced`), carrying when the
+outage started. A rejected push and a failed pull sit at `DEBUG`, where they
+hold the full git stderr for whoever is diagnosing the outage. Alert on the
+transition lines: a repeated warning every sync cycle is easy to scroll past,
+which is how the incident behind
+[#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287) ran for
+hours before anyone noticed.
+
+Both signals clear on their own once a push succeeds, or once a pull
+reconciles the divergence that raised them. A successful pull does not clear
+a failed push: reading from the remote is no evidence that anything reached
+it.
+
 ## Unmanaged / Commit-Only Mode
 
 Use unmanaged mode when another process controls pull/push, but you still want MCP writes committed locally.

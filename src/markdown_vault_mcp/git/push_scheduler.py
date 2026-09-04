@@ -27,9 +27,12 @@ from markdown_vault_mcp.git._run import (
     redact,
     resolve_tracking_ref,
 )
+from markdown_vault_mcp.git.health import push_failure_reason
+from markdown_vault_mcp.git.types import PUSH_REASON_PUSH_FAILED
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.git.bootstrap import RepoBootstrap
+    from markdown_vault_mcp.git.health import SyncHealthTracker
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,9 @@ class PushScheduler:
     lock.  The strategy's pull loop retries a failed deferred push through
     :meth:`do_push_safe` (#957), and the strategy's public ``flush`` /
     ``close`` delegate their timer/pending mechanics to :meth:`flush`.
+    Every push outcome is reported to the strategy's sync-health tracker
+    (#1287), which is what tells a write's caller that its commits are not
+    reaching the remote.
 
     Args:
         lock: The strategy-wide lock, shared with the strategy's pull/write
@@ -52,6 +58,9 @@ class PushScheduler:
             introduces no lock of its own.
         bootstrap: The repo-bootstrap collaborator; supplies the memoised
             git root and the token/username credentials for push auth.
+        health: The strategy's sync-health tracker (#1287).  Every push
+            outcome is reported to it, so the MCP write path can tell a
+            caller that its commits are not leaving the host.
         enable_push: Whether deferred push behaviour is enabled at all.
         push_delay_s: Seconds of idle before the timer pushes.  ``0``
             disables the timer (push only on ``flush``/``close``).
@@ -62,11 +71,13 @@ class PushScheduler:
         *,
         lock: threading.Lock,
         bootstrap: RepoBootstrap,
+        health: SyncHealthTracker,
         enable_push: bool,
         push_delay_s: float,
     ) -> None:
         self._lock = lock
         self._bootstrap = bootstrap
+        self._health = health
         self._enable_push = enable_push
         self._push_delay_s = push_delay_s
         self._push_pending = False
@@ -103,19 +114,32 @@ class PushScheduler:
                 self._timer.start()
 
     def do_push_safe(self) -> None:
-        """Push wrapper that catches and logs errors."""
+        """Push wrapper that catches errors and records the outcome.
+
+        Both failure arms report to the sync-health tracker (#1287): a push
+        that does not land is what strands a caller's writes on the host, and
+        the tracker is what makes that visible on the next write's result.
+        A rejected push logs at DEBUG, where it keeps the git stderr for
+        diagnosis: the tracker logs the transition into the failed state
+        once, instead of every cycle.  An *unexpected* exception is not that
+        routine event and stays at ERROR with its traceback — repeating it is
+        the point, since it means a bug on the push path rather than a remote
+        that has moved on.
+        """
         try:
             self.do_push()
         except subprocess.CalledProcessError as exc:
             sanitized_stderr = self._redact(exc.stderr or "")
-            logger.error(
-                "Git push failed: command %s returned %d\n%s",
+            logger.debug(
+                "git_push_failed cmd=%s returncode=%d stderr=%s",
                 exc.cmd,
                 exc.returncode,
                 sanitized_stderr,
             )
+            self._health.push_failed(push_failure_reason(sanitized_stderr))
         except Exception:
             logger.error("Git push failed", exc_info=True)
+            self._health.push_failed(PUSH_REASON_PUSH_FAILED)
 
     def do_push(self) -> None:
         """Execute git push and clear the pending flag on success.
@@ -133,6 +157,7 @@ class PushScheduler:
                 return
             _push(git_root, self._token, self._username)
             self._push_pending = False
+            self._health.push_succeeded()
             logger.info("Git: pushed to remote")
 
     def push_if_unpushed(self) -> None:
@@ -178,12 +203,15 @@ class PushScheduler:
                 _push(git_root, self._token, self._username)
             except subprocess.CalledProcessError as exc:
                 sanitized_stderr = self._redact(exc.stderr or "")
-                logger.error(
-                    "Git startup push failed: command %s returned %d\n%s",
+                logger.debug(
+                    "git_startup_push_failed cmd=%s returncode=%d stderr=%s",
                     exc.cmd,
                     exc.returncode,
                     sanitized_stderr,
                 )
+                self._health.push_failed(push_failure_reason(sanitized_stderr))
+            else:
+                self._health.push_succeeded()
 
     def flush(self) -> None:
         """Block until any pending push completes.

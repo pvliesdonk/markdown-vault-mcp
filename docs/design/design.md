@@ -3802,9 +3802,56 @@ the strategy closed (subsequent writes are ignored), stops the pull thread,
 then calls `flush()`. The pull loop retries a failed deferred push via
 `PushScheduler.do_push_safe()` after each tick (#957).
 
-**Strategy collaborators (#893)**: `GitWriteStrategy` composes two
+**Sync health (`git/health.py`, #1287)**: a clone whose pushes are being
+rejected keeps accepting writes — the commit lands, `read` serves it back —
+so a client whose only route to the repository is this server believes it
+saved work that never left the host. `SyncHealthTracker` is the single place
+that remembers whether the clone is reaching its remote, and the MCP write
+path reports it.
+
+- **Fed from the outcomes, not the call sites.** `_pull_pipeline` and
+  `force_push` are thin recording wrappers over the implementations
+  (`_run_pull_pipeline`, `_run_force_push`), so every pull and push outcome
+  passes one place regardless of which entry point produced it; the deferred
+  and startup pushes report from `PushScheduler`. A dry run records nothing —
+  it predicts a pull rather than observing one.
+- **Push and pull are independent conditions.** Either one holds the clone
+  unsynced. A successful pull does not clear a failed push: reading from the
+  remote is no evidence that anything reached it, and that combination is the
+  incident shape #1287 reports. Only outcomes that prove the clone cannot
+  send (`push_failed`, `non_fast_forward`) or cannot reconcile
+  (`conflict_resolution_failed`, `non_fast_forward_with_conflicts`) count;
+  `fetch_failed` and `no_remote` are not evidence of stranded commits.
+- **Reads take no lock.** The snapshot is one immutable object swapped
+  atomically. The strategy-wide lock is held across a whole fetch + merge, so
+  reading health under it would make every write response block behind a
+  pull.
+- **The log marks transitions.** Entering the state logs once at ERROR
+  (`git_remote_unsynced`), recovery once at INFO (`git_remote_resynced`); a
+  rejected push moved to DEBUG, where it keeps the git stderr. An unexpected
+  exception on the push path stays at ERROR with its traceback — that is a
+  bug on the push path, not the routine cycle event this changes. The
+  repeating per-cycle warning is what let the reported incident run for hours
+  unnoticed.
+
+Every vault-mutating write tool passes its result through
+`attach_remote_health`, which adds a `remote` object while the clone is
+unsynced and adds nothing otherwise — the `previous_revision` idiom, where
+absence says "nothing to report". It reports health known at response time,
+never the fate of that write: the commit runs on the dispatcher thread and
+the push is deferred, so no write result can attest its own replication.
+`git_sync` is exempt (it reports sync directly) and so is
+`create_upload_link` (it returns a URL; its writes land through the upload
+route). `tests/test_write_remote_health.py` partitions
+`WRITE_TOOL_NAMES` so a new write tool forces that classification.
+
+Whether a warning should ever escalate to refusing the write is left to
+[#1299](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1299).
+
+**Strategy collaborators (#893)**: `GitWriteStrategy` composes the
 collaborators extracted from the class, following the Versioner/Syncer
-seams of the decoupling-and-layering study (#879):
+seams of the decoupling-and-layering study (#879), plus the sync-health
+tracker described above (which the scheduler also holds):
 
 - `RepoBootstrap` (`git/bootstrap.py`) — managed-repo clone/validation
   (`ensure_managed_repo`), the SSH-vs-HTTPS remote-protocol check for token
@@ -3813,11 +3860,16 @@ seams of the decoupling-and-layering study (#879):
   single copy of the discovered `git_root`, which the strategy and the
   scheduler read through it.
 - `PushScheduler` (`git/push_scheduler.py`) — see above.
+- `SyncHealthTracker` (`git/health.py`, #1287) — see above.
 
-Both collaborators receive the strategy-wide lock — the SAME object; no new
-locks were introduced — so the documented lock-ordering contracts of the
-pull/write paths (`_force_pull_rebase_fallback` requires the lock held;
-`_quiesce_writes` drains before the lock is taken) are unchanged.
+`RepoBootstrap` and `PushScheduler` receive the strategy-wide lock — the SAME
+object — so the documented lock-ordering contracts of the pull/write paths
+(`_force_pull_rebase_fallback` requires the lock held; `_quiesce_writes`
+drains before the lock is taken) are unchanged. `SyncHealthTracker` is the
+one collaborator that does not take it: it serialises its own writes on a
+private lock held only for a dict update and a log call — never across a git
+subprocess or another component's lock, so recording an outcome from inside
+the strategy lock cannot deadlock — and its reads take no lock at all.
 
 **Facet protocols (`git/interfaces.py`, #1229)**: the concerns are also
 expressed as protocols, so each consumer depends on the surface it uses
@@ -3835,6 +3887,11 @@ rather than on the concrete class:
   lifecycle (`start`/`stop`/`flush`/`close`/`set_write_quiescer`), and the
   repository reads the `git_sync` tool needs (`is_managed`,
   `resolve_force_repo`, `head_sha`, `branch_name`).
+- `SyncHealthReporter` (#1287) — `sync_health`, and nothing else. Kept out of
+  `Syncer` because the write path needs to *ask* whether replication is
+  working without being able to drive it, and a store that replicates by some
+  other mechanism can answer this without implementing pull, push, and the
+  loop lifecycle.
 - `Versioner` — the per-write commit; structurally the same shape as
   `PrincipalAwareWriteCallback`, restated so the module needs no runtime
   import beyond `typing`.

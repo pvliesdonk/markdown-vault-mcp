@@ -48,6 +48,11 @@ from markdown_vault_mcp.git._run import (
     run_git_capturing,
 )
 from markdown_vault_mcp.git.bootstrap import RepoBootstrap
+from markdown_vault_mcp.git.health import (
+    SyncHealth,
+    SyncHealthTracker,
+    push_failure_reason,
+)
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
@@ -185,9 +190,14 @@ class GitWriteStrategy:
             username=username,
             repo_url=repo_url,
         )
+        # Sync health is tracked outside the strategy-wide lock (#1287): the
+        # lock is held across a whole fetch + merge, and the MCP write path
+        # reads health on every write.
+        self._health = SyncHealthTracker()
         self._push_scheduler = PushScheduler(
             lock=self._lock,
             bootstrap=self._bootstrap,
+            health=self._health,
             enable_push=enable_push,
             push_delay_s=push_delay_s,
         )
@@ -766,6 +776,39 @@ class GitWriteStrategy:
         dry_run: bool = False,
         log_prefix: str = "Git force_pull",
     ) -> PullResult:
+        """Run the pull pipeline and record what it says about the remote.
+
+        The one place both pull entry points meet, and so the one place pull
+        outcomes reach the sync-health tracker (#1287).  A dry run records
+        nothing: it predicts a pull rather than observing one.
+
+        Args:
+            git_root: Resolved working-tree root.
+            dry_run: Fetch and compute the would-be pull without touching
+                HEAD.
+            log_prefix: Message prefix identifying the calling entry point.
+
+        Returns:
+            The :class:`PullResult` the pipeline produced, unchanged.
+        """
+        result = self._run_pull_pipeline(
+            git_root, dry_run=dry_run, log_prefix=log_prefix
+        )
+        if dry_run:
+            return result
+        if result.applied:
+            self._health.pull_succeeded()
+        elif result.reason is not None:
+            self._health.pull_failed(result.reason)
+        return result
+
+    def _run_pull_pipeline(
+        self,
+        git_root: Path,
+        *,
+        dry_run: bool = False,
+        log_prefix: str = "Git force_pull",
+    ) -> PullResult:
         """Run the shared fetch → ff-only → rebase → sibling pipeline.
 
         The single implementation behind :meth:`force_pull` (interactive
@@ -1061,6 +1104,43 @@ class GitWriteStrategy:
         )
 
     def force_push(self, *, dry_run: bool = False) -> PushResult:
+        """Push local commits to ``origin``, recording what the remote said.
+
+        Wraps :meth:`_run_force_push` so the interactive push feeds the same
+        sync-health tracker as the deferred one (#1287) — the two observe the
+        same remote, and a caller warned about stranded writes should stop
+        being warned as soon as either of them lands.  Outcomes that are not
+        evidence about the remote (``dry_run_unsupported``, ``no_remote``) are
+        recorded as nothing; the tracker ignores them.
+
+        Args:
+            dry_run: See :meth:`_run_force_push`.
+
+        Returns:
+            The :class:`PushResult` the push produced, unchanged.
+        """
+        result = self._run_force_push(dry_run=dry_run)
+        if result.applied:
+            self._health.push_succeeded()
+        elif result.reason is not None:
+            self._health.push_failed(result.reason)
+        return result
+
+    def sync_health(self) -> SyncHealth | None:
+        """Report whether this clone is known not to be reaching its remote.
+
+        Read without taking the strategy-wide lock, so a write response never
+        blocks behind an in-flight pull.
+
+        Returns:
+            A :class:`~markdown_vault_mcp.git.health.SyncHealth` while the
+            clone is unsynced, or ``None`` when it is reaching its remote (or
+            has never tried — a commit-only vault never pushes, so it never
+            reports anything).
+        """
+        return self._health.snapshot()
+
+    def _run_force_push(self, *, dry_run: bool = False) -> PushResult:
         """Push local commits to ``origin`` synchronously.
 
         Never force-pushes — the underlying ``git push origin`` is a plain
@@ -1186,10 +1266,10 @@ class GitWriteStrategy:
                     stderr = self._redact((exc.stderr or "").strip())
 
                     # Detect the specific non-fast-forward case so the
-                    # caller can route to git_sync(direction='pull').
-                    # Git's wording is stable: "non-fast-forward" appears
-                    # both in the rejection line and the hint paragraph.
-                    if "non-fast-forward" in stderr or "fetch first" in stderr:
+                    # caller can route to git_sync(direction='pull').  The
+                    # classification lives in one place (#1287) so the
+                    # deferred push reads the same stderr the same way.
+                    if push_failure_reason(stderr) == PUSH_REASON_NON_FAST_FORWARD:
                         logger.warning(
                             "Git force_push: rejected as non-fast-forward "
                             "(local %s vs remote %s)",

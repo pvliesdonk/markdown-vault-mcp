@@ -32,10 +32,12 @@ from markdown_vault_mcp.git._run import (
     _find_git_root,  # noqa: F401 -- re-exported for the historic import surface
 )
 from markdown_vault_mcp.git.bootstrap import RepoBootstrap
+from markdown_vault_mcp.git.health import SyncHealth, SyncHealthTracker
 from markdown_vault_mcp.git.interfaces import (
     HistorySource,
     RevisionReader,
     Syncer,
+    SyncHealthReporter,
     VersionedStore,
     Versioner,
 )
@@ -56,6 +58,7 @@ from markdown_vault_mcp.git.types import (
     PUSH_REASON_NO_REMOTE,
     PUSH_REASON_NON_FAST_FORWARD,
     PUSH_REASON_PUSH_FAILED,
+    REMOTE_STATE_UNSYNCED,
     PullResult,
     PushResult,
     RevisionQuery,
@@ -72,6 +75,7 @@ __all__ = [
     "PUSH_REASON_NON_FAST_FORWARD",
     "PUSH_REASON_NO_REMOTE",
     "PUSH_REASON_PUSH_FAILED",
+    "REMOTE_STATE_UNSYNCED",
     "GitWriteStrategy",
     "HistorySource",
     "PullResult",
@@ -80,6 +84,9 @@ __all__ = [
     "RepoBootstrap",
     "RevisionQuery",
     "RevisionReader",
+    "SyncHealth",
+    "SyncHealthReporter",
+    "SyncHealthTracker",
     "Syncer",
     "VersionedStore",
     "Versioner",
