@@ -343,6 +343,10 @@ class TestRenameThresholdAgreement:
     Real git again, not the fake strategy: the defect was that one walk asked
     git to detect renames at 30% and another let it default to 50%, so a
     revision ``read`` served was one ``get_history`` never listed.
+
+    The threshold is what these pin.  A rename made while *resolving a merge*
+    belongs to no parent's diff and the two readers still differ there — a
+    separate mechanism, tracked in #1306.
     """
 
     def _renamed_note_repo(self, tmp_path: Path) -> tuple[Path, str, str, str]:
