@@ -8,6 +8,7 @@ from typing import Annotated, Any, TypeVar
 
 from fastmcp.tools import ToolResult
 
+from markdown_vault_mcp.git import SyncHealthReporter
 from markdown_vault_mcp.okf import derive_annotation
 from markdown_vault_mcp.vault import Vault
 
@@ -67,6 +68,43 @@ async def attach_conventions(
     conventions = await asyncio.to_thread(conventions_payload, vault, path)
     if conventions:
         data["conventions"] = conventions
+    return data
+
+
+def attach_remote_health(vault: Vault, data: dict[str, Any]) -> dict[str, Any]:
+    """Add a ``remote`` warning to a write result when the clone is unsynced.
+
+    A git-backed vault whose pushes are failing keeps accepting writes: the
+    commit lands locally and ``read`` serves it back, so nothing tells the
+    caller its content cannot leave the host (#1287).  Every vault-mutating
+    write tool passes its result through here so that state travels with the
+    write that is affected by it.
+
+    The key is **absent** whenever there is nothing to report — no git, no
+    remote, or a clone that is reaching it — so a healthy deployment's
+    responses are unchanged.
+
+    What it can and cannot mean: the commit is dispatched off the request
+    thread and the push is deferred behind an idle timer, so this reports the
+    sync health *known at response time*, never the fate of this particular
+    write.  A write made just as the remote broke can still answer clean; the
+    next one warns.
+
+    Args:
+        vault: The vault the write landed in.
+        data: The tool's result dict, mutated in place.
+
+    Returns:
+        *data*, so callers can return it directly.
+    """
+    # The MCP layer is a trusted consumer of Vault internals — the same
+    # access the ``git_sync`` gate makes, for the same reason.
+    strategy = vault._git_strategy
+    if not isinstance(strategy, SyncHealthReporter):
+        return data
+    health = strategy.sync_health()
+    if health is not None:
+        data["remote"] = health.as_payload()
     return data
 
 

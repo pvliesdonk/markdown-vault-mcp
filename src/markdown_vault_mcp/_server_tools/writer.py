@@ -41,7 +41,7 @@ from .._okf_write import (
     resolve_verify_subject,
 )
 from ..domain import get_config, get_vault
-from ._common import attach_conventions
+from ._common import attach_conventions, attach_remote_health
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +268,7 @@ def register(mcp: FastMCP) -> None:
                 result = await asyncio.to_thread(
                     vault.writer.write_attachment, path, raw_bytes, if_match=if_match
                 )
-            return _write_payload(result)
+            return attach_remote_health(vault, _write_payload(result))
         # Bind the caller's Principal plus the OKF provenance actor for the
         # enforced-write layer (#964, #1160). The OKF intent is a no-op unless
         # OKF_WRITE is on; both values ride contextvars into the to_thread
@@ -282,7 +282,9 @@ def register(mcp: FastMCP) -> None:
                 frontmatter=frontmatter,
                 if_match=if_match,
             )
-        return await attach_conventions(vault, _write_payload(result), path)
+        return attach_remote_health(
+            vault, await attach_conventions(vault, _write_payload(result), path)
+        )
 
     @mcp.tool(
         tags={"write"},
@@ -366,7 +368,9 @@ def register(mcp: FastMCP) -> None:
                     line_start=line_start,
                     line_end=line_end,
                 )
-            return await attach_conventions(vault, asdict(result), path)
+            return attach_remote_health(
+                vault, await attach_conventions(vault, asdict(result), path)
+            )
         except EditConflictError as exc:
             parts = [str(exc)]
             if exc.closest_match_line is not None:
@@ -448,7 +452,9 @@ def register(mcp: FastMCP) -> None:
                 if_match=if_match,
                 create_if_missing=create_if_missing,
             )
-        return await attach_conventions(vault, _write_payload(result), path)
+        return attach_remote_health(
+            vault, await attach_conventions(vault, _write_payload(result), path)
+        )
 
     @mcp.tool(
         tags={"write"},
@@ -497,7 +503,7 @@ def register(mcp: FastMCP) -> None:
             result = await asyncio.to_thread(
                 vault.writer.delete, path, if_match=if_match
             )
-        return asdict(result)
+        return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
         tags={"write"},
@@ -562,7 +568,7 @@ def register(mcp: FastMCP) -> None:
                 if_match=if_match,
                 update_links=update_links,
             )
-        return asdict(result)
+        return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
         tags={"write"},
@@ -621,7 +627,7 @@ def register(mcp: FastMCP) -> None:
         # link-rewrite edits stays the tool actor, as before.
         with write_identity_scope(okf_intent=False):
             result = await asyncio.to_thread(vault.writer.move_folder, old_dir, new_dir)
-        return asdict(result)
+        return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
         tags={"write"},
@@ -826,7 +832,7 @@ def register(mcp: FastMCP) -> None:
         }
         if is_markdown:
             data = await attach_conventions(vault, data, path)
-        return data
+        return attach_remote_health(vault, data)
 
     @mcp.tool(
         tags={"okf", "write"},
@@ -868,7 +874,7 @@ def register(mcp: FastMCP) -> None:
             result = await asyncio.to_thread(
                 vault.writer.okf_convert_links, folder=folder
             )
-        return asdict(result)
+        return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
         tags={"okf", "write"},
@@ -904,7 +910,7 @@ def register(mcp: FastMCP) -> None:
             result = await asyncio.to_thread(
                 vault.writer.okf_generate_index, folder=folder
             )
-        return asdict(result)
+        return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
         tags={"okf", "write"},
@@ -947,7 +953,7 @@ def register(mcp: FastMCP) -> None:
                 )
         except FileExistsError as exc:
             raise ToolError(str(exc)) from exc
-        return asdict(result)
+        return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
         tags={"okf", "write", "okf-enforce"},
@@ -1029,8 +1035,11 @@ def register(mcp: FastMCP) -> None:
                 f"Note {path!r} changed since it was read; verification "
                 "aborted to avoid attesting stale content. Re-read and retry."
             ) from exc
-        return {
-            "path": path,
-            "verifier": f"{_HUMAN_ACTOR_PREFIX}{subject}",
-            "verified_count": verified_count,
-        }
+        return attach_remote_health(
+            vault,
+            {
+                "path": path,
+                "verifier": f"{_HUMAN_ACTOR_PREFIX}{subject}",
+                "verified_count": verified_count,
+            },
+        )

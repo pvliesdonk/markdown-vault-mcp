@@ -48,6 +48,11 @@ from markdown_vault_mcp.git._run import (
     run_git_capturing,
 )
 from markdown_vault_mcp.git.bootstrap import RepoBootstrap
+from markdown_vault_mcp.git.health import (
+    SyncHealth,
+    SyncHealthTracker,
+    push_failure_reason,
+)
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
@@ -185,9 +190,14 @@ class GitWriteStrategy:
             username=username,
             repo_url=repo_url,
         )
+        # Sync health is tracked outside the strategy-wide lock (#1287): the
+        # lock is held across a whole fetch + merge, and the MCP write path
+        # reads health on every write.
+        self._health = SyncHealthTracker()
         self._push_scheduler = PushScheduler(
             lock=self._lock,
             bootstrap=self._bootstrap,
+            health=self._health,
             enable_push=enable_push,
             push_delay_s=push_delay_s,
         )
@@ -766,6 +776,46 @@ class GitWriteStrategy:
         dry_run: bool = False,
         log_prefix: str = "Git force_pull",
     ) -> PullResult:
+        """Run the pull pipeline and record what it says about the remote.
+
+        The one place both pull entry points meet, and so the one place pull
+        outcomes reach the sync-health tracker (#1287).  A dry run records
+        nothing: it predicts a pull rather than observing one.
+
+        Owns the pull's write quiescing, the strategy-wide lock and the git
+        environment, so :meth:`_pull_locked` runs and its outcome is recorded
+        without the lock being released in between (PR #1300) — two pulls
+        publish in the order they ran.
+
+        Args:
+            git_root: Resolved working-tree root.
+            dry_run: Fetch and compute the would-be pull without touching
+                HEAD.
+            log_prefix: Message prefix identifying the calling entry point.
+
+        Returns:
+            The :class:`PullResult` the pipeline produced, unchanged.
+        """
+        env = self._git_env()
+        try:
+            with self._quiesce_writes(skip=dry_run), self._lock:
+                result = self._pull_locked(
+                    git_root, env, dry_run=dry_run, log_prefix=log_prefix
+                )
+                if not dry_run:
+                    self._record_pull(result)
+                return result
+        finally:
+            self._cleanup_git_env(env)
+
+    def _pull_locked(
+        self,
+        git_root: Path,
+        env: dict[str, str] | None,
+        *,
+        dry_run: bool = False,
+        log_prefix: str = "Git force_pull",
+    ) -> PullResult:
         """Run the shared fetch → ff-only → rebase → sibling pipeline.
 
         The single implementation behind :meth:`force_pull` (interactive
@@ -773,8 +823,14 @@ class GitWriteStrategy:
         #879: the loop previously carried a diverging re-implementation
         whose post-abort upstream restore had no failure handling.
 
+        **The caller holds :attr:`_lock`** and has quiesced writes —
+        :meth:`_pull_pipeline` takes both across this call and the recording
+        of the outcome (PR #1300), so two pulls cannot publish their outcomes
+        out of order.
+
         Args:
             git_root: Resolved working-tree root.
+            env: The caller's git environment, cleaned up by the caller.
             dry_run: Fetch and compute the would-be pull without touching
                 HEAD.
             log_prefix: Message prefix identifying the calling entry point
@@ -784,130 +840,119 @@ class GitWriteStrategy:
             :class:`PullResult`; see :meth:`force_pull` for the outcome
             enumeration.
         """
-        env = self._git_env()
+        from_sha = self.head_sha(git_root)
+
+        # Always fetch first — both dry-run and real-pull need the
+        # remote-tracking ref refreshed before comparing SHAs.
         try:
-            with self._quiesce_writes(skip=dry_run), self._lock:
-                from_sha = self.head_sha(git_root)
+            self._git(git_root, "fetch", "origin", env=env)
+        except subprocess.CalledProcessError as exc:
+            # Sanitise the token before logging — fetch is the
+            # network-touching subprocess in this method, and git
+            # error messages can echo the URL with credentials
+            # back at the user.  Mirrors the redaction pattern
+            # already used in ``PushScheduler.do_push_safe`` and
+            # ``force_push``.
+            stderr = self._redact((exc.stderr or "").strip())
+            logger.warning(
+                "%s: fetch failed: %s",
+                log_prefix,
+                stderr,
+            )
+            return PullResult.head_unchanged_failure(from_sha, PULL_REASON_FETCH_FAILED)
 
-                # Always fetch first — both dry-run and real-pull need the
-                # remote-tracking ref refreshed before comparing SHAs.
-                try:
-                    self._git(git_root, "fetch", "origin", env=env)
-                except subprocess.CalledProcessError as exc:
-                    # Sanitise the token before logging — fetch is the
-                    # network-touching subprocess in this method, and git
-                    # error messages can echo the URL with credentials
-                    # back at the user.  Mirrors the redaction pattern
-                    # already used in ``PushScheduler.do_push_safe`` and
-                    # ``force_push``.
-                    stderr = self._redact((exc.stderr or "").strip())
-                    logger.warning(
-                        "%s: fetch failed: %s",
-                        log_prefix,
-                        stderr,
-                    )
-                    return PullResult.head_unchanged_failure(
-                        from_sha, PULL_REASON_FETCH_FAILED
-                    )
+        # Resolve the remote-tracking ref (``origin/<branch>``,
+        # falling back to ``origin/HEAD`` for a non-tracking or
+        # detached checkout) and read its SHA.  An unresolvable or
+        # unparseable ref is one outcome: no usable remote.
+        ref = self._tracking_ref(git_root, env)
+        remote_sha: str | None = None
+        if ref is not None:
+            try:
+                remote_sha = self._git(git_root, "rev-parse", ref, env=env).strip()
+            except subprocess.CalledProcessError:
+                remote_sha = None
+        if ref is None or remote_sha is None:
+            return PullResult.head_unchanged_failure(from_sha, PULL_REASON_NO_REMOTE)
 
-                # Resolve the remote-tracking ref (``origin/<branch>``,
-                # falling back to ``origin/HEAD`` for a non-tracking or
-                # detached checkout) and read its SHA.  An unresolvable or
-                # unparseable ref is one outcome: no usable remote.
-                ref = self._tracking_ref(git_root, env)
-                remote_sha: str | None = None
-                if ref is not None:
-                    try:
-                        remote_sha = self._git(
-                            git_root, "rev-parse", ref, env=env
-                        ).strip()
-                    except subprocess.CalledProcessError:
-                        remote_sha = None
-                if ref is None or remote_sha is None:
-                    return PullResult.head_unchanged_failure(
-                        from_sha, PULL_REASON_NO_REMOTE
-                    )
+        if remote_sha == from_sha:
+            # Already up to date — successful no-op (applied=True even on dry_run).
+            return PullResult(
+                applied=True,
+                fast_forward=True,
+                commits_pulled=0,
+                from_sha=from_sha,
+                to_sha=from_sha,
+            )
 
-                if remote_sha == from_sha:
-                    # Already up to date — successful no-op (applied=True even on dry_run).
-                    return PullResult(
-                        applied=True,
-                        fast_forward=True,
-                        commits_pulled=0,
-                        from_sha=from_sha,
-                        to_sha=from_sha,
-                    )
+        # Count commits between local and remote.  When the local
+        # branch is behind the remote this is the number of commits
+        # ``merge --ff-only`` would apply.
+        commits_ahead = self._git(
+            git_root,
+            "rev-list",
+            "--count",
+            f"{from_sha}..{remote_sha}",
+            env=env,
+        ).strip()
+        try:
+            commits_pulled = int(commits_ahead)
+        except ValueError:
+            # ``rev-list --count`` is documented to print a single
+            # integer; if parsing fails, the underlying git call is
+            # broken in a way we should surface rather than silently
+            # report 0 commits.  Fall back to 0 but log loudly.
+            logger.warning(
+                "%s: could not parse commit count %r "
+                "from `git rev-list --count %s..%s`",
+                log_prefix,
+                commits_ahead,
+                from_sha,
+                remote_sha,
+            )
+            commits_pulled = 0
 
-                # Count commits between local and remote.  When the local
-                # branch is behind the remote this is the number of commits
-                # ``merge --ff-only`` would apply.
-                commits_ahead = self._git(
-                    git_root,
-                    "rev-list",
-                    "--count",
-                    f"{from_sha}..{remote_sha}",
-                    env=env,
-                ).strip()
-                try:
-                    commits_pulled = int(commits_ahead)
-                except ValueError:
-                    # ``rev-list --count`` is documented to print a single
-                    # integer; if parsing fails, the underlying git call is
-                    # broken in a way we should surface rather than silently
-                    # report 0 commits.  Fall back to 0 but log loudly.
-                    logger.warning(
-                        "%s: could not parse commit count %r "
-                        "from `git rev-list --count %s..%s`",
-                        log_prefix,
-                        commits_ahead,
-                        from_sha,
-                        remote_sha,
-                    )
-                    commits_pulled = 0
+        if dry_run:
+            # Heuristic: assume fast-forward.  Actual ff-ness is
+            # only known after attempting the merge; the conflict
+            # path below corrects this for non-dry-run calls.
+            return PullResult(
+                applied=False,
+                fast_forward=True,
+                commits_pulled=commits_pulled,
+                from_sha=from_sha,
+                to_sha=remote_sha,
+            )
 
-                if dry_run:
-                    # Heuristic: assume fast-forward.  Actual ff-ness is
-                    # only known after attempting the merge; the conflict
-                    # path below corrects this for non-dry-run calls.
-                    return PullResult(
-                        applied=False,
-                        fast_forward=True,
-                        commits_pulled=commits_pulled,
-                        from_sha=from_sha,
-                        to_sha=remote_sha,
-                    )
+        # Attempt fast-forward merge first.  On divergence fall
+        # through to rebase + Syncthing-style sibling resolution,
+        # mirroring :meth:`sync_once`.
+        try:
+            self._git(git_root, "merge", "--ff-only", remote_sha, env=env)
+        except subprocess.CalledProcessError as ff_exc:
+            logger.debug(
+                "%s: ff-only merge failed, attempting rebase: %s",
+                log_prefix,
+                (ff_exc.stderr or "").strip(),
+            )
+            return self._force_pull_rebase_fallback(
+                git_root=git_root,
+                env=env,
+                from_sha=from_sha,
+                ref=ref,
+                log_prefix=log_prefix,
+            )
 
-                # Attempt fast-forward merge first.  On divergence fall
-                # through to rebase + Syncthing-style sibling resolution,
-                # mirroring :meth:`sync_once`.
-                try:
-                    self._git(git_root, "merge", "--ff-only", remote_sha, env=env)
-                except subprocess.CalledProcessError as ff_exc:
-                    logger.debug(
-                        "%s: ff-only merge failed, attempting rebase: %s",
-                        log_prefix,
-                        (ff_exc.stderr or "").strip(),
-                    )
-                    return self._force_pull_rebase_fallback(
-                        git_root=git_root,
-                        env=env,
-                        from_sha=from_sha,
-                        ref=ref,
-                        log_prefix=log_prefix,
-                    )
-
-                # Fast-forward succeeded.  ``remote_sha`` is the new HEAD —
-                # no need to re-read it via ``head_sha``.
-                self._lfs_pull(env=env)
-                return PullResult(
-                    applied=True,
-                    fast_forward=True,
-                    commits_pulled=commits_pulled,
-                    from_sha=from_sha,
-                    to_sha=remote_sha,
-                )
-        finally:
-            self._cleanup_git_env(env)
+        # Fast-forward succeeded.  ``remote_sha`` is the new HEAD —
+        # no need to re-read it via ``head_sha``.
+        self._lfs_pull(env=env)
+        return PullResult(
+            applied=True,
+            fast_forward=True,
+            commits_pulled=commits_pulled,
+            from_sha=from_sha,
+            to_sha=remote_sha,
+        )
 
     def _force_pull_rebase_fallback(
         self,
@@ -996,7 +1041,10 @@ class GitWriteStrategy:
                 )
 
             if not saved:
-                logger.warning(
+                # DEBUG since #1287: this repeats every pull cycle while the
+                # divergence stands.  Entering the unsynced state is logged
+                # once at ERROR by SyncHealthTracker, which this outcome feeds.
+                logger.debug(
                     "%s: conflict resolution failed, leaving HEAD unchanged",
                     log_prefix,
                 )
@@ -1016,7 +1064,8 @@ class GitWriteStrategy:
                 token=self._token,
             )
             if written is None:
-                logger.warning("%s: conflict commit failed, skipping", log_prefix)
+                # DEBUG for the same reason as the line above (#1287).
+                logger.debug("%s: conflict commit failed, skipping", log_prefix)
                 return PullResult(
                     applied=False,
                     fast_forward=False,
@@ -1061,6 +1110,70 @@ class GitWriteStrategy:
         )
 
     def force_push(self, *, dry_run: bool = False) -> PushResult:
+        """Push local commits to ``origin``, recording what the remote said.
+
+        Holds the strategy-wide lock across both the push (:meth:`_push_locked`)
+        and the recording of its outcome, so the interactive push feeds the
+        same sync-health tracker as the deferred one (#1287) and cannot
+        publish out of order against it (PR #1300).  The two observe the same
+        remote, so a caller warned about stranded writes stops being warned as
+        soon as either of them lands.
+
+        Args:
+            dry_run: See :meth:`_push_locked`.
+
+        Returns:
+            The :class:`PushResult` the push produced, unchanged.
+
+        Raises:
+            RuntimeError: When the strategy was constructed without
+                ``repo_path``.
+        """
+        git_root = self.resolve_force_repo()
+        with self._lock:
+            result = self._push_locked(git_root, dry_run=dry_run)
+            self._record_push(result)
+        return result
+
+    def _record_push(self, result: PushResult) -> None:
+        """Report a push outcome to the sync-health tracker.
+
+        Called with the strategy-wide lock held, so two pushes publish in the
+        order they ran (PR #1300).  Outcomes that say nothing about the remote
+        (``dry_run_unsupported``, ``no_remote``) are passed on as-is; the
+        tracker ignores them.
+        """
+        if result.applied:
+            self._health.push_succeeded()
+        elif result.reason is not None:
+            self._health.push_failed(result.reason)
+
+    def _record_pull(self, result: PullResult) -> None:
+        """Report a pull outcome to the sync-health tracker.
+
+        Called with the strategy-wide lock held, for the reason given on
+        :meth:`_record_push`.
+        """
+        if result.applied:
+            self._health.pull_succeeded()
+        elif result.reason is not None:
+            self._health.pull_failed(result.reason)
+
+    def sync_health(self) -> SyncHealth | None:
+        """Report whether this clone is known not to be reaching its remote.
+
+        Read without taking the strategy-wide lock, so a write response never
+        blocks behind an in-flight pull.
+
+        Returns:
+            A :class:`~markdown_vault_mcp.git.health.SyncHealth` while the
+            clone is unsynced, or ``None`` when it is reaching its remote (or
+            has never tried — a commit-only vault never pushes, so it never
+            reports anything).
+        """
+        return self._health.snapshot()
+
+    def _push_locked(self, git_root: Path, *, dry_run: bool = False) -> PushResult:
         """Push local commits to ``origin`` synchronously.
 
         Never force-pushes — the underlying ``git push origin`` is a plain
@@ -1070,11 +1183,13 @@ class GitWriteStrategy:
         hint pointing at ``git_sync(direction='pull')``.  The caller is
         expected to reconcile via the pull path and then retry.
 
-        Acquires :attr:`_lock` for the duration so the periodic pull loop
-        and the per-write commit + deferred-push pipeline cannot race
-        against the synchronous push.  This blocks writes for the network
-        round-trip; that is acceptable for the interactive ``git_sync``
-        tool and mirrors :meth:`force_pull`.
+        **The caller holds :attr:`_lock`** — :meth:`force_push` takes it
+        across this call and the recording of the outcome (PR #1300), so the
+        periodic pull loop and the per-write commit + deferred-push pipeline
+        cannot race against the synchronous push, and two pushes cannot
+        publish their outcomes out of order.  This blocks writes for the
+        network round-trip; that is acceptable for the interactive
+        ``git_sync`` tool and mirrors :meth:`force_pull`.
 
         ``dry_run`` is a no-op.  Git has no safe local probe for "would
         this push be accepted by the remote": the only authoritative
@@ -1084,156 +1199,150 @@ class GitWriteStrategy:
         limitation.
 
         Args:
+            git_root: The working tree to push from, resolved by the caller.
             dry_run: When ``True``, returns immediately without contacting
                 the remote.  See above for the rationale.
 
         Returns:
             :class:`PushResult` describing the operation.  See the
             ``reason`` field for the full enumeration of outcomes.
-
-        Raises:
-            RuntimeError: When the strategy was constructed without
-                ``repo_path``.
         """
-        git_root = self.resolve_force_repo()
+        local_head = self.head_sha(git_root)
 
-        with self._lock:
-            local_head = self.head_sha(git_root)
+        # Resolve the remote-tracking SHA before the push.  Mirrors
+        # :meth:`force_pull` — derive ``origin/<branch>`` from the current
+        # branch (see :meth:`_tracking_ref`), falling back to
+        # ``origin/HEAD`` for a detached checkout, so the lookup does not
+        # depend on ``@{upstream}`` tracking being configured.
+        ref = self._tracking_ref(git_root)
+        try:
+            if ref is None:
+                raise subprocess.CalledProcessError(1, "git rev-parse")
+            remote_sha_before = self._git(git_root, "rev-parse", ref).strip()
+        except subprocess.CalledProcessError:
+            return PushResult(
+                applied=False,
+                commits_pushed=0,
+                remote_sha_before="",
+                remote_sha_after="",
+                reason=PUSH_REASON_NO_REMOTE,
+                hint=(
+                    "No remote-tracking branch (origin/<branch>) could be "
+                    "resolved for the current branch.  Push the branch to "
+                    "origin once (`git push -u origin <branch>`) so the "
+                    "remote-tracking ref exists."
+                ),
+            )
 
-            # Resolve the remote-tracking SHA before the push.  Mirrors
-            # :meth:`force_pull` — derive ``origin/<branch>`` from the current
-            # branch (see :meth:`_tracking_ref`), falling back to
-            # ``origin/HEAD`` for a detached checkout, so the lookup does not
-            # depend on ``@{upstream}`` tracking being configured.
-            ref = self._tracking_ref(git_root)
+        if dry_run:
+            # Document the limitation rather than fake a result.
+            return PushResult(
+                applied=False,
+                commits_pushed=0,
+                remote_sha_before=remote_sha_before,
+                remote_sha_after=remote_sha_before,
+                reason=PUSH_REASON_DRY_RUN_UNSUPPORTED,
+                hint=(
+                    "force_push has no dry_run mode: git provides no safe "
+                    "local probe for whether the remote will accept a push. "
+                    "Re-invoke with dry_run=False to actually push."
+                ),
+            )
+
+        # No-op: local already matches the remote-tracking SHA.  We
+        # could let `git push` short-circuit on its own, but returning
+        # early avoids a subprocess + reads more clearly in logs.
+        if remote_sha_before == local_head:
+            return PushResult(
+                applied=True,
+                commits_pushed=0,
+                remote_sha_before=remote_sha_before,
+                remote_sha_after=remote_sha_before,
+            )
+
+        # Count commits between remote and local.  When the local
+        # branch is strictly ahead this is the count `git push` will
+        # send; when histories diverge `git push` would reject the
+        # push as non-fast-forward and the count is best-effort.
+        commits_ahead_str = self._git(
+            git_root,
+            "rev-list",
+            "--count",
+            f"{remote_sha_before}..{local_head}",
+        ).strip()
+        try:
+            commits_pushed = int(commits_ahead_str)
+        except ValueError:
+            logger.warning(
+                "Git force_push: could not parse commit count %r "
+                "from `git rev-list --count %s..%s`",
+                commits_ahead_str,
+                remote_sha_before,
+                local_head,
+            )
+            commits_pushed = 0
+
+        # Use the strategy's git env so token-based HTTPS auth works
+        # through the same GIT_ASKPASS mechanism the deferred-push
+        # path uses.  Cleaned up in the finally block below.
+        env = self._git_env()
+        try:
             try:
-                if ref is None:
-                    raise subprocess.CalledProcessError(1, "git rev-parse")
-                remote_sha_before = self._git(git_root, "rev-parse", ref).strip()
-            except subprocess.CalledProcessError:
-                return PushResult(
-                    applied=False,
-                    commits_pushed=0,
-                    remote_sha_before="",
-                    remote_sha_after="",
-                    reason=PUSH_REASON_NO_REMOTE,
-                    hint=(
-                        "No remote-tracking branch (origin/<branch>) could be "
-                        "resolved for the current branch.  Push the branch to "
-                        "origin once (`git push -u origin <branch>`) so the "
-                        "remote-tracking ref exists."
-                    ),
-                )
+                self._git(git_root, "push", "origin", env=env)
+            except subprocess.CalledProcessError as exc:
+                # Redact token if it leaked into stderr.  Mirrors the
+                # sanitisation in :meth:`_do_push_safe`.
+                stderr = self._redact((exc.stderr or "").strip())
 
-            if dry_run:
-                # Document the limitation rather than fake a result.
-                return PushResult(
-                    applied=False,
-                    commits_pushed=0,
-                    remote_sha_before=remote_sha_before,
-                    remote_sha_after=remote_sha_before,
-                    reason=PUSH_REASON_DRY_RUN_UNSUPPORTED,
-                    hint=(
-                        "force_push has no dry_run mode: git provides no safe "
-                        "local probe for whether the remote will accept a push. "
-                        "Re-invoke with dry_run=False to actually push."
-                    ),
-                )
-
-            # No-op: local already matches the remote-tracking SHA.  We
-            # could let `git push` short-circuit on its own, but returning
-            # early avoids a subprocess + reads more clearly in logs.
-            if remote_sha_before == local_head:
-                return PushResult(
-                    applied=True,
-                    commits_pushed=0,
-                    remote_sha_before=remote_sha_before,
-                    remote_sha_after=remote_sha_before,
-                )
-
-            # Count commits between remote and local.  When the local
-            # branch is strictly ahead this is the count `git push` will
-            # send; when histories diverge `git push` would reject the
-            # push as non-fast-forward and the count is best-effort.
-            commits_ahead_str = self._git(
-                git_root,
-                "rev-list",
-                "--count",
-                f"{remote_sha_before}..{local_head}",
-            ).strip()
-            try:
-                commits_pushed = int(commits_ahead_str)
-            except ValueError:
-                logger.warning(
-                    "Git force_push: could not parse commit count %r "
-                    "from `git rev-list --count %s..%s`",
-                    commits_ahead_str,
-                    remote_sha_before,
-                    local_head,
-                )
-                commits_pushed = 0
-
-            # Use the strategy's git env so token-based HTTPS auth works
-            # through the same GIT_ASKPASS mechanism the deferred-push
-            # path uses.  Cleaned up in the finally block below.
-            env = self._git_env()
-            try:
-                try:
-                    self._git(git_root, "push", "origin", env=env)
-                except subprocess.CalledProcessError as exc:
-                    # Redact token if it leaked into stderr.  Mirrors the
-                    # sanitisation in :meth:`_do_push_safe`.
-                    stderr = self._redact((exc.stderr or "").strip())
-
-                    # Detect the specific non-fast-forward case so the
-                    # caller can route to git_sync(direction='pull').
-                    # Git's wording is stable: "non-fast-forward" appears
-                    # both in the rejection line and the hint paragraph.
-                    if "non-fast-forward" in stderr or "fetch first" in stderr:
-                        logger.warning(
-                            "Git force_push: rejected as non-fast-forward "
-                            "(local %s vs remote %s)",
-                            local_head,
-                            remote_sha_before,
-                        )
-                        return PushResult(
-                            applied=False,
-                            commits_pushed=0,
-                            remote_sha_before=remote_sha_before,
-                            remote_sha_after=remote_sha_before,
-                            reason=PUSH_REASON_NON_FAST_FORWARD,
-                            hint=(
-                                "Remote has commits the local clone has not "
-                                "seen.  Run git_sync(direction='pull') to "
-                                "reconcile (fast-forward when possible, "
-                                "Syncthing-style siblings on real conflict), "
-                                "then retry git_sync(direction='push')."
-                            ),
-                        )
-
-                    logger.error(
-                        "Git force_push: push failed: %s",
-                        stderr,
+                # Detect the specific non-fast-forward case so the
+                # caller can route to git_sync(direction='pull').  The
+                # classification lives in one place (#1287) so the
+                # deferred push reads the same stderr the same way.
+                if push_failure_reason(stderr) == PUSH_REASON_NON_FAST_FORWARD:
+                    logger.warning(
+                        "Git force_push: rejected as non-fast-forward "
+                        "(local %s vs remote %s)",
+                        local_head,
+                        remote_sha_before,
                     )
-                    truncated = stderr[:200]
                     return PushResult(
                         applied=False,
                         commits_pushed=0,
                         remote_sha_before=remote_sha_before,
                         remote_sha_after=remote_sha_before,
-                        reason=PUSH_REASON_PUSH_FAILED,
-                        hint=truncated or "git push exited non-zero",
+                        reason=PUSH_REASON_NON_FAST_FORWARD,
+                        hint=(
+                            "Remote has commits the local clone has not "
+                            "seen.  Run git_sync(direction='pull') to "
+                            "reconcile (fast-forward when possible, "
+                            "Syncthing-style siblings on real conflict), "
+                            "then retry git_sync(direction='push')."
+                        ),
                     )
-            finally:
-                self._cleanup_git_env(env)
 
-            # Push succeeded — remote now matches local HEAD.
-            return PushResult(
-                applied=True,
-                commits_pushed=commits_pushed,
-                remote_sha_before=remote_sha_before,
-                remote_sha_after=local_head,
-            )
+                logger.error(
+                    "Git force_push: push failed: %s",
+                    stderr,
+                )
+                truncated = stderr[:200]
+                return PushResult(
+                    applied=False,
+                    commits_pushed=0,
+                    remote_sha_before=remote_sha_before,
+                    remote_sha_after=remote_sha_before,
+                    reason=PUSH_REASON_PUSH_FAILED,
+                    hint=truncated or "git push exited non-zero",
+                )
+        finally:
+            self._cleanup_git_env(env)
+
+        # Push succeeded — remote now matches local HEAD.
+        return PushResult(
+            applied=True,
+            commits_pushed=commits_pushed,
+            remote_sha_before=remote_sha_before,
+            remote_sha_after=local_head,
+        )
 
     def sync_once(self, repo_path: Path) -> bool:
         """Fetch and update once, returning True if HEAD advanced.

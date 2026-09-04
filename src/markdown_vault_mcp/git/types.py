@@ -24,6 +24,11 @@ PUSH_REASON_NO_REMOTE = "no_remote"
 PUSH_REASON_NON_FAST_FORWARD = "non_fast_forward"
 PUSH_REASON_PUSH_FAILED = "push_failed"
 
+# Value of the ``state`` field a write tool reports while the clone cannot
+# reach its remote (#1287).  There is deliberately no ``"ok"`` counterpart:
+# a healthy clone reports nothing at all.
+REMOTE_STATE_UNSYNCED = "unsynced"
+
 
 @dataclass(frozen=True)
 class PullResult:

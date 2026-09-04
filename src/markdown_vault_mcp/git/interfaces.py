@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp._identity import Principal
+    from markdown_vault_mcp.git.health import SyncHealth
     from markdown_vault_mcp.git.types import PullResult, PushResult, RevisionQuery
     from markdown_vault_mcp.types import (
         CommitDiff,
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
 __all__ = [
     "HistorySource",
     "RevisionReader",
+    "SyncHealthReporter",
     "Syncer",
     "VersionedStore",
     "Versioner",
@@ -154,6 +156,28 @@ class RevisionReader(Protocol):
         Returns:
             The revision identifier, or ``None`` when the note has none or the
             working copy has moved on from it.
+        """
+        ...
+
+
+@runtime_checkable
+class SyncHealthReporter(Protocol):
+    """Whether a store's local copy is still reaching the remote it syncs with.
+
+    Deliberately separate from :class:`Syncer` (#1287): the write path needs
+    to *ask* about replication without being able to drive it, and a store
+    that syncs by some other mechanism can answer this without implementing
+    pull, push, and the loop lifecycle.
+    """
+
+    def sync_health(self) -> SyncHealth | None:
+        """Report a local copy that is known not to be reaching its remote.
+
+        Returns:
+            The condition while it holds, or ``None`` when the store is
+            reaching its remote — or has no remote, or has not tried yet.
+            Callers surface the difference between "something is wrong" and
+            "nothing to report", never a healthy state object.
         """
         ...
 

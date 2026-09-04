@@ -1114,7 +1114,9 @@ class TestTokenRedactionInLogs:
 
         with (
             patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=fake_exc),
-            caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
+            # The per-attempt line sits at DEBUG since #1287: the transition
+            # into the unsynced state is what gets logged loudly, once.
+            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"),
         ):
             strategy._push_scheduler.do_push_safe()
 
@@ -1180,7 +1182,7 @@ class TestTokenRedactionInLogs:
 
         with (
             patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=fake_exc),
-            caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
+            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"),
         ):
             strategy._push_scheduler.push_if_unpushed()
 
@@ -1926,7 +1928,7 @@ class TestGitSyncOnce:
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """sync_once returns False + WARNING when _write_conflict_files commit fails.
+        """sync_once returns False when the _write_conflict_files commit fails.
 
         Mirrors test_force_pull_conflict_commit_failure_surfaces_resolution_failed
         on the force_pull side; covers the sync_once None-return path added in #462.
@@ -2012,7 +2014,9 @@ class TestGitSyncOnce:
             capture_output=True,
             text=True,
         ).stdout.strip()
-        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
+        # DEBUG since #1287: the per-cycle detail line moved down there;
+        # the once-per-outage line comes from the sync-health tracker.
+        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
             did_advance = strategy.sync_once(work)
         head_after = subprocess.run(
             ["git", "-C", str(work), "rev-parse", "HEAD"],
@@ -2023,9 +2027,14 @@ class TestGitSyncOnce:
 
         # Commit failed → sync_once reports no advance to the caller.
         assert did_advance is False
-        # WARNING surfaced for operator visibility.
+        # The detail line still names what happened, for whoever is diagnosing.
         assert any(
             "conflict commit failed, skipping" in r.message for r in caplog.records
+        )
+        # Operator visibility is the tracker's once-per-outage line (#1287).
+        assert any(
+            "git_remote_unsynced" in r.message and r.levelno == logging.ERROR
+            for r in caplog.records
         )
         # The rebase --continue ran before the failing commit, so HEAD did move.
         assert head_after != head_before
@@ -2077,7 +2086,7 @@ class TestGitSyncOnce:
         git_repo: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """_write_conflict_files returns None and logs ERROR when git commit fails."""
+        """_write_conflict_files returns None and logs when git commit fails."""
 
         # Create a real file for the original path.
         (git_repo / "note.md").write_text("# Original\n")
@@ -2104,13 +2113,13 @@ class TestGitSyncOnce:
             mock.patch(
                 "markdown_vault_mcp.git.subprocess.run", side_effect=patched_run
             ),
-            caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
+            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"),
         ):
             written = _write_conflict_files(git_repo, saved)
 
         # Commit failed: helper signals failure to its caller via None.
         assert written is None
-        # The ERROR was logged.
+        # The line was logged, at DEBUG since #1287 (it repeats per pull cycle).
         assert any("conflict commit failed" in r.message for r in caplog.records)
 
     def test_write_conflict_files_commit_failure_redacts_token(
@@ -2144,7 +2153,7 @@ class TestGitSyncOnce:
             mock.patch(
                 "markdown_vault_mcp.git.subprocess.run", side_effect=patched_run
             ),
-            caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
+            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"),
         ):
             _write_conflict_files(git_repo, saved, token="secret-pat-xyz")
 
