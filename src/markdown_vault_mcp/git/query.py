@@ -44,10 +44,60 @@ _EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 # Diff payloads larger than this are truncated with a byte-count marker.
 _DIFF_MAX_BYTES = 50 * 1024  # 50 KB
 
-# \x1e (ASCII Record Separator) is the sentinel used to split commit
-# blocks in ``git log`` output — it cannot appear in filenames or commit
-# messages.
+# Patch and ``--stat`` payloads name files in their own body.  Under git's
+# default ``core.quotePath`` a non-ASCII name is rendered there octal-escaped
+# inside double quotes, so the diff a caller reads back names a file they
+# cannot then look up.  This is a rendering choice rather than the framing
+# problem the log readers have (nothing parses these payloads — they are
+# handed to the caller as text), so the config override is the right tool
+# here where ``-z`` is the right tool there.
+_READABLE_PATHS = ("-c", "core.quotePath=false")
+
+# \x1e (ASCII Record Separator) marks the start of each commit block in
+# ``git log`` output.  Commit messages do not carry it, and while a POSIX
+# filename legally may, git has no framing that would let a block boundary be
+# found without a marker of some kind.
 _HISTORY_SENTINEL = "\x1e"
+
+
+def _split_z_block(block: str, field_count: int) -> tuple[list[str], list[str]] | None:
+    """Split one ``git log -z`` commit block into header fields and paths.
+
+    ``-z`` terminates the ``--format`` output with NUL instead of a newline,
+    then — when a file list follows — emits a single ``\\n`` before the first
+    path and terminates every path with NUL.  So a block reads
+    ``field1\\0...fieldN\\0`` optionally followed by ``\\npath1\\0path2\\0``.
+    Paths arrive as git recorded them rather than octal-escaped: ``-z``
+    suppresses the double-quoted rendering ``core.quotePath`` produces for
+    non-ASCII names, and unlike ``-c core.quotePath=false`` it also covers the
+    names git quotes unconditionally (a double quote, tab, or newline in the
+    path).  Carriage returns are the exception, and the text-mode pipe rather
+    than git is what rewrites them: a lone ``\r`` is translated, and a
+    ``\r\n`` pair collapses to a single byte (#1290).
+
+    Exactly one trailing empty token is dropped — the one git's final NUL
+    creates — rather than every trailing empty, because a commit with an empty
+    subject contributes a legitimately empty field.  Likewise exactly one
+    leading newline is removed from the first path token, since a filename may
+    legally begin with one.
+
+    Args:
+        block: One commit block, sentinel already stripped.
+        field_count: Number of ``--format`` fields the block's header carries.
+
+    Returns:
+        ``(header_fields, paths)``, or ``None`` when the block is empty or
+        carries fewer than *field_count* header fields.
+    """
+    tokens = block.split("\0")
+    if tokens and not tokens[-1]:
+        tokens.pop()
+    if len(tokens) < field_count:
+        return None
+    paths = tokens[field_count:]
+    if paths and paths[0].startswith("\n"):
+        paths[0] = paths[0][1:]
+    return tokens[:field_count], paths
 
 
 def _truncate_diff(diff: str) -> str:
@@ -207,13 +257,17 @@ def _history_log_cmd(
 
     Returns:
         The full ``git log`` argv, formatted with :data:`_HISTORY_SENTINEL`
-        block markers and NUL-separated header fields.
+        block markers and NUL-separated header fields.  ``-z`` frames the
+        ``--name-only`` paths by NUL as well, so a non-ASCII name reaches
+        the caller as git recorded it rather than octal-escaped inside
+        double quotes (see :func:`_split_z_block`).
     """
     cmd = [
         "git",
         "-C",
         str(git_root),
         "log",
+        "-z",
         f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
         f"-n{limit}",
     ]
@@ -257,20 +311,21 @@ def _history_log_output(cmd: list[str], env: dict[str, str] | None) -> str:
     return result.stdout
 
 
-def _vault_relative_paths(lines: list[str], vault_prefix: str) -> list[str]:
-    """Normalise ``--name-only`` path lines to vault-relative paths.
+def _vault_relative_paths(tokens: list[str], vault_prefix: str) -> list[str]:
+    """Normalise ``--name-only`` path tokens to vault-relative paths.
 
-    Blank lines are dropped; *vault_prefix* (when non-empty) is stripped from
-    each remaining line so callers always receive vault-relative paths.
+    Empty tokens are dropped; *vault_prefix* (when non-empty) is stripped from
+    each remaining one so callers always receive vault-relative paths.  The
+    tokens are otherwise passed through unaltered — they come from a ``-z``
+    stream, where leading and trailing whitespace is part of the filename.
     """
     paths: list[str] = []
-    for ln in lines:
-        ln = ln.strip()
-        if not ln:
+    for token in tokens:
+        if not token:
             continue
-        if vault_prefix and ln.startswith(vault_prefix):
-            ln = ln[len(vault_prefix) :]
-        paths.append(ln)
+        if vault_prefix and token.startswith(vault_prefix):
+            token = token[len(vault_prefix) :]
+        paths.append(token)
     return paths
 
 
@@ -280,30 +335,26 @@ def _parse_history_block(
     """Parse one sentinel-delimited ``git log`` block into a history entry.
 
     Args:
-        block: One commit block: ``header_line\\nfile1\\nfile2\\n`` where the
-            header carries five NUL-separated fields.
-        vault_prefix: Prefix stripped from path lines (see
+        block: One commit block from the ``-z`` stream: five NUL-terminated
+            header fields, then the block's paths (see
+            :func:`_split_z_block`).
+        vault_prefix: Prefix stripped from path tokens (see
             :func:`_vault_prefix`).
         collect_paths: When ``True`` (vault-wide or directory queries),
             populate ``paths_changed`` from the block's ``--name-only``
-            lines; when ``False`` (single-file queries) leave it empty.
+            paths; when ``False`` (single-file queries) leave it empty.
 
     Returns:
         The parsed :class:`HistoryEntry`, or ``None`` for an empty or
         malformed block.
     """
-    block = block.strip()
-    if not block:
+    split = _split_z_block(block, 5)
+    if split is None:
         return None
-    # A stripped non-empty block always has a first line.
-    lines = block.splitlines()
-    parts = lines[0].split("\x00")
-    if len(parts) < 5:
-        return None
-    sha, short_sha, timestamp, author, message = parts[:5]
+    (sha, short_sha, timestamp, author, message), path_tokens = split
     paths_changed: list[str] = []
     if collect_paths:
-        paths_changed = _vault_relative_paths(lines[1:], vault_prefix)
+        paths_changed = _vault_relative_paths(path_tokens, vault_prefix)
     return HistoryEntry(
         sha=sha,
         short_sha=short_sha,
@@ -566,7 +617,15 @@ def _range_diff(
     if summarize_binary and _diff_is_binary(git_root, diff_args, env):
         try:
             stat = subprocess.run(
-                ["git", "-C", str(git_root), "diff", "--stat", *diff_args],
+                [
+                    "git",
+                    *_READABLE_PATHS,
+                    "-C",
+                    str(git_root),
+                    "diff",
+                    "--stat",
+                    *diff_args,
+                ],
                 capture_output=True,
                 text=True,
                 check=True,
@@ -579,7 +638,7 @@ def _range_diff(
             ) from exc
         return stat.stdout
 
-    diff_cmd = ["git", "-C", str(git_root), "diff", *diff_args]
+    diff_cmd = ["git", *_READABLE_PATHS, "-C", str(git_root), "diff", *diff_args]
     try:
         result = subprocess.run(
             diff_cmd,
@@ -639,6 +698,7 @@ def _root_commit_diff(
     )
     fallback_cmd = [
         "git",
+        *_READABLE_PATHS,
         "-C",
         str(git_root),
         "show",
@@ -662,26 +722,23 @@ def _root_commit_diff(
 
 
 def _parse_log_block(block: str, rel_fallback: str) -> tuple[str, ...] | None:
-    """Parse one sentinel-delimited ``git log --name-only`` block.
+    """Parse one sentinel-delimited ``git log -z --name-only`` block.
 
     Returns:
         ``(sha, short_sha, timestamp, message, commit_path)``, or ``None``
         for an empty or malformed block.  *commit_path* is the path the
         file had at that commit (the old name for pre-rename commits,
         thanks to ``--follow``), falling back to *rel_fallback* when the
-        block carries no path line.
+        block carries no path.  It is the name git recorded rather than
+        git's quoted rendering of it, so it can be handed straight back as a
+        pathspec (see :func:`_split_z_block`, and #1290 for the carriage
+        returns still rewritten in transit).
     """
-    block = block.strip()
-    if not block:
+    split = _split_z_block(block, 4)
+    if split is None:
         return None
-    lines = block.splitlines()
-    if not lines:
-        return None
-    parts = lines[0].split("\x00")
-    if len(parts) < 4:
-        return None
-    sha, short_sha, timestamp, message = parts[:4]
-    commit_path = next((ln.strip() for ln in lines[1:] if ln.strip()), rel_fallback)
+    (sha, short_sha, timestamp, message), path_tokens = split
+    commit_path = next((token for token in path_tokens if token), rel_fallback)
     return sha, short_sha, timestamp, message, commit_path
 
 
@@ -696,12 +753,15 @@ def _per_commit_diffs(
 ) -> list[CommitDiff]:
     """Return one :class:`CommitDiff` per commit in ``ref..HEAD``.
 
-    Enumerates commits with ``git log --follow --name-only`` (with a
+    Enumerates commits with ``git log -z --follow --name-only`` (with a
     sentinel) so the path the file had at each commit can be recovered —
     critical for correct diffs across renames (``git show sha -- new.md``
     returns nothing for pre-rename commits; the old filename must be
-    passed instead).  Raises :exc:`ValueError` when *ref* is not found or
-    a per-commit diff fails for a commit that does have a parent.
+    passed instead).  ``-z`` is what makes that path usable as a pathspec:
+    without it a non-ASCII name arrives octal-escaped inside double quotes
+    and the per-commit diff comes back empty.  Raises :exc:`ValueError`
+    when *ref* is not found or a per-commit diff fails for a commit that
+    does have a parent.
     """
     path_str = str(path)
     _PC_SENTINEL = "\x1e"
@@ -710,6 +770,7 @@ def _per_commit_diffs(
         "-C",
         str(git_root),
         "log",
+        "-z",
         "--follow",
         f"--format={_PC_SENTINEL}%H%x00%h%x00%aI%x00%s",
         "--name-only",
@@ -730,7 +791,7 @@ def _per_commit_diffs(
         raise ValueError(f"Commit {ref!r} not found in history") from exc
 
     # Repo-relative posix path — the correct fallback when a --name-only
-    # block has no path line (git returns posix-relative paths, so the
+    # block carries no path (git returns posix-relative paths, so the
     # absolute platform-native path_str would break rename resolution on
     # Windows).
     try:
@@ -756,6 +817,7 @@ def _per_commit_diffs(
         commit_binary = summarize_binary and _diff_is_binary(git_root, commit_args, env)
         diff_cmd = [
             "git",
+            *_READABLE_PATHS,
             "-C",
             str(git_root),
             "diff",

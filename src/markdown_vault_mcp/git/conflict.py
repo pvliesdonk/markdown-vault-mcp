@@ -56,14 +56,17 @@ def resolve_rebase_conflicts(
     max_iterations = 50  # safety limit
 
     for _ in range(max_iterations):
-        # Identify conflicting files.
+        # Identify conflicting files.  ``-z`` frames the paths by NUL: under
+        # git's default ``core.quotePath`` a non-ASCII name comes back
+        # octal-escaped inside double quotes, and every command below is then
+        # handed a path no longer naming the conflicting file.
         result = subprocess.run(
-            ["git", "-C", root, "diff", "--name-only", "--diff-filter=U"],
+            ["git", "-C", root, "diff", "--name-only", "-z", "--diff-filter=U"],
             capture_output=True,
             text=True,
             env=env,
         )
-        conflicting = [f for f in result.stdout.strip().splitlines() if f]
+        conflicting = [f for f in result.stdout.split("\0") if f]
         if not conflicting:
             # No conflicts — rebase may have stopped for another reason.
             break
