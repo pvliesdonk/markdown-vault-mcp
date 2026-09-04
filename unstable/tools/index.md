@@ -892,7 +892,7 @@ Find the shortest path between two notes via BFS on the undirected link graph (m
 
 ### `get_history`
 
-List commits that touched a note, attachment, or folder (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults. A single-note query describes that note. A rename is followed back to the note's earlier name, including one that also rewrote the note heavily: the similarity threshold matches the one `read(revision=)` resolves at. A rename made while resolving a merge is the one case the two readers still differ on, because it belongs to no parent's diff: `read` resolves it, this history does not report it ([#1306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1306)). Where a name was freed and later reused, the commits from before this note existed belong to its predecessor, so they are left out.
+List commits that touched a note, attachment, or folder (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults. A single-note query describes that note. A rename is followed back to the note's earlier name, including one that also rewrote the note heavily and one made while resolving a merge: the note is identified the same way `read(revision=)` identifies it, at the same similarity threshold. A merge commit is listed only where the merge itself changed the note, as it does when the note was renamed while the merge was resolved. Where a merge only carried a change made on the branch it merged, the branch's own commits describe that change and the merge stays out. Where a name was freed and later reused, the commits from before this note existed belong to its predecessor, so they are left out.
 
 **Parameters:**
 
@@ -918,7 +918,7 @@ List commits that touched a note, attachment, or folder (or the whole vault) wit
 
 ### `get_diff`
 
-Return the diff of a specific note or attachment between a reference point and `HEAD`. Only available for git-backed vaults. The diff describes the note the path names today. Where a different note held that name earlier, a reference point older than this note's creation reads as a creation rather than pairing the two notes' content against each other.
+Return the diff of a specific note or attachment between a reference point and `HEAD`. Only available for git-backed vaults. The diff describes the note the path names today. A `per_commit` walk identifies the note the way `get_history` does, so it crosses a rename made while resolving a merge as well. Where a different note held that name earlier, a reference point older than this note's creation reads as a creation rather than pairing the two notes' content against each other.
 
 **Parameters:**
 
