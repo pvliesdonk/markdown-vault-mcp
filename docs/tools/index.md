@@ -984,7 +984,7 @@ Find the shortest path between two notes via BFS on the undirected link graph (m
 
 ### `get_history`
 
-List commits that touched a note, attachment, or folder (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults. A single-note query describes that note. A rename is followed back to the note's earlier name. Where a name was freed and later reused, the commits from before this note existed belong to its predecessor, so they are left out.
+List commits that touched a note, attachment, or folder (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults. A single-note query describes that note. A rename is followed back to the note's earlier name, including one that also rewrote the note heavily: the similarity threshold matches the one `read(revision=)` resolves at, so a revision `read` accepts is one this history lists. Where a name was freed and later reused, the commits from before this note existed belong to its predecessor, so they are left out.
 
 **Parameters:**
 

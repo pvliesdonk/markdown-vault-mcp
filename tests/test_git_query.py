@@ -337,6 +337,112 @@ class TestHistoryQueryHelpers:
         assert _vault_prefix(tmp_path, tmp_path) == ""
 
 
+class TestRenameThresholdAgreement:
+    """The readers agree about a rename git scores between 30% and 50% (#1297).
+
+    Real git again, not the fake strategy: the defect was that one walk asked
+    git to detect renames at 30% and another let it default to 50%, so a
+    revision ``read`` served was one ``get_history`` never listed.
+    """
+
+    def _renamed_note_repo(self, tmp_path: Path) -> tuple[Path, str, str, str]:
+        """Build a repo whose third commit renames and rewrites a note.
+
+        ``a.md`` is created, edited, then renamed to ``b.md`` and rewritten in
+        one commit.  The blob pair either side of the rename is 36% similar —
+        over the 30% this project pins, under git's 50% default — so the two
+        thresholds disagree about whether ``b.md`` has any history at all.
+
+        Returns:
+            The repo path and the three commit SHAs, oldest first.
+        """
+        repo = tmp_path / "renamed"
+        repo.mkdir()
+        subprocess.run(
+            ["git", "-C", str(repo), "init", "--initial-branch=main"],
+            check=True,
+            capture_output=True,
+        )
+        for key, value in (("user.email", "t@example.com"), ("user.name", "T")):
+            subprocess.run(
+                ["git", "-C", str(repo), "config", key, value],
+                check=True,
+                capture_output=True,
+            )
+
+        def _commit(message: str) -> str:
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-m", message],
+                check=True,
+                capture_output=True,
+            )
+            return subprocess.run(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+
+        (repo / "a.md").write_text("# Title\nDraft line\n")
+        created = _commit("create a.md")
+        (repo / "a.md").write_text("# Title\nOriginal line\n")
+        edited = _commit("edit a.md")
+        subprocess.run(
+            ["git", "-C", str(repo), "mv", "a.md", "b.md"],
+            check=True,
+            capture_output=True,
+        )
+        (repo / "b.md").write_text("# Title\nModified line\n")
+        renamed = _commit("rename a.md to b.md and rewrite it")
+
+        # The premise: git's own default does not pair these two blobs — it
+        # reports an unrelated delete and add, so a walk that leaves the
+        # threshold to git sees b.md born at this commit with no past.
+        at_default = subprocess.run(
+            ["git", "-C", str(repo), "show", "--name-status", "--format=", renamed],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert at_default == "D\ta.md\nA\tb.md\n", at_default
+
+        return repo, created, edited, renamed
+
+    def test_history_lists_the_revisions_a_revision_read_serves(
+        self, tmp_path: Path
+    ) -> None:
+        """Every revision ``read`` accepts for the note is one history reports."""
+        repo, created, edited, renamed = self._renamed_note_repo(tmp_path)
+        mgr = GitQueryManager(GitWriteStrategy(), repo)
+
+        listed = [entry.sha for entry in mgr.get_history("b.md", limit=10)]
+
+        assert listed == [renamed, edited, created]
+        # Both pre-rename revisions read back as the same note, under the name
+        # it had then — which is what made listing only the rename a lie.
+        for revision in (edited, created):
+            assert mgr.read_at_revision("b.md", revision).historical_path == "a.md"
+
+    def test_per_commit_diff_includes_the_commit_on_the_old_name(
+        self, tmp_path: Path
+    ) -> None:
+        """A pre-rename commit inside the range is diffed, not skipped."""
+        repo, created, edited, renamed = self._renamed_note_repo(tmp_path)
+        mgr = GitQueryManager(GitWriteStrategy(), repo)
+
+        diffs = mgr.get_diff("b.md", since_sha=created, per_commit=True)
+
+        assert isinstance(diffs, list)
+        assert [diff.sha for diff in diffs] == [renamed, edited]
+        # The older one is the edit made while the note was still a.md; it is
+        # rendered from that name, not skipped for not matching b.md.
+        assert "-Draft line" in diffs[1].diff
+        assert "+Original line" in diffs[1].diff
+
+
 class TestSha256Repository:
     """A SHA-256 repository's object IDs survive the round trip (#1284).
 
