@@ -53,17 +53,18 @@ _DIFF_MAX_BYTES = 50 * 1024  # 50 KB
 # here where ``-z`` is the right tool there.
 _READABLE_PATHS = ("-c", "core.quotePath=false")
 
-# Rename-detection threshold for the record walks (the revision walk behind
-# :func:`get_file_at_ref` and the lineage walk behind :func:`_lineage`).
-# Matches ``resolve_path_at_ref``'s 30% (#338): at git's 50% default, a rename
-# that also rewrote half the note reports as an unrelated add plus delete —
-# which the revision walk is obliged to refuse, and which the lineage walk
-# would read as the note having been born at the rename.  Passing it
+# Rename-detection threshold for every query in this module that resolves a
+# note across a rename — the single-note walks and the two-rev resolution
+# alike.  One constant, because the disagreement is the bug: at git's 50%
+# default a rename that also rewrote half the note reports as an unrelated add
+# plus delete, so a walk pinned at 30% would serve a revision a walk left at
+# the default never lists (#1297).  30% comes from #338: catch rename-with-edits
+# without pairing unrelated notes from a shared template.  Passing it
 # explicitly also overrides the operator's ``diff.renames`` (verified for
 # true/false/copies), so rename detection is on regardless of their config —
 # the same reason the limit below is pinned.  Copy detection is a different
-# matter: ``--follow`` turns it on by itself, so ``C`` records reach both
-# walks and are handled there.
+# matter: ``--follow`` turns it on by itself, so ``C`` records reach the walks
+# and are handled there.
 _RENAME_THRESHOLD = "--find-renames=30"
 
 # Rename-detection is capped per commit; a commit renaming more files than the
@@ -441,10 +442,20 @@ def _history_log_cmd(
         block markers and NUL-separated header fields.  ``-z`` frames the
         ``--name-only`` paths by NUL as well, so a non-ASCII name reaches
         the caller as git recorded it rather than octal-escaped inside
-        double quotes (see :func:`_split_z_block`).
+        double quotes (see :func:`_split_z_block`).  A single-file query
+        carries :data:`_RENAME_THRESHOLD` and :data:`_RENAME_LIMIT`, so it
+        crosses the same renames the revision readers do (#1297); the
+        vault-wide and directory argv are unchanged by them, since rename
+        detection would alter their ``--name-only`` output.
     """
-    cmd = [
-        "git",
+    single_file = path is not None and not is_dir
+    cmd = ["git"]
+    if single_file:
+        # Rename detection is only in play for the ``--follow`` branch below;
+        # leaving the vault-wide and directory argv untouched keeps their
+        # ``--name-only`` output exactly as it was.
+        cmd += ["-c", _RENAME_LIMIT]
+    cmd += [
         "-C",
         str(git_root),
         "log",
@@ -468,7 +479,10 @@ def _history_log_cmd(
         # needed here.
         cmd += ["--name-only", "--", literal_pathspec(str(path))]
     else:
-        cmd += ["--follow", "--", literal_pathspec(str(path))]
+        # Same threshold as every other rename-crossing query here: without it
+        # this walk stopped at a rename git scored under its 50% default, and
+        # listed no commit for a revision ``read`` would happily serve (#1297).
+        cmd += ["--follow", _RENAME_THRESHOLD, "--", literal_pathspec(str(path))]
     return cmd
 
 
@@ -660,8 +674,7 @@ def resolve_path_at_ref(
                 str(git_root),
                 "diff",
                 "--name-status",
-                # 30% threshold: catch rename-with-edits per #338, avoid template false-positives.
-                "--find-renames=30",
+                _RENAME_THRESHOLD,
                 # -z: NUL-terminated fields, tolerates tabs/newlines in paths.
                 "-z",
                 ref,
@@ -953,6 +966,10 @@ def _per_commit_diffs(
     and the per-commit diff comes back empty.  The enumerated commits are
     filtered to the note's own lineage, because ``--follow`` walks past the
     commit that created it and into whatever held the name before (#1285).
+    The walk pins :data:`_RENAME_THRESHOLD`: left at git's default it stopped
+    at a rename it scored under 50%, and the commits on the old name inside
+    the range went unlisted even though the lineage filter and the revision
+    readers both recognised them (#1297).
     Raises :exc:`ValueError` when *ref* is not found or a per-commit diff
     fails for a commit that does have a parent.
     """
@@ -960,11 +977,14 @@ def _per_commit_diffs(
     _PC_SENTINEL = "\x1e"
     log_cmd = [
         "git",
+        "-c",
+        _RENAME_LIMIT,
         "-C",
         str(git_root),
         "log",
         "-z",
         "--follow",
+        _RENAME_THRESHOLD,
         f"--format={_PC_SENTINEL}%H%x00%h%x00%aI%x00%s",
         "--name-only",
     ]
