@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from markdown_vault_mcp.git._run import cleanup_git_env, git_env
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
@@ -52,6 +52,25 @@ _DIFF_MAX_BYTES = 50 * 1024  # 50 KB
 # handed to the caller as text), so the config override is the right tool
 # here where ``-z`` is the right tool there.
 _READABLE_PATHS = ("-c", "core.quotePath=false")
+
+# Rename-detection threshold for the record walks (the revision walk behind
+# :func:`get_file_at_ref` and the lineage walk behind :func:`_lineage`).
+# Matches ``resolve_path_at_ref``'s 30% (#338): at git's 50% default, a rename
+# that also rewrote half the note reports as an unrelated add plus delete —
+# which the revision walk is obliged to refuse, and which the lineage walk
+# would read as the note having been born at the rename.  Passing it
+# explicitly also overrides the operator's ``diff.renames`` (verified for
+# true/false/copies), so rename detection is on regardless of their config —
+# the same reason the limit below is pinned.  Copy detection is a different
+# matter: ``--follow`` turns it on by itself, so ``C`` records reach both
+# walks and are handled there.
+_RENAME_THRESHOLD = "--find-renames=30"
+
+# Rename-detection is capped per commit; a commit renaming more files than the
+# cap degrades every rename to add+delete, which the walks then misread.
+# Pinning the value keeps that boundary a property of this code rather than of
+# whatever the operator has in their git config.
+_RENAME_LIMIT = "diff.renameLimit=2000"
 
 # \x1e (ASCII Record Separator) marks the start of each commit block in
 # ``git log`` output.  Commit messages do not carry it, and while a POSIX
@@ -153,6 +172,166 @@ def _resolve_since_timestamp(
             f"{(exc.stderr or '').strip()}"
         ) from exc
     return rev_result.stdout.strip() or None
+
+
+def _repo_rel(git_root: Path, path: Path) -> str | None:
+    """Return *path* relative to *git_root* as a posix string, or ``None``.
+
+    ``None`` means the path is outside the repository, which every caller
+    reads as "git has nothing to say about this" rather than as an error.
+    Git reports paths posix-relative to its root, so this is the form to
+    compare its output against — the absolute, platform-native path would
+    never match on Windows.
+    """
+    try:
+        return path.resolve().relative_to(git_root).as_posix()
+    except ValueError:
+        return None
+
+
+def _empty_tree(git_root: Path, env: dict[str, str] | None) -> str:
+    """Return this repository's empty-tree object id.
+
+    Resolved rather than hardcoded because the well-known constant is a SHA-1
+    id and is not a valid object in a SHA-256 repository (#1286).  Falls back
+    to the constant when resolution fails, which keeps a SHA-1 repository —
+    every repository that predates the option — working unchanged.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(git_root), "hash-object", "-t", "tree", "--stdin"],
+            input="",
+            capture_output=True,
+            text=True,
+            env=env,
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        return _EMPTY_TREE_SHA
+    return result.stdout.strip() or _EMPTY_TREE_SHA
+
+
+class _Lineage(NamedTuple):
+    """What git's own records say about the note now living at a path.
+
+    Attributes:
+        shas: The commits belonging to that note, or ``None`` when the walk
+            could not be run at all (a path outside the repository, or a git
+            invocation that failed).  ``None`` means "unknown", and every
+            caller treats it by leaving its existing behaviour alone rather
+            than filtering on a set it does not trust.
+        birth_found: ``True`` when the walk reached the commit that created
+            the note — so anything older belongs to whatever held the name
+            before, not to this note.
+    """
+
+    shas: set[str] | None
+    birth_found: bool
+
+
+def _track_records(path_tokens: list[str], tracked: str) -> tuple[str, bool]:
+    """Advance one commit's ``--name-status`` records in a newest-first walk.
+
+    *tracked* is the path the note carries at the commit being examined.
+    Records that do not name it are ignored: a windowed or range-bounded walk
+    can hide the rename that would have retargeted the walk, and dropping the
+    note's own commits on that evidence is worse than following a name one
+    commit too far.
+
+    Returns:
+        ``(tracked_for_older_commits, reached_birth)``.  An ``R`` record whose
+        destination is the tracked path retargets the walk to its source; an
+        ``A`` (or a ``C``, which ``--follow`` enables copy detection for) on
+        the tracked path is the note's birth; ``D`` / ``M`` / ``T`` leave the
+        identity intact.
+    """
+    i = 0
+    while i < len(path_tokens):
+        status = path_tokens[i]
+        if not status:
+            i += 1
+            continue
+        wanted = 2 if status[0] in ("R", "C") else 1
+        paths = path_tokens[i + 1 : i + 1 + wanted]
+        if len(paths) < wanted:
+            break
+        if paths[-1] == tracked:
+            if status[0] == "R":
+                return paths[0], False
+            if status[0] in ("A", "C"):
+                return tracked, True
+        i += 1 + wanted
+    return tracked, False
+
+
+def _lineage(
+    git_root: Path,
+    path: Path,
+    cur_rel: str,
+    env: dict[str, str] | None,
+    *,
+    rev_range: str | None = None,
+) -> _Lineage:
+    """Return the commits that belong to the note now at *cur_rel* (#1285).
+
+    ``git log --follow`` does not stop at the commit that created the file it
+    follows: where a name was freed by a rename or a delete and later reused,
+    it walks past that boundary and into the previous occupant's history.  So
+    the boundary is established here, from git's own ``--name-status`` records,
+    by walking newest-first and stopping at the record that creates the note.
+
+    The walk is deliberately its own invocation rather than a reading of the
+    caller's stream: ``--since`` / ``--until`` and a ``-n`` cap trim what the
+    caller's ``git log`` returns, and a window that excludes the note's
+    creation would leave no birth record to stop at.
+
+    Args:
+        git_root: Pre-resolved git repository root.
+        path: Absolute path of the note, used as the pathspec so the walk
+            matches exactly what the caller's own query matched.
+        cur_rel: That path repo-relative and posix — the form git's records
+            use, and where the walk starts tracking.
+        env: Git environment from :func:`git_env`.
+        rev_range: Restrict the walk to a range (``"<ref>..HEAD"``).  ``None``
+            walks back from ``HEAD`` without a bound, which is what a caller
+            filtering a date-windowed query needs.
+
+    Returns:
+        A :class:`_Lineage`.  A failed git invocation yields
+        ``_Lineage(None, False)`` — unknown, not empty — so a caller falls
+        back to its previous behaviour instead of discarding every commit.
+    """
+    cmd = [
+        "git",
+        "-c",
+        _RENAME_LIMIT,
+        "-C",
+        str(git_root),
+        "log",
+        "-z",
+        "--follow",
+        "--name-status",
+        _RENAME_THRESHOLD,
+        f"--format={_HISTORY_SENTINEL}%H",
+    ]
+    if rev_range is not None:
+        cmd.append(rev_range)
+    cmd += ["--", str(path)]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
+    if result.returncode != 0:
+        return _Lineage(None, False)
+    shas: set[str] = set()
+    tracked = cur_rel
+    for block in result.stdout.split(_HISTORY_SENTINEL):
+        split = _split_z_block(block, 1)
+        if split is None:
+            continue
+        (sha,), path_tokens = split
+        shas.add(sha)
+        tracked, reached_birth = _track_records(path_tokens, tracked)
+        if reached_birth:
+            return _Lineage(shas, True)
+    return _Lineage(shas, False)
 
 
 def _rename_aware_diff_args(
@@ -390,7 +569,9 @@ def get_file_history(
             subtree (``git log -- <dir>``, without the single-file
             ``--follow``), and ``paths_changed`` is populated with the
             subtree files each commit touched. When ``False`` (a single file),
-            ``--follow`` tracks renames and ``paths_changed`` stays empty.
+            ``--follow`` tracks renames, the result is filtered to the note's
+            own lineage (see :func:`_lineage`, #1285), and ``paths_changed``
+            stays empty.
         since: Passed as ``--since`` to ``git log`` (ISO 8601 or git date
             expression such as ``"1 week ago"``).  ``None`` disables the
             filter.
@@ -420,9 +601,18 @@ def get_file_history(
         git_root, repo_path, path, since, until, limit, is_dir=is_dir
     )
 
+    cur_rel = None if (path is None or is_dir) else _repo_rel(git_root, path)
     env = git_env(token, username)
     try:
         raw = _history_log_output(cmd, env)
+        # Single-file queries only: establish which commits belong to the note
+        # now at this path, so a name that was reused does not hand the caller
+        # its previous occupant's commits (#1285).
+        lineage = (
+            _Lineage(None, False)
+            if cur_rel is None or path is None
+            else _lineage(git_root, path, cur_rel, env)
+        )
     finally:
         cleanup_git_env(env)
 
@@ -439,8 +629,11 @@ def get_file_history(
     entries: list[HistoryEntry] = []
     for block in raw.split(_HISTORY_SENTINEL):
         entry = _parse_history_block(block, vault_prefix, collect_paths=collect_paths)
-        if entry is not None:
-            entries.append(entry)
+        if entry is None:
+            continue
+        if lineage.shas is not None and entry.sha not in lineage.shas:
+            continue
+        entries.append(entry)
     return entries
 
 
@@ -597,19 +790,33 @@ def _range_diff(
     """Return the single unified diff of *path* from *ref* to HEAD.
 
     Handles rename resolution, the binary ``--stat`` summary (#342), and
-    truncation.  Raises :exc:`ValueError` on an invalid ref or a path not
-    present at that revision.
+    truncation.  When the note now at *path* was created after *ref* — which
+    is the interesting case only because the name may have been someone
+    else's then (#1285) — the diff is taken against the empty tree, so it
+    reads as the creation it is instead of pairing two notes' content.
+    Raises :exc:`ValueError` on an invalid ref or a path not present at that
+    revision.
     """
     path_str = str(path)
-    # Resolve the path-at-ref once so renames are handled uniformly for
-    # binary detection, the --stat summary, and the full diff.
-    try:
-        cur_rel = path.resolve().relative_to(git_root).as_posix()
-    except ValueError:
-        cur_rel = None
-    diff_args, _old_path = _rename_aware_diff_args(
-        git_root, ref, "HEAD", cur_rel, path_str, env
-    )
+    # Both branches below settle the diff's endpoints once, so binary
+    # detection, the --stat summary, and the full diff all read the same
+    # target: the empty tree where the note was born inside the range, and
+    # otherwise the rename-resolved pair.
+    cur_rel = _repo_rel(git_root, path)
+    if (
+        cur_rel is not None
+        and _lineage(git_root, path, cur_rel, env, rev_range=f"{ref}..HEAD").birth_found
+    ):
+        # The note now at this path was created within the range, so whatever
+        # stood at that name at *ref* belongs to a different note.  Diff
+        # against the empty tree instead: the note reads as the creation it
+        # is, exactly as it would if the name had never been used before
+        # (#1285).
+        diff_args = [_empty_tree(git_root, env), "HEAD", "--", path_str]
+    else:
+        diff_args, _old_path = _rename_aware_diff_args(
+            git_root, ref, "HEAD", cur_rel, path_str, env
+        )
 
     # Binary attachments: a unified patch is meaningless, so emit a
     # --stat summary instead.  Text attachments (and notes, since the
@@ -669,30 +876,7 @@ def _root_commit_diff(
     gets ``--stat``) and falls back to ``git show``.  Raises
     :exc:`ValueError` when even the fallback fails.
     """
-    # Resolve the empty-tree object for this repo's hash algorithm
-    # (the hardcoded SHA-1 constant is invalid in SHA-256 repos);
-    # fall back to the SHA-1 constant if resolution fails.
-    empty_tree = _EMPTY_TREE_SHA
-    try:
-        res = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(git_root),
-                "hash-object",
-                "-t",
-                "tree",
-                "--stdin",
-            ],
-            input="",
-            capture_output=True,
-            text=True,
-            env=env,
-            check=True,
-        )
-        empty_tree = res.stdout.strip() or _EMPTY_TREE_SHA
-    except subprocess.CalledProcessError:
-        pass
+    empty_tree = _empty_tree(git_root, env)
     root_binary = summarize_binary and _diff_is_binary(
         git_root, [empty_tree, sha, "--", commit_path], env
     )
@@ -759,9 +943,11 @@ def _per_commit_diffs(
     returns nothing for pre-rename commits; the old filename must be
     passed instead).  ``-z`` is what makes that path usable as a pathspec:
     without it a non-ASCII name arrives octal-escaped inside double quotes
-    and the per-commit diff comes back empty.  Raises :exc:`ValueError`
-    when *ref* is not found or a per-commit diff fails for a commit that
-    does have a parent.
+    and the per-commit diff comes back empty.  The enumerated commits are
+    filtered to the note's own lineage, because ``--follow`` walks past the
+    commit that created it and into whatever held the name before (#1285).
+    Raises :exc:`ValueError` when *ref* is not found or a per-commit diff
+    fails for a commit that does have a parent.
     """
     path_str = str(path)
     _PC_SENTINEL = "\x1e"
@@ -794,10 +980,16 @@ def _per_commit_diffs(
     # block carries no path (git returns posix-relative paths, so the
     # absolute platform-native path_str would break rename resolution on
     # Windows).
-    try:
-        rel_fallback = path.resolve().relative_to(git_root).as_posix()
-    except ValueError:
-        rel_fallback = path_str
+    cur_rel = _repo_rel(git_root, path)
+    rel_fallback = cur_rel if cur_rel is not None else path_str
+    # Which of the enumerated commits belong to the note now at this path:
+    # ``--follow`` walks past the commit that created it and into whatever
+    # held the name before, and those commits are a different note's (#1285).
+    lineage = (
+        _Lineage(None, False)
+        if cur_rel is None
+        else _lineage(git_root, path, cur_rel, env, rev_range=f"{ref}..HEAD")
+    )
 
     diffs: list[CommitDiff] = []
     for block in log_result.stdout.split(_PC_SENTINEL):
@@ -805,6 +997,8 @@ def _per_commit_diffs(
         if parsed is None:
             continue
         sha, short_sha, timestamp, message, commit_path = parsed
+        if lineage.shas is not None and sha not in lineage.shas:
+            continue
 
         # Build a rename-aware diff target for THIS commit vs its parent,
         # mirroring the single-range branch, so a renamed binary pairs into
@@ -892,22 +1086,6 @@ _LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1"
 # as text, not the linked note's content, so a revision read refuses rather
 # than handing back a path string as though it were a note.
 _SYMLINK_MODE = "120000"
-
-# Rename-detection threshold for the revision walk.  Matches
-# ``resolve_path_at_ref``'s 30% (#338): at git's 50% default, a rename that
-# also rewrote half the note reports as an unrelated add plus delete, which
-# this walk is obliged to refuse.  Passing it explicitly also overrides the
-# operator's ``diff.renames`` (verified for true/false/copies), so rename
-# detection is on regardless of their config — the same reason the limit
-# below is pinned.  Copy detection is a different matter: ``--follow`` turns
-# it on by itself, so ``C`` records reach the walk and are handled there.
-_RENAME_THRESHOLD = "--find-renames=30"
-
-# Rename-detection is capped per commit; a commit renaming more files than the
-# cap degrades every rename to add+delete, which the walk refuses.  Pinning the
-# value keeps that boundary a property of this code rather than of whatever the
-# operator has in their git config.
-_RENAME_LIMIT = "diff.renameLimit=2000"
 
 
 def _revision_walk_output(
