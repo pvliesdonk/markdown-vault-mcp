@@ -276,6 +276,14 @@ class TestBoundaryWalkHelpers:
         # An `R` record missing its destination half is not half a rename.
         assert _track_records(["R100", "a.md"], "b.md") == ("b.md", False)
 
+    def test_empty_tree_falls_back_when_git_cannot_resolve_it(
+        self, tmp_path: Path
+    ) -> None:
+        """A repository git cannot read yields the well-known SHA-1 constant."""
+        from markdown_vault_mcp.git.query import _EMPTY_TREE_SHA, _empty_tree
+
+        assert _empty_tree(tmp_path / "no-such-repo", None) == _EMPTY_TREE_SHA
+
     def test_path_outside_the_repository_has_no_relative_form(
         self, tmp_path: Path
     ) -> None:
