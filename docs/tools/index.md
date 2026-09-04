@@ -649,7 +649,7 @@ history before continuing the conversation.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `direction` | `"pull"` \| `"push"` \| `"both"` | `"both"` | Which legs to run. `"both"` runs pull first, then push; if pull fails (`pull.applied=false`) the push leg is skipped and `push` stays `null` so a callable can inspect `pull.reason` before retrying. |
-| `dry_run` | bool | `false` | When `true`, the pull leg runs `git fetch` and reports what *would* happen (`would_apply: bool`, projected `to_sha`) without moving HEAD. The push leg has no safe local probe for "would the remote accept this," so a dry-run push is a no-op that returns `applied=false` with `reason="dry_run_unsupported"`. |
+| `dry_run` | bool | `false` | When `true`, the pull leg runs `git fetch` and reports what *would* happen (`would_apply: bool`, projected `to_sha`) without moving HEAD. A clone whose history has moved on alongside the remote gets `fast_forward=false` with `reason="diverged"` rather than a fast-forward the real pull could not perform. The push leg has no safe local probe for "would the remote accept this," so a dry-run push is a no-op that returns `applied=false` with `reason="dry_run_unsupported"`. |
 
 **Returns:** Dict with the following fields:
 
@@ -746,7 +746,8 @@ Push rejected as non-fast-forward:
 ```
 
 **`pull.reason` values** (set on every non-fast-forward outcome and on
-failures; `null` for clean fast-forwards and dry-runs):
+failures; `null` when the pull fast-forwards cleanly, has nothing to bring
+in, or is a dry run projecting a clean fast-forward):
 
 | Reason | Meaning | `applied` |
 |--------|---------|-----------|
@@ -756,6 +757,7 @@ failures; `null` for clean fast-forwards and dry-runs):
 | `"conflicts_resolved_with_siblings"` | Rebase hit real conflicts; resolved by accepting upstream and writing local versions as `.conflict-mcp-*` siblings (#232). `conflict_files` populated. | `true` |
 | `"conflict_resolution_failed"` | The conflict-resolution loop could not produce a recoverable working tree; rebase was aborted. HEAD did not move. | `false` |
 | `"non_fast_forward_with_conflicts"` | Rare catastrophic fallback when even the conflict-resolution path could not stabilise the working tree. HEAD did not move. | `false` |
+| `"diverged"` | **`dry_run=true` only.** Local and remote histories have both moved on, so the projected pull cannot fast-forward. The real call rebases and may end in `"rebased"`, `"conflicts_resolved_with_siblings"`, or a failure; a dry run reports the divergence rather than guessing which. | `false` |
 
 **`push.reason` values** (`null` on success including the
 already-up-to-date no-op):

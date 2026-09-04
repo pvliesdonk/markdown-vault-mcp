@@ -18,6 +18,7 @@ PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS = "non_fast_forward_with_conflicts"
 PULL_REASON_REBASED = "rebased"
 PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS = "conflicts_resolved_with_siblings"
 PULL_REASON_CONFLICT_RESOLUTION_FAILED = "conflict_resolution_failed"
+PULL_REASON_DIVERGED = "diverged"
 
 PUSH_REASON_DRY_RUN_UNSUPPORTED = "dry_run_unsupported"
 PUSH_REASON_NO_REMOTE = "no_remote"
@@ -36,19 +37,23 @@ class PullResult:
 
     Attributes:
         applied: ``True`` when the pull was actually executed and HEAD was
-            moved (or was already up-to-date and required no work).
-            Also ``True`` when divergent history was resolved via the
-            Syncthing-style sibling write — HEAD advanced to the remote
-            and the local MCP versions were preserved as
+            moved, and when there was nothing to bring in — an up-to-date
+            clone, or one carrying only unpushed local commits — so no work
+            was required.  Also ``True`` when divergent history was resolved
+            via the Syncthing-style sibling write — HEAD advanced to the
+            remote and the local MCP versions were preserved as
             ``.conflict-mcp-*`` siblings (see ``conflict_files``).
-            ``False`` for ``dry_run`` calls and for failures that left
-            HEAD unchanged.
+            ``False`` for failures that left HEAD unchanged, and for a
+            ``dry_run`` predicting work: a dry run with nothing to pull
+            reports ``True``, since that answer is the same either way.
         fast_forward: ``True`` when the pull was (or would have been) a
             clean fast-forward.  ``False`` when divergent history
             required rebase + sibling writes, or when the operation
             failed.  Inspect ``reason`` and ``conflict_files`` to
             distinguish "applied via conflict resolution" from outright
-            failure.
+            failure.  A ``dry_run`` classifies the divergence before
+            predicting, so this is never ``True`` for a pull the real
+            call could not fast-forward (#1292).
         commits_pulled: Count of commits brought in.  Reliable on the
             fast-forward path (``reason is None`` and ``fast_forward=True``).
             On ``"rebased"`` and ``"conflicts_resolved_with_siblings"`` this
@@ -57,13 +62,21 @@ class PullResult:
             so the linear-history "commits pulled" count is not meaningful.
             Inspect ``from_sha != to_sha`` to detect that HEAD actually
             moved on those paths.  In ``dry_run`` mode this is the count
-            that *would* have been pulled.
+            of remote-only commits the pull would reconcile against —
+            on a diverged clone the real pull rebases and reports ``0``,
+            so the two disagree by design.
         from_sha: HEAD SHA before the pull.
         to_sha: HEAD SHA after the pull.  In ``dry_run`` mode this is the
-            SHA HEAD would have moved to.  When the pull failed and HEAD
-            did not move this equals ``from_sha``.
+            SHA HEAD would have moved to — on the ``"diverged"``
+            prediction, the remote tip the pull would reconcile against
+            rather than a SHA HEAD can reach, since the rebase mints new
+            commits.  When the pull failed and HEAD did not move this
+            equals ``from_sha``, as it does when there is nothing to
+            pull.
         reason: Diagnostic code describing the outcome.  ``None`` for
-            clean fast-forward pulls and dry-runs.  Otherwise one of:
+            clean fast-forward pulls, for pulls with nothing to bring in,
+            and for dry-runs predicting a clean fast-forward.  Otherwise
+            one of:
 
             * ``"fetch_failed"`` — ``git fetch origin`` exited non-zero
               (network error, auth failure, etc.); HEAD did not move.
@@ -93,6 +106,14 @@ class PullResult:
               move (``from_sha == to_sha``); (b) the rebase completed and
               HEAD advanced, but the sibling-files commit failed — HEAD
               has moved (``from_sha != to_sha``, ``applied=False``).
+            * ``"diverged"`` — **dry-run only**: local and remote
+              histories have both moved on, so the pull being predicted
+              cannot fast-forward.  The real call would rebase and fall
+              back to Syncthing-style sibling resolution, which may end
+              in ``"conflicts_resolved_with_siblings"``, ``"rebased"``,
+              or a failure — a dry run does not attempt the rebase, so
+              it reports the divergence rather than guessing which
+              (#1292).
 
             See module-level ``PULL_REASON_*`` constants for the
             string values.

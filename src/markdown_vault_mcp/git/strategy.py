@@ -57,6 +57,7 @@ from markdown_vault_mcp.git.push_scheduler import PushScheduler
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PULL_REASON_CONFLICTS_RESOLVED_WITH_SIBLINGS,
+    PULL_REASON_DIVERGED,
     PULL_REASON_FETCH_FAILED,
     PULL_REASON_NO_REMOTE,
     PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS,
@@ -680,6 +681,101 @@ class GitWriteStrategy:
         """
         return run_git_capturing(git_root, *args, env=env)
 
+    def _is_ancestor(
+        self,
+        git_root: Path,
+        ancestor: str,
+        descendant: str,
+        *,
+        env: dict[str, str] | None = None,
+    ) -> bool:
+        """Report whether *ancestor* is reachable from *descendant*.
+
+        ``git merge-base --is-ancestor`` answers by exit status: ``0`` yes,
+        ``1`` no.  That is the fast-forward test the pull pipeline needs —
+        ``merge --ff-only <remote>`` succeeds exactly when HEAD is an
+        ancestor of the remote tip — so a dry run can classify the
+        divergence without attempting the merge (#1292).
+
+        Args:
+            git_root: Working-tree root used for git ``-C``.
+            ancestor: Commit-ish that may be reachable from *descendant*.
+            descendant: Commit-ish to search back from.
+            env: Optional GIT_ASKPASS environment.  Both commits are local
+                objects here, so no network access is involved.
+
+        Returns:
+            ``True`` when *ancestor* is reachable from *descendant* (a SHA
+            is its own ancestor).  ``False`` when it is not, and also when
+            git answers with any other exit status — an unusable answer
+            must not read as "a fast-forward is available".
+        """
+        proc = self._run_git_capturing(
+            git_root, "merge-base", "--is-ancestor", ancestor, descendant, env=env
+        )
+        if proc.returncode not in (0, 1):
+            logger.warning(
+                "Git: `merge-base --is-ancestor %s %s` failed (exit %d): %s",
+                ancestor,
+                descendant,
+                proc.returncode,
+                self._redact((proc.stderr or "").strip()),
+            )
+            return False
+        return proc.returncode == 0
+
+    def _count_commits_behind(
+        self,
+        git_root: Path,
+        from_sha: str,
+        remote_sha: str,
+        *,
+        env: dict[str, str] | None = None,
+        log_prefix: str = "Git force_pull",
+    ) -> int:
+        """Count the commits *remote_sha* carries that *from_sha* does not.
+
+        On a clone that is purely behind, this is the number of commits
+        ``merge --ff-only`` would apply; on a diverged clone it is the
+        remote-only half of the divergence.
+
+        Args:
+            git_root: Working-tree root used for git ``-C``.
+            from_sha: Local HEAD SHA.
+            remote_sha: Remote-tracking tip SHA.
+            env: Optional GIT_ASKPASS environment.
+            log_prefix: Message prefix identifying the calling entry point.
+
+        Returns:
+            The commit count, or ``0`` when git answered with something no
+            ``int`` can hold — which is logged as a warning rather than
+            raised, so an unusable count does not fail an otherwise fine
+            pull.
+        """
+        commits_ahead = self._git(
+            git_root,
+            "rev-list",
+            "--count",
+            f"{from_sha}..{remote_sha}",
+            env=env,
+        ).strip()
+        try:
+            return int(commits_ahead)
+        except ValueError:
+            # ``rev-list --count`` is documented to print a single
+            # integer; if parsing fails, the underlying git call is
+            # broken in a way we should surface rather than silently
+            # report 0 commits.  Fall back to 0 but log loudly.
+            logger.warning(
+                "%s: could not parse commit count %r "
+                "from `git rev-list --count %s..%s`",
+                log_prefix,
+                commits_ahead,
+                from_sha,
+                remote_sha,
+            )
+            return 0
+
     def _tracking_ref(
         self, git_root: Path, env: dict[str, str] | None = None
     ) -> str | None:
@@ -713,9 +809,11 @@ class GitWriteStrategy:
         first and the merge runs on a clean tree (#571). Skipped under
         ``dry_run`` (which only fetches and never touches the working tree).
 
-        On ``ff-only`` failure (divergent history) the implementation
-        falls through to the same rebase + Syncthing-style sibling write
-        path used by :meth:`sync_once` (see
+        Divergent history is detected before the merge (``git merge-base
+        --is-ancestor``, #1292) and goes straight to the same rebase +
+        Syncthing-style sibling write path used by :meth:`sync_once`; a
+        working tree that refuses an otherwise available fast-forward
+        falls through to it too (see
         :func:`~markdown_vault_mcp.git.conflict.resolve_rebase_conflicts` and
         :func:`~markdown_vault_mcp.git.conflict.write_conflict_files`).  When
         the conflict-resolution
@@ -741,9 +839,11 @@ class GitWriteStrategy:
 
         Args:
             dry_run: When ``True``, runs ``git fetch`` and computes the
-                would-be pull without modifying HEAD.  Returns
-                ``applied=False`` with ``commits_pulled`` set to the count
-                that *would* have been pulled.
+                would-be pull without modifying HEAD.  A projection that
+                predicts work returns ``applied=False`` with
+                ``commits_pulled`` set to the count that *would* have been
+                pulled; one that finds nothing to pull returns the same
+                ``applied=True`` the real call would.
 
         Returns:
             :class:`PullResult` describing the operation.  See the
@@ -816,7 +916,7 @@ class GitWriteStrategy:
         dry_run: bool = False,
         log_prefix: str = "Git force_pull",
     ) -> PullResult:
-        """Run the shared fetch → ff-only → rebase → sibling pipeline.
+        """Run the shared fetch → classify → ff-only → rebase → sibling pipeline.
 
         The single implementation behind :meth:`force_pull` (interactive
         ``git_sync`` tool) and :meth:`sync_once` (periodic pull loop) —
@@ -831,8 +931,8 @@ class GitWriteStrategy:
         Args:
             git_root: Resolved working-tree root.
             env: The caller's git environment, cleaned up by the caller.
-            dry_run: Fetch and compute the would-be pull without touching
-                HEAD.
+            dry_run: Fetch and project the would-be pull from the same
+                classification the real pull acts on, without touching HEAD.
             log_prefix: Message prefix identifying the calling entry point
                 (``"Git force_pull"`` / ``"Git pull"``).
 
@@ -875,8 +975,16 @@ class GitWriteStrategy:
         if ref is None or remote_sha is None:
             return PullResult.head_unchanged_failure(from_sha, PULL_REASON_NO_REMOTE)
 
-        if remote_sha == from_sha:
-            # Already up to date — successful no-op (applied=True even on dry_run).
+        # Nothing to bring in: either the remote tip *is* HEAD, or it is an
+        # ancestor of HEAD because the clone carries unpushed local commits.
+        # ``merge --ff-only`` is a no-op success on both, so report HEAD as
+        # the SHA it stayed at — naming ``remote_sha`` there made a pull that
+        # moved nothing read as a pull that moved HEAD backwards, and made
+        # ``git_sync`` reindex for it (#1292).  The SHA equality short-circuit
+        # keeps the common case free of a subprocess.
+        if remote_sha == from_sha or self._is_ancestor(
+            git_root, remote_sha, from_sha, env=env
+        ):
             return PullResult(
                 applied=True,
                 fast_forward=True,
@@ -885,48 +993,46 @@ class GitWriteStrategy:
                 to_sha=from_sha,
             )
 
-        # Count commits between local and remote.  When the local
-        # branch is behind the remote this is the number of commits
-        # ``merge --ff-only`` would apply.
-        commits_ahead = self._git(
-            git_root,
-            "rev-list",
-            "--count",
-            f"{from_sha}..{remote_sha}",
-            env=env,
-        ).strip()
-        try:
-            commits_pulled = int(commits_ahead)
-        except ValueError:
-            # ``rev-list --count`` is documented to print a single
-            # integer; if parsing fails, the underlying git call is
-            # broken in a way we should surface rather than silently
-            # report 0 commits.  Fall back to 0 but log loudly.
-            logger.warning(
-                "%s: could not parse commit count %r "
-                "from `git rev-list --count %s..%s`",
-                log_prefix,
-                commits_ahead,
-                from_sha,
-                remote_sha,
-            )
-            commits_pulled = 0
+        commits_pulled = self._count_commits_behind(
+            git_root, from_sha, remote_sha, env=env, log_prefix=log_prefix
+        )
+
+        # Classify before predicting or merging: HEAD being an ancestor of the
+        # remote tip is exactly the condition ``merge --ff-only`` requires.
+        # A dry run that assumed fast-forward reported one for divergences the
+        # real pull then refused, which read as benign while writes stranded
+        # locally (#1292).
+        can_fast_forward = self._is_ancestor(git_root, from_sha, remote_sha, env=env)
 
         if dry_run:
-            # Heuristic: assume fast-forward.  Actual ff-ness is
-            # only known after attempting the merge; the conflict
-            # path below corrects this for non-dry-run calls.
             return PullResult(
                 applied=False,
-                fast_forward=True,
+                fast_forward=can_fast_forward,
                 commits_pulled=commits_pulled,
                 from_sha=from_sha,
                 to_sha=remote_sha,
+                reason=None if can_fast_forward else PULL_REASON_DIVERGED,
             )
 
-        # Attempt fast-forward merge first.  On divergence fall
-        # through to rebase + Syncthing-style sibling resolution,
-        # mirroring :meth:`sync_once`.
+        if not can_fast_forward:
+            # Histories diverged; ``merge --ff-only`` cannot succeed.  Go
+            # straight to rebase + Syncthing-style sibling resolution,
+            # mirroring :meth:`sync_once`.
+            logger.debug(
+                "%s: local and remote diverged, attempting rebase",
+                log_prefix,
+            )
+            return self._force_pull_rebase_fallback(
+                git_root=git_root,
+                env=env,
+                from_sha=from_sha,
+                ref=ref,
+                log_prefix=log_prefix,
+            )
+
+        # Fast-forward is available on the history; the merge can still fail
+        # on a working tree the fetch's new commits would overwrite, which
+        # falls through to the same rebase path.
         try:
             self._git(git_root, "merge", "--ff-only", remote_sha, env=env)
         except subprocess.CalledProcessError as ff_exc:
@@ -965,8 +1071,9 @@ class GitWriteStrategy:
     ) -> PullResult:
         """Attempt rebase + Syncthing-style sibling resolution.
 
-        Called by :meth:`_pull_pipeline` when ``merge --ff-only`` failed
-        because local and remote histories diverged.  Returns a
+        Called by :meth:`_pull_locked` when local and remote histories have
+        diverged, and when an available fast-forward was refused by the
+        working tree.  Returns a
         structured :class:`PullResult`; :meth:`sync_once` adapts it back
         to its historical bool (#879).
 
@@ -1349,7 +1456,7 @@ class GitWriteStrategy:
 
         Thin adapter over :meth:`_pull_pipeline` (#879) — the periodic
         pull loop and the interactive ``git_sync`` tool now share one
-        fetch → ff-only → rebase → sibling implementation, so the loop
+        fetch → classify → ff-only → rebase → sibling implementation, so the loop
         gets the pipeline's safe conflict handling: defensive rebase
         abort and an upstream restore that drops paths whose restore
         failed instead of committing stale local content over them.
