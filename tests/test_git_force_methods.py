@@ -8,11 +8,12 @@ so the same setup can be reused by future tests for the higher-level
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.git import conflict
+from markdown_vault_mcp.git import GitWriteStrategy, conflict
 from tests.fixtures.git import _run_git
 
 if TYPE_CHECKING:
@@ -213,6 +214,68 @@ class TestForcePush:
         assert result.hint is not None
         # Dry-run must not touch the remote.
         assert result.remote_sha_before == result.remote_sha_after
+
+
+class TestUnparseableCommitCount:
+    """``git rev-list --count`` answering something that is not a number.
+
+    Documented as "broken in a way we should surface rather than silently
+    report 0 commits": both paths log and fall back to zero rather than
+    raising ``ValueError`` out of a pull or a push.
+    """
+
+    @staticmethod
+    def _garbled_counts(strategy: GitWriteStrategy) -> None:
+        """Make every ``rev-list --count`` return text an int cannot hold."""
+        real_git = strategy._git
+
+        def _git(git_root: Path, *args: str, **kwargs: object) -> str:
+            if args[:2] == ("rev-list", "--count"):
+                return "not-a-number\n"
+            return real_git(git_root, *args, **kwargs)  # type: ignore[arg-type]
+
+        strategy._git = _git  # type: ignore[method-assign]
+
+    def test_a_pull_reports_zero_commits_and_says_so(
+        self, git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The pull still applies; only the count is unusable."""
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_bad_count_pull",
+            file_name="seeded.md",
+            body="seeded\n",
+        )
+        strategy = GitWriteStrategy(
+            enable_pull=True, enable_push=False, repo_path=git_repo_pair.local_path
+        )
+        self._garbled_counts(strategy)
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
+            result = strategy.force_pull()
+
+        assert result.applied is True
+        assert result.commits_pulled == 0
+        assert any("could not parse commit count" in r.message for r in caplog.records)
+
+    def test_a_push_reports_zero_commits_and_says_so(
+        self, git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The push still happens; only the count is unusable."""
+        (git_repo_pair.local_path / "local.md").write_text("# local\n")
+        _run_git(git_repo_pair.local_path, "add", "local.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "local edit")
+        strategy = GitWriteStrategy(
+            enable_pull=True, enable_push=True, repo_path=git_repo_pair.local_path
+        )
+        self._garbled_counts(strategy)
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
+            result = strategy.force_push()
+
+        assert result.applied is True
+        assert result.commits_pushed == 0
+        assert any("could not parse commit count" in r.message for r in caplog.records)
 
 
 class TestForceMethodsErrorBranches:
