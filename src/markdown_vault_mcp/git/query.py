@@ -1302,9 +1302,9 @@ def _tree_entry(
     the *commit* object, so a size check passes against the wrong object and
     the subsequent blob read fails with a message on stderr and an exit status
     of **zero** — which reads as an empty note.  Asking the tree instead keeps
-    the lookup a pathspec (glob-proof via :func:`~markdown_vault_mcp.git._run.literal_pathspec`) and yields the
-    mode, the object id, and the size in one call, with the blob then fetched
-    by its own hash.
+    the lookup a pathspec, and so glob-proof like every other in this package,
+    and yields the mode, the object id, and the size in one call, with the blob
+    then fetched by its own hash.
 
     Raises:
         ValueError: If nothing is recorded at that path, or the entry is not a
