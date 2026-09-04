@@ -4860,7 +4860,7 @@ front.</p>
 </table>
 <p><strong>Returns:</strong> Object with <code>found</code> (bool), <code>path</code> (ordered list of document paths from source to target), and <code>hops</code> (number of edges, or <code>-1</code> if not found). Index freshness is reported in <code>_meta.index_stale</code> (see the <em>Index freshness on read tools</em> admonition at the top of this page).</p>
 <h3 id="get_history"><code>get_history</code><a class="headerlink" href="#get_history" title="Permanent link">&para;</a></h3>
-<p>List commits that touched a note, attachment, or folder (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults.</p>
+<p>List commits that touched a note, attachment, or folder (or the whole vault) within an optional time window, up to a maximum count. Only available for git-backed vaults. A single-note query describes that note. A rename is followed back to the note's earlier name. Where a name was freed and later reused, the commits from before this note existed belong to its predecessor, so they are left out.</p>
 <p><strong>Parameters:</strong></p>
 <table>
 <thead>
@@ -4942,7 +4942,7 @@ front.</p>
 </table>
 <p><strong>Raises:</strong> <code>ToolError</code> if <code>path</code> is invalid or uses an unsupported extension.</p>
 <h3 id="get_diff"><code>get_diff</code><a class="headerlink" href="#get_diff" title="Permanent link">&para;</a></h3>
-<p>Return the diff of a specific note or attachment between a reference point and <code>HEAD</code>. Only available for git-backed vaults.</p>
+<p>Return the diff of a specific note or attachment between a reference point and <code>HEAD</code>. Only available for git-backed vaults. The diff describes the note the path names today. Where a different note held that name earlier, a reference point older than this note's creation reads as a creation rather than pairing the two notes' content against each other.</p>
 <p><strong>Parameters:</strong></p>
 <table>
 <thead>
