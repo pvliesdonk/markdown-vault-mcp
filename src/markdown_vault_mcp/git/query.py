@@ -335,6 +335,237 @@ def _lineage(
     return _Lineage(shas, False)
 
 
+def _first_parent_records_cmd(
+    git_root: Path, cur_rel: str, revs: str | None
+) -> list[str]:
+    """Assemble the argv for the walk that resolves a note's names.
+
+    ``-m --first-parent`` is load-bearing, not decoration: a rename performed
+    *while resolving a merge* appears in no parent's diff, so a plain walk
+    returns no records for it at all — the reader is left believing the merge
+    created the note, and never reaches the name it had before (#1306).
+    Restricting to the first parent and asking for its diff surfaces that
+    rename as an ordinary ``R`` record.
+
+    ``-z`` frames paths by NUL, so a path containing a space, a quote or a
+    newline survives intact and no ``core.quotePath`` unescaping is needed.
+
+    Args:
+        git_root: Pre-resolved git repository root.
+        cur_rel: The note's path, repo-relative and posix.
+        revs: What to walk: a range (``"<ref>..HEAD"``) or a single revision
+            to walk back from, or ``None`` for ``HEAD`` without a bound.
+    """
+    cmd = [
+        "git",
+        "-c",
+        _RENAME_LIMIT,
+        "-C",
+        str(git_root),
+        "log",
+        "-m",
+        "--first-parent",
+        "--follow",
+        "--name-status",
+        "-z",
+        _RENAME_THRESHOLD,
+        f"--format={_HISTORY_SENTINEL}%H",
+    ]
+    if revs is not None:
+        cmd.append(revs)
+    return [*cmd, "--", literal_pathspec(cur_rel)]
+
+
+class _NameSegment(NamedTuple):
+    """One stretch of a note's life under a single name (#1306).
+
+    Attributes:
+        name: The name the note carried, repo-relative and posix — the form
+            git's own records use.
+        acquired_at: The commit that gave the note this name: the rename, or
+            the note's creation.  It belongs to this segment whatever else
+            lists it, because a diff of that commit has to be taken under the
+            name it *gave* the note for git to pair the rename rather than
+            report the old name being deleted.
+        after: That commit's first parent, excluded from the segment and with
+            it everything older, so the name's previous owner stays out.
+            ``None`` when the note was created by a parent-less commit, where
+            there is nothing older to exclude.
+        through: The newest commit at which this name was the note's own.
+            ``None`` for the name the note carries now, whose segment runs to
+            ``HEAD``.
+    """
+
+    name: str
+    acquired_at: str | None
+    after: str | None
+    through: str | None
+
+
+class _Frontier(NamedTuple):
+    """A revision and the note's name there, whose history is still unwalked.
+
+    Attributes:
+        rev: The revision to walk back from.
+        name: The name the note carries at *rev*.
+        through: The newest commit at which that name was the note's own.
+    """
+
+    rev: str
+    name: str
+    through: str | None
+
+
+# A note renamed on many merged branches would otherwise walk one chain per
+# rename-carrying merge.  Past this many walks the recovery stops early: it
+# reports fewer of the note's names, never names that are not the note's.
+_MAX_NAME_WALKS = 16
+
+
+def _parents(git_root: Path, sha: str, env: dict[str, str] | None) -> list[str]:
+    """Return *sha*'s parents, first parent first; empty for a root commit."""
+    result = subprocess.run(
+        ["git", "-C", str(git_root), "rev-list", "--parents", "-n1", sha],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if result.returncode != 0:
+        return []
+    return result.stdout.split()[1:]
+
+
+def _first_parent(git_root: Path, sha: str, env: dict[str, str] | None) -> str | None:
+    """Return *sha*'s first parent, or ``None`` for a parent-less commit."""
+    parents = _parents(git_root, sha, env)
+    return parents[0] if parents else None
+
+
+def _branch_frontiers(
+    git_root: Path,
+    sha: str,
+    name: str,
+    older: str,
+    env: dict[str, str] | None,
+) -> list[_Frontier]:
+    """Return the names *sha*'s merged branches knew the note by.
+
+    A first-parent walk reads a rename carried by a merge as one step, from
+    the name on the trunk straight to the name the merge settled on.  Where
+    the note was *also* renamed on the branch, the name it carried there is in
+    no first-parent diff at all, and the branch's own commits — made under
+    that name — would go unreported.  So each other parent is asked what the
+    note was called at it, and a name that is neither of the two the merge
+    already named opens a walk of its own.
+    """
+    frontiers: list[_Frontier] = []
+    for parent in _parents(git_root, sha, env)[1:]:
+        at_parent = resolve_path_at_ref(git_root, parent, name, env, to_ref=sha)
+        if at_parent is not None and at_parent not in (name, older):
+            frontiers.append(_Frontier(parent, at_parent, parent))
+    return frontiers
+
+
+def _walk_one_name(
+    git_root: Path, frontier: _Frontier, env: dict[str, str] | None
+) -> tuple[list[_NameSegment], list[_Frontier]]:
+    """Walk one line of descent, newest first, for the note at *frontier*.
+
+    Returns:
+        The segments this line contributes and the frontiers it opened.  A
+        line that never reaches the note's creation contributes **nothing**:
+        its oldest name has no lower bound, and a name recovered without one
+        can pick up whatever held it before this note existed.
+    """
+    result = subprocess.run(
+        _first_parent_records_cmd(git_root, frontier.name, frontier.rev),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if result.returncode != 0:
+        return [], []
+    tracked, through = frontier.name, frontier.through
+    segments: list[_NameSegment] = []
+    opened: list[_Frontier] = []
+    for block in result.stdout.split(_HISTORY_SENTINEL):
+        split = _split_z_block(block, 1)
+        if split is None:
+            continue
+        (sha,), path_tokens = split
+        older, reached_birth = _track_records(path_tokens, tracked)
+        if reached_birth:
+            segments.append(
+                _NameSegment(tracked, sha, _first_parent(git_root, sha, env), through)
+            )
+            return segments, opened
+        if older != tracked:
+            opened += _branch_frontiers(git_root, sha, tracked, older, env)
+            segments.append(
+                _NameSegment(tracked, sha, _first_parent(git_root, sha, env), through)
+            )
+            tracked, through = older, sha
+    return [], []
+
+
+def _name_segments(
+    git_root: Path, cur_rel: str, env: dict[str, str] | None
+) -> list[_NameSegment]:
+    """Return the names the note at *cur_rel* carried, newest name first (#1306).
+
+    A note's identity is resolved here the way :func:`get_file_at_ref` resolves
+    it — by walking ``-m --first-parent``, which is the only walk that sees a
+    rename performed *while resolving a merge*: that rename belongs to no
+    parent's diff, so ``git log --follow`` reports the note as having been
+    created by the merge and never reaches the name it had before.  Where such
+    a merge joined a branch that had renamed the note too, that branch is
+    walked in turn (:func:`_branch_frontiers`), because the name it used is in
+    no first-parent diff either.
+
+    The result is what a caller enumerates commits with, in place of asking
+    ``--follow`` to do both jobs at once.  Each segment carries the revision
+    bounds that make its name unambiguous, so a name used by another note
+    before this one was created or after it was renamed away stays out — the
+    boundary :func:`_lineage` establishes for the ``--follow`` walk.
+
+    Returns:
+        The segments, or an empty list when there is nothing to add: a note
+        that never changed name (the ``--follow`` walk already covers it), or
+        a walk that did not reach the note's birth and so cannot say where the
+        oldest name stops belonging to it.
+    """
+    segments, pending = _walk_one_name(git_root, _Frontier("HEAD", cur_rel, None), env)
+    if not segments:
+        return []
+    walked = {("HEAD", cur_rel)}
+    while pending and len(walked) < _MAX_NAME_WALKS:
+        frontier = pending.pop()
+        if (frontier.rev, frontier.name) in walked:
+            continue
+        walked.add((frontier.rev, frontier.name))
+        found, opened = _walk_one_name(git_root, frontier, env)
+        segments += found
+        pending += opened
+    return segments if len(segments) > 1 else []
+
+
+def _segment_rev_args(seg: _NameSegment, exclude: str | None) -> list[str]:
+    """Return the revision arguments selecting the commits in *seg*.
+
+    Args:
+        seg: The segment to bound the walk to.
+        exclude: A further commit whose ancestors are out of scope (the
+            caller's own ``ref`` in a ``ref..HEAD`` query), or ``None``.
+    """
+    excluded = [rev for rev in (seg.after, exclude) if rev is not None]
+    args = [seg.through or "HEAD"]
+    if excluded:
+        args += ["--not", *excluded]
+    return args
+
+
 def _rename_aware_diff_args(
     git_root: Path,
     from_ref: str,
@@ -506,6 +737,186 @@ def _history_log_output(cmd: list[str], env: dict[str, str] | None) -> str:
     return result.stdout
 
 
+class _WalkBounds(NamedTuple):
+    """The caller's bounds, applied to every segment walk.
+
+    Attributes:
+        since: ``--since`` filter, or ``None``.
+        until: ``--until`` filter, or ``None``.
+        limit: Maximum number of commits per walk, or ``None`` for no cap.
+        exclude: A commit whose ancestors are out of scope — the caller's own
+            ``ref`` in a ``ref..HEAD`` query — or ``None``.
+    """
+
+    since: str | None = None
+    until: str | None = None
+    limit: int | None = None
+    exclude: str | None = None
+
+
+def _segment_shas(
+    git_root: Path,
+    segments: list[_NameSegment],
+    bounds: _WalkBounds,
+    env: dict[str, str] | None,
+) -> dict[str, str]:
+    """Map the note's commits under its earlier names to the name each touched.
+
+    One walk per segment, each bounded to the revisions where that name was
+    the note's own (see :class:`_NameSegment`) and carrying the caller's own
+    bounds.  No ``--follow``: the names come from :func:`_name_segments`
+    already, and leaving rename detection out of the enumeration is what lets
+    git apply its ordinary merge simplification — so a merge is reported only
+    where it changed the note relative to what it merged.
+
+    Segments overlap at the commit that renamed the note, which touches both
+    names, and there a segment's claim on the name it was *given* settles it:
+    that is the name a diff of that commit has to target for git to pair the
+    rename rather than report the old name being deleted.  Claims are applied
+    after every walk, so the answer does not depend on the order the names
+    were discovered in.
+
+    A failed walk contributes nothing rather than raising: this supplements a
+    result the caller already has.
+    """
+    found: dict[str, str] = {}
+    claims: dict[str, str] = {}
+    for seg in segments:
+        cmd = ["git", "-C", str(git_root), "log", "--format=%H"]
+        if bounds.limit is not None:
+            cmd.append(f"-n{bounds.limit}")
+        if bounds.since:
+            cmd.append(f"--since={bounds.since}")
+        if bounds.until:
+            cmd.append(f"--until={bounds.until}")
+        cmd += _segment_rev_args(seg, bounds.exclude)
+        cmd += ["--", literal_pathspec(seg.name)]
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, env=env
+        )
+        if result.returncode != 0:
+            continue
+        for sha in result.stdout.split():
+            found.setdefault(sha, seg.name)
+        if seg.acquired_at is not None:
+            claims[seg.acquired_at] = seg.name
+    for sha, name in claims.items():
+        if sha in found:
+            found[sha] = name
+    return found
+
+
+def _history_entries_for(
+    git_root: Path,
+    shas: set[str],
+    vault_prefix: str,
+    env: dict[str, str] | None,
+) -> list[HistoryEntry]:
+    """Return history entries for *shas*, newest first, in git's own ordering.
+
+    ``--no-walk`` formats exactly the commits named and orders them by date,
+    which is what puts commits gathered from several walks into one sequence
+    without this module having to compare timestamps across time zones.
+    """
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(git_root),
+            "log",
+            "--no-walk",
+            "-z",
+            f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%aN <%aE>%x00%s",
+            *sorted(shas),
+            "--",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if result.returncode != 0:
+        return []
+    entries: list[HistoryEntry] = []
+    for block in result.stdout.split(_HISTORY_SENTINEL):
+        entry = _parse_history_block(block, vault_prefix, collect_paths=False)
+        if entry is not None:
+            entries.append(entry)
+    return entries
+
+
+class _NameQuery(NamedTuple):
+    """What a single-note history query needs to reach the note's old names.
+
+    Attributes:
+        cur_rel: The note's path, repo-relative and posix.
+        vault_prefix: Prefix stripped from path tokens (see
+            :func:`_vault_prefix`).
+        bounds: The caller's own window, applied to every walk.
+    """
+
+    cur_rel: str
+    vault_prefix: str
+    bounds: _WalkBounds
+
+
+def _with_earlier_names(
+    git_root: Path,
+    entries: list[HistoryEntry],
+    query: _NameQuery,
+    env: dict[str, str] | None,
+) -> list[HistoryEntry]:
+    """Add the note's commits under the names it carried before (#1306).
+
+    ``git log --follow`` resolves a note's identity from a single parent's
+    diff, so it stops at a rename that belongs to no parent's diff — the one a
+    ``git mv`` while resolving a merge produces.  The names on the far side of
+    such a rename are recovered here from the walk the revision reader trusts,
+    and the commits under them added to what the caller already has.
+
+    Purely additive: a note that never changed name yields no segments and
+    *entries* is returned untouched, as is one whose segments turn up nothing
+    the ``--follow`` walk had not already found — or one whose union git
+    declines to describe, since a supplement that failed must not cost the
+    caller the commits it already had.
+    """
+    segments = _name_segments(git_root, query.cur_rel, env)
+    known = {entry.sha for entry in entries}
+    extra = set(_segment_shas(git_root, segments, query.bounds, env)) - known
+    if not extra:
+        return entries
+    ordered = _history_entries_for(git_root, known | extra, query.vault_prefix, env)
+    if not ordered:
+        return entries
+    return ordered[: query.bounds.limit]
+
+
+def _parse_history_entries(
+    raw: str,
+    vault_prefix: str,
+    lineage: _Lineage,
+    *,
+    collect_paths: bool,
+) -> list[HistoryEntry]:
+    """Parse a history walk's ``-z`` stream into the note's own entries.
+
+    Splits on the sentinel embedded at the start of each format line.  The
+    first element will be empty (output starts with the sentinel); the parser
+    rejects it along with any other empty or malformed block.  Commits outside
+    *lineage* are dropped, so a reused name does not hand the caller its
+    previous occupant's commits (#1285).
+    """
+    entries: list[HistoryEntry] = []
+    for block in raw.split(_HISTORY_SENTINEL):
+        entry = _parse_history_block(block, vault_prefix, collect_paths=collect_paths)
+        if entry is None:
+            continue
+        if lineage.shas is not None and entry.sha not in lineage.shas:
+            continue
+        entries.append(entry)
+    return entries
+
+
 def _vault_relative_paths(tokens: list[str], vault_prefix: str) -> list[str]:
     """Normalise ``--name-only`` path tokens to vault-relative paths.
 
@@ -586,8 +997,10 @@ def get_file_history(
             ``--follow``), and ``paths_changed`` is populated with the
             subtree files each commit touched. When ``False`` (a single file),
             ``--follow`` tracks renames, the result is filtered to the note's
-            own lineage (see :func:`_lineage`, #1285), and ``paths_changed``
-            stays empty.
+            own lineage (see :func:`_lineage`, #1285) and supplemented with
+            the commits under the names ``--follow`` cannot reach (see
+            :func:`_with_earlier_names`, #1306), and ``paths_changed`` stays
+            empty.
         since: Passed as ``--since`` to ``git log`` (ISO 8601 or git date
             expression such as ``"1 week ago"``).  ``None`` disables the
             filter.
@@ -618,6 +1031,10 @@ def get_file_history(
     )
 
     cur_rel = None if (path is None or is_dir) else _repo_rel(git_root, path)
+    vault_prefix = _vault_prefix(git_root, repo_path)
+    # paths_changed is populated for vault-wide and directory queries only;
+    # single-file queries (--follow) leave it empty.
+    collect_paths = path is None or is_dir
     env = git_env(token, username)
     try:
         raw = _history_log_output(cmd, env)
@@ -629,27 +1046,18 @@ def get_file_history(
             if cur_rel is None or path is None
             else _lineage(git_root, path, cur_rel, env)
         )
+        entries = _parse_history_entries(
+            raw, vault_prefix, lineage, collect_paths=collect_paths
+        )
+        if cur_rel is not None:
+            entries = _with_earlier_names(
+                git_root,
+                entries,
+                _NameQuery(cur_rel, vault_prefix, _WalkBounds(since, until, limit)),
+                env,
+            )
     finally:
         cleanup_git_env(env)
-
-    if not raw.strip():
-        return []
-
-    vault_prefix = _vault_prefix(git_root, repo_path)
-    # paths_changed is populated for vault-wide and directory queries only;
-    # single-file queries (--follow) leave it empty.
-    collect_paths = path is None or is_dir
-    # Split on the sentinel embedded at the start of each format line.  The
-    # first element will be empty (output starts with the sentinel); the
-    # parser rejects it along with any other empty/malformed block.
-    entries: list[HistoryEntry] = []
-    for block in raw.split(_HISTORY_SENTINEL):
-        entry = _parse_history_block(block, vault_prefix, collect_paths=collect_paths)
-        if entry is None:
-            continue
-        if lineage.shas is not None and entry.sha not in lineage.shas:
-            continue
-        entries.append(entry)
     return entries
 
 
@@ -946,35 +1354,128 @@ def _parse_log_block(block: str, rel_fallback: str) -> tuple[str, ...] | None:
     return sha, short_sha, timestamp, message, commit_path
 
 
-def _per_commit_diffs(
+def _canonical_order(
+    git_root: Path, shas: set[str], env: dict[str, str] | None
+) -> list[str]:
+    """Return *shas* newest first, in git's own ordering.
+
+    ``--no-walk`` shows exactly the commits named, dated order, which is what
+    puts commits gathered from several walks into one sequence without this
+    module having to compare timestamps across time zones.  An invocation that
+    fails returns nothing, leaving the caller with the order it already had.
+    """
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(git_root),
+            "log",
+            "--no-walk",
+            "--format=%H",
+            *sorted(shas),
+            "--",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    return result.stdout.split() if result.returncode == 0 else []
+
+
+def _commit_rows_for(
+    git_root: Path, shas: set[str], name: str, env: dict[str, str] | None
+) -> list[tuple[str, ...]]:
+    """Return per-commit rows for *shas*, each carrying *name* as its path."""
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(git_root),
+            "log",
+            "--no-walk",
+            "-z",
+            f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
+            *sorted(shas),
+            "--",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if result.returncode != 0:
+        return []
+    rows: list[tuple[str, ...]] = []
+    for block in result.stdout.split(_HISTORY_SENTINEL):
+        row = _parse_log_block(block, name)
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def _rows_with_earlier_names(
+    git_root: Path,
+    rows: list[tuple[str, ...]],
+    cur_rel: str,
+    bounds: _WalkBounds,
+    env: dict[str, str] | None,
+) -> list[tuple[str, ...]]:
+    """Add the note's commits under the names it carried before (#1306).
+
+    The counterpart of :func:`_with_earlier_names` for the per-commit diff
+    walk, which needs each commit paired with the name the note had *there* —
+    ``git show <sha> -- <today's name>`` returns nothing for a commit that
+    predates a rename.  Purely additive, and the rows are reordered only when
+    something was added.
+    """
+    segments = _name_segments(git_root, cur_rel, env)
+    known = {row[0] for row in rows}
+    extra: dict[str, set[str]] = {}
+    for sha, name in _segment_shas(git_root, segments, bounds, env).items():
+        if sha not in known:
+            extra.setdefault(name, set()).add(sha)
+    if not extra:
+        return rows
+    for name, shas in extra.items():
+        rows = [*rows, *_commit_rows_for(git_root, shas, name, env)]
+    by_sha = {row[0]: row for row in rows}
+    order = _canonical_order(git_root, set(by_sha), env)
+    if not order:
+        return rows
+    ordered = [by_sha[sha] for sha in order]
+    return ordered[: bounds.limit] if bounds.limit is not None else ordered
+
+
+def _per_commit_rows(
     git_root: Path,
     path: Path,
     ref: str,
     limit: int | None,
     env: dict[str, str] | None,
-    *,
-    summarize_binary: bool,
-) -> list[CommitDiff]:
-    """Return one :class:`CommitDiff` per commit in ``ref..HEAD``.
+) -> list[tuple[str, ...]]:
+    """Enumerate the note's commits in ``ref..HEAD``, newest first.
 
-    Enumerates commits with ``git log -z --follow --name-only`` (with a
-    sentinel) so the path the file had at each commit can be recovered —
-    critical for correct diffs across renames (``git show sha -- new.md``
-    returns nothing for pre-rename commits; the old filename must be
-    passed instead).  ``-z`` is what makes that path usable as a pathspec:
-    without it a non-ASCII name arrives octal-escaped inside double quotes
-    and the per-commit diff comes back empty.  The enumerated commits are
-    filtered to the note's own lineage, because ``--follow`` walks past the
-    commit that created it and into whatever held the name before (#1285).
-    The walk pins :data:`_RENAME_THRESHOLD`: left at git's default it stopped
-    at a rename it scored under 50%, and the commits on the old name inside
-    the range went unlisted even though the lineage filter and the revision
-    readers both recognised them (#1297).
-    Raises :exc:`ValueError` when *ref* is not found or a per-commit diff
-    fails for a commit that does have a parent.
+    Each row is ``(sha, short_sha, timestamp, message, commit_path)``, where
+    *commit_path* is the name the note had at that commit — critical for
+    correct diffs across renames (``git show sha -- new.md`` returns nothing
+    for a commit that predates the rename; the old name must be passed
+    instead).  ``-z`` is what makes that path usable as a pathspec: without it
+    a non-ASCII name arrives octal-escaped inside double quotes and the
+    per-commit diff comes back empty.
+
+    The ``--follow`` walk is filtered to the note's own lineage, because it
+    walks past the commit that created the note and into whatever held the
+    name before (#1285), and pins :data:`_RENAME_THRESHOLD`, because at git's
+    default it stopped at a rename it scored under 50% (#1297).  What it
+    cannot cross at any threshold is a rename that belongs to no parent's
+    diff, so the names on the far side of one are recovered separately
+    (#1306).
+
+    Raises:
+        ValueError: If *ref* is not found in this repository.
     """
     path_str = str(path)
-    _PC_SENTINEL = "\x1e"
     log_cmd = [
         "git",
         "-c",
@@ -985,11 +1486,11 @@ def _per_commit_diffs(
         "-z",
         "--follow",
         _RENAME_THRESHOLD,
-        f"--format={_PC_SENTINEL}%H%x00%h%x00%aI%x00%s",
+        f"--format={_HISTORY_SENTINEL}%H%x00%h%x00%aI%x00%s",
         "--name-only",
     ]
-    if limit is not None:
-        clamped_limit = min(max(1, limit), 100)
+    clamped_limit = None if limit is None else min(max(1, limit), 100)
+    if clamped_limit is not None:
         log_cmd.append(f"-n{clamped_limit}")
     log_cmd += [f"{ref}..HEAD", "--", literal_pathspec(path_str)]
     try:
@@ -1009,24 +1510,46 @@ def _per_commit_diffs(
     # Windows).
     cur_rel = _repo_rel(git_root, path)
     rel_fallback = cur_rel if cur_rel is not None else path_str
-    # Which of the enumerated commits belong to the note now at this path:
-    # ``--follow`` walks past the commit that created it and into whatever
-    # held the name before, and those commits are a different note's (#1285).
     lineage = (
         _Lineage(None, False)
         if cur_rel is None
         else _lineage(git_root, path, cur_rel, env, rev_range=f"{ref}..HEAD")
     )
-
-    diffs: list[CommitDiff] = []
-    for block in log_result.stdout.split(_PC_SENTINEL):
+    rows: list[tuple[str, ...]] = []
+    for block in log_result.stdout.split(_HISTORY_SENTINEL):
         parsed = _parse_log_block(block, rel_fallback)
         if parsed is None:
             continue
-        sha, short_sha, timestamp, message, commit_path = parsed
-        if lineage.shas is not None and sha not in lineage.shas:
+        if lineage.shas is not None and parsed[0] not in lineage.shas:
             continue
+        rows.append(parsed)
+    if cur_rel is None:
+        return rows
+    bounds = _WalkBounds(limit=clamped_limit, exclude=ref)
+    return _rows_with_earlier_names(git_root, rows, cur_rel, bounds, env)
 
+
+def _per_commit_diffs(
+    git_root: Path,
+    path: Path,
+    ref: str,
+    limit: int | None,
+    env: dict[str, str] | None,
+    *,
+    summarize_binary: bool,
+) -> list[CommitDiff]:
+    """Return one :class:`CommitDiff` per commit in ``ref..HEAD``.
+
+    The commits and the name the note had at each come from
+    :func:`_per_commit_rows`; this builds the diff for every one of them.
+
+    Raises :exc:`ValueError` when *ref* is not found or a per-commit diff
+    fails for a commit that does have a parent.
+    """
+    diffs: list[CommitDiff] = []
+    for sha, short_sha, timestamp, message, commit_path in _per_commit_rows(
+        git_root, path, ref, limit, env
+    ):
         # Build a rename-aware diff target for THIS commit vs its parent,
         # mirroring the single-range branch, so a renamed binary pairs into
         # `{old => new} | Bin OLD -> NEW` instead of an add/text stat (#683).
@@ -1120,35 +1643,13 @@ def _revision_walk_output(
 ) -> str:
     """Return git's ``--name-status`` record stream for *cur_rel* over ``ref..HEAD``.
 
-    ``-m --first-parent`` is load-bearing, not decoration: a rename performed
-    *while resolving a merge* appears in no parent's diff, so a plain walk
-    returns no records at all and the caller would fall through to trusting
-    today's path at an old revision.  Restricting to the first parent and
-    asking for its diff surfaces that rename as an ordinary ``R`` record.
-
-    ``-z`` frames paths by NUL, so a path containing a space, a quote or a
-    newline survives intact and no ``core.quotePath`` unescaping is needed.
+    See :func:`_first_parent_records_cmd` for why the walk is shaped the way
+    it is.  A failed invocation is an error here, because the caller is about
+    to serve a note's content and has nothing to fall back on.
     """
     try:
         result = subprocess.run(
-            [
-                "git",
-                "-c",
-                _RENAME_LIMIT,
-                "-C",
-                str(git_root),
-                "log",
-                "-m",
-                "--first-parent",
-                "--follow",
-                "--name-status",
-                "-z",
-                _RENAME_THRESHOLD,
-                f"--format={_HISTORY_SENTINEL}%H",
-                f"{ref}..HEAD",
-                "--",
-                literal_pathspec(cur_rel),
-            ],
+            _first_parent_records_cmd(git_root, cur_rel, f"{ref}..HEAD"),
             capture_output=True,
             text=True,
             check=True,
