@@ -2361,9 +2361,14 @@ succeeded; otherwise <code>push</code> stays <code>null</code> and the LLM shoul
 <code>pull.reason</code> (and <code>pull.conflict_files</code>) before retrying.</p>
 <p><code>dry_run=true</code> previews what a pull <em>would</em> do (useful for "is there
 anything new on origin?") without risking an in-conversation conflict.
-The push leg has no safe local "would this be accepted" probe, so a
-dry-run push always returns <code>applied=false</code> with
-<code>reason="dry_run_unsupported"</code>.</p>
+The preview classifies the clone against the remote before predicting. A
+history that has moved on both locally and on the remote reports
+<code>fast_forward=false</code> with <code>reason="diverged"</code>, which is the signal that the
+real pull would rebase and may end in sibling resolution or fail outright.
+A clone with nothing to pull (up to date, or carrying only unpushed local
+commits) reports <code>would_apply=false</code>. The push leg has no safe local
+"would this be accepted" probe, so a dry-run push always returns
+<code>applied=false</code> with <code>reason="dry_run_unsupported"</code>.</p>
 <div class="admonition info">
 <p class="admonition-title">Conflict outcome: Syncthing-style sibling resolution</p>
 <p>When the pull would otherwise need an interactive merge, the server

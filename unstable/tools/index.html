@@ -4310,7 +4310,7 @@ history before continuing the conversation.</p>
 <td><code>dry_run</code></td>
 <td>bool</td>
 <td><code>false</code></td>
-<td>When <code>true</code>, the pull leg runs <code>git fetch</code> and reports what <em>would</em> happen (<code>would_apply: bool</code>, projected <code>to_sha</code>) without moving HEAD. The push leg has no safe local probe for "would the remote accept this," so a dry-run push is a no-op that returns <code>applied=false</code> with <code>reason="dry_run_unsupported"</code>.</td>
+<td>When <code>true</code>, the pull leg runs <code>git fetch</code> and reports what <em>would</em> happen (<code>would_apply: bool</code>, projected <code>to_sha</code>) without moving HEAD. A clone whose history has moved on alongside the remote gets <code>fast_forward=false</code> with <code>reason="diverged"</code> rather than a fast-forward the real pull could not perform. The push leg has no safe local probe for "would the remote accept this," so a dry-run push is a no-op that returns <code>applied=false</code> with <code>reason="dry_run_unsupported"</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -4398,7 +4398,8 @@ commits <em>on top of</em> the remote (the remote commits are reconciled, not
 <span class="p">}</span>
 </code></pre></div>
 <p><strong><code>pull.reason</code> values</strong> (set on every non-fast-forward outcome and on
-failures; <code>null</code> for clean fast-forwards and dry-runs):</p>
+failures; <code>null</code> when the pull fast-forwards cleanly, has nothing to bring
+in, or is a dry run projecting a clean fast-forward):</p>
 <table>
 <thead>
 <tr>
@@ -4436,6 +4437,11 @@ failures; <code>null</code> for clean fast-forwards and dry-runs):</p>
 <tr>
 <td><code>"non_fast_forward_with_conflicts"</code></td>
 <td>Rare catastrophic fallback when even the conflict-resolution path could not stabilise the working tree. HEAD did not move.</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>"diverged"</code></td>
+<td><strong><code>dry_run=true</code> only.</strong> Local and remote histories have both moved on, so the projected pull cannot fast-forward. The real call rebases and may end in <code>"rebased"</code>, <code>"conflicts_resolved_with_siblings"</code>, or a failure; a dry run reports the divergence rather than guessing which.</td>
 <td><code>false</code></td>
 </tr>
 </tbody>

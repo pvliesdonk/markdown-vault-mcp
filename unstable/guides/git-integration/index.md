@@ -112,7 +112,7 @@ git_sync(direction="both")
 
 Use `direction="pull"` or `direction="push"` to skip a leg. In `direction="both"` mode the push leg only runs when the pull leg succeeded; otherwise `push` stays `null` and the LLM should inspect `pull.reason` (and `pull.conflict_files`) before retrying.
 
-`dry_run=true` previews what a pull *would* do (useful for "is there anything new on origin?") without risking an in-conversation conflict. The push leg has no safe local "would this be accepted" probe, so a dry-run push always returns `applied=false` with `reason="dry_run_unsupported"`.
+`dry_run=true` previews what a pull *would* do (useful for "is there anything new on origin?") without risking an in-conversation conflict. The preview classifies the clone against the remote before predicting. A history that has moved on both locally and on the remote reports `fast_forward=false` with `reason="diverged"`, which is the signal that the real pull would rebase and may end in sibling resolution or fail outright. A clone with nothing to pull (up to date, or carrying only unpushed local commits) reports `would_apply=false`. The push leg has no safe local "would this be accepted" probe, so a dry-run push always returns `applied=false` with `reason="dry_run_unsupported"`.
 
 Conflict outcome: Syncthing-style sibling resolution
 

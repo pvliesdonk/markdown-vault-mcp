@@ -787,7 +787,7 @@ git_sync(direction="both")
 
 Use `direction="pull"` or `direction="push"` to skip a leg. In `direction="both"` mode the push leg only runs when the pull leg succeeded; otherwise `push` stays `null` and the LLM should inspect `pull.reason` (and `pull.conflict_files`) before retrying.
 
-`dry_run=true` previews what a pull *would* do (useful for "is there anything new on origin?") without risking an in-conversation conflict. The push leg has no safe local "would this be accepted" probe, so a dry-run push always returns `applied=false` with `reason="dry_run_unsupported"`.
+`dry_run=true` previews what a pull *would* do (useful for "is there anything new on origin?") without risking an in-conversation conflict. The preview classifies the clone against the remote before predicting. A history that has moved on both locally and on the remote reports `fast_forward=false` with `reason="diverged"`, which is the signal that the real pull would rebase and may end in sibling resolution or fail outright. A clone with nothing to pull (up to date, or carrying only unpushed local commits) reports `would_apply=false`. The push leg has no safe local "would this be accepted" probe, so a dry-run push always returns `applied=false` with `reason="dry_run_unsupported"`.
 
 Conflict outcome: Syncthing-style sibling resolution
 
@@ -5227,10 +5227,10 @@ Force an immediate `git pull` / `git push` / both, bypassing the periodic pull i
 
 **Parameters:**
 
-| Parameter   | Type     | Default  | Description                                                                                                                                                                                                                                                                                                       |
-| ----------- | -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `direction` | `"pull"` | `"push"` | `"both"`                                                                                                                                                                                                                                                                                                          |
-| `dry_run`   | bool     | `false`  | When `true`, the pull leg runs `git fetch` and reports what *would* happen (`would_apply: bool`, projected `to_sha`) without moving HEAD. The push leg has no safe local probe for "would the remote accept this," so a dry-run push is a no-op that returns `applied=false` with `reason="dry_run_unsupported"`. |
+| Parameter   | Type     | Default  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ----------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `direction` | `"pull"` | `"push"` | `"both"`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `dry_run`   | bool     | `false`  | When `true`, the pull leg runs `git fetch` and reports what *would* happen (`would_apply: bool`, projected `to_sha`) without moving HEAD. A clone whose history has moved on alongside the remote gets `fast_forward=false` with `reason="diverged"` rather than a fast-forward the real pull could not perform. The push leg has no safe local probe for "would the remote accept this," so a dry-run push is a no-op that returns `applied=false` with `reason="dry_run_unsupported"`. |
 
 **Returns:** Dict with the following fields:
 
@@ -5306,16 +5306,17 @@ Push rejected as non-fast-forward:
 }
 ```
 
-**`pull.reason` values** (set on every non-fast-forward outcome and on failures; `null` for clean fast-forwards and dry-runs):
+**`pull.reason` values** (set on every non-fast-forward outcome and on failures; `null` when the pull fast-forwards cleanly, has nothing to bring in, or is a dry run projecting a clean fast-forward):
 
-| Reason                               | Meaning                                                                                                                                                | `applied` |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
-| `"fetch_failed"`                     | `git fetch origin` exited non-zero (network / auth / proxy). HEAD did not move.                                                                        | `false`   |
-| `"no_remote"`                        | No remote-tracking ref (`origin/<branch>`, or `origin/HEAD` for a detached checkout) could be resolved on the local clone.                             | `false`   |
-| `"rebased"`                          | Local and remote diverged but `git rebase origin/<branch>` replayed local commits cleanly. `conflict_files` empty.                                     | `true`    |
-| `"conflicts_resolved_with_siblings"` | Rebase hit real conflicts; resolved by accepting upstream and writing local versions as `.conflict-mcp-*` siblings (#232). `conflict_files` populated. | `true`    |
-| `"conflict_resolution_failed"`       | The conflict-resolution loop could not produce a recoverable working tree; rebase was aborted. HEAD did not move.                                      | `false`   |
-| `"non_fast_forward_with_conflicts"`  | Rare catastrophic fallback when even the conflict-resolution path could not stabilise the working tree. HEAD did not move.                             | `false`   |
+| Reason                               | Meaning                                                                                                                                                                                                                                                                               | `applied` |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `"fetch_failed"`                     | `git fetch origin` exited non-zero (network / auth / proxy). HEAD did not move.                                                                                                                                                                                                       | `false`   |
+| `"no_remote"`                        | No remote-tracking ref (`origin/<branch>`, or `origin/HEAD` for a detached checkout) could be resolved on the local clone.                                                                                                                                                            | `false`   |
+| `"rebased"`                          | Local and remote diverged but `git rebase origin/<branch>` replayed local commits cleanly. `conflict_files` empty.                                                                                                                                                                    | `true`    |
+| `"conflicts_resolved_with_siblings"` | Rebase hit real conflicts; resolved by accepting upstream and writing local versions as `.conflict-mcp-*` siblings (#232). `conflict_files` populated.                                                                                                                                | `true`    |
+| `"conflict_resolution_failed"`       | The conflict-resolution loop could not produce a recoverable working tree; rebase was aborted. HEAD did not move.                                                                                                                                                                     | `false`   |
+| `"non_fast_forward_with_conflicts"`  | Rare catastrophic fallback when even the conflict-resolution path could not stabilise the working tree. HEAD did not move.                                                                                                                                                            | `false`   |
+| `"diverged"`                         | **`dry_run=true` only.** Local and remote histories have both moved on, so the projected pull cannot fast-forward. The real call rebases and may end in `"rebased"`, `"conflicts_resolved_with_siblings"`, or a failure; a dry run reports the divergence rather than guessing which. | `false`   |
 
 **`push.reason` values** (`null` on success including the already-up-to-date no-op):
 
@@ -9178,7 +9179,7 @@ Acquires :attr:`_lock` for the duration so the periodic pull loop and the per-wr
 
 Before the merge it self-quiesces via :meth:`_quiesce_writes`: new writes are paused and the deferred-commit queue is drained (best-effort, time-bounded) so a write that landed just before the pull is committed first and the merge runs on a clean tree (#571). Skipped under `dry_run` (which only fetches and never touches the working tree).
 
-On `ff-only` failure (divergent history) the implementation falls through to the same rebase + Syncthing-style sibling write path used by :meth:`sync_once` (see :func:`~markdown_vault_mcp.git.conflict.resolve_rebase_conflicts` and :func:`~markdown_vault_mcp.git.conflict.write_conflict_files`). When the conflict-resolution path produces sibling files HEAD has advanced to the remote and :attr:`PullResult.applied` is `True` with :attr:`PullResult.reason` set to `"conflicts_resolved_with_siblings"`.
+Divergent history is detected before the merge (`git merge-base --is-ancestor`, #1292) and goes straight to the same rebase + Syncthing-style sibling write path used by :meth:`sync_once`; a working tree that refuses an otherwise available fast-forward falls through to it too (see :func:`~markdown_vault_mcp.git.conflict.resolve_rebase_conflicts` and :func:`~markdown_vault_mcp.git.conflict.write_conflict_files`). When the conflict-resolution path produces sibling files HEAD has advanced to the remote and :attr:`PullResult.applied` is `True` with :attr:`PullResult.reason` set to `"conflicts_resolved_with_siblings"`.
 
 After a successful HEAD advance — fast-forward or sibling resolution — :meth:`_lfs_pull` runs so any LFS pointers in the new commits are materialised before the caller sees the working tree.
 
@@ -9186,9 +9187,9 @@ A strategy built without remote sync — unmanaged / commit-only mode, where `en
 
 Parameters:
 
-| Name      | Type   | Description                                                                                                                                                              | Default |
-| --------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| `dry_run` | `bool` | When True, runs git fetch and computes the would-be pull without modifying HEAD. Returns applied=False with commits_pulled set to the count that would have been pulled. | `False` |
+| Name      | Type   | Description                                                                                                                                                                                                                                                                                | Default |
+| --------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `dry_run` | `bool` | When True, runs git fetch and computes the would-be pull without modifying HEAD. A projection that predicts work returns applied=False with commits_pulled set to the count that would have been pulled; one that finds nothing to pull returns the same applied=True the real call would. | `False` |
 
 Returns:
 
@@ -9246,7 +9247,7 @@ Returns:
 
 Fetch and update once, returning True if HEAD advanced.
 
-Thin adapter over :meth:`_pull_pipeline` (#879) — the periodic pull loop and the interactive `git_sync` tool now share one fetch → ff-only → rebase → sibling implementation, so the loop gets the pipeline's safe conflict handling: defensive rebase abort and an upstream restore that drops paths whose restore failed instead of committing stale local content over them.
+Thin adapter over :meth:`_pull_pipeline` (#879) — the periodic pull loop and the interactive `git_sync` tool now share one fetch → classify → ff-only → rebase → sibling implementation, so the loop gets the pipeline's safe conflict handling: defensive rebase abort and an upstream restore that drops paths whose restore failed instead of committing stale local content over them.
 
 The pipeline self-quiesces before the merge via :meth:`_quiesce_writes` (pause new writes + drain the deferred-commit queue, best-effort/time-bounded) so a write racing the periodic pull is committed first and the merge runs on a clean tree (#571). The pause is held for the whole fetch + merge — including the network round-trip — so MCP writes block for the pull's duration; acceptable for a periodic background pull (default every 600 s) and a fast fetch.
 

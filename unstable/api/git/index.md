@@ -172,7 +172,7 @@ Acquires :attr:`_lock` for the duration so the periodic pull loop and the per-wr
 
 Before the merge it self-quiesces via :meth:`_quiesce_writes`: new writes are paused and the deferred-commit queue is drained (best-effort, time-bounded) so a write that landed just before the pull is committed first and the merge runs on a clean tree (#571). Skipped under `dry_run` (which only fetches and never touches the working tree).
 
-On `ff-only` failure (divergent history) the implementation falls through to the same rebase + Syncthing-style sibling write path used by :meth:`sync_once` (see :func:`~markdown_vault_mcp.git.conflict.resolve_rebase_conflicts` and :func:`~markdown_vault_mcp.git.conflict.write_conflict_files`). When the conflict-resolution path produces sibling files HEAD has advanced to the remote and :attr:`PullResult.applied` is `True` with :attr:`PullResult.reason` set to `"conflicts_resolved_with_siblings"`.
+Divergent history is detected before the merge (`git merge-base --is-ancestor`, #1292) and goes straight to the same rebase + Syncthing-style sibling write path used by :meth:`sync_once`; a working tree that refuses an otherwise available fast-forward falls through to it too (see :func:`~markdown_vault_mcp.git.conflict.resolve_rebase_conflicts` and :func:`~markdown_vault_mcp.git.conflict.write_conflict_files`). When the conflict-resolution path produces sibling files HEAD has advanced to the remote and :attr:`PullResult.applied` is `True` with :attr:`PullResult.reason` set to `"conflicts_resolved_with_siblings"`.
 
 After a successful HEAD advance — fast-forward or sibling resolution — :meth:`_lfs_pull` runs so any LFS pointers in the new commits are materialised before the caller sees the working tree.
 
@@ -180,9 +180,9 @@ A strategy built without remote sync — unmanaged / commit-only mode, where `en
 
 Parameters:
 
-| Name      | Type   | Description                                                                                                                                                              | Default |
-| --------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
-| `dry_run` | `bool` | When True, runs git fetch and computes the would-be pull without modifying HEAD. Returns applied=False with commits_pulled set to the count that would have been pulled. | `False` |
+| Name      | Type   | Description                                                                                                                                                                                                                                                                                | Default |
+| --------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `dry_run` | `bool` | When True, runs git fetch and computes the would-be pull without modifying HEAD. A projection that predicts work returns applied=False with commits_pulled set to the count that would have been pulled; one that finds nothing to pull returns the same applied=True the real call would. | `False` |
 
 Returns:
 
@@ -240,7 +240,7 @@ Returns:
 
 Fetch and update once, returning True if HEAD advanced.
 
-Thin adapter over :meth:`_pull_pipeline` (#879) — the periodic pull loop and the interactive `git_sync` tool now share one fetch → ff-only → rebase → sibling implementation, so the loop gets the pipeline's safe conflict handling: defensive rebase abort and an upstream restore that drops paths whose restore failed instead of committing stale local content over them.
+Thin adapter over :meth:`_pull_pipeline` (#879) — the periodic pull loop and the interactive `git_sync` tool now share one fetch → classify → ff-only → rebase → sibling implementation, so the loop gets the pipeline's safe conflict handling: defensive rebase abort and an upstream restore that drops paths whose restore failed instead of committing stale local content over them.
 
 The pipeline self-quiesces before the merge via :meth:`_quiesce_writes` (pause new writes + drain the deferred-commit queue, best-effort/time-bounded) so a write racing the periodic pull is committed first and the merge runs on a clean tree (#571). The pause is held for the whole fetch + merge — including the network round-trip — so MCP writes block for the pull's duration; acceptable for a periodic background pull (default every 600 s) and a fast fetch.
 

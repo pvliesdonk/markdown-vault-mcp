@@ -3252,9 +3252,11 @@ writes are paused and the deferred-commit queue is drained (best-effort,
 time-bounded) so a write that landed just before the pull is committed
 first and the merge runs on a clean tree (#571). Skipped under
 <code>dry_run</code> (which only fetches and never touches the working tree).</p>
-<p>On <code>ff-only</code> failure (divergent history) the implementation
-falls through to the same rebase + Syncthing-style sibling write
-path used by :meth:<code>sync_once</code> (see
+<p>Divergent history is detected before the merge (<code>git merge-base
+--is-ancestor</code>, #1292) and goes straight to the same rebase +
+Syncthing-style sibling write path used by :meth:<code>sync_once</code>; a
+working tree that refuses an otherwise available fast-forward
+falls through to it too (see
 :func:<code>~markdown_vault_mcp.git.conflict.resolve_rebase_conflicts</code> and
 :func:<code>~markdown_vault_mcp.git.conflict.write_conflict_files</code>).  When
 the conflict-resolution
@@ -3298,9 +3300,11 @@ gated only the periodic loop before; it now gates every pull.</p>
             <td>
               <div class="doc-md-description">
                 <p>When <code>True</code>, runs <code>git fetch</code> and computes the
-would-be pull without modifying HEAD.  Returns
-<code>applied=False</code> with <code>commits_pulled</code> set to the count
-that <em>would</em> have been pulled.</p>
+would-be pull without modifying HEAD.  A projection that
+predicts work returns <code>applied=False</code> with
+<code>commits_pulled</code> set to the count that <em>would</em> have been
+pulled; one that finds nothing to pull returns the same
+<code>applied=True</code> the real call would.</p>
               </div>
             </td>
             <td>
@@ -3561,7 +3565,7 @@ blocks behind an in-flight pull.</p>
         <p>Fetch and update once, returning True if HEAD advanced.</p>
 <p>Thin adapter over :meth:<code>_pull_pipeline</code> (#879) — the periodic
 pull loop and the interactive <code>git_sync</code> tool now share one
-fetch → ff-only → rebase → sibling implementation, so the loop
+fetch → classify → ff-only → rebase → sibling implementation, so the loop
 gets the pipeline's safe conflict handling: defensive rebase
 abort and an upstream restore that drops paths whose restore
 failed instead of committing stale local content over them.</p>
