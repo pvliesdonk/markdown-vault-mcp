@@ -101,8 +101,10 @@ class GitQueryManager:
 
         A *path* that resolves to an existing directory scopes history to that
         subtree (``git log -- <dir>``); a ``.md`` note or a configured
-        attachment scopes to that single file (rename-following); ``None``
-        returns vault-wide history.
+        attachment scopes to that single file, following its renames back and
+        stopping where it was created — a name that was freed and reused does
+        not carry its previous occupant's commits (#1285); ``None`` returns
+        vault-wide history.
 
         Args:
             path: Vault-relative path to filter on. An existing directory
@@ -200,6 +202,10 @@ class GitQueryManager:
             in the given range, or when the vault's source directory is not
             inside a git repository.  Per-commit (``per_commit=True``)
             attachment diffs are rename-aware (a copied file renders as an add).
+            The diff describes the note the path names today: where that name
+            was held by a different note earlier, a reference older than this
+            note's creation renders as a creation rather than pairing the two
+            notes' content (#1285).
 
         Raises:
             ValueError: If exactly one of *since_sha* / *since_timestamp* is
