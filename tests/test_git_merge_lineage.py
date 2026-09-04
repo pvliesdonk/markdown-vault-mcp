@@ -139,6 +139,43 @@ def _renamed_on_a_branch_then_merged(repo: Path) -> tuple[str, str, str, str]:
     return birth, rename, edit, merge
 
 
+def _renamed_on_a_branch_and_again_in_the_merge(
+    repo: Path,
+) -> tuple[str, str, str, str]:
+    """``old.md`` renamed on a branch, then renamed again while merging.
+
+    The name in the middle lives only on the merged branch: the merge's
+    first-parent diff records a single rename, ``old.md`` straight to
+    ``new.md``, and never mentions ``middle.md`` at all.  Resolving the note's
+    names along the first parent alone therefore never learns the name under
+    which the branch's own commits were made.
+
+    Returns:
+        The four SHAs oldest-first: the note's creation, the rename made on
+        the branch, the edit that followed it there, and the merge that
+        renamed the note again.
+    """
+    _init(repo)
+    (repo / "old.md").write_text(_BODY)
+    birth = _commit(repo, "c1 add old.md", _DAY1)
+    _git(repo, "checkout", "-q", "-b", "side")
+    _git(repo, "mv", "old.md", "middle.md")
+    rename = _commit(repo, "c2 rename to middle.md on the branch", _DAY2)
+    (repo / "middle.md").write_text(_SIDE)
+    edit = _commit(repo, "c3 edit middle.md on the branch", _DAY3)
+    _git(repo, "checkout", "-q", "-")
+    (repo / "other.md").write_text("unrelated\n")
+    _commit(repo, "c4 unrelated trunk commit", _DAY4)
+    subprocess.run(
+        ["git", "-C", str(repo), "merge", "--no-commit", "--no-ff", "side"],
+        capture_output=True,
+        check=False,
+    )
+    _git(repo, "mv", "middle.md", "new.md")
+    merge = _commit(repo, "c5 merge, renaming again during resolution", _DAY5)
+    return birth, rename, edit, merge
+
+
 def _edited_on_a_branch_then_merged(repo: Path) -> tuple[str, str, str, str]:
     """``note.md`` edited twice on a branch and merged, with no rename at all.
 
@@ -262,6 +299,38 @@ class TestRenameMadeWhileResolvingAMerge:
         assert _history(shallow, "renamed.md") == [merge]
 
 
+class TestANameThatLivedOnlyOnTheBranch:
+    """A merge's first-parent diff can hide a whole name (#1314 review).
+
+    Where a note is renamed on a branch and renamed *again* while the branch
+    is merged, the merge records one rename from the trunk's name to the name
+    it settled on.  The name in between belongs to no first-parent diff, so
+    resolving identity along the first parent alone never learns it — and the
+    branch's commits, made under that name, go unreported.
+    """
+
+    def test_history_reports_the_commits_made_under_it(self, tmp_path: Path) -> None:
+        """The branch's own commits are the note's, under whatever name."""
+        repo = tmp_path / "vault"
+        birth, rename, edit, merge = _renamed_on_a_branch_and_again_in_the_merge(repo)
+        assert _history(repo, "new.md") == [merge, edit, rename, birth]
+
+    def test_the_branch_rename_reads_as_a_rename(self, tmp_path: Path) -> None:
+        """Its diff is taken under the name the branch gave the note.
+
+        A ``git mv`` with no edit has no content diff, so what a reader gets
+        is the rename itself (#683).  Recovered under the trunk's name
+        instead, the same commit renders as that file being deleted.
+        """
+        repo = tmp_path / "vault"
+        birth, rename, _edit, _merge = _renamed_on_a_branch_and_again_in_the_merge(repo)
+        diffs = GitWriteStrategy().get_file_diff(repo, repo / "new.md", birth, True)
+        assert isinstance(diffs, list)
+        renaming = next(d for d in diffs if d.sha == rename)
+        assert "old.md => middle.md" in renaming.diff
+        assert "deleted file" not in renaming.diff
+
+
 class TestRenameMadeOnABranch:
     """A rename in a parent's diff was reachable already, and stays reachable."""
 
@@ -368,7 +437,7 @@ class TestSegmentWalkEdges:
             _WalkBounds,
         )
 
-        segments = [_NameSegment("b.md", "deadbeef", None)]
+        segments = [_NameSegment("b.md", "deadbeef", "cafef00d", None)]
         found = _segment_shas(tmp_path / "no-such-repo", segments, _WalkBounds(), None)
         assert found == {}
 
@@ -395,6 +464,14 @@ class TestSegmentWalkEdges:
         from markdown_vault_mcp.git.query import _canonical_order
 
         assert _canonical_order(tmp_path / "no-such-repo", {"deadbeef"}, None) == []
+
+    def test_a_merges_branches_are_unknown_when_git_cannot_answer(
+        self, tmp_path: Path
+    ) -> None:
+        """No parents means no branch to walk, and no name recovered from one."""
+        from markdown_vault_mcp.git.query import _parents
+
+        assert _parents(tmp_path / "no-such-repo", "deadbeef", None) == []
 
     def test_a_segment_reaching_back_to_a_first_commit_has_no_lower_bound(
         self, tmp_path: Path

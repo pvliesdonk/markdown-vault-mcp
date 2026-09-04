@@ -336,7 +336,7 @@ def _lineage(
 
 
 def _first_parent_records_cmd(
-    git_root: Path, cur_rel: str, rev_range: str | None
+    git_root: Path, cur_rel: str, revs: str | None
 ) -> list[str]:
     """Assemble the argv for the walk that resolves a note's names.
 
@@ -353,8 +353,8 @@ def _first_parent_records_cmd(
     Args:
         git_root: Pre-resolved git repository root.
         cur_rel: The note's path, repo-relative and posix.
-        rev_range: Restrict the walk to a range (``"<ref>..HEAD"``), or
-            ``None`` to walk back from ``HEAD`` without a bound.
+        revs: What to walk: a range (``"<ref>..HEAD"``) or a single revision
+            to walk back from, or ``None`` for ``HEAD`` without a bound.
     """
     cmd = [
         "git",
@@ -371,8 +371,8 @@ def _first_parent_records_cmd(
         _RENAME_THRESHOLD,
         f"--format={_HISTORY_SENTINEL}%H",
     ]
-    if rev_range is not None:
-        cmd.append(rev_range)
+    if revs is not None:
+        cmd.append(revs)
     return [*cmd, "--", literal_pathspec(cur_rel)]
 
 
@@ -382,32 +382,132 @@ class _NameSegment(NamedTuple):
     Attributes:
         name: The name the note carried, repo-relative and posix — the form
             git's own records use.
-        after: A commit excluded from the segment, and with it everything
-            older: the commit that gave the note this name (which belongs to
-            the previous name's segment, where it appears as that name's
-            removal), or the parent of the commit that created the note.
-            ``None`` when the note was created by a parent-less commit, so
+        acquired_at: The commit that gave the note this name: the rename, or
+            the note's creation.  It belongs to this segment whatever else
+            lists it, because a diff of that commit has to be taken under the
+            name it *gave* the note for git to pair the rename rather than
+            report the old name being deleted.
+        after: That commit's first parent, excluded from the segment and with
+            it everything older, so the name's previous owner stays out.
+            ``None`` when the note was created by a parent-less commit, where
             there is nothing older to exclude.
-        through: The commit that renamed the note away, included in the
-            segment because it is the last one to touch this name.  ``None``
-            for the name the note carries now, whose segment runs to ``HEAD``.
+        through: The newest commit at which this name was the note's own.
+            ``None`` for the name the note carries now, whose segment runs to
+            ``HEAD``.
     """
 
     name: str
+    acquired_at: str | None
     after: str | None
     through: str | None
 
 
-def _first_parent(git_root: Path, sha: str, env: dict[str, str] | None) -> str | None:
-    """Return *sha*'s first parent, or ``None`` for a parent-less commit."""
+class _Frontier(NamedTuple):
+    """A revision and the note's name there, whose history is still unwalked.
+
+    Attributes:
+        rev: The revision to walk back from.
+        name: The name the note carries at *rev*.
+        through: The newest commit at which that name was the note's own.
+    """
+
+    rev: str
+    name: str
+    through: str | None
+
+
+# A note renamed on many merged branches would otherwise walk one chain per
+# rename-carrying merge.  Past this many walks the recovery stops early: it
+# reports fewer of the note's names, never names that are not the note's.
+_MAX_NAME_WALKS = 16
+
+
+def _parents(git_root: Path, sha: str, env: dict[str, str] | None) -> list[str]:
+    """Return *sha*'s parents, first parent first; empty for a root commit."""
     result = subprocess.run(
-        ["git", "-C", str(git_root), "rev-parse", "--verify", "--quiet", f"{sha}^"],
+        ["git", "-C", str(git_root), "rev-list", "--parents", "-n1", sha],
         capture_output=True,
         text=True,
         check=False,
         env=env,
     )
-    return result.stdout.strip() or None
+    if result.returncode != 0:
+        return []
+    return result.stdout.split()[1:]
+
+
+def _first_parent(git_root: Path, sha: str, env: dict[str, str] | None) -> str | None:
+    """Return *sha*'s first parent, or ``None`` for a parent-less commit."""
+    parents = _parents(git_root, sha, env)
+    return parents[0] if parents else None
+
+
+def _branch_frontiers(
+    git_root: Path,
+    sha: str,
+    name: str,
+    older: str,
+    env: dict[str, str] | None,
+) -> list[_Frontier]:
+    """Return the names *sha*'s merged branches knew the note by.
+
+    A first-parent walk reads a rename carried by a merge as one step, from
+    the name on the trunk straight to the name the merge settled on.  Where
+    the note was *also* renamed on the branch, the name it carried there is in
+    no first-parent diff at all, and the branch's own commits — made under
+    that name — would go unreported.  So each other parent is asked what the
+    note was called at it, and a name that is neither of the two the merge
+    already named opens a walk of its own.
+    """
+    frontiers: list[_Frontier] = []
+    for parent in _parents(git_root, sha, env)[1:]:
+        at_parent = resolve_path_at_ref(git_root, parent, name, env, to_ref=sha)
+        if at_parent is not None and at_parent not in (name, older):
+            frontiers.append(_Frontier(parent, at_parent, parent))
+    return frontiers
+
+
+def _walk_one_name(
+    git_root: Path, frontier: _Frontier, env: dict[str, str] | None
+) -> tuple[list[_NameSegment], list[_Frontier]]:
+    """Walk one line of descent, newest first, for the note at *frontier*.
+
+    Returns:
+        The segments this line contributes and the frontiers it opened.  A
+        line that never reaches the note's creation contributes **nothing**:
+        its oldest name has no lower bound, and a name recovered without one
+        can pick up whatever held it before this note existed.
+    """
+    result = subprocess.run(
+        _first_parent_records_cmd(git_root, frontier.name, frontier.rev),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if result.returncode != 0:
+        return [], []
+    tracked, through = frontier.name, frontier.through
+    segments: list[_NameSegment] = []
+    opened: list[_Frontier] = []
+    for block in result.stdout.split(_HISTORY_SENTINEL):
+        split = _split_z_block(block, 1)
+        if split is None:
+            continue
+        (sha,), path_tokens = split
+        older, reached_birth = _track_records(path_tokens, tracked)
+        if reached_birth:
+            segments.append(
+                _NameSegment(tracked, sha, _first_parent(git_root, sha, env), through)
+            )
+            return segments, opened
+        if older != tracked:
+            opened += _branch_frontiers(git_root, sha, tracked, older, env)
+            segments.append(
+                _NameSegment(tracked, sha, _first_parent(git_root, sha, env), through)
+            )
+            tracked, through = older, sha
+    return [], []
 
 
 def _name_segments(
@@ -419,7 +519,10 @@ def _name_segments(
     it — by walking ``-m --first-parent``, which is the only walk that sees a
     rename performed *while resolving a merge*: that rename belongs to no
     parent's diff, so ``git log --follow`` reports the note as having been
-    created by the merge and never reaches the name it had before.
+    created by the merge and never reaches the name it had before.  Where such
+    a merge joined a branch that had renamed the note too, that branch is
+    walked in turn (:func:`_branch_frontiers`), because the name it used is in
+    no first-parent diff either.
 
     The result is what a caller enumerates commits with, in place of asking
     ``--follow`` to do both jobs at once.  Each segment carries the revision
@@ -433,33 +536,19 @@ def _name_segments(
         a walk that did not reach the note's birth and so cannot say where the
         oldest name stops belonging to it.
     """
-    result = subprocess.run(
-        _first_parent_records_cmd(git_root, cur_rel, None),
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
-    if result.returncode != 0:
+    segments, pending = _walk_one_name(git_root, _Frontier("HEAD", cur_rel, None), env)
+    if not segments:
         return []
-    tracked = cur_rel
-    through: str | None = None
-    segments: list[_NameSegment] = []
-    for block in result.stdout.split(_HISTORY_SENTINEL):
-        split = _split_z_block(block, 1)
-        if split is None:
+    walked = {("HEAD", cur_rel)}
+    while pending and len(walked) < _MAX_NAME_WALKS:
+        frontier = pending.pop()
+        if (frontier.rev, frontier.name) in walked:
             continue
-        (sha,), path_tokens = split
-        older, reached_birth = _track_records(path_tokens, tracked)
-        if reached_birth:
-            segments.append(
-                _NameSegment(tracked, _first_parent(git_root, sha, env), through)
-            )
-            return segments if len(segments) > 1 else []
-        if older != tracked:
-            segments.append(_NameSegment(tracked, sha, through))
-            tracked, through = older, sha
-    return []
+        walked.add((frontier.rev, frontier.name))
+        found, opened = _walk_one_name(git_root, frontier, env)
+        segments += found
+        pending += opened
+    return segments if len(segments) > 1 else []
 
 
 def _segment_rev_args(seg: _NameSegment, exclude: str | None) -> list[str]:
@@ -680,16 +769,19 @@ def _segment_shas(
     git apply its ordinary merge simplification — so a merge is reported only
     where it changed the note relative to what it merged.
 
-    Walking oldest segment first lets the newer name win where two segments
-    meet, and the commit that performed a rename is named by what the note
-    *became*: that is the name a diff of that commit has to target for git to
-    pair the rename rather than report a deletion.
+    Segments overlap at the commit that renamed the note, which touches both
+    names, and there a segment's claim on the name it was *given* settles it:
+    that is the name a diff of that commit has to target for git to pair the
+    rename rather than report the old name being deleted.  Claims are applied
+    after every walk, so the answer does not depend on the order the names
+    were discovered in.
 
     A failed walk contributes nothing rather than raising: this supplements a
     result the caller already has.
     """
     found: dict[str, str] = {}
-    for seg in reversed(segments):
+    claims: dict[str, str] = {}
+    for seg in segments:
         cmd = ["git", "-C", str(git_root), "log", "--format=%H"]
         if bounds.limit is not None:
             cmd.append(f"-n{bounds.limit}")
@@ -705,9 +797,12 @@ def _segment_shas(
         if result.returncode != 0:
             continue
         for sha in result.stdout.split():
-            found[sha] = seg.name
-        if seg.after is not None and seg.after in found:
-            found[seg.after] = seg.name
+            found.setdefault(sha, seg.name)
+        if seg.acquired_at is not None:
+            claims[seg.acquired_at] = seg.name
+    for sha, name in claims.items():
+        if sha in found:
+            found[sha] = name
     return found
 
 
