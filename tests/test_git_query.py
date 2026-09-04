@@ -345,8 +345,8 @@ class TestRenameThresholdAgreement:
     revision ``read`` served was one ``get_history`` never listed.
 
     The threshold is what these pin.  A rename made while *resolving a merge*
-    belongs to no parent's diff and the two readers still differ there — a
-    separate mechanism, tracked in #1306.
+    belongs to no parent's diff, which no threshold reaches; that mechanism is
+    a separate one, covered by ``tests/test_git_merge_lineage.py`` (#1306).
     """
 
     def _renamed_note_repo(self, tmp_path: Path) -> tuple[Path, str, str, str]:
