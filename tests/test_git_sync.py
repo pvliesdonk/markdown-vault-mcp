@@ -258,6 +258,94 @@ class TestGitSync:
         assert payload["push"]["applied"] is False
         assert payload["push"]["reason"] == "dry_run_unsupported", payload["push"]
 
+    async def test_dry_run_pull_on_a_diverged_clone_reports_diverged(
+        self, git_repo_pair: GitRepoPair, _git_managed_env: Path
+    ) -> None:
+        """#1292: the preview names the divergence the real pull would meet.
+
+        It previously answered ``fast_forward=true`` for a clone the real
+        pull could not fast-forward, so the reporter's stranded writes read
+        as a healthy clone on first inspection.
+        """
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_dry_diverged",
+            file_name="shared.md",
+            body="from remote\n",
+        )
+        (git_repo_pair.local_path / "shared.md").write_text("from local\n")
+        _run_git(git_repo_pair.local_path, "add", "shared.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "local edit")
+
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "git_sync", {"direction": "pull", "dry_run": True}
+            )
+
+        payload = _parse_tool_data(result)
+
+        assert payload["pull"]["fast_forward"] is False
+        assert payload["pull"]["reason"] == "diverged"
+        # The pull would still do work — it is the *kind* of work that the
+        # reason qualifies.
+        assert payload["pull"]["would_apply"] is True
+
+    async def test_dry_run_pull_with_only_unpushed_commits_would_apply_false(
+        self, git_repo_pair: GitRepoPair, _git_managed_env: Path
+    ) -> None:
+        """A clone that is only ahead has nothing to pull (#1292)."""
+        (git_repo_pair.local_path / "unpushed.md").write_text("local\n")
+        _run_git(git_repo_pair.local_path, "add", "unpushed.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "unpushed local commit")
+
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "git_sync", {"direction": "pull", "dry_run": True}
+            )
+
+        payload = _parse_tool_data(result)
+
+        assert payload["pull"]["would_apply"] is False
+        assert payload["pull"]["commits_pulled"] == 0
+        assert payload["pull"]["from_sha"] == payload["pull"]["to_sha"]
+
+    async def test_pull_with_only_unpushed_commits_does_not_reindex(
+        self,
+        git_repo_pair: GitRepoPair,
+        _git_managed_env: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A pull that moves nothing must not trigger a reindex (#1292).
+
+        The reindex is keyed on ``from_sha != to_sha``; naming the remote
+        tip as ``to_sha`` on a clone that is only ahead made every such
+        pull pause writes and rebuild the index for no new content.
+        """
+        from markdown_vault_mcp._server_tools import git as git_tools
+
+        calls: list[str] = []
+
+        async def _spy(_vault: Any, pull_dict: dict[str, Any]) -> None:
+            calls.append(pull_dict["to_sha"])
+
+        monkeypatch.setattr(git_tools, "_reindex_after_pull", _spy)
+
+        (git_repo_pair.local_path / "unpushed.md").write_text("local\n")
+        _run_git(git_repo_pair.local_path, "add", "unpushed.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "unpushed local commit")
+
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool("git_sync", {"direction": "pull"})
+
+        payload = _parse_tool_data(result)
+
+        assert payload["pull"]["applied"] is True
+        assert payload["pull"]["from_sha"] == payload["pull"]["to_sha"]
+        assert calls == []
+
     async def test_pull_conflict_returns_conflict_files(
         self, git_repo_pair: GitRepoPair, _git_managed_env: Path
     ) -> None:

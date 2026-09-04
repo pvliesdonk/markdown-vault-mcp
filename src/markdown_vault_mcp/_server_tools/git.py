@@ -91,7 +91,11 @@ def _format_pull_dict(result: PullResult, dry_run: bool) -> dict[str, Any]:
     if result.conflict_files:
         pull_dict["conflict_files"] = list(result.conflict_files)
     if dry_run:
-        # SHA comparison: handles force_pull's up-to-date early-return cleanly.
+        # SHA comparison: handles the pull pipeline's nothing-to-pull return
+        # (up-to-date, or a clone that is only ahead) cleanly — both report
+        # ``to_sha == from_sha``.  On a ``diverged`` projection this is
+        # ``True`` because the real pull would do work, though the work is a
+        # rebase that mints its own SHAs rather than a move to ``to_sha``.
         pull_dict["would_apply"] = result.from_sha != result.to_sha
     return pull_dict
 
@@ -391,10 +395,12 @@ def register(mcp: FastMCP) -> None:
         ``pull.reason`` (and ``pull.conflict_files`` for conflict
         resolution) before retrying.
 
-        ``dry_run=True`` projects the would-be pull without moving HEAD.
-        Push has no safe dry-run (git provides no local probe for
-        "would the remote accept this"), so the push leg returns
-        ``applied=False`` with ``reason='dry_run_unsupported'``.
+        ``dry_run=True`` projects the would-be pull without moving HEAD,
+        reporting ``fast_forward=False`` with ``reason='diverged'`` when
+        the real pull could not fast-forward.  Push has no safe dry-run
+        (git provides no local probe for "would the remote accept this"),
+        so the push leg returns ``applied=False`` with
+        ``reason='dry_run_unsupported'``.
 
         Args:
             direction: ``"pull"``, ``"push"``, or ``"both"`` (default).
@@ -449,10 +455,10 @@ def register(mcp: FastMCP) -> None:
 
             # Short-circuit the push leg when the pull failed in 'both' mode
             # so we don't push on top of an unreconciled local clone.
-            # Excludes ``dry_run``: in dry-run mode ``applied`` is always
-            # ``False`` even on a healthy projection, so falling through is
-            # correct — the push leg's ``dry_run_unsupported`` reason then
-            # surfaces in the response, distinguishing a preview from a
+            # Excludes ``dry_run``: a projection reports ``applied=False``
+            # whenever it predicts work, so falling through is correct — the
+            # push leg's ``dry_run_unsupported`` reason then surfaces in the
+            # response, distinguishing a preview from a
             # real-pull-failed-push-skipped result.
             if direction == "both" and not pull_dict["applied"] and not dry_run:
                 # Refresh head_sha defensively (today's force_pull leaves

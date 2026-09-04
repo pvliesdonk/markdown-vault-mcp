@@ -3968,12 +3968,14 @@ Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` for repos that do not use LFS, or when
   enables concurrent readers during index writes).
 - If `MARKDOWN_VAULT_MCP_GIT_LFS=true`, each pull tick that advanced `HEAD`
   ends with `git lfs pull` so LFS pointer files are resolved before reads and
-  indexing (a no-op tick that finds `HEAD` already up to date skips it).
+  indexing (a no-op tick with nothing to pull skips it: nothing arrived that
+  could carry a pointer).
 
 **Shared pull pipeline (#879)**: the periodic loop (`sync_once`) and the
 interactive `git_sync(direction='pull')` tool (`force_pull`) are thin entry
 points over one implementation, `GitWriteStrategy._pull_pipeline` (quiesce +
-lock → `git fetch origin` → resolve tracking ref → ff-only merge → rebase →
+lock → `git fetch origin` → resolve tracking ref → classify divergence →
+ff-only merge → rebase →
 Syncthing-style sibling conflict resolution → LFS pull). `force_pull` returns
 the pipeline's structured `PullResult` directly; `sync_once` adapts it to its
 historical bool (`applied and to_sha != from_sha`), pre-checks the tracking ref
@@ -3983,6 +3985,22 @@ contract. Unifying the two paths fixed the loop's diverged conflict handling:
 its post-abort upstream restore previously ran per-file `git checkout` with no
 failure handling, whereas the pipeline's `_restore_upstream_paths` drops paths
 whose restore failed instead of committing stale local content over them.
+
+**Divergence is classified before the pull, not after (#1292)**: the pipeline
+asks `git merge-base --is-ancestor` before it merges or predicts — the remote
+tip reachable from `HEAD` means there is nothing to pull, `HEAD` reachable
+from the remote tip means `merge --ff-only` can succeed. A dry run projects
+from that classification instead of assuming a fast-forward, so a diverged
+clone reports `fast_forward=False, reason="diverged"` rather than the clean
+fast-forward the real pull then refused; the real pull skips the merge it
+already knows cannot succeed and goes straight to the rebase path. The same
+classification corrected a clone that was only *ahead* — unpushed local
+commits, remote unmoved: it reported `to_sha=<remote tip>` for a pull that
+left `HEAD` where it was, which read as HEAD moving backwards and made
+`git_sync` reindex for a pull that moved nothing. A dry run still fetches
+without draining deferred writes, so its prediction describes the clone at
+fetch time: a pending write the real pull commits first can diverge after the
+projection was taken.
 
 **`enable_pull` gates every pull, not just the loop (#1128)**: the flag is
 `False` in unmanaged / commit-only mode, where the strategy exists only to

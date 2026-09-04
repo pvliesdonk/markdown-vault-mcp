@@ -9,6 +9,7 @@ so the same setup can be reused by future tests for the higher-level
 from __future__ import annotations
 
 import logging
+import subprocess
 from typing import TYPE_CHECKING
 
 import pytest
@@ -113,6 +114,187 @@ class TestForcePull:
         assert result.applied is False  # dry-run reports prediction only
         assert result.commits_pulled == 1  # would pull 1 commit
         assert not (git_repo_pair.local_path / "drynew.md").exists()
+
+
+class TestPullDivergenceClassification:
+    """#1292: the pipeline classifies the clone before merging or predicting.
+
+    The reported incident: a dry-run pull answered ``fast_forward=True`` for a
+    divergence the real pull then refused, so an operator watching writes
+    strand locally read the clone as healthy.
+    """
+
+    @staticmethod
+    def _local_commit(repo: Path, file_name: str, body: str) -> None:
+        """Commit one file on the local clone without pushing it."""
+        (repo / file_name).write_text(body)
+        _run_git(repo, "add", file_name)
+        _run_git(repo, "commit", "-m", f"local commit: {file_name}")
+
+    def _diverged_strategy(
+        self, pair: GitRepoPair, clone_name: str
+    ) -> GitWriteStrategy:
+        """Move the remote and the local clone onto the same file."""
+        _seed_remote_commit(
+            pair,
+            clone_name=clone_name,
+            file_name="shared.md",
+            body="from remote\n",
+        )
+        self._local_commit(pair.local_path, "shared.md", "from local\n")
+        return GitWriteStrategy(
+            enable_pull=True, enable_push=False, repo_path=pair.local_path
+        )
+
+    def test_dry_run_on_a_diverged_clone_says_diverged(
+        self, git_repo_pair: GitRepoPair
+    ) -> None:
+        """The projection reports the divergence instead of a fast-forward."""
+        strategy = self._diverged_strategy(git_repo_pair, "clone_diverged_dry")
+        head_before = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
+
+        result = strategy.force_pull(dry_run=True)
+
+        assert result.fast_forward is False
+        assert result.reason == "diverged"
+        assert result.applied is False
+        # The remote-only commit is still counted: it is what the pull would
+        # reconcile against, even though the real pull rebases rather than
+        # fast-forwarding it in.
+        assert result.commits_pulled == 1
+        assert result.to_sha != result.from_sha
+        assert (
+            _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
+            == head_before
+        )
+
+    def test_the_dry_run_prediction_holds_for_the_real_pull(
+        self, git_repo_pair: GitRepoPair
+    ) -> None:
+        """The real pull on the same divergence also cannot fast-forward."""
+        strategy = self._diverged_strategy(git_repo_pair, "clone_diverged_real")
+
+        predicted = strategy.force_pull(dry_run=True)
+        actual = strategy.force_pull()
+
+        assert predicted.fast_forward is False
+        assert actual.fast_forward is predicted.fast_forward
+        # The real pull resolves the divergence rather than refusing it here;
+        # what the dry run promised is only that it would not be a
+        # fast-forward.
+        assert actual.reason == "conflicts_resolved_with_siblings"
+
+    def test_a_clone_that_is_only_ahead_pulls_nothing(
+        self, git_repo_pair: GitRepoPair
+    ) -> None:
+        """Unpushed local commits leave HEAD alone — and are reported that way.
+
+        The remote tip is an ancestor of HEAD, so ``merge --ff-only`` is a
+        no-op success.  Reporting the remote tip as ``to_sha`` made a pull
+        that moved nothing look like a pull that moved HEAD backwards, which
+        is also what made ``git_sync`` reindex for it.
+        """
+        self._local_commit(git_repo_pair.local_path, "unpushed.md", "local\n")
+        strategy = GitWriteStrategy(
+            enable_pull=True, enable_push=False, repo_path=git_repo_pair.local_path
+        )
+        head = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
+
+        result = strategy.force_pull()
+
+        assert result.applied is True
+        assert result.fast_forward is True
+        assert result.commits_pulled == 0
+        assert result.from_sha == head
+        assert result.to_sha == head
+        assert _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip() == head
+
+    def test_a_dry_run_on_a_clone_that_is_only_ahead_predicts_no_move(
+        self, git_repo_pair: GitRepoPair
+    ) -> None:
+        """Same clone, projected: nothing to pull, so no SHA move to report."""
+        self._local_commit(git_repo_pair.local_path, "unpushed.md", "local\n")
+        strategy = GitWriteStrategy(
+            enable_pull=True, enable_push=False, repo_path=git_repo_pair.local_path
+        )
+
+        result = strategy.force_pull(dry_run=True)
+
+        assert result.fast_forward is True
+        assert result.reason is None
+        assert result.commits_pulled == 0
+        assert result.from_sha == result.to_sha
+
+    def test_an_available_fast_forward_can_still_fail_on_a_dirty_tree(
+        self, git_repo_pair: GitRepoPair
+    ) -> None:
+        """History says fast-forward; the working tree can still refuse it.
+
+        The classification only reads history, so the ``merge --ff-only``
+        attempt stays wrapped: an uncommitted edit to a file the incoming
+        commit also touches makes git refuse, and the pull falls back to the
+        rebase path (which cannot proceed on that tree either, leaving HEAD
+        where it was).
+        """
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_dirty_tree",
+            file_name="README.md",
+            body="remote edit\n",
+        )
+        (git_repo_pair.local_path / "README.md").write_text("uncommitted local\n")
+        strategy = GitWriteStrategy(
+            enable_pull=True, enable_push=False, repo_path=git_repo_pair.local_path
+        )
+        head = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
+
+        result = strategy.force_pull()
+
+        assert result.applied is False
+        assert result.reason == "conflict_resolution_failed"
+        assert result.from_sha == result.to_sha == head
+        # The uncommitted edit is still on disk — nothing was thrown away.
+        assert (
+            git_repo_pair.local_path / "README.md"
+        ).read_text() == "uncommitted local\n"
+
+    def test_an_unusable_ancestry_answer_does_not_promise_a_fast_forward(
+        self, git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """``merge-base`` failing outright must not read as "fast-forward".
+
+        Exit status is the whole answer, so any status other than 0 / 1
+        leaves the pipeline without one.  It then declines to promise the
+        fast-forward it cannot verify.
+        """
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_broken_mergebase",
+            file_name="seeded.md",
+            body="seeded\n",
+        )
+        strategy = GitWriteStrategy(
+            enable_pull=True, enable_push=False, repo_path=git_repo_pair.local_path
+        )
+        real_capturing = strategy._run_git_capturing
+
+        def _capturing(
+            git_root: Path, *args: str, **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            if args[:2] == ("merge-base", "--is-ancestor"):
+                return subprocess.CompletedProcess(
+                    args=["git", *args], returncode=128, stdout="", stderr="boom\n"
+                )
+            return real_capturing(git_root, *args, **kwargs)  # type: ignore[arg-type]
+
+        strategy._run_git_capturing = _capturing  # type: ignore[method-assign]
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
+            result = strategy.force_pull(dry_run=True)
+
+        assert result.fast_forward is False
+        assert result.reason == "diverged"
+        assert any("git_merge_base_failed" in r.message for r in caplog.records)
 
 
 class TestForcePush:
