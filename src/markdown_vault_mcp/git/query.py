@@ -27,7 +27,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
-from markdown_vault_mcp.git._run import cleanup_git_env, git_env
+from markdown_vault_mcp.git._run import cleanup_git_env, git_env, literal_pathspec
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
 
 if TYPE_CHECKING:
@@ -316,7 +316,7 @@ def _lineage(
     ]
     if rev_range is not None:
         cmd.append(rev_range)
-    cmd += ["--", str(path)]
+    cmd += ["--", literal_pathspec(str(path))]
     result = subprocess.run(cmd, capture_output=True, text=True, check=False, env=env)
     if result.returncode != 0:
         return _Lineage(None, False)
@@ -359,7 +359,7 @@ def _rename_aware_diff_args(
         else None
     )
     if old_path is None or cur_rel is None or old_path == cur_rel:
-        return [f"{from_ref}..{to_ref}", "--", pathspec], old_path
+        return [f"{from_ref}..{to_ref}", "--", literal_pathspec(pathspec)], old_path
     return [f"{from_ref}:{old_path}", f"{to_ref}:{cur_rel}"], old_path
 
 
@@ -369,11 +369,13 @@ def _diff_is_binary(
     """True if git reports the diff target as binary.
 
     *diff_args* is the ref/path portion of a ``git diff`` invocation — such as
-    a range/path form (``["<from>..<to>", "--", path_str]``), a two-endpoint
+    a range/path form (``["<from>..<to>", "--", <pathspec>]``), a two-endpoint
     blob/tree-spec form (``[f"{a}:{old}", f"{b}:{new}"]``), or two revs followed
     by a pathspec (e.g. the empty-tree SHA and a commit SHA followed by
-    ``["--", commit_path]``, used for parent-less commits).  The endpoints may
-    be refs, commit SHAs, blob specs, or the empty-tree constant.
+    ``["--", <pathspec>]``, used for parent-less commits).  The endpoints may
+    be refs, commit SHAs, blob specs, or the empty-tree constant; every
+    pathspec among them is built by
+    :func:`~markdown_vault_mcp.git._run.literal_pathspec`.
     ``git diff --numstat`` prints ``-\\t-\\t<path>`` for binary and real counts
     for text; empty output (no change) → non-binary.
     A non-zero git exit (e.g. a bad ref) yields empty stdout, so it is classified
@@ -457,16 +459,16 @@ def _history_log_cmd(
     if path is None:
         # vault-wide: scope to the resolved real path so symlinked SOURCE_DIR
         # values work correctly (git compares against the real toplevel).
-        cmd += ["--name-only", "--", str(repo_path.resolve())]
+        cmd += ["--name-only", "--", literal_pathspec(str(repo_path.resolve()))]
     elif is_dir:
         # directory scope: no --follow (git rejects it for anything but a
         # single file); --name-only so paths_changed carries the subtree files
         # each commit touched. git already filters the name-only output to the
         # <dir> pathspec, so no sibling paths leak in and no extra filtering is
         # needed here.
-        cmd += ["--name-only", "--", str(path)]
+        cmd += ["--name-only", "--", literal_pathspec(str(path))]
     else:
-        cmd += ["--follow", "--", str(path)]
+        cmd += ["--follow", "--", literal_pathspec(str(path))]
     return cmd
 
 
@@ -812,7 +814,12 @@ def _range_diff(
         # against the empty tree instead: the note reads as the creation it
         # is, exactly as it would if the name had never been used before
         # (#1285).
-        diff_args = [_empty_tree(git_root, env), "HEAD", "--", path_str]
+        diff_args = [
+            _empty_tree(git_root, env),
+            "HEAD",
+            "--",
+            literal_pathspec(path_str),
+        ]
     else:
         diff_args, _old_path = _rename_aware_diff_args(
             git_root, ref, "HEAD", cur_rel, path_str, env
@@ -878,7 +885,7 @@ def _root_commit_diff(
     """
     empty_tree = _empty_tree(git_root, env)
     root_binary = summarize_binary and _diff_is_binary(
-        git_root, [empty_tree, sha, "--", commit_path], env
+        git_root, [empty_tree, sha, "--", literal_pathspec(commit_path)], env
     )
     fallback_cmd = [
         "git",
@@ -890,7 +897,7 @@ def _root_commit_diff(
         "--stat" if root_binary else "-p",
         sha,
         "--",
-        commit_path,
+        literal_pathspec(commit_path),
     ]
     try:
         show_result = subprocess.run(
@@ -964,7 +971,7 @@ def _per_commit_diffs(
     if limit is not None:
         clamped_limit = min(max(1, limit), 100)
         log_cmd.append(f"-n{clamped_limit}")
-    log_cmd += [f"{ref}..HEAD", "--", path_str]
+    log_cmd += [f"{ref}..HEAD", "--", literal_pathspec(path_str)]
     try:
         log_result = subprocess.run(
             log_cmd,
@@ -1120,7 +1127,7 @@ def _revision_walk_output(
                 f"--format={_HISTORY_SENTINEL}%H",
                 f"{ref}..HEAD",
                 "--",
-                _literal(cur_rel),
+                literal_pathspec(cur_rel),
             ],
             capture_output=True,
             text=True,
@@ -1247,7 +1254,7 @@ def _require_tracked(
     if not path.exists():
         return
     result = subprocess.run(
-        ["git", "-C", str(git_root), "ls-files", "--", _literal(cur_rel)],
+        ["git", "-C", str(git_root), "ls-files", "--", literal_pathspec(cur_rel)],
         capture_output=True,
         text=True,
         check=False,
@@ -1284,17 +1291,6 @@ def _require_inside_vault(historical: str, prefix: str, ref: str) -> None:
         )
 
 
-def _literal(path: str) -> str:
-    """Return *path* as a pathspec git will not interpret as a glob.
-
-    A note may legitimately be named ``star*note.md`` or ``brack[et].md``, and
-    a bare pathspec is a wildmatch pattern, so such a name would silently
-    select whichever sibling it happens to match.  ``:(literal)`` turns off
-    that interpretation.
-    """
-    return f":(literal){path}"
-
-
 def _tree_entry(
     git_root: Path, ref: str, repo_rel: str, env: dict[str, str] | None
 ) -> tuple[str, int]:
@@ -1306,9 +1302,9 @@ def _tree_entry(
     the *commit* object, so a size check passes against the wrong object and
     the subsequent blob read fails with a message on stderr and an exit status
     of **zero** — which reads as an empty note.  Asking the tree instead keeps
-    the lookup a pathspec (glob-proof via :func:`_literal`) and yields the
-    mode, the object id, and the size in one call, with the blob then fetched
-    by its own hash.
+    the lookup a pathspec, and so glob-proof like every other in this package,
+    and yields the mode, the object id, and the size in one call, with the blob
+    then fetched by its own hash.
 
     Raises:
         ValueError: If nothing is recorded at that path, or the entry is not a
@@ -1325,7 +1321,7 @@ def _tree_entry(
             "-z",
             ref,
             "--",
-            _literal(repo_rel),
+            literal_pathspec(repo_rel),
         ],
         capture_output=True,
         text=True,
@@ -1501,7 +1497,7 @@ def committed_revision(
                 "-1",
                 "--format=%H",
                 "--",
-                _literal(rel),
+                literal_pathspec(rel),
             ],
             capture_output=True,
             text=True,
@@ -1512,7 +1508,7 @@ def committed_revision(
         if found.returncode != 0 or not sha:
             return None
         tracked = subprocess.run(
-            ["git", "-C", str(git_root), "ls-files", "--", _literal(rel)],
+            ["git", "-C", str(git_root), "ls-files", "--", literal_pathspec(rel)],
             capture_output=True,
             text=True,
             check=False,
@@ -1524,7 +1520,16 @@ def committed_revision(
             # deleted it — a breadcrumb pointing at content that is not there.
             return None
         clean = subprocess.run(
-            ["git", "-C", str(git_root), "diff", "--quiet", sha, "--", _literal(rel)],
+            [
+                "git",
+                "-C",
+                str(git_root),
+                "diff",
+                "--quiet",
+                sha,
+                "--",
+                literal_pathspec(rel),
+            ],
             capture_output=True,
             check=False,
             env=env,

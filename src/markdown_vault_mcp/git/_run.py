@@ -19,6 +19,32 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def literal_pathspec(path: str) -> str:
+    """Return *path* as a pathspec git will not interpret as a glob.
+
+    A note may legitimately be named ``star*note.md`` or ``brack[et].md``, and
+    a bare pathspec is a wildmatch pattern, so such a name would silently
+    select whichever sibling it happens to match — reporting that sibling's
+    commits as the note's history (#1303), and sweeping that sibling's
+    uncommitted work into the note's own commit (#1304).  ``:(literal)`` turns
+    off that interpretation.
+
+    Every git command in this package that takes a **pathspec** goes through
+    this: ``log``, ``diff``, ``show``, ``add``, ``rm``, ``commit --only``,
+    ``ls-files``, ``checkout``.  ``check-ignore`` is the exception, and not an
+    oversight: it takes *pathnames*, rejects pathspec magic outright
+    (``fatal: pathspec magic not supported by this command: 'literal'``), and
+    already matches the name literally.
+
+    Args:
+        path: The path to pass to git, absolute or repository-relative.
+
+    Returns:
+        The path prefixed with git's ``:(literal)`` pathspec magic.
+    """
+    return f":(literal){path}"
+
+
 def _is_ssh_remote(url: str) -> bool:
     return url.startswith("git@") or url.startswith("ssh://")
 
