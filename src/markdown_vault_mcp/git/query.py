@@ -798,8 +798,10 @@ def _range_diff(
     revision.
     """
     path_str = str(path)
-    # Resolve the path-at-ref once so renames are handled uniformly for
-    # binary detection, the --stat summary, and the full diff.
+    # Both branches below settle the diff's endpoints once, so binary
+    # detection, the --stat summary, and the full diff all read the same
+    # target: the empty tree where the note was born inside the range, and
+    # otherwise the rename-resolved pair.
     cur_rel = _repo_rel(git_root, path)
     if (
         cur_rel is not None
