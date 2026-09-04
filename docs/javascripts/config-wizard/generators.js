@@ -99,28 +99,46 @@ export function isVisible(q, answers) {
   return Object.entries(q.showIf).every(([k, allowed]) => allowed.includes(answers[k]));
 }
 
-// Bind mounts for visible dockerVolume questions: [[hostPath, containerPath]].
-// An empty answer yields a `/path/to/<id>` placeholder so the artifact still
-// reads as "replace me".
+// A dockerVolume question contributes only when the user actually supplied a
+// host path. Blank means "I am not using this", and the two halves must agree:
+// emitting the mount without the env override leaves a bind mount nothing
+// references, and emitting the override without a real host path points the
+// server at a file that does not exist. Both halves therefore key off the same
+// answer.
+//
+// This replaced a `/path/to/<id>` placeholder that a blank answer used to
+// produce as a "replace me" marker. That reads fine for a path the server
+// requires, and breaks a path it merely accepts: leaving the optional bearer
+// tokens file blank produced `-e ..._BEARER_TOKENS_FILE=/etc/<project>/
+// tokens.toml` beside `BEARER_TOKEN`, and core prefers a tokens file whenever
+// both are set — so the default bearer output named a file that was never
+// mounted and refused to start. The spec has no required-ness signal to
+// distinguish the two cases, so the safe rule is the one that cannot generate
+// a broken command.
+const dockerHostPath = (q, answers) => (q.dockerVolume ? answers[q.id] : "");
+
+// Bind mounts for visible, answered dockerVolume questions:
+// [[hostPath, containerPath]].
 export function dockerVolumes(spec, answers) {
   const vols = [];
   for (const q of spec.questions) {
-    if (!q.dockerVolume || !isVisible(q, answers)) continue;
-    const host = answers[q.id] || `/path/to/${q.id}`;
-    vols.push([host, q.dockerVolume]);
+    if (!isVisible(q, answers)) continue;
+    const host = dockerHostPath(q, answers);
+    if (host) vols.push([host, q.dockerVolume]);
   }
   return vols;
 }
 
 // Rewrite the env map for Docker/Compose output. A dockerVolume question's var
-// is always fixed to its container path (the bind mount makes that path real).
-// A dockerPath question's var is fixed only when already present (the user
-// opted into the value); dockerPath never adds a mount. FASTMCP_HOME is injected.
+// is fixed to its container path once the user supplies a host path, because
+// the bind mount above then makes that path real. A dockerPath question's var
+// is fixed only when already present (the user opted into the value);
+// dockerPath never adds a mount. FASTMCP_HOME is injected.
 function dockerEnvMap(spec, answers, map) {
   const out = { ...map };
   for (const q of spec.questions) {
     if (!isVisible(q, answers) || !q.var) continue;
-    if (q.dockerVolume) {
+    if (dockerHostPath(q, answers)) {
       out[q.var] = q.dockerVolume;
     } else if (q.dockerPath && q.var in out) {
       out[q.var] = q.dockerPath;

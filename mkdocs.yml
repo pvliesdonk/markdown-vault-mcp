@@ -6,7 +6,7 @@ repo_name: pvliesdonk/markdown-vault-mcp
 edit_uri: edit/main/docs/
 
 # Internal dev docs live under docs/ but are NOT part of the published site.
-# Keep this set in lockstep with the Vale exclusion (ci.yml vale_flags glob +
+# Keep this set in lockstep with the Vale exclusion (ci.yml's `glob:` input +
 # the pre-commit `- id: vale` exclude); see the Documentation Conventions
 # section in AGENTS.md. superpowers/ is also gitignored.
 exclude_docs: |
