@@ -3810,13 +3810,23 @@ that remembers whether the clone is reaching its remote, and the MCP write
 path reports it.
 
 - **Fed from the outcomes, not the call sites.** `_pull_pipeline` and
-  `force_push` are thin recording wrappers over the implementations
-  (`_run_pull_pipeline`, `_run_force_push`), so every pull and push outcome
-  passes one place regardless of which entry point produced it; the deferred
-  and startup pushes report from `PushScheduler`. A dry run records nothing —
-  it predicts a pull rather than observing one.
+  `force_push` own the strategy-wide lock and call the implementations under
+  it (`_pull_locked`, `_push_locked`), so every pull and push outcome passes
+  one place regardless of which entry point produced it; the deferred and
+  startup pushes report from `PushScheduler`. A dry run records nothing — it
+  predicts a pull rather than observing one.
+- **Outcomes are recorded before the lock is released.** The lock is what
+  orders concurrent pushes (interactive against deferred) and concurrent
+  pulls (the loop against `git_sync` or a webhook), so recording after
+  releasing it let an earlier operation publish over a later one — an older
+  push'"'"'s success clearing the failure of the push that ran after it, which
+  put a caller back to being told nothing while its commits were stranded.
+  Reported on PR #1300; `tests/test_git_health.py` asserts the lock is held
+  at each recording.
 - **Push and pull are independent conditions.** Either one holds the clone
-  unsynced. A successful pull does not clear a failed push: reading from the
+  unsynced, and `since` dates the outage rather than the surviving condition:
+  it does not move when the older of two closes while the other still holds
+  (also PR #1300). A successful pull does not clear a failed push: reading from the
   remote is no evidence that anything reached it, and that combination is the
   incident shape #1287 reports. Only outcomes that prove the clone cannot
   send (`push_failed`, `non_fast_forward`) or cannot reconcile
@@ -3827,11 +3837,15 @@ path reports it.
   reading health under it would make every write response block behind a
   pull.
 - **The log marks transitions.** Entering the state logs once at ERROR
-  (`git_remote_unsynced`), recovery once at INFO (`git_remote_resynced`); a
-  rejected push moved to DEBUG, where it keeps the git stderr. An unexpected
-  exception on the push path stays at ERROR with its traceback — that is a
-  bug on the push path, not the routine cycle event this changes. The
-  repeating per-cycle warning is what let the reported incident run for hours
+  (`git_remote_unsynced`), recovery once at INFO (`git_remote_resynced`). The
+  per-attempt lines behind the conditions moved to DEBUG, where they keep the
+  git stderr: the rejected push in `PushScheduler`, and on the pull side the
+  conflict-resolution loop cap, the "conflict resolution failed" line, and the
+  sibling-commit failure — the three that repeated every cycle in the reported
+  incident. Two classes stay loud: an unexpected exception on either path
+  (a bug, not a cycle), and a failure that can leave the working tree
+  inconsistent (`abort_in_progress_rebase`, `restore_upstream_paths`). The
+  repeating per-cycle warning is what let the incident run for hours
   unnoticed.
 
 Every vault-mutating write tool passes its result through

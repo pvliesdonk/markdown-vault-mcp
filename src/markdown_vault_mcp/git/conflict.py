@@ -121,7 +121,12 @@ def resolve_rebase_conflicts(
         # loop around and resolve again.
 
     # Exhausted iterations or no conflicting files after non-zero continue.
-    logger.error(
+    # DEBUG, not ERROR (#1287): a clone stuck on the same divergence hits this
+    # cap on every pull cycle, and that repetition is what let the reported
+    # incident scroll past unnoticed.  The transition into the unsynced state
+    # is logged once, loudly, by SyncHealthTracker; this line keeps the detail
+    # for whoever is diagnosing it.
+    logger.debug(
         "Git pull: conflict resolution loop exceeded %d iterations", max_iterations
     )
     return list(saved.items())
@@ -479,7 +484,9 @@ def write_conflict_files(
         env=env,
     )
     if commit_result.returncode != 0:
-        logger.error(
+        # DEBUG for the reason given at the loop-cap line above (#1287): this
+        # outcome marks the clone unsynced, and the tracker logs that once.
+        logger.debug(
             "Git pull: conflict commit failed (rc=%d): %s",
             commit_result.returncode,
             redact(

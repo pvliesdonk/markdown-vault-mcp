@@ -114,12 +114,11 @@ class PushScheduler:
                 self._timer.start()
 
     def do_push_safe(self) -> None:
-        """Push wrapper that catches errors and records the outcome.
+        """Push wrapper that catches and logs errors.
 
-        Both failure arms report to the sync-health tracker (#1287): a push
-        that does not land is what strands a caller's writes on the host, and
-        the tracker is what makes that visible on the next write's result.
-        A rejected push logs at DEBUG, where it keeps the git stderr for
+        The outcome itself is recorded by :meth:`do_push`, while the shared
+        lock still orders it against every other push (PR #1300); this wrapper
+        only logs.  A rejected push logs at DEBUG, where it keeps the git stderr for
         diagnosis: the tracker logs the transition into the failed state
         once, instead of every cycle.  An *unexpected* exception is not that
         routine event and stays at ERROR with its traceback — repeating it is
@@ -129,17 +128,14 @@ class PushScheduler:
         try:
             self.do_push()
         except subprocess.CalledProcessError as exc:
-            sanitized_stderr = self._redact(exc.stderr or "")
             logger.debug(
                 "git_push_failed cmd=%s returncode=%d stderr=%s",
                 exc.cmd,
                 exc.returncode,
-                sanitized_stderr,
+                self._redact(exc.stderr or ""),
             )
-            self._health.push_failed(push_failure_reason(sanitized_stderr))
         except Exception:
             logger.error("Git push failed", exc_info=True)
-            self._health.push_failed(PUSH_REASON_PUSH_FAILED)
 
     def do_push(self) -> None:
         """Execute git push and clear the pending flag on success.
@@ -150,12 +146,28 @@ class PushScheduler:
         divergence (#957); previously the flag was cleared before the push,
         so a failed deferred push left commits local with no retry until the
         next write or startup.
+
+        Both outcomes reach the sync-health tracker from inside the lock, so
+        two pushes publish in the order they ran (PR #1300).  Recording after
+        the lock was released let an earlier push's success clear the failure
+        of the push that ran after it, leaving a caller unwarned while its
+        commits were stranded.  The exception is re-raised for
+        :meth:`do_push_safe` to log.
         """
         with self._lock:
             git_root = self._git_root
             if not self._enable_push or not self._push_pending or git_root is None:
                 return
-            _push(git_root, self._token, self._username)
+            try:
+                _push(git_root, self._token, self._username)
+            except subprocess.CalledProcessError as exc:
+                self._health.push_failed(
+                    push_failure_reason(self._redact(exc.stderr or ""))
+                )
+                raise
+            except Exception:
+                self._health.push_failed(PUSH_REASON_PUSH_FAILED)
+                raise
             self._push_pending = False
             self._health.push_succeeded()
             logger.info("Git: pushed to remote")

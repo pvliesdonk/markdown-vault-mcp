@@ -704,7 +704,9 @@ class TestForceMethodsErrorBranches:
 
         monkeypatch.setattr(git_subprocess, "run", _patched_run)
 
-        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"):
+        # DEBUG since #1287: the cap is hit on every cycle while the same
+        # divergence stands, so the detail line moved down there.
+        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
             saved = conflict.resolve_rebase_conflicts(
                 git_repo_pair.local_path, env=None
             )
@@ -713,7 +715,7 @@ class TestForceMethodsErrorBranches:
         assert saved == [("README.md", "# local\n")]
         log_messages = [r.getMessage() for r in caplog.records]
         assert any("exceeded 50 iterations" in msg for msg in log_messages), (
-            f"expected max_iterations ERROR log; got: {log_messages}"
+            f"expected the max_iterations log line; got: {log_messages}"
         )
 
     def test_force_pull_non_fast_forward_with_conflicts_when_abort_fails(

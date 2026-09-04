@@ -266,10 +266,15 @@ ERROR markdown_vault_mcp.git.health: git_remote_unsynced kind=push reason=non_fa
 ```
 
 Recovery logs once at `INFO` (`git_remote_resynced`), carrying when the
-outage started. A rejected push and a failed pull sit at `DEBUG`, where they
-hold the full git stderr for whoever is diagnosing the outage. Alert on the
-transition lines: a repeated warning every sync cycle is easy to scroll past,
-which is how the incident behind
+outage started. The per-attempt lines behind both conditions (a rejected
+push, and a pull that could not resolve the divergence) sit at `DEBUG`, where
+they keep the full git stderr for whoever is diagnosing the outage. Two kinds
+of failure stay loud, because neither is a cycle that repeats harmlessly: an
+unexpected exception on the push or resolve path, and a failure that can
+leave the working tree inconsistent (a rebase that would not abort, an
+upstream file that would not restore). Alert on the transition
+lines: a repeated warning every sync cycle is easy to scroll past, which is
+how the incident behind
 [#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287) ran for
 hours before anyone noticed.
 

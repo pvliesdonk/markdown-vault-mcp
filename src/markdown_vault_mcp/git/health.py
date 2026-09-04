@@ -98,7 +98,9 @@ class SyncHealth:
             that opened the condition still in force.  A push failure outranks
             a pull failure: it is the half that strands the caller's writes.
         since: When the clone was first observed not reaching its remote, in
-            UTC.  Dates the outage, not the most recent failed attempt.
+            UTC.  Dates the outage: it does not move when a second condition
+            opens, nor when one of two closes while the other still holds, and
+            it restarts only after the clone has actually recovered.
     """
 
     state: str
@@ -129,14 +131,6 @@ class SyncHealth:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class _Condition:
-    """One reason the clone is not reaching its remote, and when it started."""
-
-    reason: str
-    since: datetime
-
-
 class SyncHealthTracker:
     """Remember whether pushes and pulls are reaching the remote.
 
@@ -156,7 +150,8 @@ class SyncHealthTracker:
     def __init__(self) -> None:
         """Start out making no claim: nothing has been observed yet."""
         self._lock = threading.Lock()
-        self._conditions: dict[_Kind, _Condition] = {}
+        self._reasons: dict[_Kind, str] = {}
+        self._outage_since: datetime | None = None
         self._snapshot: SyncHealth | None = None
 
     def snapshot(self) -> SyncHealth | None:
@@ -200,13 +195,18 @@ class SyncHealthTracker:
         if reason not in conditions:
             return
         with self._lock:
-            if kind in self._conditions:
+            if kind in self._reasons:
                 logger.debug(
                     "git_remote_still_unsynced kind=%s reason=%s", kind, reason
                 )
                 return
-            was_healthy = self._snapshot is None
-            self._conditions[kind] = _Condition(reason=reason, since=datetime.now(UTC))
+            was_healthy = not self._reasons
+            if was_healthy:
+                # The outage starts here and is not restarted by a second
+                # condition opening, nor by the first one closing while the
+                # other still holds (PR #1300).
+                self._outage_since = datetime.now(UTC)
+            self._reasons[kind] = reason
             self._recompute()
             if was_healthy:
                 logger.error(
@@ -221,15 +221,17 @@ class SyncHealthTracker:
     def _close(self, kind: _Kind) -> None:
         """Close the *kind* condition, logging recovery once when it was the last."""
         with self._lock:
-            closed = self._conditions.pop(kind, None)
-            if closed is None:
+            if self._reasons.pop(kind, None) is None:
                 return
+            started = self._outage_since
+            if not self._reasons:
+                self._outage_since = None
             self._recompute()
             if self._snapshot is None:
                 logger.info(
                     "git_remote_resynced kind=%s unsynced_since=%s",
                     kind,
-                    closed.since.isoformat(),
+                    started.isoformat() if started is not None else "unknown",
                 )
             else:
                 logger.debug("git_remote_partly_resynced kind=%s", kind)
@@ -240,12 +242,12 @@ class SyncHealthTracker:
         Called under :attr:`_lock`.  Publishes one fully built immutable
         object so a concurrent reader never observes a half-updated state.
         """
-        active = self._conditions.get("push") or self._conditions.get("pull")
-        if active is None:
+        reason = self._reasons.get("push") or self._reasons.get("pull")
+        if reason is None or self._outage_since is None:
             self._snapshot = None
             return
         self._snapshot = SyncHealth(
             state=REMOTE_STATE_UNSYNCED,
-            reason=active.reason,
-            since=min(condition.since for condition in self._conditions.values()),
+            reason=reason,
+            since=self._outage_since,
         )

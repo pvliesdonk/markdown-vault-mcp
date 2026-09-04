@@ -28,6 +28,7 @@ from markdown_vault_mcp.git.types import (
 from tests.fixtures.git import _run_git
 
 if TYPE_CHECKING:
+    import threading
     from pathlib import Path
 
     import pytest
@@ -428,3 +429,142 @@ class TestStrategyRecordsPullOutcomes:
         strategy.force_pull(dry_run=True)
 
         assert strategy.sync_health() is not None
+
+
+class TestOutageStartSurvivesPartialRecovery:
+    """``since`` dates the outage, not the condition that outlived it."""
+
+    def test_clearing_the_older_condition_keeps_the_outage_start(self) -> None:
+        """The clone never became healthy, so the outage never restarted.
+
+        Reported on PR #1300: with both conditions open, closing whichever
+        opened first recomputed ``since`` from the survivor, so a payload
+        understated how long the writes had been stranded.
+        """
+        tracker = SyncHealthTracker()
+        tracker.pull_failed(PULL_REASON_CONFLICT_RESOLUTION_FAILED)
+        first = tracker.snapshot()
+        assert first is not None
+        tracker.push_failed(PUSH_REASON_NON_FAST_FORWARD)
+
+        tracker.pull_succeeded()
+
+        health = tracker.snapshot()
+        assert health is not None
+        assert health.since == first.since
+
+    def test_a_new_outage_after_recovery_gets_a_new_start(self) -> None:
+        """A clone that recovered and broke again is a second outage."""
+        tracker = SyncHealthTracker()
+        tracker.push_failed(PUSH_REASON_NON_FAST_FORWARD)
+        first = tracker.snapshot()
+        assert first is not None
+        tracker.push_succeeded()
+
+        tracker.push_failed(PUSH_REASON_NON_FAST_FORWARD)
+
+        health = tracker.snapshot()
+        assert health is not None
+        assert health.since > first.since
+
+
+class _LockObservingTracker(SyncHealthTracker):
+    """Records whether a lock was held at the moment each outcome landed."""
+
+    def __init__(self, lock: threading.Lock) -> None:
+        super().__init__()
+        self._observed_lock = lock
+        self.held: list[bool] = []
+
+    def push_failed(self, reason: str) -> None:
+        self.held.append(self._observed_lock.locked())
+        super().push_failed(reason)
+
+    def push_succeeded(self) -> None:
+        self.held.append(self._observed_lock.locked())
+        super().push_succeeded()
+
+    def pull_failed(self, reason: str) -> None:
+        self.held.append(self._observed_lock.locked())
+        super().pull_failed(reason)
+
+    def pull_succeeded(self) -> None:
+        self.held.append(self._observed_lock.locked())
+        super().pull_succeeded()
+
+
+def _observe_health(strategy: GitWriteStrategy) -> _LockObservingTracker:
+    """Swap in a tracker that reports the strategy lock's state per record."""
+    tracker = _LockObservingTracker(strategy._lock)
+    strategy._health = tracker
+    strategy._push_scheduler._health = tracker
+    return tracker
+
+
+class TestOutcomesAreRecordedUnderTheStrategyLock:
+    """Concurrent operations must not record their outcomes out of order.
+
+    Pushes and pulls are serialised by the strategy-wide lock, so recording
+    an outcome after releasing it lets an older operation publish over a
+    newer one — an earlier push's success clearing the failure of the push
+    that ran after it, which puts the caller back to being told nothing
+    while its commits are stranded. Reported on PR #1300.
+    """
+
+    def test_a_deferred_push_records_before_releasing_the_lock(
+        self, tmp_path: Path
+    ) -> None:
+        """The path ordinary MCP writes take."""
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+        tracker = _observe_health(strategy)
+        rejected = subprocess.CalledProcessError(
+            returncode=1, cmd=["git", "push", "origin"], stderr="fetch first"
+        )
+
+        with patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=rejected):
+            strategy._push_scheduler.do_push_safe()
+
+        assert tracker.held == [True]
+
+    def test_an_interactive_push_records_before_releasing_the_lock(
+        self, git_repo_pair: GitRepoPair
+    ) -> None:
+        """``git_sync(direction="push")`` observes the same remote."""
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_lock_push",
+            file_name="remote.md",
+            body="# remote\n",
+        )
+        (git_repo_pair.local_path / "local.md").write_text("# local\n")
+        _run_git(git_repo_pair.local_path, "add", "local.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "local edit")
+        strategy = GitWriteStrategy(
+            enable_pull=True, enable_push=True, repo_path=git_repo_pair.local_path
+        )
+        tracker = _observe_health(strategy)
+
+        strategy.force_push()
+
+        assert tracker.held == [True]
+
+    def test_a_pull_records_before_releasing_the_lock(
+        self, git_repo_pair: GitRepoPair
+    ) -> None:
+        """Two pulls are ordered by the lock; their outcomes must be too."""
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_lock_pull",
+            file_name="seeded.md",
+            body="seeded\n",
+        )
+        strategy = GitWriteStrategy(
+            enable_pull=True, enable_push=False, repo_path=git_repo_pair.local_path
+        )
+        tracker = _observe_health(strategy)
+
+        strategy.force_pull()
+
+        assert tracker.held == [True]
