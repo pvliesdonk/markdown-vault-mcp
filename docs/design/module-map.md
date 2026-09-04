@@ -54,7 +54,7 @@ src/markdown_vault_mcp/
     summarize.py       -- SummarizeFacet: readiness-gated summarization surface; present only when a backend is configured (#925)
   git/
     __init__.py        -- package facade preserving the historical single-module import surface (incl. test patch targets)
-    _run.py            -- low-level git subprocess + credential plumbing
+    _run.py            -- low-level git subprocess + credential plumbing; literal_pathspec (#1303)
     interfaces.py      -- HistorySource/RevisionReader/SyncHealthReporter/Syncer/Versioner/VersionedStore: the versioning seam; GitWriteStrategy is the one implementation (#1229)
     strategy.py        -- GitWriteStrategy: auto-commit per write; composes RepoBootstrap + PushScheduler over one shared lock (#893)
     bootstrap.py       -- RepoBootstrap: managed-clone bootstrap, remote-protocol validation, memoised git-root discovery (#893)

@@ -1396,6 +1396,141 @@ class TestStageAndCommitPathHandling:
         assert str(outside_path) in recorded_msgs[0]
 
 
+class TestGlobMetacharactersInNoteNames:
+    """A note named like a glob is one note, not a pattern (#1303, #1304).
+
+    Git reads a pathspec as a wildmatch pattern unless told otherwise, so
+    ``b[1].md`` selected ``b1.md``: the note's history listed its sibling's
+    commits, and its write swept the sibling's uncommitted work into the
+    note's own commit.
+    """
+
+    @staticmethod
+    def _seed_sibling(repo: Path) -> Path:
+        """Commit ``b1.md``, the note a bare ``b[1].md`` pathspec matches."""
+        sibling = repo / "b1.md"
+        sibling.write_text("# sibling v1\n")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "-A"], check=True, capture_output=True
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "-m", "seed sibling"],
+            check=True,
+            capture_output=True,
+        )
+        return sibling
+
+    @staticmethod
+    def _porcelain(repo: Path) -> str:
+        return subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+
+    @staticmethod
+    def _last_commit_files(repo: Path) -> list[str]:
+        """Paths in the last commit, with ``--no-renames`` so a rename shows both.
+
+        Matches :func:`_commit_files` further down this module: without it git
+        renders a rename as the new name alone, and a test asserting the two
+        sides would be reading git's presentation rather than what was staged.
+        """
+        out = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(repo),
+                "show",
+                "--format=",
+                "--name-only",
+                "--no-renames",
+                "HEAD",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        return sorted(line for line in out.splitlines() if line)
+
+    def test_write_commits_the_note_and_leaves_the_sibling_alone(
+        self, git_repo: Path
+    ) -> None:
+        """The sibling's uncommitted edit stays uncommitted, and on disk."""
+        callback = git_write_strategy()
+        sibling = self._seed_sibling(git_repo)
+        # An edit the operator has not committed: the work #894 / #1273
+        # established a vault write must never carry off.
+        sibling.write_text("# sibling v2, still being written\n")
+        note = git_repo / "b[1].md"
+        note.write_text("# bracket note\n")
+
+        callback(note, "# bracket note\n", "write")
+
+        assert self._last_commit_files(git_repo) == ["b[1].md"]
+        assert self._porcelain(git_repo) == " M b1.md\n"
+        assert sibling.read_text() == "# sibling v2, still being written\n"
+
+    def test_delete_stages_only_the_notes_own_removal(self, git_repo: Path) -> None:
+        """Deleting the note does not stage the sibling's pending edit."""
+        callback = git_write_strategy()
+        sibling = self._seed_sibling(git_repo)
+        note = git_repo / "b[1].md"
+        note.write_text("# bracket note\n")
+        callback(note, "# bracket note\n", "write")
+
+        sibling.write_text("# sibling v2, still being written\n")
+        note.unlink()
+        callback(note, "", "delete")
+
+        assert self._last_commit_files(git_repo) == ["b[1].md"]
+        assert self._porcelain(git_repo) == " M b1.md\n"
+
+    def test_rename_stages_both_sides_of_the_note_and_nothing_else(
+        self, git_repo: Path
+    ) -> None:
+        """The riskiest conversion: two pathspec lists, built beside raw compares."""
+        from markdown_vault_mcp.git import _stage_and_commit
+
+        callback = git_write_strategy()
+        sibling = self._seed_sibling(git_repo)
+        old_abs = git_repo / "b[1].md"
+        old_abs.write_text("# bracket note\n")
+        callback(old_abs, "# bracket note\n", "write")
+
+        sibling.write_text("# sibling v2, still being written\n")
+        new_abs = git_repo / "b[2].md"
+        old_abs.rename(new_abs)
+
+        _stage_and_commit(git_repo, new_abs, "rename", old_path=old_abs)
+
+        assert self._last_commit_files(git_repo) == ["b[1].md", "b[2].md"]
+        assert self._porcelain(git_repo) == " M b1.md\n"
+
+    def test_history_of_a_glob_named_note_is_its_own(self, git_repo: Path) -> None:
+        """#1303: the note reports its commits, not every match of its name."""
+        from markdown_vault_mcp.managers.git_query import GitQueryManager
+
+        callback = git_write_strategy()
+        sibling = self._seed_sibling(git_repo)
+        note = git_repo / "b[1].md"
+        note.write_text("# bracket note\n")
+        callback(note, "# bracket note\n", "write")
+        # A commit that touches the sibling only, after the note exists.
+        sibling.write_text("# sibling v2\n")
+        callback(sibling, "# sibling v2\n", "write")
+
+        mgr = GitQueryManager(GitWriteStrategy(), git_repo)
+
+        assert [entry.message for entry in mgr.get_history("b[1].md", limit=10)] == [
+            "write: b[1].md"
+        ]
+        # The sibling is unaffected in the other direction: its own history is
+        # still whole.
+        assert len(mgr.get_history("b1.md", limit=10)) == 2
+
+
 class TestCommitterIdentityInCommit:
     """Tests that commit_name and commit_email appear in git commit commands."""
 

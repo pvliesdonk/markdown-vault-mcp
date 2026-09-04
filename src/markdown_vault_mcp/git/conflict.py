@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import frontmatter
 
-from markdown_vault_mcp.git._run import redact, run_git_capturing
+from markdown_vault_mcp.git._run import literal_pathspec, redact, run_git_capturing
 from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PullResult,
@@ -91,14 +91,22 @@ def resolve_rebase_conflicts(
             # branch being rebased onto (upstream), --theirs is the
             # commit being replayed (our local MCP commit).
             subprocess.run(
-                ["git", "-C", root, "checkout", "--ours", "--", rel_path],
+                [
+                    "git",
+                    "-C",
+                    root,
+                    "checkout",
+                    "--ours",
+                    "--",
+                    literal_pathspec(rel_path),
+                ],
                 capture_output=True,
                 text=True,
                 env=env,
                 check=True,
             )
             subprocess.run(
-                ["git", "-C", root, "add", "--", rel_path],
+                ["git", "-C", root, "add", "--", literal_pathspec(rel_path)],
                 capture_output=True,
                 text=True,
                 env=env,
@@ -315,7 +323,7 @@ def restore_upstream_paths(
             "checkout",
             ref,
             "--",
-            rel_path,
+            literal_pathspec(rel_path),
             env=env,
         )
         if checkout_proc.returncode != 0:
@@ -448,7 +456,7 @@ def write_conflict_files(
     # below still captures.
     paths_to_add = updated_originals + written
     subprocess.run(
-        ["git", "-C", root, "add", "--", *paths_to_add],
+        ["git", "-C", root, "add", "--", *map(literal_pathspec, paths_to_add)],
         capture_output=True,
         text=True,
         env=env,
