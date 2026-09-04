@@ -205,6 +205,23 @@ class TestRenameMadeWhileResolvingAMerge:
         assert isinstance(diffs, list)
         assert [d.sha for d in diffs] == [merge, side]
 
+    def test_the_renaming_merge_reads_as_a_rename(self, tmp_path: Path) -> None:
+        """The commit that renamed the note is diffed under the name it gave it.
+
+        Which name a recovered commit is paired with decides what its diff
+        says.  Targeting the *old* name at the commit that removed it produces
+        a diff of the note being deleted; only the new name lets git pair the
+        two blobs and render the rename.  The commit list is identical either
+        way, so it takes the diff body to tell them apart.
+        """
+        repo = tmp_path / "vault"
+        birth, _side, _trunk, merge = _renamed_while_resolving_a_merge(repo)
+        diffs = GitWriteStrategy().get_file_diff(repo, repo / "renamed.md", birth, True)
+        assert isinstance(diffs, list)
+        renaming = next(d for d in diffs if d.sha == merge)
+        assert "a/old.md b/renamed.md" in renaming.diff
+        assert "+side change" in renaming.diff
+
     def test_a_window_still_bounds_the_history(self, tmp_path: Path) -> None:
         """``--since`` trims the commits reported, in either name's segment."""
         repo = tmp_path / "vault"
@@ -291,6 +308,25 @@ class TestTheBoundaryHoldsAcrossTheMerge:
         assert reported == [merge, side, birth]
         assert stranger not in reported
         assert freed not in reported
+
+    def test_a_successor_to_the_old_name_stays_out(self, tmp_path: Path) -> None:
+        """The rename frees the old name, and a new note may take it.
+
+        The recovered name is bounded above by the commit that renamed the
+        note away, so the note created under the freed name afterwards is not
+        reachable from it — its commits are its own.
+        """
+        repo = tmp_path / "vault"
+        birth, side, _trunk, merge = _renamed_while_resolving_a_merge(repo)
+        (repo / "old.md").write_text("A SUCCESSOR, created under the freed name\n")
+        successor = _commit(repo, "c5 new note created as old.md", _DAY5)
+        (repo / "old.md").write_text("A SUCCESSOR, edited\n")
+        successor_edit = _commit(repo, "c6 successor edited", _DAY5)
+
+        reported = _history(repo, "renamed.md")
+        assert reported == [merge, side, birth]
+        assert successor not in reported
+        assert successor_edit not in reported
 
 
 class TestMergesThatChangedNothingStayOut:
