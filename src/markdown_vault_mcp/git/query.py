@@ -757,7 +757,7 @@ class _NameQuery(NamedTuple):
         cur_rel: The note's path, repo-relative and posix.
         vault_prefix: Prefix stripped from path tokens (see
             :func:`_vault_prefix`).
-        window: The caller's own bounds, applied to every walk.
+        bounds: The caller's own window, applied to every walk.
     """
 
     cur_rel: str
@@ -781,7 +781,9 @@ def _with_earlier_names(
 
     Purely additive: a note that never changed name yields no segments and
     *entries* is returned untouched, as is one whose segments turn up nothing
-    the ``--follow`` walk had not already found.
+    the ``--follow`` walk had not already found — or one whose union git
+    declines to describe, since a supplement that failed must not cost the
+    caller the commits it already had.
     """
     segments = _name_segments(git_root, query.cur_rel, env)
     known = {entry.sha for entry in entries}
@@ -789,6 +791,8 @@ def _with_earlier_names(
     if not extra:
         return entries
     ordered = _history_entries_for(git_root, known | extra, query.vault_prefix, env)
+    if not ordered:
+        return entries
     return ordered[: query.bounds.limit]
 
 
@@ -898,8 +902,10 @@ def get_file_history(
             ``--follow``), and ``paths_changed`` is populated with the
             subtree files each commit touched. When ``False`` (a single file),
             ``--follow`` tracks renames, the result is filtered to the note's
-            own lineage (see :func:`_lineage`, #1285), and ``paths_changed``
-            stays empty.
+            own lineage (see :func:`_lineage`, #1285) and supplemented with
+            the commits under the names ``--follow`` cannot reach (see
+            :func:`_with_earlier_names`, #1306), and ``paths_changed`` stays
+            empty.
         since: Passed as ``--since`` to ``git log`` (ISO 8601 or git date
             expression such as ``"1 week ago"``).  ``None`` disables the
             filter.
