@@ -715,7 +715,7 @@ class GitWriteStrategy:
         )
         if proc.returncode not in (0, 1):
             logger.warning(
-                "Git: `merge-base --is-ancestor %s %s` failed (exit %d): %s",
+                "git_merge_base_failed ancestor=%s descendant=%s exit=%d stderr=%s",
                 ancestor,
                 descendant,
                 proc.returncode,
@@ -1019,7 +1019,7 @@ class GitWriteStrategy:
             # straight to rebase + Syncthing-style sibling resolution,
             # mirroring :meth:`sync_once`.
             logger.debug(
-                "%s: local and remote diverged, attempting rebase",
+                "git_pull_diverged entry=%s action=rebase",
                 log_prefix,
             )
             return self._force_pull_rebase_fallback(

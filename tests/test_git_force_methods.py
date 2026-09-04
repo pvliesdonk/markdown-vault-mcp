@@ -294,7 +294,7 @@ class TestPullDivergenceClassification:
 
         assert result.fast_forward is False
         assert result.reason == "diverged"
-        assert any("--is-ancestor" in r.message for r in caplog.records)
+        assert any("git_merge_base_failed" in r.message for r in caplog.records)
 
 
 class TestForcePush:
