@@ -163,7 +163,12 @@ vars:
     default: null
     help: "Subject-to-scope ACL file (TOML), for bearer and any auth mode."
     tags: [authz]
-    wizard: {group: Authorization, when: server}
+    # dockerVolume: the operator supplies this file from the host, so the
+    # wizard's `docker run` must carry a matching `-v <answer>:<container
+    # path>` or the container cannot read the file the -e just named (#261).
+    # Container path mirrors the `examples:` value below, which is also the
+    # path the systemd/nfpm layout uses.
+    wizard: {group: Authorization, when: server, dockerVolume: "/etc/{PROJECT_NAME}/acl.toml"}
 
   - name: "{PREFIX}_AUTHZ_CLAIM"
     provenance: template
@@ -408,6 +413,13 @@ wizard_help:
 wizard_hints:
   "{PREFIX}_TOOLS_ALLOW": {group: Tools}
   "{PREFIX}_TOOLS_DENY": {group: Tools}
+  # Same host-supplied-file case as {PREFIX}_ACL_PATH above, but this var is
+  # core's, so the hint arrives through this map instead of a `vars:` entry.
+  # `_apply_wizard_hint_overrides` REPLACES a var's hint mapping wholesale,
+  # so core's own `{group: Auth, when: bearer}` has to be restated here —
+  # dropping either would move the question out of its group or make it
+  # unconditionally visible.
+  "{PREFIX}_BEARER_TOKENS_FILE": {group: Auth, when: bearer, dockerVolume: "/etc/{PROJECT_NAME}/tokens.toml"}
 
 # Wizard routing questions that emit a var rather than mapping 1:1 to one.
 wizard_routing:
@@ -464,7 +476,16 @@ files:
       Copy to /etc/{PROJECT_NAME}/env and edit for your deployment; the systemd
       unit (/usr/lib/systemd/system/{PROJECT_NAME}.service) sources
       /etc/{PROJECT_NAME}/env via EnvironmentFile=.
-    commented: false
+    # Commented, like .env.example and unlike the two `examples/` files (#290).
+    # The copy an operator makes of this becomes the unit's EnvironmentFile,
+    # whose role is to carry DEVIATIONS from the defaults — so emitting every
+    # default as a live assignment overwrote the handful of deliberate
+    # overrides a systemd install needs. A consumer migrating to generated
+    # artifacts lost a `/var/lib/...` cache path that way and got a service
+    # writing into a directory `ProtectSystem=strict` makes read-only.
+    # The header above already describes a template to copy and edit; the
+    # active form was the half that contradicted it.
+    commented: true
     sections:
       - {title: Logging, tags: [observability]}
       - title: Domain

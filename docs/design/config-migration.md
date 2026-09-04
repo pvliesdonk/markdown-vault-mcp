@@ -44,6 +44,16 @@ the pre-update commit), save the prose you wrote in `.env.example`,
 variable (the ones your project added beyond what the template shipped). That
 text is about to be replaced and is the only copy of it.
 
+Save your **active assignments** from `packaging/env.example` too, not only the
+prose. That file is a template an operator copies to
+`/etc/markdown-vault-mcp/env`, so its job is to carry the few deviations a
+systemd install needs — a state directory under `/var/lib/`, say, matching the
+`ReadWritePaths=` the shipped unit grants. The generated file comments every
+variable out, exactly like `.env.example`, so an override that was a live line
+in your hand-written copy comes back commented and stops taking effect. Re-apply
+each one in your deployed `/etc/markdown-vault-mcp/env`, which the package
+never overwrites.
+
 ### 2. Move each domain env var into `ProjectConfig`'s `CONFIG-FIELDS` block
 
 For every domain env var you found in step 1, add or update its field in

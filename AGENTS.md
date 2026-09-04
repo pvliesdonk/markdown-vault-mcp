@@ -204,8 +204,8 @@ under a fixed set of subtrees, excluded from both the published site and Vale:
 This boundary is declared in three places that **must stay in lockstep** (the
 `template-ci` "vale exclusion-scope lockstep" job asserts the CI glob and the
 pre-commit exclude match): the mkdocs `exclude_docs:` block, the `vale` CI
-step's `vale_flags` glob (`--glob=!docs/{superpowers,design,decisions}/**` — one
-glob with brace alternation, because Vale honors only a single `--glob`), and
+step's `glob:` input (`!docs/{superpowers,design,decisions}/**` — one glob
+with brace alternation, because Vale honors only a single `--glob`), and
 the `- id: vale` pre-commit hook's `exclude:` regex
 (`^docs/(superpowers|design|decisions)/`). The set is fixed by convention — do
 not add per-project exclusions; put internal docs in one of the subtrees above.
