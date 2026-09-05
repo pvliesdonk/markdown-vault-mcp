@@ -61,6 +61,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "artifact_suffix",
+    "canonical_attachment_extensions",
     "effective_attachment_extensions",
     "has_md_suffix",
     "is_allowed_artifact",
@@ -173,3 +174,29 @@ def effective_attachment_extensions(
         return DEFAULT_ATTACHMENT_EXTENSIONS
     normalized = (ext.strip().lstrip(".").lower() for ext in attachment_extensions)
     return frozenset(ext for ext in normalized if ext)
+
+
+def canonical_attachment_extensions(extensions: frozenset[str]) -> str:
+    """Return the allowlist's canonical string form, for build provenance.
+
+    Link extraction consults the allowlist to tell a wikilink naming an
+    attachment from one naming a note (#1333), which makes it the first
+    *content* setting to change how a note's stored rows derive from its
+    bytes. The index therefore records it, and a warm restart compares it,
+    the way it already does for ``title_field`` and the curated field lists.
+
+    The default set is deliberately rendered as the empty string rather than
+    its members: an index built before this key existed reads back ``""``,
+    and must compare equal to a default-configured server rather than
+    forcing a spurious rebuild on every such deployment.
+
+    Args:
+        extensions: The effective allowlist, as returned by
+            :func:`effective_attachment_extensions`.
+
+    Returns:
+        ``""`` for the default set, else the sorted members comma-joined.
+    """
+    if extensions == DEFAULT_ATTACHMENT_EXTENSIONS:
+        return ""
+    return ",".join(sorted(extensions))

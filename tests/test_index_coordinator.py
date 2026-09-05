@@ -16,6 +16,10 @@ from markdown_vault_mcp.indexing import IndexWriteCoordinator, ProcessDirtyPaths
 from markdown_vault_mcp.managers.index import IndexManager
 from markdown_vault_mcp.scanner import HeadingChunker
 from markdown_vault_mcp.tracker import ChangeTracker
+from markdown_vault_mcp.utils import (
+    canonical_attachment_extensions,
+    effective_attachment_extensions,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -32,6 +36,7 @@ def make_coordinator(
     title_field: str = "title",
     searchable_fields: tuple[str, ...] = (),
     indexed_frontmatter_fields: tuple[str, ...] = (),
+    attachment_extensions: tuple[str, ...] | None = None,
 ) -> IndexWriteCoordinator:
     """Build a wired coordinator over a tmp vault (mirrors Vault wiring)."""
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
@@ -55,6 +60,9 @@ def make_coordinator(
         exclude_patterns=None,
         required_frontmatter=None,
         indexed_frontmatter_fields=list(indexed_frontmatter_fields),
+        attachment_extensions=(
+            None if attachment_extensions is None else list(attachment_extensions)
+        ),
         get_vectors=lambda: holder["v"],
         set_vectors=lambda v: holder.__setitem__("v", v),
         embed_model_name=embed_model_name,
@@ -72,6 +80,11 @@ def make_coordinator(
         title_field=title_field,
         searchable_fields=",".join(searchable_fields),
         indexed_frontmatter_fields=",".join(indexed_frontmatter_fields),
+        attachment_extensions=canonical_attachment_extensions(
+            effective_attachment_extensions(
+                None if attachment_extensions is None else list(attachment_extensions)
+            )
+        ),
     )
 
 
@@ -1150,5 +1163,70 @@ def test_default_curated_knobs_keep_warm_restart(tmp_path: Path) -> None:
     try:
         assert coord2._chunking_meta_matches() is True
         assert coord2.build_index().chunks_indexed == 0
+    finally:
+        coord2.close(timeout=5)
+
+
+def test_changing_the_attachment_allowlist_rejects_the_warm_restart(
+    tmp_path: Path,
+) -> None:
+    """The allowlist decides link rows, so a change to it stales them.
+
+    Hash-based reindexing never re-parses a note whose bytes did not move, so
+    an unchanged ``[[data.csv]]`` would keep the ``data.csv.md`` target it was
+    built with after ``csv`` became allowlisted (#1333, review round 1).
+    """
+    db = tmp_path / "index.db"
+    (tmp_path / "a.md").write_text("# A\n\n[[data.csv]]\n", encoding="utf-8")
+    coord = make_coordinator(tmp_path, db=db, attachment_extensions=("png",))
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+
+    coord2 = make_coordinator(tmp_path, db=db, attachment_extensions=("png", "csv"))
+    try:
+        assert coord2._chunking_meta_matches() is False
+    finally:
+        coord2.close(timeout=5)
+
+
+def test_an_unchanged_allowlist_keeps_the_warm_restart(tmp_path: Path) -> None:
+    """The guard must not force a rebuild on every restart."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, db=db, attachment_extensions=("png",))
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+
+    coord2 = make_coordinator(tmp_path, db=db, attachment_extensions=("png",))
+    try:
+        assert coord2._chunking_meta_matches() is True
+    finally:
+        coord2.close(timeout=5)
+
+
+def test_a_default_allowlist_matches_an_index_predating_the_key(
+    tmp_path: Path,
+) -> None:
+    """An absent key reads back as "", which is what the default renders as."""
+    db = tmp_path / "index.db"
+    coord = make_coordinator(tmp_path, db=db)
+    try:
+        coord.build_index()
+    finally:
+        coord.close(timeout=5)
+
+    conn = sqlite3.connect(db)
+    try:
+        with conn:
+            conn.execute("DELETE FROM meta WHERE key = 'attachment_extensions'")
+    finally:
+        conn.close()
+
+    coord2 = make_coordinator(tmp_path, db=db)
+    try:
+        assert coord2._chunking_meta_matches() is True
     finally:
         coord2.close(timeout=5)

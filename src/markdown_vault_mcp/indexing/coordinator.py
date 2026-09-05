@@ -61,6 +61,7 @@ class IndexWriteCoordinator:
         title_field: str = "title",
         searchable_fields: str = "",
         indexed_frontmatter_fields: str = "",
+        attachment_extensions: str = "",
     ) -> None:
         self._fts = fts
         self._index_path = index_path
@@ -85,6 +86,13 @@ class IndexWriteCoordinator:
         # short-circuit (#927) even when SEARCHABLE_FIELDS is explicitly
         # overridden and would otherwise stay unchanged.
         self._indexed_frontmatter_fields = indexed_frontmatter_fields
+        # Link-extraction provenance: the attachment allowlist decides whether
+        # a wikilink target gains ``.md`` or names an attachment (#1333), so a
+        # change to it changes stored link rows for notes whose bytes never
+        # moved. Hash-based reindexing would never re-parse those notes, so
+        # without this the warm restart would keep serving `pic.png.md`
+        # forever. Comma-joined canonical form ("" for the default set).
+        self._attachment_extensions = attachment_extensions
         self._readiness = ReadinessState()
         # Deprecated background-build thread bookkeeping (guarded by the
         # injected file-write lock, matching the former Vault locking).
@@ -252,6 +260,11 @@ class IndexWriteCoordinator:
                 "indexed_frontmatter_fields",
                 stored.indexed_frontmatter_fields,
                 self._indexed_frontmatter_fields,
+            ),
+            (
+                "attachment_extensions",
+                stored.attachment_extensions,
+                self._attachment_extensions,
             ),
             (
                 "index_semantics_version",

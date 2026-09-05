@@ -198,7 +198,7 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """Find all links that point to non-existent documents (broken links).
+        """Find all links whose target is not in the vault (broken links).
 
         Use this to audit link health across the vault. Call this when
         'stats' shows broken_link_count > 0, or after a 'rename' that did

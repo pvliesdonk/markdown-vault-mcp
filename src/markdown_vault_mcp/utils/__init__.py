@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.utils.content_kind import (
     artifact_suffix,
+    canonical_attachment_extensions,
     effective_attachment_extensions,
     has_md_suffix,
     is_allowed_artifact,
@@ -261,6 +262,7 @@ __all__ = [
     "artifact_suffix",
     "attachment_target_exists",
     "build_position_map",
+    "canonical_attachment_extensions",
     "compute_new_raw_target",
     "effective_attachment_extensions",
     "find_closest_match",

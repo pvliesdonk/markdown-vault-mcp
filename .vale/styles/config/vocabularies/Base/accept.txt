@@ -84,6 +84,7 @@ Authentik
 automations
 backlink
 backlinks
+basename
 basenames
 beartype
 binariness

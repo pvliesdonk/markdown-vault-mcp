@@ -872,7 +872,7 @@ def register(mcp: FastMCP) -> None:
               - link_type (str): One of "markdown", "wikilink", or "reference".
               - fragment (str | None): Heading anchor (e.g. "#section"), or null.
               - raw_target (str): Literal link target as written in the source.
-              - exists (bool): True if the target document is indexed.
+              - exists (bool): True if the target is in the vault.
 
             - similar (list): Semantically similar notes, field-collapsed by
               file (chunks_per_file=1 for compact dossiers).  List of dicts,

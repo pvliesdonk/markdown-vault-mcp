@@ -2935,7 +2935,7 @@ pattern). Each tool is annotated with MCP `ToolAnnotations`:
 | `embeddings_status` | Check embedding provider status | `True` | `False` | `True` |
 | `get_backlinks` | Find documents that link to a path | `True` | `False` | `True` |
 | `get_outlinks` | Find links from a document (with exists flag) | `True` | `False` | `True` |
-| `get_broken_links` | Find links to non-existent documents | `True` | `False` | `True` |
+| `get_broken_links` | Find links whose target is not in the vault | `True` | `False` | `True` |
 | `get_similar` | Find semantically similar notes by path | `True` | `False` | `True` |
 | `get_toc` | Heading outline for a note or folder subtree | `True` | `False` | `True` |
 | `get_recent` | Get most recently modified notes | `True` | `False` | `True` |

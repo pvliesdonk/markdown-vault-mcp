@@ -25,7 +25,7 @@ markdown-vault-mcp exposes MCP tools across several categories. Write tools are 
 | [`get_index_status`](#get_index_status) | Index Status | Read | Check background FTS build state (queryable / building / failed) |
 | [`get_backlinks`](#get_backlinks) | Backlinks | Read | Find all documents that link to a given document |
 | [`get_outlinks`](#get_outlinks) | Outlinks | Read | Find all links from a document, with existence check |
-| [`get_broken_links`](#get_broken_links) | Broken Links | Read | Find all links pointing to non-existent documents |
+| [`get_broken_links`](#get_broken_links) | Broken Links | Read | Find all links whose target is not in the vault |
 | [`get_similar`](#get_similar) | Similar Notes | Read | Find semantically similar notes by document path |
 | [`get_toc`](#get_toc) | Table of Contents | Read | Heading outline for a note or a folder subtree |
 | [`get_recent`](#get_recent) | Recent Notes | Read | Get the most recently modified notes |
@@ -823,11 +823,17 @@ Find all links from a document, with existence check.
 | `limit` | int | `null` | Maximum number of outlinks to return. Omitted (the default) returns all. |
 | `wait_for_pending_writes` | bool | `false` | Block until the IndexWriter drains before answering, then report freshness via `_meta.index_stale` (see the *Index freshness on read tools* note at the top of this page). |
 
-**Returns:** List of link targets with an `exists` field indicating whether the target document is in the vault. Each entry has `target_path`, `link_text`, `link_type`, `fragment`, `raw_target`, and `exists` fields. Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
+**Returns:** List of link targets with an `exists` field indicating whether the target is present in the vault. A target counts as present when it is an indexed note, or an attachment on disk whose extension is in `ATTACHMENT_EXTENSIONS`. Attachments are not indexed, so `![[diagram.png]]` and `[x](data/file.txt)` resolve against the same files `read` serves. Each entry has `target_path`, `link_text`, `link_type`, `fragment`, `raw_target`, and `exists` fields. Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
 ### `get_broken_links`
 
-Find all links across the vault pointing to non-existent documents.
+Find all links across the vault whose target is not in the vault.
+
+A link counts as broken when nothing is at its target path: neither an
+indexed note, nor an allowlisted attachment on disk. A wikilink embed such as
+`![[diagram.png]]` does not appear here when the file exists, even though
+attachments are never indexed. `stats.broken_link_count` is counted
+through the same test, so the two always agree.
 
 **Parameters:**
 

@@ -32,7 +32,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.fts_index import ChunkingMeta
@@ -204,6 +204,7 @@ class KeywordIndex(Protocol):
         title_field: str = "title",
         searchable_fields: str = "",
         indexed_frontmatter_fields: str = "",
+        attachment_extensions: str = "",
     ) -> None:
         """Record the settings the current rows were derived under.
 
@@ -281,7 +282,7 @@ class GraphStore(Protocol):
         """Return the number of notes nothing links to."""
         ...
 
-    def resolve_vault_wikilinks(self) -> int:
+    def resolve_vault_wikilinks(self, *, attachment_paths: Sequence[str] = ()) -> int:
         """Resolve stored wikilink targets to real paths.
 
         A write, unlike the rest of this protocol: link targets are only

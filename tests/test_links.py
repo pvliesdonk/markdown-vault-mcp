@@ -2359,3 +2359,99 @@ class TestAttachmentLinkTargets:
         (broken,) = col.graph.get_broken_links()
         assert broken.target_path == "Images/../../outside.png"
         assert all(o.exists is False for o in col.graph.get_outlinks("note.md"))
+
+
+# ---------------------------------------------------------------------------
+# Attachment wikilinks resolve vault-wide (#1333, review round 1)
+# ---------------------------------------------------------------------------
+
+
+class TestAttachmentWikilinksResolveVaultWide:
+    """Obsidian's embeds name a file, and usually only its basename.
+
+    Extraction alone left `![[pic.png]]` stored as `pic.png` while the file
+    lived in `assets/`, so it stayed broken; and because the vault-wide
+    resolver appended `.md` to every target, a same-named note could capture
+    the embed outright.
+    """
+
+    @staticmethod
+    def _vault(tmp_path: Path, *, decoy: bool) -> Vault:
+        src = tmp_path / "vault"
+        (src / "assets").mkdir(parents=True)
+        (src / "assets" / "pic.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        if decoy:
+            (src / "pic.png.md").write_text("# unrelated\n", encoding="utf-8")
+        (src / "note.md").write_text("# N\n\n![[pic.png]]\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=["png"])
+        col.index.build_index()
+        return col
+
+    def test_bare_embed_resolves_to_the_file_in_its_folder(
+        self, tmp_path: Path
+    ) -> None:
+        col = self._vault(tmp_path, decoy=False)
+        (outlink,) = col.graph.get_outlinks("note.md")
+        assert outlink.target_path == "assets/pic.png"
+        assert outlink.exists is True
+        assert col.graph.get_broken_links() == []
+
+    def test_a_same_named_note_does_not_capture_the_embed(self, tmp_path: Path) -> None:
+        """`pic.png.md` is what the .md append used to look for."""
+        col = self._vault(tmp_path, decoy=True)
+        (outlink,) = col.graph.get_outlinks("note.md")
+        assert outlink.target_path == "assets/pic.png"
+
+    def test_note_wikilinks_still_resolve_vault_wide(self, tmp_path: Path) -> None:
+        """The attachment branch must not shadow ordinary note resolution."""
+        src = tmp_path / "vault"
+        (src / "notes").mkdir(parents=True)
+        (src / "notes" / "Topic.md").write_text("# T\n", encoding="utf-8")
+        (src / "hub.md").write_text("[[Topic]]\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=["png"])
+        col.index.build_index()
+        (outlink,) = col.graph.get_outlinks("hub.md")
+        assert outlink.target_path == "notes/Topic.md"
+        assert outlink.exists is True
+
+    def test_shortest_path_wins_among_attachments(self, tmp_path: Path) -> None:
+        """Obsidian's tie-break, applied to the attachment population too."""
+        src = tmp_path / "vault"
+        (src / "a" / "b").mkdir(parents=True)
+        (src / "a" / "pic.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (src / "a" / "b" / "pic.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (src / "note.md").write_text("![[pic.png]]\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=["png"])
+        col.index.build_index()
+        assert col.graph.get_outlinks("note.md")[0].target_path == "a/pic.png"
+
+
+# ---------------------------------------------------------------------------
+# The allowlist is build provenance (#1333, review round 1)
+# ---------------------------------------------------------------------------
+
+
+class TestAttachmentAllowlistIsProvenance:
+    """Link extraction reads the allowlist, so a change to it stales the rows.
+
+    Hash-based reindexing never re-parses a note whose bytes did not move, so
+    without the allowlist in the recorded provenance an unchanged
+    `[[data.csv]]` kept its `data.csv.md` row after `csv` was allowlisted.
+    """
+
+    def test_the_allowlist_is_recorded_with_the_build(self, tmp_path: Path) -> None:
+        src = tmp_path / "vault"
+        src.mkdir()
+        (src / "n.md").write_text("# N\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=["png", "PDF"])
+        col.index.build_index()
+        assert col._fts.get_chunking_meta().attachment_extensions == "pdf,png"
+
+    def test_the_default_set_is_recorded_as_empty(self, tmp_path: Path) -> None:
+        """So an index built before this key existed compares equal."""
+        src = tmp_path / "vault"
+        src.mkdir()
+        (src / "n.md").write_text("# N\n", encoding="utf-8")
+        col = Vault(source_dir=src)
+        col.index.build_index()
+        assert col._fts.get_chunking_meta().attachment_extensions == ""

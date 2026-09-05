@@ -49,7 +49,7 @@ from markdown_vault_mcp.types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +217,13 @@ _META_SEARCHABLE_FIELDS_KEY = "searchable_fields"
 # searchable_fields (which only shares its value when SEARCHABLE_FIELDS is
 # left to default to INDEXED_FIELDS).
 _META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields"
+#: Canonical attachment allowlist in force at build time. Link extraction
+#: consults it to tell a wikilink naming an attachment from one naming a note
+#: (#1333), which makes it the first *content* config to change how a note's
+#: stored rows derive from its bytes. Without it here, flipping
+#: ``ATTACHMENT_EXTENSIONS`` leaves an unchanged note's stale ``pic.png.md``
+#: link row in place until something else forces a rebuild.
+_META_ATTACHMENT_EXTENSIONS_KEY = "attachment_extensions"
 
 # Derived-content provenance: the version of this server's own parse-to-row
 # pipeline (#1124). Unlike every key above it, this records no operator input
@@ -274,6 +281,10 @@ class ChunkingMeta(NamedTuple):
         indexed_frontmatter_fields: Comma-joined canonical form of the
             frontmatter fields promoted to ``document_tags`` for structured
             filtering (default ``""`` — none configured).
+        attachment_extensions: Comma-joined canonical attachment allowlist in
+            force at build time (default ``""`` — the built-in set). Link
+            extraction consults it (#1333), so a change to it changes the
+            stored link rows.
         semantics_version: :data:`INDEX_SEMANTICS_VERSION` in force when the
             build ran (``0`` for an index written before the key existed).
     """
@@ -283,6 +294,7 @@ class ChunkingMeta(NamedTuple):
     title_field: str = "title"
     searchable_fields: str = ""
     indexed_frontmatter_fields: str = ""
+    attachment_extensions: str = ""
     semantics_version: int = 0
 
 
@@ -1272,6 +1284,7 @@ class FTSIndex:
         title_field: str = "title",
         searchable_fields: str = "",
         indexed_frontmatter_fields: str = "",
+        attachment_extensions: str = "",
     ) -> None:
         """Record the embedding/indexing provenance used for this build.
 
@@ -1303,6 +1316,10 @@ class FTSIndex:
             indexed_frontmatter_fields: Comma-joined canonical
                 structured-filter field list. The default (no fields) is
                 already the empty string.
+            attachment_extensions: Comma-joined canonical attachment
+                allowlist. The default set is stored as the empty string so a
+                pre-upgrade index reads back as "unchanged" rather than as a
+                spurious mismatch.
         """
         conn = self._conn()
         model_value = "" if model is None else model
@@ -1319,6 +1336,7 @@ class FTSIndex:
                 (_META_TITLE_FIELD_KEY, title_value),
                 (_META_SEARCHABLE_FIELDS_KEY, searchable_fields),
                 (_META_INDEXED_FIELDS_KEY, indexed_frontmatter_fields),
+                (_META_ATTACHMENT_EXTENSIONS_KEY, attachment_extensions),
                 (_META_INDEX_SEMANTICS_KEY, str(INDEX_SEMANTICS_VERSION)),
             ):
                 conn.execute(
@@ -1344,13 +1362,14 @@ class FTSIndex:
         conn = self._conn()
         with conn:
             rows = conn.execute(
-                "SELECT key, value FROM meta WHERE key IN (?, ?, ?, ?, ?, ?)",
+                "SELECT key, value FROM meta WHERE key IN (?, ?, ?, ?, ?, ?, ?)",
                 (
                     _META_EMBED_MODEL_KEY,
                     _META_MAX_CHUNK_CHARS_OVERRIDE_KEY,
                     _META_TITLE_FIELD_KEY,
                     _META_SEARCHABLE_FIELDS_KEY,
                     _META_INDEXED_FIELDS_KEY,
+                    _META_ATTACHMENT_EXTENSIONS_KEY,
                     _META_INDEX_SEMANTICS_KEY,
                 ),
             ).fetchall()
@@ -1373,6 +1392,7 @@ class FTSIndex:
             title_field=stored.get(_META_TITLE_FIELD_KEY) or "title",
             searchable_fields=stored.get(_META_SEARCHABLE_FIELDS_KEY) or "",
             indexed_frontmatter_fields=stored.get(_META_INDEXED_FIELDS_KEY) or "",
+            attachment_extensions=stored.get(_META_ATTACHMENT_EXTENSIONS_KEY) or "",
             semantics_version=semantics_version,
         )
 
@@ -1913,7 +1933,7 @@ class FTSIndex:
         return [dict(row) for row in cur.fetchall()]
 
     @_retry_on_locked
-    def resolve_vault_wikilinks(self) -> int:
+    def resolve_vault_wikilinks(self, *, attachment_paths: Sequence[str] = ()) -> int:
         """Resolve vault-wide wikilink ``target_path`` values against the document set.
 
         Obsidian resolves bare wikilinks (e.g. ``[[Note]]``) by searching the
@@ -1935,6 +1955,20 @@ class FTSIndex:
         that document.  This mirrors Obsidian's alias resolution behaviour
         (e.g. ``[[AI]]`` resolves to a document with ``aliases: [AI]``).
 
+        Attachments resolve here too, and are tried **first** (#1333).
+        ``![[pic.png]]`` is Obsidian's embed syntax and names a file, not a
+        note, so the ``.md`` append that follows would look for
+        ``pic.png.md`` — a path that cannot exist, unless some unrelated note
+        happens to carry that name, in which case the embed silently resolved
+        to it. Trying the attachment population against the target *as
+        written* fixes both: the common layout where the file lives in
+        ``assets/`` or ``Images/`` while the embed names only its basename,
+        and the mis-resolution onto a same-named note.
+
+        Attachments are not indexed, so the caller supplies their paths;
+        ``IndexManager`` passes the same population
+        ``list_documents(include_attachments=True)`` serves.
+
         Wikilinks with an explicit relative prefix (``./`` or ``../``) are
         skipped; they are resolved relative to the source document at scan time
         and do not participate in vault-wide resolution.
@@ -1947,6 +1981,11 @@ class FTSIndex:
 
         Uses ``substr``/``length`` comparisons instead of ``LIKE`` to avoid
         wildcard-escaping issues with filenames that contain ``%`` or ``_``.
+
+        Args:
+            attachment_paths: Vault-relative paths of the allowlisted
+                attachments on disk. Empty means "notes only", which is the
+                pre-#1333 behaviour.
 
         Returns:
             Number of link rows whose ``target_path`` was updated.
@@ -1997,15 +2036,20 @@ class FTSIndex:
                 stem = stem[: stem.index("#")]
             if not stem:
                 continue
-            # 2. Append .md if not already present.
-            search_target = stem if stem.lower().endswith(".md") else stem + ".md"
-
-            # Find the best match: exact path or suffix match, shortest wins.
+            # 2. An attachment is named as written — no .md is appended —
+            #    and is tried first so an embed never resolves onto a
+            #    same-named note (#1333).
             candidates = [
-                p
-                for p in doc_paths
-                if p == search_target or p.endswith("/" + search_target)
+                p for p in attachment_paths if p == stem or p.endswith("/" + stem)
             ]
+            # 3. Otherwise this names a note: append .md if not already there.
+            if not candidates:
+                search_target = stem if stem.lower().endswith(".md") else stem + ".md"
+                candidates = [
+                    p
+                    for p in doc_paths
+                    if p == search_target or p.endswith("/" + search_target)
+                ]
             if not candidates:
                 # Fallback: check if the stem matches a document alias.
                 # Use the raw stem (without .md) for alias matching.

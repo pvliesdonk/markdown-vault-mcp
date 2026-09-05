@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -35,11 +36,13 @@ from markdown_vault_mcp.scanner import (
 )
 from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult, SkippedFile
 from markdown_vault_mcp.utils import (
+    canonical_attachment_extensions,
     effective_attachment_extensions,
+    is_allowed_artifact,
     is_note,
     is_path_excluded,
 )
-from markdown_vault_mcp.utils.fs import iter_markdown_files
+from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -169,6 +172,40 @@ class IndexManager:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _attachment_paths(self) -> list[str]:
+        """Vault-relative paths of the allowlisted attachments on disk.
+
+        Attachments are not indexed, so vault-wide wikilink resolution cannot
+        find them in ``documents`` and every embed read as broken (#1333).
+        This walks the source tree the way ``list_documents`` does, applying
+        the same exclusion rules, and runs once per resolution pass rather
+        than once per link.
+
+        Returns:
+            Sorted vault-relative POSIX paths, or an empty list when nothing
+            is allowlisted.
+        """
+        if not self._attachment_extensions:
+            return []
+        paths: list[str] = []
+        for abs_path in self._source_dir.rglob("*", **GLOB_SYMLINK_KWARGS):
+            try:
+                if not abs_path.is_file():
+                    continue
+                rel = abs_path.relative_to(self._source_dir).as_posix()
+            except (OSError, ValueError):
+                continue
+            if is_note(rel) or not is_allowed_artifact(
+                rel, self._attachment_extensions
+            ):
+                continue
+            if any(part.startswith(".") for part in PurePosixPath(rel).parts):
+                continue
+            if self._is_path_excluded(rel):
+                continue
+            paths.append(rel)
+        return sorted(paths)
 
     def _is_path_excluded(self, path: str) -> bool:
         """Check whether *path* matches any configured exclude pattern.
@@ -494,7 +531,7 @@ class IndexManager:
         skipped = len(candidates) - len(notes)
 
         # Resolve vault-wide wikilinks now that all documents are indexed.
-        self._fts.resolve_vault_wikilinks()
+        self._fts.resolve_vault_wikilinks(attachment_paths=self._attachment_paths())
 
         # Record skipped files (excluded, missing frontmatter, unparseable)
         # in tracker state too, so the first reindex() — including the boot
@@ -556,6 +593,9 @@ class IndexManager:
             title_field=self._title_field,
             searchable_fields=",".join(self._embed_builder.searchable_fields),
             indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
+            attachment_extensions=canonical_attachment_extensions(
+                self._attachment_extensions
+            ),
         )
         return IndexStats(
             documents_indexed=len(notes) - errored,
@@ -655,7 +695,7 @@ class IndexManager:
             vectors.save(embeddings_path)
 
         # Re-resolve vault-wide wikilinks.
-        self._fts.resolve_vault_wikilinks()
+        self._fts.resolve_vault_wikilinks(attachment_paths=self._attachment_paths())
 
         # Rebuild tracker state from current FTS index contents.
         state_notes: list[ParsedNote] = [
@@ -1016,7 +1056,9 @@ class IndexManager:
         finally:
             # Always restore link-graph consistency, even on per-path failures.
             try:
-                self._fts.resolve_vault_wikilinks()
+                self._fts.resolve_vault_wikilinks(
+                    attachment_paths=self._attachment_paths()
+                )
             except Exception:
                 logger.exception("process_dirty_paths: resolve_vault_wikilinks failed")
 

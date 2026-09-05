@@ -47,6 +47,12 @@ from markdown_vault_mcp.scanner import (
     WholeDocumentChunker,
 )
 from markdown_vault_mcp.tracker import ChangeTracker
+from markdown_vault_mcp.utils.content_kind import (
+    canonical_attachment_extensions as _canonical_attachment_extensions,
+)
+from markdown_vault_mcp.utils.content_kind import (
+    effective_attachment_extensions as _effective_attachment_extensions,
+)
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 if TYPE_CHECKING:
@@ -617,6 +623,9 @@ class Vault:
             title_field=self._title_field,
             searchable_fields=",".join(self._searchable_frontmatter_fields),
             indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
+            attachment_extensions=_canonical_attachment_extensions(
+                _effective_attachment_extensions(self._attachment_extensions)
+            ),
         )
         # 3. SearchManager (receives IndexManager callbacks via constructor)
         self._search_mgr = SearchManager(
