@@ -17,8 +17,11 @@
 #   * NEVER use GitHub's "Update branch" button on a release PR — the only
 #     refresh is re-dispatching Release Prepare.
 #   * A branch release (base != default branch) is followed by the
-#     port-bookkeeping job below, which opens an ordinary PR carrying the
-#     changelog section to the default branch — there is no merge-back.
+#     port-bookkeeping job below, which opens an ordinary PR bringing the
+#     release to the default branch — a merge of the release commit plus
+#     its stamps when it is the newest stable, files only for an older
+#     backport (scripts/port_bookkeeping.sh) — there is no merge-back of
+#     features.
 name: Release
 
 on:
@@ -1073,20 +1076,22 @@ jobs:
 
   # Branch-release bookkeeping (release-vision section 4.5): after a STABLE
   # release cut from a branch other than the default one, the default branch
-  # still wants the changelog section and the release-notes page — both
-  # landed on the release branch inside the merged release PR (template#419)
-  # and both accumulate on the default branch, where the docs site reads
-  # them.  That ports over as an ORDINARY pull request, opened with
-  # RELEASE_TOKEN so its CI runs — no admin-bypass push, no merge-back, and
-  # nothing deadlocks if it merges late.  Stables only: knope's stable
-  # section is cumulative over the whole rc cycle, so porting per rc would
-  # only manufacture pairwise conflicts and duplicate entries for content
-  # the stable's port carries anyway.  The version stamps are deliberately
-  # NOT ported (the default branch's pyproject.toml and manifests describe
-  # its own series) — which is why release-prepare.yml refuses a computed
-  # version whose tag already exists repo-globally.  A CHANGELOG.md whose
-  # flag line or section boundaries have drifted fails this job loudly; the
-  # remedy is a hand-opened PR carrying the section.
+  # still wants the release — as an ORDINARY pull request, opened with
+  # RELEASE_TOKEN so its CI runs — no admin-bypass push, and nothing
+  # deadlocks if it merges late.  scripts/port_bookkeeping.sh decides the
+  # shape (template#588): the newest stable is MERGED (a real merge commit,
+  # carrying the release's ancestry and its version stamps) so this branch's
+  # next Release Prepare anchors on it — knope computes version and
+  # changelog range from the first stable tag it meets walking the log in
+  # date order, and a copied section never moved that anchor; an OLDER
+  # backport ports files only (its changelog section, notes page and index
+  # entry), because merging its later-dated tag would become the anchor and
+  # drag this branch backwards.  Stables only: knope's stable section is
+  # cumulative over the whole rc cycle, so porting per rc would only
+  # manufacture pairwise conflicts and duplicate entries for content the
+  # stable's port carries anyway.  A CHANGELOG.md whose flag line or section
+  # boundaries have drifted fails the script loudly; the remedy is a
+  # hand-opened PR carrying the section.
   port-bookkeeping:
     needs: release
     if: >-
@@ -1101,7 +1106,11 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
+          # Full history + tags: the port compares the released version
+          # against every stable tag in the repository, and merges the
+          # release commit when it is the newest.
           fetch-depth: 0
+          fetch-tags: true
           # PAT, so the branch push and PR below trigger CI on the port PR
           # (GITHUB_TOKEN-created PRs run no workflows and could never pass
           # the required CI Success check).
@@ -1116,106 +1125,6 @@ jobs:
           BASE: ${{ github.event.pull_request.base.ref }}
           DEFAULT: ${{ github.event.repository.default_branch }}
           REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          git fetch -q origin "$MERGE_SHA"
-          # Extract this release's changelog section from the released
-          # commit: its `## <version>` heading up to (not including) the
-          # next `## ` heading.
-          git show "${MERGE_SHA}:CHANGELOG.md" > /tmp/released-changelog.md
-          # Escape the version's dots INSIDE awk (an escaped `-v` value
-          # would be mangled by awk's own escape processing), so the
-          # heading regex here and the dedup grep below match identically —
-          # neither treats `4.1.0` as also matching `4x1y0`.
-          awk -v ver="$VERSION" '
-            BEGIN { gsub(/\./, "\\.", ver); re = "^## v?" ver "([ (]|$)" }
-            $0 ~ re { found=1; print; next }
-            found && /^## / { exit }
-            found { print }
-          ' /tmp/released-changelog.md > /tmp/section.md
-          if ! [ -s /tmp/section.md ]; then
-            echo "::error::could not find the ## ${VERSION} section in the released CHANGELOG.md — port the changelog section to ${DEFAULT} by hand (ordinary PR)"
-            exit 1
-          fi
-          if grep -qE "^## v?${VERSION//./\\.}([ (]|\$)" CHANGELOG.md; then
-            echo "${DEFAULT}'s CHANGELOG.md already carries the ${VERSION} section — skipping the changelog half"
-          else
-            # Insert directly below the insertion flag: newest-inserted-first
-            # matches release chronology (a backport releases after the newer
-            # stables above it were inserted).
-            if ! grep -qF '<!-- version list -->' CHANGELOG.md; then
-              echo "::error::${DEFAULT}'s CHANGELOG.md has no '<!-- version list -->' flag line — port the ${VERSION} section by hand (ordinary PR)"
-              exit 1
-            fi
-            awk 'BEGIN { while ((getline line < "/tmp/section.md") > 0) sec = sec line "\n" }
-                 { print }
-                 $0 == "<!-- version list -->" { printf "\n%s", sec }' \
-              CHANGELOG.md > CHANGELOG.md.new
-            mv CHANGELOG.md.new CHANGELOG.md
-          fi
-          # The notes page follows the changelog's port path (template#419):
-          # a branch-cut stable's page section landed on the release branch
-          # inside its release PR, and the default branch — where the pages
-          # for all releases accumulate — needs it too.  The released page
-          # is copied wholesale; if the default branch's copy moved since
-          # the cut, that divergence surfaces as this PR's reviewable diff
-          # and is resolved by hand there, same contract as the changelog.
-          minor="${VERSION%.*}"
-          page="docs/releases/${minor}.md"
-          if git show "${MERGE_SHA}:${page}" > /tmp/released-page.md 2>/dev/null; then
-            if [ -f "$page" ] && cmp -s /tmp/released-page.md "$page"; then
-              echo "${DEFAULT}'s ${page} already matches the released page — skipping the notes half"
-            else
-              mkdir -p docs/releases
-              cp /tmp/released-page.md "$page"
-            fi
-          fi
-          # The index entry ports by INSERTION, never wholesale copy: a
-          # backport branch's index predates newer minors listed on the
-          # default branch, so copying it would delete their entries.  When
-          # the default branch's index lacks this minor's entry (the
-          # first-stable-of-a-minor branch cut), the released index's entry
-          # lines — the `(minor.md)` line through the entry's continuation
-          # lines — are inserted right after the RELEASE-PAGES-START
-          # sentinel, newest-first like the changelog insertion.
-          index="docs/releases/index.md"
-          if [ -f "$index" ] && ! grep -qF "(${minor}.md)" "$index" \
-            && git show "${MERGE_SHA}:${index}" > /tmp/released-index.md 2>/dev/null \
-            && grep -qF "(${minor}.md)" /tmp/released-index.md; then
-            awk -v ref="(${minor}.md)" '
-              index($0, ref) { f=1; print; next }
-              f && (/^- / || /RELEASE-PAGES-END/) { exit }
-              f { print }
-            ' /tmp/released-index.md > /tmp/index-entry.md
-            awk 'BEGIN { while ((getline l < "/tmp/index-entry.md") > 0) e = e l "\n" }
-                 { print }
-                 /RELEASE-PAGES-START/ { start=1 }
-                 start && !done && /-->[[:space:]]*$/ { printf "%s", e; done=1 }' \
-              "$index" > "${index}.new"
-            mv "${index}.new" "$index"
-          fi
-          # status --porcelain, not diff: a newly created page is untracked
-          # and would be invisible to git diff.
-          if ! git status --porcelain -- CHANGELOG.md docs/releases | grep -q .; then
-            echo "${DEFAULT} already carries the changelog section and the notes pages — nothing to port"
-            exit 0
-          fi
-          git config user.name "github-actions"
-          git config user.email "actions@users.noreply.github.com"
-          BRANCH="knope/port/${TAG}"
-          git switch --force-create "$BRANCH"
-          git add CHANGELOG.md
-          [ ! -d docs/releases ] || git add docs/releases
-          git commit -m "chore: port ${TAG} release bookkeeping to ${DEFAULT}"
-          git push --force origin "HEAD:${BRANCH}"
-          # Skip cleanly when a port PR is already open (the force-push just
-          # refreshed it); otherwise create WITHOUT masking failures — a
-          # 403 or API error must fail this job loudly, per its contract.
-          existing="$(gh pr list --head "$BRANCH" --base "$DEFAULT" --state open --json number --jq 'length')"
-          if [ "$existing" != "0" ]; then
-            echo "port PR for ${BRANCH} already open — the force-push refreshed it"
-            exit 0
-          fi
-          gh pr create --base "$DEFAULT" --head "$BRANCH" \
-            --title "chore: port ${TAG} release bookkeeping to ${DEFAULT}" \
-            --body "Ports the ${TAG} changelog section and release-notes page from \`${BASE}\` to \`${DEFAULT}\` after the branch release ([release](https://github.com/${REPO}/releases/tag/${TAG})). Version stamps are deliberately not ported — ${DEFAULT}'s manifests describe its own series. Ordinary PR: review and merge on its own clock; divergence (if ${DEFAULT}'s copy moved since the cut) shows as this PR's diff and is resolved by hand."
+        # The script needs python3 (3.11+) for scripts/stamp_manifests.py;
+        # ubuntu-latest's interpreter is enough, no setup-python step.
+        run: bash scripts/port_bookkeeping.sh

@@ -39,6 +39,18 @@ release-PR model:
   exact-tag check let it through to fail later in the notes promotion
   (fastmcp-server-template#587).  The step's shell is executed here with
   ``knope`` and ``gh`` stubbed, so the refusal is asserted, not grepped.
+- The port after a branch release (``scripts/port_bookkeeping.sh``) is
+  exercised against a two-branch sandbox: the repository's newest stable
+  merges its ancestry (a real merge commit, stamps moved, a page git
+  merged cleanly kept as merged), an older backport — or one shipped
+  while a newer stable's port is still open — ports files only, conflicts
+  inside the release bookkeeping regenerate, a code conflict falls back to
+  files only, a trunk mid-rc on a higher series keeps its own
+  ``pyproject.toml``, a higher stable merged but not yet tagged keeps an
+  older release in files mode, a re-run after the port merged does
+  nothing, and a merge that fails without conflicts fails the job.  The
+  invariant all of this protects — the stable knope would anchor on is the
+  highest stable reachable — is asserted on every checkout with tags.
 - Tags-absent behavior fails loudly only when the repo demonstrably has
   releases (``CHANGELOG.md`` carries version sections) while no tags are
   visible — the template#387 failure mode is a tag-less checkout of a
@@ -931,24 +943,632 @@ def test_rc_release_body_reads_the_stable_summary_marker() -> None:
     )
 
 
+PORT = REPO_ROOT / "scripts" / "port_bookkeeping.sh"
+
+
 def test_port_bookkeeping_carries_the_notes_page() -> None:
     """A branch-cut stable's page reaches the default branch like the changelog.
 
     The pages for all releases accumulate on the default branch (the docs
     site reads them there); a release cut from release/X.Y lands its page
-    on that branch only, so the port PR must carry it over alongside the
-    changelog section.
+    on that branch only, so the port must carry it over alongside the
+    changelog section.  The logic lives in ``scripts/port_bookkeeping.sh``;
+    the workflow step only invokes it.
     """
     text = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     port = text[text.index("port-bookkeeping:") :]
-    assert 'page="docs/releases/${minor}.md"' in port, (
-        "the port step no longer stages the release-notes page"
+    assert "scripts/port_bookkeeping.sh" in port, (
+        "the port-bookkeeping job no longer runs the port script"
     )
-    assert "released-page.md" in port
-    assert "RELEASE-PAGES-START" in port and "index-entry.md" in port, (
+    script = PORT.read_text(encoding="utf-8")
+    assert 'page="docs/releases/${minor}.md"' in script, (
+        "the port script no longer stages the release-notes page"
+    )
+    assert "released-page.md" in script
+    assert "RELEASE-PAGES-START" in script and "index-entry.md" in script, (
         "a first-of-minor branch cut must port its index ENTRY too — by "
         "insertion, never wholesale copy (a backport branch's index "
         "predates newer minors on the default branch)"
+    )
+
+
+def _allowed_set(script: Path) -> list[str]:
+    text = script.read_text(encoding="utf-8")
+    block = text[text.index("ALLOWED=(") :]
+    block = block[: block.index(")")]
+    return re.findall(r'"([^"]+)"', block)
+
+
+def test_port_regenerable_set_matches_the_promotion_guard() -> None:
+    """The two scripts' ``ALLOWED`` arrays are one list written twice.
+
+    The port resolves a merge conflict itself only for the files a release
+    commit always touches — the array the promotion guard admits between
+    an rc and its stable — so the arrays must not drift.  The guard's
+    wider globs (all of ``docs/releases/**``, the Vale vocabulary) are
+    deliberately NOT mirrored: the port regenerates only the release's own
+    page, the index and the staging file, so a conflict elsewhere takes
+    the files-only fallback.
+    """
+    assert _allowed_set(PORT) == _allowed_set(GUARD), (
+        "scripts/port_bookkeeping.sh's ALLOWED set differs from "
+        "scripts/promotion_guard.sh's"
+    )
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout
+
+
+def _commit(repo: Path, message: str) -> None:
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", message)
+
+
+def _write(repo: Path, relative: str, text: str) -> None:
+    path = repo / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+def _stamp_pyproject(repo: Path, version: str) -> None:
+    _write(
+        repo,
+        "pyproject.toml",
+        f'[project]\nname = "sandbox-pkg"\nversion = "{version}"\n',
+    )
+
+
+def _insert_changelog_section(repo: Path, heading: str, body: str) -> None:
+    path = repo / "CHANGELOG.md"
+    text = path.read_text(encoding="utf-8")
+    flag = "<!-- version list -->\n"
+    text = text.replace(flag, f"{flag}\n## {heading}\n\n{body}\n", 1)
+    path.write_text(text, encoding="utf-8")
+
+
+# Long enough for git's rename detection to pair the staging file with a
+# page promoted from it (the hazard `-X no-renames` exists for).
+STAGED_NOTES = "".join(f"line {i} of the staged notes\n" for i in range(1, 9))
+
+
+def _seed_trunk(repo: Path) -> None:
+    """Seed ``v4.0.0`` and the cut point ``v4.1.0-rc.0`` on ``main``."""
+    _stamp_pyproject(repo, "4.0.0")
+    _write(
+        repo,
+        "uv.lock",
+        '[[package]]\nname = "sandbox-pkg"\nversion = "4.0.0"\n\n'
+        '[[package]]\nname = "other-dep"\nversion = "0.5.0"\n',
+    )
+    shutil.copy(REPO_ROOT / "server.json", repo / "server.json")
+    for manifest in (PLUGIN_JSON, MCP_JSON):
+        (repo / manifest).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO_ROOT / manifest, repo / manifest)
+    (repo / "scripts").mkdir()
+    shutil.copy(STAMPER, repo / "scripts" / "stamp_manifests.py")
+    _write(
+        repo,
+        "CHANGELOG.md",
+        "# Changelog\n\n<!-- version list -->\n\n"
+        "## 4.0.0 (2026-01-01)\n\n### Features\n\n- seed\n",
+    )
+    _write(
+        repo,
+        "docs/releases/index.md",
+        "# Releases\n\n<!-- RELEASE-PAGES-START -->\n"
+        "- [4.0](4.0.md) — first\n<!-- RELEASE-PAGES-END -->\n",
+    )
+    _write(repo, "docs/releases/4.0.md", "# 4.0\n\nfirst\n")
+    _write(repo, "docs/releases/next.md", "# Next release\n\n" + STAGED_NOTES)
+    _write(repo, "module.py", "VALUE = 1\n")
+    _commit(repo, "chore: seed")
+    _git(repo, "tag", "v4.0.0")
+    _write(repo, "a.py", "A = 1\n")
+    _commit(repo, "feat: a")
+    _stamp_pyproject(repo, "4.1.0-rc.0")
+    _write(repo, "docs/releases/4.1.md", "# 4.1\n\nnotes for 4.1\n")
+    (repo / "docs" / "releases" / "next.md").unlink()
+    _insert_index_entry(repo, "- [4.1](4.1.md) — fix\n")
+    _commit(repo, "chore: prepare release 4.1.0-rc.0")
+    _git(repo, "tag", "v4.1.0-rc.0")
+    # A fix landed on trunk after the cut, cherry-picked to the branch
+    # below: the same patch on both sides, so never "branch-only".
+    _write(repo, "c.py", "C = 'fixed'\n")
+    _commit(repo, "fix: c")
+
+
+def _prepare_stable(repo: Path, version: str, date: str, entry: str) -> None:
+    """A stable prepare commit as knope + the stamper would leave it."""
+    _stamp_pyproject(repo, version)
+    subprocess.run(
+        [sys.executable, "scripts/stamp_manifests.py", version],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    _insert_changelog_section(
+        repo, f"{version} ({date})", f"### Bug Fixes\n\n- {entry}"
+    )
+    _commit(repo, f"chore: prepare release {version}")
+    _git(repo, "tag", f"v{version}")
+
+
+def _insert_index_entry(repo: Path, entry: str) -> None:
+    index = repo / "docs" / "releases" / "index.md"
+    index.write_text(
+        index.read_text(encoding="utf-8").replace(
+            "<!-- RELEASE-PAGES-START -->\n",
+            "<!-- RELEASE-PAGES-START -->\n" + entry,
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _cut_release_branches(repo: Path) -> None:
+    """``release/4.1`` (fix + stable ``v4.1.0``) and ``release/4.0`` (``v4.0.1``).
+
+    The 4.1 stable prepare appends the stable's section to the ``4.1.md``
+    page the rc.0 prepare on trunk had already promoted, the way the notes
+    promoter leaves the tree.
+    """
+    _git(repo, "switch", "-q", "-c", "release/4.1", "v4.1.0-rc.0")
+    _git(repo, "cherry-pick", "main")
+    _write(repo, "b.py", "B = 'fixed'\n")
+    _commit(repo, "fix: b")
+    _write(repo, "docs/releases/4.1.md", "# 4.1\n\nnotes for 4.1\n\n## v4.1.0\n\nb\n")
+    _prepare_stable(repo, "4.1.0", "2026-02-01", "b")
+
+    _git(repo, "switch", "-q", "-c", "release/4.0", "v4.0.0")
+    _write(repo, "d.py", "D = 1\n")
+    _commit(repo, "fix: d")
+    _write(repo, "docs/releases/4.0.md", "# 4.0\n\nfirst\n\n## v4.0.1\n\nd\n")
+    _prepare_stable(repo, "4.0.1", "2026-03-01", "d")
+    _git(repo, "switch", "-q", "main")
+
+
+def _stub_gh(tmp_path: Path) -> None:
+    """A ``gh`` that records its argv and answers the calls the port makes.
+
+    The open-PR count is always 0; the merged-release-PR listing prints
+    whatever ``merged-release-prs`` next to the stub holds (one merge
+    commit per line, empty by default), so a test can stage a release
+    whose PR merged but whose tag has not appeared.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "gh-calls.log"
+    merged = tmp_path / "merged-release-prs"
+    merged.write_text("", encoding="utf-8")
+    gh = bin_dir / "gh"
+    gh.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> {shlex.quote(str(log))}\n"
+        'case "$*" in\n'
+        f"  *'--state merged'*) cat {shlex.quote(str(merged))} ;;\n"
+        "  'pr list'*) echo 0 ;;\n"
+        "  'pr create'*) echo https://example.invalid/pr/1 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    gh.chmod(0o755)
+
+
+@pytest.fixture
+def port_sandbox(tmp_path: Path) -> Path:
+    """A clone of a bare ``origin`` holding a trunk and two release branches.
+
+    Trunk (``main``) carries the seed stable ``v4.0.0``, the cut point
+    ``v4.1.0-rc.0`` (whose prepare promoted ``next.md`` into ``4.1.md``
+    and inserted the index entry) and one fix after it, ``fix: c``.
+    ``release/4.1`` continues from the cut with that fix cherry-picked,
+    a branch-only fix (``b.py``) and the stable ``v4.1.0`` prepare commit —
+    stamps via the real stamper, the changelog section, the stable's
+    section appended to the page.  ``release/4.0`` branches from
+    ``v4.0.0`` with a backport ``v4.0.1``.  Tests move ``main`` as the
+    scenario needs and run the real port script from the clone, whose
+    ``HEAD`` is ``main`` with nothing after the cut; the port branch it
+    pushes is read back from ``origin``.  ``gh`` is a stub recording its
+    argv to ``gh-calls.log``.  ``HEAD`` is ``main`` at ``fix: c``.
+    """
+    origin = tmp_path / "origin.git"
+    origin.mkdir()
+    _git(origin, "init", "-q", "--bare", "-b", "main")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "port@test")
+    _git(repo, "config", "user.name", "port")
+    _git(repo, "remote", "add", "origin", str(origin))
+    _seed_trunk(repo)
+    _cut_release_branches(repo)
+    _git(repo, "push", "-q", "origin", "--all")
+    _git(repo, "push", "-q", "origin", "--tags")
+    _stub_gh(tmp_path)
+    return repo
+
+
+def _run_port(repo: Path, tag: str, base: str) -> subprocess.CompletedProcess[str]:
+    """Run the real port script from the clone for the release ``tag``."""
+    merge_sha = _git(repo, "rev-parse", tag + "^{commit}").strip()
+    env = {
+        "PATH": f"{repo.parent / 'bin'}:{os.environ.get('PATH', '')}",
+        "HOME": str(repo.parent),
+        "TAG": tag,
+        "VERSION": tag[1:],
+        "MERGE_SHA": merge_sha,
+        "BASE": base,
+        "DEFAULT": "main",
+        "REPO": "example/project",
+        "GH_TOKEN": "stub",
+    }
+    return subprocess.run(
+        ["bash", str(PORT)],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _ported(repo: Path, tag: str, path: str) -> str:
+    """A file's content on the pushed port branch, read from ``origin``."""
+    return _git(repo.parent / "origin.git", "show", f"knope/port/{tag}:{path}")
+
+
+def _port_has_ancestor(repo: Path, tag: str) -> bool:
+    origin = repo.parent / "origin.git"
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", tag, f"knope/port/{tag}"],
+            cwd=origin,
+            check=False,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def _port_parent_count(repo: Path, tag: str) -> int:
+    origin = repo.parent / "origin.git"
+    line = _git(origin, "rev-list", "--parents", "-n", "1", f"knope/port/{tag}")
+    return len(line.split()) - 1
+
+
+def _pr_body(repo: Path) -> str:
+    log = (repo.parent / "gh-calls.log").read_text(encoding="utf-8")
+    assert "pr create" in log, log
+    return log[log.index("pr create") :]
+
+
+def _ported_version(repo: Path, tag: str) -> str:
+    match = re.search(r'^version = "(.*)"', _ported(repo, tag, "pyproject.toml"), re.M)
+    assert match, "no version line on the port branch's pyproject.toml"
+    return match.group(1)
+
+
+def test_port_merges_the_ancestry_of_the_newest_stable(port_sandbox: Path) -> None:
+    """The #588 case: trunk's stamps still read rc, the branch shipped stable.
+
+    The port is a real merge of the release commit, so the next Release
+    Prepare on trunk anchors on ``v4.1.0``; the stamps move to 4.1.0; the
+    section is carried once; the page is the released one; and the PR body
+    says the PR must merge as a merge commit.
+    """
+    repo = port_sandbox
+    _write(repo, "b.py", "B = 'fixed'\n")
+    _commit(repo, "fix: b")
+    result = _run_port(repo, "v4.1.0", "release/4.1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ancestry mode" in result.stdout, result.stdout
+    assert _port_has_ancestor(repo, "v4.1.0"), "the port carries no ancestry"
+    assert _port_parent_count(repo, "v4.1.0") == 2, "the port is not a merge commit"
+    changelog = _ported(repo, "v4.1.0", "CHANGELOG.md")
+    assert changelog.count("## 4.1.0") == 1, changelog
+    assert _ported_version(repo, "v4.1.0") == "4.1.0"
+    server = json.loads(_ported(repo, "v4.1.0", "server.json"))
+    assert server["version"] == "4.1.0", "the manifests were not stamped"
+    assert _ported(repo, "v4.1.0", "docs/releases/4.1.md") == _git(
+        repo, "show", "v4.1.0:docs/releases/4.1.md"
+    )
+    assert "merge commit" in _pr_body(repo)
+
+
+def test_port_copies_files_for_an_older_backport(port_sandbox: Path) -> None:
+    """A backport below trunk's highest stable ports files, never ancestry.
+
+    knope anchors on the first stable tag it meets walking the log in date
+    order, so a later-dated older release merged into trunk would become
+    the anchor and drag trunk's next version and range backwards.  The
+    section still lands in release order, above the newer stable's.
+    """
+    repo = port_sandbox
+    _write(repo, "b.py", "B = 'fixed'\n")
+    _commit(repo, "fix: b")
+    _git(repo, "merge", "-q", "--no-ff", "-m", "chore: port v4.1.0", "v4.1.0")
+    _git(repo, "push", "-q", "origin", "main")
+    result = _run_port(repo, "v4.0.1", "release/4.0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "files mode" in result.stdout, result.stdout
+    assert not _port_has_ancestor(repo, "v4.0.1"), "an older backport was merged"
+    assert _port_parent_count(repo, "v4.0.1") == 1
+    changelog = _ported(repo, "v4.0.1", "CHANGELOG.md")
+    assert changelog.count("## 4.0.1") == 1, changelog
+    assert changelog.index("## 4.0.1") < changelog.index("## 4.1.0"), (
+        "the backport section must sit above the newer stable's (release order)"
+    )
+    assert _ported_version(repo, "v4.0.1") == "4.1.0", "stamps moved backwards"
+    assert "newer stable" in _pr_body(repo)
+
+
+def test_port_regenerates_conflicts_inside_the_release_bookkeeping(
+    port_sandbox: Path,
+) -> None:
+    """Conflicts in stamps and notes resolve from trunk's side, then re-apply.
+
+    Trunk moved the changelog top, appended to the ``4.1.md`` page where
+    the branch's stable prepare also appended, wrote fresh staging notes
+    for the next minor, and edited ``pyproject.toml`` next to the version
+    line.  Every conflict is in the regenerable set: trunk's side wins,
+    the section is re-inserted, the conflicted page is replaced by the
+    released copy (the files-mode contract), the version is re-stamped,
+    the new ``next.md`` survives, and the ancestry still lands.
+    """
+    repo = port_sandbox
+    _insert_changelog_section(repo, "4.0.1 (2026-03-01)", "### Bug Fixes\n\n- d")
+    _write(repo, "docs/releases/4.1.md", "# 4.1\n\nnotes for 4.1\n\n## trunk\n\nx\n")
+    _write(repo, "docs/releases/next.md", "# Next release\n\nnotes for 4.2\n")
+    _write(
+        repo,
+        "pyproject.toml",
+        '[project]\nname = "sandbox-pkg"\nversion = "4.1.0-rc.0"\n'
+        'description = "moved on trunk"\n',
+    )
+    _commit(repo, "chore: trunk moves")
+    result = _run_port(repo, "v4.1.0", "release/4.1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "regenerating" in result.stdout, result.stdout
+    assert _port_has_ancestor(repo, "v4.1.0"), "the port carries no ancestry"
+    changelog = _ported(repo, "v4.1.0", "CHANGELOG.md")
+    assert changelog.count("## 4.1.0") == 1 and changelog.count("## 4.0.1") == 1
+    assert _ported(repo, "v4.1.0", "docs/releases/4.1.md") == _git(
+        repo, "show", "v4.1.0:docs/releases/4.1.md"
+    ), "a conflicted page must be replaced by the released copy"
+    assert "notes for 4.2" in _ported(repo, "v4.1.0", "docs/releases/next.md")
+    pyproject = _ported(repo, "v4.1.0", "pyproject.toml")
+    assert 'version = "4.1.0"' in pyproject and "moved on trunk" in pyproject
+
+
+def test_port_keeps_trunk_edits_to_a_cleanly_merged_page(port_sandbox: Path) -> None:
+    """A page git merged without conflict is not overwritten by the released copy.
+
+    Trunk reworded the page's heading after the cut while the branch's
+    stable prepare appended its section at the end: hunks two unchanged
+    lines apart (adjacent hunks would conflict), a clean 3-way merge, and
+    both must survive on the port branch.
+    """
+    repo = port_sandbox
+    _write(repo, "docs/releases/4.1.md", "# 4.1 polished\n\nnotes for 4.1\n")
+    _commit(repo, "docs: polish 4.1 notes")
+    result = _run_port(repo, "v4.1.0", "release/4.1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    page = _ported(repo, "v4.1.0", "docs/releases/4.1.md")
+    assert "polished" in page and "## v4.1.0" in page, page
+
+
+def test_port_copies_files_for_a_backport_shipped_out_of_order(
+    port_sandbox: Path,
+) -> None:
+    """A backport shipped while a newer stable's port is still open ports files.
+
+    Only ``v4.0.0`` is reachable from trunk (``v4.1.0``'s port PR has not
+    merged), but ``v4.1.0`` exists in the repository, so ``v4.0.1`` is not
+    the newest stable and must not be merged: once both ports landed, the
+    later-dated ``v4.0.1`` would be knope's anchor.
+    """
+    repo = port_sandbox
+    result = _run_port(repo, "v4.0.1", "release/4.0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "files mode" in result.stdout, result.stdout
+    assert not _port_has_ancestor(repo, "v4.0.1"), "an out-of-order backport merged"
+    assert _ported_version(repo, "v4.0.1") == "4.1.0-rc.0", "stamps moved"
+    assert _ported(repo, "v4.0.1", "CHANGELOG.md").count("## 4.0.1") == 1
+
+
+def test_port_keeps_trunk_stamps_when_trunk_is_mid_rc_on_a_higher_series(
+    port_sandbox: Path,
+) -> None:
+    """Trunk at ``4.2.0-rc.0`` receiving ``v4.1.0`` keeps its own pyproject.
+
+    The ancestry still lands and the manifests move to the newest stable,
+    but moving ``pyproject.toml`` and ``uv.lock`` back to 4.1.0 would reset
+    knope's pre-release counter and recompute the already-tagged rc.
+    """
+    repo = port_sandbox
+    _stamp_pyproject(repo, "4.2.0-rc.0")
+    _write(
+        repo,
+        "uv.lock",
+        '[[package]]\nname = "sandbox-pkg"\nversion = "4.2.0rc0"\n\n'
+        '[[package]]\nname = "other-dep"\nversion = "0.5.0"\n',
+    )
+    _insert_changelog_section(repo, "4.2.0-rc.0 (2026-02-10)", "### Features\n\n- z")
+    _commit(repo, "chore: prepare release 4.2.0-rc.0")
+    _git(repo, "tag", "v4.2.0-rc.0")
+    _git(repo, "push", "-q", "origin", "main", "--tags")
+    result = _run_port(repo, "v4.1.0", "release/4.1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ancestry mode" in result.stdout and "mid-rc" in result.stdout, result.stdout
+    assert _port_has_ancestor(repo, "v4.1.0")
+    assert _ported_version(repo, "v4.1.0") == "4.2.0-rc.0", "pyproject moved back"
+    assert 'version = "4.2.0rc0"' in _ported(repo, "v4.1.0", "uv.lock")
+    server = json.loads(_ported(repo, "v4.1.0", "server.json"))
+    assert server["version"] == "4.1.0", "manifests must name the newest stable"
+    changelog = _ported(repo, "v4.1.0", "CHANGELOG.md")
+    assert changelog.index("## 4.1.0") < changelog.index("## 4.2.0-rc.0")
+
+
+def test_port_fails_loudly_when_the_merge_fails_without_conflicts(
+    port_sandbox: Path,
+) -> None:
+    """A merge git refuses outright is never papered over as a port.
+
+    An untracked ``b.py`` in the checkout makes git refuse the merge
+    before producing conflicts; the job must exit non-zero with git's
+    diagnostic rather than commit a single-parent "port" that claims an
+    ancestry.
+    """
+    repo = port_sandbox
+    _write(repo, "b.py", "B = 'untracked'\n")
+    result = _run_port(repo, "v4.1.0", "release/4.1")
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "failed without conflicts" in result.stdout, result.stdout
+    assert "knope/port/v4.1.0" not in _git(
+        repo.parent / "origin.git", "branch", "--list", "knope/port/*"
+    ), "a failed merge must push no port branch"
+
+
+def test_port_keeps_trunk_notes_when_the_release_promoted_the_staging_file(
+    port_sandbox: Path,
+) -> None:
+    """A branch cut before any rc promotes ``next.md`` itself; trunk's survives.
+
+    Relative to the merge base the release deleted ``next.md`` and added a
+    similar ``4.2.md``, while trunk rewrote ``next.md`` for its next
+    series.  With rename detection on, git pairs the deletion with the new
+    page and merges trunk's notes INTO the released page while the staging
+    file vanishes; the port merges with ``-X no-renames`` so the deletion
+    is a modify/delete conflict resolved from trunk's side instead.
+    """
+    repo = port_sandbox
+    _git(repo, "switch", "-q", "-c", "release/4.2", "v4.1.0-rc.0~1")
+    _write(
+        repo, "docs/releases/4.2.md", "# 4.2\n\n" + STAGED_NOTES + "\n## v4.2.0\n\ne\n"
+    )
+    (repo / "docs" / "releases" / "next.md").unlink()
+    _insert_index_entry(repo, "- [4.2](4.2.md) — e\n")
+    _prepare_stable(repo, "4.2.0", "2026-04-01", "e")
+    _git(repo, "switch", "-q", "main")
+    _write(repo, "docs/releases/next.md", "# Next release\n\nnotes for 4.3\n")
+    _commit(repo, "docs: stage 4.3 notes")
+    _git(repo, "push", "-q", "origin", "--all")
+    _git(repo, "push", "-q", "origin", "--tags")
+    result = _run_port(repo, "v4.2.0", "release/4.2")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _port_has_ancestor(repo, "v4.2.0")
+    assert "notes for 4.3" in _ported(repo, "v4.2.0", "docs/releases/next.md"), (
+        "trunk's staging notes were merged away as a rename"
+    )
+    assert _ported(repo, "v4.2.0", "docs/releases/4.2.md") == _git(
+        repo, "show", "v4.2.0:docs/releases/4.2.md"
+    )
+
+
+def test_port_copies_files_while_a_higher_stable_is_in_flight(
+    port_sandbox: Path,
+) -> None:
+    """A higher release merged but not yet tagged still counts as newer.
+
+    Two releases from different bases can overlap: ``v4.1.0``'s release PR
+    merged first but its tag job is still running when ``v4.0.1`` tags and
+    ports.  Its future tag will point at a commit dated before
+    ``v4.0.1``'s, so an ancestry port of ``v4.0.1`` would leave the
+    later-dated older release as knope's anchor once both land.  The port
+    reads the merged release PRs and takes files mode.
+    """
+    repo = port_sandbox
+    merged_sha = _git(repo, "rev-parse", "release/4.1").strip()
+    (repo.parent / "merged-release-prs").write_text(merged_sha + "\n", encoding="utf-8")
+    _git(repo, "tag", "-d", "v4.1.0")
+    _git(repo, "push", "-q", "origin", ":refs/tags/v4.1.0")
+    result = _run_port(repo, "v4.0.1", "release/4.0")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "in flight" in result.stdout and "files mode" in result.stdout, result.stdout
+    assert not _port_has_ancestor(repo, "v4.0.1"), (
+        "an older release merged its ancestry"
+    )
+    assert "in flight" in _pr_body(repo)
+
+
+def test_port_falls_back_on_a_conflict_in_another_release_page(
+    port_sandbox: Path,
+) -> None:
+    """Only the release's own page, the index and the staging file regenerate.
+
+    Both sides edited an OLDER minor's page: nothing in the port could
+    regenerate it, so resolving it from trunk's side would silently drop
+    the branch's edit while recording the ancestry as merged.  It is a
+    code conflict: files-only fallback, the page named in the body.
+    """
+    repo = port_sandbox
+    _git(repo, "switch", "-q", "-c", "release/4.2", "v4.1.0-rc.0~1")
+    _write(repo, "docs/releases/4.0.md", "# 4.0\n\nfirst, per the branch\n")
+    _commit(repo, "docs: branch backfills 4.0 notes")
+    _write(repo, "docs/releases/4.2.md", "# 4.2\n\nnotes for 4.2\n\n## v4.2.0\n\ne\n")
+    _insert_index_entry(repo, "- [4.2](4.2.md) — e\n")
+    _prepare_stable(repo, "4.2.0", "2026-04-01", "e")
+    _git(repo, "switch", "-q", "main")
+    _write(repo, "docs/releases/4.0.md", "# 4.0\n\nfirst, per trunk\n")
+    _commit(repo, "docs: trunk backfills 4.0 notes")
+    _git(repo, "push", "-q", "origin", "--all")
+    _git(repo, "push", "-q", "origin", "--tags")
+    result = _run_port(repo, "v4.2.0", "release/4.2")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "falling back" in result.stdout + result.stderr, result.stdout
+    assert not _port_has_ancestor(repo, "v4.2.0"), "another page's conflict was merged"
+    assert "docs/releases/4.0.md" in _pr_body(repo)
+
+
+def test_port_does_nothing_when_the_release_is_already_reachable(
+    port_sandbox: Path,
+) -> None:
+    """A re-run after the port merged touches nothing: the release is all there."""
+    repo = port_sandbox
+    _write(repo, "b.py", "B = 'fixed'\n")
+    _commit(repo, "fix: b")
+    _git(repo, "merge", "-q", "--no-ff", "-m", "chore: port v4.1.0", "v4.1.0")
+    _git(repo, "push", "-q", "origin", "main")
+    result = _run_port(repo, "v4.1.0", "release/4.1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "nothing to port" in result.stdout, result.stdout
+    assert "knope/port/v4.1.0" not in _git(
+        repo.parent / "origin.git", "branch", "--list", "knope/port/*"
+    )
+
+
+def test_port_falls_back_to_files_on_a_code_conflict(port_sandbox: Path) -> None:
+    """A conflict outside the bookkeeping is never resolved by the job.
+
+    The merge is aborted, the files-only port opens as before, and the PR
+    body names the conflicting file and the branch-only commits so a
+    human lands the ancestry by hand.
+    """
+    repo = port_sandbox
+    _write(repo, "b.py", "B = 'different'\n")
+    _commit(repo, "fix: b differently")
+    result = _run_port(repo, "v4.1.0", "release/4.1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "falling back" in result.stdout + result.stderr, result.stdout
+    assert not _port_has_ancestor(repo, "v4.1.0"), "a code conflict was merged"
+    assert _ported(repo, "v4.1.0", "CHANGELOG.md").count("## 4.1.0") == 1
+    assert _ported_version(repo, "v4.1.0") == "4.1.0-rc.0", "stamps ported"
+    body = _pr_body(repo)
+    assert "b.py" in body and "fix: b" in body and "merge commit" in body, body
+    assert "fix: c" not in body, "a cherry-picked-identical commit is not branch-only"
+
+
+def test_port_merges_ancestry_when_trunk_has_not_moved(port_sandbox: Path) -> None:
+    """Trunk exactly at the cut still gets a merge commit, not a fast-forward."""
+    _git(port_sandbox, "reset", "-q", "--hard", "v4.1.0-rc.0")
+    result = _run_port(port_sandbox, "v4.1.0", "release/4.1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _port_has_ancestor(port_sandbox, "v4.1.0")
+    assert _port_parent_count(port_sandbox, "v4.1.0") == 2, (
+        "--no-ff must hold: a fast-forward would leave no port commit to review"
     )
 
 
@@ -1641,6 +2261,58 @@ class TestPinRuleLogic:
         # disagree" leaves the reader diffing four files by hand.
         assert "server.json version = 1.9.0" in violation
         assert "plugin.json version = 2.0.0" in violation
+
+
+def _knope_anchor_tag() -> str | None:
+    """The stable tag knope anchors on from this checkout's ``HEAD``.
+
+    knope 0.23.0 takes the first STABLE tag it meets walking ``git log`` in
+    its default order — reverse commit date, children before parents — so
+    rc tags never anchor and, among stables neither of which descends from
+    the other, the later-dated one wins.
+    """
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "log", "--format=%D", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in completed.stdout.splitlines():
+        for ref in line.split(", "):
+            name = ref.removeprefix("tag: ")
+            if ref != name and re.fullmatch(r"v\d+\.\d+\.\d+", name):
+                return name
+    return None
+
+
+def test_reachable_stables_anchor_on_the_highest() -> None:
+    """The stable knope would anchor on IS the highest stable reachable.
+
+    Every Release Prepare on this branch computes its version and its
+    changelog range from that anchor.  The port after a branch release
+    keeps the invariant by merging only the repository's newest stable's
+    ancestry (``scripts/port_bookkeeping.sh``); a hand merge of an older
+    release's ancestry — or two overlapping releases whose ports both
+    merged — breaks it, and the next release here would compute from the
+    wrong stable.  This runs on every PR's merge preview, so a port PR
+    that would break it cannot merge.
+    """
+    stable_tags = _reachable_stable_tags()
+    if not stable_tags:
+        pytest.skip("no stable release tags reachable from this checkout's HEAD")
+    highest = max(stable_tags, key=lambda t: tuple(int(p) for p in t[1:].split(".")))
+    anchor = _knope_anchor_tag()
+    assert anchor == highest, (
+        f"knope would anchor the next release on {anchor}, but the highest "
+        f"stable reachable from HEAD is {highest}: an older release's ancestry "
+        "was merged after the newer one's. The next Release Prepare here "
+        "computes from the wrong stable; re-dispatch it with override_version "
+        "until a newer stable is released from this branch."
+    )
 
 
 def test_committed_pins_name_the_last_stable_or_the_prepared_version() -> None:

@@ -4279,13 +4279,19 @@ the MCP Registry publish are all skipped; rc prepares leave the
 `server.json`/plugin pins untouched at the last published stable, since
 the versions those pins name only exist for stable releases.
 
-**There is no merge-back.** A stable released from a `release/*` branch
-is followed by an automated **bookkeeping port PR** to `main` carrying
-the changelog section (an ordinary PR, reviewed and merged like any
-other); rcs port nothing. A prepare whose computed version is already
-tagged repo-globally refuses with the remedy in its message — the
-release tag no longer needs to be reachable from `main` for the next
-computation to succeed, which is what made PSR's merge-back mandatory.
+**There is no merge-back of features.** A stable released from a
+`release/*` branch is followed by an automated **bookkeeping port PR**
+to `main` (an ordinary PR, reviewed and merged like any other); rcs port
+nothing. knope anchors the next version and the changelog range on the
+newest stable tag reachable from the branch it prepares on, so when the
+branch release is the repository's newest stable the port PR is a real
+merge of the release commit plus its version stamps, and **must be
+merged with a merge commit** (#1328); an older backport's port carries
+the changelog section and notes page only, because merging its ancestry
+would make it knope's anchor and drag `main` backwards. A prepare whose
+computed version — or whose rc's stable base — is already tagged
+repo-globally refuses with the remedy in its message (#1326), so a port
+that has not landed surfaces at prepare time, not at tag time.
 
 The `edge` channel is produced by a separate `Unstable channel`
 workflow (`.github/workflows/unstable.yml`), not `release.yml`: every
