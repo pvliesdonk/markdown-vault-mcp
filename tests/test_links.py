@@ -2479,3 +2479,169 @@ class TestAttachmentAllowlistIsProvenance:
         col = Vault(source_dir=src)
         col.index.build_index()
         assert col._fts.get_chunking_meta().attachment_extensions == ""
+
+
+# ---------------------------------------------------------------------------
+# Review round 2: the three gaps the round-1 fixes left (#1333)
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyAllowlistIsDistinctProvenance:
+    """An explicitly empty allowlist is not the default set.
+
+    They derive different rows — with nothing allowlisted `[[pic.png]]` is a
+    note reference storing `pic.png.md` — so rendering both as `""` let a
+    switch between them keep the warm index and serve the old interpretation.
+    """
+
+    def test_empty_and_default_render_differently(self) -> None:
+        from markdown_vault_mcp.utils import (
+            canonical_attachment_extensions,
+            effective_attachment_extensions,
+        )
+
+        default = canonical_attachment_extensions(effective_attachment_extensions(None))
+        empty = canonical_attachment_extensions(effective_attachment_extensions([]))
+        assert default == ""
+        assert empty != default
+
+    def test_a_literal_none_extension_does_not_collide(self) -> None:
+        """The sentinel must not be a renderable allowlist."""
+        from markdown_vault_mcp.utils import (
+            canonical_attachment_extensions,
+            effective_attachment_extensions,
+        )
+
+        empty = canonical_attachment_extensions(effective_attachment_extensions([]))
+        literal = canonical_attachment_extensions(
+            effective_attachment_extensions(["none"])
+        )
+        assert empty != literal
+
+    def test_the_empty_allowlist_is_recorded_with_the_build(
+        self, tmp_path: Path
+    ) -> None:
+        src = tmp_path / "vault"
+        src.mkdir()
+        (src / "n.md").write_text("# N\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=[])
+        col.index.build_index()
+        assert col._fts.get_chunking_meta().attachment_extensions != ""
+
+
+class TestMissingAttachmentStaysBroken:
+    """A target classified as an attachment must not resolve onto a note.
+
+    Extraction declined to append `.md`, so resolution has to agree. Falling
+    through handed a *missing* `pic.png` to any note called `pic.png.md`,
+    reporting an existing link to an unrelated note.
+    """
+
+    def test_a_missing_attachment_does_not_resolve_to_a_same_named_note(
+        self, tmp_path: Path
+    ) -> None:
+        src = tmp_path / "vault"
+        src.mkdir()
+        (src / "pic.png.md").write_text("# unrelated\n", encoding="utf-8")
+        (src / "note.md").write_text("![[pic.png]]\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=["png"])
+        col.index.build_index()
+        (outlink,) = col.graph.get_outlinks("note.md")
+        assert outlink.target_path == "pic.png"
+        assert outlink.exists is False
+
+    def test_the_resolver_refuses_the_note_fallback_directly(self) -> None:
+        from markdown_vault_mcp.fts_index import _resolve_one_wikilink
+
+        assert (
+            _resolve_one_wikilink(
+                "pic.png",
+                attachment_paths=[],
+                doc_paths=["pic.png.md"],
+                alias_map={},
+                attachment_extensions=frozenset({"png"}),
+            )
+            is None
+        )
+
+    def test_a_note_target_still_uses_the_note_population(self) -> None:
+        """The guard must not disable ordinary note resolution."""
+        from markdown_vault_mcp.fts_index import _resolve_one_wikilink
+
+        assert (
+            _resolve_one_wikilink(
+                "Topic",
+                attachment_paths=[],
+                doc_paths=["notes/Topic.md"],
+                alias_map={},
+                attachment_extensions=frozenset({"png"}),
+            )
+            == "notes/Topic.md"
+        )
+
+    def test_aliases_still_resolve_for_note_targets(self) -> None:
+        from markdown_vault_mcp.fts_index import _resolve_one_wikilink
+
+        assert (
+            _resolve_one_wikilink(
+                "AI",
+                attachment_paths=[],
+                doc_paths=[],
+                alias_map={"ai": ["notes/Artificial Intelligence.md"]},
+                attachment_extensions=frozenset({"png"}),
+            )
+            == "notes/Artificial Intelligence.md"
+        )
+
+
+class TestAttachmentWritesReResolve:
+    """Adding an attachment changes what an existing embed resolves to.
+
+    Attachment writes carry no index rows, so nothing scheduled a resolver
+    pass and `![[pic.png]]` written before its file stayed unresolved until
+    an unrelated write or a manual reindex.
+    """
+
+    @staticmethod
+    def _vault(tmp_path: Path) -> Vault:
+        src = tmp_path / "vault"
+        (src / "assets").mkdir(parents=True)
+        (src / "note.md").write_text("# N\n\n![[pic.png]]\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=["png"], read_only=False)
+        col.index.build_index()
+        return col
+
+    def test_writing_the_attachment_resolves_the_waiting_embed(
+        self, tmp_path: Path
+    ) -> None:
+        col = self._vault(tmp_path)
+        assert col.graph.get_outlinks("note.md")[0].exists is False
+
+        col._doc_mgr.write_attachment("assets/pic.png", b"\x89PNG\r\n\x1a\n")
+        wait_for_writer_drain(col)
+
+        (outlink,) = col.graph.get_outlinks("note.md")
+        assert outlink.target_path == "assets/pic.png"
+        assert outlink.exists is True
+
+    def test_deleting_the_attachment_un_resolves_it(self, tmp_path: Path) -> None:
+        col = self._vault(tmp_path)
+        col._doc_mgr.write_attachment("assets/pic.png", b"\x89PNG\r\n\x1a\n")
+        wait_for_writer_drain(col)
+        assert col.graph.get_outlinks("note.md")[0].exists is True
+
+        col._doc_mgr.delete("assets/pic.png")
+        wait_for_writer_drain(col)
+        assert col.graph.get_outlinks("note.md")[0].exists is False
+
+    def test_renaming_the_attachment_follows_it(self, tmp_path: Path) -> None:
+        col = self._vault(tmp_path)
+        col._doc_mgr.write_attachment("assets/pic.png", b"\x89PNG\r\n\x1a\n")
+        wait_for_writer_drain(col)
+
+        col._doc_mgr.rename("assets/pic.png", "img/pic.png")
+        wait_for_writer_drain(col)
+
+        (outlink,) = col.graph.get_outlinks("note.md")
+        assert outlink.target_path == "img/pic.png"
+        assert outlink.exists is True

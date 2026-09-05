@@ -790,8 +790,32 @@ class DocumentManager:
                 *path* already exists while no *if_match* is supplied.
             ValueError: If the path escapes the source directory or has an
                 extension not in the allowlist.
+
+        An attachment is never indexed, but the link graph resolves wikilink
+        embeds against the attachments present on disk (#1333), so adding one
+        changes what ``![[pic.png]]`` resolves to. Marking the path dirty
+        routes that through the writer's existing choke point: the per-path
+        step is a no-op for an unindexed file, and the
+        ``resolve_vault_wikilinks()`` pass it always ends with is the part
+        that matters.
         """
-        return self._artifacts.write(path, content, if_match)
+        result = self._artifacts.write(path, content, if_match)
+        self._mark_attachment_dirty(path)
+        return result
+
+    def _mark_attachment_dirty(self, *paths: str) -> None:
+        """Schedule a link-graph re-resolution after an attachment mutation.
+
+        Attachments carry no index rows of their own, so this exists purely
+        for its side effect on wikilink resolution (#1333). Without it, an
+        embed written before its attachment stays unresolved until something
+        else marks a path dirty or a reindex runs.
+
+        Args:
+            paths: The attachment paths that were added, removed, or moved.
+        """
+        if self._mark_paths_dirty is not None:
+            self._mark_paths_dirty(list(paths))
 
     def edit(
         self,
@@ -1045,6 +1069,7 @@ class DocumentManager:
                     self._mark_paths_dirty([path])
             else:
                 abs_path = self._artifacts.unlink(path, if_match)
+                self._mark_attachment_dirty(path)
 
             self._notifier.fire(abs_path, "", "delete")
 
@@ -1134,6 +1159,7 @@ class DocumentManager:
                     self._mark_paths_dirty(dirty)
             else:
                 old_abs, new_abs = self._artifacts.move(old_path, new_path, if_match)
+                self._mark_attachment_dirty(old_path, new_path)
                 callback_content = ""
 
             self._notifier.fire_rename(new_abs, callback_content, old_abs)

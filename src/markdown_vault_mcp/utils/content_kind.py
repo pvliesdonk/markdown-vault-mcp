@@ -51,6 +51,7 @@ a bare wikilink, stripping it for a label).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -67,6 +68,7 @@ __all__ = [
     "is_allowed_artifact",
     "is_allowed_artifact_suffix",
     "is_note",
+    "names_attachment",
 ]
 
 
@@ -176,6 +178,16 @@ def effective_attachment_extensions(
     return frozenset(ext for ext in normalized if ext)
 
 
+#: An extension-shaped suffix: what a file type looks like, used only under
+#: the ``*`` attachment wildcard (see :func:`names_attachment`).
+_RE_EXTENSION_SHAPE = re.compile(r"[A-Za-z0-9]{1,8}")
+
+#: Provenance rendering of an *explicitly empty* attachment allowlist,
+#: distinct from the empty string the default set renders as (see
+#: :func:`canonical_attachment_extensions`).
+_NO_EXTENSIONS = "(none)"
+
+
 def canonical_attachment_extensions(extensions: frozenset[str]) -> str:
     """Return the allowlist's canonical string form, for build provenance.
 
@@ -190,13 +202,64 @@ def canonical_attachment_extensions(extensions: frozenset[str]) -> str:
     and must compare equal to a default-configured server rather than
     forcing a spurious rebuild on every such deployment.
 
+    An *explicitly empty* allowlist renders as :data:`_NO_EXTENSIONS`, not as
+    ``""``. The two are different configurations that derive different rows —
+    with nothing allowlisted, ``[[pic.png]]`` is a note reference and stores
+    ``pic.png.md`` — so collapsing them onto one value let a switch between
+    them keep the warm index and serve the previous interpretation forever.
+    The sentinel is not a possible rendering of a real allowlist: an
+    extension is configured without its dot, so no member can contain
+    parentheses.
+
     Args:
         extensions: The effective allowlist, as returned by
             :func:`effective_attachment_extensions`.
 
     Returns:
-        ``""`` for the default set, else the sorted members comma-joined.
+        ``""`` for the default set, :data:`_NO_EXTENSIONS` for an explicitly
+        empty one, else the sorted members comma-joined.
     """
     if extensions == DEFAULT_ATTACHMENT_EXTENSIONS:
         return ""
+    if not extensions:
+        return _NO_EXTENSIONS
     return ",".join(sorted(extensions))
+
+
+def names_attachment(target: str, extensions: frozenset[str]) -> bool:
+    """Return whether a wikilink target names an attachment rather than a note.
+
+    Shared by extraction (which decides whether to append ``.md``) and by
+    vault-wide resolution (which must not fall back to the note population
+    for a target this classifies as an attachment). Both stages have to
+    reach the same verdict, or a target classified one way at write time is
+    resolved the other way at query time — which is how a missing
+    ``pic.png`` came to resolve onto an unrelated ``pic.png.md`` note.
+
+    Distinct from
+    :func:`~markdown_vault_mcp.utils.attachment_target_exists`, deliberately:
+    that one mirrors what ``read`` will serve and applies no shape guard,
+    because under the ``*`` wildcard ``read`` really does serve an
+    extensionless ``Makefile``. This one decides a *name*'s kind, where the
+    same wildcard must not read the note title ``Version 2.0 plan`` as a
+    ``0 plan`` attachment.
+
+    Args:
+        target: Wikilink target with any fragment already split off.
+        extensions: The effective attachment allowlist, as returned by
+            :func:`~markdown_vault_mcp.utils.content_kind.effective_attachment_extensions`.
+
+    Returns:
+        ``True`` when *target* carries an extension naming an attachment.
+    """
+    suffix = artifact_suffix(target)
+    if not suffix:
+        # No extension at all — a note name in every configuration.
+        return False
+    if "*" in extensions:
+        # The wildcard means "every non-.md file", which says nothing about
+        # which *suffixes* are file types. Taken literally it would read the
+        # note title ``Version 2.0 plan`` as a ``0 plan`` attachment, so under
+        # the wildcard the suffix must also look like an extension.
+        return _RE_EXTENSION_SHAPE.fullmatch(suffix) is not None
+    return suffix in extensions

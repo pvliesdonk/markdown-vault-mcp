@@ -13,6 +13,7 @@ from markdown_vault_mcp.utils.content_kind import (
     is_allowed_artifact,
     is_allowed_artifact_suffix,
     is_note,
+    names_attachment,
 )
 
 if TYPE_CHECKING:
@@ -272,6 +273,7 @@ __all__ = [
     "is_allowed_artifact_suffix",
     "is_note",
     "is_path_excluded",
+    "names_attachment",
     "normalize_text",
     "resolve_inside",
     "validate_history_dir",

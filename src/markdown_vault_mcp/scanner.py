@@ -15,8 +15,8 @@ import yaml
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import Chunk, LinkInfo, ParsedNote, SkippedFile
 from markdown_vault_mcp.utils.content_kind import (
-    artifact_suffix,
     effective_attachment_extensions,
+    names_attachment,
 )
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
 from markdown_vault_mcp.utils.text import decode_utf8
@@ -788,24 +788,29 @@ _EXTERNAL_URL_PREFIXES = ("//",)
 # Matching the *shape* rather than an allowlist of four prefixes is what keeps
 # `file:`, `ftp:`, `obsidian:` and `zotero:` out of vault-path resolution.
 _RE_URI_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]+:")
-# An extension-shaped suffix: what a file type looks like, used only under the
-# ``*`` attachment wildcard (see :func:`_names_attachment`).
-_RE_EXTENSION_SHAPE = re.compile(r"[A-Za-z0-9]{1,8}")
-
 # Fenced code block: matches ``` or ~~~ delimiters (with optional language tag).
 _RE_FENCED_CODE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
 # Inline code: matches single backtick spans (non-greedy, no newlines inside).
 _RE_INLINE_CODE = re.compile(r"`[^`\n]+`")
-# Link *text*, bounded to one paragraph. CommonMark permits a soft break inside
-# link text but not a blank line, so a newline is allowed only when it is not
-# followed by another (#1334). Without this an unmatched ``[`` pairs with a
-# ``](`` thousands of characters later and indexes whole pages of prose as a
-# link — wrong data, and a multi-kilobyte value on every outlink result.
-_TEXT_SPAN = r"(?:[^\]\n]|\n(?![ \t]*\n))*"
-# Inline markdown link: [text](target). A destination never contains a newline.
-_RE_INLINE_LINK = re.compile(rf"\[({_TEXT_SPAN})\]\(([^)\n]+)\)")
+# A blank line: the paragraph boundary CommonMark says no link may cross.
+# Extraction splits on this and matches within one paragraph at a time, which
+# is what bounds a link rather than the regexes themselves (#1334).
+#
+# Splitting first, rather than teaching each regex to stop at a blank line,
+# is deliberate on two counts. The bounded alternation it replaced
+# (``(?:[^\]\n]|\n(?![ \t]*\n))*``) was correct but roughly seven times
+# slower than a plain negated class on the pathological input this defect is
+# about — a long run of unmatched ``[`` — because CPython's engine pays for
+# the alternation on every backtrack step. Splitting keeps the plain class
+# *and* shrinks the quadratic backtracking window from the whole document to
+# one paragraph, so it is faster than the code this defect was found in.
+_RE_PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
+# Inline markdown link: [text](target). Matched within one paragraph, so
+# ``[^\]]*`` cannot cross a blank line. A destination never contains a
+# newline in any case: CommonMark does not allow one.
+_RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)\n]+)\)")
 # Reference-style link usage: [text][ref] or [text][]
-_RE_REF_USAGE = re.compile(rf"\[({_TEXT_SPAN})\]\[({_TEXT_SPAN})\]")
+_RE_REF_USAGE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
 # Reference definition: [ref]: target  (at start of line, optional leading whitespace)
 _RE_REF_DEF = re.compile(r"^\s*\[([^\]\n]+)\]:\s*(.+)$", re.MULTILINE)
 # Markdown footnotes ([^label] / [^label]: body) differ from reference-style
@@ -832,35 +837,6 @@ def _is_external_target(target: str) -> bool:
     return target.startswith(_EXTERNAL_URL_PREFIXES) or bool(
         _RE_URI_SCHEME.match(target)
     )
-
-
-def _names_attachment(target: str, extensions: frozenset[str]) -> bool:
-    """Return whether a wikilink target names an attachment rather than a note.
-
-    Used to decide whether ``.md`` should be appended: ``[[diagram.png]]``
-    names the attachment that ``read`` already serves, and appending ``.md``
-    produced a target that cannot exist, so every Obsidian image embed was
-    reported broken (#1333).
-
-    Args:
-        target: Wikilink target with any fragment already split off.
-        extensions: The effective attachment allowlist, as returned by
-            :func:`~markdown_vault_mcp.utils.content_kind.effective_attachment_extensions`.
-
-    Returns:
-        ``True`` when *target* carries an extension naming an attachment.
-    """
-    suffix = artifact_suffix(target)
-    if not suffix:
-        # No extension at all — a note name in every configuration.
-        return False
-    if "*" in extensions:
-        # The wildcard means "every non-.md file", which says nothing about
-        # which *suffixes* are file types. Taken literally it would read the
-        # note title ``Version 2.0 plan`` as a ``0 plan`` attachment, so under
-        # the wildcard the suffix must also look like an extension.
-        return _RE_EXTENSION_SHAPE.fullmatch(suffix) is not None
-    return suffix in extensions
 
 
 def _strip_code_spans(content: str) -> str:
@@ -950,6 +926,9 @@ def extract_links(
     * **Reference-style**: ``[text][ref]`` with ``[ref]: path.md``
     * **Wikilinks**: ``[[path]]`` or ``[[path|alias]]``
 
+    Matching runs one paragraph at a time, so no link crosses a blank line;
+    reference *definitions* are the exception and are collected document-wide.
+
     Links inside fenced code blocks and inline code spans are ignored. A
     destination carrying any URI scheme (``https:``, ``file:``, ``obsidian:``
     …) is external and skipped, as are same-document anchors in every
@@ -974,11 +953,19 @@ def extract_links(
         if attachment_extensions is None
         else attachment_extensions
     )
-    return [
-        *_extract_inline_links(clean, source_path),
-        *_extract_reference_links(clean, source_path),
-        *_extract_wikilinks(clean, source_path, extensions),
-    ]
+    # Definitions are document-wide; every other match is paragraph-local,
+    # which is what stops a link crossing a blank line (#1334).
+    ref_defs = _collect_reference_definitions(clean)
+    inline: list[LinkInfo] = []
+    reference: list[LinkInfo] = []
+    wiki: list[LinkInfo] = []
+    for paragraph in _RE_PARAGRAPH_BREAK.split(clean):
+        inline.extend(_extract_inline_links(paragraph, source_path))
+        reference.extend(_extract_reference_links(paragraph, source_path, ref_defs))
+        wiki.extend(_extract_wikilinks(paragraph, source_path, extensions))
+    # Grouped by kind rather than interleaved by position, preserving the
+    # order callers saw when each extractor ran over the whole document.
+    return [*inline, *reference, *wiki]
 
 
 def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
@@ -1013,21 +1000,23 @@ def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
     return links
 
 
-def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
-    """Extract reference-style ``[text][ref]`` links from code-stripped content.
+def _collect_reference_definitions(clean: str) -> dict[str, str]:
+    """Collect ``[ref]: path.md`` definitions from code-stripped content.
 
-    Collects the ``[ref]: path.md`` definitions first (optional CommonMark
-    titles stripped), then resolves each usage; an empty ``[ref]`` falls
-    back to the link text per CommonMark shortcut semantics. Destinations
-    carrying a URI scheme and pure anchors are skipped.
+    Read from the whole document rather than per paragraph: a definition
+    lives wherever the author put it, usually far from the usages it serves,
+    so this is the one part of extraction that is not paragraph-local.
 
-    Markdown footnotes are skipped on both halves: a footnote definition
-    (``[^label]: body``) is prose, not a link target, and two adjacent
-    footnote references (``[^a][^b]``) are not one reference-style link
-    (#1104).
+    Optional CommonMark titles are stripped. A footnote definition
+    (``[^label]: body``) is prose, not a link target, and storing it resolved
+    whatever the footnote said as a vault path (#1104).
+
+    Args:
+        clean: Code-stripped markdown body.
+
+    Returns:
+        Lower-cased reference key to its raw target.
     """
-    links: list[LinkInfo] = []
-    # Collect reference definitions first.
     ref_defs: dict[str, str] = {}
     for m in _RE_REF_DEF.finditer(clean):
         ref_key = m.group(1).strip().lower()
@@ -1039,7 +1028,29 @@ def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
         # Strip optional CommonMark title: "...", '...', or (...)
         ref_target = re.sub(r'\s+(?:"[^"]*"|\'[^\']*\'|\([^)]*\))\s*$', "", ref_target)
         ref_defs[ref_key] = ref_target
+    return ref_defs
 
+
+def _extract_reference_links(
+    clean: str, source_path: str, ref_defs: dict[str, str]
+) -> list[LinkInfo]:
+    """Extract reference-style ``[text][ref]`` usages from one paragraph.
+
+    An empty ``[ref]`` falls back to the link text per CommonMark shortcut
+    semantics. Destinations carrying a URI scheme and pure anchors are
+    skipped, as are footnote references: two adjacent ones (``[^a][^b]``) are
+    not one ``[text][ref]`` pair (#1104).
+
+    Args:
+        clean: One paragraph of code-stripped markdown.
+        source_path: Relative POSIX path of the source document.
+        ref_defs: Definitions collected document-wide by
+            :func:`_collect_reference_definitions`.
+
+    Returns:
+        List of :class:`~markdown_vault_mcp.types.LinkInfo` objects.
+    """
+    links: list[LinkInfo] = []
     for m in _RE_REF_USAGE.finditer(clean):
         text = m.group(1)
         ref = m.group(2).strip() or text  # empty [ref] falls back to link text
@@ -1136,7 +1147,7 @@ def _extract_wikilinks(
 
         # Wikilinks naming a note get ".md" appended; one naming an attachment
         # already carries the extension that identifies it (#1333).
-        if not raw_path.lower().endswith(".md") and not _names_attachment(
+        if not raw_path.lower().endswith(".md") and not names_attachment(
             raw_path, attachment_extensions
         ):
             raw_path = raw_path + ".md"

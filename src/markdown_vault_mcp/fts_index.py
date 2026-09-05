@@ -47,6 +47,7 @@ from markdown_vault_mcp.types import (
     SubtreeNote,
     TocEntry,
 )
+from markdown_vault_mcp.utils.content_kind import names_attachment
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -304,6 +305,7 @@ def _resolve_one_wikilink(
     attachment_paths: Sequence[str],
     doc_paths: Sequence[str],
     alias_map: dict[str, list[str]],
+    attachment_extensions: frozenset[str],
 ) -> str | None:
     """Resolve one wikilink's ``raw_target`` to a vault path, or ``None``.
 
@@ -313,16 +315,25 @@ def _resolve_one_wikilink(
     each — Obsidian's own tie-break:
 
     1. **Attachments, against the target as written.** ``![[pic.png]]`` names
-       a file, so no ``.md`` is appended. Tried first so an embed can never
-       resolve onto a note that happens to be called ``pic.png.md`` (#1333).
+       a file, so no ``.md`` is appended (#1333).
     2. **Notes**, with ``.md`` appended when the target lacks it.
     3. **Aliases**, matched on the raw stem.
+
+    A target that :func:`~markdown_vault_mcp.utils.names_attachment`
+    classifies as an attachment stops after step 1, whether or not the file
+    is there. The note steps would append ``.md`` and hand a *missing*
+    ``pic.png`` to any note called ``pic.png.md``, reporting an existing link
+    to an unrelated note where the honest answer is a broken one. Extraction
+    made that classification when it declined to append ``.md``, so
+    resolution has to agree with it — which is why both call one predicate.
 
     Args:
         raw_target: The wikilink target as written, fragment included.
         attachment_paths: Vault-relative paths of allowlisted attachments.
         doc_paths: Vault-relative paths of indexed documents.
         alias_map: Lower-cased alias to the paths declaring it.
+        attachment_extensions: The effective attachment allowlist, used to
+            reach the same verdict extraction reached.
 
     Returns:
         The resolved vault-relative path, or ``None`` when nothing matches
@@ -335,15 +346,15 @@ def _resolve_one_wikilink(
         return None
 
     candidates = [p for p in attachment_paths if p == stem or p.endswith("/" + stem)]
-    if not candidates:
+    if not candidates and not names_attachment(stem, attachment_extensions):
         search_target = stem if stem.lower().endswith(".md") else stem + ".md"
         candidates = [
             p
             for p in doc_paths
             if p == search_target or p.endswith("/" + search_target)
         ]
-    if not candidates:
-        candidates = alias_map.get(stem.lower(), [])
+        if not candidates:
+            candidates = alias_map.get(stem.lower(), [])
     if not candidates:
         return None
     return min(candidates, key=len)
@@ -1984,7 +1995,12 @@ class FTSIndex:
         return [dict(row) for row in cur.fetchall()]
 
     @_retry_on_locked
-    def resolve_vault_wikilinks(self, *, attachment_paths: Sequence[str] = ()) -> int:
+    def resolve_vault_wikilinks(
+        self,
+        *,
+        attachment_paths: Sequence[str] = (),
+        attachment_extensions: frozenset[str] | None = None,
+    ) -> int:
         """Resolve vault-wide wikilink ``target_path`` values against the document set.
 
         Obsidian resolves bare wikilinks (e.g. ``[[Note]]``) by searching the
@@ -2037,6 +2053,10 @@ class FTSIndex:
             attachment_paths: Vault-relative paths of the allowlisted
                 attachments on disk. Empty means "notes only", which is the
                 pre-#1333 behaviour.
+            attachment_extensions: The effective allowlist, so a target
+                classified as an attachment is not resolved onto a note when
+                the file is missing. ``None`` classifies nothing as an
+                attachment, matching an empty *attachment_paths*.
 
         Returns:
             Number of link rows whose ``target_path`` was updated.
@@ -2085,6 +2105,7 @@ class FTSIndex:
                 attachment_paths=attachment_paths,
                 doc_paths=doc_paths,
                 alias_map=alias_map,
+                attachment_extensions=attachment_extensions or frozenset(),
             )
             if new_path is not None and new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))

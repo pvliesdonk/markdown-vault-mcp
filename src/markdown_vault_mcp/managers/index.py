@@ -539,7 +539,10 @@ class IndexManager:
         skipped = len(candidates) - len(notes)
 
         # Resolve vault-wide wikilinks now that all documents are indexed.
-        self._fts.resolve_vault_wikilinks(attachment_paths=self._attachment_paths())
+        self._fts.resolve_vault_wikilinks(
+            attachment_paths=self._attachment_paths(),
+            attachment_extensions=self._attachment_extensions,
+        )
 
         # Record skipped files (excluded, missing frontmatter, unparseable)
         # in tracker state too, so the first reindex() — including the boot
@@ -703,7 +706,10 @@ class IndexManager:
             vectors.save(embeddings_path)
 
         # Re-resolve vault-wide wikilinks.
-        self._fts.resolve_vault_wikilinks(attachment_paths=self._attachment_paths())
+        self._fts.resolve_vault_wikilinks(
+            attachment_paths=self._attachment_paths(),
+            attachment_extensions=self._attachment_extensions,
+        )
 
         # Rebuild tracker state from current FTS index contents.
         state_notes: list[ParsedNote] = [
@@ -1065,7 +1071,8 @@ class IndexManager:
             # Always restore link-graph consistency, even on per-path failures.
             try:
                 self._fts.resolve_vault_wikilinks(
-                    attachment_paths=self._attachment_paths()
+                    attachment_paths=self._attachment_paths(),
+                    attachment_extensions=self._attachment_extensions,
                 )
             except Exception:
                 logger.exception("process_dirty_paths: resolve_vault_wikilinks failed")

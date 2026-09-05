@@ -282,7 +282,12 @@ class GraphStore(Protocol):
         """Return the number of notes nothing links to."""
         ...
 
-    def resolve_vault_wikilinks(self, *, attachment_paths: Sequence[str] = ()) -> int:
+    def resolve_vault_wikilinks(
+        self,
+        *,
+        attachment_paths: Sequence[str] = (),
+        attachment_extensions: frozenset[str] | None = None,
+    ) -> int:
         """Resolve stored wikilink targets to real paths.
 
         A write, unlike the rest of this protocol: link targets are only
