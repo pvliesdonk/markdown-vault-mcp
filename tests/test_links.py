@@ -2425,6 +2425,30 @@ class TestAttachmentWikilinksResolveVaultWide:
         col.index.build_index()
         assert col.graph.get_outlinks("note.md")[0].target_path == "a/pic.png"
 
+    def test_an_empty_allowlist_resolves_no_attachments(self, tmp_path: Path) -> None:
+        """Nothing allowlisted means the scan is skipped entirely."""
+        src = tmp_path / "vault"
+        (src / "assets").mkdir(parents=True)
+        (src / "assets" / "pic.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (src / "note.md").write_text("![[pic.png]]\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=[])
+        col.index.build_index()
+        (broken,) = col.graph.get_broken_links()
+        assert broken.target_path == "pic.png.md"
+
+    def test_an_unreadable_entry_is_skipped_not_raised(self, tmp_path: Path) -> None:
+        """A racing delete or an unreadable component must not fail the build."""
+        src = tmp_path / "vault"
+        (src / "assets").mkdir(parents=True)
+        (src / "assets" / "pic.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (src / "note.md").write_text("![[pic.png]]\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=["png"])
+        from pathlib import Path as _RuntimePath
+
+        with patch.object(_RuntimePath, "is_file", side_effect=OSError("vanished")):
+            paths = col._index_mgr._attachment_paths()
+        assert paths == []
+
 
 # ---------------------------------------------------------------------------
 # The allowlist is build provenance (#1333, review round 1)

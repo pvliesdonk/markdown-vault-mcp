@@ -298,6 +298,57 @@ class ChunkingMeta(NamedTuple):
     semantics_version: int = 0
 
 
+def _resolve_one_wikilink(
+    raw_target: str,
+    *,
+    attachment_paths: Sequence[str],
+    doc_paths: Sequence[str],
+    alias_map: dict[str, list[str]],
+) -> str | None:
+    """Resolve one wikilink's ``raw_target`` to a vault path, or ``None``.
+
+    The vault-wide half of Obsidian's wikilink semantics, extracted from
+    :meth:`FTSIndex.resolve_vault_wikilinks` so the caller stays a batch loop.
+    Three populations are consulted in order, and the shortest match wins in
+    each — Obsidian's own tie-break:
+
+    1. **Attachments, against the target as written.** ``![[pic.png]]`` names
+       a file, so no ``.md`` is appended. Tried first so an embed can never
+       resolve onto a note that happens to be called ``pic.png.md`` (#1333).
+    2. **Notes**, with ``.md`` appended when the target lacks it.
+    3. **Aliases**, matched on the raw stem.
+
+    Args:
+        raw_target: The wikilink target as written, fragment included.
+        attachment_paths: Vault-relative paths of allowlisted attachments.
+        doc_paths: Vault-relative paths of indexed documents.
+        alias_map: Lower-cased alias to the paths declaring it.
+
+    Returns:
+        The resolved vault-relative path, or ``None`` when nothing matches
+        (a genuinely broken link) or the target is fragment-only.
+    """
+    stem = raw_target
+    if "#" in stem:
+        stem = stem[: stem.index("#")]
+    if not stem:
+        return None
+
+    candidates = [p for p in attachment_paths if p == stem or p.endswith("/" + stem)]
+    if not candidates:
+        search_target = stem if stem.lower().endswith(".md") else stem + ".md"
+        candidates = [
+            p
+            for p in doc_paths
+            if p == search_target or p.endswith("/" + search_target)
+        ]
+    if not candidates:
+        candidates = alias_map.get(stem.lower(), [])
+    if not candidates:
+        return None
+    return min(candidates, key=len)
+
+
 def _escape_like(value: str) -> str:
     """Escape SQLite LIKE special characters in ``value``.
 
@@ -2029,37 +2080,13 @@ class FTSIndex:
         # Resolve each wikilink in Python, then batch-UPDATE.
         updates: list[tuple[str, int]] = []
         for row in rows:
-            # Derive the search filename from raw_target:
-            # 1. Strip any trailing fragment (#heading).
-            stem = row["raw_target"]
-            if "#" in stem:
-                stem = stem[: stem.index("#")]
-            if not stem:
-                continue
-            # 2. An attachment is named as written — no .md is appended —
-            #    and is tried first so an embed never resolves onto a
-            #    same-named note (#1333).
-            candidates = [
-                p for p in attachment_paths if p == stem or p.endswith("/" + stem)
-            ]
-            # 3. Otherwise this names a note: append .md if not already there.
-            if not candidates:
-                search_target = stem if stem.lower().endswith(".md") else stem + ".md"
-                candidates = [
-                    p
-                    for p in doc_paths
-                    if p == search_target or p.endswith("/" + search_target)
-                ]
-            if not candidates:
-                # Fallback: check if the stem matches a document alias.
-                # Use the raw stem (without .md) for alias matching.
-                alias_candidates = alias_map.get(stem.lower(), [])
-                if alias_candidates:
-                    candidates = alias_candidates
-            if not candidates:
-                continue  # Genuinely broken — no document matches.
-            new_path = min(candidates, key=len)
-            if new_path != row["target_path"]:
+            new_path = _resolve_one_wikilink(
+                row["raw_target"],
+                attachment_paths=attachment_paths,
+                doc_paths=doc_paths,
+                alias_map=alias_map,
+            )
+            if new_path is not None and new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))
 
         with conn:
