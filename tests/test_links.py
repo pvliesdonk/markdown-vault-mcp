@@ -2204,6 +2204,40 @@ class TestPercentEncodedTargets:
         links = extract_links("[x](notes/50%25%20off.md)", "hub.md")
         assert links[0].target_path == "notes/50% off.md"
 
+    def test_an_encoded_separator_is_data_not_structure(self) -> None:
+        """``%2F`` names one impossible file, not a path with a folder in it.
+
+        Decoding it would resolve the link to the unrelated note actually at
+        ``dir/note.md``, giving it a false backlink and letting a rename
+        rewrite it (review round 1).
+        """
+        links = extract_links("[x](dir%2Fnote.md)", "hub.md")
+        assert links[0].target_path == "dir%2Fnote.md"
+
+    def test_an_encoded_separator_does_not_collide_with_a_real_note(self) -> None:
+        content = "[a](dir%2Fnote.md)\n\n[b](dir/note.md)\n"
+        targets = [lnk.target_path for lnk in extract_links(content, "hub.md")]
+        assert targets == ["dir%2Fnote.md", "dir/note.md"]
+
+    def test_an_invalid_utf8_escape_leaves_the_target_undecoded(self) -> None:
+        """``unquote`` would substitute U+FFFD, inventing a name.
+
+        Distinct malformed sequences would also collapse onto that one
+        target, so several broken links could share a false backlink.
+        """
+        links = extract_links("[x](bad%FF.md)", "hub.md")
+        assert links[0].target_path == "bad%FF.md"
+
+    def test_distinct_malformed_escapes_stay_distinct(self) -> None:
+        content = "[a](bad%FF.md)\n\n[b](bad%FE.md)\n"
+        targets = {lnk.target_path for lnk in extract_links(content, "hub.md")}
+        assert targets == {"bad%FF.md", "bad%FE.md"}
+
+    def test_valid_multibyte_escapes_still_decode(self) -> None:
+        """Strict decoding must not reject legitimate non-ASCII names."""
+        links = extract_links("[x](notes/caf%C3%A9.md)", "hub.md")
+        assert links[0].target_path == "notes/café.md"
+
     def test_wikilinks_are_not_decoded(self) -> None:
         """Obsidian writes wikilink targets literally; it never encodes them.
 

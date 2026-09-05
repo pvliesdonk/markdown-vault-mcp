@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-from markdown_vault_mcp.utils import apply_link_replacement, compute_new_raw_target
+from markdown_vault_mcp.utils import (
+    apply_link_replacement,
+    compute_new_raw_target,
+    decode_link_target,
+)
 
 
 class TestComputeNewRawTargetEncoded:
@@ -144,6 +148,43 @@ class TestComputeNewRawTargetEncoded:
                 old_path="notes/100%20plan.md",
             )
             == "notes/renamed"
+        )
+
+
+class TestDecodeLinkTarget:
+    """The shared decoder's two refusals (review round 1)."""
+
+    def test_an_encoded_separator_survives_decoding(self) -> None:
+        assert decode_link_target("dir%2Fnote.md") == "dir%2Fnote.md"
+
+    def test_a_lowercase_encoded_separator_is_canonicalised(self) -> None:
+        assert decode_link_target("a%2fb.md") == "a%2Fb.md"
+
+    def test_an_invalid_utf8_escape_leaves_the_whole_target(self) -> None:
+        assert decode_link_target("bad%FF.md") == "bad%FF.md"
+
+    def test_ordinary_escapes_decode(self) -> None:
+        assert decode_link_target("probe/b%5B1%5D.md") == "probe/b[1].md"
+
+    def test_a_lone_percent_is_left_alone(self) -> None:
+        assert decode_link_target("50%25 off.md") == "50% off.md"
+
+
+class TestComputeNewRawTargetRefusals:
+    """A target the decoder refuses must not be treated as encoded."""
+
+    def test_an_encoded_separator_target_is_not_re_encoded(self) -> None:
+        """It never decoded, so there is no encoding convention to preserve."""
+        assert (
+            compute_new_raw_target(
+                "markdown",
+                "dir%2Fnote.md",
+                None,
+                "p/renamed.md",
+                source_path="hub.md",
+                old_path="dir%2Fnote.md",
+            )
+            == "p/renamed.md"
         )
 
 

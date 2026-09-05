@@ -2040,6 +2040,17 @@ ordering rules matter:
 - **The fragment splits before the decode.** An encoded `%23` is a literal
   `#` in the file name; decoding first would read it as the fragment marker
   and truncate the target.
+- **Two escapes are refused rather than decoded**, because decoding them
+  would invent a target that resolves. An encoded separator (`%2F`) stays
+  encoded: it is path *data*, so `dir%2Fnote.md` names one file that cannot
+  exist, and decoding it would point the link at the unrelated note actually
+  at `dir/note.md`, complete with a false backlink and a rename that rewrites
+  it. An escape that is not valid UTF-8 (`bad%FF.md`) leaves the whole
+  destination undecoded, because `unquote`'s default replacement decoding
+  substitutes U+FFFD — inventing a name, and collapsing distinct malformed
+  sequences onto one target so several broken links could share a false
+  backlink. `decode_link_target` in `utils/links.py` is the single decoder,
+  shared by extraction and by the rename-shape comparison.
 - **`raw_target` keeps the spelling as written**, because it is what
   `apply_link_replacement` searches for in the file. Only `target_path` is
   decoded.

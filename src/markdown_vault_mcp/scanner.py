@@ -8,7 +8,6 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
-from urllib.parse import unquote
 
 import frontmatter
 import yaml
@@ -16,6 +15,7 @@ import yaml
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import Chunk, LinkInfo, ParsedNote, SkippedFile
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
+from markdown_vault_mcp.utils.links import decode_link_target
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
@@ -844,9 +844,10 @@ def _resolve_link_path(
         target = target[:idx]
 
     if decode_percent:
-        # unquote leaves a ``%`` that begins no valid escape alone, so a note
-        # genuinely named "50% off.md" survives a round trip.
-        target = unquote(target)
+        # An encoded separator stays encoded and an invalid-UTF-8 escape
+        # leaves the target undecoded, so neither invents a resolvable name;
+        # see :func:`~markdown_vault_mcp.utils.links.decode_link_target`.
+        target = decode_link_target(target)
 
     if not target:
         # Link with only a fragment — points to the source document itself.

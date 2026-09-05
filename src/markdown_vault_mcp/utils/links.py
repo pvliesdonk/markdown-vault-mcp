@@ -1,7 +1,8 @@
-"""Link-update helpers for file rename operations.
+"""Link target helpers: decoding, replacement computation, substitution.
 
-These functions compute replacement link targets and apply substitutions
-in file content when a note is renamed within the vault.
+:func:`decode_link_target` is shared with link extraction; the rest compute
+replacement link targets and apply substitutions in file content when a note
+is renamed within the vault.
 """
 
 from __future__ import annotations
@@ -15,6 +16,46 @@ from urllib.parse import quote, unquote
 #: already wrote percent-encoded. Only ``/`` — it is the path separator, and
 #: encoding it would change the link's structure rather than its spelling.
 _QUOTE_SAFE = "/"
+
+#: An encoded path separator. ``%2F`` is deliberately *not* decoded: a
+#: percent-escaped reserved character is data, not structure, so decoding it
+#: would turn ``dir%2Fnote.md`` — which names one impossible file — into a
+#: link to the unrelated note at ``dir/note.md``, complete with a false
+#: backlink and a rename that rewrites it.
+_RE_ENCODED_SEPARATOR = re.compile(r"%2[Ff]")
+
+
+def decode_link_target(target: str) -> str:
+    """Percent-decode a link destination without changing its structure.
+
+    CommonMark defines a markdown destination as a URL, so its escapes name
+    the same file the literal spelling does (#1332). Two escapes are refused
+    rather than decoded, because decoding them would invent a target:
+
+    * **An encoded separator** (``%2F``) stays encoded. It is path *data*,
+      not a path separator, so a target carrying one names a file that cannot
+      exist and must resolve to nothing rather than to the note whose real
+      path the decode would spell.
+    * **An escape sequence that is not valid UTF-8** (``bad%FF.md``) leaves
+      the whole destination undecoded. ``unquote`` would otherwise substitute
+      U+FFFD, which invents a name — and collapses distinct malformed
+      sequences onto one target, so several broken links could all acquire
+      the same false backlink.
+
+    Args:
+        target: The destination's path portion, fragment already split off.
+
+    Returns:
+        The decoded path, or *target* unchanged when it carries an escape
+        that is not valid UTF-8.
+    """
+    try:
+        return "%2F".join(
+            unquote(part, errors="strict")
+            for part in _RE_ENCODED_SEPARATOR.split(target)
+        )
+    except UnicodeDecodeError:
+        return target
 
 
 def compute_new_raw_target(
@@ -72,7 +113,7 @@ def compute_new_raw_target(
         # one — the same fidelity defect as #1105, reached by a different
         # route (#1332). Decode for the comparison; re-encode the answer only
         # if the author was encoding.
-        decoded_path_part = unquote(raw_path_part)
+        decoded_path_part = decode_link_target(raw_path_part)
         was_encoded = decoded_path_part != raw_path_part
 
         if raw_path_part.startswith("/"):
