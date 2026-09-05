@@ -17,11 +17,13 @@ from urllib.parse import quote, unquote
 #: encoding it would change the link's structure rather than its spelling.
 _QUOTE_SAFE = "/"
 
-#: An encoded path separator. ``%2F`` is deliberately *not* decoded: a
-#: percent-escaped reserved character is data, not structure, so decoding it
-#: would turn ``dir%2Fnote.md`` — which names one impossible file — into a
-#: link to the unrelated note at ``dir/note.md``, complete with a false
-#: backlink and a rename that rewrites it.
+#: An encoded path separator, which makes a destination unresolvable rather
+#: than merely undecoded. A percent-escaped reserved character is data, not
+#: structure, so ``dir%2Fnote.md`` names one path segment containing a slash.
+#: Decoding it would point the link at the unrelated note at ``dir/note.md``;
+#: keeping the raw spelling would point it at a file literally called
+#: ``dir%2Fnote.md``. Both are files the destination does not name, so
+#: :func:`decode_link_target` refuses it outright.
 _RE_ENCODED_SEPARATOR = re.compile(r"%2[Ff]")
 
 
@@ -116,9 +118,9 @@ def compute_new_raw_target(
         # relative-to-source branch and came back rewritten as a relative
         # one — the same fidelity defect as #1105, reached by a different
         # route (#1332). Decode for the comparison; re-encode the answer only
-        # if the author was encoding.
-        # A refused destination names no file, so there is no encoding
-        # convention to preserve: treat it as written.
+        # if the author was encoding. A refused destination names no file, so
+        # there is no encoding convention to preserve and it is compared as
+        # written — such a link is never stored, so this arm is defensive.
         decoded_path_part = decode_link_target(raw_path_part) or raw_path_part
         was_encoded = decoded_path_part != raw_path_part
 

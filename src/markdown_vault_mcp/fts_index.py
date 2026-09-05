@@ -248,8 +248,11 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #:
 #: Version 4 (#1332): a markdown or reference destination is percent-decoded
 #: before it is resolved, so a link written ``b%5B1%5D.md`` now stores the
-#: target ``b[1].md`` it always named. An index built by an older pipeline
-#: holds the undecoded target, which matches no document.
+#: target ``b[1].md`` it always named, and a destination whose escapes name
+#: no possible file (``dir%2Fnote.md``, ``bad%FF.md``) stores no row at all.
+#: An index built by an older pipeline holds the undecoded target for the
+#: first, and a row for the second that can match a file coincidentally
+#: named the same as the escape sequence.
 INDEX_SEMANTICS_VERSION = 4
 
 
