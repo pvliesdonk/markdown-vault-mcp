@@ -297,7 +297,7 @@ commits) reports `would_apply=false`. The push leg has no safe local
 
     - The pull **succeeds** (`pull.applied=true`,
       `pull.reason="conflicts_resolved_with_siblings"`).
-    - HEAD advances to the remote tip — the canonical path now reflects
+    - HEAD advances to the remote tip, so the canonical path now reflects
       the remote (remote wins).
     - The local versions that conflicted are preserved as
       `<basename>.conflict-mcp-<timestamp>.md` siblings on the same
@@ -371,8 +371,8 @@ WARNING markdown_vault_mcp.git.push_scheduler: git_push_failed cmd=... returncod
 
 Credentials are redacted. These lines were at `DEBUG` until
 [#1330](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1330), which
-meant a deployment running at `INFO` saw the transition and nothing else —
-and, because every retry was equally silent, could not tell a clone that was
+meant a deployment running at `INFO` saw the transition and nothing else.
+Because every retry was equally silent, it could not tell a clone that was
 still retrying from one that had stopped. Repetition is the point here: it is
 the evidence the retries are happening. Quieter still are the per-cycle
 details of a divergence the resolver is working through, which stay at
