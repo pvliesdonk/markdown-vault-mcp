@@ -33,6 +33,12 @@ release-PR model:
   pass CI.  ``prepared`` counts only when it is itself a stable ``X.Y.Z``:
   an rc in ``pyproject.toml`` must never make an rc pin in the published
   manifests pass CI (the markdown-vault-mcp#1053 class).
+- The prepare-time version guard judges a candidate by its stable base as
+  well as its own tag: after ``vX.Y.Z`` ships from a branch, the default
+  branch's next rc prepare computes the untagged ``X.Y.Z-rc.N+1``, and an
+  exact-tag check let it through to fail later in the notes promotion
+  (fastmcp-server-template#587).  The step's shell is executed here with
+  ``knope`` and ``gh`` stubbed, so the refusal is asserted, not grepped.
 - Tags-absent behavior fails loudly only when the repo demonstrably has
   releases (``CHANGELOG.md`` carries version sections) while no tags are
   visible — the template#387 failure mode is a tag-less checkout of a
@@ -42,7 +48,9 @@ release-PR model:
 from __future__ import annotations
 
 import json
+import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -51,6 +59,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 KNOPE_TOML = REPO_ROOT / "knope.toml"
@@ -410,9 +419,233 @@ def test_prepare_collision_step_covers_tags_and_open_release_prs() -> None:
         "the step must skip this dispatch's own prep branch"
     )
     assert "override_version" in step, "the refusals must name the override remedy"
+    assert "%-rc.*" in step, (
+        "the step must derive an rc's stable base — an exact-tag check lets an "
+        "rc through when its stable already shipped from another branch (#587)"
+    )
     assert "|| true" in step.split("gh pr list", 1)[1], (
         "the gh call must degrade to the tag-only check on API failure"
     )
+
+
+_RESERVE_STEP = "Refuse a version that is already tagged or reserved"
+
+
+def _reserve_step_script() -> str:
+    """The reservation step's ``run:`` script, ready for a plain ``bash``.
+
+    The one Actions expression inside the script is the channel flags
+    passed to knope's dry run; bash would reject its literal dollar-brace
+    opener as a bad substitution, and the stubbed ``knope`` ignores its
+    flags anyway.
+    """
+    workflow = yaml.safe_load(PREPARE_WORKFLOW.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["prepare"]["steps"]
+    step = next(s for s in steps if s.get("name") == _RESERVE_STEP)
+    return re.sub(r"\$\{\{[^}]*\}\}", "", str(step["run"]))
+
+
+@pytest.fixture
+def reserve_sandbox(tmp_path: Path) -> Path:
+    """A one-commit repo whose tags each test sets, plus a stub ``bin/``.
+
+    The step is run HERE, never against this checkout: a downstream's real
+    tags would otherwise leak into the collision check.
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def run(*args: str) -> None:
+        subprocess.run(args, cwd=repo, check=True, capture_output=True)
+
+    run("git", "init", "-q")
+    run("git", "config", "user.email", "reserve@test")
+    run("git", "config", "user.name", "reserve")
+    (repo / "pyproject.toml").write_text(
+        '[project]\nversion = "0.0.0"\n', encoding="utf-8"
+    )
+    run("git", "add", "-A")
+    run("git", "commit", "-q", "-m", "seed")
+    (tmp_path / "bin").mkdir()
+    return repo
+
+
+def _run_reserve_step(
+    sandbox: Path,
+    computed: str,
+    *,
+    reserved: dict[str, str] | None = None,
+    prep_branch: str = "knope/prepare/main",
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    """Run the real step against ``sandbox`` with ``knope`` and ``gh`` stubbed.
+
+    ``computed`` is the version knope's dry run would print; ``reserved``
+    maps other open prep heads to the version their committed
+    ``pyproject.toml`` carries.  The ``gh`` stub answers the two calls the
+    step makes — the open-PR head listing and the per-head file read —
+    with the post-``--jq`` output the real CLI would produce.  Returns the
+    completed process and whatever the step wrote to ``GITHUB_OUTPUT``.
+    """
+    bin_dir = sandbox.parent / "bin"
+    knope = bin_dir / "knope"
+    knope.write_text(
+        f"#!/bin/sh\necho 'Would add the following to pyproject.toml: {computed}'\n",
+        encoding="utf-8",
+    )
+    knope.chmod(0o755)
+    heads = reserved or {}
+    listing = "\n".join(f"    echo {shlex.quote(head)}" for head in heads) or "    :"
+    reads = "\n".join(
+        f"      *'ref={head}'*) printf '%s' 'version = \"{version}\"' | base64 ;;"
+        for head, version in heads.items()
+    )
+    gh = bin_dir / "gh"
+    gh.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  pr)\n"
+        f"{listing}\n"
+        "    ;;\n"
+        "  api)\n"
+        '    case "$2" in\n'
+        f"{reads}\n"
+        "      *) exit 1 ;;\n"
+        "    esac\n"
+        "    ;;\n"
+        "  *) exit 1 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    gh.chmod(0o755)
+    output = sandbox.parent / "github_output"
+    output.write_text("", encoding="utf-8")
+    env = {
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+        "HOME": str(sandbox.parent),
+        "GITHUB_OUTPUT": str(output),
+        "GITHUB_REF_NAME": "main",
+        "PREP_BRANCH": prep_branch,
+        "REPO": "example/project",
+        "GH_TOKEN": "stub",
+    }
+    # `bash -e`: what Actions runs a `run:` script under when no `shell:`
+    # is declared, so the step's exit status here is the step's on CI.
+    completed = subprocess.run(
+        ["bash", "-e", "-c", _reserve_step_script()],
+        cwd=sandbox,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed, output.read_text(encoding="utf-8")
+
+
+def _tag(sandbox: Path, *tags: str) -> None:
+    for tag in tags:
+        subprocess.run(
+            ["git", "tag", tag], cwd=sandbox, check=True, capture_output=True
+        )
+
+
+def test_reserve_step_refuses_an_exactly_tagged_version(
+    reserve_sandbox: Path,
+) -> None:
+    """The original collision: the computed stable already carries a tag."""
+    _tag(reserve_sandbox, "v4.1.0")
+    result, output = _run_reserve_step(reserve_sandbox, "4.1.0")
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "v4.1.0 is already tagged" in result.stdout
+    assert "override_version" in result.stdout
+    assert "version=" not in output
+
+
+def test_reserve_step_refuses_an_rc_whose_stable_base_is_tagged(
+    reserve_sandbox: Path,
+) -> None:
+    """An rc for an already-shipped version refuses at the guard (#587).
+
+    After ``vX.Y.0`` ships from ``release/X.Y``, the default branch's
+    stamps still read ``X.Y.0-rc.N`` and its next rc prepare computes
+    ``X.Y.0-rc.N+1`` — a tag that does not exist, so an exact-tag check
+    lets it through to fail one step later in the notes promotion with a
+    message that never mentions the collision.  The guard must ask
+    whether the rc's stable base is tagged, and refuse there with the
+    remedies.
+    """
+    _tag(reserve_sandbox, "v4.1.0-rc.0", "v4.1.0")
+    result, output = _run_reserve_step(reserve_sandbox, "4.1.0-rc.1")
+    assert result.returncode != 0, (
+        "an rc for an already-tagged stable passed the guard: "
+        f"{result.stdout}{result.stderr}"
+    )
+    assert "v4.1.0 is already tagged" in result.stdout, result.stdout
+    assert "override_version" in result.stdout, "the refusal must name the remedy"
+    assert "version=" not in output
+
+
+def test_reserve_step_admits_an_rc_whose_stable_base_is_untagged(
+    reserve_sandbox: Path,
+) -> None:
+    """The ordinary rc cycle — earlier rcs tagged, stable not — proceeds."""
+    _tag(reserve_sandbox, "v4.0.0", "v4.1.0-rc.0")
+    result, output = _run_reserve_step(reserve_sandbox, "4.1.0-rc.1")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "version=4.1.0-rc.1" in output
+
+
+def test_reserve_step_refuses_an_rc_whose_stable_base_is_reserved(
+    reserve_sandbox: Path,
+) -> None:
+    """An open stable release PR for ``X.Y.Z`` blocks an ``X.Y.Z-rc.N``.
+
+    The reservation half compared exact versions too: a candidate and the
+    stable it is a candidate for, in flight from different bases, would
+    both pass, and with merge order uncontrolled the stable could land
+    first, tagging the rc behind its own stable.
+    """
+    result, output = _run_reserve_step(
+        reserve_sandbox,
+        "4.1.0-rc.1",
+        reserved={"knope/prepare/release-4.1": "4.1.0"},
+    )
+    assert result.returncode != 0, (
+        f"an rc for a reserved stable passed the guard: {result.stdout}{result.stderr}"
+    )
+    assert "knope/prepare/release-4.1" in result.stdout, result.stdout
+    assert "version=" not in output
+
+
+def test_reserve_step_refuses_a_stable_whose_rc_is_reserved(
+    reserve_sandbox: Path,
+) -> None:
+    """The mirror image: an open rc PR for ``X.Y.Z`` blocks stable ``X.Y.Z``."""
+    result, output = _run_reserve_step(
+        reserve_sandbox,
+        "4.1.0",
+        reserved={"knope/prepare/main": "4.1.0-rc.1"},
+        prep_branch="knope/prepare/release-4.1",
+    )
+    assert result.returncode != 0, (
+        "a stable with an rc reserved elsewhere passed the guard: "
+        f"{result.stdout}{result.stderr}"
+    )
+    assert "knope/prepare/main" in result.stdout, result.stdout
+    assert "version=" not in output
+
+
+def test_reserve_step_admits_an_rc_of_another_series(
+    reserve_sandbox: Path,
+) -> None:
+    """A reservation for a DIFFERENT series is no collision at all."""
+    _tag(reserve_sandbox, "v4.0.0")
+    result, output = _run_reserve_step(
+        reserve_sandbox,
+        "4.1.0-rc.0",
+        reserved={"knope/prepare/release-4.0": "4.0.1"},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "version=4.1.0-rc.0" in output
 
 
 def test_prepare_concurrency_group_is_global() -> None:
