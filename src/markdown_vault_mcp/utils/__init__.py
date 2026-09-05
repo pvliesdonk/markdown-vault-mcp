@@ -190,7 +190,7 @@ def attachment_target_exists(
     The test mirrors what ``read`` will actually serve: non-``.md``,
     allowlisted, and present on disk. It deliberately does **not** apply the
     extension-shape guard that
-    :func:`~markdown_vault_mcp.scanner._names_attachment` uses — that one
+    :func:`~markdown_vault_mcp.utils.names_attachment` uses — that one
     decides whether to append ``.md`` at extraction time and must not read an
     extensionless note title as a file type, whereas under the ``*`` wildcard
     ``read`` really does serve an extensionless ``Makefile``, so this

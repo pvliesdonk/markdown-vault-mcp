@@ -251,7 +251,17 @@ def names_attachment(target: str, extensions: frozenset[str]) -> bool:
 
     Returns:
         ``True`` when *target* carries an extension naming an attachment.
+        Always ``False`` for a ``.md`` target.
     """
+    if has_md_suffix(target):
+        # A ``.md`` target is a note in every configuration, including under
+        # the ``*`` wildcard, where ``md`` would otherwise be an
+        # extension-shaped suffix that matches everything. Extraction reaches
+        # this verdict by short-circuiting before it asks; saying it here too
+        # is what lets resolution ask the same question and get the same
+        # answer, instead of classifying an explicit ``[[note.md]]`` as an
+        # attachment and refusing to resolve it.
+        return False
     suffix = artifact_suffix(target)
     if not suffix:
         # No extension at all — a note name in every configuration.

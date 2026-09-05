@@ -2564,6 +2564,46 @@ class TestMissingAttachmentStaysBroken:
             is None
         )
 
+    def test_an_explicit_md_wikilink_resolves_under_the_wildcard(self) -> None:
+        """A ``.md`` target is a note in every configuration.
+
+        Under ``*`` every extension-shaped suffix names an attachment, and
+        ``md`` is one — so classifying by suffix alone made an explicit
+        ``[[note.md]]`` unresolvable. Extraction never hit that, because it
+        short-circuits on the ``.md`` before asking; the two stages have to
+        agree, so the predicate answers it the same way.
+        """
+        from markdown_vault_mcp.fts_index import _resolve_one_wikilink
+
+        assert (
+            _resolve_one_wikilink(
+                "note.md",
+                attachment_paths=[],
+                doc_paths=["notes/note.md"],
+                alias_map={},
+                attachment_extensions=frozenset({"*"}),
+            )
+            == "notes/note.md"
+        )
+
+    def test_an_md_target_is_never_an_attachment(self) -> None:
+        from markdown_vault_mcp.utils import names_attachment
+
+        assert names_attachment("note.md", frozenset({"*"})) is False
+        assert names_attachment("note.MD", frozenset({"*"})) is False
+        assert names_attachment("diagram.png", frozenset({"*"})) is True
+
+    def test_an_explicit_md_wikilink_resolves_end_to_end(self, tmp_path: Path) -> None:
+        src = tmp_path / "vault"
+        (src / "notes").mkdir(parents=True)
+        (src / "notes" / "note.md").write_text("# N\n", encoding="utf-8")
+        (src / "hub.md").write_text("[[note.md]]\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=["*"])
+        col.index.build_index()
+        (outlink,) = col.graph.get_outlinks("hub.md")
+        assert outlink.target_path == "notes/note.md"
+        assert outlink.exists is True
+
     def test_a_note_target_still_uses_the_note_population(self) -> None:
         """The guard must not disable ordinary note resolution."""
         from markdown_vault_mcp.fts_index import _resolve_one_wikilink

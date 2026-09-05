@@ -47,7 +47,7 @@ class TestAttachmentTargetExists:
     def test_wildcard_serves_an_extensionless_file(self, vault: Path) -> None:
         """No extension-shape guard here: ``read`` serves this under ``*``.
 
-        This is the deliberate asymmetry with ``scanner._names_attachment``,
+        This is the deliberate asymmetry with ``names_attachment``,
         which does apply a shape guard because it answers a different
         question (whether to append ``.md`` at extraction time).
         """

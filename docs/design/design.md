@@ -2097,18 +2097,33 @@ vault-wide resolution rules rather than relative path resolution:
   `diagram.png.md`, a target that cannot exist, so every image and PDF embed
   was permanently in `get_broken_links` and inflated `broken_link_count`
   (#1333). This is why `IndexManager` (and through it `parse_note` /
-  `scan_directory`) carries the allowlist. Under the `*` wildcard the suffix
-  must additionally *look* like an extension (`[A-Za-z0-9]{1,8}`), or the
-  note title `Version 2.0 plan` would read as a `0 plan` attachment. Whether
-  an embed should be recorded as a link at all — `_extract_inline_links`
-  skips `![alt](src)` — is a separate question, deliberately left open.
+  `scan_directory`) carries the allowlist. The classification rule itself is
+  described under the three stages below. Whether an embed should be
+  recorded as a link at all — `_extract_inline_links` skips `![alt](src)` —
+  is a separate question, deliberately left open.
 
-**Attachment targets need two stages, because attachments are not indexed.**
-`list_documents(include_attachments=True)` walks the filesystem; `documents`
-holds notes only. Extraction therefore cannot be the whole fix, and neither
-can `resolve_vault_wikilinks()`, which has no rows to match an attachment
-against. The layers split cleanly:
+**Attachment targets need three stages, because attachments are not
+indexed.** `list_documents(include_attachments=True)` walks the filesystem;
+`documents` holds notes only. Extraction alone therefore cannot be the fix,
+and the vault-wide resolver cannot find an attachment in rows that do not
+exist. The layers split as follows:
 
+- **Extraction classifies the name.** `utils.names_attachment()` decides
+  whether `.md` is appended. It is the *name*'s kind, not the file's
+  presence: a `.md` target is a note in every configuration, and otherwise
+  the suffix must be allowlisted — plus, under the `*` wildcard,
+  extension-*shaped* (`[A-Za-z0-9]{1,8}`), so the note title
+  `Version 2.0 plan` does not read as a `0 plan` attachment.
+- **Resolution asks the same predicate.** `resolve_vault_wikilinks()`
+  receives the attachment population (supplied by `IndexManager`, one walk
+  per pass) and matches it against the target *as written*, before the
+  `.md` note fallback. A target `names_attachment()` classifies as an
+  attachment stops there whether or not the file exists — otherwise a
+  missing `pic.png` gains `.md` and matches any note called `pic.png.md`,
+  reporting an existing link to something unrelated. Extraction made that
+  classification when it declined to append `.md`; resolution has to agree,
+  which is why one predicate serves both. Two stages disagreeing about what
+  a name *is* is the whole defect class here.
 - **Index truth stays index truth.** `FTSIndex.get_broken_links()` and
   `count_broken_links()` answer "is this target an indexed document", which
   is the only question the index can answer, and their docstrings say so.
@@ -2120,17 +2135,34 @@ against. The layers split cleanly:
   the same rows through the same predicate, so `stats.broken_link_count`
   cannot disagree with the list). It covers markdown links to attachments
   (`[x](data/file.txt)`) as well as wikilink embeds — the same defect class.
-- **The two attachment tests are deliberately different.**
-  `_names_attachment` in the scanner decides whether to append `.md`, and
-  under the `*` wildcard requires an extension-*shaped* suffix so a dotted
-  note title stays a note. `attachment_target_exists` mirrors what `read`
-  will actually serve, where under the wildcard an extensionless `Makefile`
-  *is* an attachment — so it applies no shape guard. They answer different
-  questions and must not be unified.
+
+**`names_attachment` and `attachment_target_exists` are deliberately
+different and must not be unified.** The first asks what a *name* is, and
+applies the wildcard shape guard. The second mirrors what `read` will
+actually serve, where under the wildcard an extensionless `Makefile` *is* an
+attachment — so it applies no shape guard. Different questions, different
+answers.
 
 The filesystem check runs only for a target that is non-`.md` and
 allowlisted, so a vault whose broken links are all notes pays nothing beyond
 the query the index already ran.
+
+**An attachment mutation re-resolves the graph.** Attachments carry no index
+rows, so `write_attachment`, and the attachment branches of `delete` and
+`rename`, mark the path dirty purely for the effect on resolution: the
+per-path step is a no-op for an unindexed file, and the
+`resolve_vault_wikilinks()` pass `process_dirty_paths` always ends with is
+the point. Without it an embed written before its file stayed unresolved
+until an unrelated write or a manual reindex.
+
+**The allowlist is build provenance.** Because extraction reads it, it is
+the first *content* setting to change how a note's rows derive from its
+bytes, so it rides in `ChunkingMeta` and is compared on warm restart.
+`canonical_attachment_extensions()` renders the default set as `""` (an
+index predating the key compares equal) and an *explicitly empty* allowlist
+as a distinct sentinel — the two are different configurations deriving
+different rows, and collapsing them let a switch between them keep serving
+the old interpretation.
 
 - **Alias resolution**: When no path match is found,
   `resolve_vault_wikilinks()` also checks the `document_aliases` table.
