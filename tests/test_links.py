@@ -2227,6 +2227,12 @@ class TestPercentEncodedTargets:
         """
         assert extract_links("[x](bad%FF.md)", "hub.md") == []
 
+    def test_a_reference_definition_can_be_refused_too(self) -> None:
+        """The refusal applies wherever a destination is decoded, not only
+        to inline links."""
+        content = "[x][ref]\n\n[ref]: dir%2Fnote.md"
+        assert extract_links(content, "hub.md") == []
+
     def test_a_doubly_encoded_percent_still_reaches_its_file(self) -> None:
         """A file genuinely named ``dir%2Fnote.md`` is linked by encoding the
         percent, and that destination is decoded rather than refused."""
