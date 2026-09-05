@@ -2269,3 +2269,11 @@ class TestRenameRewritesEncodedLinks:
         body = (tmp_path / "vault" / "hub.md").read_text(encoding="utf-8")
         assert "[encoded](/probe/c%5B2%5D.md)" in body
         assert "[literal](/probe/c[2].md)" in body
+
+    def test_move_folder_rewrites_encoded_links_too(self, tmp_path: Path) -> None:
+        """rename and move_folder share one rewrite path, so both are fixed."""
+        col = self._vault(tmp_path)
+        col.writer.move_folder("probe", "moved")
+        body = (tmp_path / "vault" / "hub.md").read_text(encoding="utf-8")
+        assert "[encoded](/moved/b%5B1%5D.md)" in body
+        assert "[literal](/moved/b[1].md)" in body
