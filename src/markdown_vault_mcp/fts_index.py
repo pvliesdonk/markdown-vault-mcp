@@ -245,7 +245,12 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: ``documents``. An index built by an older pipeline has no tombstones, so
 #: its row absences are ambiguous (skipped vs. deleted); the bump forces the
 #: one cold rebuild that materialises tombstones for existing skips.
-INDEX_SEMANTICS_VERSION = 3
+#:
+#: Version 4 (#1332): a markdown or reference destination is percent-decoded
+#: before it is resolved, so a link written ``b%5B1%5D.md`` now stores the
+#: target ``b[1].md`` it always named. An index built by an older pipeline
+#: holds the undecoded target, which matches no document.
+INDEX_SEMANTICS_VERSION = 4
 
 
 class ChunkingMeta(NamedTuple):

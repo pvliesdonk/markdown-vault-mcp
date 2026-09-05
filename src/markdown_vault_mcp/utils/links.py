@@ -9,6 +9,12 @@ from __future__ import annotations
 import os.path as osp
 import re
 from pathlib import Path
+from urllib.parse import quote, unquote
+
+#: Characters left unescaped when re-encoding a destination that the author
+#: already wrote percent-encoded. Only ``/`` — it is the path separator, and
+#: encoding it would change the link's structure rather than its spelling.
+_QUOTE_SAFE = "/"
 
 
 def compute_new_raw_target(
@@ -37,7 +43,9 @@ def compute_new_raw_target(
 
     Returns:
         The replacement raw_target string to write into the source file,
-        written in the same shape the original used.
+        written in the same shape *and the same spelling* the original used:
+        a destination the author percent-encoded is re-encoded, one written
+        literally stays literal (#1105, #1332).
     """
     if link_type == "wikilink":
         # Determine whether the original wikilink included the .md extension.
@@ -57,9 +65,19 @@ def compute_new_raw_target(
         # way, but silently converting one spelling to another undoes a
         # vault's OKF link conformance on any rename or folder move (#1105).
         raw_path_part = raw_target.split("#")[0]
+        # The shape test below compares the destination to old_path, and
+        # old_path is never encoded. Comparing the encoded spelling therefore
+        # never matched, so a root-relative encoded link fell into the
+        # relative-to-source branch and came back rewritten as a relative
+        # one — the same fidelity defect as #1105, reached by a different
+        # route (#1332). Decode for the comparison; re-encode the answer only
+        # if the author was encoding.
+        decoded_path_part = unquote(raw_path_part)
+        was_encoded = decoded_path_part != raw_path_part
+
         if raw_path_part.startswith("/"):
             new_path_part = "/" + new_path
-        elif source_path and old_path and raw_path_part != old_path:
+        elif source_path and old_path and decoded_path_part != old_path:
             # Relative-to-source link: compute the correct new relative path so
             # cross-directory links continue to resolve after the rename.
             source_dir = str(Path(source_path).parent)
@@ -68,6 +86,8 @@ def compute_new_raw_target(
             new_path_part = new_rel.replace("\\", "/")
         else:
             new_path_part = new_path
+        if was_encoded:
+            new_path_part = quote(new_path_part, safe=_QUOTE_SAFE)
         return new_path_part + ("#" + fragment if fragment else "")
 
 

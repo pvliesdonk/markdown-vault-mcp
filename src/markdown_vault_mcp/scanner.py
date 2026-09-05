@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from urllib.parse import unquote
 
 import frontmatter
 import yaml
@@ -810,7 +811,9 @@ def _strip_code_spans(content: str) -> str:
     return content
 
 
-def _resolve_link_path(target: str, source_rel: str) -> tuple[str, str | None]:
+def _resolve_link_path(
+    target: str, source_rel: str, *, decode_percent: bool = False
+) -> tuple[str, str | None]:
     """Resolve a raw link target against the source document's directory.
 
     Splits off any fragment identifier (``#heading``), resolves the path
@@ -821,18 +824,29 @@ def _resolve_link_path(target: str, source_rel: str) -> tuple[str, str | None]:
         target: Raw target string from the link (may include ``#fragment``).
         source_rel: Relative POSIX path of the source document
             (e.g. ``"Journal/2024/today.md"``).
+        decode_percent: Whether to percent-decode the path portion. True for
+            markdown and reference links, whose destination CommonMark
+            defines as a URL; False for wikilinks, which Obsidian writes
+            literally (#1332).
 
     Returns:
         A ``(resolved_path, fragment)`` tuple where ``resolved_path`` is the
         vault-relative POSIX path with forward slashes and ``fragment`` is the
         heading identifier or ``None``.
     """
-    # Split fragment.
+    # Split fragment BEFORE decoding: an encoded ``%23`` is a literal ``#`` in
+    # the file name, and decoding first would read it as the fragment marker
+    # and truncate the target (#1332).
     fragment: str | None = None
     if "#" in target:
         idx = target.index("#")
         fragment = target[idx + 1 :] or None
         target = target[:idx]
+
+    if decode_percent:
+        # unquote leaves a ``%`` that begins no valid escape alone, so a note
+        # genuinely named "50% off.md" survives a round trip.
+        target = unquote(target)
 
     if not target:
         # Link with only a fragment — points to the source document itself.
@@ -915,7 +929,9 @@ def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
         if raw_target.startswith("#"):
             # Pure anchor link — skip (points to a section in the same doc).
             continue
-        resolved, fragment = _resolve_link_path(raw_target, source_path)
+        resolved, fragment = _resolve_link_path(
+            raw_target, source_path, decode_percent=True
+        )
         links.append(
             LinkInfo(
                 target_path=resolved,
@@ -975,7 +991,9 @@ def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
             continue
         if raw_target.startswith("#"):
             continue
-        resolved, fragment = _resolve_link_path(raw_target, source_path)
+        resolved, fragment = _resolve_link_path(
+            raw_target, source_path, decode_percent=True
+        )
         links.append(
             LinkInfo(
                 target_path=resolved,

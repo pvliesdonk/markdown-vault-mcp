@@ -2029,6 +2029,37 @@ to `Journal/sibling.md`. A leading slash makes the target vault-root-relative
 document's location — this is OKF's recommended link style. Traversal above the
 vault root clamps to root.
 
+**A markdown destination is a URL, so its percent-escapes are decoded.**
+`[x](/probe/b%5B1%5D.md)` names `probe/b[1].md`, and percent-encoding is the
+canonical way to write a destination containing `[`, `]`, spaces or
+parentheses — exactly the note names #1303 / #1305 taught the git layer to
+handle. Nothing decoded them, so the encoded spelling resolved to nothing,
+produced no backlink, and was skipped by a link-updating rename (#1332). Two
+ordering rules matter:
+
+- **The fragment splits before the decode.** An encoded `%23` is a literal
+  `#` in the file name; decoding first would read it as the fragment marker
+  and truncate the target.
+- **`raw_target` keeps the spelling as written**, because it is what
+  `apply_link_replacement` searches for in the file. Only `target_path` is
+  decoded.
+
+**Wikilinks are not decoded.** Obsidian writes wikilink targets literally, so
+`%20` in one is part of the name; decoding would break a note genuinely
+carrying a `%`. This is the one place the two link families deliberately
+disagree, and `_resolve_link_path` takes a `decode_percent` flag rather than
+guessing.
+
+**A rewrite keeps the spelling, not just the shape.** `compute_new_raw_target`
+detects a link's shape by comparing its destination to `old_path`, which is
+never encoded — so an encoded root-relative link never compared equal and fell
+into the relative-to-source branch, coming back rewritten as a relative link.
+That is the #1105 fidelity defect reached by a second route. The comparison is
+now made against the decoded destination, and the replacement is re-encoded
+(`quote`, `safe="/"`) only when the original was encoded. No encoding is
+introduced where the author used none, which also means a rename cannot repair
+a destination whose new name would need escaping to parse.
+
 **Fragment handling**: `path.md#heading` splits into `target_path=path.md` and
 `fragment=heading`. The fragment is preserved on `LinkInfo` but the target path
 is stored without it.
