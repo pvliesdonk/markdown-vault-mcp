@@ -476,9 +476,9 @@ class _LockObservingTracker(SyncHealthTracker):
         self._observed_lock = lock
         self.held: list[bool] = []
 
-    def push_failed(self, reason: str) -> None:
+    def push_failed(self, reason: str, detail: str | None = None) -> None:
         self.held.append(self._observed_lock.locked())
-        super().push_failed(reason)
+        super().push_failed(reason, detail)
 
     def push_succeeded(self) -> None:
         self.held.append(self._observed_lock.locked())
@@ -568,3 +568,134 @@ class TestOutcomesAreRecordedUnderTheStrategyLock:
         strategy.force_pull()
 
         assert tracker.held == [True]
+
+
+# ---------------------------------------------------------------------------
+# A stranded clone says why, at the level deployments run at (#1330)
+# ---------------------------------------------------------------------------
+
+
+class TestPushFailureIsDiagnosable:
+    """What an operator can learn from the log when pushes stop landing.
+
+    Observed on a live vault: the only push-related line in the whole
+    container log was the transition into the unsynced state, naming the
+    generic ``push_failed`` bucket. Git's own words sat at DEBUG, and the
+    deployment ran at INFO.
+    """
+
+    @staticmethod
+    def _rejected() -> subprocess.CalledProcessError:
+        return subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["git", "push", "origin"],
+            stderr=(
+                "remote: GitLab: You are not allowed to push code to "
+                "protected branches on this project."
+            ),
+        )
+
+    def test_the_per_attempt_line_carries_git_stderr_at_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+
+        with (
+            patch(
+                "markdown_vault_mcp.git.push_scheduler._push",
+                side_effect=self._rejected(),
+            ),
+            caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"),
+        ):
+            strategy._push_scheduler.do_push_safe()
+
+        line = next(r for r in caplog.records if "git_push_failed" in r.message)
+        assert line.levelno == logging.WARNING
+        assert "protected branches" in line.getMessage()
+
+    def test_every_retry_logs_so_retrying_is_distinguishable_from_stopped(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The transition line fires once; the attempts are what repeat."""
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+
+        with (
+            patch(
+                "markdown_vault_mcp.git.push_scheduler._push",
+                side_effect=self._rejected(),
+            ),
+            caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"),
+        ):
+            for _ in range(3):
+                strategy._push_pending = True
+                strategy._push_scheduler.do_push_safe()
+
+        assert len([r for r in caplog.records if "git_push_failed" in r.message]) == 3
+
+    def test_the_transition_line_names_the_cause_not_just_the_bucket(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """``push_failed`` is the bucket every unrecognised stderr lands in."""
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+
+        with (
+            patch(
+                "markdown_vault_mcp.git.push_scheduler._push",
+                side_effect=self._rejected(),
+            ),
+            caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
+        ):
+            strategy._push_scheduler.do_push_safe()
+
+        line = next(r for r in caplog.records if "git_remote_unsynced" in r.message)
+        assert "protected branches" in line.getMessage()
+
+    def test_a_missing_cause_reads_as_unavailable_not_none(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """An outcome with no hint still produces a readable line."""
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+
+        with (
+            patch(
+                "markdown_vault_mcp.git.push_scheduler._push",
+                side_effect=OSError("boom"),
+            ),
+            caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"),
+        ):
+            strategy._push_scheduler.do_push_safe()
+
+        line = next(r for r in caplog.records if "git_remote_unsynced" in r.message)
+        assert "cause=" in line.message
+        assert "None" not in line.getMessage()
+
+    def test_the_token_is_still_redacted_at_the_new_level(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Raising the level must not raise a secret with it."""
+        secret = "glpat_secret_abc123"
+        strategy = GitWriteStrategy(token=secret, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+        exc = subprocess.CalledProcessError(
+            returncode=128,
+            cmd=["git", "push", "origin"],
+            stderr=f"fatal: authentication failed — token={secret}",
+        )
+
+        with (
+            patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=exc),
+            caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"),
+        ):
+            strategy._push_scheduler.do_push_safe()
+
+        text = " ".join(r.getMessage() for r in caplog.records)
+        assert secret not in text
+        assert "***" in text

@@ -1722,11 +1722,20 @@ def _path_at_ref(raw: str, cur_rel: str, ref: str) -> str:
                 "'get_history' to find a revision this note actually has."
             )
         elif status.startswith("C") and paths[-1] == tracked:
+            # The copy source is git's similarity guess, not a note the caller
+            # asked about: two short notes sharing frontmatter scaffolding
+            # clear the rename threshold easily. Naming it as the thing to
+            # read invites restoring unrelated content, and the documented
+            # next step after a revision read is to write it back, so this
+            # branch points at 'get_history' the way the 'A' branch above
+            # does (#1336). The source is still named, because it is what
+            # git said and it explains the refusal.
             raise ValueError(
                 f"{tracked!r} appears as a copy of {paths[0]!r} rather than as a "
                 "continuation of it, so the note now at that path did not exist "
-                f"at that revision. Read {paths[0]!r} at {ref!r} instead if the "
-                "content you want is the one it was copied from."
+                "at that revision. The copy source is git's similarity match, "
+                "not necessarily related to what you asked for; use "
+                "'get_history' to find a revision this note actually has."
             )
         elif status[0] not in ("D", "M", "T") or paths[0] != tracked:
             raise ValueError(

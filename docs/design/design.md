@@ -3848,17 +3848,31 @@ path reports it.
   atomically. The strategy-wide lock is held across a whole fetch + merge, so
   reading health under it would make every write response block behind a
   pull.
-- **The log marks transitions.** Entering the state logs once at ERROR
-  (`git_remote_unsynced`), recovery once at INFO (`git_remote_resynced`). The
-  per-attempt lines behind the conditions moved to DEBUG, where they keep the
-  git stderr: the rejected push in `PushScheduler`, and on the pull side the
-  conflict-resolution loop cap, the "conflict resolution failed" line, and the
-  sibling-commit failure — the three that repeated every cycle in the reported
-  incident. Two classes stay loud: an unexpected exception on either path
-  (a bug, not a cycle), and a failure that can leave the working tree
-  inconsistent (`abort_in_progress_rebase`, `restore_upstream_paths`). The
-  repeating per-cycle warning is what let the incident run for hours
-  unnoticed.
+- **The log marks transitions, and the push attempts behind them.** Entering
+  the state logs once at ERROR (`git_remote_unsynced`), recovery once at INFO
+  (`git_remote_resynced`). The transition carries a `cause=` field — the git
+  stderr the outcome came with — because `push_failed` is the bucket every
+  unrecognised message lands in and names a state rather than a problem
+  (#1330). `SyncHealthTracker.push_failed` takes that detail as a second
+  argument, and every call site passes it: the two in `PushScheduler`
+  (deferred and startup) and `GitWriteStrategy._record_push`, which forwards
+  `PushResult.hint`.
+- **Push attempts log at WARNING; pull-cycle detail stays at DEBUG.** #1287
+  moved the per-attempt lines to DEBUG to stop a per-cycle warning from
+  drowning the transition. That was right for the pull side — the
+  conflict-resolution loop cap, the "conflict resolution failed" line, and
+  the sibling-commit failure repeated every cycle in the reported incident,
+  and they stay at DEBUG. It was wrong for the push side (#1330): a rejected
+  push is the only evidence that retries are still happening, and hiding it
+  at DEBUG left an operator on a deployment running at INFO unable to
+  distinguish a clone that was still retrying from one that had stopped, or
+  to see what git said. Both push paths are back at WARNING with redacted
+  stderr; the fetch leg was already there. Two classes stay loud for their
+  own reasons: an unexpected exception on either path (a bug, not a cycle),
+  and a failure that can leave the working tree inconsistent
+  (`abort_in_progress_rebase`, `restore_upstream_paths`). The guidance the
+  incident produced still holds — alert on the transitions, not the
+  attempts.
 
 Every vault-mutating write tool passes its result through
 `attach_remote_health`, which adds a `remote` object while the clone is
