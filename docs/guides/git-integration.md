@@ -7,9 +7,47 @@ Use this guide to choose and configure the right git mode for your deployment.
 1. **Managed** (`GIT_REPO_URL` + `GIT_TOKEN`)
    The server owns clone, periodic pull, commit, and deferred push.
 2. **Unmanaged / commit-only** (no `GIT_REPO_URL`, existing git repo)
-   The server stages and commits writes, but never pulls or pushes.
+   The server commits writes (one commit per tool call), but never pulls or pushes.
 3. **No-git** (default)
    The vault is treated as a plain directory with no git operations.
+
+## What a commit covers
+
+In both git modes, the commit boundary is the MCP tool call, not the file.
+A call that wrote one file commits under that file's path
+(`write: notes/one.md`), so an ordinary vault's log reads as it always
+did. A call that touched many files, such as `move_folder`, `rename` with
+`update_links=True`, or `okf_convert_links`, produces one commit with the
+subject `<tool>: N files`, where a per-file boundary produced one commit per
+file ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)).
+No setting changes this. In managed mode, the deferred push sends
+whatever commits accumulated during the idle delay, however many calls
+produced them.
+
+## Getting an overwritten note back
+
+On a git-backed vault, a `write` that replaces an existing note returns
+`previous_revision`: the commit holding the content it replaced. Pass that
+SHA to `read` as `revision=` and the replaced content comes back, ready to
+write again:
+
+```text
+write(path, content=...)              → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")        → the replaced content
+```
+
+A SHA from `get_history` works the same way, which is also how a note
+deleted since is recovered: read it at a revision that still has it. Pass
+the name the note has today; a rename since that revision is followed.
+
+Two limits. `previous_revision` is absent when no commit provably holds the
+replaced content: a newly created note, or two writes in quick succession
+where the first never reached a commit. Content that never reached a commit
+is not recoverable from git at all. Separately, `read` fails rather than
+returning content where git's records do not connect the revision to
+today's note, because the next thing a caller does with the result is write
+it back. The full rules, including the cases that fail, are in
+[Reading an earlier revision](../tools/index.md#reading-an-earlier-revision).
 
 ## Managed Mode (Recommended For Containerized Deployments)
 
@@ -29,7 +67,7 @@ Behavior:
 
 - If `SOURCE_DIR` is empty at startup, the server clones `GIT_REPO_URL` into it.
 - If `SOURCE_DIR` is already a git repo, the server verifies `origin` matches `GIT_REPO_URL`.
-- Writes are committed and pushed after the configured idle delay.
+- Each write tool call is committed (see [What a commit covers](#what-a-commit-covers)); the accumulated commits are pushed after the configured idle delay.
 - Periodic pull uses fast-forward-only updates.
 
 Two mechanisms sit alongside the periodic loop, both described below: a
@@ -339,6 +377,10 @@ Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` to skip the LFS pull. Use this when:
 - Your vault does not use Git LFS
 - `git-lfs` is not installed in your environment
 - You want faster startup and don't need LFS-tracked attachments
+
+A revision read does not go through LFS: `read(revision=)` of a note that
+git stored in LFS at that revision fails rather than returning the pointer
+text. See [Getting an overwritten note back](#getting-an-overwritten-note-back).
 
 ```bash
 MARKDOWN_VAULT_MCP_GIT_LFS=false
