@@ -238,11 +238,18 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # The version knope is about to prepare must not already carry a tag
-      # ANYWHERE in the repo.  Version computation is ancestry-local and the
-      # port-bookkeeping PR deliberately never ports version stamps, so a
-      # trunk prepare after a branch-only release can recompute an
-      # already-released version — without this gate that collision would
-      # surface only at tag time, after the release PR merged.  The dry run
+      # ANYWHERE in the repo — and a candidate's claim is its stable base
+      # too: semver orders every X.Y.Z-rc.N before X.Y.Z, so once vX.Y.Z is
+      # tagged no candidate for it may follow.  Version computation is
+      # ancestry-local and the port-bookkeeping PR deliberately never
+      # ports version stamps, so a trunk prepare after a branch-only
+      # release can recompute an already-released version — without this
+      # gate that collision would surface only at tag time, after the
+      # release PR merged.  Exact-tag matching alone misses the rc shape
+      # (#587): after the branch-only stable, the trunk's stamps still read
+      # X.Y.Z-rc.N, its next rc prepare computes the untagged X.Y.Z-rc.N+1,
+      # and the collision surfaced one step later inside the notes
+      # promotion, under a message that never named it.  The dry run
       # prints the exact version the real run below would stamp (same
       # flags, same commits); its output format is pinned by knope 0.23.0.
       #
@@ -264,8 +271,16 @@ jobs:
             echo "::error::could not parse the computed version from knope's dry run — the knope pin and this parser must move together"
             exit 1
           fi
+          # A stable is its own base; an rc's base is the stable it is a
+          # candidate for.  Exact `rev-parse` lookups, never `sort -V`,
+          # which misorders an rc against its stable.
+          base="${version%-rc.*}"
           if git rev-parse -q --verify "refs/tags/v${version}" > /dev/null; then
             echo "::error::v${version} is already tagged in this repository (most likely released from another branch whose version stamps were never ported). Re-dispatch with override_version set to an untaken version, or land a version-stamp port to ${GITHUB_REF_NAME} first."
+            exit 1
+          fi
+          if [ "$base" != "$version" ] && git rev-parse -q --verify "refs/tags/v${base}" > /dev/null; then
+            echo "::error::v${version} is a candidate for v${base}, and v${base} is already tagged in this repository (most likely released from another branch whose version stamps were never ported). Re-dispatch with override_version set to an untaken version, or land a version-stamp port to ${GITHUB_REF_NAME} first."
             exit 1
           fi
           # Reservation check across other bases' open release PRs.  The
@@ -292,6 +307,16 @@ jobs:
               [ -n "$other" ] || continue
               if [ "$other" = "$version" ]; then
                 echo "::error::version ${version} is already reserved by the open release PR from '${head}' (its stamped pyproject.toml carries ${other}) — merging both would race for tag v${version}. Merge or close that release PR first, or re-dispatch with override_version set to an untaken version."
+                exit 1
+              fi
+              # The tag check's base rule, applied to reservations: a
+              # candidate and the stable it is a candidate for must not be
+              # in flight from different bases — the tags differ, so this
+              # is no race, but merge order is not controlled, and if the
+              # stable merged first the candidate would tag behind its own
+              # stable.
+              if [ "$other" = "$base" ] || [ "${other%-rc.*}" = "$version" ]; then
+                echo "::error::version ${version} collides with the open release PR from '${head}' (its stamped pyproject.toml carries ${other}): a candidate and the stable it is a candidate for cannot both be in flight — merge order is not controlled, and if the stable merged first the candidate would tag behind its own stable. Merge or close that release PR first, or re-dispatch with override_version set to an untaken version."
                 exit 1
               fi
             done <<< "$reserved"

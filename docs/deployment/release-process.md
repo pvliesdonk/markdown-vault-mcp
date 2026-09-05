@@ -133,7 +133,8 @@ picks the release kind: `auto` prepares a release candidate on
 replaces the computed version with an explicit one, for the rare range
 whose commits the tool counts nothing in; the workflow refuses a
 dispatch on any branch other than the default branch or `release/X.Y`,
-and refuses a computed version whose tag already exists.
+and refuses a computed version whose tag already exists, or a release
+candidate whose stable version is already tagged.
 
 The release pull request is an ordinary pull request: full CI runs on it,
 and the reviewer checks the computed version against the breaking-change
