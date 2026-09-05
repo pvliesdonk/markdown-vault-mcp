@@ -154,14 +154,20 @@ class TestComputeNewRawTargetEncoded:
 class TestDecodeLinkTarget:
     """The shared decoder's two refusals (review round 1)."""
 
-    def test_an_encoded_separator_survives_decoding(self) -> None:
-        assert decode_link_target("dir%2Fnote.md") == "dir%2Fnote.md"
+    def test_an_encoded_separator_is_refused(self) -> None:
+        """Returning the raw string would match a file literally named that,
+        which is a different file from the one the destination names."""
+        assert decode_link_target("dir%2Fnote.md") is None
 
-    def test_a_lowercase_encoded_separator_is_canonicalised(self) -> None:
-        assert decode_link_target("a%2fb.md") == "a%2Fb.md"
+    def test_a_lowercase_encoded_separator_is_refused_too(self) -> None:
+        assert decode_link_target("a%2fb.md") is None
 
-    def test_an_invalid_utf8_escape_leaves_the_whole_target(self) -> None:
-        assert decode_link_target("bad%FF.md") == "bad%FF.md"
+    def test_an_invalid_utf8_escape_is_refused(self) -> None:
+        assert decode_link_target("bad%FF.md") is None
+
+    def test_a_doubly_encoded_percent_is_not_refused(self) -> None:
+        """How a file genuinely named ``dir%2Fnote.md`` is reached."""
+        assert decode_link_target("dir%252Fnote.md") == "dir%2Fnote.md"
 
     def test_ordinary_escapes_decode(self) -> None:
         assert decode_link_target("probe/b%5B1%5D.md") == "probe/b[1].md"

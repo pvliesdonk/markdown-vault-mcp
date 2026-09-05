@@ -25,37 +25,41 @@ _QUOTE_SAFE = "/"
 _RE_ENCODED_SEPARATOR = re.compile(r"%2[Ff]")
 
 
-def decode_link_target(target: str) -> str:
-    """Percent-decode a link destination without changing its structure.
+def decode_link_target(target: str) -> str | None:
+    """Percent-decode a link destination, or refuse it.
 
     CommonMark defines a markdown destination as a URL, so its escapes name
-    the same file the literal spelling does (#1332). Two escapes are refused
-    rather than decoded, because decoding them would invent a target:
+    the same file the literal spelling does (#1332). Two escapes name no file
+    at all, and are refused rather than decoded:
 
-    * **An encoded separator** (``%2F``) stays encoded. It is path *data*,
-      not a path separator, so a target carrying one names a file that cannot
-      exist and must resolve to nothing rather than to the note whose real
-      path the decode would spell.
-    * **An escape sequence that is not valid UTF-8** (``bad%FF.md``) leaves
-      the whole destination undecoded. ``unquote`` would otherwise substitute
-      U+FFFD, which invents a name — and collapses distinct malformed
-      sequences onto one target, so several broken links could all acquire
-      the same false backlink.
+    * **An encoded separator** (``%2F``). It is path *data*, not a path
+      separator, so the destination names one path segment containing a
+      slash — which no file can be called.
+    * **An escape sequence that is not valid UTF-8** (``bad%FF.md``). It
+      names bytes that are not a UTF-8 name. ``unquote`` would substitute
+      U+FFFD, inventing one, and collapse distinct malformed sequences onto
+      it.
+
+    Refusing returns ``None`` rather than the raw string, because the raw
+    string is itself a valid path: a vault containing a file literally called
+    ``dir%2Fnote.md`` would otherwise match it, giving a destination that
+    names nothing a resolved target and a backlink to an unrelated note. A
+    file genuinely called that is reached by encoding the percent
+    (``dir%252Fnote.md``), which decodes here without being refused.
 
     Args:
         target: The destination's path portion, fragment already split off.
 
     Returns:
-        The decoded path, or *target* unchanged when it carries an escape
-        that is not valid UTF-8.
+        The decoded path, or ``None`` when the destination carries an escape
+        that names no possible file.
     """
+    if _RE_ENCODED_SEPARATOR.search(target):
+        return None
     try:
-        return "%2F".join(
-            unquote(part, errors="strict")
-            for part in _RE_ENCODED_SEPARATOR.split(target)
-        )
+        return unquote(target, errors="strict")
     except UnicodeDecodeError:
-        return target
+        return None
 
 
 def compute_new_raw_target(
@@ -113,7 +117,9 @@ def compute_new_raw_target(
         # one — the same fidelity defect as #1105, reached by a different
         # route (#1332). Decode for the comparison; re-encode the answer only
         # if the author was encoding.
-        decoded_path_part = decode_link_target(raw_path_part)
+        # A refused destination names no file, so there is no encoding
+        # convention to preserve: treat it as written.
+        decoded_path_part = decode_link_target(raw_path_part) or raw_path_part
         was_encoded = decoded_path_part != raw_path_part
 
         if raw_path_part.startswith("/"):

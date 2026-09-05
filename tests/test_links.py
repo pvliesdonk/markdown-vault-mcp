@@ -2204,34 +2204,34 @@ class TestPercentEncodedTargets:
         links = extract_links("[x](notes/50%25%20off.md)", "hub.md")
         assert links[0].target_path == "notes/50% off.md"
 
-    def test_an_encoded_separator_is_data_not_structure(self) -> None:
-        """``%2F`` names one impossible file, not a path with a folder in it.
+    def test_an_encoded_separator_records_no_link(self) -> None:
+        """``%2F`` names one path segment containing a slash: no such file.
 
-        Decoding it would resolve the link to the unrelated note actually at
-        ``dir/note.md``, giving it a false backlink and letting a rename
-        rewrite it (review round 1).
+        Decoding it would resolve to the unrelated note actually at
+        ``dir/note.md``; keeping the raw spelling would resolve to a file
+        literally called ``dir%2Fnote.md``. Both are a different file from
+        the one the destination names, which is none.
         """
-        links = extract_links("[x](dir%2Fnote.md)", "hub.md")
-        assert links[0].target_path == "dir%2Fnote.md"
+        assert extract_links("[x](dir%2Fnote.md)", "hub.md") == []
 
     def test_an_encoded_separator_does_not_collide_with_a_real_note(self) -> None:
         content = "[a](dir%2Fnote.md)\n\n[b](dir/note.md)\n"
         targets = [lnk.target_path for lnk in extract_links(content, "hub.md")]
-        assert targets == ["dir%2Fnote.md", "dir/note.md"]
+        assert targets == ["dir/note.md"]
 
-    def test_an_invalid_utf8_escape_leaves_the_target_undecoded(self) -> None:
-        """``unquote`` would substitute U+FFFD, inventing a name.
+    def test_an_invalid_utf8_escape_records_no_link(self) -> None:
+        """The escaped bytes are not a UTF-8 name, so they name no file.
 
-        Distinct malformed sequences would also collapse onto that one
-        target, so several broken links could share a false backlink.
+        ``unquote`` would substitute U+FFFD, inventing one and collapsing
+        distinct malformed sequences onto it.
         """
-        links = extract_links("[x](bad%FF.md)", "hub.md")
-        assert links[0].target_path == "bad%FF.md"
+        assert extract_links("[x](bad%FF.md)", "hub.md") == []
 
-    def test_distinct_malformed_escapes_stay_distinct(self) -> None:
-        content = "[a](bad%FF.md)\n\n[b](bad%FE.md)\n"
-        targets = {lnk.target_path for lnk in extract_links(content, "hub.md")}
-        assert targets == {"bad%FF.md", "bad%FE.md"}
+    def test_a_doubly_encoded_percent_still_reaches_its_file(self) -> None:
+        """A file genuinely named ``dir%2Fnote.md`` is linked by encoding the
+        percent, and that destination is decoded rather than refused."""
+        links = extract_links("[x](dir%252Fnote.md)", "hub.md")
+        assert links[0].target_path == "dir%2Fnote.md"
 
     def test_valid_multibyte_escapes_still_decode(self) -> None:
         """Strict decoding must not reject legitimate non-ASCII names."""
@@ -2311,3 +2311,55 @@ class TestRenameRewritesEncodedLinks:
         body = (tmp_path / "vault" / "hub.md").read_text(encoding="utf-8")
         assert "[encoded](/moved/b%5B1%5D.md)" in body
         assert "[literal](/moved/b[1].md)" in body
+
+
+# ---------------------------------------------------------------------------
+# A refused destination resolves to nothing, even against a same-spelled file
+# (#1332, review round 2)
+# ---------------------------------------------------------------------------
+
+
+class TestRefusedDestinationsResolveToNothing:
+    """The raw spelling is itself a valid path, so returning it is not a refusal.
+
+    A vault can contain a file literally called ``dir%2Fnote.md``. Reaching it
+    means encoding the percent (``dir%252Fnote.md``); the single-encoded
+    destination names a path segment containing a slash, which is a different
+    thing — and no thing at all.
+    """
+
+    @staticmethod
+    def _vault(tmp_path: Path) -> Vault:
+        src = tmp_path / "vault"
+        src.mkdir()
+        (src / "dir%2Fnote.md").write_text("# literal\n", encoding="utf-8")
+        (src / "bad%FF.md").write_text("# literal\n", encoding="utf-8")
+        (src / "hub.md").write_text(
+            "[a](dir%2Fnote.md)\n\n[b](bad%FF.md)\n", encoding="utf-8"
+        )
+        col = Vault(source_dir=src)
+        col.index.build_index()
+        return col
+
+    def test_neither_refused_destination_becomes_an_outlink(
+        self, tmp_path: Path
+    ) -> None:
+        assert self._vault(tmp_path).graph.get_outlinks("hub.md") == []
+
+    def test_neither_same_spelled_file_gains_a_backlink(self, tmp_path: Path) -> None:
+        col = self._vault(tmp_path)
+        assert col.graph.get_backlinks("dir%2Fnote.md") == []
+        assert col.graph.get_backlinks("bad%FF.md") == []
+
+    def test_the_doubly_encoded_spelling_does_reach_the_file(
+        self, tmp_path: Path
+    ) -> None:
+        src = tmp_path / "vault"
+        src.mkdir()
+        (src / "dir%2Fnote.md").write_text("# literal\n", encoding="utf-8")
+        (src / "hub.md").write_text("[a](dir%252Fnote.md)\n", encoding="utf-8")
+        col = Vault(source_dir=src)
+        col.index.build_index()
+        (outlink,) = col.graph.get_outlinks("hub.md")
+        assert outlink.target_path == "dir%2Fnote.md"
+        assert outlink.exists is True

@@ -813,7 +813,7 @@ def _strip_code_spans(content: str) -> str:
 
 def _resolve_link_path(
     target: str, source_rel: str, *, decode_percent: bool = False
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None] | None:
     """Resolve a raw link target against the source document's directory.
 
     Splits off any fragment identifier (``#heading``), resolves the path
@@ -832,7 +832,10 @@ def _resolve_link_path(
     Returns:
         A ``(resolved_path, fragment)`` tuple where ``resolved_path`` is the
         vault-relative POSIX path with forward slashes and ``fragment`` is the
-        heading identifier or ``None``.
+        heading identifier or ``None``. ``None`` in place of the tuple when
+        the destination carries an escape naming no possible file, in which
+        case the caller records no link at all — see
+        :func:`~markdown_vault_mcp.utils.links.decode_link_target`.
     """
     # Split fragment BEFORE decoding: an encoded ``%23`` is a literal ``#`` in
     # the file name, and decoding first would read it as the fragment marker
@@ -844,10 +847,13 @@ def _resolve_link_path(
         target = target[:idx]
 
     if decode_percent:
-        # An encoded separator stays encoded and an invalid-UTF-8 escape
-        # leaves the target undecoded, so neither invents a resolvable name;
-        # see :func:`~markdown_vault_mcp.utils.links.decode_link_target`.
-        target = decode_link_target(target)
+        decoded = decode_link_target(target)
+        if decoded is None:
+            # Names no possible file. Returning the raw spelling instead
+            # would resolve it against a vault that happens to contain a
+            # file called that, which is a different file.
+            return None
+        target = decoded
 
     if not target:
         # Link with only a fragment — points to the source document itself.
@@ -930,9 +936,10 @@ def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
         if raw_target.startswith("#"):
             # Pure anchor link — skip (points to a section in the same doc).
             continue
-        resolved, fragment = _resolve_link_path(
-            raw_target, source_path, decode_percent=True
-        )
+        resolution = _resolve_link_path(raw_target, source_path, decode_percent=True)
+        if resolution is None:
+            continue
+        resolved, fragment = resolution
         links.append(
             LinkInfo(
                 target_path=resolved,
@@ -992,9 +999,10 @@ def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
             continue
         if raw_target.startswith("#"):
             continue
-        resolved, fragment = _resolve_link_path(
-            raw_target, source_path, decode_percent=True
-        )
+        resolution = _resolve_link_path(raw_target, source_path, decode_percent=True)
+        if resolution is None:
+            continue
+        resolved, fragment = resolution
         links.append(
             LinkInfo(
                 target_path=resolved,
@@ -1065,7 +1073,13 @@ def _extract_wikilinks(clean: str, source_path: str) -> list[LinkInfo]:
         # FTSIndex.resolve_vault_wikilinks() can resolve them vault-wide
         # against the full indexed document set.
         if raw_path.startswith("./") or raw_path.startswith("../"):
-            resolved, path_fragment = _resolve_link_path(raw_path, source_path)
+            resolution = _resolve_link_path(raw_path, source_path)
+            if resolution is None:  # pragma: no cover - decode_percent=False
+                # Only a refused percent-escape yields None, and wikilinks
+                # are never decoded (Obsidian writes their targets
+                # literally), so this branch is unreachable from here.
+                continue
+            resolved, path_fragment = resolution
             fragment = fragment or path_fragment
         else:
             resolved = raw_path
