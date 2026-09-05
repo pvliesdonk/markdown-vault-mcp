@@ -337,7 +337,8 @@
           "bearer",
           "both"
         ]
-      }
+      },
+      "dockerVolume": "/etc/markdown-vault-mcp/tokens.toml"
     },
     {
       "id": "bearer_default_subject",

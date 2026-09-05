@@ -238,7 +238,17 @@ def test_docker_volume_adds_mount_and_fixes_container_path(page: Page) -> None:
     assert "DEMO_DATA_DIR=/host/data" not in result
 
 
-def test_docker_volume_empty_answer_uses_placeholder(page: Page) -> None:
+def test_docker_volume_blank_answer_contributes_nothing(page: Page) -> None:
+    """A blank answer emits neither the mount nor the container-path override.
+
+    This replaced a `/path/to/<id>` "replace me" placeholder.  That reads fine
+    for a path the server requires and breaks one it merely accepts: leaving
+    the optional bearer tokens file blank produced an `-e ..._TOKENS_FILE=`
+    pointing at a file that was never mounted, beside `BEARER_TOKEN` — and
+    core prefers a tokens file whenever both are set, so the server refused to
+    start.  The spec carries no required-ness signal to tell the two cases
+    apart, so blank means "not using this" for both.
+    """
     result = _eval_generators(
         page,
         """(g) => {
@@ -249,10 +259,39 @@ def test_docker_volume_empty_answer_uses_placeholder(page: Page) -> None:
             guards: [] };
           const answers = { deployment: 'server' };
           const map = g.buildEnvMap(spec, answers);
-          return g.generateDockerRun(spec, answers, map);
+          return { docker: g.generateDockerRun(spec, answers, map),
+                   compose: g.generateCompose(spec, answers, map),
+                   vols: g.dockerVolumes(spec, answers) };
         }""",
     )
-    assert "-v /path/to/data_dir:/data/app" in result
+    assert result["vols"] == []
+    assert "/path/to/data_dir" not in result["docker"]
+    assert "/data/app" not in result["docker"]
+    # The var must not be pinned to a container path nothing mounts.
+    assert "DEMO_DATA_DIR" not in result["docker"]
+    # Compose shares dockerVolumes/dockerEnvMap, so it must agree.
+    assert "/data/app" not in result["compose"]
+
+
+def test_docker_volume_answered_still_emits_both_halves(page: Page) -> None:
+    """The blank-answer rule must not regress the answered case (#261)."""
+    result = _eval_generators(
+        page,
+        """(g) => {
+          const spec = { version: 1,
+            meta: { projectName: 'demo', dockerImage: 'img:latest', envPrefix: 'DEMO' },
+            secretKeys: [],
+            questions: [{ id: 'data_dir', label: 'D', type: 'text', var: 'DEMO_DATA_DIR', dockerVolume: '/data/app' }],
+            guards: [] };
+          const answers = { deployment: 'server', data_dir: '/host/data' };
+          const map = g.buildEnvMap(spec, answers);
+          return { docker: g.generateDockerRun(spec, answers, map),
+                   compose: g.generateCompose(spec, answers, map) };
+        }""",
+    )
+    assert "-v /host/data:/data/app" in result["docker"]
+    assert "DEMO_DATA_DIR=/data/app" in result["docker"]
+    assert "/host/data:/data/app" in result["compose"]
 
 
 def test_docker_path_fixes_present_var_without_mount(page: Page) -> None:
