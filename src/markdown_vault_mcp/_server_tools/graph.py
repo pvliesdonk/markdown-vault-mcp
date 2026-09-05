@@ -155,7 +155,7 @@ def register(mcp: FastMCP) -> None:
             - link_type (str): One of "markdown", "wikilink", or "reference".
             - fragment (str | None): Heading anchor (e.g. "#section"), or null.
             - raw_target (str): Literal link target as written in the source.
-            - exists (bool): True if the target document is indexed.
+            - exists (bool): True if the target is in the vault.
 
             Index freshness is reported out-of-band in the response's
             ``_meta.index_stale`` field — True when the IndexWriter had
@@ -203,8 +203,8 @@ def register(mcp: FastMCP) -> None:
         Use this to audit link health across the vault. Call this when
         'stats' shows broken_link_count > 0, or after a 'rename' that did
         not use update_links=True, to see what links were left pointing to
-        the old path. A broken link means the target path does not match any
-        indexed document — the referenced note may have been deleted, renamed,
+        the old path. A broken link means nothing in the vault is at the
+        target path — the referenced note may have been deleted, renamed,
         or never created.
 
         Args:

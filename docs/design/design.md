@@ -2096,15 +2096,41 @@ vault-wide resolution rules rather than relative path resolution:
   that attachment, and keeps its own extension. Appending `.md` produced
   `diagram.png.md`, a target that cannot exist, so every image and PDF embed
   was permanently in `get_broken_links` and inflated `broken_link_count`
-  (#1333). The decision has to happen at extraction time: attachments are not
-  indexed — `list_documents(include_attachments=True)` walks the filesystem —
-  so `resolve_vault_wikilinks()` has no rows to match against. This is why
-  `IndexManager` (and through it `parse_note` / `scan_directory`) carries the
-  allowlist. Under the `*` wildcard the suffix must additionally *look* like
-  an extension (`[A-Za-z0-9]{1,8}`), or the note title `Version 2.0 plan`
-  would read as a `0 plan` attachment. Whether an embed should be recorded as
-  a link at all — `_extract_inline_links` skips `![alt](src)` — is a separate
-  question, deliberately left open.
+  (#1333). This is why `IndexManager` (and through it `parse_note` /
+  `scan_directory`) carries the allowlist. Under the `*` wildcard the suffix
+  must additionally *look* like an extension (`[A-Za-z0-9]{1,8}`), or the
+  note title `Version 2.0 plan` would read as a `0 plan` attachment. Whether
+  an embed should be recorded as a link at all — `_extract_inline_links`
+  skips `![alt](src)` — is a separate question, deliberately left open.
+
+**Attachment targets need two stages, because attachments are not indexed.**
+`list_documents(include_attachments=True)` walks the filesystem; `documents`
+holds notes only. Extraction therefore cannot be the whole fix, and neither
+can `resolve_vault_wikilinks()`, which has no rows to match an attachment
+against. The layers split cleanly:
+
+- **Index truth stays index truth.** `FTSIndex.get_broken_links()` and
+  `count_broken_links()` answer "is this target an indexed document", which
+  is the only question the index can answer, and their docstrings say so.
+- **`LinkManager` overlays vault truth**, because `source_dir` is what it
+  holds that the index does not. `utils.attachment_target_exists()` is the
+  single shared predicate — non-`.md`, allowlisted, resolving inside the
+  vault, present on disk — applied by `get_broken_links` (filters the row
+  out), `get_outlinks` (ORs into `exists`), and `count_broken_links` (counts
+  the same rows through the same predicate, so `stats.broken_link_count`
+  cannot disagree with the list). It covers markdown links to attachments
+  (`[x](data/file.txt)`) as well as wikilink embeds — the same defect class.
+- **The two attachment tests are deliberately different.**
+  `_names_attachment` in the scanner decides whether to append `.md`, and
+  under the `*` wildcard requires an extension-*shaped* suffix so a dotted
+  note title stays a note. `attachment_target_exists` mirrors what `read`
+  will actually serve, where under the wildcard an extensionless `Makefile`
+  *is* an attachment — so it applies no shape guard. They answer different
+  questions and must not be unified.
+
+The filesystem check runs only for a target that is non-`.md` and
+allowlisted, so a vault whose broken links are all notes pays nothing beyond
+the query the index already ran.
 
 - **Alias resolution**: When no path match is found,
   `resolve_vault_wikilinks()` also checks the `document_aliases` table.

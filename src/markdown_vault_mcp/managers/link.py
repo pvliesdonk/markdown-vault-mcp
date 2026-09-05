@@ -21,12 +21,15 @@ from markdown_vault_mcp.types import (
     OutlinkInfo,
 )
 from markdown_vault_mcp.utils import (
+    attachment_target_exists,
+    effective_attachment_extensions,
     fts_row_to_note_info,
     normalize_folder,
     validate_path,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.interfaces import KeywordGraphIndex
@@ -40,11 +43,41 @@ class LinkManager:
     Args:
         fts: The FTS index to query.
         source_dir: Absolute path to the vault root directory.
+        attachment_extensions: Configured attachment allowlist (``None`` = the
+            default set), used to overlay vault truth on the index's answer
+            for links that target attachments (#1333).
     """
 
-    def __init__(self, fts: KeywordGraphIndex, source_dir: Path) -> None:
+    def __init__(
+        self,
+        fts: KeywordGraphIndex,
+        source_dir: Path,
+        attachment_extensions: Sequence[str] | None = None,
+    ) -> None:
         self._fts = fts
         self._source_dir = source_dir
+        self._attachment_extensions = effective_attachment_extensions(
+            attachment_extensions
+        )
+
+    def _target_is_present_attachment(self, target: str) -> bool:
+        """Return whether *target* names an attachment file the vault holds.
+
+        The index answers "is this an indexed document", and attachments are
+        not indexed, so every link to one read as broken (#1333). This is the
+        one place the link queries consult the filesystem to complete that
+        answer; see
+        :func:`~markdown_vault_mcp.utils.attachment_target_exists`.
+
+        Args:
+            target: Stored vault-relative link target.
+
+        Returns:
+            ``True`` when the target is an allowlisted attachment on disk.
+        """
+        return attachment_target_exists(
+            target, self._source_dir, self._attachment_extensions
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -116,7 +149,8 @@ class LinkManager:
 
         The ``exists`` field on each
         :class:`~markdown_vault_mcp.types.OutlinkInfo` indicates whether the
-        target document is currently indexed.
+        target is present in the vault — an indexed note, or an allowlisted
+        attachment on disk (attachments are not indexed, #1333).
 
         Args:
             path: Relative path of the source document
@@ -139,7 +173,8 @@ class LinkManager:
                 link_text=row["link_text"],
                 link_type=row["link_type"],
                 fragment=row["fragment"],
-                exists=bool(row["target_exists"]),
+                exists=bool(row["target_exists"])
+                or self._target_is_present_attachment(row["target_path"]),
                 raw_target=row["raw_target"],
             )
             for row in rows
@@ -147,6 +182,10 @@ class LinkManager:
 
     def get_broken_links(self, *, folder: str | None = None) -> list[BrokenLinkInfo]:
         """Return all links whose target does not exist in the vault.
+
+        The index's own answer covers indexed notes only; a link naming an
+        allowlisted attachment that is present on disk is not broken, and is
+        filtered out here (#1333).
 
         Args:
             folder: If provided, restrict to source documents in this folder
@@ -169,7 +208,30 @@ class LinkManager:
                 raw_target=row["raw_target"],
             )
             for row in rows
+            if not self._target_is_present_attachment(row["target_path"])
         ]
+
+    def count_broken_links(self) -> int:
+        """Return the number of broken links, matching :meth:`get_broken_links`.
+
+        Counted from the same rows and through the same attachment overlay, so
+        ``stats.broken_link_count`` cannot disagree with the list a caller
+        gets back (#1333). ``KeywordGraphIndex.count_broken_links`` remains the
+        index-truth counterpart and does not apply the overlay.
+
+        A filesystem check runs only for a target that is non-``.md`` and
+        allowlisted, so a vault whose broken links are all notes pays nothing
+        beyond the query the index already ran.
+
+        Returns:
+            Number of links whose target is in neither the index nor the
+            vault's attachments.
+        """
+        return sum(
+            1
+            for row in self._fts.get_broken_links()
+            if not self._target_is_present_attachment(row["target_path"])
+        )
 
     def get_orphan_notes(self) -> list[NoteInfo]:
         """Return all documents with no inbound or outbound links.

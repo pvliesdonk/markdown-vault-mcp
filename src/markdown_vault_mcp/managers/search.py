@@ -1449,7 +1449,17 @@ class SearchManager:
             indexed_frontmatter_fields=list(self._indexed_frontmatter_fields),
             attachment_extensions=attachment_extensions,
             link_count=self._fts.count_links(),
-            broken_link_count=self._fts.count_broken_links(),
+            # Through LinkManager when wired (the production path): attachments
+            # are not indexed, so the index-level count disagrees with the list
+            # get_broken_links() returns (#1333). The raw count is the correct
+            # fallback for a SearchManager built without one — it is then the
+            # only answer available, and it matches the FTS rows that same
+            # caller would read.
+            broken_link_count=(
+                self._link_manager.count_broken_links()
+                if self._link_manager is not None
+                else self._fts.count_broken_links()
+            ),
             orphan_count=self._fts.count_orphans(),
         )
 

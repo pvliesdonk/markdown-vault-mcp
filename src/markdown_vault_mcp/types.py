@@ -588,7 +588,9 @@ class OutlinkInfo:
         link_type: Link syntax: ``"markdown"``, ``"wikilink"``, or ``"reference"``.
         fragment: Heading anchor if present.
         raw_target: The unresolved link target exactly as written.
-        exists: ``True`` if the target document exists in the vault.
+        exists: ``True`` if the target is present in the vault — an
+            indexed note, or an attachment on disk whose extension is
+            allowlisted (attachments are not indexed, #1333).
     """
 
     target_path: str

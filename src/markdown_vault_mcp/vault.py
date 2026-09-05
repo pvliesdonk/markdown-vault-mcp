@@ -564,7 +564,11 @@ class Vault:
         from markdown_vault_mcp.managers.search import SearchManager
 
         # 1. LinkManager (no deps)
-        self._link_mgr = LinkManager(fts=self._fts, source_dir=self._source_dir)
+        self._link_mgr = LinkManager(
+            fts=self._fts,
+            source_dir=self._source_dir,
+            attachment_extensions=self._attachment_extensions,
+        )
         # 1b. GitQueryManager (git history/diff/revision reads; needs
         #     git_strategy + source_dir + the note read cap)
         self._git_query_mgr = GitQueryManager(

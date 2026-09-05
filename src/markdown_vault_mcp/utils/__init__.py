@@ -174,6 +174,58 @@ def validate_history_path(
     return resolve_inside(path, source_dir)
 
 
+def attachment_target_exists(
+    target: str, source_dir: Path, attachment_extensions: frozenset[str]
+) -> bool:
+    """Return whether a link target names an attachment present in the vault.
+
+    Attachments are not indexed — ``list_documents(include_attachments=True)``
+    walks the filesystem — so the index alone cannot tell a link to
+    ``Images/pic.png`` from a link to a note that does not exist. This is the
+    vault-truth overlay the link queries apply on top of the index-truth
+    answer (#1333).
+
+    The test mirrors what ``read`` will actually serve: non-``.md``,
+    allowlisted, and present on disk. It deliberately does **not** apply the
+    extension-shape guard that
+    :func:`~markdown_vault_mcp.scanner._names_attachment` uses — that one
+    decides whether to append ``.md`` at extraction time and must not read an
+    extensionless note title as a file type, whereas under the ``*`` wildcard
+    ``read`` really does serve an extensionless ``Makefile``, so this
+    predicate must too.
+
+    Lives here rather than in ``utils.content_kind`` for two reasons: it
+    touches the filesystem, and it is not the ``is_attachment`` helper that
+    module's docstring deliberately declines to provide. That one would be a
+    routing test wearing a misleading name; this one is a link-graph
+    question — "is there something at this target" — composed at the one
+    place that has ``source_dir`` to answer it.
+
+    Args:
+        target: Stored vault-relative link target.
+        source_dir: Absolute vault root.
+        attachment_extensions: The effective attachment allowlist.
+
+    Returns:
+        ``True`` when *target* is an allowlisted attachment that exists inside
+        the vault. ``False`` for a note, a non-allowlisted extension, a path
+        escaping the vault, or a file that is not there.
+    """
+    if is_note(target) or not is_allowed_artifact(target, attachment_extensions):
+        return False
+    try:
+        abs_path = resolve_inside(target, source_dir)
+    except (OSError, RuntimeError, ValueError):
+        # ValueError: traversal outside the vault. OSError/RuntimeError: a
+        # symlink loop or unreadable component reached by resolve()
+        # (RuntimeError on Python < 3.13).
+        return False
+    try:
+        return abs_path.is_file()
+    except OSError:
+        return False
+
+
 def validate_history_dir(path: str, source_dir: Path) -> Path:
     """Resolve a vault-relative *directory* path for read-only git-history queries.
 
@@ -207,6 +259,7 @@ __all__ = [
     "CHAR_SUBS",
     "apply_link_replacement",
     "artifact_suffix",
+    "attachment_target_exists",
     "build_position_map",
     "compute_new_raw_target",
     "effective_attachment_extensions",

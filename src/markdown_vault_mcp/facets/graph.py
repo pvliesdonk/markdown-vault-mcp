@@ -93,7 +93,8 @@ class GraphFacet:
         """Return all links from the given document to other documents.
 
         The ``exists`` field on each :class:`~markdown_vault_mcp.types.OutlinkInfo`
-        indicates whether the target document is currently indexed.
+        indicates whether the target is present in the vault — an indexed
+        note, or an allowlisted attachment on disk (#1333).
 
         Args:
             path: Relative path of the source document
@@ -114,6 +115,9 @@ class GraphFacet:
 
     def get_broken_links(self, *, folder: str | None = None) -> list[BrokenLinkInfo]:
         """Return all links whose target does not exist in the vault.
+
+        A link naming an allowlisted attachment that is present on disk is
+        not broken, even though attachments are never indexed (#1333).
 
         Args:
             folder: If provided, restrict to source documents in this folder

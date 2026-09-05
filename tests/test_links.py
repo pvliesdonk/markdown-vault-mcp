@@ -2283,3 +2283,79 @@ class TestWikilinkAttachments:
         """A default call (no allowlist) uses the default attachment set."""
         links = extract_links("[[notes/pic.png]]", "index.md")
         assert links[0].target_path == "notes/pic.png"
+
+
+# ---------------------------------------------------------------------------
+# Attachment targets are vault truth, not index truth (#1333)
+# ---------------------------------------------------------------------------
+
+
+class TestAttachmentLinkTargets:
+    """A link to an on-disk attachment is not broken, at every surface.
+
+    Attachments are never indexed, so the FTS answer alone reports every one
+    of them broken. These pin the LinkManager overlay that completes it.
+    """
+
+    @staticmethod
+    def _vault(tmp_path: Path, body: str) -> Vault:
+        src = tmp_path / "vault"
+        (src / "Images").mkdir(parents=True)
+        (src / "Images" / "pic.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (src / "note.md").write_text(body, encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=["png"])
+        col.index.build_index()
+        return col
+
+    def test_wikilink_embed_of_present_attachment_is_not_broken(
+        self, tmp_path: Path
+    ) -> None:
+        """The #1333 reproduction, end to end."""
+        col = self._vault(tmp_path, "# Note\n\n![[Images/pic.png]]\n")
+        assert col.graph.get_broken_links() == []
+        (outlink,) = col.graph.get_outlinks("note.md")
+        assert outlink.target_path == "Images/pic.png"
+        assert outlink.exists is True
+
+    def test_stats_count_agrees_with_the_list(self, tmp_path: Path) -> None:
+        """broken_link_count and get_broken_links read the same population."""
+        col = self._vault(tmp_path, "# Note\n\n![[Images/pic.png]]\n\n[[Nowhere]]\n")
+        assert col.reader.stats().broken_link_count == len(col.graph.get_broken_links())
+        assert col.reader.stats().broken_link_count == 1
+
+    def test_inline_link_to_present_attachment_is_not_broken(
+        self, tmp_path: Path
+    ) -> None:
+        """The same overlay covers markdown links, not only wikilinks."""
+        col = self._vault(tmp_path, "# Note\n\n[pic](Images/pic.png)\n")
+        assert col.graph.get_broken_links() == []
+
+    def test_missing_attachment_is_still_broken(self, tmp_path: Path) -> None:
+        """The allowlist alone does not excuse a file that is not there."""
+        col = self._vault(tmp_path, "# Note\n\n![[Images/gone.png]]\n")
+        (broken,) = col.graph.get_broken_links()
+        assert broken.target_path == "Images/gone.png"
+
+    def test_non_allowlisted_extension_is_still_broken(self, tmp_path: Path) -> None:
+        """An extension outside the allowlist keeps note semantics."""
+        src = tmp_path / "vault"
+        src.mkdir()
+        (src / "data.csv").write_text("a,b\n", encoding="utf-8")
+        (src / "note.md").write_text("[[data.csv]]\n", encoding="utf-8")
+        col = Vault(source_dir=src, attachment_extensions=["png"])
+        col.index.build_index()
+        (broken,) = col.graph.get_broken_links()
+        assert broken.target_path == "data.csv.md"
+
+    def test_traversal_target_is_never_resolved_outside_the_vault(
+        self, tmp_path: Path
+    ) -> None:
+        """A target escaping the vault stays broken even if the file exists."""
+        (tmp_path / "outside.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        # A bare wikilink is stored verbatim — it never passes through the
+        # clamping in _resolve_link_path — so this is the one spelling that
+        # reaches the overlay carrying real ``..`` segments.
+        col = self._vault(tmp_path, "# Note\n\n[[Images/../../outside.png]]\n")
+        (broken,) = col.graph.get_broken_links()
+        assert broken.target_path == "Images/../../outside.png"
+        assert all(o.exists is False for o in col.graph.get_outlinks("note.md"))
