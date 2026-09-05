@@ -14,6 +14,7 @@ import json
 import logging
 import mimetypes
 import sqlite3
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from markdown_vault_mcp.embed_text import is_embeddable
@@ -80,7 +81,10 @@ from markdown_vault_mcp.utils import (
     normalize_folder,
     validate_path,
 )
-from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
+from markdown_vault_mcp.utils.fs import (
+    GLOB_SYMLINK_KWARGS,
+    vault_relative_in_scope,
+)
 
 if TYPE_CHECKING:
     import builtins
@@ -1309,31 +1313,21 @@ class SearchManager:
                 attachments.append(info)
         return attachments
 
-    def _attachment_rel_path(self, abs_path: Path) -> Path | None:
+    def _attachment_rel_path(self, abs_path: Path) -> str | None:
         """Vault-relative path of *abs_path*, or ``None`` when out of scope.
 
         Out of scope: outside ``source_dir``, any dot-prefixed path
         component, or a match against the configured exclude patterns
-        (mirrors ``scan_directory`` behaviour).
+        (mirrors ``scan_directory`` behaviour). The rule itself lives in
+        :func:`~markdown_vault_mcp.utils.fs.vault_relative_in_scope`, shared
+        with the link layer's attachment scan so the two cannot drift.
         """
-        try:
-            # rglob yields paths anchored at the unresolved self._source_dir;
-            # using .resolve() here would mismatch when source_dir is itself
-            # a symlink and silently drop every attachment.
-            rel = abs_path.relative_to(self._source_dir)
-        except ValueError as exc:
-            logger.warning(
-                "_list_attachments: skipping %s — outside source_dir (%s)",
-                abs_path,
-                exc,
-            )
-            return None
-        # Skip files where any path component starts with ".".
-        if any(part.startswith(".") for part in rel.parts):
-            return None
-        if self._is_path_excluded(rel.as_posix()):
-            return None
-        return rel
+        return vault_relative_in_scope(
+            abs_path,
+            self._source_dir,
+            is_excluded=self._is_path_excluded,
+            log_context="_list_attachments",
+        )
 
     def _attachment_info(
         self,
@@ -1365,17 +1359,17 @@ class SearchManager:
             or not is_allowed_artifact_suffix(suffix, exts)
         ):
             return None
-        rel = self._attachment_rel_path(abs_path)
-        if rel is None:
-            return None
         # POSIX spelling throughout: `str(Path)` yields OS separators, so on
         # Windows this produced `docs\\api` where the index, the exclusion
         # check above, and a normalized `folder` argument all use `docs/api`
-        # — nested attachments then matched nothing.
-        rel_path = rel.as_posix()
+        # — nested attachments then matched nothing. The shared scope helper
+        # returns the POSIX spelling directly.
+        rel_path = self._attachment_rel_path(abs_path)
+        if rel_path is None:
+            return None
         if pattern and not fnmatch.fnmatch(rel_path, pattern):
             return None
-        rel_folder = rel.parent.as_posix()
+        rel_folder = PurePosixPath(rel_path).parent.as_posix()
         if rel_folder == ".":
             rel_folder = ""
         if folder is not None and not folder_matches(rel_folder, folder):

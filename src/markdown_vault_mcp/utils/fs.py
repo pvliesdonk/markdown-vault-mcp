@@ -195,3 +195,49 @@ def iter_markdown_files(
         for filename in filenames:
             if is_note(filename):
                 yield base / filename
+
+
+def vault_relative_in_scope(
+    abs_path: Path,
+    source_dir: Path,
+    *,
+    is_excluded: Callable[[str], bool],
+    log_context: str = "attachment scan",
+) -> str | None:
+    """Vault-relative POSIX path of *abs_path*, or ``None`` when out of scope.
+
+    The shared in-scope rule for the attachment population: a file is out of
+    scope when it sits outside *source_dir*, when any path component is
+    dot-prefixed, or when it matches the configured exclude patterns. Mirrors
+    ``scan_directory`` so the attachments a vault serves and the attachments
+    its links resolve against are the same set.
+
+    Deliberately does **not** resolve symlinks: ``rglob`` yields paths
+    anchored at the unresolved *source_dir*, and resolving here would
+    mismatch when *source_dir* is itself a symlink and silently drop every
+    attachment.
+
+    Args:
+        abs_path: A path yielded by walking *source_dir*.
+        source_dir: The vault root, unresolved.
+        is_excluded: Predicate over the vault-relative POSIX path, supplied
+            by the caller because the exclude patterns live on its config.
+        log_context: Prefix naming the calling scan in the warning logged
+            when *abs_path* is outside *source_dir*.
+
+    Returns:
+        The vault-relative POSIX path, or ``None`` when out of scope.
+    """
+    try:
+        rel = abs_path.relative_to(source_dir)
+    except ValueError as exc:
+        logger.warning(
+            "%s: skipping %s — outside source_dir (%s)", log_context, abs_path, exc
+        )
+        return None
+    if any(part.startswith(".") for part in rel.parts):
+        return None
+    rel_posix = rel.as_posix()
+    if is_excluded(rel_posix):
+        return None
+    return rel_posix

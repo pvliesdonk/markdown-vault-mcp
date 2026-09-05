@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -42,7 +41,11 @@ from markdown_vault_mcp.utils import (
     is_note,
     is_path_excluded,
 )
-from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
+from markdown_vault_mcp.utils.fs import (
+    GLOB_SYMLINK_KWARGS,
+    iter_markdown_files,
+    vault_relative_in_scope,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -178,8 +181,10 @@ class IndexManager:
 
         Attachments are not indexed, so vault-wide wikilink resolution cannot
         find them in ``documents`` and every embed read as broken (#1333).
-        This walks the source tree the way ``list_documents`` does, applying
-        the same exclusion rules, and runs once per resolution pass rather
+        The in-scope rule is shared with the listing path through
+        :func:`~markdown_vault_mcp.utils.fs.vault_relative_in_scope`, so the
+        attachments a vault *serves* and the attachments its links *resolve
+        against* cannot drift apart. Runs once per resolution pass rather
         than once per link.
 
         Returns:
@@ -193,16 +198,19 @@ class IndexManager:
             try:
                 if not abs_path.is_file():
                     continue
-                rel = abs_path.relative_to(self._source_dir).as_posix()
-            except (OSError, ValueError):
+            except OSError:
+                # A racing delete or an unreadable component: not a reason to
+                # fail the whole build.
                 continue
-            if is_note(rel) or not is_allowed_artifact(
-                rel, self._attachment_extensions
-            ):
+            rel = vault_relative_in_scope(
+                abs_path,
+                self._source_dir,
+                is_excluded=self._is_path_excluded,
+                log_context="_attachment_paths",
+            )
+            if rel is None or is_note(rel):
                 continue
-            if any(part.startswith(".") for part in PurePosixPath(rel).parts):
-                continue
-            if self._is_path_excluded(rel):
+            if not is_allowed_artifact(rel, self._attachment_extensions):
                 continue
             paths.append(rel)
         return sorted(paths)
