@@ -2146,7 +2146,7 @@
 <li><strong><a href="guides/okf/">Open Knowledge Format</a></strong>: recognizes OKF bundles (an <code>okf_version</code> declaration in the root <code>index.md</code>) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier; those dimensions are filterable and nudge ranking, and the server ships an <code>okf_validate</code> audit, one-shot migration transforms, an optional enforced write layer (provenance + verification + <code>log.md</code>/<code>index.md</code> upkeep), and a downloadable bundle export</li>
 <li><strong>Attachment support</strong>: read, write, delete, and list non-markdown files (PDFs, images, and so on)</li>
 <li><strong>LLM summarization</strong>: optional <code>summarize</code> tool condenses a note, a set of notes, or a subtree with a language model via any OpenAI-compatible endpoint (OpenAI, Ollama, Anthropic, vLLM, and others); the synthesis references the individual source notes by path. Gated on <code>OPENAI_API_KEY</code> or a configured base URL.</li>
-<li><strong>Git integration</strong>: optional auto-commit and push on every write via <code>GIT_ASKPASS</code></li>
+<li><strong>Git integration</strong>: optional auto-commit (one commit per write tool call) and deferred push, with token auth via <code>GIT_ASKPASS</code></li>
 <li><strong>OIDC authentication</strong>: optional token-based auth for HTTP deployments</li>
 <li><strong>MCP tools</strong>: search, read, write, edit, append, delete, rename, link graph analysis, and admin operations</li>
 <li><strong>MCP resources</strong>: vault configuration, statistics, tags, folders, document outlines, similar notes, and recent notes</li>

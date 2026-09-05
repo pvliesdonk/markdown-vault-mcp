@@ -775,6 +775,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-a-commit-covers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a commit covers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-an-overwritten-note-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting an overwritten note back
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#managed-mode-recommended-for-containerized-deployments" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2044,6 +2066,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#what-a-commit-covers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What a commit covers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#getting-an-overwritten-note-back" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Getting an overwritten note back
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#managed-mode-recommended-for-containerized-deployments" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2208,10 +2252,40 @@
 <li><strong>Managed</strong> (<code>GIT_REPO_URL</code> + <code>GIT_TOKEN</code>)
    The server owns clone, periodic pull, commit, and deferred push.</li>
 <li><strong>Unmanaged / commit-only</strong> (no <code>GIT_REPO_URL</code>, existing git repo)
-   The server stages and commits writes, but never pulls or pushes.</li>
+   The server commits writes (one commit per tool call), but never pulls or pushes.</li>
 <li><strong>No-git</strong> (default)
    The vault is treated as a plain directory with no git operations.</li>
 </ol>
+<h2 id="what-a-commit-covers">What a commit covers<a class="headerlink" href="#what-a-commit-covers" title="Permanent link">&para;</a></h2>
+<p>In both git modes, the commit boundary is the MCP tool call, not the file.
+A call that wrote one file commits under that file's path
+(<code>write: notes/one.md</code>), so an ordinary vault's log reads as it always
+did. A call that touched many files, such as <code>move_folder</code>, <code>rename</code> with
+<code>update_links=True</code>, or <code>okf_convert_links</code>, produces one commit with the
+subject <code>&lt;tool&gt;: N files</code>, where a per-file boundary produced one commit per
+file (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264">#1264</a>).
+No setting changes this. In managed mode, the deferred push sends
+whatever commits accumulated during the idle delay, however many calls
+produced them.</p>
+<h2 id="getting-an-overwritten-note-back">Getting an overwritten note back<a class="headerlink" href="#getting-an-overwritten-note-back" title="Permanent link">&para;</a></h2>
+<p>On a git-backed vault, a <code>write</code> that replaces an existing note returns
+<code>previous_revision</code>: the commit holding the content it replaced. Pass that
+SHA to <code>read</code> as <code>revision=</code> and the replaced content comes back, ready to
+write again:</p>
+<div class="highlight"><pre><span></span><code>write(path, content=...)              → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")        → the replaced content
+</code></pre></div>
+<p>A SHA from <code>get_history</code> works the same way, which is also how a note
+deleted since is recovered: read it at a revision that still has it. Pass
+the name the note has today; a rename since that revision is followed.</p>
+<p>Two limits. <code>previous_revision</code> is absent when no commit provably holds the
+replaced content: a newly created note, or two writes in quick succession
+where the first never reached a commit. Content that never reached a commit
+is not recoverable from git at all. Separately, <code>read</code> fails rather than
+returning content where git's records do not connect the revision to
+today's note, because the next thing a caller does with the result is write
+it back. The full rules, including the cases that fail, are in
+<a href="../../tools/#reading-an-earlier-revision">Reading an earlier revision</a>.</p>
 <h2 id="managed-mode-recommended-for-containerized-deployments">Managed Mode (Recommended For Containerized Deployments)<a class="headerlink" href="#managed-mode-recommended-for-containerized-deployments" title="Permanent link">&para;</a></h2>
 <p>Use managed mode when the server should fully own git synchronization.</p>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_SOURCE_DIR</span><span class="o">=</span>/data/vault
@@ -2226,7 +2300,7 @@
 <ul>
 <li>If <code>SOURCE_DIR</code> is empty at startup, the server clones <code>GIT_REPO_URL</code> into it.</li>
 <li>If <code>SOURCE_DIR</code> is already a git repo, the server verifies <code>origin</code> matches <code>GIT_REPO_URL</code>.</li>
-<li>Writes are committed and pushed after the configured idle delay.</li>
+<li>Each write tool call is committed (see <a href="#what-a-commit-covers">What a commit covers</a>); the accumulated commits are pushed after the configured idle delay.</li>
 <li>Periodic pull uses fast-forward-only updates.</li>
 </ul>
 <p>Two mechanisms sit alongside the periodic loop, both described below: a
@@ -2485,6 +2559,9 @@ it.</p>
 <li><code>git-lfs</code> is not installed in your environment</li>
 <li>You want faster startup and don't need LFS-tracked attachments</li>
 </ul>
+<p>A revision read does not go through LFS: <code>read(revision=)</code> of a note that
+git stored in LFS at that revision fails rather than returning the pointer
+text. See <a href="#getting-an-overwritten-note-back">Getting an overwritten note back</a>.</p>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_GIT_LFS</span><span class="o">=</span><span class="nb">false</span>
 </code></pre></div>
 <h2 id="legacy-compatibility">Legacy Compatibility<a class="headerlink" href="#legacy-compatibility" title="Permanent link">&para;</a></h2>
