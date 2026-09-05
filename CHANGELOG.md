@@ -22,6 +22,39 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 4.2.0-rc.0 (2026-09-05)
+
+### Features
+
+- add VaultSettings so Vault construction is settings-first (#1224)
+- record skip tombstones so FTS absence means deleted (#1227)
+- push-triggered reindex for GitLab-hosted vaults (#1262)
+- embed queries and documents asymmetrically (#1270)
+- commit once per tool call, not once per file (#1265)
+- read a note at a revision, and name the one an overwrite replaced (#1288)
+
+### Bug Fixes
+
+- resolve commit identity at the tool edge so OIDC claims survive the dispatcher thread (#1226)
+- report every moved file to the write callback in move_folder (#1244)
+- adopt template v7 semantic roles (#1255)
+- enforce client-facing budgets (#1258)
+- adopt template v7.0.1 and de-fork the OIDC pages (#1260)
+- exclude reserved files from the stats OKF histograms (#1267)
+- scope the auto-commit's no-diff check to the operation's own paths (#1274)
+- commit the operation's own paths, not the whole index (#1275)
+- keep the file watcher when a webhook cannot deliver on this transport (#1277)
+- keep ProjectConfig importable under the generator's dep floor (#1279)
+- normalize attachment-extension spellings on the way in (#1280)
+- accept the object IDs a SHA-256 repository mints (#1286)
+- stop handing back non-ASCII note paths git octal-escaped (#1291)
+- stop attributing a previous note's commits to one that reused its name (#1298)
+- tell a caller when its write cannot leave the host (#1300)
+- stop predicting a fast-forward for a pull that would diverge (#1301)
+- treat a note's name as a name, not a glob, wherever git takes a pathspec (#1305)
+- follow a note's renames at the same threshold in every reader (#1302)
+- give a note renamed while resolving a merge its history back (#1314)
+
 ## 4.1.0 (2026-08-30)
 
 ### Features
