@@ -595,6 +595,7 @@ class Vault:
             embed_model_name=self._embed_model_name,
             max_chunk_chars_override=self._max_chunk_chars_override,
             title_field=self._title_field,
+            attachment_extensions=self._attachment_extensions,
             embed_text_builder=self._embed_builder,
             embedding_batch_size=self._embedding_batch_size,
         )

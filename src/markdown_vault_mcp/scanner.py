@@ -14,6 +14,10 @@ import yaml
 
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import Chunk, LinkInfo, ParsedNote, SkippedFile
+from markdown_vault_mcp.utils.content_kind import (
+    artifact_suffix,
+    effective_attachment_extensions,
+)
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
 from markdown_vault_mcp.utils.text import decode_utf8
 
@@ -775,23 +779,88 @@ def _resolve_title(
     return path.stem
 
 
-_EXTERNAL_URL_PREFIXES = ("http://", "https://", "mailto:", "//")
+# Protocol-relative URLs (``//host/path``) carry no scheme for
+# :data:`_RE_URI_SCHEME` to match, so they are named here.
+_EXTERNAL_URL_PREFIXES = ("//",)
+# A URI scheme, per RFC 3986, anchored at the start of a destination. Two or
+# more characters are required before the colon: a single letter is a Windows
+# drive (``C:/notes/topic.md``), which is a path and not a scheme (#1335).
+# Matching the *shape* rather than an allowlist of four prefixes is what keeps
+# `file:`, `ftp:`, `obsidian:` and `zotero:` out of vault-path resolution.
+_RE_URI_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]+:")
+# An extension-shaped suffix: what a file type looks like, used only under the
+# ``*`` attachment wildcard (see :func:`_names_attachment`).
+_RE_EXTENSION_SHAPE = re.compile(r"[A-Za-z0-9]{1,8}")
 
 # Fenced code block: matches ``` or ~~~ delimiters (with optional language tag).
 _RE_FENCED_CODE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
 # Inline code: matches single backtick spans (non-greedy, no newlines inside).
 _RE_INLINE_CODE = re.compile(r"`[^`\n]+`")
-# Inline markdown link: [text](target)
-_RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
+# Link *text*, bounded to one paragraph. CommonMark permits a soft break inside
+# link text but not a blank line, so a newline is allowed only when it is not
+# followed by another (#1334). Without this an unmatched ``[`` pairs with a
+# ``](`` thousands of characters later and indexes whole pages of prose as a
+# link — wrong data, and a multi-kilobyte value on every outlink result.
+_TEXT_SPAN = r"(?:[^\]\n]|\n(?![ \t]*\n))*"
+# Inline markdown link: [text](target). A destination never contains a newline.
+_RE_INLINE_LINK = re.compile(rf"\[({_TEXT_SPAN})\]\(([^)\n]+)\)")
 # Reference-style link usage: [text][ref] or [text][]
-_RE_REF_USAGE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
+_RE_REF_USAGE = re.compile(rf"\[({_TEXT_SPAN})\]\[({_TEXT_SPAN})\]")
 # Reference definition: [ref]: target  (at start of line, optional leading whitespace)
-_RE_REF_DEF = re.compile(r"^\s*\[([^\]]+)\]:\s*(.+)$", re.MULTILINE)
+_RE_REF_DEF = re.compile(r"^\s*\[([^\]\n]+)\]:\s*(.+)$", re.MULTILINE)
 # Markdown footnotes ([^label] / [^label]: body) differ from reference-style
 # links by exactly this character, and both reference regexes match them.
 _FOOTNOTE_LABEL_PREFIX = "^"
-# Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian table-cell escape)
-_RE_WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
+# Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian table-cell
+# escape). Neither half spans a line — Obsidian has no multi-line wikilink.
+_RE_WIKILINK = re.compile(r"\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]")
+
+
+def _is_external_target(target: str) -> bool:
+    """Return whether a raw link destination points outside the vault.
+
+    A destination carrying a URI scheme names a resource somewhere else and is
+    not a vault-relative path, however unfamiliar the scheme (#1335).
+
+    Args:
+        target: Raw destination string as written in the document.
+
+    Returns:
+        ``True`` when *target* is external and should not be resolved as a
+        vault path.
+    """
+    return target.startswith(_EXTERNAL_URL_PREFIXES) or bool(
+        _RE_URI_SCHEME.match(target)
+    )
+
+
+def _names_attachment(target: str, extensions: frozenset[str]) -> bool:
+    """Return whether a wikilink target names an attachment rather than a note.
+
+    Used to decide whether ``.md`` should be appended: ``[[diagram.png]]``
+    names the attachment that ``read`` already serves, and appending ``.md``
+    produced a target that cannot exist, so every Obsidian image embed was
+    reported broken (#1333).
+
+    Args:
+        target: Wikilink target with any fragment already split off.
+        extensions: The effective attachment allowlist, as returned by
+            :func:`~markdown_vault_mcp.utils.content_kind.effective_attachment_extensions`.
+
+    Returns:
+        ``True`` when *target* carries an extension naming an attachment.
+    """
+    suffix = artifact_suffix(target)
+    if not suffix:
+        # No extension at all — a note name in every configuration.
+        return False
+    if "*" in extensions:
+        # The wildcard means "every non-.md file", which says nothing about
+        # which *suffixes* are file types. Taken literally it would read the
+        # note title ``Version 2.0 plan`` as a ``0 plan`` attachment, so under
+        # the wildcard the suffix must also look like an extension.
+        return _RE_EXTENSION_SHAPE.fullmatch(suffix) is not None
+    return suffix in extensions
 
 
 def _strip_code_spans(content: str) -> str:
@@ -867,7 +936,12 @@ def _resolve_link_path(target: str, source_rel: str) -> tuple[str, str | None]:
     return resolved_str, fragment
 
 
-def extract_links(content: str, source_path: str) -> list[LinkInfo]:
+def extract_links(
+    content: str,
+    source_path: str,
+    *,
+    attachment_extensions: frozenset[str] | None = None,
+) -> list[LinkInfo]:
     """Extract all links from a markdown document body.
 
     Handles three link formats:
@@ -876,32 +950,42 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
     * **Reference-style**: ``[text][ref]`` with ``[ref]: path.md``
     * **Wikilinks**: ``[[path]]`` or ``[[path|alias]]``
 
-    Links inside fenced code blocks and inline code spans are ignored.
-    External URLs (``http://``, ``https://``, ``mailto:``) are skipped, as
-    are same-document anchors in every spelling — ``[text](#heading)``,
-    ``[text][ref]`` with a ``#`` target, and ``[[#heading]]``.
+    Links inside fenced code blocks and inline code spans are ignored. A
+    destination carrying any URI scheme (``https:``, ``file:``, ``obsidian:``
+    …) is external and skipped, as are same-document anchors in every
+    spelling — ``[text](#heading)``, ``[text][ref]`` with a ``#`` target, and
+    ``[[#heading]]``. No link spans a blank line, and no destination contains
+    a newline.
 
     Args:
         content: Markdown body text (frontmatter already stripped).
         source_path: Relative POSIX path of the source document, used for
             resolving relative link targets (e.g. ``"Journal/2024/today.md"``).
+        attachment_extensions: Configured attachment allowlist, used to tell a
+            wikilink naming an attachment (``[[diagram.png]]``) from one naming
+            a note. ``None`` uses the default set.
 
     Returns:
         List of :class:`~markdown_vault_mcp.types.LinkInfo` objects.
     """
     clean = _strip_code_spans(content)
+    extensions = (
+        effective_attachment_extensions(None)
+        if attachment_extensions is None
+        else attachment_extensions
+    )
     return [
         *_extract_inline_links(clean, source_path),
         *_extract_reference_links(clean, source_path),
-        *_extract_wikilinks(clean, source_path),
+        *_extract_wikilinks(clean, source_path, extensions),
     ]
 
 
 def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
     """Extract inline ``[text](path.md)`` links from code-stripped content.
 
-    Skips image links (``![alt](src)``), external URLs, and pure anchor
-    links (``#section`` within the same document).
+    Skips image links (``![alt](src)``), destinations carrying any URI
+    scheme, and pure anchor links (``#section`` within the same document).
     """
     links: list[LinkInfo] = []
     for m in _RE_INLINE_LINK.finditer(clean):
@@ -910,7 +994,7 @@ def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
             continue
         text = m.group(1)
         raw_target = m.group(2).strip()
-        if any(raw_target.startswith(p) for p in _EXTERNAL_URL_PREFIXES):
+        if _is_external_target(raw_target):
             continue
         if raw_target.startswith("#"):
             # Pure anchor link — skip (points to a section in the same doc).
@@ -934,8 +1018,8 @@ def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
 
     Collects the ``[ref]: path.md`` definitions first (optional CommonMark
     titles stripped), then resolves each usage; an empty ``[ref]`` falls
-    back to the link text per CommonMark shortcut semantics. External URLs
-    and pure anchors are skipped.
+    back to the link text per CommonMark shortcut semantics. Destinations
+    carrying a URI scheme and pure anchors are skipped.
 
     Markdown footnotes are skipped on both halves: a footnote definition
     (``[^label]: body``) is prose, not a link target, and two adjacent
@@ -971,7 +1055,7 @@ def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
         raw_target = ref_defs.get(ref_key)
         if raw_target is None:
             continue
-        if any(raw_target.startswith(p) for p in _EXTERNAL_URL_PREFIXES):
+        if _is_external_target(raw_target):
             continue
         if raw_target.startswith("#"):
             continue
@@ -989,7 +1073,9 @@ def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
     return links
 
 
-def _extract_wikilinks(clean: str, source_path: str) -> list[LinkInfo]:
+def _extract_wikilinks(
+    clean: str, source_path: str, attachment_extensions: frozenset[str]
+) -> list[LinkInfo]:
     """Extract ``[[path]]`` / ``[[path|alias]]`` wikilinks from content.
 
     Handles the Obsidian table-cell pipe escape (#731), fragment splitting
@@ -999,7 +1085,15 @@ def _extract_wikilinks(clean: str, source_path: str) -> list[LinkInfo]:
     for ``FTSIndex.resolve_vault_wikilinks()`` to resolve vault-wide.
 
     Fragment-only wikilinks (``[[#Heading]]``) are skipped, matching how
-    :func:`_extract_inline_links` treats ``[text](#heading)`` (#1107).
+    :func:`_extract_inline_links` treats ``[text](#heading)`` (#1107), as are
+    schemed targets, which name something outside the vault (#1335).
+
+    Args:
+        clean: Code-stripped markdown body.
+        source_path: Relative POSIX path of the source document.
+        attachment_extensions: Effective attachment allowlist, consulted to
+            decide whether a target names an attachment rather than a note
+            (#1333).
     """
     links: list[LinkInfo] = []
     for m in _RE_WIKILINK.finditer(clean):
@@ -1031,12 +1125,20 @@ def _extract_wikilinks(clean: str, source_path: str) -> list[LinkInfo]:
             # exist and so was always reported broken (#1107).
             continue
 
+        if _is_external_target(raw_path):
+            # A schemed target ([[https://example.com]]) is not a vault path,
+            # and appending ".md" to one produced a target that cannot exist.
+            continue
+
         # raw_target for wikilinks: path portion before .md is appended,
         # with fragment re-attached so the original [[Note#section]] is preserved.
         wikilink_raw_target = raw_path + ("#" + fragment if fragment else "")
 
-        # Wikilinks without .md extension: append it.
-        if not raw_path.lower().endswith(".md"):
+        # Wikilinks naming a note get ".md" appended; one naming an attachment
+        # already carries the extension that identifies it (#1333).
+        if not raw_path.lower().endswith(".md") and not _names_attachment(
+            raw_path, attachment_extensions
+        ):
             raw_path = raw_path + ".md"
 
         # Obsidian vault-wide resolution semantics:
@@ -1069,6 +1171,7 @@ def parse_note(
     chunk_strategy: ChunkStrategy | None = None,
     *,
     title_field: str = "title",
+    attachment_extensions: frozenset[str] | None = None,
 ) -> ParsedNote:
     """Parse a single markdown file into a ParsedNote.
 
@@ -1083,6 +1186,10 @@ def parse_note(
             :class:`HeadingChunker`.
         title_field: Frontmatter key consulted first when resolving the
             document title (see :func:`_resolve_title`).
+        attachment_extensions: Effective attachment allowlist, consulted only
+            by link extraction (see :func:`extract_links`). ``None`` uses the
+            default set — correct for a caller that reads the parsed
+            frontmatter, chunks or hash and ignores ``links``.
 
     Returns:
         A :class:`~markdown_vault_mcp.types.ParsedNote` instance.
@@ -1115,7 +1222,7 @@ def parse_note(
     rel_str = rel_path.as_posix()
 
     chunks = chunk_strategy.chunk(body, metadata)
-    links = extract_links(body, rel_str)
+    links = extract_links(body, rel_str, attachment_extensions=attachment_extensions)
     # Measured here rather than summed from `chunks`: overlap duplicates text
     # across chunk boundaries, so a sum would over-count multi-chunk notes.
     content_chars = len(body)
@@ -1168,6 +1275,7 @@ def parse_note_categorized(
     *,
     rel_path: str,
     title_field: str = "title",
+    attachment_extensions: frozenset[str] | None = None,
     required_frontmatter: list[str] | None = None,
     log_context: str = "scan",
 ) -> ParsedNote | CategorizedSkip | None:
@@ -1196,6 +1304,8 @@ def parse_note_categorized(
         rel_path: Vault-relative POSIX path, used for the ``SkippedFile``
             and log messages.
         title_field: Frontmatter key consulted first for the title.
+        attachment_extensions: Effective attachment allowlist, forwarded to
+            :func:`parse_note` for link extraction.
         required_frontmatter: Frontmatter keys that must be present.
         log_context: Prefix identifying the calling pipeline in logs.
 
@@ -1204,7 +1314,13 @@ def parse_note_categorized(
         deterministic skip, or ``None`` for a transient I/O failure.
     """
     try:
-        note = parse_note(abs_path, source_dir, chunk_strategy, title_field=title_field)
+        note = parse_note(
+            abs_path,
+            source_dir,
+            chunk_strategy,
+            title_field=title_field,
+            attachment_extensions=attachment_extensions,
+        )
     except UnicodeDecodeError as exc:
         logger.warning(
             "%s: skipping %s — cannot decode as UTF-8 (%s)",
@@ -1259,6 +1375,7 @@ def scan_directory(
     chunk_strategy: ChunkStrategy | None = None,
     on_skip: Callable[[SkippedFile], None] | None = None,
     title_field: str = "title",
+    attachment_extensions: frozenset[str] | None = None,
 ) -> Iterator[ParsedNote]:
     """Discover and parse all markdown files under ``source_dir``.
 
@@ -1290,6 +1407,8 @@ def scan_directory(
             transient ``OSError`` skips (self-healing). ``None`` (default)
             preserves the historical behaviour of silently skipping such
             files (#775).
+        attachment_extensions: Effective attachment allowlist, forwarded to
+            link extraction.
         title_field: Frontmatter key consulted first when resolving each
             document's title; passed through to :func:`parse_note`.
 
@@ -1335,6 +1454,7 @@ def scan_directory(
             chunk_strategy,
             rel_path=rel_posix,
             title_field=title_field,
+            attachment_extensions=attachment_extensions,
             required_frontmatter=required_frontmatter,
             log_context="scan",
         )

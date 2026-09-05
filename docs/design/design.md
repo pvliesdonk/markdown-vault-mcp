@@ -1998,8 +1998,22 @@ Links are extracted from markdown content during `parse_note()` and stored in th
 - **Wikilinks**: `[[path]]`, `[[path|alias]]`, `[[path#heading]]`
 
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
-are not extracted. External URLs (`http://`, `https://`, `mailto:`) and pure anchors
-are skipped. "Pure anchor" covers every spelling of a same-document reference:
+are not extracted. External destinations and pure anchors are skipped.
+
+**A destination carrying any URI scheme is external.** The filter was an
+allowlist of four prefixes (`http://`, `https://`, `mailto:`, `//`) until
+#1335, so every other scheme fell through to vault-path resolution: a
+`file:///E:/…` link was joined against the source note's folder, collapsed to
+`file:/E:/…` by path normalisation, and reported broken — as were `ftp:`,
+`obsidian:` and `zotero:`, all of which appear in real vaults. The test is now
+the shape RFC 3986 gives a scheme, anchored at the start of the destination,
+requiring **two or more** characters before the colon: one letter is a Windows
+drive (`C:/notes/topic.md`), which is a path. `//` stays named explicitly
+because a protocol-relative URL has no scheme to match. The same test now
+guards wikilinks, where `[[https://example.com]]` had been storing
+`https://example.com.md`.
+
+"Pure anchor" covers every spelling of a same-document reference:
 `[text](#heading)`, a reference definition whose target starts with `#`, and the
 wikilink form `[[#heading]]` (issue #1107). The wikilink form was the exception
 until #1107: its fragment is split off before `.md` is appended, so the empty path
@@ -2021,6 +2035,20 @@ external-URL skip did not recognise it and the path resolver joined it against
 the source note's directory, collapsing `https://` to `https:/` in the stored
 `target_path`. Both halves of reference extraction now skip labels beginning
 with `^`.
+
+**No link spans a paragraph.** The inline-link regex bounded link text with
+`[^\]]*` and the destination with `[^)]+`, and both character classes match
+newlines (#1334). A single unmatched `[` therefore paired with a `](`
+thousands of characters later, indexing several paragraphs of prose as one
+link whose destination was whatever followed — including destinations
+containing literal newlines. Beyond the wrong rows, `get_broken_links` and
+`get_outlinks` returned those multi-kilobyte `link_text` values verbatim,
+making one call very expensive in an LLM context. The bound follows
+CommonMark: link text may contain a *soft* break but not a blank line
+(`(?:[^\]\n]|\n(?![ \t]*\n))*`), and a destination contains no newline at
+all. The same unbounded shape was swept from the reference-usage,
+reference-definition and wikilink regexes in the same change — a wikilink has
+no multi-line form in Obsidian either.
 
 **Path resolution for markdown links**: relative paths are resolved against the
 source document's directory. `../sibling.md` from `Journal/2024/today.md` resolves
@@ -2062,6 +2090,21 @@ vault-wide resolution rules rather than relative path resolution:
   the source document's directory at scan time, identical to markdown links.
 
 - `[[Note Title]]` appends `.md` → `Note Title.md` before resolution.
+
+- **Wikilinks to attachments** (`![[diagram.png]]`, Obsidian's embed syntax):
+  a target whose extension is in the configured attachment allowlist names
+  that attachment, and keeps its own extension. Appending `.md` produced
+  `diagram.png.md`, a target that cannot exist, so every image and PDF embed
+  was permanently in `get_broken_links` and inflated `broken_link_count`
+  (#1333). The decision has to happen at extraction time: attachments are not
+  indexed — `list_documents(include_attachments=True)` walks the filesystem —
+  so `resolve_vault_wikilinks()` has no rows to match against. This is why
+  `IndexManager` (and through it `parse_note` / `scan_directory`) carries the
+  allowlist. Under the `*` wildcard the suffix must additionally *look* like
+  an extension (`[A-Za-z0-9]{1,8}`), or the note title `Version 2.0 plan`
+  would read as a `0 plan` attachment. Whether an embed should be recorded as
+  a link at all — `_extract_inline_links` skips `![alt](src)` — is a separate
+  question, deliberately left open.
 
 - **Alias resolution**: When no path match is found,
   `resolve_vault_wikilinks()` also checks the `document_aliases` table.

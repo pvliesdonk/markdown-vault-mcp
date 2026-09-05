@@ -2149,3 +2149,137 @@ class TestAliasResolution:
         outlinks = idx.get_outlinks("source.md")
         assert outlinks[0]["target_path"] == "artificial-intelligence.md"
         assert outlinks[0]["fragment"] == "history"
+
+
+# ---------------------------------------------------------------------------
+# extract_links: paragraph bounding (#1334)
+# ---------------------------------------------------------------------------
+
+
+class TestLinkSpanBounding:
+    def test_stray_bracket_does_not_pair_across_a_blank_line(self) -> None:
+        """An unmatched ``[`` cannot pair with a ``](`` in a later paragraph."""
+        content = "See item [3 below.\n\nAnother paragraph.\n\nAn image: [x](pic.md)"
+        links = extract_links(content, "index.md")
+        assert [lnk.link_text for lnk in links] == ["x"]
+        assert links[0].target_path == "pic.md"
+
+    def test_link_text_may_span_a_soft_break(self) -> None:
+        """CommonMark allows a single newline inside link text."""
+        links = extract_links("[wrapped\ntext](note.md)", "index.md")
+        assert len(links) == 1
+        assert links[0].link_text == "wrapped\ntext"
+
+    def test_destination_never_contains_a_newline(self) -> None:
+        """A ``](`` whose closing paren is paragraphs away is not a link."""
+        content = "[text](.\n2. The programme has objectives:\n3. (a)"
+        assert extract_links(content, "index.md") == []
+
+    def test_reference_usage_does_not_span_a_blank_line(self) -> None:
+        """``[text][ref]`` is bounded the same way inline link text is."""
+        content = "A stray [bracket.\n\nProse.\n\n[real][ref]\n\n[ref]: b.md"
+        links = extract_links(content, "index.md")
+        assert [lnk.link_text for lnk in links] == ["real"]
+
+    def test_wikilink_target_never_spans_a_newline(self) -> None:
+        """``[[`` on one line and ``]]`` on another is not a wikilink."""
+        assert extract_links("[[stray\n\nprose]]", "index.md") == []
+
+
+# ---------------------------------------------------------------------------
+# extract_links: URI schemes (#1335)
+# ---------------------------------------------------------------------------
+
+
+class TestExternalUriSchemes:
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "file:///E:/Design/2026-001/Semicon",
+            "ftp://example.com/pub/doc.md",
+            "obsidian://open?vault=Notes&file=Topic",
+            "zotero://select/items/1_ABCD",
+            "tel:+31612345678",
+        ],
+    )
+    def test_schemed_inline_target_is_external(self, target: str) -> None:
+        """Any URI scheme marks the destination external, not a vault path."""
+        assert extract_links(f"[x]({target})", "notes/deep/src.md") == []
+
+    def test_schemed_reference_target_is_external(self) -> None:
+        """The scheme test applies to reference definitions too."""
+        content = "[x][ref]\n\n[ref]: zotero://select/items/1_ABCD"
+        assert extract_links(content, "index.md") == []
+
+    def test_schemed_wikilink_target_is_external(self) -> None:
+        """A schemed wikilink target is not a vault path with ``.md`` appended."""
+        assert extract_links("[[https://example.com]]", "index.md") == []
+
+    def test_windows_drive_letter_is_not_a_scheme(self) -> None:
+        """A single letter before ``:`` is a drive letter, not a URI scheme."""
+        links = extract_links("[x](C:/notes/topic.md)", "index.md")
+        assert len(links) == 1
+        assert links[0].raw_target == "C:/notes/topic.md"
+
+    def test_plain_relative_target_still_resolves(self) -> None:
+        """A destination with no scheme is unaffected."""
+        links = extract_links("[x](../sibling.md)", "Journal/2024/today.md")
+        assert len(links) == 1
+        assert links[0].target_path == "Journal/sibling.md"
+
+
+# ---------------------------------------------------------------------------
+# extract_links: wikilinks to attachments (#1333)
+# ---------------------------------------------------------------------------
+
+
+class TestWikilinkAttachments:
+    def test_allowlisted_extension_does_not_get_md_appended(self) -> None:
+        """``![[diagram.png]]`` names the attachment, not ``diagram.png.md``."""
+        links = extract_links(
+            "![[Images/wachtpost.png]]",
+            "index.md",
+            attachment_extensions=frozenset({"png", "pdf"}),
+        )
+        assert len(links) == 1
+        assert links[0].target_path == "Images/wachtpost.png"
+        assert links[0].raw_target == "Images/wachtpost.png"
+
+    def test_non_allowlisted_extension_still_gets_md_appended(self) -> None:
+        """An extension outside the allowlist keeps the note-name behaviour."""
+        links = extract_links(
+            "[[Report v2.final]]",
+            "index.md",
+            attachment_extensions=frozenset({"png"}),
+        )
+        assert links[0].target_path == "Report v2.final.md"
+
+    def test_bare_wikilink_still_gets_md_appended(self) -> None:
+        """A target with no extension is a note in every configuration."""
+        links = extract_links(
+            "[[My Note]]", "index.md", attachment_extensions=frozenset({"*"})
+        )
+        assert links[0].target_path == "My Note.md"
+
+    def test_wildcard_allows_any_extension_shaped_suffix(self) -> None:
+        """Under ``*`` every plausible file extension names an attachment."""
+        links = extract_links(
+            "[[assets/flow.drawio]]",
+            "index.md",
+            attachment_extensions=frozenset({"*"}),
+        )
+        assert links[0].target_path == "assets/flow.drawio"
+
+    def test_wildcard_does_not_treat_a_dotted_title_as_an_extension(self) -> None:
+        """``Version 2.0 plan`` is a note title, not a ``0 plan`` attachment."""
+        links = extract_links(
+            "[[Version 2.0 plan]]",
+            "index.md",
+            attachment_extensions=frozenset({"*"}),
+        )
+        assert links[0].target_path == "Version 2.0 plan.md"
+
+    def test_attachment_wikilink_keeps_its_fragment_behaviour(self) -> None:
+        """A default call (no allowlist) uses the default attachment set."""
+        links = extract_links("[[notes/pic.png]]", "index.md")
+        assert links[0].target_path == "notes/pic.png"

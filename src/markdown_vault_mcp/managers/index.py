@@ -35,13 +35,14 @@ from markdown_vault_mcp.scanner import (
 )
 from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult, SkippedFile
 from markdown_vault_mcp.utils import (
+    effective_attachment_extensions,
     is_note,
     is_path_excluded,
 )
 from markdown_vault_mcp.utils.fs import iter_markdown_files
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.interfaces import KeywordGraphIndex, VectorStore
@@ -87,6 +88,8 @@ class IndexManager:
             force at build time, or ``None`` when the cap was derived from the
             model context. Recorded into FTS meta alongside the model as a
             stable warm-restart key (#649).
+        attachment_extensions: Configured attachment allowlist, consulted by
+            link extraction (``None`` = the default set).
         title_field: Frontmatter key consulted first when resolving document
             titles; threaded to every ``parse_note``/``scan_directory`` call
             and recorded into FTS meta as a warm-restart key.
@@ -118,6 +121,7 @@ class IndexManager:
         embed_model_name: str | None = None,
         max_chunk_chars_override: int | None = None,
         title_field: str = "title",
+        attachment_extensions: Sequence[str] | None = None,
         embed_text_builder: EmbedTextBuilder | None = None,
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
     ) -> None:
@@ -136,6 +140,13 @@ class IndexManager:
         self._embed_model_name = embed_model_name
         self._max_chunk_chars_override = max_chunk_chars_override
         self._title_field = title_field
+        # Link extraction needs the allowlist to tell a wikilink naming an
+        # attachment ([[diagram.png]]) from one naming a note (#1333).
+        # Resolved once here: attachments are not indexed, so the decision
+        # cannot be deferred to resolve_vault_wikilinks().
+        self._attachment_extensions = effective_attachment_extensions(
+            attachment_extensions
+        )
         self._embed_builder = embed_text_builder or EmbedTextBuilder()
         # Composed vector-lifecycle collaborator (#1157). The shared path
         # helpers are injected as callables (per the #736 precedent) so the
@@ -432,6 +443,7 @@ class IndexManager:
                 exclude_patterns=self._exclude_patterns,
                 on_skip=_collect_skip,
                 title_field=self._title_field,
+                attachment_extensions=self._attachment_extensions,
             )
         )
 
@@ -706,6 +718,7 @@ class IndexManager:
                 self._chunk_strategy,
                 rel_path=path,
                 title_field=self._title_field,
+                attachment_extensions=self._attachment_extensions,
                 required_frontmatter=self._required_frontmatter,
                 log_context="reindex",
             )
@@ -928,6 +941,7 @@ class IndexManager:
                             self._source_dir,
                             self._chunk_strategy,
                             title_field=self._title_field,
+                            attachment_extensions=self._attachment_extensions,
                         )
                         missing = [
                             k
