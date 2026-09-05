@@ -2275,6 +2275,16 @@ and a leading dot are now ignored, so <code>PDF</code>, <code>.pdf</code>, and <
 same type. This only widens what is accepted; no working configuration
 changes meaning. Library callers passing <code>attachment_extensions=</code> get the
 same normalization.</p>
+<p><strong>The git guide now says what the remote must permit.</strong> It documented which
+credentials to configure but not what the token had to be allowed to do, so
+two ordinary first-run conditions each cost a long detour before the real git
+error was found: a read-only token, and a protected default branch that
+refused the push
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1337">#1337</a>). The
+managed-git section now states both prerequisites and points at
+<code>git_sync(direction="push")</code> as the call that returns the remote's own
+refusal message, with a note on why <code>git push --dry-run</code> is not a substitute
+for it.</p>
 <h2 id="for-library-consumers">For library consumers<a class="headerlink" href="#for-library-consumers" title="Permanent link">&para;</a></h2>
 <p><code>Vault</code> construction is now settings-first: a <code>VaultSettings</code> object
 (importable from <code>markdown_vault_mcp.vault</code> alongside <code>Vault</code>) replaces

@@ -805,6 +805,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Managed Mode (Recommended For Containerized Deployments)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-remote-must-permit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the remote must permit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2096,6 +2113,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Managed Mode (Recommended For Containerized Deployments)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-remote-must-permit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the remote must permit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2301,8 +2335,34 @@ it back. The full rules, including the cases that fail, are in
 <li>If <code>SOURCE_DIR</code> is empty at startup, the server clones <code>GIT_REPO_URL</code> into it.</li>
 <li>If <code>SOURCE_DIR</code> is already a git repo, the server verifies <code>origin</code> matches <code>GIT_REPO_URL</code>.</li>
 <li>Each write tool call is committed (see <a href="#what-a-commit-covers">What a commit covers</a>); the accumulated commits are pushed after the configured idle delay.</li>
-<li>Periodic pull uses fast-forward-only updates.</li>
 </ul>
+<h3 id="what-the-remote-must-permit">What the remote must permit<a class="headerlink" href="#what-the-remote-must-permit" title="Permanent link">&para;</a></h3>
+<p><code>GIT_USERNAME</code> and <code>GIT_TOKEN</code> decide who the server authenticates <em>as</em>. They
+say nothing about what that identity is allowed to do, and a token that
+authenticates perfectly can still be refused at push time. Both conditions
+below are ordinary first-run states rather than mistakes, and neither
+is visible from the credentials.</p>
+<p><strong>The token needs push access to the branch the vault tracks.</strong> A read-only
+token clones and pulls without complaint, so a vault can run for hours,
+committing locally, before anything reveals that nothing is replicating.</p>
+<p><strong>A protected default branch refuses the push.</strong> GitLab protected branches,
+GitHub branch protection, and GitHub rulesets all reject a push that does not
+meet their conditions, whatever the token's own scopes say. Either grant the
+token's identity permission to push to that branch, or point the vault at a
+branch it may write:</p>
+<ul>
+<li>GitLab: Settings → Repository → Protected branches, or use a token whose
+  role is listed under <strong>Allowed to push and merge</strong>.</li>
+<li>GitHub: Settings → Branches (or Rules → Rulesets); a bypass entry for the
+  app or account behind the token.</li>
+</ul>
+<p>The symptom is the same either way: writes succeed, <code>read</code> serves them back,
+and the commits accumulate in the clone without reaching the remote. See
+<a href="#when-the-clone-stops-reaching-its-remote">When the clone stops reaching its remote</a>
+for what that looks like, and
+<a href="#manual-sync-git_sync-tool">Manual sync</a> for the one call that returns the
+remote's actual refusal message.
+- Periodic pull uses fast-forward-only updates.</p>
 <p>Two mechanisms sit alongside the periodic loop, both described below: a
 push webhook that pulls the moment someone pushes, and the <code>git_sync</code>
 tool for pulling or pushing on demand from inside a conversation.</p>
@@ -2433,6 +2493,19 @@ conversation, call <code>git_sync</code> directly:</p>
 <code>direction="both"</code> mode the push leg only runs when the pull leg
 succeeded; otherwise <code>push</code> stays <code>null</code> and the LLM should inspect
 <code>pull.reason</code> (and <code>pull.conflict_files</code>) before retrying.</p>
+<p><strong><code>git_sync(direction="push")</code> is how you see why a push was refused.</strong> It
+runs a real push and returns the remote's own words in <code>push.hint</code>:</p>
+<div class="highlight"><pre><span></span><code>remote: GitLab: You are not allowed to push code to protected branches on this project.
+</code></pre></div>
+<p>That is the fastest route from "the vault is not replicating" to the sentence
+that names the cause, and it is worth reaching for before inspecting the
+container or reproducing the push by hand.</p>
+<p>Do not substitute <code>git push --dry-run</code> for it. A dry-run push negotiates with
+the remote but never runs its pre-receive hooks, which is where a protected
+branch does its rejecting, so it reports success against a remote that would
+refuse the real push. This is also why a <code>dry_run=true</code> <code>git_sync</code> returns
+<code>applied=false</code> with <code>reason="dry_run_unsupported"</code> on the push leg rather
+than a prediction: there is no honest local answer to give.</p>
 <p><code>dry_run=true</code> previews what a pull <em>would</em> do (useful for "is there
 anything new on origin?") without risking an in-conversation conflict.
 The preview classifies the clone against the remote before predicting. A

@@ -44,6 +44,20 @@ Behavior:
 - If `SOURCE_DIR` is empty at startup, the server clones `GIT_REPO_URL` into it.
 - If `SOURCE_DIR` is already a git repo, the server verifies `origin` matches `GIT_REPO_URL`.
 - Each write tool call is committed (see [What a commit covers](#what-a-commit-covers)); the accumulated commits are pushed after the configured idle delay.
+
+### What the remote must permit
+
+`GIT_USERNAME` and `GIT_TOKEN` decide who the server authenticates *as*. They say nothing about what that identity is allowed to do, and a token that authenticates perfectly can still be refused at push time. Both conditions below are ordinary first-run states rather than mistakes, and neither is visible from the credentials.
+
+**The token needs push access to the branch the vault tracks.** A read-only token clones and pulls without complaint, so a vault can run for hours, committing locally, before anything reveals that nothing is replicating.
+
+**A protected default branch refuses the push.** GitLab protected branches, GitHub branch protection, and GitHub rulesets all reject a push that does not meet their conditions, whatever the token's own scopes say. Either grant the token's identity permission to push to that branch, or point the vault at a branch it may write:
+
+- GitLab: Settings → Repository → Protected branches, or use a token whose role is listed under **Allowed to push and merge**.
+- GitHub: Settings → Branches (or Rules → Rulesets); a bypass entry for the app or account behind the token.
+
+The symptom is the same either way: writes succeed, `read` serves them back, and the commits accumulate in the clone without reaching the remote. See [When the clone stops reaching its remote](#when-the-clone-stops-reaching-its-remote) for what that looks like, and [Manual sync](#manual-sync-git_sync-tool) for the one call that returns the remote's actual refusal message.
+
 - Periodic pull uses fast-forward-only updates.
 
 Two mechanisms sit alongside the periodic loop, both described below: a push webhook that pulls the moment someone pushes, and the `git_sync` tool for pulling or pushing on demand from inside a conversation.
@@ -128,6 +142,16 @@ git_sync(direction="both")
 ```
 
 Use `direction="pull"` or `direction="push"` to skip a leg. In `direction="both"` mode the push leg only runs when the pull leg succeeded; otherwise `push` stays `null` and the LLM should inspect `pull.reason` (and `pull.conflict_files`) before retrying.
+
+**`git_sync(direction="push")` is how you see why a push was refused.** It runs a real push and returns the remote's own words in `push.hint`:
+
+```
+remote: GitLab: You are not allowed to push code to protected branches on this project.
+```
+
+That is the fastest route from "the vault is not replicating" to the sentence that names the cause, and it is worth reaching for before inspecting the container or reproducing the push by hand.
+
+Do not substitute `git push --dry-run` for it. A dry-run push negotiates with the remote but never runs its pre-receive hooks, which is where a protected branch does its rejecting, so it reports success against a remote that would refuse the real push. This is also why a `dry_run=true` `git_sync` returns `applied=false` with `reason="dry_run_unsupported"` on the push leg rather than a prediction: there is no honest local answer to give.
 
 `dry_run=true` previews what a pull *would* do (useful for "is there anything new on origin?") without risking an in-conversation conflict. The preview classifies the clone against the remote before predicting. A history that has moved on both locally and on the remote reports `fast_forward=false` with `reason="diverged"`, which is the signal that the real pull would rebase and may end in sibling resolution or fail outright. A clone with nothing to pull (up to date, or carrying only unpushed local commits) reports `would_apply=false`. The push leg has no safe local "would this be accepted" probe, so a dry-run push always returns `applied=false` with `reason="dry_run_unsupported"`.
 
