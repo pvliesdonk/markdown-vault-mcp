@@ -11062,3 +11062,134 @@ The Vault Explorer app declared an empty content-security policy while its page 
 On a deployment using OIDC authentication, a failure during OIDC discovery now raises `ConfigurationError` rather than surfacing whichever error the discovery path produced. The normalisation is upstream, in pvl-core [v5.0.0](https://github.com/pvliesdonk/fastmcp-pvl-core/releases/tag/v5.0.0), and reaches this server through the floor moving from 4.11.3 to 5.0.0. A deployment that catches `ConfigurationError` around startup already covers every OIDC mode.
 
 The `pygments` pins that held the lock on a broken release are gone ([#1166](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1166)), and the project moved to mypy 2.x ([#1168](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1168)).
+
+# 4.2
+
+This release is about trusting the git layer. On a git-backed vault, an agent can now undo an overwrite from the client: an overwriting `write` names the commit holding what it replaced, and `read` accepts a `revision` to get it back. Writes commit once per tool call instead of once per file, each commit is scoped so an operator's staged work is never swept in, and when the clone stops reaching its remote every write result says so instead of reporting quiet success. Six history bugs (wrong note, escaped path, rejected SHA, vanished history) are fixed. GitLab-hosted vaults gain the push-triggered reindex GitHub vaults already had, Voyage vaults get better search relevance with nothing to configure, and server instructions now arrive in full on Claude Code instead of losing their tail to a 2,048-unit cap. Nothing breaks: no env var, tool, or library import changes meaning. Two one-time costs on first start after upgrade: every vault rebuilds its text index once, and a Voyage vault re-embeds once.
+
+This is the first release since [4.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.1/index.md). Most of it happened in one place, the git integration, pushed by two outside reports: a vault where one bulk call produced 2,596 commits, and a production deployment that wrote for hours into a clone that could no longer push. Around that sit a GitLab webhook and better search on Voyage vaults, plus a fix for server instructions that never fully arrived.
+
+## Undo an overwrite without leaving the client
+
+On a git write-through vault, an overwritten note's previous content was always safe in history, but not reachable over MCP. As the motivating issue put it: "In practice 'git is the recovery' means a human with shell access to the checkout, not the agent" ([#1137](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1137), [#1288](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1288)).
+
+Two additive pieces close that gap. An overwriting `write` now returns `previous_revision`, the commit that holds the content it replaced. And `read` accepts a `revision` argument (that SHA, or any commit from `get_history`), returning the note as it stood then. The full round trip:
+
+```
+write(path, content=...)              → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")       → the replaced content
+read(path)                            → the current etag
+write(path, content=<what you read>, if_match=<that etag>)
+```
+
+The content comes back as the whole raw file, frontmatter included, so the last step restores the note byte for byte. A note that has since been *deleted* is still readable at a revision that has it; that is how a deleted note is recovered.
+
+One design decision worth understanding: a revision read resolves the *note*, not the path. You pass the name the note has today; a rename since that revision is followed, and the response reports the `historical_path` it carried then. Where git's records cannot connect today's note to that revision (a different note took over the name, a rename rewrote the note beyond recognition, the revision is off the current history), the read **fails rather than returning content**, because the next thing a caller does with the result is write it back. The [tools reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#reading-an-earlier-revision) lists every refusal case. In the same spirit, `previous_revision` is absent whenever no commit provably holds the replaced content, such as a brand-new note or a vault without git.
+
+Requires a git-backed vault; revision reads cover `.md` notes. No `restore` tool ships with this, deliberately: the read/write round trip above is the restore, and it keeps the caller in charge of what gets written.
+
+## History that describes the right note
+
+Building the revision reader forced a hard look at what the history readers were actually reporting, and six long-standing bugs fell out. Every one of them was reachable on 4.1 and earlier:
+
+- A note whose name contains glob characters got another note's history: a vault holding `b1.md` and `b[1].md` reported `b1.md`'s commits under both names. Note names are now passed to git as literal paths everywhere ([#1303](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1303), [#1305](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1305)).
+- A note that reused a freed name inherited its predecessor's commits, and a `get_diff` spanning the two rendered one note's content against the other's as though it were one file being edited ([#1285](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1285), [#1298](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1298)).
+- A rename that also rewrote the note heavily dropped its pre-rename commits: git scored the rename below its 50% default similarity, while the project's other walks accept 30%. Every reader now follows renames at the same 30% threshold ([#1297](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1297), [#1302](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1302)).
+- A note renamed while resolving a merge had no history at all: `get_history` returned an empty list for a note the server could read ([#1306](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1306), [#1314](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1314)).
+- On a SHA-256 repository, `get_diff` rejected the commit IDs `get_history` had just returned: the ID check stopped at 40 hex digits, and a SHA-256 object ID has 64 ([#1284](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1284), [#1286](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1286)).
+- Non-ASCII note paths came back octal-escaped (`"caf\303\251.md"`), and a per-commit diff of such a note came back empty ([#1282](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1282), [#1291](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1291)).
+
+The end state is uniform: `get_history`, `get_diff`, and the new `read(revision=)` all identify a note the same way, with the same rename following, the same threshold, and the same lineage boundary at the note's creation.
+
+## One commit per tool call
+
+This one arrived from the field. [@mikebronner](https://github.com/mikebronner) ran a single `okf_convert_links` call on a 3,918-document vault and got 2,596 commits, one per file: "One logical migration is 2,596 entries, so `git log` no longer answers 'what changed and why' at the level a reader asks it" ([#1264](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1264)). They also contributed the fix ([#1265](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1265)).
+
+The commit boundary is now the MCP tool call. A bulk operation such as `okf_convert_links`, `move_folder`, or `rename` with link updates produces one commit with the subject `<tool>: N files`. A call that wrote a single file keeps the familiar `write: note.md` subject, so an ordinary vault's log reads exactly as it always has. No mode knob exists; the boundary is unconditional.
+
+The same work fixed how much a commit takes with it. The auto-commit used to commit the whole index, which had a consequence for anyone sharing the checkout with the server: an operator's deliberately staged-but-uncommitted work could disappear into a commit attributed to a vault write they never made ([#1249](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1249), [#1273](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1273), [#1304](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1304)). Commits are now scoped to the operation's own paths: every git command involved, from staging through the no-op check to the commit itself, names exactly the files the operation touched and nothing else. A write during an operator's in-progress merge now commits nothing and logs why, leaving the merge intact. And `move_folder` now reports every file it moves to git, including files outside the attachment allowlist, which previously left the working tree dirty ([#1238](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1238), [#1244](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1244)).
+
+Commit *identity* got the same treatment. On an OIDC deployment, `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` and `_EMAIL_CLAIM` promised to stamp commits with the authenticated user, but the claims were resolved on a background thread that had no request context, so every commit silently fell back to the static server identity ([#1218](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1218), [#1226](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1226)). The claims are now resolved when the tool call arrives and carried to the background commit, so the commit author is the person who made the write. It also now agrees with the OKF provenance record for the same write, which was already stamped correctly.
+
+## A write that cannot leave the host says so
+
+The sharpest report of the cycle came from a production deployment. [@FoundationOperations](https://github.com/FoundationOperations) ran the server as the only git route for their agents, and a diverged clone stopped pushing: "the tools reported durable writes for changes that could never leave the host. This ran for hours before anyone noticed. Three commits accumulated locally; one of them was an agent's only copy of its work" ([#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287)).
+
+Every vault-mutating tool result now carries a `remote` object while the clone is not reaching its remote ([#1300](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1300)):
+
+```
+{"state": "unsynced", "reason": "non_fast_forward",
+ "since": "2026-09-04T07:12:33+00:00",
+ "detail": "This vault's git clone has not reached its remote since ..."}
+```
+
+The write still succeeded and the commit is real; the key tells the caller it is committed locally only, so an agent knows to keep its own copy and alert its user. When there is nothing to report, the key is absent rather than null. The log marks the transition once (`git_remote_unsynced`, and `git_remote_resynced` on recovery) instead of repeating the failure every push cycle. Writes are warned, never refused; the same report asked for a configurable block, which is tracked separately as [#1299](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1299).
+
+The same incident exposed a lie in `git_sync`: a dry-run pull "reported `fast_forward: true, would_apply: true` for the same divergence that the non-dry-run call refused" (the reporter's words in [#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287), split out as [#1292](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1292)). The pull leg now classifies the clone against the remote before predicting anything: a divergence reports `fast_forward=false` with `reason="diverged"`, and a clone that is merely ahead of its remote stops reporting the remote tip as its projected target, which had been triggering pointless full reindexes through the sync paths ([#1301](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1301)).
+
+See "When the clone stops reaching its remote" in the [git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/git-integration/index.md).
+
+## Push-triggered reindex for GitLab-hosted vaults
+
+At 4.1 the push webhook was GitHub-only end to end, so "on GitLab there is no configuration that gets external edits indexed promptly": the vault was stuck with the periodic pull loop, 600 seconds by default ([#1178](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1178)).
+
+A GitLab-hosted vault now reaches the same staleness window as a GitHub one ([#1262](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1262)): a push lands, GitLab delivers a `Push Hook` to `POST /gitlab-webhook`, and the server pulls and reindexes within a couple of seconds. Two credentials are supported, either of which mounts the route:
+
+- `MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SIGNING_TOKEN`: the value GitLab generates in the webhook form (`whsec_...`), verified as a Standard Webhooks signature. Needs GitLab 19.0 or later.
+- `MARKDOWN_VAULT_MCP_GITLAB_WEBHOOK_SECRET_TOKEN`: the legacy plain token, accepted on any GitLab version, sent in clear by GitLab; startup warns when it is the only credential.
+
+Set both during a migration and the server accepts either. `MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET` and `/github-webhook` are untouched; an existing GitHub setup needs no change. The setup walkthrough is in the [git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/git-integration/index.md).
+
+One related fix reaches beyond GitLab: on `--transport stdio`, where no HTTP route can exist, a configured webhook credential used to stand the file watcher down anyway, leaving that deployment with no external-change detection at all. That hole existed at 4.1 for `GITHUB_WEBHOOK_SECRET` ([#1263](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1263), [#1277](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1277)). The watcher now stays on, and startup logs `webhook_transport_inert` naming the credential that does nothing on that transport.
+
+## Server instructions now arrive in full
+
+At 4.1, this server's composed instructions were 2,358 characters, and Claude Code caps a server's instructions at 2,048 UTF-16 units. The final 310 characters were silently cut, and they were the ones that mattered most: the `READ-ONLY`/`READ-WRITE` announcement, and the position where an operator's `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` is appended ([#1252](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1252)). Worse, with several instances of this server connected, the one line guaranteed to survive was the identity line, a constant, byte-identical across all of them.
+
+Instructions are now composed by semantic role (identity, routing, instance mode, operator policy, then capabilities and workflows), so the parts that distinguish and govern a deployment come first and fit the cap ([#1255](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1255), [#1258](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1258), built on the same change in [fastmcp-pvl-core 6](https://github.com/pvliesdonk/fastmcp-pvl-core/pull/301)). Concretely, for an operator:
+
+- The identity line now names your deployment (`work-vault: ...`) instead of a shared constant, and a new `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION` variable carries a one-line description of what this instance holds, the thing a client needs to route between several connected vaults. The upstream migration guidance: move *descriptions of the material* there, and keep *behavioral rules* in `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`.
+- `INSTRUCTIONS_EXTRA` itself moved from the end of the text, where Claude Code was discarding it, to the operator-policy slot near the front.
+- The legacy `MARKDOWN_VAULT_MCP_INSTRUCTIONS` full replacement still wins, but is deprecated and logs a warning naming the two variables it ignores.
+- Generated guidance targets 1,536 units, reserving the rest of the 2,048 for the operator's routing and policy text. Crossing either threshold logs a startup warning; the server never truncates.
+
+The whole client-facing surface (instructions, tool descriptions, schemas) is now also measured and budgeted in CI ([#1253](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1253)), so it cannot quietly grow past what clients tolerate again.
+
+## Search and indexing
+
+**Voyage vaults search better with nothing to configure.** Voyage's embedding models are asymmetric: they expect queries and documents to be embedded differently, and "embedding both sides identically leaves retrieval quality on the table for these models; the asymmetry is the vendor's own recommended usage" ([#1135](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1135)). Notes are now embedded as documents and search queries as queries on the `voyage` provider ([#1270](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1270)). The other providers send byte-identical requests to before. An existing Voyage vault re-embeds itself once on first start after upgrade, automatically, at the cost of one pass of Voyage API calls; see the [embeddings guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/embeddings/index.md).
+
+**An unparseable note no longer serves stale content.** The index used to encode "deleted," "excluded," and "could not be parsed" as the same absence, and the pipelines disagreed on what to do when a previously indexed note stopped parsing; one of them kept serving its last-good content ([#1129](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1129), [#1227](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1227)). Skips are now recorded first-class: a note that becomes unparseable drops out of `search` and `read` on the pass that detects it, and shows up in `get_index_status.skipped_files` until it is fixed or deleted. This is the change behind the one-time index rebuild described under Upgrading.
+
+**`stats` stops miscounting OKF bundles.** On a fully conformant OKF vault, `stats` reported untyped notes while `okf_validate` reported zero findings; both were counting the same reserved `index.md` files, which the spec exempts from typing ([#1251](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1251), [#1267](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1267)). The histograms now cover the same note population `okf_validate` audits, and reserved files are reported separately as `reserved_count`.
+
+## Configuration and its documentation
+
+**The OIDC pages stopped steering readers into the wrong mode.** The 4.1 configuration reference documented only `oidc-proxy` and marked its client credentials required, while the recommended `remote` mode was, in the issue's words, "expressed only by absence"; nothing distinguished choosing it from not finishing the configuration ([#1248](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1248)). And the wrong choice was costly: proxy mode propagates into the identity provider's configuration before anyone notices. The reference now documents both modes, names `MARKDOWN_VAULT_MCP_AUTH_MODE`, and marks the Required column as the *proxy-mode* set; a new "Choosing an OIDC mode" section states why remote is the better default for this server ([template#559](https://github.com/pvliesdonk/fastmcp-server-template/pull/559), [#1260](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1260)). Nothing about runtime mode selection changed; an existing deployment is unaffected.
+
+**The configuration reference is now generated.** The whole env-var surface in [the configuration reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md) is produced from the config model itself and guarded in CI, so the tables can no longer drift from the code. One correction rode along: the JWT signing key documentation had claimed the key was required on Linux/Docker because the default was ephemeral; in fact the default is derived from the client secret and survives restarts ([#1247](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1247)).
+
+**Attachment extensions now accept the spellings people write.** An operator who set `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS=PDF` or `.pdf` got an allowlist that matched nothing, with every attachment refused by an error message listing the extensions they had just configured ([#1239](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1239), [#1280](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1280)). Case and a leading dot are now ignored, so `PDF`, `.pdf`, and `pdf` name the same type. This only widens what is accepted; no working configuration changes meaning. Library callers passing `attachment_extensions=` get the same normalization.
+
+## For library consumers
+
+`Vault` construction is now settings-first: a `VaultSettings` object (importable from `markdown_vault_mcp.vault` alongside `Vault`) replaces what had grown into "a flattened config bus" of 35 keyword parameters ([#1158](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1158), [#1224](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1224)). Every legacy keyword still works. Deprecation is docstring-only, with removal scheduled for the next major, but mixing `settings=` with a non-default legacy keyword raises `ValueError` naming each conflict: pick one mode per construction. Collaborator arguments (`embedding_provider`, `summarizer`, `git_strategy`, `on_write`, `chunk_strategy`) and `source_dir` stay as keywords and are not deprecated. See the [Vault API page](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/vault/index.md).
+
+Under the hood, the concrete classes now sit behind protocols: `git_strategy` is typed against a `VersionedStore` protocol rather than the concrete `GitWriteStrategy`, and `markdown_vault_mcp.git` and `markdown_vault_mcp.interfaces` export the protocol names. A consumer who passes a `GitWriteStrategy` needs to do nothing; the type only widened ([#1237](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1237)). The protocols are documented in the design notes rather than the API reference.
+
+One inherited behavior note from [fastmcp-pvl-core 6](https://github.com/pvliesdonk/fastmcp-pvl-core/releases/tag/v6.0.0): `make_server()` now finalizes instructions synchronously and must not be called from a running event loop.
+
+## Upgrading
+
+**No breaking changes.** No env var, tool, or importable name changes meaning; the operator surface only grew (two GitLab webhook variables, `INSTANCE_DESCRIPTION`). A few things do change behavior without any action on your part:
+
+- **The text index rebuilds once on first start.** Recording skip tombstones changed how stored rows derive from a note's bytes, so `INDEX_SEMANTICS_VERSION` moved from 2 to 3 ([#1227](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1227)). The rebuild is automatic, costs CPU and local IO proportional to vault size, and does not re-embed.
+- **A Voyage vault also re-embeds once**, through a separate mechanism with a separate trigger: the provider's embedding behavior is part of the vector sidecar's identity, and asymmetric embedding changed it ([#1270](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1270)). This one costs Voyage API calls. Vaults on other providers load warm.
+- **A note that fails to parse stops serving its last-good content.** It drops from search and read until fixed, and is listed in `get_index_status.skipped_files`.
+- **Bulk calls produce one commit.** Tooling that expected one commit per file from `okf_convert_links`, `move_folder`, or link-updating `rename` now sees `<tool>: N files`. Single-file writes keep their old subjects.
+- **On OIDC deployments with commit claims configured, commit authorship changes**, from the static fallback identity to the authenticated user, which is what the configuration always promised.
+- **A stdio deployment with a webhook credential starts its file watcher** where it previously ran nothing, and logs that the credential is inert on that transport.
+- **If your `INSTRUCTIONS_EXTRA` describes what the vault contains**, move that part to `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION`; keep rules of behavior where they are. Long instruction text now logs a budget warning at startup rather than being silently cut by the client.
+- **Fresh package installs get a fully commented `env.example`**; every assignment now documents a default instead of setting one. A deployed `/etc/markdown-vault-mcp/env` is never overwritten.
+
+This release is not the FastMCP 4 move: the template's v8 line and fastmcp-pvl-core 7 carry that migration, tracked for the next major as [#1271](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1271).
