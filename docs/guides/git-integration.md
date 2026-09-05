@@ -95,8 +95,9 @@ branch it may write:
 The symptom is the same either way: writes succeed, `read` serves them back,
 and the commits accumulate in the clone without reaching the remote. See
 [When the clone stops reaching its remote](#when-the-clone-stops-reaching-its-remote)
-for what that looks like, and the next section for how to read the actual git
-error.
+for what that looks like, and
+[Manual sync](#manual-sync-git_sync-tool) for the one call that returns the
+remote's actual refusal message.
 - Periodic pull uses fast-forward-only updates.
 
 Two mechanisms sit alongside the periodic loop, both described below: a
