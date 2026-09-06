@@ -272,7 +272,14 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: ``[img](pic.png)`` a ``pic.png`` row, both broken by construction since
 #: attachments are never indexed; the bump drops those rows from notes whose
 #: bytes never changed.
-INDEX_SEMANTICS_VERSION = 6
+#:
+#: Version 7 (#1334): a link is matched inside one paragraph region and a
+#: destination never contains a line ending. A stray ``[`` used to pair with
+#: a ``](`` paragraphs later, storing pages of prose as ``link_text`` and
+#: whatever followed as a broken target; the bump drops those rows, and
+#: records the links on heading, quote and list lines that the regions now
+#: bound correctly, for notes whose bytes never changed.
+INDEX_SEMANTICS_VERSION = 7
 
 
 class ChunkingMeta(NamedTuple):

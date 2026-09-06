@@ -62,7 +62,7 @@ Python 3.13.
   extended autolinks; GitHub footnotes.
 - Does not cover: emphasis, rendering, Obsidian wikilinks/embeds/callouts.
 - Depended on by: `src/markdown_vault_mcp/scanner.py` (`extract_links`,
-  `_extract_inline_links`, `_extract_reference_links`, `_strip_code_spans`,
+  `_extract_inline_links`, `_extract_reference_links`, `_strip_fenced_code`,
   `_scan_headings`, `extract_section`, `HeadingChunker._budget_split`),
   `src/markdown_vault_mcp/utils/links.py` (`apply_link_replacement`);
   `docs/design/design.md` § Link Extraction, § Chunking Strategy.
@@ -334,29 +334,39 @@ Python 3.13.
 ## Where this project departs from the subject
 
 Each inventoried assumption, by function, judged right / partial / wrong.
-Behaviour lines are [observed: `extract_links`, `_strip_code_spans`,
+Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
 `_HEADING_RE` on the working tree, 2026-09-06].
 
-- `_RE_FENCED_CODE` in `_strip_code_spans` — **partial.** Right: backtick
-  and tilde fences. Wrong: not line-anchored (`` x ``` y … z ``` w `` in
-  prose is stripped); length ignored (a 4-backtick block "closes" at 3);
-  character ignored (a backtick block "closes" at `~~~`); an unclosed fence
-  is not stripped, so its links are extracted; `` `` `` on a line is
-  treated as a fence. Indented code, info strings, fences under list/quote
-  indentation are not modelled.
-- `_RE_INLINE_CODE` — **partial.** Single backtick, single line only: a span
-  with a line ending inside is not stripped; a double-backtick span is
-  stripped by accident when it holds no inner backtick.
-- `_RE_INLINE_LINK` in `_extract_inline_links` — **wrong** on #1334: text
-  and destination match across line endings, blank lines and every
-  interrupting block, since `[^\]]` and `[^)]` admit `\n` and `\r`.
+- `_RE_FENCED_CODE` in `_strip_fenced_code` — **partial.** Right: backtick
+  and tilde fences; both fences anchored to a line start after indentation
+  or quote markers, so `` x ``` y … z ``` w `` in prose is no longer
+  stripped and a backtick block no longer "closes" at `~~~` (#1334, since
+  2026-09-06). Wrong: length ignored (a 4-backtick block "closes" at 3); an
+  unclosed fence is not stripped, so its links are extracted. Indented code
+  and info strings are not modelled. [observed: `_strip_fenced_code`,
+  2026-09-06]
+- `_RE_INLINE_CODE` in `_strip_inline_code` — **partial.** A backtick run
+  and a closing run on one line, stripped per paragraph region after the
+  split so a span filling a whole line does not read as a blank line
+  (#1334). A span with a line ending inside is not stripped; a
+  double-backtick span holding an inner backtick is stripped up to that
+  backtick. [observed: `_strip_inline_code`, 2026-09-06]
+- `_RE_INLINE_LINK` in `_extract_inline_links` — **right** on the #1334
+  boundaries the decision table below marks honoured, since 2026-09-06:
+  each pattern runs inside one paragraph region (`_paragraph_regions`,
+  line-shape only) and the destination class excludes `\n`; line endings
+  are normalised to `\n` first. A destination wrapped onto its own line
+  inside the parentheses (§6.3, one line ending allowed) is not recognised
+  — a deliberate departure, pinned. [observed: `extract_links`, 2026-09-06]
+  [pins: tests/test_links_paragraph_bounds.py::TestSeparators::test_a_stray_bracket_does_not_cross_it, tests/test_links_paragraph_bounds.py::TestOpeners::test_a_link_on_the_line_survives, tests/test_links_paragraph_bounds.py::TestIssueReproduction::test_a_destination_on_its_own_line_is_the_known_cost]
   **Partial** elsewhere: no `<dest>` form (stored as `<x y.md>`); no title
   (stored as `x.md "t"`); no balanced parentheses (`x(1).md` stored as
   `x(1`); spaces in destinations accepted; no bracket balancing
   (`[a [b] c](x.md)` missed, `[a [b c](x.md)` links `b c`); `\[` ignored;
   escapes and entities kept raw; links inside HTML blocks and fence info
   strings extracted. Right: images by `!` lookbehind; `[a] (x.md)` rejected.
-  Decided in `docs/design/design.md` § Link Extraction, pending #1334.
+  Decided in `docs/design/design.md` § Link Extraction; the destination
+  spellings are #1353.
 - `_RE_REF_USAGE` / `_RE_REF_DEF` in `_extract_reference_links` —
   **partial.** Right: full and collapsed forms, title stripping,
   document-wide definitions, footnotes excluded. Wrong: shortcut `[label]`
@@ -364,8 +374,10 @@ Behaviour lines are [observed: `extract_links`, `_strip_code_spans`,
   case-folded (`[ẞ]`/`[ss]` miss) and whitespace is not collapsed; a
   4-space-indented definition accepted, one inside `> ` rejected; trailing
   garbage kept in the target; `<x y.md>` kept with brackets; label text may
-  span a blank line; on a CR-only file `$` never matches, so no definition
-  is found (`[t][r]\r[r]: x.md\r` → no links).
+  span a blank line. A usage's text no longer spans a blank line, and the
+  CR-only miss is gone: line endings are normalised before `_RE_REF_DEF`
+  runs, so `[t][r]\r[r]: x.md\r` links (#1334). [observed: `extract_links`,
+  2026-09-06]
 - `_RE_URI_SCHEME` in `_is_external_target` — **right** against
   CommonMark's scheme (2+ characters, letter then `[A-Za-z0-9+.-]`), minus
   the 32 cap, plus `//host`; narrower than RFC 3986 by design (#1335).
@@ -395,49 +407,56 @@ Behaviour lines are [observed: `extract_links`, `_strip_code_spans`,
 
 ## Not covered
 
-- No test asserts a paragraph-boundary behaviour of `extract_links` (blank
-  line in any spelling, bare `>`, heading, thematic break, list marker, HTML
-  block) or a link *on* a boundary line; #1334's next attempt builds them
-  from the table below.
+- `tests/test_links_paragraph_bounds.py` pins one case per row of the table
+  below (a stray `[` across the boundary, a link *on* it, one link across
+  each continuation kind) since #1334. Untested rows: the HTML-block rows
+  (not honoured), end of document (trivial), and the link reference
+  definition, whose boundary behaviour is unobservable — the definition's
+  own brackets end any link text, so nothing can pair across it either way
+  (pinned as such).
+- Whether `parse_note` should normalise a lone CR is settled by #1334:
+  `extract_links` normalises CRLF and CR to LF itself, so the question no
+  longer reaches the parser.
 - No test covers `<dest>` destinations, inline titles, balanced parentheses,
   nested brackets, `\[`, shortcut references, first-definition precedence,
   whitespace-collapsed labels, definitions in quotes, or CR-only files; the
   departures above are observed, not pinned.
-- Whether `parse_note` should normalise a lone CR as python-frontmatter
-  normalises CRLF is a design question, not a spec one.
 
 ## Paragraph boundaries the scanner should honour
 
 Decision table for #1334, one row per way a paragraph ends. "Container-free"
 means detectable from the line alone, without tracking open quotes, items
 or fences. "Now" is whether `extract_links` on the working tree stops a
-`[`…`](…)` match there (observed 2026-09-06). "Link on the line" is what the
-spec does with a link written on the boundary line itself — what a
-`re.split` that discards the separator loses (the #1348 regression).
+`[`…`](…)` match there (observed 2026-09-06, after #1334: "yes" where the
+row is honoured, "no" where the decision on the issue leaves it a
+continuation line, and "dep." for the two deliberate departures). "Link on
+the line" is what the spec does with a link written on the boundary line
+itself — what a `re.split` that discards the separator loses (the #1348
+regression).
 
 | Boundary | Spec | Container-free | Now | Example line | Link on the line |
 | --- | --- | --- | --- | --- | --- |
 | End of document / container | §4.8 | yes | yes | — | — |
-| Blank line, LF | §2.1, §4.8 | yes | no | empty line | none possible |
-| Blank line, CRLF (`\r\n\r\n`) | §2.1 | yes | no | `\r\n` | none; already LF on the `parse_note` path |
-| Blank line, lone CR (`\r\r`) | §2.1 | yes | no | `\r` | none |
-| Whitespace-only line (spaces/tabs) | §2.1 | yes | no | `   ` | none |
-| Bare quote marker line | §5.1 Ex. 244 | yes (`^ {0,3}>[ \t]*$`) | no | `>` | none |
-| ATX heading | §4.2 | yes (`^ {0,3}#{1,6}([ \t]\|$)`) | no | `## See [t](n.md)` | **is a link** (inline content) |
-| Thematic break | §4.1 | yes | no | `***` | none possible |
-| Setext underline (`===`/`---`) | §4.3 | yes, but it turns the *preceding* lines into a heading | no | `---` after text | preceding lines' links stay links |
+| Blank line, LF | §2.1, §4.8 | yes | yes | empty line | none possible |
+| Blank line, CRLF (`\r\n\r\n`) | §2.1 | yes | yes | `\r\n` | none; already LF on the `parse_note` path |
+| Blank line, lone CR (`\r\r`) | §2.1 | yes | yes | `\r` | none |
+| Whitespace-only line (spaces/tabs) | §2.1 | yes | yes | `   ` | none |
+| Bare quote marker line | §5.1 Ex. 244 | yes (`^ {0,3}>[ \t]*$`) | yes, at any depth (`>>`, `> >`) | `>` | none |
+| ATX heading | §4.2 | yes (`^ {0,3}#{1,6}([ \t]\|$)`) | yes, own region | `## See [t](n.md)` | **is a link** (inline content) |
+| Thematic break | §4.1 | yes | yes | `***` | none possible |
+| Setext underline (`===`/`---`) | §4.3 | yes, but it turns the *preceding* lines into a heading | yes | `---` after text | preceding lines' links stay links |
 | Fence opener, 3+ backticks or tildes | §4.5 | opener yes; the closer needs length and character | only if closed | ```` ```py ```` | info string: **not a link** |
-| Block quote line with text | §5.1 Ex. 245 | yes | no | `> see [t](n.md)` | **is a link** (paragraph in the quote) |
-| Bullet item `-`/`+`/`*` + space | §5.3 Ex. 303 | yes | no | `- see [t](n.md)` | **is a link** |
-| Ordered item `1.`/`1)` + space | §5.2 rule 1 | yes | no | `1. see [t](n.md)` | **is a link** |
-| Ordered item not starting at 1 | §5.2 Ex. 304 | not a boundary | — | `2. text` | continuation text |
+| Block quote line with text | §5.1 Ex. 245 | yes | yes, when the quote depth grows | `> see [t](n.md)` | **is a link** (paragraph in the quote) |
+| Bullet item `-`/`+`/`*` + space | §5.3 Ex. 303 | yes | yes | `- see [t](n.md)` | **is a link** |
+| Ordered item `1.`/`1)` + space | §5.2 rule 1 | yes | yes | `1. see [t](n.md)` | **is a link** |
+| Ordered item not starting at 1 | §5.2 Ex. 304 | not a boundary | dep.: opens a region | `2. text` | continuation text |
 | Empty list item | §5.2 Ex. 285 | not a boundary (a lone `-` is a setext underline) | — | `*` | — |
-| HTML block type 1–5 opener | §4.6 | yes (fixed prefixes) | no | `<!-- note -->` | raw: **not a link** |
-| HTML block type 6 opener | §4.6 | yes (tag list) | no | `<div>` | raw until a blank line: **not a link** |
+| HTML block type 1–5 opener | §4.6 | yes (fixed prefixes) | no, by choice | `<!-- note -->` | raw: **not a link** |
+| HTML block type 6 opener | §4.6 | yes (tag list) | no, by choice | `<div>` | raw until a blank line: **not a link** |
 | HTML block type 7 | §4.6 Ex. 187 | not a boundary | — | `<span>` | continuation text |
 | Indented code (4+ spaces) | §4.4 Ex. 223 | not a boundary | — | `    text` | continuation text |
 | Link reference definition | §4.7 Ex. 213 | not a boundary | — | `[r]: x.md` | continuation text (a definition only after a blank line or block) |
-| GFM table header + delimiter | GFM §4.10 | needs two lines | no | `\| a \|` / `\|---\|` | cells: **are links** |
+| GFM table header + delimiter | GFM §4.10 | needs two lines | no, by choice | `\| a \|` / `\|---\|` | cells: **are links** |
 | Soft break (single line ending) | §6.8 | — | not a boundary | `[a` / `b](x.md)` | one link across it |
 
 Two consequences. Four boundary kinds carry inline content on the boundary
@@ -445,4 +464,10 @@ line (ATX heading, quote line, list opener, table row): a splitter must hand
 that line to the extractors as its own region or it repeats #1348. The rows
 marked "not a boundary" are the ones a line-shape regex is tempted to treat
 as separators; each is spec-backed continuation text and deserves a test
-that the link survives.
+that the link survives. The decision taken on #1334 (2026-09-06) and its
+rationale for each "no, by choice" and "dep." cell is recorded in
+`docs/design/design.md`, "Link Extraction"; the "Now" column is what
+`_paragraph_regions` does since that change. The quote prefix is stripped
+before a line's shape is read, so every row above applies inside a block
+quote too (`> ***`, `> # h`, `> - item`), and the "Link on the line" column
+holds there as well.
