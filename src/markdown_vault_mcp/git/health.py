@@ -18,8 +18,13 @@ Two properties matter for how it is used:
   across a whole fetch + merge, so reading health under it would make every
   write response block behind a pull.
 * **The log records transitions, not cycles.** Entering the unsynced state
-  logs once at ERROR and recovery once at INFO.  The repeating per-cycle
-  warning is what let the incident in #1287 run for hours unnoticed.
+  logs once at ERROR, with the cause git gave, and recovery once at INFO.
+  The repeating per-cycle warning is what let the incident in #1287 run for
+  hours unnoticed.  Push attempts that a write, a flush, or startup caused
+  are the exception (#1330): each is one attempt per cause, so its rejection
+  line repeats once per burst of writes and is the evidence that retries are
+  happening.  The pull loop's timer-driven retry of a pending push stays at
+  DEBUG for the same reason the pull-side lines do.
 """
 
 from __future__ import annotations
@@ -62,6 +67,24 @@ _Kind = Literal["push", "pull"]
 #: commits the clone has not seen.  Git's wording is stable: both appear in
 #: the rejection line and the hint paragraph.
 _NON_FAST_FORWARD_MARKERS = ("non-fast-forward", "fetch first")
+
+
+def one_line(text: str) -> str:
+    """Collapse *text* onto one line for a ``key=value`` log record.
+
+    Git's stderr spans several lines and pads them with trailing spaces; a
+    line-oriented log collector reads the unprefixed continuation lines as
+    separate malformed entries, and a later ``key=`` field would land on the
+    last of them (#1330).
+
+    Args:
+        text: Redacted git stderr, or any multi-line detail.
+
+    Returns:
+        The words of *text* joined by single spaces; empty when *text* has
+        none.
+    """
+    return " ".join(text.split())
 
 
 def push_failure_reason(stderr: str) -> str:
@@ -163,14 +186,18 @@ class SyncHealthTracker:
         """
         return self._snapshot
 
-    def push_failed(self, reason: str) -> None:
+    def push_failed(self, reason: str, detail: str | None = None) -> None:
         """Record a push that did not reach the remote.
 
         Args:
             reason: A ``PUSH_REASON_*`` code.  Codes that do not prove
                 commits are stranded are ignored (see :data:`_PUSH_CONDITIONS`).
+            detail: What git said, when the caller has it.  ``push_failed`` is
+                the generic bucket every unrecognised stderr lands in, so
+                without this the one transition line names a state and not a
+                cause (#1330).
         """
-        self._open("push", reason, _PUSH_CONDITIONS)
+        self._open("push", reason, _PUSH_CONDITIONS, detail=detail)
 
     def push_succeeded(self) -> None:
         """Record that local commits reached the remote."""
@@ -190,8 +217,22 @@ class SyncHealthTracker:
         """Record that the clone reconciled with the remote."""
         self._close("pull")
 
-    def _open(self, kind: _Kind, reason: str, conditions: frozenset[str]) -> None:
-        """Open the *kind* condition, logging the transition into it once."""
+    def _open(
+        self,
+        kind: _Kind,
+        reason: str,
+        conditions: frozenset[str],
+        *,
+        detail: str | None = None,
+    ) -> None:
+        """Open the *kind* condition, logging the transition into it once.
+
+        Args:
+            kind: ``"push"`` or ``"pull"``.
+            reason: The ``*_REASON_*`` code.
+            conditions: The codes that count as an outage for this kind.
+            detail: Optional cause text carried onto the transition line.
+        """
         if reason not in conditions:
             return
         with self._lock:
@@ -209,11 +250,16 @@ class SyncHealthTracker:
             self._reasons[kind] = reason
             self._recompute()
             if was_healthy:
+                # Placed last, where a cause that somehow kept a newline
+                # could not split an earlier field.
+                cause = one_line(detail) if detail else ""
                 logger.error(
                     "git_remote_unsynced kind=%s reason=%s "
-                    "detail=writes are committed locally and are not reaching the remote",
+                    "detail=writes are committed locally and are not reaching "
+                    "the remote cause=%s",
                     kind,
                     reason,
+                    cause or "unavailable",
                 )
             else:
                 logger.debug("git_remote_unsynced_also kind=%s reason=%s", kind, reason)

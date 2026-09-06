@@ -1114,8 +1114,9 @@ class TestTokenRedactionInLogs:
 
         with (
             patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=fake_exc),
-            # The per-attempt line sits at DEBUG since #1287: the transition
-            # into the unsynced state is what gets logged loudly, once.
+            # The per-attempt line moved to WARNING in #1330 — DEBUG was
+            # invisible at the level deployments run at, so an operator saw
+            # the transition into the unsynced state and never its cause.
             caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"),
         ):
             strategy._push_scheduler.do_push_safe()
@@ -2723,6 +2724,46 @@ class TestGitPullLoop:
             strategy.stop()
 
         assert push_calls, "pull loop did not retry the pending push"
+
+    def test_pull_loop_retry_of_a_rejected_push_does_not_warn(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A timer-driven retry logs at DEBUG, not once per tick at WARNING (#1330)."""
+        import logging
+        import subprocess
+        import time
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        monkeypatch.setattr(strategy, "_ensure_git_root", lambda _p: tmp_path)
+        monkeypatch.setattr(
+            "markdown_vault_mcp.git.subprocess.run",
+            lambda *_args, **_kwargs: SimpleNamespace(
+                returncode=0, stdout="", stderr=""
+            ),
+        )
+        monkeypatch.setattr(strategy, "sync_once", lambda _repo: True)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+        rejected = subprocess.CalledProcessError(
+            returncode=1, cmd=["git", "push", "origin"], stderr="pre-receive hook"
+        )
+
+        with (
+            patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=rejected),
+            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"),
+        ):
+            strategy.start(repo_path=tmp_path, pull_interval_s=3600)
+            time.sleep(0.05)
+            strategy.stop()
+
+        attempts = [r for r in caplog.records if "git_push_failed" in r.message]
+        assert attempts, "pull loop did not retry the pending push"
+        assert {r.levelno for r in attempts} == {logging.DEBUG}
 
     def test_pull_loop_retries_after_non_ff_rebase(
         self,

@@ -1250,11 +1250,17 @@ class GitWriteStrategy:
         order they ran (PR #1300).  Outcomes that say nothing about the remote
         (``dry_run_unsupported``, ``no_remote``) are passed on as-is; the
         tracker ignores them.
+
+        ``hint`` travels with the reason (#1330): for ``push_failed`` it is
+        git's own redacted stderr, since that reason is the bucket for every
+        message matching no known marker and alone told an operator the vault
+        was stranded but not why; for ``non_fast_forward`` it is the recovery
+        instruction ``force_push`` composes, which already names the problem.
         """
         if result.applied:
             self._health.push_succeeded()
         elif result.reason is not None:
-            self._health.push_failed(result.reason)
+            self._health.push_failed(result.reason, result.hint)
 
     def _record_pull(self, result: PullResult) -> None:
         """Report a pull outcome to the sync-health tracker.
@@ -1626,9 +1632,10 @@ class GitWriteStrategy:
                 # Retry a pending push after the pull reconciled any
                 # non-fast-forward divergence via its rebase step (#957).
                 # PushScheduler.do_push's guard makes this a no-op when
-                # nothing is pending.
+                # nothing is pending. Marked as a retry so a push that keeps
+                # failing does not warn once per tick (#1330).
                 if self._enable_push:
-                    self._push_scheduler.do_push_safe()
+                    self._push_scheduler.do_push_safe(retry=True)
             except Exception:
                 logger.exception("Git pull loop tick failed")
             # Wait until the next interval, or stop early.
