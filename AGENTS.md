@@ -182,6 +182,7 @@ Always fetch both before declaring a review round complete.
 Every issue, PR, and code change must consider documentation impact. Before closing any issue or creating any PR, check whether the following need updating:
 
 - **`docs/design/`** — internal design specs and architecture decisions (the authoritative dev reference). Any new feature, changed behavior, or architectural decision must be reflected here. Not part of the published site.
+- **`docs/design/reference/`** — an OKF v0.2 bundle of dated, sourced references on how *external* things behave (see the `researching-references` skill). A bug rooted in an external behaviour closes with a reference entry, not only a design-doc narrative; a reference past its `stale_after` date is re-researched, never trusted.
 - **`README.md`** — user-facing documentation. New env vars, tools, resources, prompts, CLI flags, or configuration options must be documented here.
 - **`docs/` site pages** — the published documentation site. New or changed MCP tools/resources/prompts, new env vars, new installation methods or deployment options.
 - **`CHANGELOG.md`** — machine-generated audit trail: knope writes each release's version section (below the `<!-- version list -->` insertion flag) into the release PR's diff. Never hand-edit version sections or the flag line. If this project was generated before the flag existed, add the flag line to `CHANGELOG.md` once by hand — `tests/test_release_flow_contract.py` fails with the exact line until it is present.
@@ -243,5 +244,5 @@ If a conflict marker appears in a copier-update bot PR, the conflict itself ofte
 - Library is sync; MCP layer uses `asyncio.to_thread()`
 - Indexing is hash-based, so an unchanged file is never re-parsed: any change to how a note's stored rows are derived from its bytes (link extraction, chunking, tag/alias/heading derivation) must bump `INDEX_SEMANTICS_VERSION` in `fts_index.py` in the same commit, or deployed vaults keep serving the rows the old code produced (#1124)
 - Full decision log in `docs/design/design.md` appendix
-- How the outside world behaves (Obsidian's dialect, CommonMark/GFM, git) is recorded in dated, sourced references under `docs/design/reference/`; read the relevant page before touching `scanner.py`, `fts_index.py` link resolution, or `git/`, and re-research rather than trust a page past its `review_by`
+- How the outside world behaves (Obsidian's dialect, CommonMark/GFM, git) is recorded in dated, sourced references under `docs/design/reference/` (an OKF v0.2 bundle; start at its `index.md`); read the relevant page before touching `scanner.py`, `fts_index.py` link resolution, or `git/`, and re-research rather than trust a page past its `stale_after`
 <!-- DOMAIN-END -->

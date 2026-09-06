@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
-"""Every reference under ``docs/design/reference/`` is dated, sourced, and pinned.
+"""Every reference under ``docs/design/reference/`` is an OKF concept: dated, sourced, pinned.
 
 A reference records how something outside the repository behaves (a markdown
 dialect, git, a file format, a vendor API) so an agent reads it instead of
 re-deriving it from parametric memory.  The ``researching-references`` skill
-describes how one is written; this script enforces the part that can be
-checked mechanically:
+describes how one is written; the directory is an Open Knowledge Format
+(OKF v0.2) bundle, and this script enforces the part of that contract which
+can be checked mechanically:
 
-* the YAML frontmatter carries every key in ``REQUIRED_KEYS``, ``researched``
-  and ``review_by`` are ISO dates, ``status`` is one of ``STATUSES``, and a
-  ``superseded`` reference names an existing ``superseded_by`` file;
-* ``sources`` is a non-empty list, each entry with an ``id``, a ``url``, and an
-  ``accessed`` date;
+* the YAML frontmatter carries every key in ``REQUIRED_KEYS``; ``type`` is
+  ``Reference``; ``generated`` is ``{by, at}`` with an actor and an ISO date;
+  ``stale_after`` is an ISO date; ``status``, when present, is one of OKF's
+  ``draft`` / ``stable`` / ``deprecated``; ``verified`` entries are ``{by, at}``;
+  a ``superseded_by`` names a file under the reference root;
+* ``sources`` is a non-empty list, each entry with an ``id``, a ``resource``
+  and an ``accessed`` date;
 * every ``[source: id]`` marker in the body names a declared source, and every
-  ``[pins: tests/x.py::test_y]`` marker names a test function that exists.
+  ``[pins: tests/x.py::test_y]`` marker names a pytest node that exists;
+* the bundle root carries an ``index.md`` declaring ``okf_version``, and a
+  ``log.md``, if present, uses ``## YYYY-MM-DD`` headings.
 
-A passed ``review_by`` date is *reported*, not failed, unless ``--strict`` is
-given: expiry is a reason to re-research, and a build must not turn red on a
-day nobody changed anything.  ``tests/test_reference_docs.py`` runs the
-non-strict form in CI and surfaces expiry as a warning.
+A passed ``stale_after`` date is *reported*, not failed, unless ``--strict`` is
+given: staleness is a reason to re-research, and a build must not turn red on
+a day nobody changed anything.  ``tests/test_reference_docs.py`` runs the
+non-strict form in CI and surfaces staleness as a warning.
 
-Exit status 1 with one line per finding; 0 when clean.  ``README.md`` and
-``index.md`` under the reference root are indexes, not references, and are
-skipped.
+Exit status 1 with one line per finding; 0 when clean.  ``README.md``,
+``index.md`` and ``log.md`` under the reference root are OKF's reserved and
+navigation files, not references, and are skipped by the per-page checks.
 """
 
 from __future__ import annotations
@@ -39,18 +44,20 @@ from typing import Any
 import yaml
 
 DEFAULT_ROOT = Path("docs/design/reference")
-SKIPPED_NAMES = frozenset({"README.md", "index.md"})
+SKIPPED_NAMES = frozenset({"README.md", "index.md", "log.md"})
+REFERENCE_TYPE = "Reference"
+OKF_VERSION = "0.2"
 REQUIRED_KEYS: tuple[str, ...] = (
+    "type",
     "title",
-    "subject",
+    "description",
     "subject_version",
     "valid_for",
-    "researched",
-    "review_by",
-    "status",
+    "generated",
+    "stale_after",
     "sources",
 )
-STATUSES = frozenset({"current", "expired", "superseded"})
+STATUSES = frozenset({"draft", "stable", "deprecated"})
 MARKER_KINDS = ("source", "observed", "unverified", "pins")
 
 _FRONTMATTER_RE = re.compile(r"\A---\n(?P<yaml>.*?)\n---\n(?P<body>.*)\Z", re.DOTALL)
@@ -64,6 +71,9 @@ _PIN_RE = re.compile(
     r"^(?P<file>tests/[^:\s]+\.py)::(?P<name>(?:Test[A-Za-z0-9_]*::)*test[A-Za-z0-9_]*)$"
 )
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+# OKF actor convention: `human:<id>`, `process:<id>`, or `<producer>/<version>`.
+_ACTOR_RE = re.compile(r"^(?:human:\S+|process:\S+|[^\s/]+/[^\s/]+)$")
+_LOG_HEADING_RE = re.compile(r"^## (?P<date>.+?)\s*$", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -92,6 +102,19 @@ class Reference:
         """Number of markers of ``kind`` in the body."""
         return sum(1 for k, _ in self.markers if k == kind)
 
+    @property
+    def status(self) -> str:
+        """OKF lifecycle status; absent means ``stable``."""
+        return str(self.meta.get("status") or "stable")
+
+    @property
+    def trust_tier(self) -> str:
+        """OKF trust tier derived from ``verified``: unverified, machine-confirmed, human-reviewed."""
+        entries = _verified_entries(self.meta)
+        if any(str(e.get("by", "")).startswith("human:") for e in entries):
+            return "human-reviewed"
+        return "machine-confirmed" if entries else "unverified"
+
 
 def parse_reference(path: Path, text: str) -> Reference:
     """Split ``text`` into frontmatter and body.
@@ -118,11 +141,22 @@ def _as_date(value: object) -> dt.date | None:
     if isinstance(value, dt.date):
         return value
     if isinstance(value, str):
-        try:
-            return dt.date.fromisoformat(value)
-        except ValueError:
-            return None
+        for parse in (dt.date.fromisoformat, dt.datetime.fromisoformat):
+            try:
+                parsed = parse(value)
+            except ValueError:
+                continue
+            return parsed.date() if isinstance(parsed, dt.datetime) else parsed
     return None
+
+
+def _verified_entries(meta: dict[str, Any]) -> list[dict[str, Any]]:
+    value = meta.get("verified")
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return [e for e in value if isinstance(e, dict)]
+    return []
 
 
 def _check_keys(ref: Reference) -> list[str]:
@@ -133,37 +167,60 @@ def _check_keys(ref: Reference) -> list[str]:
         for k in REQUIRED_KEYS
         if ref.meta.get(k) is None
     ]
-    for key in ("researched", "review_by"):
-        if key in ref.meta and _as_date(ref.meta[key]) is None:
-            problems.append(
-                f"`{key}` must be an ISO date (YYYY-MM-DD), got {ref.meta[key]!r}"
-            )
-    for key in ("subject_version", "valid_for"):
+    if ref.meta.get("type") is not None and ref.meta["type"] != REFERENCE_TYPE:
+        problems.append(f"`type` must be {REFERENCE_TYPE!r}, got {ref.meta['type']!r}")
+    if "stale_after" in ref.meta and _as_date(ref.meta["stale_after"]) is None:
+        problems.append(
+            f"`stale_after` must be an ISO date (YYYY-MM-DD), got {ref.meta['stale_after']!r}"
+        )
+    for key in ("title", "description", "subject_version", "valid_for"):
         if key in ref.meta and not str(ref.meta[key]).strip():
             problems.append(f"`{key}` must not be empty")
     return problems
 
 
+def _check_actor_entry(label: str, entry: object) -> list[str]:
+    """``{by, at}`` shape shared by ``generated`` and each ``verified`` entry."""
+    if not isinstance(entry, dict):
+        return [f"`{label}` must be a mapping with `by` and `at`"]
+    problems: list[str] = []
+    by = str(entry.get("by") or "").strip()
+    if not _ACTOR_RE.match(by):
+        problems.append(
+            f"`{label}.by` must follow the OKF actor convention "
+            f"(human:<id>, process:<id> or <producer>/<version>), got {by!r}"
+        )
+    if _as_date(entry.get("at")) is None:
+        problems.append(f"`{label}.at` must be an ISO date or datetime")
+    return problems
+
+
+def _check_trust(ref: Reference) -> list[str]:
+    problems: list[str] = []
+    if ref.meta.get("generated") is not None:
+        problems += _check_actor_entry("generated", ref.meta["generated"])
+    value = ref.meta.get("verified")
+    if value is not None and not isinstance(value, dict | list):
+        problems.append("`verified` must be a `{by, at}` mapping or a list of them")
+    for i, entry in enumerate(_verified_entries(ref.meta)):
+        problems += _check_actor_entry(f"verified[{i}]", entry)
+    return problems
+
+
 def _check_status(ref: Reference, root: Path) -> list[str]:
     status = ref.meta.get("status")
-    if status is None:
-        return []
-    if status not in STATUSES:
+    if status is not None and status not in STATUSES:
         return [f"`status` must be one of {sorted(STATUSES)}, got {status!r}"]
-    return _check_superseded(ref, root) if status == "superseded" else []
-
-
-def _check_superseded(ref: Reference, root: Path) -> list[str]:
     target = ref.meta.get("superseded_by")
-    if not target:
-        return [
-            "`status: superseded` requires `superseded_by: <file under the reference root>`"
-        ]
+    if target is None:
+        return []
     resolved = (root / str(target)).resolve()
     if not resolved.is_relative_to(root.resolve()):
         return [f"`superseded_by` names {target!r}, which is outside {root}"]
     if not resolved.is_file():
         return [f"`superseded_by` names {target!r}, which does not exist under {root}"]
+    if status != "deprecated":
+        return ["`superseded_by` is only meaningful with `status: deprecated`"]
     return []
 
 
@@ -176,7 +233,7 @@ def _check_sources(ref: Reference) -> tuple[list[str], set[str]]:
     for i, entry in enumerate(sources):
         if not isinstance(entry, dict):
             problems.append(
-                f"sources[{i}] must be a mapping with id, title, url, accessed"
+                f"sources[{i}] must be a mapping with id, resource, accessed (title recommended)"
             )
             continue
         sid = str(entry.get("id") or "").strip()
@@ -186,8 +243,10 @@ def _check_sources(ref: Reference) -> tuple[list[str], set[str]]:
             problems.append(f"sources[{i}] duplicates id {sid!r}")
         else:
             ids.add(sid)
-        if not str(entry.get("url") or "").strip():
-            problems.append(f"sources[{i}] ({sid or '?'}) has no `url`")
+        if not str(entry.get("resource") or "").strip():
+            problems.append(
+                f"sources[{i}] ({sid or '?'}) has no `resource` (OKF's URI field)"
+            )
         if _as_date(entry.get("accessed")) is None:
             problems.append(f"sources[{i}] ({sid or '?'}) needs an ISO `accessed` date")
     return problems, ids
@@ -256,6 +315,7 @@ def _defined(source: str, parts: list[str]) -> bool:
 def findings(ref: Reference, *, repo_root: Path, root: Path) -> list[str]:
     """Contract violations for one reference, each prefixed with its path."""
     problems = _check_keys(ref)
+    problems += _check_trust(ref)
     problems += _check_status(ref, root)
     source_problems, ids = _check_sources(ref)
     problems += source_problems
@@ -263,20 +323,46 @@ def findings(ref: Reference, *, repo_root: Path, root: Path) -> list[str]:
     return [f"{ref.path}: {p}" for p in problems]
 
 
+def bundle_findings(root: Path) -> list[str]:
+    """OKF bundle-level violations: the root ``index.md`` marker and ``log.md`` headings."""
+    if not discover(root):
+        return []
+    problems: list[str] = []
+    index = root / "index.md"
+    if not index.is_file():
+        problems.append(
+            f"{index}: missing; an OKF bundle root declares `okf_version` there"
+        )
+    else:
+        m = _FRONTMATTER_RE.match(index.read_text(encoding="utf-8"))
+        meta = yaml.safe_load(m.group("yaml")) if m else None
+        declared = meta.get("okf_version") if isinstance(meta, dict) else None
+        if str(declared) != OKF_VERSION:
+            problems.append(
+                f'{index}: must declare `okf_version: "{OKF_VERSION}"` in its frontmatter'
+            )
+    log = root / "log.md"
+    if log.is_file():
+        for hm in _LOG_HEADING_RE.finditer(log.read_text(encoding="utf-8")):
+            if _as_date(hm.group("date")) is None:
+                problems.append(
+                    f"{log}: heading `## {hm.group('date')}` is not a `## YYYY-MM-DD` date"
+                )
+    return problems
+
+
 def expiry(ref: Reference, today: dt.date) -> str | None:
     """Why the reference should be re-researched, or ``None`` if it is current."""
-    if ref.meta.get("status") == "expired":
-        return "marked `status: expired`"
-    if ref.meta.get("status") == "superseded":
+    if ref.status == "deprecated":
         return None
-    review_by = _as_date(ref.meta.get("review_by"))
-    if review_by is not None and review_by < today:
-        return f"`review_by` {review_by.isoformat()} has passed"
+    stale_after = _as_date(ref.meta.get("stale_after"))
+    if stale_after is not None and today >= stale_after:
+        return f"stale since {stale_after.isoformat()} (`stale_after`)"
     return None
 
 
 def discover(root: Path) -> list[Path]:
-    """Reference pages under ``root`` (absent root → empty), indexes skipped."""
+    """Reference pages under ``root`` (absent root → empty), reserved files skipped."""
     if not root.is_dir():
         return []
     return sorted(p for p in root.glob("*.md") if p.name not in SKIPPED_NAMES)
@@ -291,13 +377,16 @@ def load(path: Path) -> tuple[Reference | None, str | None]:
 
 
 def summary_line(ref: Reference, today: dt.date) -> str:
-    """One report line: status, dates, marker counts, expiry reason."""
+    """One report line: status, trust, dates, marker counts, expiry reason."""
     meta = ref.meta
+    generated: dict[str, Any] = (
+        meta["generated"] if isinstance(meta.get("generated"), dict) else {}
+    )
     counts = ", ".join(f"{ref.count(k)} {k}" for k in MARKER_KINDS)
     line = (
-        f"{ref.path}: status={meta.get('status')} subject_version={meta.get('subject_version')} "
-        f"valid_for={meta.get('valid_for')!s} researched={meta.get('researched')} "
-        f"review_by={meta.get('review_by')} [{counts}]"
+        f"{ref.path}: status={ref.status} trust={ref.trust_tier} "
+        f"subject_version={meta.get('subject_version')} valid_for={meta.get('valid_for')!s} "
+        f"generated={generated.get('at')} stale_after={meta.get('stale_after')} [{counts}]"
     )
     reason = expiry(ref, today)
     return f"{line}  <- RE-RESEARCH: {reason}" if reason else line
@@ -319,7 +408,7 @@ def main(argv: list[str] | None = None) -> int:
         help="repository root that `[pins: ...]` paths are relative to",
     )
     parser.add_argument(
-        "--strict", action="store_true", help="also fail on a passed review_by date"
+        "--strict", action="store_true", help="also fail on a passed stale_after date"
     )
     parser.add_argument(
         "--quiet",
@@ -329,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     today = dt.date.today()
 
-    problems: list[str] = []
+    problems: list[str] = bundle_findings(args.root)
     for path in discover(args.root):
         ref, problem = load(path)
         if ref is None:

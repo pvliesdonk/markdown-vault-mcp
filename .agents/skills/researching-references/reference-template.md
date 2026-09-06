@@ -1,15 +1,18 @@
 ---
+type: Reference
 title: <Subject, as a reader would look it up>
-subject: <What was researched, one line>
+description: <What was researched, one sentence>
 subject_version: "<version or line the claims were checked against, e.g. 1.9>"
 valid_for: "<expiry condition in the subject's terms, e.g. Obsidian 1.x>"
-researched: <YYYY-MM-DD>
-review_by: <YYYY-MM-DD, six months for a moving target, twelve for a frozen spec>
-status: current
+generated:
+  by: process:researching-references
+  at: <YYYY-MM-DD>
+stale_after: <YYYY-MM-DD, six months for a moving target, twelve for a frozen spec>
+status: stable
 sources:
   - id: <short-id>
     title: <Page or document title>
-    url: <https://...>
+    resource: <https://...>
     accessed: <YYYY-MM-DD>
 ---
 

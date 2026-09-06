@@ -5,10 +5,12 @@ reads it instead of re-deriving it from memory; the ``researching-references``
 skill says how one is written.  ``scripts/check_references.py`` is the
 mechanical half of that contract, and this test runs it: every reference has
 the required frontmatter, every ``[source: id]`` names a declared source, and
-every ``[pins: tests/x.py::test_y]`` names a test that exists.  A passed
-``review_by`` date is a warning, not a failure — expiry means re-research, and
-the build must not turn red on a day nobody changed anything.  A project with
-no ``docs/design/reference/`` directory passes trivially.
+every ``[pins: tests/x.py::test_y]`` names a test that exists, and the
+directory is an OKF v0.2 bundle (root ``index.md`` with ``okf_version``).  A
+passed ``stale_after`` date is a warning, not a failure — staleness means
+re-research, and the build must not turn red on a day nobody changed
+anything.  A project with no ``docs/design/reference/`` directory passes
+trivially.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.check_references import (  # noqa: E402
     DEFAULT_ROOT,
+    bundle_findings,
     discover,
     expiry,
     findings,
@@ -33,7 +36,7 @@ ROOT = REPO_ROOT / DEFAULT_ROOT
 
 
 def test_references_are_dated_sourced_and_pinned() -> None:
-    problems: list[str] = []
+    problems: list[str] = bundle_findings(ROOT)
     for path in discover(ROOT):
         ref, problem = load(path)
         if ref is None:
