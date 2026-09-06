@@ -3771,6 +3771,12 @@ ifcraftcorpus).
 
 ### Write + Git Integration
 
+What git itself does at every point this section relies on it (how a push is
+refused and in what words, credentials, URL forms, pathspec magic, `log -z`
+framing, identity) is recorded with sources and dates in
+[`reference/git-cli.md`](reference/git-cli.md); this section records what the
+project does with it and why.
+
 Three git modes:
 
 1. **Managed mode** (`GIT_REPO_URL` set): server owns git lifecycle.
