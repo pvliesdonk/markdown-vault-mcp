@@ -2195,6 +2195,12 @@ class TestLinkSpanBounding:
         assert [lnk.link_text for lnk in links] == ["x"]
         assert links[0].target_path == "pic.md"
 
+    def test_a_lone_cr_blank_line_is_a_paragraph_break(self) -> None:
+        """CommonMark counts a lone carriage return as a line ending too."""
+        content = "See item [3 below.\r\rProse.\r\rAn image: [x](pic.md)"
+        links = extract_links(content, "index.md")
+        assert [lnk.link_text for lnk in links] == ["x"]
+
     def test_a_bare_quote_marker_line_is_a_paragraph_break(self) -> None:
         """Inside a block quote a blank line is written as ``>`` alone."""
         content = "> See [3.\n>\n> More prose.\n>\n> A real [x](pic.md)"
