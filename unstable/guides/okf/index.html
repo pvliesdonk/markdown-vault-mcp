@@ -2280,8 +2280,8 @@
 <p>On a recognised bundle, the server reads a few OKF frontmatter families and surfaces them in <code>search</code>, <code>read</code>, and <code>get_context</code> results under an <code>okf</code> key:</p>
 <ul>
 <li><strong>Type</strong>: the free-text <code>type</code> field, such as <code>Playbook</code>, <code>Metric</code>, or <code>Reference</code>.</li>
-<li><strong>Lifecycle</strong>: <code>status</code> is one of <code>draft</code>, <code>stable</code>, or <code>deprecated</code>. A note with no <code>status</code> is treated as <code>stable</code>. <code>stale_after: YYYY-MM-DD</code> marks a note stale once that date passes.</li>
-<li><strong>Trust tier</strong>: derived from the <code>verified</code> list. A note verified by a person (<code>by: human:...</code>) is <code>human-reviewed</code>; a note verified only by a process is <code>machine-confirmed</code>; an unverified note is <code>unverified</code>.</li>
+<li><strong>Lifecycle</strong>: <code>status</code> is one of <code>draft</code>, <code>stable</code>, or <code>deprecated</code>. A note with no <code>status</code> is treated as <code>stable</code>. <code>stale_after: YYYY-MM-DD</code> marks a note stale from that date on.</li>
+<li><strong>Trust tier</strong>: derived from the <code>verified</code> list (a single entry may be written as a bare mapping, per the spec). A note verified by a person (<code>by: human:...</code>) is <code>human-reviewed</code>; a note verified only by a process is <code>machine-confirmed</code>; an unverified note is <code>unverified</code>.</li>
 <li><strong>Sources</strong>: the <code>sources</code> provenance list, surfaced in full on <code>read</code> and as a count on search hits.</li>
 </ul>
 <p>You can filter on these dimensions. <code>search</code> and <code>list_documents</code> accept <code>status</code>, <code>stale</code>, <code>trust_tier</code>, and <code>type</code> filters, so <code>{"stale": "true"}</code> or <code>{"status": "deprecated"}</code> builds a triage listing. See the <a href="../../tools/">tools reference</a> for the full filter set.</p>

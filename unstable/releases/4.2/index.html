@@ -2277,6 +2277,19 @@ exempts from typing
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1267">#1267</a>). The
 histograms now cover the same note population <code>okf_validate</code> audits, and
 reserved files are reported separately as <code>reserved_count</code>.</p>
+<p><strong>OKF staleness and the single-verifier shorthand now follow the spec.</strong>
+The OKF v0.2 field reference says a note is "stale when <code>today &gt;=
+stale_after</code>" and that consumers "must treat a bare mapping as a
+one-element list" for <code>verified</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1357">#1357</a>).
+The server did neither: on the <code>stale_after</code> date itself it still reported
+the note current, and a note whose <code>verified</code> was written as a single
+mapping rather than a list read as <code>unverified</code>. Worse, <code>okf_verify</code> on
+such a note replaced that mapping with its own entry, so the earlier
+attestation was lost. The <code>stale</code> flag, the <code>stale</code> filter, the <code>stats</code>
+stale count and ranking now turn stale on the named date; the trust tier,
+the <code>okf_verify</code> append and its <code>verified_count</code> all read a bare mapping as
+one entry.</p>
 <p><strong>A link with any URI scheme is external.</strong> The external-link filter was an
 allowlist of four prefixes, so a <code>file:</code>, <code>ftp:</code>, <code>obsidian:</code> or <code>zotero:</code>
 destination was resolved against the source note's folder and reported as a
@@ -2444,6 +2457,12 @@ on your part:</p>
   <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 7. One rebuild covers all
   five; it is automatic, costs CPU and local IO proportional to vault size,
   and does not re-embed.</li>
+<li><strong>A note becomes stale one day earlier.</strong> <code>stale_after</code> is now the first
+  stale day rather than the last current one
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1357">#1357</a>),
+  so a note dated today flips to <code>stale: true</code> on upgrade; triage listings
+  built with <code>{"stale": "true"}</code> may gain an entry. No stored rows change,
+  so no rebuild.</li>
 <li><strong>A Voyage vault also re-embeds once</strong>, through a separate mechanism
   with a separate trigger: the provider's embedding behavior is part of the
   vector sidecar's identity, and asymmetric embedding changed it
