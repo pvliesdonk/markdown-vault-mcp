@@ -1549,18 +1549,57 @@ class TestRenameUpdateLinks:
         assert "(self_renamed.md)" in content
         assert "(self_link.md)" not in content
 
-    def test_update_links_ignored_for_attachments(self, rename_vault: Path) -> None:
-        """update_links=True is silently ignored when renaming a non-.md attachment."""
+    def test_update_links_on_attachment_says_it_does_not_apply(
+        self, rename_vault: Path
+    ) -> None:
+        """Renaming an embedded attachment with update_links=True sets ``hint``.
+
+        The embed is not a tracked link (#1333), so nothing is rewritten and
+        ``updated_links`` is honestly 0 — but the caller asked for a rewrite
+        and gets told why none happened instead of a bare zero (#1338).
+        """
+        (rename_vault / "Images").mkdir()
+        (rename_vault / "Images" / "pic.png").write_bytes(b"\x89PNG\r\n")
+        (rename_vault / "embedder.md").write_text("# N\n\n![[Images/pic.png]]\n")
+        col = Vault(
+            source_dir=rename_vault, read_only=False, attachment_extensions=["png"]
+        )
+        col.index.build_index()
+
+        result = col.writer.rename(
+            "Images/pic.png", "Images/renamed.png", update_links=True
+        )
+
+        assert result.updated_links == 0
+        assert result.hint is not None
+        assert "update_links" in result.hint
+        assert (rename_vault / "Images" / "renamed.png").is_file()
+        assert "![[Images/pic.png]]" in (rename_vault / "embedder.md").read_text()
+
+    def test_attachment_rename_without_update_links_has_no_hint(
+        self, rename_vault: Path
+    ) -> None:
+        """The hint answers a request that was made; no request, no hint."""
         (rename_vault / "image.png").write_bytes(b"\x89PNG\r\n")
         col = Vault(
             source_dir=rename_vault, read_only=False, attachment_extensions=["png"]
         )
         col.index.build_index()
 
-        result = col.writer.rename("image.png", "photo.png", update_links=True)
+        result = col.writer.rename("image.png", "photo.png")
 
         assert result.updated_links == 0
-        assert (rename_vault / "photo.png").is_file()
+        assert result.hint is None
+
+    def test_note_rename_has_no_hint(self, rename_vault: Path) -> None:
+        """The note branch honours update_links, so it never carries the hint."""
+        col = Vault(source_dir=rename_vault, read_only=False)
+        col.index.build_index()
+
+        result = col.writer.rename("target.md", "renamed.md", update_links=True)
+
+        assert result.updated_links > 0
+        assert result.hint is None
 
 
 # ---------------------------------------------------------------------------

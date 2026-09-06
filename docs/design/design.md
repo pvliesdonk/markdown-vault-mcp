@@ -1829,6 +1829,7 @@ class RenameResult:
     old_path: str
     new_path: str
     updated_links: int = 0  # number of source docs updated (update_links=True)
+    hint: str | None = None  # why nothing was rewritten (attachment, #1338)
 
 # --- Index types ---
 
@@ -2125,8 +2126,9 @@ itself resolves `[[Figure 1.png]]` to the file and shows it in its graph
 ([`reference/obsidian-markdown.md`](reference/obsidian-markdown.md),
 "Extension, non-markdown targets, embeds"); making attachments graph nodes
 here — resolution, `exists`, backlinks, rename-rewrite — is the v5 feature
-#1359. Until then `rename` of an attachment reports `updated_links: 0`
-with no signal; making it say that `update_links` does not apply is #1338.
+#1359. Until then `rename` of an attachment with `update_links=True`
+reports `updated_links: 0` with a `hint` saying the flag does not apply
+(#1338).
 
 Two consequences follow. The allowlist is now an input to what a note's
 stored rows are, so it is recorded as build provenance alongside
@@ -2483,7 +2485,13 @@ count reflects source documents successfully rewritten. Link style is
 preserved: vault-root-relative links are rewritten as vault-root-relative;
 source-directory-relative links (such as `../notes/target.md`) are rewritten
 with the correct new relative path from the source file's directory.
-`update_links` is silently ignored for attachments (non-`.md` files).
+`update_links` does not apply to attachments (non-`.md` files): the link
+graph is notes-only, so no reference to an attachment is tracked and there
+is nothing to rewrite. Passing the flag for an attachment sets
+`RenameResult.hint` saying so; `updated_links` stays `0`, and the MCP tool
+carries the `hint` key only when it is set (#1338). `move_folder` has no
+such flag and rewrites through its `.md`-only path map, so it needs no
+equivalent. Rewriting embeds on attachment rename is the v5 feature #1359.
 
 **`move_folder()` behavior**: a dedicated tool (not an overload of `rename`)
 that moves an entire folder subtree to a new prefix in one call. It is the

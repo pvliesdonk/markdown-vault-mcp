@@ -396,11 +396,15 @@ class RenameResult:
         old_path: Original relative path.
         new_path: New relative path after the rename.
         updated_links: Number of backlinks in other documents that were rewritten.
+        hint: Why no links were rewritten although ``update_links`` was
+            requested — set when the renamed file is an attachment, whose
+            references are not tracked as links (#1338). ``None`` otherwise.
     """
 
     old_path: str
     new_path: str
     updated_links: int = 0
+    hint: str | None = None
 
 
 @dataclass

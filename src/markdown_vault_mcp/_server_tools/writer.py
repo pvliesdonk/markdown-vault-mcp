@@ -524,12 +524,13 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Rename or move a document or attachment. When renaming a .md note,
         always pass update_links=True to rewrite links in other documents
-        that point to the old path — omitting this leaves those links broken.
+        that point to the old path.
 
         For .md documents: the file and its search index entries are updated
         immediately — do not call 'reindex' afterward.
-        For attachments: only the file is moved (no index update needed).
-        Parent directories for new_path are created automatically.
+        For attachments: only the file is moved; update_links does not apply
+        (attachment references are not tracked as links).
+        Parent directories are created automatically.
 
         Args:
             old_path: Current relative path (e.g. "drafts/idea.md"
@@ -549,6 +550,8 @@ def register(mcp: FastMCP) -> None:
         Returns:
             Dict with old_path (str), new_path (str), and updated_links (int)
             counting the number of source documents whose links were updated.
+            Carries hint (str) only when update_links was requested for an
+            attachment, saying why nothing was rewritten.
 
         Raises:
             DocumentNotFoundError: If old_path does not exist.
@@ -568,7 +571,11 @@ def register(mcp: FastMCP) -> None:
                 if_match=if_match,
                 update_links=update_links,
             )
-        return attach_remote_health(vault, asdict(result))
+        data = asdict(result)
+        # Absent, not null, when there is nothing to say — like `remote`.
+        if data["hint"] is None:
+            del data["hint"]
+        return attach_remote_health(vault, data)
 
     @mcp.tool(
         tags={"write"},
