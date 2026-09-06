@@ -1699,6 +1699,50 @@ class TestMCPWriteAttachment:
                 )
 
 
+class TestMCPRenameAttachment:
+    """MCP rename() on an attachment says when update_links does not apply."""
+
+    async def test_rename_attachment_with_update_links_carries_hint(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "rename",
+                {
+                    "old_path": "assets/image.png",
+                    "new_path": "assets/photo.png",
+                    "update_links": True,
+                },
+            )
+        data = result.data
+        assert data["new_path"] == "assets/photo.png"
+        assert data["updated_links"] == 0
+        assert "update_links" in data["hint"]
+
+    async def test_rename_attachment_without_update_links_omits_hint(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "rename",
+                {"old_path": "assets/image.png", "new_path": "assets/photo.png"},
+            )
+        assert "hint" not in result.data
+
+    async def test_rename_note_omits_hint(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "rename",
+                {"old_path": "note.md", "new_path": "moved.md", "update_links": True},
+            )
+        assert "hint" not in result.data
+
+
 class TestAttachmentSizeCap:
     """Cap enforcement lives in the read/write MCP tools, not the vault library."""
 

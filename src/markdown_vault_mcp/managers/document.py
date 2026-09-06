@@ -83,6 +83,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: Set as :attr:`~markdown_vault_mcp.types.RenameResult.hint` when
+#: ``update_links=True`` is passed for an attachment.  The link graph is
+#: notes-only — references to attachments are not tracked as links — so there
+#: is nothing to rewrite; a bare ``updated_links: 0`` hid that (#1338).
+_ATTACHMENT_UPDATE_LINKS_HINT = (
+    "update_links does not apply to attachments: references to attachments "
+    "are not tracked as links, so none were rewritten. Notes embedding the "
+    "old path still name it; edit them to point at the new path."
+)
+
 
 class DocumentManager:
     """Manages document CRUD, attachments, path validation, and backlinks.
@@ -1067,7 +1077,9 @@ class DocumentManager:
 
         When *update_links* is ``True`` and *old_path* is a ``.md`` document,
         every document that links to *old_path* is also updated so its links
-        point to *new_path*.
+        point to *new_path*.  For an attachment the flag does not apply —
+        references to attachments are not tracked as links — and the result's
+        *hint* says so instead of reporting a bare ``0`` (#1338).
 
         Args:
             old_path: Current relative document or attachment path.
@@ -1082,7 +1094,9 @@ class DocumentManager:
 
         Returns:
             :class:`~markdown_vault_mcp.types.RenameResult` with
-            *updated_links* counting source documents successfully updated.
+            *updated_links* counting source documents successfully updated,
+            and *hint* set when *update_links* was requested for an
+            attachment.
 
         Raises:
             ReadOnlyError: If the vault is read-only.
@@ -1096,6 +1110,7 @@ class DocumentManager:
         """
         self._check_writable()
         updated_links = 0
+        hint: str | None = None
         backlink_callbacks: list[tuple[Path, str]] = []
 
         with self._file_write_lock:
@@ -1135,6 +1150,8 @@ class DocumentManager:
             else:
                 old_abs, new_abs = self._artifacts.move(old_path, new_path, if_match)
                 callback_content = ""
+                if update_links:
+                    hint = _ATTACHMENT_UPDATE_LINKS_HINT
 
             self._notifier.fire_rename(new_abs, callback_content, old_abs)
             for src_abs, src_content in backlink_callbacks:
@@ -1144,6 +1161,7 @@ class DocumentManager:
             old_path=old_path,
             new_path=new_path,
             updated_links=updated_links,
+            hint=hint,
         )
 
     def _rewrite_one_source(
