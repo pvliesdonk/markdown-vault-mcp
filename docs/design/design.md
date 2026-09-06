@@ -1998,8 +1998,14 @@ Links are extracted from markdown content during `parse_note()` and stored in th
 - **Wikilinks**: `[[path]]`, `[[path|alias]]`, `[[path#heading]]`
 
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
-are not extracted. External URLs (`http://`, `https://`, `mailto:`) and pure anchors
-are skipped. "Pure anchor" covers every spelling of a same-document reference:
+are not extracted. External destinations and pure anchors are skipped. "External"
+is decided by shape, not by allowlist (#1335): a destination carrying any URI
+scheme (`[A-Za-z][A-Za-z0-9+.-]+:`, so `https:`, `mailto:`, `file:`,
+`obsidian:`, `zotero:` alike) or the protocol-relative `//host` prefix, which has
+no scheme to detect. Two or more characters are required before the colon so a
+Windows drive (`C:/notes/x.md`) stays a path; the known cost is that a file
+name shaped like `draft:v2.md` reads as a scheme. The test applies at all three
+extraction sites, wikilinks included. "Pure anchor" covers every spelling of a same-document reference:
 `[text](#heading)`, a reference definition whose target starts with `#`, and the
 wikilink form `[[#heading]]` (issue #1107). The wikilink form was the exception
 until #1107: its fragment is split off before `.md` is appended, so the empty path
