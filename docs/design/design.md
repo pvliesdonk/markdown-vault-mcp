@@ -2081,6 +2081,52 @@ a destination whose new name would need escaping to parse. The other CommonMark
 destination spellings (pointy brackets, backslash escapes, balanced
 parentheses, titles, entities) are a separate defect, #1353.
 
+**A link is matched inside one paragraph, never across a boundary (#1334).**
+The three patterns used to run over the whole code-stripped body, and their
+negated character classes admit line endings, so a stray unmatched `[` paired
+with a `](` paragraphs later and stored pages of prose as `link_text` — several
+multi-kilobyte blobs per `get_broken_links` call on a vault of converted PDFs.
+The body is now walked line by line into *regions* and each of inline links,
+reference usages and wikilinks is matched one region at a time; reference
+*definitions* stay document-wide, since they live wherever the author put
+them. The returned list keeps its grouped order (inline, reference, wikilink).
+Which lines end a paragraph is taken row by row from
+[`reference/commonmark-gfm.md`](reference/commonmark-gfm.md) ("Paragraph
+boundaries the scanner should honour"), and the walk is *line shape only* — no
+open-quote, open-item or open-fence state:
+
+- **Separators** (end the region, carry nothing): a blank or whitespace-only
+  line, a bare `>` marker, a thematic break, a setext underline.
+- **A heading** (`#`–`######` plus space, up to three leading spaces) is a
+  region by itself, so a link written on the heading line survives — the
+  second attempt (#1348) split on the heading and silently dropped
+  `## See also: [[Related]]` edges.
+- **Openers** (start a region that includes the line): a quote line with text,
+  unless the line before was one too (consecutive quote lines are one
+  paragraph); a bullet item; an ordered item.
+- Everything else is continuation text, as the spec has it for indented code,
+  `[r]: x.md` lines, HTML type-7 tags, table rows and lazy continuations.
+
+The patterns themselves keep their plain negated classes — the region bounds
+them — because a bounded alternation measured 7–8x slower on adversarial
+input (#1339); the inline destination class additionally excludes a line
+ending, since a destination never contains one. Line endings are normalised
+(`\r\n` and lone `\r` → `\n`) once before anything is matched, the way
+python-frontmatter already normalises CRLF on ingestion, so a CR-only note's
+reference definitions are found too. Two deliberate departures from the spec
+table: *every* ordered marker opens a region, not only `1.` (§5.2 Ex. 304 makes
+`2. text` after prose continuation text, but converted PDFs are numbered lists
+and a stray `[` in one item must not pair into the next — a link whose text
+soft-breaks onto a `2. ` line is the pinned cost); and a destination wrapped
+onto its own line inside the parentheses (`[a](\nx.md\n)`, legal in §6.3) is
+not recognised, since that shape is exactly what the defect produced. Not
+honoured, by choice: HTML block openers, GFM table delimiter rows, unclosed
+fences (a `_strip_code_spans` matter), and a nested item indented four or more
+spaces (continuation by the shape rule; the under-split is bounded by the next
+honoured boundary). The quadratic cost of the wikilink pattern *inside* one
+region with no boundaries is #1343 and is unchanged. `INDEX_SEMANTICS_VERSION`
+6 → 7 drops the stray-bracket rows on upgrade.
+
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
 are not extracted. External destinations and pure anchors are skipped. "External"
 is decided by shape, not by allowlist (#1335): a destination carrying any URI

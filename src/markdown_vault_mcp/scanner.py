@@ -803,8 +803,11 @@ _RE_URI_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]+:")
 _RE_FENCED_CODE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
 # Inline code: matches single backtick spans (non-greedy, no newlines inside).
 _RE_INLINE_CODE = re.compile(r"`[^`\n]+`")
-# Inline markdown link: [text](target)
-_RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
+# Inline markdown link: [text](target). The text keeps the plain negated
+# class — a soft break inside link text is legal — and is bounded by the
+# paragraph region it is matched in (#1334); the destination excludes a line
+# ending outright, since a destination never contains one.
+_RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)\n]+)\)")
 # Reference-style link usage: [text][ref] or [text][]
 _RE_REF_USAGE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
 # Reference definition: [ref]: target  (at start of line, optional leading whitespace)
@@ -814,6 +817,30 @@ _RE_REF_DEF = re.compile(r"^\s*\[([^\]]+)\]:\s*(.+)$", re.MULTILINE)
 _FOOTNOTE_LABEL_PREFIX = "^"
 # Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian table-cell escape)
 _RE_WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
+
+# Line shapes at which a paragraph ends, each decidable from the line alone
+# (no container state). The rows come from
+# ``docs/design/reference/commonmark-gfm.md``, "Paragraph boundaries the
+# scanner should honour"; which rows are honoured, and the two departures,
+# are the decision on #1334. A separator carries no link content and is
+# dropped; a heading is a region by itself; a quote line with text or a list
+# item opens a region that includes the line, so links written on such a
+# line survive (the #1348 regression stated as a requirement).
+_RE_LINE_SEPARATOR = re.compile(
+    r"^(?:"
+    r"[ \t]*"  # blank or whitespace-only (§2.1, §4.8)
+    r"| {0,3}>[ \t]*"  # bare quote marker (§5.1 Ex. 244)
+    r"| {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})"  # break (§4.1)
+    r"| {0,3}(?:=+|-+)[ \t]*"  # setext underline (§4.3)
+    r")$"
+)
+_RE_LINE_ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
+_RE_LINE_QUOTE = re.compile(r"^ {0,3}>")
+# Bullet or ordered item with content. Every ordered marker opens a region,
+# not only ``1.`` — §5.2 Ex. 304 makes ``2. text`` after prose continuation
+# text, but converted PDFs are numbered lists and a stray ``[`` in one item
+# must not pair into the next; the split soft-break link is the known cost.
+_RE_LINE_LIST_ITEM = re.compile(r"^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+\S")
 
 
 def _is_external_target(target: str) -> bool:
@@ -832,6 +859,69 @@ def _is_external_target(target: str) -> bool:
     return target.startswith(_EXTERNAL_URL_PREFIXES) or bool(
         _RE_URI_SCHEME.match(target)
     )
+
+
+def _normalise_line_endings(content: str) -> str:
+    """Rewrite CRLF and lone CR line endings as LF.
+
+    CommonMark treats all three spellings as a line ending (§2.1).
+    python-frontmatter already rewrites CRLF on the ``parse_note`` path, so
+    only a CR-only note and direct callers ever see the other two; doing it
+    here once means every pattern below reasons about ``\\n`` alone
+    (#1334).
+
+    Args:
+        content: Raw markdown body text.
+
+    Returns:
+        *content* with every line ending spelled ``\\n``.
+    """
+    return content.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _paragraph_regions(clean: str) -> Iterator[str]:
+    """Split code-stripped, LF-normalised content into paragraph regions.
+
+    A region is the run of lines inside which a link may span a soft break;
+    a stray ``[`` in one region cannot pair with a ``](`` in the next. The
+    walk is line-shape only (see :data:`_RE_LINE_SEPARATOR` and friends):
+    it tracks no open quotes, items or fences, so a nested item indented four
+    or more spaces is continuation text and a quote line is one paragraph
+    with the quote line before it.
+
+    Args:
+        clean: Body text with code removed and line endings normalised.
+
+    Yields:
+        Each region's lines joined with ``\\n``, in document order.
+    """
+    lines: list[str] = []
+    previous_was_quote = False
+    for line in clean.split("\n"):
+        if _RE_LINE_SEPARATOR.match(line):
+            if lines:
+                yield "\n".join(lines)
+                lines = []
+            previous_was_quote = False
+            continue
+        if _RE_LINE_ATX_HEADING.match(line):
+            if lines:
+                yield "\n".join(lines)
+                lines = []
+            yield line
+            previous_was_quote = False
+            continue
+        is_quote = _RE_LINE_QUOTE.match(line) is not None
+        opens = (is_quote and not previous_was_quote) or (
+            _RE_LINE_LIST_ITEM.match(line) is not None
+        )
+        if opens and lines:
+            yield "\n".join(lines)
+            lines = []
+        lines.append(line)
+        previous_was_quote = is_quote
+    if lines:
+        yield "\n".join(lines)
 
 
 def _strip_code_spans(content: str) -> str:
@@ -962,32 +1052,42 @@ def extract_links(
     Returns:
         List of :class:`~markdown_vault_mcp.types.LinkInfo` objects.
     """
-    clean = _strip_code_spans(content)
+    clean = _strip_code_spans(_normalise_line_endings(content))
     extensions = (
         effective_attachment_extensions(None)
         if attachment_extensions is None
         else attachment_extensions
     )
-    return [
-        *_extract_inline_links(clean, source_path, extensions),
-        *_extract_reference_links(clean, source_path, extensions),
-        *_extract_wikilinks(clean, source_path, extensions),
-    ]
+    # Definitions live wherever the author put them, so they are collected
+    # over the whole body; usages, inline links and wikilinks are matched one
+    # paragraph region at a time so nothing pairs across a boundary (#1334).
+    # The result stays grouped by kind — callers index into it.
+    ref_defs = _collect_reference_definitions(clean)
+    inline: list[LinkInfo] = []
+    reference: list[LinkInfo] = []
+    wiki: list[LinkInfo] = []
+    for region in _paragraph_regions(clean):
+        inline.extend(_extract_inline_links(region, source_path, extensions))
+        reference.extend(
+            _extract_reference_links(region, ref_defs, source_path, extensions)
+        )
+        wiki.extend(_extract_wikilinks(region, source_path, extensions))
+    return [*inline, *reference, *wiki]
 
 
 def _extract_inline_links(
-    clean: str, source_path: str, attachment_extensions: frozenset[str]
+    region: str, source_path: str, attachment_extensions: frozenset[str]
 ) -> list[LinkInfo]:
-    """Extract inline ``[text](path.md)`` links from code-stripped content.
+    """Extract inline ``[text](path.md)`` links from one paragraph region.
 
     Skips image links (``![alt](src)``), external URLs, pure anchor links
     (``#section`` within the same document), and destinations naming an
     attachment (#1333).
     """
     links: list[LinkInfo] = []
-    for m in _RE_INLINE_LINK.finditer(clean):
+    for m in _RE_INLINE_LINK.finditer(region):
         # Skip image links: ![alt](src) shares the same bracket syntax.
-        if m.start() > 0 and clean[m.start() - 1] == "!":
+        if m.start() > 0 and region[m.start() - 1] == "!":
             continue
         text = m.group(1)
         raw_target = m.group(2).strip()
@@ -1016,23 +1116,21 @@ def _extract_inline_links(
     return links
 
 
-def _extract_reference_links(
-    clean: str, source_path: str, attachment_extensions: frozenset[str]
-) -> list[LinkInfo]:
-    """Extract reference-style ``[text][ref]`` links from code-stripped content.
+def _collect_reference_definitions(clean: str) -> dict[str, str]:
+    """Collect ``[ref]: path.md`` definitions from the whole document body.
 
-    Collects the ``[ref]: path.md`` definitions first (optional CommonMark
-    titles stripped), then resolves each usage; an empty ``[ref]`` falls
-    back to the link text per CommonMark shortcut semantics. External URLs,
-    pure anchors, and definitions naming an attachment (#1333) are skipped.
+    Definitions apply document-wide and commonly sit far from the usages
+    they serve, so they are gathered over the full body rather than per
+    paragraph region (#1334). Optional CommonMark titles are stripped. A
+    footnote definition (``[^label]: body``) is prose, not a link target,
+    and is skipped (#1104).
 
-    Markdown footnotes are skipped on both halves: a footnote definition
-    (``[^label]: body``) is prose, not a link target, and two adjacent
-    footnote references (``[^a][^b]``) are not one reference-style link
-    (#1104).
+    Args:
+        clean: Body text with code removed and line endings normalised.
+
+    Returns:
+        Lower-cased label to raw target; a later definition wins.
     """
-    links: list[LinkInfo] = []
-    # Collect reference definitions first.
     ref_defs: dict[str, str] = {}
     for m in _RE_REF_DEF.finditer(clean):
         ref_key = m.group(1).strip().lower()
@@ -1044,8 +1142,27 @@ def _extract_reference_links(
         # Strip optional CommonMark title: "...", '...', or (...)
         ref_target = re.sub(r'\s+(?:"[^"]*"|\'[^\']*\'|\([^)]*\))\s*$', "", ref_target)
         ref_defs[ref_key] = ref_target
+    return ref_defs
 
-    for m in _RE_REF_USAGE.finditer(clean):
+
+def _extract_reference_links(
+    region: str,
+    ref_defs: dict[str, str],
+    source_path: str,
+    attachment_extensions: frozenset[str],
+) -> list[LinkInfo]:
+    """Extract reference-style ``[text][ref]`` links from one paragraph region.
+
+    Resolves each usage against *ref_defs* (see
+    :func:`_collect_reference_definitions`); an empty ``[ref]`` falls back
+    to the link text per CommonMark shortcut semantics. External URLs, pure
+    anchors, and definitions naming an attachment (#1333) are skipped.
+
+    Two adjacent footnote references (``[^a][^b]``) are not one
+    reference-style link and are skipped (#1104).
+    """
+    links: list[LinkInfo] = []
+    for m in _RE_REF_USAGE.finditer(region):
         text = m.group(1)
         ref = m.group(2).strip() or text  # empty [ref] falls back to link text
         if text.startswith(_FOOTNOTE_LABEL_PREFIX) or ref.startswith(
@@ -1083,9 +1200,9 @@ def _extract_reference_links(
 
 
 def _extract_wikilinks(
-    clean: str, source_path: str, attachment_extensions: frozenset[str]
+    region: str, source_path: str, attachment_extensions: frozenset[str]
 ) -> list[LinkInfo]:
-    """Extract ``[[path]]`` / ``[[path|alias]]`` wikilinks from content.
+    """Extract ``[[path]]`` / ``[[path|alias]]`` wikilinks from one region.
 
     Handles the Obsidian table-cell pipe escape (#731), fragment splitting
     before the ``.md`` append, and Obsidian vault-wide resolution
@@ -1100,7 +1217,7 @@ def _extract_wikilinks(
     the embed marker does not change what the target names.
     """
     links: list[LinkInfo] = []
-    for m in _RE_WIKILINK.finditer(clean):
+    for m in _RE_WIKILINK.finditer(region):
         raw_path = m.group(1).strip()
         # Obsidian escapes the alias pipe as `\|` in table cells, so the target
         # keeps a trailing `\` (#731). Strip it BEFORE wikilink_raw_target is
