@@ -856,9 +856,10 @@ def register(mcp: FastMCP) -> None:
         whose target is indexed are converted, so the link graph is
         preserved exactly — a converted link points at the same note the
         wikilink resolved to. Unresolvable wikilinks are left untouched and
-        counted as skipped. Each changed note is written through the normal
-        write path (git commit if configured). Re-running is safe: already-
-        converted links are plain markdown and are not touched again.
+        counted as skipped; attachment embeds are not links. Each changed
+        note is written through the write path (git commit if configured).
+        Re-running is safe: converted links are plain markdown and are not
+        touched again.
 
         Args:
             folder: Restrict to this folder subtree (e.g. "guides"). Omit to

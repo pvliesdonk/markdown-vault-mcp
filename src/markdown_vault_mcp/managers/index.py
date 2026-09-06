@@ -35,13 +35,15 @@ from markdown_vault_mcp.scanner import (
 )
 from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult, SkippedFile
 from markdown_vault_mcp.utils import (
+    canonical_attachment_extensions,
+    effective_attachment_extensions,
     is_note,
     is_path_excluded,
 )
 from markdown_vault_mcp.utils.fs import iter_markdown_files
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.interfaces import KeywordGraphIndex, VectorStore
@@ -90,6 +92,11 @@ class IndexManager:
         title_field: Frontmatter key consulted first when resolving document
             titles; threaded to every ``parse_note``/``scan_directory`` call
             and recorded into FTS meta as a warm-restart key.
+        attachment_extensions: Configured attachment allowlist (``None`` =
+            the default set). Link extraction consults it to tell a reference
+            naming an attachment from one naming a note (#1333), so it is
+            threaded to every parse call and recorded into FTS meta as a
+            warm-restart key.
         embed_text_builder: Shared
             :class:`~markdown_vault_mcp.embed_text.EmbedTextBuilder` used at
             every embedding site so hot, cold, converge, and flush paths all
@@ -118,6 +125,7 @@ class IndexManager:
         embed_model_name: str | None = None,
         max_chunk_chars_override: int | None = None,
         title_field: str = "title",
+        attachment_extensions: Sequence[str] | None = None,
         embed_text_builder: EmbedTextBuilder | None = None,
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
     ) -> None:
@@ -136,6 +144,9 @@ class IndexManager:
         self._embed_model_name = embed_model_name
         self._max_chunk_chars_override = max_chunk_chars_override
         self._title_field = title_field
+        self._attachment_extensions = effective_attachment_extensions(
+            attachment_extensions
+        )
         self._embed_builder = embed_text_builder or EmbedTextBuilder()
         # Composed vector-lifecycle collaborator (#1157). The shared path
         # helpers are injected as callables (per the #736 precedent) so the
@@ -432,6 +443,7 @@ class IndexManager:
                 exclude_patterns=self._exclude_patterns,
                 on_skip=_collect_skip,
                 title_field=self._title_field,
+                attachment_extensions=self._attachment_extensions,
             )
         )
 
@@ -544,6 +556,9 @@ class IndexManager:
             title_field=self._title_field,
             searchable_fields=",".join(self._embed_builder.searchable_fields),
             indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
+            attachment_extensions=canonical_attachment_extensions(
+                self._attachment_extensions
+            ),
         )
         return IndexStats(
             documents_indexed=len(notes) - errored,
@@ -706,6 +721,7 @@ class IndexManager:
                 self._chunk_strategy,
                 rel_path=path,
                 title_field=self._title_field,
+                attachment_extensions=self._attachment_extensions,
                 required_frontmatter=self._required_frontmatter,
                 log_context="reindex",
             )
@@ -928,6 +944,7 @@ class IndexManager:
                             self._source_dir,
                             self._chunk_strategy,
                             title_field=self._title_field,
+                            attachment_extensions=self._attachment_extensions,
                         )
                         missing = [
                             k

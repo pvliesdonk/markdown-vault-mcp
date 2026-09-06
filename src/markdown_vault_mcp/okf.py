@@ -624,6 +624,8 @@ class OkfConvertResult:
         links_converted: Wikilink occurrences turned into markdown links.
         links_skipped: Unresolvable wikilink occurrences left untouched
             (their target is not indexed, so no root-absolute path exists).
+            A wikilink naming an attachment is not a link and is not
+            counted here (#1333).
         notes_scanned: Notes examined.
     """
 
@@ -666,9 +668,11 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
     Only wikilinks whose target is indexed (``exists``) are converted, so
     the link graph is preserved edge-for-edge — a converted link points at
     the same resolved ``target_path`` the wikilink already resolved to.
-    Unresolvable wikilinks are left as-is and counted as skipped. Interior
-    whitespace and the table-cell ``\\|`` escape are not matched (the same
-    limitation as the rename/move link-rewrite engine).
+    Unresolvable wikilinks are left as-is and counted as skipped; a
+    wikilink naming an attachment (``![[pic.png]]``) is not a link at all,
+    so it is left as-is and not counted (#1333). Interior whitespace and
+    the table-cell ``\\|`` escape are not matched (the same limitation as
+    the rename/move link-rewrite engine).
 
     Args:
         content: Raw note text (frontmatter included).

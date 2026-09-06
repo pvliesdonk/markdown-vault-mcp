@@ -61,6 +61,7 @@ class IndexWriteCoordinator:
         title_field: str = "title",
         searchable_fields: str = "",
         indexed_frontmatter_fields: str = "",
+        attachment_extensions: str = "",
     ) -> None:
         self._fts = fts
         self._index_path = index_path
@@ -85,6 +86,13 @@ class IndexWriteCoordinator:
         # short-circuit (#927) even when SEARCHABLE_FIELDS is explicitly
         # overridden and would otherwise stay unchanged.
         self._indexed_frontmatter_fields = indexed_frontmatter_fields
+        # Link-extraction provenance: the attachment allowlist decides whether
+        # a reference is a link row at all (#1333), so a change to it changes
+        # the stored rows of notes whose bytes never moved. Hash-based
+        # reindexing would never re-parse those notes, so without this key
+        # the warm restart kept serving the previous interpretation forever.
+        # Canonical form ("" for the default set, else a sorted JSON list).
+        self._attachment_extensions = attachment_extensions
         self._readiness = ReadinessState()
         # Deprecated background-build thread bookkeeping (guarded by the
         # injected file-write lock, matching the former Vault locking).
@@ -219,9 +227,10 @@ class IndexWriteCoordinator:
         name and the explicit ``MAX_CHUNK_CHARS`` override (the shared
         chunker's char-cap inputs, #649), plus the title field (which
         shapes FTS titles), the searchable frontmatter fields (which shape
-        the ``summary`` column), and the indexed frontmatter fields (which
-        shape the ``document_tags`` structured-filter set, #927) — never the
-        runtime-derived cap. A genuine option change rejects the
+        the ``summary`` column), the indexed frontmatter fields (which
+        shape the ``document_tags`` structured-filter set, #927), and the
+        attachment allowlist (which decides whether a reference is a link
+        row, #1333) — never the runtime-derived cap. A genuine option change rejects the
         warm-restart short-circuit (cold rebuild); a derived cap that merely
         differs because the model context was read transiently differently
         (e.g. an Ollama instance briefly unreachable) changes no input, so
@@ -252,6 +261,11 @@ class IndexWriteCoordinator:
                 "indexed_frontmatter_fields",
                 stored.indexed_frontmatter_fields,
                 self._indexed_frontmatter_fields,
+            ),
+            (
+                "attachment_extensions",
+                stored.attachment_extensions,
+                self._attachment_extensions,
             ),
             (
                 "index_semantics_version",
