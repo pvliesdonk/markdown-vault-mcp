@@ -2009,12 +2009,20 @@ Links are extracted from markdown content during `parse_note()` and stored in th
 - **Wikilinks**: `[[path]]`, `[[path|alias]]`, `[[path#heading]]`
 
 **A markdown destination is a URL, so its percent-escapes are decoded (#1332).**
-`[x](/probe/b%5B1%5D.md)` names `probe/b[1].md`; percent-encoding is the
-canonical way to write a destination containing `[`, `]`, spaces or
-parentheses, which is exactly the note names #1303 / #1305 taught the git layer
-to handle. Nothing decoded them, so the encoded spelling resolved to nothing,
-produced no backlink, and was skipped by a link-updating rename. The rules,
-enumerated on the issue before the change was made:
+`[x](/probe/b%5B1%5D.md)` names `probe/b[1].md`. Obsidian itself writes
+markdown links this way (`[Three laws of motion](Three%20laws%20of%20motion.md)`,
+with "Use Wikilinks" off; see `reference/obsidian-markdown.md`, "Markdown links
+Obsidian writes"), so an Obsidian-authored vault contains exactly this
+spelling for every note whose name carries a space, `[`, `]` or parentheses —
+the names #1303 / #1305 taught the git layer to handle. Nothing decoded them,
+so the encoded spelling resolved to nothing, produced no backlink, and was
+skipped by a link-updating rename. Two things the reference leaves
+`[unverified]`, each with a fixture named there: whether Obsidian decodes on
+lookup (the writer side implies it, but it is not documented), and which
+characters beyond spaces Obsidian encodes when it writes a link — which is
+what decides whether a rewrite's `quote()` spelling matches what Obsidian
+would have written. The rules, enumerated on the issue before the change was
+made:
 
 - **The fragment splits before the decode.** An encoded `%23` is a literal
   `#` in the file name; decoding first would read it as the fragment marker
@@ -2037,6 +2045,12 @@ enumerated on the issue before the change was made:
 - **`raw_target` keeps the spelling as written**, because it is what
   `apply_link_replacement` searches for in the file. Only `target_path` is
   decoded.
+- **Order against the other decodings.** CommonMark decodes backslash escapes
+  and entity references in a destination (`reference/commonmark-gfm.md`,
+  "Inline links": `[a](x\*.md)` names `x*.md`, `[a](x&#46;md)` names `x.md`)
+  *before* the destination is a URL; percent-decoding is the URL layer after
+  that. The scanner does not yet decode escapes or entities (#1353); when it
+  does, that step runs before `decode_link_target`, never after.
 
 **Wikilinks are not decoded.** Obsidian writes wikilink targets literally, so
 `%20` in one is part of the name; decoding would break a note genuinely
