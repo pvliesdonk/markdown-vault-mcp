@@ -22,6 +22,7 @@ import yaml
 from markdown_vault_mcp.hashing import compute_etag
 from markdown_vault_mcp.types import Chunk, LinkInfo, ParsedNote, SkippedFile
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
+from markdown_vault_mcp.utils.links import decode_link_target
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
@@ -845,7 +846,9 @@ def _strip_code_spans(content: str) -> str:
     return content
 
 
-def _resolve_link_path(target: str, source_rel: str) -> tuple[str, str | None]:
+def _resolve_link_path(
+    target: str, source_rel: str, *, decode_percent: bool = False
+) -> tuple[str, str | None]:
     """Resolve a raw link target against the source document's directory.
 
     Splits off any fragment identifier (``#heading``), resolves the path
@@ -856,18 +859,31 @@ def _resolve_link_path(target: str, source_rel: str) -> tuple[str, str | None]:
         target: Raw target string from the link (may include ``#fragment``).
         source_rel: Relative POSIX path of the source document
             (e.g. ``"Journal/2024/today.md"``).
+        decode_percent: Whether to percent-decode the path portion. True for
+            markdown and reference links, whose destination CommonMark
+            defines as a URL; False for wikilinks, which Obsidian writes
+            literally (#1332).
 
     Returns:
         A ``(resolved_path, fragment)`` tuple where ``resolved_path`` is the
         vault-relative POSIX path with forward slashes and ``fragment`` is the
         heading identifier or ``None``.
     """
-    # Split fragment.
+    # Split fragment BEFORE decoding: an encoded ``%23`` is a literal ``#`` in
+    # the file name, and decoding first would read it as the fragment marker
+    # and truncate the target (#1332).
     fragment: str | None = None
     if "#" in target:
         idx = target.index("#")
         fragment = target[idx + 1 :] or None
         target = target[:idx]
+
+    if decode_percent:
+        # A refused escape leaves the whole target as written, so it never
+        # invents a resolvable name; the traversal clamp below still runs on
+        # whatever comes out, so a decoded ``%2E%2E`` cannot climb above the
+        # root. See :func:`~markdown_vault_mcp.utils.links.decode_link_target`.
+        target = decode_link_target(target)
 
     if not target:
         # Link with only a fragment — points to the source document itself.
@@ -952,7 +968,9 @@ def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
         if raw_target.startswith("#"):
             # Pure anchor link — skip (points to a section in the same doc).
             continue
-        resolved, fragment = _resolve_link_path(raw_target, source_path)
+        resolved, fragment = _resolve_link_path(
+            raw_target, source_path, decode_percent=True
+        )
         links.append(
             LinkInfo(
                 target_path=resolved,
@@ -1012,7 +1030,9 @@ def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
             continue
         if raw_target.startswith("#"):
             continue
-        resolved, fragment = _resolve_link_path(raw_target, source_path)
+        resolved, fragment = _resolve_link_path(
+            raw_target, source_path, decode_percent=True
+        )
         links.append(
             LinkInfo(
                 target_path=resolved,
