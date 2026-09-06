@@ -395,7 +395,7 @@ def bundle_findings(root: Path) -> list[str]:
     log = root / "log.md"
     if log.is_file():
         for hm in _LOG_HEADING_RE.finditer(log.read_text(encoding="utf-8")):
-            if _as_date(hm.group("date")) is None:
+            if _as_day(hm.group("date")) is None:
                 problems.append(
                     f"{log}: heading `## {hm.group('date')}` is not a `## YYYY-MM-DD` date"
                 )
