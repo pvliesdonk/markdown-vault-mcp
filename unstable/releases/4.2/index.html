@@ -2324,6 +2324,27 @@ What this deliberately does not do is make attachments part of the graph:
 <code>get_backlinks</code> on an image, <code>exists</code> on an embed, and a rename that
 rewrites the embeds pointing at the renamed file are the v5 feature
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1359">#1359</a>.</p>
+<p><strong>A stray <code>[</code> no longer turns pages of prose into a link.</strong> The inline-link
+pattern let link text run across paragraph boundaries, so an unmatched <code>[</code>
+early in a note paired with a <code>](</code> thousands of characters later. In the
+report, "one entry's <em>destination</em> contains literal newlines," a second
+entry's link text spanned "[~2,000 further characters spanning many
+paragraphs]," and "a single <code>get_broken_links</code> call on this vault returned
+several multi-kilobyte blobs of document prose"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1334">#1334</a>).
+Links are now matched inside one paragraph at a time, with the boundaries
+taken from the CommonMark spec row by row (a blank line in any line-ending
+spelling, a bare <code>&gt;</code>, a thematic break, a heading, a quote line, a list
+item), and a destination never contains a line ending. A link written <em>on</em> a
+heading, quote or list line still counts, as does a link whose text
+soft-breaks onto the next line. Three limits are deliberate. The scanner
+tracks no open quotes, items or fences, so a nested item indented four or
+more spaces is continuation text. Every numbered-list marker starts a new
+paragraph, not only <code>1.</code>, because converted PDFs are numbered lists and a
+stray <code>[</code> in one item must not pair into the next. And a destination
+wrapped onto its own line inside the parentheses is not accepted, because
+that shape is what the converted-PDF defect produced. Existing vaults
+rebuild once on first start after upgrade.</p>
 <p><strong>Renaming an attachment says when <code>update_links</code> does not apply.</strong> The
 attachment branch of <code>rename</code> never read the flag, so a call that asked
 for a rewrite answered <code>updated_links: 0</code> and nothing else, and "the two
@@ -2408,7 +2429,7 @@ meaning; the operator surface only grew (two GitLab webhook variables,
 <code>INSTANCE_DESCRIPTION</code>). A few things do change behavior without any action
 on your part:</p>
 <ul>
-<li><strong>The text index rebuilds once on first start.</strong> Four changes in this
+<li><strong>The text index rebuilds once on first start.</strong> Five changes in this
   release alter how stored rows derive from a note's bytes: skip
   tombstones
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1227">#1227</a>),
@@ -2416,10 +2437,12 @@ on your part:</p>
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1335">#1335</a>),
   percent-decoded destinations
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1332">#1332</a>),
-  and attachment references leaving the link graph
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1333">#1333</a>).
-  <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 6. One rebuild covers all
-  four; it is automatic, costs CPU and local IO proportional to vault size,
+  attachment references leaving the link graph
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1333">#1333</a>),
+  and links bounded to one paragraph
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1334">#1334</a>).
+  <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 7. One rebuild covers all
+  five; it is automatic, costs CPU and local IO proportional to vault size,
   and does not re-embed.</li>
 <li><strong>A Voyage vault also re-embeds once</strong>, through a separate mechanism
   with a separate trigger: the provider's embedding behavior is part of the
