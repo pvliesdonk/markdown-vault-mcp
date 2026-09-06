@@ -252,8 +252,9 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: schemed wikilink gained a ``.md`` suffix. Those rows are gone from a fresh
 #: parse; the bump rebuilds notes whose bytes never changed.
 #:
-#: Version 5 (#1334): no link crosses a blank line. Link extraction matches
-#: one paragraph at a time, so an unmatched ``[`` can no longer pair with a
+#: Version 5 (#1334): no link crosses a paragraph boundary (a blank line,
+#: an ATX heading, or a thematic break). Link extraction matches one
+#: paragraph at a time, so an unmatched ``[`` can no longer pair with a
 #: ``](`` paragraphs later and store pages of prose as one link's text and
 #: destination. Those rows are gone from a fresh parse; the bump rebuilds
 #: notes whose bytes never changed.

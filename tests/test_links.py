@@ -2201,6 +2201,35 @@ class TestLinkSpanBounding:
         links = extract_links(content, "index.md")
         assert [lnk.link_text for lnk in links] == ["x"]
 
+    def test_an_atx_heading_ends_the_paragraph_before_it(self) -> None:
+        """A heading interrupts a paragraph even with no blank line."""
+        content = "See item [3 below.\n## Heading\ntext [x](pic.md)"
+        assert [lnk.link_text for lnk in extract_links(content, "index.md")] == ["x"]
+
+    def test_a_heading_under_a_heading_still_splits(self) -> None:
+        """Each boundary line splits, not only the first of two."""
+        content = "[a\n# H [\n## H2\nb](p.md)"
+        assert extract_links(content, "index.md") == []
+
+    def test_a_hash_without_a_space_is_not_a_heading(self) -> None:
+        """``#hash`` is text; only ``#`` plus space (or end of line) is a heading."""
+        links = extract_links("[wrapped\n#tag text](note.md)", "index.md")
+        assert len(links) == 1
+
+    @pytest.mark.parametrize("rule", ["---", "* * *", "___", "- - -"])
+    def test_a_thematic_break_ends_the_paragraph_before_it(self, rule: str) -> None:
+        content = f"See item [3 below.\n{rule}\ntext [x](pic.md)"
+        assert [lnk.link_text for lnk in extract_links(content, "index.md")] == ["x"]
+
+    def test_an_indented_hash_line_is_a_continuation_not_a_heading(self) -> None:
+        """Four spaces of indent cannot interrupt a paragraph in CommonMark."""
+        links = extract_links("[wrapped\n    # still text](note.md)", "index.md")
+        assert len(links) == 1
+
+    def test_two_dashes_are_not_a_thematic_break(self) -> None:
+        links = extract_links("[wrapped\n--\ntext](note.md)", "index.md")
+        assert len(links) == 1
+
     def test_a_bare_quote_marker_line_is_a_paragraph_break(self) -> None:
         """Inside a block quote a blank line is written as ``>`` alone."""
         content = "> See [3.\n>\n> More prose.\n>\n> A real [x](pic.md)"

@@ -2005,10 +2005,15 @@ cross a blank line, and bounding the *input* rather than the *pattern* keeps
 the plain negated character classes: a bounded alternation in the pattern
 measured 7-8x slower on a long run of unmatched brackets, while the split
 measured ~100x faster than whole-document matching on multi-paragraph input.
-A blank line is recognised with any line ending CommonMark accepts (LF, CRLF,
-or a lone CR), and a bare `>` line
-counts as blank, since inside a block quote that is how a paragraph break is
-written. A destination class additionally excludes `\n`. The returned list stays
+The boundary is what CommonMark says ends a paragraph, as far as that can be
+told without tracking containers: a blank line, under any line ending CommonMark
+accepts (LF, CRLF, or a lone CR; nothing upstream normalises them) and written
+as a bare `>` inside a block quote; an ATX heading line; a thematic break line
+(each indented at most three spaces, since four make an indented line, which
+cannot interrupt a paragraph). A block quote or list item also interrupts a paragraph, but a `>` or `-` line
+with text is a *continuation* inside its own container, so splitting there
+would cut quoted and listed paragraphs apart, and those two stay unsplit. A
+destination class additionally excludes `\r` and `\n`. The returned list stays
 grouped by kind (inline, reference, wikilink), which callers index into. A
 paragraph with no blank lines is still matched as one unit, so the wikilink
 pattern's quadratic cost on such input is unchanged (#1343).

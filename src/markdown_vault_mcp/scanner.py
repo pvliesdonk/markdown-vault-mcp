@@ -791,18 +791,41 @@ _RE_URI_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]+:")
 _RE_FENCED_CODE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
 # Inline code: matches single backtick spans (non-greedy, no newlines inside).
 _RE_INLINE_CODE = re.compile(r"`[^`\n]+`")
-# A blank line: the paragraph boundary CommonMark says no link may cross.
+# The paragraph boundary CommonMark says no link may cross.
 # Link extraction runs one paragraph at a time (#1334), so the negated
 # classes below are bounded by the split rather than by the pattern; a
 # bounded alternation inside the pattern measured 7-8x slower on a long run
 # of unmatched brackets, and matching per paragraph measured ~100x faster
-# than whole-document matching on multi-paragraph input. Nothing upstream
-# normalises line endings, so every ending CommonMark recognises (LF, CRLF,
-# and a lone CR) must bound a blank line; and inside a block quote a blank
-# line is written as a bare ``>``, which is a paragraph break in CommonMark
-# wherever it appears.
-_LINE_ENDING = r"(?:\r\n|\n|\r)"
-_RE_PARAGRAPH_BREAK = re.compile(rf"{_LINE_ENDING}[ \t>]*{_LINE_ENDING}")
+# than whole-document matching on multi-paragraph input.
+#
+# CommonMark ends a paragraph at a blank line, or where a block that may
+# interrupt a paragraph starts. The boundary below covers what can be told
+# without tracking containers: a blank line, under every line ending
+# CommonMark accepts (LF, CRLF, a lone CR; nothing upstream normalises
+# them) and written as a bare ``>`` inside a block quote; an ATX heading
+# line; a thematic break line. A block quote or list item also interrupts a
+# paragraph, but a ``>`` or ``-`` line with text is a *continuation* inside
+# its own container, so splitting there would cut quoted and listed
+# paragraphs apart; those stay unsplit.
+# A lone CR is an ending only when no LF follows, or CRLF would count twice.
+_LINE_ENDING = r"(?:\r\n|\n|\r(?!\n))"
+_BLANK_LINE = r"[ \t>]*"
+# What may precede a heading or a thematic break: block-quote markers, each
+# indented at most three spaces, then at most three spaces. Four spaces of
+# indentation make an indented line, which cannot interrupt a paragraph.
+_BLOCK_PREFIX = r"(?: {0,3}>)* {0,3}"
+_ATX_HEADING_LINE = rf"{_BLOCK_PREFIX}#{{1,6}}(?:[ \t][^\r\n]*)?"
+_THEMATIC_BREAK_LINE = (
+    rf"{_BLOCK_PREFIX}(?:-[ \t]*){{3,}}"
+    rf"|{_BLOCK_PREFIX}(?:\*[ \t]*){{3,}}"
+    rf"|{_BLOCK_PREFIX}(?:_[ \t]*){{3,}}"
+)
+# The trailing ending is a lookahead, so two boundary lines in a row (a
+# heading under a heading) each split.
+_RE_PARAGRAPH_BREAK = re.compile(
+    rf"{_LINE_ENDING}(?:{_BLANK_LINE}|{_ATX_HEADING_LINE}|{_THEMATIC_BREAK_LINE})"
+    rf"(?={_LINE_ENDING})"
+)
 # Inline markdown link: [text](target). The destination never spans a line.
 _RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)\r\n]+)\)")
 # Reference-style link usage: [text][ref] or [text][]
@@ -917,8 +940,9 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
     * **Wikilinks**: ``[[path]]`` or ``[[path|alias]]``
 
     Links inside fenced code blocks and inline code spans are ignored.
-    Matching runs one paragraph at a time, so no link crosses a blank line
-    (#1334); reference *definitions* are the exception and are collected
+    Matching runs one paragraph at a time, so no link crosses a paragraph
+    boundary: a blank line, an ATX heading, or a thematic break (#1334);
+    reference *definitions* are the exception and are collected
     document-wide. External destinations are skipped: any URI scheme (``https:``,
     ``mailto:``, ``file:``, ``obsidian:``, and so on, by shape rather than
     by allowlist, #1335) and protocol-relative ``//host`` targets. So are
