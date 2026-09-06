@@ -865,6 +865,28 @@ class TestWalkRules:
 
         assert list(_iter_name_status("\x1eSHA\0\nR100\0only-one-path\0")) == []
 
+    def test_a_copy_refusal_does_not_send_the_caller_to_another_note(self) -> None:
+        """The copy source is git's similarity guess, not the caller's note.
+
+        Advising "read that one instead" invited restoring unrelated
+        content — the documented next step after a revision read is to
+        write it back (#1336). The sibling ``A`` branch already pointed at
+        'get_history'; this one now does too.
+        """
+        from markdown_vault_mcp.git.query import _path_at_ref
+
+        stream = "\x1eSHA\0\nC85\0unrelated.md\0note.md\0"
+        with pytest.raises(ValueError) as exc:
+            _path_at_ref(stream, "note.md", "abc123")
+
+        message = str(exc.value)
+        assert "get_history" in message
+        # The source is still named — it is what git said, and it is what
+        # explains the refusal — but it is not offered as a thing to read.
+        assert "unrelated.md" in message
+        assert "Read 'unrelated.md'" not in message
+        assert "similarity match" in message
+
     def test_edits_and_deletes_carry_the_identity_forward(self) -> None:
         """The walk survives the record classes that keep a note's identity."""
         from markdown_vault_mcp.git.query import _path_at_ref
