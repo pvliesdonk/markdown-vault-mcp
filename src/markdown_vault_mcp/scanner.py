@@ -1,4 +1,11 @@
-"""File discovery, frontmatter parsing, and chunking for markdown-vault-mcp."""
+"""File discovery, frontmatter parsing, and chunking for markdown-vault-mcp.
+
+The link, heading and code-span rules this module implements are checked
+against the dated references in ``docs/design/reference/`` (``commonmark-gfm.md``
+for the CommonMark and GFM rules, ``obsidian-markdown.md`` for wikilinks,
+embeds and Obsidian's resolution). Consult them before changing a regex here;
+a rule the reference does not settle is research first, not a guess.
+"""
 
 from __future__ import annotations
 

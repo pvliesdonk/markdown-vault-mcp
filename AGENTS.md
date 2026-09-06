@@ -74,6 +74,7 @@ Detailed guidance lives in skills under `.agents/skills/` (portable; Claude Code
 - `code-review` — before opening a PR, marking one ready, or pushing further commits to a branch with an open PR: self-review the cumulative diff.
 - `applying-template-updates` — when working through the weekly template update PR (`copier/update` branch) or after running `copier update`.
 - `writing-release-notes` — when drafting a `docs/releases/` page.
+- `researching-references` — when a change depends on how something outside the repo behaves (a markdown dialect, git, a file format, a vendor API) and `docs/design/reference/` has no current page for it.
 
 Project-owned skills follow the same shape: a directory under `.agents/skills/` plus a relative symlink in `.claude/skills/`.
 
@@ -242,4 +243,5 @@ If a conflict marker appears in a copier-update bot PR, the conflict itself ofte
 - Library is sync; MCP layer uses `asyncio.to_thread()`
 - Indexing is hash-based, so an unchanged file is never re-parsed: any change to how a note's stored rows are derived from its bytes (link extraction, chunking, tag/alias/heading derivation) must bump `INDEX_SEMANTICS_VERSION` in `fts_index.py` in the same commit, or deployed vaults keep serving the rows the old code produced (#1124)
 - Full decision log in `docs/design/design.md` appendix
+- How the outside world behaves (Obsidian's dialect, CommonMark/GFM, git) is recorded in dated, sourced references under `docs/design/reference/`; read the relevant page before touching `scanner.py`, `fts_index.py` link resolution, or `git/`, and re-research rather than trust a page past its `review_by`
 <!-- DOMAIN-END -->

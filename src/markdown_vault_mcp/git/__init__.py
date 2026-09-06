@@ -1,5 +1,12 @@
 """Git integration package.
 
+What the git command line actually does where this package relies on it
+(refusal messages and their locale status, ``--porcelain``, askpass, URL
+forms, pathspec magic, ``log -z`` framing, identity) is recorded with sources
+and dates in ``docs/design/reference/git-cli.md``. Consult it before matching
+a new stderr string or adding a git invocation; a behaviour the reference
+does not settle is research first, not a guess.
+
 ``markdown_vault_mcp.git`` was historically a single 2721-LOC module. It is now a
 package; this ``__init__`` preserves the public and test-relied-upon import
 surface so existing ``from markdown_vault_mcp.git import X`` imports keep
