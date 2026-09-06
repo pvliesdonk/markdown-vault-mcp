@@ -2188,6 +2188,25 @@ class TestLinkSpanBounding:
         content = "A stray [bracket.\n   \nA real [x](pic.md)"
         assert [lnk.link_text for lnk in extract_links(content, "index.md")] == ["x"]
 
+    def test_a_crlf_blank_line_is_a_paragraph_break(self) -> None:
+        """Nothing upstream normalises line endings; Windows notes keep CRLF."""
+        content = "See item [3 below.\r\n\r\nProse.\r\n\r\nAn image: [x](pic.md)"
+        links = extract_links(content, "index.md")
+        assert [lnk.link_text for lnk in links] == ["x"]
+        assert links[0].target_path == "pic.md"
+
+    def test_a_bare_quote_marker_line_is_a_paragraph_break(self) -> None:
+        """Inside a block quote a blank line is written as ``>`` alone."""
+        content = "> See [3.\n>\n> More prose.\n>\n> A real [x](pic.md)"
+        links = extract_links(content, "index.md")
+        assert [lnk.link_text for lnk in links] == ["x"]
+
+    def test_a_quoted_line_with_text_is_not_a_break(self) -> None:
+        """Only a bare marker is blank; ``> text`` continues the paragraph."""
+        links = extract_links("[wrapped\n> text](note.md)", "index.md")
+        assert len(links) == 1
+        assert links[0].link_text == "wrapped\n> text"
+
     def test_reference_usage_does_not_span_a_blank_line(self) -> None:
         """``[text][ref]`` is bounded the same way inline link text is."""
         content = "A stray [bracket.\n\nProse.\n\n[real][ref]\n\n[ref]: b.md"

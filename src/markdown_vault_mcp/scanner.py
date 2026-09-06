@@ -795,11 +795,14 @@ _RE_INLINE_CODE = re.compile(r"`[^`\n]+`")
 # Link extraction runs one paragraph at a time (#1334), so the negated
 # classes below are bounded by the split rather than by the pattern; a
 # bounded alternation inside the pattern measured 7-8x slower on a long run
-# of unmatched brackets, and matching per paragraph measured ~90x faster than
-# whole-document matching on ordinary multi-paragraph markdown.
-_RE_PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
+# of unmatched brackets, and matching per paragraph measured ~100x faster
+# than whole-document matching on multi-paragraph input. Nothing upstream
+# normalises line endings, so a CRLF blank line must match too; and inside a
+# block quote a blank line is written as a bare ``>``, which is a paragraph
+# break in CommonMark wherever it appears.
+_RE_PARAGRAPH_BREAK = re.compile(r"\r?\n[ \t>]*\r?\n")
 # Inline markdown link: [text](target). The destination never spans a line.
-_RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)\n]+)\)")
+_RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)\r\n]+)\)")
 # Reference-style link usage: [text][ref] or [text][]
 _RE_REF_USAGE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
 # Reference definition: [ref]: target  (at start of line, optional leading whitespace)

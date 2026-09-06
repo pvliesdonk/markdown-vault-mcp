@@ -2005,7 +2005,9 @@ cross a blank line, and bounding the *input* rather than the *pattern* keeps
 the plain negated character classes: a bounded alternation in the pattern
 measured 7-8x slower on a long run of unmatched brackets, while the split
 measured ~100x faster than whole-document matching on multi-paragraph input.
-A destination class additionally excludes `\n`. The returned list stays
+A blank line is recognised with either line ending, and a bare `>` line
+counts as blank, since inside a block quote that is how a paragraph break is
+written. A destination class additionally excludes `\n`. The returned list stays
 grouped by kind (inline, reference, wikilink), which callers index into. A
 paragraph with no blank lines is still matched as one unit, so the wikilink
 pattern's quadratic cost on such input is unchanged (#1343).
