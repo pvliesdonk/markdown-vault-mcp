@@ -27,7 +27,7 @@ from markdown_vault_mcp.git._run import (
     redact,
     resolve_tracking_ref,
 )
-from markdown_vault_mcp.git.health import push_failure_reason
+from markdown_vault_mcp.git.health import one_line, push_failure_reason
 from markdown_vault_mcp.git.types import PUSH_REASON_PUSH_FAILED
 
 if TYPE_CHECKING:
@@ -148,7 +148,7 @@ class PushScheduler:
                 "git_push_failed cmd=%s returncode=%d stderr=%s",
                 exc.cmd,
                 exc.returncode,
-                self._redact(exc.stderr or ""),
+                one_line(self._redact(exc.stderr or "")),
             )
         except Exception:
             logger.error("Git push failed", exc_info=True)
@@ -244,7 +244,7 @@ class PushScheduler:
                     "git_startup_push_failed cmd=%s returncode=%d stderr=%s",
                     exc.cmd,
                     exc.returncode,
-                    sanitized_stderr,
+                    one_line(sanitized_stderr),
                 )
                 self._health.push_failed(
                     push_failure_reason(sanitized_stderr), sanitized_stderr.strip()

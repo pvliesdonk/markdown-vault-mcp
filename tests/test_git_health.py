@@ -615,6 +615,31 @@ class TestPushFailureIsDiagnosable:
         assert line.levelno == logging.WARNING
         assert "protected branches" in line.getMessage()
 
+    def test_the_attempt_line_is_one_line_however_git_wrapped_it(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A line-oriented collector must not see continuation lines."""
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+        exc = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["git", "push", "origin"],
+            stderr="remote: no.        \nTo https://example.invalid/v.git\n ! rejected",
+        )
+
+        with (
+            patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=exc),
+            caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"),
+        ):
+            strategy._push_scheduler.do_push_safe()
+
+        line = next(r for r in caplog.records if "git_push_failed" in r.message)
+        assert "\n" not in line.getMessage()
+        assert line.getMessage().endswith(
+            "stderr=remote: no. To https://example.invalid/v.git ! rejected"
+        )
+
     def test_every_retry_logs_so_retrying_is_distinguishable_from_stopped(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
@@ -767,6 +792,7 @@ class TestPushFailureIsDiagnosable:
         line = next(r for r in caplog.records if "git_startup_push_failed" in r.message)
         assert line.levelno == logging.WARNING
         assert "protected branches" in line.getMessage()
+        assert "\n" not in line.getMessage()
         transition = next(
             r for r in caplog.records if "git_remote_unsynced" in r.message
         )

@@ -69,6 +69,24 @@ _Kind = Literal["push", "pull"]
 _NON_FAST_FORWARD_MARKERS = ("non-fast-forward", "fetch first")
 
 
+def one_line(text: str) -> str:
+    """Collapse *text* onto one line for a ``key=value`` log record.
+
+    Git's stderr spans several lines and pads them with trailing spaces; a
+    line-oriented log collector reads the unprefixed continuation lines as
+    separate malformed entries, and a later ``key=`` field would land on the
+    last of them (#1330).
+
+    Args:
+        text: Redacted git stderr, or any multi-line detail.
+
+    Returns:
+        The words of *text* joined by single spaces; empty when *text* has
+        none.
+    """
+    return " ".join(text.split())
+
+
 def push_failure_reason(stderr: str) -> str:
     """Classify a failed ``git push`` from its stderr.
 
@@ -232,11 +250,9 @@ class SyncHealthTracker:
             self._reasons[kind] = reason
             self._recompute()
             if was_healthy:
-                # Git's stderr spans several lines and pads them with
-                # trailing spaces; the log line is key=value pairs, so the
-                # cause is flattened onto one line and placed last, where it
-                # cannot split an earlier field.
-                cause = " ".join(detail.split()) if detail else ""
+                # Placed last, where a cause that somehow kept a newline
+                # could not split an earlier field.
+                cause = one_line(detail) if detail else ""
                 logger.error(
                     "git_remote_unsynced kind=%s reason=%s "
                     "detail=writes are committed locally and are not reaching "
