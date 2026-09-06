@@ -1,5 +1,8 @@
 """OKF enforced-write convention maintenance (#964, design §6 phase 5b).
 
+The ``index.md`` / ``log.md`` shapes maintained here are the spec's §8 and §9,
+recorded in ``docs/design/reference/okf-v0.2.md``.
+
 After a successful enforced content write (``write`` / ``edit``), the server
 keeps the affected folder's reserved files current: it appends a dated bullet
 to that folder's ``log.md`` and refreshes its ``index.md`` listing. These are

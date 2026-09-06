@@ -1,5 +1,8 @@
 """OKF bundle export (#963): build a conformant bundle zip from live vault state.
 
+"Conformant" is the spec's §11, recorded with the link and reserved-file rules
+in ``docs/design/reference/okf-v0.2.md``.
+
 Phase 4 of ``docs/design/okf.md`` §7, and the export half of the migration
 story that :mod:`markdown_vault_mcp.managers.okf_migrate` began. The build
 **never mutates the vault**: it reads the notes and attachments in scope,

@@ -2,6 +2,7 @@
 
 ## 2026-09-06
 
+- `okf-v0.2.md` created from `okf/SPEC.md` at commit 62432a09 and the July 2026 text it amended (Codex on #1371: #1357 changed runtime semantics on a digest of the spec with no reference page behind it). Records that the spec's timestamp contract moved in place on 2026-08-21 (`stale_after` is an instant, every timestamp carries an offset) while the header stayed 0.2; departures on staleness and write stamps recorded and filed as #1373 and #1372; the root `index.md` trimmed to `okf_version` only, which §8 requires and the plugin validator enforced.
 - `commonmark-gfm.md`: the `_RE_INLINE_LINK` and reference-link departure entries re-observed after #1334 (per-region matching, LF normalisation, no line ending in a destination); the decision table's "Now" column filled in from `_paragraph_regions`, with "dep." for the two deliberate departures and "no, by choice" for the rows left unhonoured; pointer to the design-doc rationale added.
 - `obsidian-markdown.md`: the `.md`-append and embed entries updated for #1333 (attachment references are not links; note embeds still are); the departure recorded as a deliberate notes-only carve-out pointing at #1359; test pins added; the stale "without decoding" departure note corrected to the #1332 behaviour.
 - Bundle created: `obsidian-markdown.md`, `commonmark-gfm.md`, `git-cli.md` migrated from the first reference contract to OKF v0.2 (`generated`, `verified`, `stale_after`, `sources[].resource`); the refute pass on each page recorded as a `process:` verification.

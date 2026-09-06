@@ -10,6 +10,10 @@ a contextvar: ``asyncio.to_thread`` copies the current context into its worker, 
 a value set around the ``to_thread`` call is visible to the enricher. This mirrors
 ``fastmcp_pvl_core``'s own ``_current_auth_mode`` contextvar.
 
+What the spec requires of the ``generated`` / ``verified`` stamps written here
+(actor convention, timestamp form) is in ``docs/design/reference/okf-v0.2.md``;
+the stamps' departure from it is #1372.
+
 Actor resolution rules (design §6):
 
 - ``human:<subject>`` when an authenticated subject is present.
