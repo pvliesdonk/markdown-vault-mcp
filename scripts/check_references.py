@@ -200,9 +200,13 @@ def _check_trust(ref: Reference) -> list[str]:
     if ref.meta.get("generated") is not None:
         problems += _check_actor_entry("generated", ref.meta["generated"])
     value = ref.meta.get("verified")
-    if value is not None and not isinstance(value, dict | list):
-        problems.append("`verified` must be a `{by, at}` mapping or a list of them")
-    for i, entry in enumerate(_verified_entries(ref.meta)):
+    if value is None:
+        return problems
+    if isinstance(value, dict):
+        return [*problems, *_check_actor_entry("verified", value)]
+    if not isinstance(value, list):
+        return [*problems, "`verified` must be a `{by, at}` mapping or a list of them"]
+    for i, entry in enumerate(value):
         problems += _check_actor_entry(f"verified[{i}]", entry)
     return problems
 
@@ -213,8 +217,17 @@ def _check_status(ref: Reference, root: Path) -> list[str]:
         return [f"`status` must be one of {sorted(STATUSES)}, got {status!r}"]
     target = ref.meta.get("superseded_by")
     if target is None:
+        if status == "deprecated":
+            return [
+                "`status: deprecated` requires `superseded_by: <file under the reference root>`; "
+                "a deprecated page with no successor is re-researched, not retired"
+            ]
         return []
-    resolved = (root / str(target)).resolve()
+    return _check_successor(str(target), status, root)
+
+
+def _check_successor(target: str, status: object, root: Path) -> list[str]:
+    resolved = (root / target).resolve()
     if not resolved.is_relative_to(root.resolve()):
         return [f"`superseded_by` names {target!r}, which is outside {root}"]
     if not resolved.is_file():
@@ -287,6 +300,8 @@ def _check_pin(pin: str, repo_root: Path) -> str:
             "(optionally tests/file.py::TestClass::test_name)"
         )
     test_file = repo_root / m.group("file")
+    if not test_file.resolve().is_relative_to((repo_root / "tests").resolve()):
+        return f"`[pins: {pin}]` names a path that resolves outside tests/"
     if not test_file.is_file():
         return f"`[pins: {pin}]` names {m.group('file')}, which does not exist"
     qualname = m.group("name")
@@ -323,6 +338,18 @@ def findings(ref: Reference, *, repo_root: Path, root: Path) -> list[str]:
     return [f"{ref.path}: {p}" for p in problems]
 
 
+def _declared_okf_version(index: Path) -> object | None:
+    """The root ``index.md``'s ``okf_version``; ``None`` when unreadable."""
+    m = _FRONTMATTER_RE.match(index.read_text(encoding="utf-8"))
+    if not m:
+        return None
+    try:
+        meta = yaml.safe_load(m.group("yaml"))
+    except yaml.YAMLError:
+        return None
+    return meta.get("okf_version", "") if isinstance(meta, dict) else None
+
+
 def bundle_findings(root: Path) -> list[str]:
     """OKF bundle-level violations: the root ``index.md`` marker and ``log.md`` headings."""
     if not discover(root):
@@ -334,10 +361,10 @@ def bundle_findings(root: Path) -> list[str]:
             f"{index}: missing; an OKF bundle root declares `okf_version` there"
         )
     else:
-        m = _FRONTMATTER_RE.match(index.read_text(encoding="utf-8"))
-        meta = yaml.safe_load(m.group("yaml")) if m else None
-        declared = meta.get("okf_version") if isinstance(meta, dict) else None
-        if str(declared) != OKF_VERSION:
+        declared = _declared_okf_version(index)
+        if declared is None:
+            problems.append(f"{index}: frontmatter is missing or not valid YAML")
+        elif str(declared) != OKF_VERSION:
             problems.append(
                 f'{index}: must declare `okf_version: "{OKF_VERSION}"` in its frontmatter'
             )
