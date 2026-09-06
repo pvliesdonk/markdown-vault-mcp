@@ -83,7 +83,7 @@ def register(mcp: FastMCP) -> None:
                 bundle three keys carry OKF semantics: status ("draft"/
                 "stable"/"deprecated"; "stable" also matches notes without
                 a status field), stale ("true"/"false" — stale_after
-                passed), and trust_tier ("unverified"/"machine-confirmed"/
+                reached), and trust_tier ("unverified"/"machine-confirmed"/
                 "human-reviewed"); "type" filters normally, e.g.
                 {"type": "Playbook", "stale": "false"}.
             chunks_per_file: Maximum number of sections to return per file
@@ -119,7 +119,7 @@ def register(mcp: FastMCP) -> None:
             - okf (dict, optional): OKF read annotation — present only when
               the vault is an active OKF bundle. Carries ``type`` (when
               declared), ``status`` (defaults to "stable"), ``stale``
-              (bool, ``stale_after`` passed), ``trust_tier`` ("unverified" /
+              (bool, ``stale_after`` reached), ``trust_tier`` ("unverified" /
               "machine-confirmed" / "human-reviewed"), and
               ``sources_count`` (when the note cites sources).
             - sections (list[dict]): Up to ``chunks_per_file`` best-matching
@@ -323,7 +323,7 @@ def register(mcp: FastMCP) -> None:
                 fields match by membership. On an OKF bundle three keys
                 carry OKF semantics: status ("draft"/"stable"/"deprecated";
                 "stable" also matches notes without a status field), stale
-                ("true"/"false" — stale_after passed), and trust_tier
+                ("true"/"false" — stale_after reached), and trust_tier
                 ("unverified"/"machine-confirmed"/"human-reviewed"). Use
                 {"status": "deprecated"} or {"stale": "true"} to build
                 triage listings. Any filter excludes attachments (they

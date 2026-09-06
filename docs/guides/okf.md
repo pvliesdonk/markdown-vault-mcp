@@ -34,8 +34,8 @@ Check the current state at any time through the `okf` section of the `stats` too
 On a recognised bundle, the server reads a few OKF frontmatter families and surfaces them in `search`, `read`, and `get_context` results under an `okf` key:
 
 - **Type**: the free-text `type` field, such as `Playbook`, `Metric`, or `Reference`.
-- **Lifecycle**: `status` is one of `draft`, `stable`, or `deprecated`. A note with no `status` is treated as `stable`. `stale_after: YYYY-MM-DD` marks a note stale once that date passes.
-- **Trust tier**: derived from the `verified` list. A note verified by a person (`by: human:...`) is `human-reviewed`; a note verified only by a process is `machine-confirmed`; an unverified note is `unverified`.
+- **Lifecycle**: `status` is one of `draft`, `stable`, or `deprecated`. A note with no `status` is treated as `stable`. `stale_after: YYYY-MM-DD` marks a note stale from that date on.
+- **Trust tier**: derived from the `verified` list (a single entry may be written as a bare mapping, per the spec). A note verified by a person (`by: human:...`) is `human-reviewed`; a note verified only by a process is `machine-confirmed`; an unverified note is `unverified`.
 - **Sources**: the `sources` provenance list, surfaced in full on `read` and as a count on search hits.
 
 You can filter on these dimensions. `search` and `list_documents` accept `status`, `stale`, `trust_tier`, and `type` filters, so `{"stale": "true"}` or `{"status": "deprecated"}` builds a triage listing. See the [tools reference](../tools/index.md) for the full filter set.

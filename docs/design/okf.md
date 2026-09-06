@@ -153,11 +153,14 @@ server's ranking math — layer 1 surfaces signal and lets the agent judge.
 **Computed per-note properties** (derived at annotation time from the stored
 frontmatter blob; not persisted):
 
-- `staleness`: `stale` iff `stale_after` < today (date-only comparison,
-  server-local date); absent field → not stale.
+- `staleness`: `stale` iff today ≥ `stale_after` (the spec's rule, date-only
+  comparison, server-local date — the named date is the first stale day,
+  #1357); absent field → not stale.
 - `trust_tier`: `human-reviewed` if any `verified[].by` has the `human:`
   prefix; else `machine-confirmed` if `verified` is non-empty (all
-  verifiers non-human); else `unverified`. Exact tier algorithm lives in
+  verifiers non-human); else `unverified`. A bare `verified` mapping is
+  read as a one-element list (spec shorthand; `okf.verified_entries` is the
+  one reader, #1357). Exact tier algorithm lives in
   the field-mapping table (§1 spec-stability caveat) with table-driven
   tests.
 - `okf.status`: the raw `status` value, defaulted to `stable` when absent

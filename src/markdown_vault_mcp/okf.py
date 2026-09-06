@@ -202,13 +202,37 @@ class OkfDetector:
         return None
 
 
+def verified_entries(metadata: dict[str, Any]) -> list[Any]:
+    """Return a note's ``verified`` field as the list the spec defines.
+
+    The field reference allows a single verifier "as a bare mapping without
+    the list dash" and requires consumers to "treat a bare mapping as a
+    one-element list" (#1357). Every reader of ``verified`` goes through
+    here so the shorthand is honoured at each of them alike.
+
+    Args:
+        metadata: The note's frontmatter dict.
+
+    Returns:
+        The list as written, a bare mapping wrapped as one element, or an
+        empty list when the field is absent or of neither shape.
+    """
+    verified = metadata.get("verified")
+    if isinstance(verified, list):
+        return verified
+    if isinstance(verified, dict):
+        return [verified]
+    return []
+
+
 def derive_trust_tier(metadata: dict[str, Any]) -> str:
     """Derive a note's trust tier from its ``verified`` frontmatter.
 
     Per the design (§3): ``human-reviewed`` when any well-formed
     ``verified[].by`` carries the ``human:`` prefix; ``machine-confirmed``
     when ``verified`` is non-empty (all verifiers non-human); ``unverified``
-    otherwise. Malformed entries are ignored (permissive consumer).
+    otherwise. Malformed entries are ignored (permissive consumer); a bare
+    mapping is one entry (:func:`verified_entries`).
 
     Args:
         metadata: The note's frontmatter dict.
@@ -217,10 +241,7 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
         One of :data:`TRUST_UNVERIFIED`, :data:`TRUST_MACHINE`,
         :data:`TRUST_HUMAN`.
     """
-    verified = metadata.get("verified")
-    if not isinstance(verified, list):
-        return TRUST_UNVERIFIED
-    entries = [entry for entry in verified if isinstance(entry, dict)]
+    entries = [entry for entry in verified_entries(metadata) if isinstance(entry, dict)]
     if any(
         str(entry.get("by", "")).startswith(_HUMAN_ACTOR_PREFIX) for entry in entries
     ):
@@ -233,6 +254,9 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
 def derive_stale(metadata: dict[str, Any], *, today: _dt.date) -> bool:
     """Derive staleness from ``stale_after`` (date-only comparison).
 
+    The field reference's rule: "Stale when ``today >= stale_after``", so
+    the date named is the first stale day (#1357).
+
     Args:
         metadata: The note's frontmatter dict. ``stale_after`` may be a
             ``date`` (YAML parses bare ISO dates) or a ``YYYY-MM-DD``
@@ -240,16 +264,16 @@ def derive_stale(metadata: dict[str, Any], *, today: _dt.date) -> bool:
         today: The server-local date to compare against.
 
     Returns:
-        ``True`` iff ``stale_after`` parses and is strictly before *today*.
+        ``True`` iff ``stale_after`` parses and is on or before *today*.
     """
     raw = metadata.get("stale_after")
     if isinstance(raw, _dt.datetime):
         raw = raw.date()
     if isinstance(raw, _dt.date):
-        return raw < today
+        return raw <= today
     if isinstance(raw, str):
         try:
-            return _dt.date.fromisoformat(raw.strip()) < today
+            return _dt.date.fromisoformat(raw.strip()) <= today
         except ValueError:
             logger.debug("okf_stale_after_invalid value=%r", raw)
             return False
@@ -939,8 +963,7 @@ def append_okf_verification(text: str, *, subject: str, today: _dt.date) -> str:
     """
     post = fm.loads(text)
     meta: dict[str, Any] = dict(post.metadata)
-    existing = meta.get("verified")
-    verified = list(existing) if isinstance(existing, list) else []
+    verified = list(verified_entries(meta))
     verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": today.isoformat()})
     meta["verified"] = verified
     return fm.dumps(fm.Post(post.content, **meta))
