@@ -297,7 +297,7 @@ commits) reports `would_apply=false`. The push leg has no safe local
 
     - The pull **succeeds** (`pull.applied=true`,
       `pull.reason="conflicts_resolved_with_siblings"`).
-    - HEAD advances to the remote tip — the canonical path now reflects
+    - HEAD advances to the remote tip, so the canonical path now reflects
       the remote (remote wins).
     - The local versions that conflicted are preserved as
       `<basename>.conflict-mcp-<timestamp>.md` siblings on the same
@@ -356,16 +356,34 @@ once at `ERROR`:
 ERROR markdown_vault_mcp.git.health: git_remote_unsynced kind=push reason=non_fast_forward ...
 ```
 
-Recovery logs once at `INFO` (`git_remote_resynced`), carrying when the
-outage started. The per-attempt lines behind both conditions (a rejected
-push, and a pull that could not resolve the divergence) sit at `DEBUG`, where
-they keep the full git stderr for whoever is diagnosing the outage. Two kinds
-of failure stay loud, because neither is a cycle that repeats harmlessly: an
-unexpected exception on the push or resolve path, and a failure that can
-leave the working tree inconsistent (a rebase that would not abort, an
-upstream file that would not restore). Alert on the transition
-lines: a repeated warning every sync cycle is easy to scroll past, which is
-how the incident behind
+That line carries the cause alongside the reason code, because `push_failed`
+is the bucket every unrecognised git message lands in and names a state
+rather than a problem. Recovery logs once at `INFO`
+(`git_remote_resynced`), carrying when the outage started.
+
+**The attempts are visible too, at the default level.** A rejected push logs
+at `WARNING` with the git stderr that says why, on the deferred and the
+startup path alike, as does a fetch that could not reach the remote:
+
+```
+WARNING markdown_vault_mcp.git.push_scheduler: git_push_failed cmd=... returncode=1 stderr=remote: GitLab: You are not allowed to push code to protected branches on this project.
+```
+
+Credentials are redacted. These lines were at `DEBUG` until
+[#1330](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1330), which
+meant a deployment running at `INFO` saw the transition and nothing else.
+Because every retry was equally silent, it could not tell a clone that was
+still retrying from one that had stopped. A push is scheduled by a write, so
+this line repeats once per burst of writes, not on a timer, and it is the
+evidence the retries are happening. The per-cycle details of a divergence
+the resolver is working through do fire on a timer, and they stay at
+`DEBUG`. Two kinds of failure stay loud for their own reasons: an unexpected
+exception on the push or resolve path, and a failure that can leave the
+working tree inconsistent (a rebase that would not abort, an upstream file
+that would not restore).
+
+Alert on the transition lines rather than the per-attempt ones: a warning
+every sync cycle is easy to scroll past, which is how the incident behind
 [#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287) ran for
 hours before anyone noticed.
 

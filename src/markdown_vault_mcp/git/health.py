@@ -18,8 +18,11 @@ Two properties matter for how it is used:
   across a whole fetch + merge, so reading health under it would make every
   write response block behind a pull.
 * **The log records transitions, not cycles.** Entering the unsynced state
-  logs once at ERROR and recovery once at INFO.  The repeating per-cycle
-  warning is what let the incident in #1287 run for hours unnoticed.
+  logs once at ERROR, with the cause git gave, and recovery once at INFO.
+  The repeating per-cycle warning is what let the incident in #1287 run for
+  hours unnoticed.  Push attempts are the exception (#1330): a push is
+  scheduled by a write rather than by a timer, so its rejection line repeats
+  once per burst of writes and is the evidence that retries are happening.
 """
 
 from __future__ import annotations
@@ -163,14 +166,18 @@ class SyncHealthTracker:
         """
         return self._snapshot
 
-    def push_failed(self, reason: str) -> None:
+    def push_failed(self, reason: str, detail: str | None = None) -> None:
         """Record a push that did not reach the remote.
 
         Args:
             reason: A ``PUSH_REASON_*`` code.  Codes that do not prove
                 commits are stranded are ignored (see :data:`_PUSH_CONDITIONS`).
+            detail: What git said, when the caller has it.  ``push_failed`` is
+                the generic bucket every unrecognised stderr lands in, so
+                without this the one transition line names a state and not a
+                cause (#1330).
         """
-        self._open("push", reason, _PUSH_CONDITIONS)
+        self._open("push", reason, _PUSH_CONDITIONS, detail=detail)
 
     def push_succeeded(self) -> None:
         """Record that local commits reached the remote."""
@@ -190,8 +197,22 @@ class SyncHealthTracker:
         """Record that the clone reconciled with the remote."""
         self._close("pull")
 
-    def _open(self, kind: _Kind, reason: str, conditions: frozenset[str]) -> None:
-        """Open the *kind* condition, logging the transition into it once."""
+    def _open(
+        self,
+        kind: _Kind,
+        reason: str,
+        conditions: frozenset[str],
+        *,
+        detail: str | None = None,
+    ) -> None:
+        """Open the *kind* condition, logging the transition into it once.
+
+        Args:
+            kind: ``"push"`` or ``"pull"``.
+            reason: The ``*_REASON_*`` code.
+            conditions: The codes that count as an outage for this kind.
+            detail: Optional cause text carried onto the transition line.
+        """
         if reason not in conditions:
             return
         with self._lock:
@@ -209,11 +230,18 @@ class SyncHealthTracker:
             self._reasons[kind] = reason
             self._recompute()
             if was_healthy:
+                # Git's stderr spans several lines and pads them with
+                # trailing spaces; the log line is key=value pairs, so the
+                # cause is flattened onto one line and placed last, where it
+                # cannot split an earlier field.
+                cause = " ".join(detail.split()) if detail else "unavailable"
                 logger.error(
                     "git_remote_unsynced kind=%s reason=%s "
-                    "detail=writes are committed locally and are not reaching the remote",
+                    "detail=writes are committed locally and are not reaching "
+                    "the remote cause=%s",
                     kind,
                     reason,
+                    cause,
                 )
             else:
                 logger.debug("git_remote_unsynced_also kind=%s reason=%s", kind, reason)

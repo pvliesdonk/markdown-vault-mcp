@@ -1114,8 +1114,9 @@ class TestTokenRedactionInLogs:
 
         with (
             patch("markdown_vault_mcp.git.push_scheduler._push", side_effect=fake_exc),
-            # The per-attempt line sits at DEBUG since #1287: the transition
-            # into the unsynced state is what gets logged loudly, once.
+            # The per-attempt line moved to WARNING in #1330 — DEBUG was
+            # invisible at the level deployments run at, so an operator saw
+            # the transition into the unsynced state and never its cause.
             caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"),
         ):
             strategy._push_scheduler.do_push_safe()

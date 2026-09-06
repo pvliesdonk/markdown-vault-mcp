@@ -118,17 +118,21 @@ class PushScheduler:
 
         The outcome itself is recorded by :meth:`do_push`, while the shared
         lock still orders it against every other push (PR #1300); this wrapper
-        only logs.  A rejected push logs at DEBUG, where it keeps the git stderr for
-        diagnosis: the tracker logs the transition into the failed state
-        once, instead of every cycle.  An *unexpected* exception is not that
-        routine event and stays at ERROR with its traceback — repeating it is
-        the point, since it means a bug on the push path rather than a remote
-        that has moved on.
+        only logs.  A rejected push logs at WARNING with the git stderr that
+        says why, matching what the pull leg already does for a failed fetch
+        (#1330).  It was at DEBUG, and deployments run at INFO, so an operator
+        saw the tracker's one transition line naming the generic
+        ``push_failed`` bucket and nothing about the cause — and, because
+        every retry was equally silent, no way to tell a clone that is still
+        retrying from one that stopped.  Repeating per attempt is the point
+        here: it is the only evidence the retries are happening.  An
+        *unexpected* exception stays at ERROR with its traceback, since it
+        means a bug on the push path rather than a remote that has moved on.
         """
         try:
             self.do_push()
         except subprocess.CalledProcessError as exc:
-            logger.debug(
+            logger.warning(
                 "git_push_failed cmd=%s returncode=%d stderr=%s",
                 exc.cmd,
                 exc.returncode,
@@ -161,12 +165,18 @@ class PushScheduler:
             try:
                 _push(git_root, self._token, self._username)
             except subprocess.CalledProcessError as exc:
-                self._health.push_failed(
-                    push_failure_reason(self._redact(exc.stderr or ""))
-                )
+                # The stderr travels with the reason: ``push_failed`` is the
+                # bucket every unrecognised message lands in, so the reason
+                # alone names a state and not a cause (#1330).
+                stderr = self._redact(exc.stderr or "")
+                self._health.push_failed(push_failure_reason(stderr), stderr.strip())
                 raise
-            except Exception:
-                self._health.push_failed(PUSH_REASON_PUSH_FAILED)
+            except Exception as exc:
+                # Redacted like the stderr arm: an exception raised while
+                # building the push command can echo the remote URL.
+                self._health.push_failed(
+                    PUSH_REASON_PUSH_FAILED, self._redact(str(exc)) or None
+                )
                 raise
             self._push_pending = False
             self._health.push_succeeded()
@@ -215,13 +225,18 @@ class PushScheduler:
                 _push(git_root, self._token, self._username)
             except subprocess.CalledProcessError as exc:
                 sanitized_stderr = self._redact(exc.stderr or "")
-                logger.debug(
+                # WARNING for the same reason as the deferred-push leg
+                # (#1330): a startup push that cannot reach the remote is the
+                # first evidence an operator gets, and DEBUG hid it.
+                logger.warning(
                     "git_startup_push_failed cmd=%s returncode=%d stderr=%s",
                     exc.cmd,
                     exc.returncode,
                     sanitized_stderr,
                 )
-                self._health.push_failed(push_failure_reason(sanitized_stderr))
+                self._health.push_failed(
+                    push_failure_reason(sanitized_stderr), sanitized_stderr.strip()
+                )
             else:
                 self._health.push_succeeded()
 

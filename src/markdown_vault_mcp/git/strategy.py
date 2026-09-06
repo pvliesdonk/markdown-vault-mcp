@@ -1250,11 +1250,16 @@ class GitWriteStrategy:
         order they ran (PR #1300).  Outcomes that say nothing about the remote
         (``dry_run_unsupported``, ``no_remote``) are passed on as-is; the
         tracker ignores them.
+
+        ``hint`` carries git's own words and travels with the reason: the
+        reason alone is the generic ``push_failed`` bucket for every stderr
+        that matches no known marker, which told an operator the vault was
+        stranded but not why (#1330).
         """
         if result.applied:
             self._health.push_succeeded()
         elif result.reason is not None:
-            self._health.push_failed(result.reason)
+            self._health.push_failed(result.reason, result.hint)
 
     def _record_pull(self, result: PullResult) -> None:
         """Report a pull outcome to the sync-health tracker.
