@@ -21,6 +21,7 @@ from markdown_vault_mcp.utils.fts import fts_row_to_note_info
 from markdown_vault_mcp.utils.links import (
     apply_link_replacement,
     compute_new_raw_target,
+    decode_link_target,
 )
 from markdown_vault_mcp.utils.text import (
     CHAR_SUBS,
@@ -209,6 +210,7 @@ __all__ = [
     "artifact_suffix",
     "build_position_map",
     "compute_new_raw_target",
+    "decode_link_target",
     "effective_attachment_extensions",
     "find_closest_match",
     "fts_row_to_note_info",

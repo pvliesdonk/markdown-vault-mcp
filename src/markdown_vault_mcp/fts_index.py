@@ -251,7 +251,13 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: ``obsidian:`` and the like were stored as vault-relative link rows, and a
 #: schemed wikilink gained a ``.md`` suffix. Those rows are gone from a fresh
 #: parse; the bump rebuilds notes whose bytes never changed.
-INDEX_SEMANTICS_VERSION = 4
+#:
+#: Version 5 (#1332): a markdown or reference-link destination is
+#: percent-decoded before it is resolved, so ``b%5B1%5D.md`` and ``b[1].md``
+#: store the same ``target_path`` row. Encoded links previously stored their
+#: spelling verbatim and never resolved; the bump rebuilds notes whose bytes
+#: never changed so those rows gain their targets.
+INDEX_SEMANTICS_VERSION = 5
 
 
 class ChunkingMeta(NamedTuple):

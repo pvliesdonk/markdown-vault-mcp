@@ -2008,6 +2008,55 @@ Links are extracted from markdown content during `parse_note()` and stored in th
 - **Reference-style**: `[text][ref]` with `[ref]: path.md` definitions
 - **Wikilinks**: `[[path]]`, `[[path|alias]]`, `[[path#heading]]`
 
+**A markdown destination is a URL, so its percent-escapes are decoded (#1332).**
+`[x](/probe/b%5B1%5D.md)` names `probe/b[1].md`; percent-encoding is the
+canonical way to write a destination containing `[`, `]`, spaces or
+parentheses, which is exactly the note names #1303 / #1305 taught the git layer
+to handle. Nothing decoded them, so the encoded spelling resolved to nothing,
+produced no backlink, and was skipped by a link-updating rename. The rules,
+enumerated on the issue before the change was made:
+
+- **The fragment splits before the decode.** An encoded `%23` is a literal
+  `#` in the file name; decoding first would read it as the fragment marker
+  and truncate the target.
+- **Three escapes are refused, and a refusal leaves the whole destination
+  exactly as written** — today's behaviour for every encoded link, so it stays
+  visible to `get_broken_links` and never resolves onto an unrelated note. An
+  encoded separator (`%2F`) is path *data*: `dir%2Fnote.md` names one file
+  that cannot exist, and decoding it would point the link at the unrelated
+  note actually at `dir/note.md`, complete with a false backlink and a rename
+  that rewrites it. An encoded NUL (`%00`) names nothing any file system
+  allows. An escape that is not valid UTF-8 (`bad%FF.md`) would have `unquote`
+  substitute U+FFFD, inventing a name and collapsing distinct malformed
+  spellings onto one target. There is no partial decode: `dir%2Fno%20te.md`
+  stays `dir%2Fno%20te.md`. `decode_link_target` in `utils/links.py` is the
+  single decoder, shared by extraction and by the rename-shape comparison.
+- **What is not an escape passes through**: a `%` not followed by two hex
+  digits, and `+`, which is a space only in form encoding. A decoded `%2E%2E`
+  meets the same root clamp as a literal `..`, since the decode runs first.
+- **`raw_target` keeps the spelling as written**, because it is what
+  `apply_link_replacement` searches for in the file. Only `target_path` is
+  decoded.
+
+**Wikilinks are not decoded.** Obsidian writes wikilink targets literally, so
+`%20` in one is part of the name; decoding would break a note genuinely
+carrying a `%`. This is the one place the two link families deliberately
+disagree, and `_resolve_link_path` takes a `decode_percent` flag rather than
+guessing.
+
+**A rewrite keeps the spelling, not just the shape.** `compute_new_raw_target`
+detects a link's shape by comparing its destination to `old_path`, which is
+never encoded, so an encoded root-relative link never compared equal and fell
+into the relative-to-source branch, coming back rewritten as a relative link:
+the #1105 fidelity defect reached by a second route. The comparison is now
+made against the decoded destination, and the replacement is re-encoded
+(`quote`, `safe="/"`) only when the original was encoded; a refused
+destination never decoded, so it is not re-encoded either. No encoding is
+introduced where the author used none, which also means a rename cannot repair
+a destination whose new name would need escaping to parse. The other CommonMark
+destination spellings (pointy brackets, backslash escapes, balanced
+parentheses, titles, entities) are a separate defect, #1353.
+
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
 are not extracted. External destinations and pure anchors are skipped. "External"
 is decided by shape, not by allowlist (#1335): a destination carrying any URI

@@ -1,7 +1,8 @@
-"""Link-update helpers for file rename operations.
+"""Link target helpers: decoding, replacement computation, substitution.
 
-These functions compute replacement link targets and apply substitutions
-in file content when a note is renamed within the vault.
+:func:`decode_link_target` is shared with link extraction; the rest compute
+replacement link targets and apply substitutions in file content when a note
+is renamed within the vault.
 """
 
 from __future__ import annotations
@@ -9,6 +10,54 @@ from __future__ import annotations
 import os.path as osp
 import re
 from pathlib import Path
+from urllib.parse import quote, unquote
+
+#: Characters left unescaped when re-encoding a destination that the author
+#: already wrote percent-encoded. Only ``/`` — it is the path separator, and
+#: encoding it would change the link's structure rather than its spelling.
+_QUOTE_SAFE = "/"
+
+#: Escapes that are refused rather than decoded, because decoding would name
+#: something no file can be: an encoded path separator (``%2F`` is path
+#: *data*, so ``dir%2Fnote.md`` must not become a link to the unrelated note
+#: at ``dir/note.md``) and an encoded NUL (no file system allows one in a
+#: name). Either case, ``decode_link_target`` leaves the whole destination
+#: as written.
+_RE_REFUSED_ESCAPE = re.compile(r"%(?:2[Ff]|00)")
+
+
+def decode_link_target(target: str) -> str:
+    """Percent-decode a link destination, or leave it as written.
+
+    CommonMark defines a markdown destination as a URL, so its escapes name
+    the same file the literal spelling does (#1332): ``b%5B1%5D.md`` is
+    ``b[1].md``. Three escapes are refused, and a refusal leaves the *whole*
+    destination exactly as written, so it stays visible to
+    ``get_broken_links`` and never resolves onto an unrelated note:
+
+    * an encoded separator (``%2F``) — path data, not structure;
+    * an encoded NUL (``%00``) — no file system allows it in a name;
+    * an escape sequence that is not valid UTF-8 (``bad%FF.md``) —
+      ``unquote`` would substitute U+FFFD, inventing a name and collapsing
+      distinct malformed spellings onto one target.
+
+    A ``%`` not followed by two hex digits is not an escape and passes
+    through untouched, as does ``+``, which is a space only in form
+    encoding.
+
+    Args:
+        target: The destination's path portion, fragment already split off.
+
+    Returns:
+        The decoded path, or *target* unchanged when it carries a refused
+        escape.
+    """
+    if _RE_REFUSED_ESCAPE.search(target):
+        return target
+    try:
+        return unquote(target, errors="strict")
+    except UnicodeDecodeError:
+        return target
 
 
 def compute_new_raw_target(
@@ -37,7 +86,9 @@ def compute_new_raw_target(
 
     Returns:
         The replacement raw_target string to write into the source file,
-        written in the same shape the original used.
+        written in the same shape *and the same spelling* the original used:
+        a destination the author percent-encoded is re-encoded, one written
+        literally stays literal (#1105, #1332).
     """
     if link_type == "wikilink":
         # Determine whether the original wikilink included the .md extension.
@@ -57,9 +108,19 @@ def compute_new_raw_target(
         # way, but silently converting one spelling to another undoes a
         # vault's OKF link conformance on any rename or folder move (#1105).
         raw_path_part = raw_target.split("#")[0]
+        # The shape test below compares the destination to old_path, and
+        # old_path is never encoded. Comparing the encoded spelling therefore
+        # never matched, so a root-relative encoded link fell into the
+        # relative-to-source branch and came back rewritten as a relative
+        # one — the same fidelity defect as #1105, reached by a different
+        # route (#1332). Decode for the comparison; re-encode the answer only
+        # if the author was encoding.
+        decoded_path_part = decode_link_target(raw_path_part)
+        was_encoded = decoded_path_part != raw_path_part
+
         if raw_path_part.startswith("/"):
             new_path_part = "/" + new_path
-        elif source_path and old_path and raw_path_part != old_path:
+        elif source_path and old_path and decoded_path_part != old_path:
             # Relative-to-source link: compute the correct new relative path so
             # cross-directory links continue to resolve after the rename.
             source_dir = str(Path(source_path).parent)
@@ -68,6 +129,8 @@ def compute_new_raw_target(
             new_path_part = new_rel.replace("\\", "/")
         else:
             new_path_part = new_path
+        if was_encoded:
+            new_path_part = quote(new_path_part, safe=_QUOTE_SAFE)
         return new_path_part + ("#" + fragment if fragment else "")
 
 
