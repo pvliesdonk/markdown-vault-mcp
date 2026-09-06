@@ -2303,6 +2303,27 @@ an encoded NUL, and a sequence that is not valid UTF-8; such a destination
 stays exactly as written and is still reported broken. Wikilinks are not
 decoded, since Obsidian writes them literally. Existing vaults rebuild once
 on first start after upgrade.</p>
+<p><strong>An embedded image or PDF is no longer a broken link.</strong> A wikilink whose
+target carried a configured attachment extension had <code>.md</code> appended, so
+<code>![[diagram.png]]</code> was stored as a link to <code>diagram.png.md</code>, a file that
+cannot exist; a markdown link to the same file was stored as a link to a
+path the index never holds, since attachments are served from disk and not
+indexed. Either way <code>get_broken_links</code> reported the reference and
+<code>stats.broken_link_count</code> counted it while the attachment sat readable in
+the vault, about 12 of one vault's 90 reported broken links in one case
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1333">#1333</a>).
+The link graph is now notes-only: a reference whose target has an
+allowlisted extension is not a link, in any of the three link spellings and
+whether or not it is an embed, the way image links <code>![alt](src)</code> always
+were. A note whose only links were embeds is now an orphan in
+<code>get_orphan_notes</code> and <code>stats.orphan_count</code>, which is what it was to the
+note graph all along. The attachment allowlist has become an input to the index, so
+changing <code>MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS</code> rebuilds it once on the
+next start, and existing vaults rebuild once on first start after upgrade.
+What this deliberately does not do is make attachments part of the graph:
+<code>get_backlinks</code> on an image, <code>exists</code> on an embed, and a rename that
+rewrites the embeds pointing at the renamed file are the v5 feature
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1359">#1359</a>.</p>
 <h2 id="configuration-and-its-documentation">Configuration and its documentation<a class="headerlink" href="#configuration-and-its-documentation" title="Permanent link">&para;</a></h2>
 <p><strong>The OIDC pages stopped steering readers into the wrong mode.</strong> The 4.1
 configuration reference documented only <code>oidc-proxy</code> and marked its client
@@ -2376,12 +2397,19 @@ meaning; the operator surface only grew (two GitLab webhook variables,
 <code>INSTANCE_DESCRIPTION</code>). A few things do change behavior without any action
 on your part:</p>
 <ul>
-<li><strong>The text index rebuilds once on first start.</strong> Recording skip
-  tombstones changed how stored rows derive from a note's bytes, so
-  <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 3
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1227">#1227</a>).
-  The rebuild is automatic, costs CPU and local IO proportional to vault
-  size, and does not re-embed.</li>
+<li><strong>The text index rebuilds once on first start.</strong> Four changes in this
+  release alter how stored rows derive from a note's bytes: skip
+  tombstones
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1227">#1227</a>),
+  any-scheme external links
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1335">#1335</a>),
+  percent-decoded destinations
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1332">#1332</a>),
+  and attachment references leaving the link graph
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1333">#1333</a>).
+  <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 6. One rebuild covers all
+  four; it is automatic, costs CPU and local IO proportional to vault size,
+  and does not re-embed.</li>
 <li><strong>A Voyage vault also re-embeds once</strong>, through a separate mechanism
   with a separate trigger: the provider's embedding behavior is part of the
   vector sidecar's identity, and asymmetric embedding changed it

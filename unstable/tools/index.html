@@ -4127,7 +4127,7 @@ etag. The flag defaults to <code>false</code> in 4.x and to <code>true</code> fr
 <h3 id="okf-migration-transforms">OKF migration transforms<a class="headerlink" href="#okf-migration-transforms" title="Permanent link">&para;</a></h3>
 <p>Three one-shot <a href="https://github.com/GoogleCloudPlatform/knowledge-catalog">OKF (Open Knowledge Format)</a> migration tools for moving a vault toward the bundle conventions. They are write tools (hidden in read-only mode and when <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> is <code>off</code>), and they run through the normal write path, so a git-backed vault commits each change. Run each one once when moving a vault into the format.</p>
 <h4 id="okf_convert_links"><code>okf_convert_links</code><a class="headerlink" href="#okf_convert_links" title="Permanent link">&para;</a></h4>
-<p>Rewrite <code>[[wikilinks]]</code> as the bundle-root-absolute markdown links OKF recommends (<code>[text](/path/note.md)</code>) across the vault or one folder. Only links whose target is indexed are converted, so the link graph is preserved edge-for-edge; unresolvable wikilinks are left untouched and counted as skipped. Re-running is safe (already-converted markdown links are not touched).</p>
+<p>Rewrite <code>[[wikilinks]]</code> as the bundle-root-absolute markdown links OKF recommends (<code>[text](/path/note.md)</code>) across the vault or one folder. Only links whose target is indexed are converted, so the link graph is preserved edge-for-edge; unresolvable wikilinks are left untouched and counted as skipped, and a wikilink naming an attachment (<code>![[pic.png]]</code>) is not a link, so it is left untouched and not counted. Re-running is safe (already-converted markdown links are not touched).</p>
 <table>
 <thead>
 <tr>
@@ -4573,6 +4573,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 </tbody>
 </table>
 <p><strong>Returns:</strong> List of link targets with an <code>exists</code> field indicating whether the target document is in the vault. Each entry has <code>target_path</code>, <code>link_text</code>, <code>link_type</code>, <code>fragment</code>, <code>raw_target</code>, and <code>exists</code> fields. Index freshness is reported in <code>_meta.index_stale</code> (see the freshness note at the top of this page).</p>
+<p>The link graph covers notes only. A reference whose target carries a configured attachment extension (<code>![[diagram.png]]</code>, <code>[[Document.pdf#page=3]]</code>, <code>[paper](papers/x.pdf)</code>) is not a link and does not appear here, in <code>get_backlinks</code>, or in <code>get_broken_links</code>; image links <code>![alt](src)</code> never did. A note whose only links are such references counts as an orphan in <code>get_orphan_notes</code> and <code>stats.orphan_count</code>. Which extensions count is <code>MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS</code> (see <a href="../configuration/">Configuration</a>).</p>
 <h3 id="get_broken_links"><code>get_broken_links</code><a class="headerlink" href="#get_broken_links" title="Permanent link">&para;</a></h3>
 <p>Find all links across the vault pointing to non-existent documents.</p>
 <p><strong>Parameters:</strong></p>
@@ -4595,6 +4596,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 </tbody>
 </table>
 <p><strong>Returns:</strong> List of entries with <code>source_path</code>, <code>source_title</code>, <code>target_path</code>, <code>link_text</code>, <code>link_type</code>, <code>fragment</code>, and <code>raw_target</code> fields.</p>
+<p>A missing attachment is not reported: references to attachments are not links (see <a href="#get_outlinks"><code>get_outlinks</code></a>). What is listed is a target no indexed note matches, whether a note reference or a destination whose extension is not on the attachment allowlist. A destination written in a CommonMark spelling the scanner does not yet parse, such as <code>[paper](&lt;my report.pdf&gt;)</code> or <code>[paper](report.pdf "PDF")</code>, is classified as written and is still listed (#1353). <code>stats.broken_link_count</code> counts the same population.</p>
 <h3 id="get_similar"><code>get_similar</code><a class="headerlink" href="#get_similar" title="Permanent link">&para;</a></h3>
 <p>Find semantically similar notes by document path. Requires embeddings to be built.</p>
 <p><strong>Parameters:</strong></p>
