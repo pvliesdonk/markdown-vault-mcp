@@ -135,13 +135,20 @@ def parse_reference(path: Path, text: str) -> Reference:
     return Reference(path=path, meta=meta, body=m.group("body"))
 
 
+# The contract spells dates ``YYYY-MM-DD``. ``date.fromisoformat`` also accepts
+# the basic (``20270306``) and week (``2027-W10-6``) ISO spellings from Python
+# 3.11 on, which a date-only consumer may not, so the text is checked first.
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_DAY_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:$|[T ])")
+
+
 def _as_day(value: object) -> dt.date | None:
     """A calendar date only (``YYYY-MM-DD``); a datetime is rejected."""
     if isinstance(value, dt.datetime):
         return None
     if isinstance(value, dt.date):
         return value
-    if isinstance(value, str):
+    if isinstance(value, str) and _DAY_RE.match(value):
         try:
             return dt.date.fromisoformat(value)
         except ValueError:
@@ -150,11 +157,12 @@ def _as_day(value: object) -> dt.date | None:
 
 
 def _as_date(value: object) -> dt.date | None:
+    """A calendar date or a datetime whose date part is spelt ``YYYY-MM-DD``."""
     if isinstance(value, dt.datetime):
         return value.date()
     if isinstance(value, dt.date):
         return value
-    if isinstance(value, str):
+    if isinstance(value, str) and _DAY_PREFIX_RE.match(value):
         for parse in (dt.date.fromisoformat, dt.datetime.fromisoformat):
             try:
                 parsed = parse(value)
