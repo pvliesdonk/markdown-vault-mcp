@@ -6908,7 +6908,9 @@ not match.</p>
         <p>Rename or move a document or attachment.</p>
 <p>Moves the file on disk and updates the FTS / vector indices.  When
 <em>update_links</em> is <code>True</code>, all wikilinks and markdown links in other
-documents that pointed to <em>old_path</em> are rewritten to <em>new_path</em>.</p>
+documents that pointed to <em>old_path</em> are rewritten to <em>new_path</em>.
+For an attachment the flag does not apply (its references are not
+tracked as links) and the result's <code>hint</code> says so.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -7003,7 +7005,7 @@ vault to reflect the new path.  Defaults to <code>False</code>.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="RenameResult(old_path, new_path, updated_links=0)
+                  <code><a class="autorefs autorefs-internal" title="RenameResult(old_path, new_path, updated_links=0, hint=None)
 
   
       dataclass

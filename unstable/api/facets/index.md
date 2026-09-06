@@ -619,7 +619,7 @@ Raises:
 
 Rename or move a document or attachment.
 
-Moves the file on disk and updates the FTS / vector indices. When *update_links* is `True`, all wikilinks and markdown links in other documents that pointed to *old_path* are rewritten to *new_path*.
+Moves the file on disk and updates the FTS / vector indices. When *update_links* is `True`, all wikilinks and markdown links in other documents that pointed to *old_path* are rewritten to *new_path*. For an attachment the flag does not apply (its references are not tracked as links) and the result's `hint` says so.
 
 Parameters:
 

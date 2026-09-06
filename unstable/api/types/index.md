@@ -280,7 +280,7 @@ Attributes:
 | ------ | ----- | ----------------------------------------------- |
 | `path` | `str` | Relative path of the document that was deleted. |
 
-## `RenameResult(old_path, new_path, updated_links=0)`
+## `RenameResult(old_path, new_path, updated_links=0, hint=None)`
 
 Result of a rename operation.
 
@@ -291,6 +291,7 @@ Attributes:
 | `old_path`      | `str` | Original relative path.                                     |
 | `new_path`      | `str` | New relative path after the rename.                         |
 | `updated_links` | `int` | Number of backlinks in other documents that were rewritten. |
+| `hint`          | \`str | None\`                                                      |
 
 ## `IndexStats(documents_indexed, chunks_indexed, skipped)`
 

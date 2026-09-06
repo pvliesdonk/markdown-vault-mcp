@@ -2324,6 +2324,17 @@ What this deliberately does not do is make attachments part of the graph:
 <code>get_backlinks</code> on an image, <code>exists</code> on an embed, and a rename that
 rewrites the embeds pointing at the renamed file are the v5 feature
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1359">#1359</a>.</p>
+<p><strong>Renaming an attachment says when <code>update_links</code> does not apply.</strong> The
+attachment branch of <code>rename</code> never read the flag, so a call that asked
+for a rewrite answered <code>updated_links: 0</code> and nothing else, and "the two
+halves of one documented parameter behave differently with no signal to
+the caller"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1338">#1338</a>).
+The count was honest; the silence was the bug. The result now carries a
+<code>hint</code> when <code>update_links=true</code> is passed for an attachment: references to
+attachments are not tracked as links, so nothing was rewritten and the
+notes embedding the old path still name it. A note rename, or an attachment
+rename without the flag, carries no <code>hint</code> key at all.</p>
 <h2 id="configuration-and-its-documentation">Configuration and its documentation<a class="headerlink" href="#configuration-and-its-documentation" title="Permanent link">&para;</a></h2>
 <p><strong>The OIDC pages stopped steering readers into the wrong mode.</strong> The 4.1
 configuration reference documented only <code>oidc-proxy</code> and marked its client

@@ -463,12 +463,21 @@ Rename a document or attachment, or move it to a different folder. Parent direct
 
 **Parameters:**
 
-| Parameter  | Type   | Description                                              |
-| ---------- | ------ | -------------------------------------------------------- |
-| `old_path` | string | Current relative path                                    |
-| `new_path` | string | Target relative path. Fails if `new_path` already exists |
+| Parameter      | Type   | Description                                                                                                  |
+| -------------- | ------ | ------------------------------------------------------------------------------------------------------------ |
+| `old_path`     | string | Current relative path                                                                                        |
+| `new_path`     | string | Target relative path. Fails if `new_path` already exists                                                     |
+| `if_match`     | string | Optional etag from a previous `read`; the rename proceeds only if the file is unchanged since                |
+| `update_links` | bool   | Rewrite links in other notes that point to `old_path`. Pass `true` whenever renaming a note. Default `false` |
 
-**Returns:** `{"old_path": "drafts/idea.md", "new_path": "projects/idea.md"}`
+**Returns:**
+
+| Field           | Type    | Description                                                                                                                                    |
+| --------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `old_path`      | string  | Source path (echoed back)                                                                                                                      |
+| `new_path`      | string  | Destination path (echoed back)                                                                                                                 |
+| `updated_links` | integer | Number of source documents whose links were rewritten                                                                                          |
+| `hint`          | string  | Present only when `update_links` was requested for an attachment: references to attachments are not tracked as links, so nothing was rewritten |
 
 ### `move_folder`
 

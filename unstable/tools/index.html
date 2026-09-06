@@ -4053,9 +4053,50 @@ etag. The flag defaults to <code>false</code> in 4.x and to <code>true</code> fr
 <td>string</td>
 <td>Target relative path. Fails if <code>new_path</code> already exists</td>
 </tr>
+<tr>
+<td><code>if_match</code></td>
+<td>string</td>
+<td>Optional etag from a previous <code>read</code>; the rename proceeds only if the file is unchanged since</td>
+</tr>
+<tr>
+<td><code>update_links</code></td>
+<td>bool</td>
+<td>Rewrite links in other notes that point to <code>old_path</code>. Pass <code>true</code> whenever renaming a note. Default <code>false</code></td>
+</tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> <code>{"old_path": "drafts/idea.md", "new_path": "projects/idea.md"}</code></p>
+<p><strong>Returns:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>old_path</code></td>
+<td>string</td>
+<td>Source path (echoed back)</td>
+</tr>
+<tr>
+<td><code>new_path</code></td>
+<td>string</td>
+<td>Destination path (echoed back)</td>
+</tr>
+<tr>
+<td><code>updated_links</code></td>
+<td>integer</td>
+<td>Number of source documents whose links were rewritten</td>
+</tr>
+<tr>
+<td><code>hint</code></td>
+<td>string</td>
+<td>Present only when <code>update_links</code> was requested for an attachment: references to attachments are not tracked as links, so nothing was rewritten</td>
+</tr>
+</tbody>
+</table>
 <h3 id="move_folder"><code>move_folder</code><a class="headerlink" href="#move_folder" title="Permanent link">&para;</a></h3>
 <p>Move an entire folder subtree to a new prefix and rewrite all vault links that point into the moved subtree. This is the folder-level analogue of <code>rename</code>.</p>
 <p><strong>Parameters:</strong></p>

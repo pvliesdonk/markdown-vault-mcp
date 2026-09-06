@@ -4985,7 +4985,7 @@ vault writer can change which note occupies the path in between.</p>
 
 
 <h2 id="markdown_vault_mcp.types.RenameResult" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">RenameResult</span><span class="p">(</span><span class="n">old_path</span><span class="p">,</span> <span class="n">new_path</span><span class="p">,</span> <span class="n">updated_links</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">RenameResult</span><span class="p">(</span><span class="n">old_path</span><span class="p">,</span> <span class="n">new_path</span><span class="p">,</span> <span class="n">updated_links</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">hint</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -5041,6 +5041,19 @@ vault writer can change which note occupies the path in between.</p>
             <td>
               <div class="doc-md-description">
                 <p>Number of backlinks in other documents that were rewritten.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.RenameResult.hint">hint</span></code></td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Why no links were rewritten although <code>update_links</code> was
+requested — set when the renamed file is an attachment, whose
+references are not tracked as links (#1338). <code>None</code> otherwise.</p>
               </div>
             </td>
           </tr>
