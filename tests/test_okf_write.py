@@ -91,12 +91,15 @@ class TestApplyOkfWriteStamp:
             "sources:\n"
             "  - resource: https://example.com/a\n"
             "    id: a\n"
+            "x_custom: 1\n"
             "---\n"
             "# P\n"
         )
         meta = fm.loads(apply_okf_write_stamp(text, actor="t/1", today=_TODAY)).metadata
         assert meta["type"] == "Playbook"
         assert meta["sources"] == [{"resource": "https://example.com/a", "id": "a"}]
+        # A producer-defined key survives the round trip (OKF v0.2 §4.1).
+        assert meta["x_custom"] == 1
 
     def test_same_actor_same_day_re_stamp_is_idempotent(self) -> None:
         # Once a note carries this exact actor/date stamp and no verified,

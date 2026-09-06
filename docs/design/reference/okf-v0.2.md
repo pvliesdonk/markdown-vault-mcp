@@ -41,9 +41,11 @@ on the word of a digest of the spec rather than the spec itself; this page
 reads the spec, and finds that the spec has moved since that digest was
 made. The document still calls itself "Version 0.2", but its text was
 amended in place on 2026-08-21 [source: pr-323]; where the July and August
-texts differ, both are recorded. The spec's own authors describe it as
-"early-stage" and "a starting point" [source: spec], so its `stale_after`
-here is six months, not twelve.
+texts differ, both are recorded. The spec calls its field one that "is
+evolving quickly" and keeps a "Considered and deferred" list for the next
+revision [source: spec] (§1, §12), it was amended without a version bump,
+and the repository carries no tags, so this page's `stale_after` is six
+months, not twelve.
 
 ## Scope
 
@@ -98,7 +100,7 @@ here is six months, not twelve.
 - Producers "MAY include any additional keys"; consumers "SHOULD preserve
   unknown keys when round-tripping and MUST NOT reject documents with
   unrecognized fields". [source: spec] (§4.1)
-  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_preserves_sources_and_other_fields]
+  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_preserves_sources_and_other_fields, tests/test_okf.py::TestOkfAudit::test_mixed_vault_report]
 
 ### Trust: `generated`, `verified`, tiers (§5.2, §5.3, §7)
 
@@ -162,11 +164,14 @@ here is six months, not twelve.
 
 ### Provenance: `sources` (§5.1)
 
-- `sources` is a list of `{ id, resource, title, author, usage_count,
-  last_modified }` entries; per-claim attribution is a markdown footnote
-  whose label is a `sources[].id`, "keyed rather than positional".
-  [source: spec] (§5.1)
+- `sources` is a list of entries in which `resource` is "REQUIRED within an
+  entry" and `id`, `title`, `author`, `usage_count` and `last_modified` are
+  optional; the server passes the list through on reads and counts it on
+  search hits. [source: spec] (§5.1)
   [pins: tests/test_okf.py::TestDeriveAnnotation::test_read_mode_includes_sources, tests/test_okf.py::TestDeriveAnnotation::test_search_mode_counts_sources]
+- Per-claim attribution is a markdown footnote whose label is a
+  `sources[].id`, "keyed rather than positional". Nothing here depends on
+  it. [source: spec] (§5.1)
 
 ### Links and paths (§6)
 
@@ -190,10 +195,14 @@ here is six months, not twelve.
   does not understand the declared version "SHOULD attempt best-effort
   consumption rather than refusing the bundle". [source: spec] (§12)
   [pins: tests/test_okf.py::TestOkfDetector::test_unknown_version_warns_once_and_detects, tests/test_okf.py::TestOkfDetector::test_unquoted_yaml_scalar_version]
-- v0.2 supersedes v0.1 with two breaking renames: `timestamp` →
-  `generated.at` (consumers MAY fall back to `timestamp`), and the body
-  `# Citations` list → `sources`. Everything else is carried forward
-  unchanged. [source: spec] (§13)
+- v0.2 supersedes v0.1 with two breaking renames — `timestamp` →
+  `generated.at` (consumers MAY fall back to `timestamp`) and the body
+  `# Citations` list → `sources` — plus the additive families this page
+  documents: `sources`, `generated`/`verified`, `status`/`stale_after`, the
+  `Attested Computation` type and the actor convention. Bundle structure,
+  reserved filenames, the required `type`, the recommended keys,
+  cross-linking, index and log files and the permissive conformance rule
+  are "carried forward unchanged". [source: spec] (§13)
 - The 2026-08-21 timestamp amendment changed the text of "Version 0.2"
   without a version bump: the header still reads 0.2, `okf_version: "0.2"`
   still declares it, and the repository carries no tags. [observed:
