@@ -57,7 +57,12 @@ _FRONTMATTER_RE = re.compile(r"\A---\n(?P<yaml>.*?)\n---\n(?P<body>.*)\Z", re.DO
 _MARKER_RE = re.compile(
     r"\[(?P<kind>source|observed|unverified|pins)(?::\s*(?P<arg>[^\]]*))?\]"
 )
-_PIN_RE = re.compile(r"^(?P<file>[^:\s]+\.py)::(?P<name>[A-Za-z_][A-Za-z0-9_:]*)$")
+# A pin names a pytest node: a file under tests/, optional Test* classes, and a
+# test_* function.  Anything else (a helper, production code) would let CI
+# certify a claim that no test covers.
+_PIN_RE = re.compile(
+    r"^(?P<file>tests/[^:\s]+\.py)::(?P<name>(?:Test[A-Za-z0-9_]*::)*test[A-Za-z0-9_]*)$"
+)
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
@@ -212,7 +217,10 @@ def _check_markers(ref: Reference, source_ids: set[str], repo_root: Path) -> lis
 def _check_pin(pin: str, repo_root: Path) -> str:
     m = _PIN_RE.match(pin)
     if not m:
-        return f"`[pins: {pin}]` is not of the form tests/file.py::test_name"
+        return (
+            f"`[pins: {pin}]` is not of the form tests/file.py::test_name "
+            "(optionally tests/file.py::TestClass::test_name)"
+        )
     test_file = repo_root / m.group("file")
     if not test_file.is_file():
         return f"`[pins: {pin}]` names {m.group('file')}, which does not exist"
