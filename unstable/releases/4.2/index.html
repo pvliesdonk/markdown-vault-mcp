@@ -2154,6 +2154,23 @@ anything: a divergence reports <code>fast_forward=false</code> with
 reporting the remote tip as its projected target, which had been triggering
 pointless full reindexes through the sync paths
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1301">#1301</a>).</p>
+<p>The release candidate then showed the other half of the problem: the
+noticing worked, and the diagnosing did not. When a clone could not reach
+its remote, the only line in the log was that one transition, naming the
+generic <code>push_failed</code> bucket; git's own words sat at <code>DEBUG</code>, and
+deployments run at <code>INFO</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1330">#1330</a>). An
+operator learned the vault was stranded but not why, and because every retry
+was equally silent, could not tell a clone that was still retrying from one
+that had stopped. The transition line now carries the cause alongside the
+reason code, and a rejected push logs at <code>WARNING</code> with the git stderr, on
+the deferred and the startup path alike. That is a deliberate step back from
+the quieting #1287 introduced, and it is bounded by what caused the attempt:
+a push that a write caused is one attempt per write, so the line repeats
+once per burst of writes, whereas the pull loop's timer-driven retry of a
+still-pending push, like the pull-side detail that drowned the transition
+in the original incident, stays at <code>DEBUG</code>. Credentials are redacted as
+before.</p>
 <p>See "When the clone stops reaching its remote" in the
 <a href="../../guides/git-integration/">git integration guide</a>.</p>
 <h2 id="push-triggered-reindex-for-gitlab-hosted-vaults">Push-triggered reindex for GitLab-hosted vaults<a class="headerlink" href="#push-triggered-reindex-for-gitlab-hosted-vaults" title="Permanent link">&para;</a></h2>

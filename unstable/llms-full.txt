@@ -835,7 +835,7 @@ Conflict outcome: Syncthing-style sibling resolution
 When the pull would otherwise need an interactive merge, the server follows the [#232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/232) Syncthing-style flow:
 
 - The pull **succeeds** (`pull.applied=true`, `pull.reason="conflicts_resolved_with_siblings"`).
-- HEAD advances to the remote tip — the canonical path now reflects the remote (remote wins).
+- HEAD advances to the remote tip, so the canonical path now reflects the remote (remote wins).
 - The local versions that conflicted are preserved as `<basename>.conflict-mcp-<timestamp>.md` siblings on the same path; their vault-relative paths are listed in `pull.conflict_files`.
 - `pull.commits_pulled` is `0` on this path because the rebase replays your local commits *on top of* the remote tip — the counting model only reports linear-history catch-ups.
 
@@ -863,7 +863,17 @@ Two things make that visible.
 ERROR markdown_vault_mcp.git.health: git_remote_unsynced kind=push reason=non_fast_forward ...
 ```
 
-Recovery logs once at `INFO` (`git_remote_resynced`), carrying when the outage started. The per-attempt lines behind both conditions (a rejected push, and a pull that could not resolve the divergence) sit at `DEBUG`, where they keep the full git stderr for whoever is diagnosing the outage. Two kinds of failure stay loud, because neither is a cycle that repeats harmlessly: an unexpected exception on the push or resolve path, and a failure that can leave the working tree inconsistent (a rebase that would not abort, an upstream file that would not restore). Alert on the transition lines: a repeated warning every sync cycle is easy to scroll past, which is how the incident behind [#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287) ran for hours before anyone noticed.
+That line carries the cause alongside the reason code, because `push_failed` is the bucket every unrecognised git message lands in and names a state rather than a problem. Recovery logs once at `INFO` (`git_remote_resynced`), carrying when the outage started.
+
+**The attempts are visible too, at the default level.** A rejected push logs at `WARNING` with the git stderr that says why, on the deferred and the startup path alike, as does a fetch that could not reach the remote:
+
+```
+WARNING markdown_vault_mcp.git.push_scheduler: git_push_failed cmd=... returncode=1 stderr=remote: GitLab: You are not allowed to push code to protected branches on this project.
+```
+
+Credentials are redacted. These lines were at `DEBUG` until [#1330](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1330), which meant a deployment running at `INFO` saw the transition and nothing else. Because every retry was equally silent, it could not tell a clone that was still retrying from one that had stopped. The level follows what caused the attempt: a push that a write, a `git_sync` flush, or startup caused warns, so the line repeats once per burst of writes and is the evidence the retries are happening. The pull loop's own retry of a still-pending push fires on its timer, and that one stays at `DEBUG` (a warning per tick, indefinitely, is the line #1287 removed), as do the per-cycle details of a divergence the resolver is working through. Two kinds of failure stay loud for their own reasons: an unexpected exception on the push or resolve path, and a failure that can leave the working tree inconsistent (a rebase that would not abort, an upstream file that would not restore).
+
+Alert on the transition lines rather than the per-attempt ones: a warning every sync cycle is easy to scroll past, which is how the incident behind [#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287) ran for hours before anyone noticed.
 
 Both signals clear on their own once a push succeeds, or once a pull reconciles the divergence that raised them. A successful pull does not clear a failed push: reading from the remote is no evidence that anything reached it.
 
@@ -11154,6 +11164,8 @@ Every vault-mutating tool result now carries a `remote` object while the clone i
 The write still succeeded and the commit is real; the key tells the caller it is committed locally only, so an agent knows to keep its own copy and alert its user. When there is nothing to report, the key is absent rather than null. The log marks the transition once (`git_remote_unsynced`, and `git_remote_resynced` on recovery) instead of repeating the failure every push cycle. Writes are warned, never refused; the same report asked for a configurable block, which is tracked separately as [#1299](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1299).
 
 The same incident exposed a lie in `git_sync`: a dry-run pull "reported `fast_forward: true, would_apply: true` for the same divergence that the non-dry-run call refused" (the reporter's words in [#1287](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287), split out as [#1292](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1292)). The pull leg now classifies the clone against the remote before predicting anything: a divergence reports `fast_forward=false` with `reason="diverged"`, and a clone that is merely ahead of its remote stops reporting the remote tip as its projected target, which had been triggering pointless full reindexes through the sync paths ([#1301](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1301)).
+
+The release candidate then showed the other half of the problem: the noticing worked, and the diagnosing did not. When a clone could not reach its remote, the only line in the log was that one transition, naming the generic `push_failed` bucket; git's own words sat at `DEBUG`, and deployments run at `INFO` ([#1330](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1330)). An operator learned the vault was stranded but not why, and because every retry was equally silent, could not tell a clone that was still retrying from one that had stopped. The transition line now carries the cause alongside the reason code, and a rejected push logs at `WARNING` with the git stderr, on the deferred and the startup path alike. That is a deliberate step back from the quieting #1287 introduced, and it is bounded by what caused the attempt: a push that a write caused is one attempt per write, so the line repeats once per burst of writes, whereas the pull loop's timer-driven retry of a still-pending push, like the pull-side detail that drowned the transition in the original incident, stays at `DEBUG`. Credentials are redacted as before.
 
 See "When the clone stops reaching its remote" in the [git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/git-integration/index.md).
 

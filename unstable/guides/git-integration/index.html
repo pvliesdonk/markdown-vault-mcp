@@ -2524,7 +2524,7 @@ Syncthing-style flow:</p>
 <ul>
 <li>The pull <strong>succeeds</strong> (<code>pull.applied=true</code>,
   <code>pull.reason="conflicts_resolved_with_siblings"</code>).</li>
-<li>HEAD advances to the remote tip — the canonical path now reflects
+<li>HEAD advances to the remote tip, so the canonical path now reflects
   the remote (remote wins).</li>
 <li>The local versions that conflicted are preserved as
   <code>&lt;basename&gt;.conflict-mcp-&lt;timestamp&gt;.md</code> siblings on the same
@@ -2575,16 +2575,32 @@ the client can keep its own copy instead of treating the note as saved.</p>
 once at <code>ERROR</code>:</p>
 <div class="highlight"><pre><span></span><code>ERROR markdown_vault_mcp.git.health: git_remote_unsynced kind=push reason=non_fast_forward ...
 </code></pre></div>
-<p>Recovery logs once at <code>INFO</code> (<code>git_remote_resynced</code>), carrying when the
-outage started. The per-attempt lines behind both conditions (a rejected
-push, and a pull that could not resolve the divergence) sit at <code>DEBUG</code>, where
-they keep the full git stderr for whoever is diagnosing the outage. Two kinds
-of failure stay loud, because neither is a cycle that repeats harmlessly: an
-unexpected exception on the push or resolve path, and a failure that can
-leave the working tree inconsistent (a rebase that would not abort, an
-upstream file that would not restore). Alert on the transition
-lines: a repeated warning every sync cycle is easy to scroll past, which is
-how the incident behind
+<p>That line carries the cause alongside the reason code, because <code>push_failed</code>
+is the bucket every unrecognised git message lands in and names a state
+rather than a problem. Recovery logs once at <code>INFO</code>
+(<code>git_remote_resynced</code>), carrying when the outage started.</p>
+<p><strong>The attempts are visible too, at the default level.</strong> A rejected push logs
+at <code>WARNING</code> with the git stderr that says why, on the deferred and the
+startup path alike, as does a fetch that could not reach the remote:</p>
+<div class="highlight"><pre><span></span><code>WARNING markdown_vault_mcp.git.push_scheduler: git_push_failed cmd=... returncode=1 stderr=remote: GitLab: You are not allowed to push code to protected branches on this project.
+</code></pre></div>
+<p>Credentials are redacted. These lines were at <code>DEBUG</code> until
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1330">#1330</a>, which
+meant a deployment running at <code>INFO</code> saw the transition and nothing else.
+Because every retry was equally silent, it could not tell a clone that was
+still retrying from one that had stopped. The level follows what caused the
+attempt: a push that a write, a <code>git_sync</code> flush, or startup caused warns,
+so the line repeats once per burst of writes and is the evidence the
+retries are happening. The pull loop's own retry of a still-pending push
+fires on its timer, and that one stays at <code>DEBUG</code> (a warning per tick,
+indefinitely, is the line #1287 removed), as do the per-cycle details of a
+divergence the resolver is working through. Two kinds of failure stay loud
+for their own reasons: an unexpected
+exception on the push or resolve path, and a failure that can leave the
+working tree inconsistent (a rebase that would not abort, an upstream file
+that would not restore).</p>
+<p>Alert on the transition lines rather than the per-attempt ones: a warning
+every sync cycle is easy to scroll past, which is how the incident behind
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1287">#1287</a> ran for
 hours before anyone noticed.</p>
 <p>Both signals clear on their own once a push succeeds, or once a pull
