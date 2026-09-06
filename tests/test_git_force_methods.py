@@ -646,6 +646,127 @@ class TestForceMethodsErrorBranches:
         assert (git_repo_pair.local_path / "remote_only.md").exists()
         assert (git_repo_pair.local_path / "local_only.md").exists()
 
+    def test_force_pull_rebases_without_any_repo_or_global_identity(
+        self,
+        git_repo_pair: GitRepoPair,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A divergent pull must rebase in a checkout with no git identity at all.
+
+        Regression for the production shape: the container has no
+        ``~/.gitconfig`` and the served clone has no ``user.name`` /
+        ``user.email``.  Per-write commits pass the identity with ``-c`` and
+        succeed, but ``git rebase`` also commits, and it used to stop at the
+        first replayed commit with ``Committer identity unknown`` — zero
+        unmerged paths, so the conflict resolver had nothing to do, the
+        ``force_pull`` reported a conflict-resolution failure, and every later
+        push was non-fast-forward while ``write`` kept returning success.
+        """
+        from markdown_vault_mcp.git import (
+            PULL_REASON_REBASED,
+            GitWriteStrategy,
+        )
+
+        _seed_remote_commit(
+            git_repo_pair,
+            clone_name="clone_no_identity",
+            file_name="remote_only.md",
+            body="remote\n",
+        )
+        (git_repo_pair.local_path / "local_only.md").write_text("local\n")
+        _run_git(git_repo_pair.local_path, "add", "local_only.md")
+        _run_git(git_repo_pair.local_path, "commit", "-m", "local divergent")
+
+        # Strip every identity source git consults: repo config, global
+        # config, system config, and the env overrides.
+        _run_git(git_repo_pair.local_path, "config", "--unset", "user.name")
+        _run_git(git_repo_pair.local_path, "config", "--unset", "user.email")
+        # On a developer Mac git happily auto-detects "user@host"; the
+        # container (hostname with no domain) does not.  Disable
+        # auto-detection so the test means the same thing everywhere.  An
+        # identity given explicitly via env or ``-c`` still counts.
+        _run_git(git_repo_pair.local_path, "config", "user.useConfigOnly", "true")
+        bare_home = tmp_path / "bare_home"
+        bare_home.mkdir()
+        monkeypatch.setenv("HOME", str(bare_home))
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(bare_home / "xdg"))
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(bare_home / "no-such-gitconfig"))
+        monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+        for var in (
+            "GIT_AUTHOR_NAME",
+            "GIT_AUTHOR_EMAIL",
+            "GIT_COMMITTER_NAME",
+            "GIT_COMMITTER_EMAIL",
+            "EMAIL",
+        ):
+            monkeypatch.delenv(var, raising=False)
+        # Sanity: a bare commit in this clone would now fail for want of an identity.
+        probe = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(git_repo_pair.local_path),
+                "commit",
+                "--allow-empty",
+                "-m",
+                "probe",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert probe.returncode != 0
+        assert "identity" in (probe.stderr + probe.stdout).lower()
+
+        head_before = _run_git(git_repo_pair.local_path, "rev-parse", "HEAD").strip()
+        strategy = GitWriteStrategy(
+            enable_pull=True,
+            enable_push=False,
+            repo_path=git_repo_pair.local_path,
+        )
+        result = strategy.force_pull()
+
+        assert result.reason == PULL_REASON_REBASED, result
+        assert result.applied is True
+        assert result.to_sha != head_before
+        assert (git_repo_pair.local_path / "remote_only.md").exists()
+        assert (git_repo_pair.local_path / "local_only.md").exists()
+        # The replayed commit carries the strategy's configured identity, the
+        # same one a per-write commit would have used.
+        committer = _run_git(
+            git_repo_pair.local_path, "log", "-1", "--format=%cn <%ce>"
+        ).strip()
+        assert committer == (
+            f"{GitWriteStrategy.DEFAULT_COMMIT_NAME} <{GitWriteStrategy.DEFAULT_COMMIT_EMAIL}>"
+        )
+
+    def test_git_env_carries_the_commit_identity(self) -> None:
+        """``git_env`` puts the identity in the env with or without a token."""
+        from markdown_vault_mcp.git._run import cleanup_git_env, git_env
+
+        assert git_env(None, "x-access-token") is None
+
+        no_token = git_env(
+            None, "x-access-token", identity=("Door", "door@example.com")
+        )
+        assert no_token is not None
+        assert no_token["GIT_COMMITTER_NAME"] == "Door"
+        assert no_token["GIT_COMMITTER_EMAIL"] == "door@example.com"
+        assert no_token["GIT_AUTHOR_NAME"] == "Door"
+        assert no_token["GIT_AUTHOR_EMAIL"] == "door@example.com"
+        assert "GIT_ASKPASS" not in no_token
+        assert "PATH" in no_token  # inherits the parent environment
+
+        with_token = git_env(
+            "secret", "x-access-token", identity=("Door", "door@example.com")
+        )
+        try:
+            assert with_token is not None
+            assert with_token["GIT_COMMITTER_EMAIL"] == "door@example.com"
+            assert "GIT_ASKPASS" in with_token
+        finally:
+            cleanup_git_env(with_token)
+
     def test_force_push_no_remote_when_upstream_and_origin_head_missing(
         self, tmp_path: Path
     ) -> None:

@@ -225,8 +225,18 @@ class GitWriteStrategy:
         When a token is set, reuse the existing GIT_ASKPASS mechanism to avoid
         prompting interactively. This mirrors the push path and keeps the token
         out of command-line arguments.
+
+        The configured commit identity always rides along as
+        ``GIT_AUTHOR_*`` / ``GIT_COMMITTER_*`` so that ``git rebase`` (which
+        commits) works in a checkout with no ``user.name`` / ``user.email``
+        of its own — the same identity the per-write commit passes with
+        ``-c``.  See :func:`~markdown_vault_mcp.git._run.git_env`.
         """
-        return git_env(self._token, self._username)
+        return git_env(
+            self._token,
+            self._username,
+            identity=(self._commit_name, self._commit_email),
+        )
 
     def _cleanup_git_env(self, env: dict[str, str] | None) -> None:
         cleanup_git_env(env)
@@ -1108,7 +1118,17 @@ class GitWriteStrategy:
         # and replay cleanly with no manual intervention.
         try:
             self._git(git_root, "rebase", ref, env=env)
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as rebase_exc:
+            # Keep git's own words: a rebase stops for content conflicts, but
+            # also for a missing committer identity, a hook, or a lock — and
+            # the resolver below can only act on unmerged paths.  Without
+            # this line those other causes were invisible.
+            logger.warning(
+                "%s: rebase onto %s stopped: %s",
+                log_prefix,
+                ref,
+                self._redact((rebase_exc.stderr or "").strip()) or "(no stderr)",
+            )
             # Real conflicts during rebase — resolve by accepting upstream
             # and saving the local MCP versions as Syncthing-style siblings.
             #

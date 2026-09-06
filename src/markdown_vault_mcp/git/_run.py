@@ -119,16 +119,41 @@ def _find_git_root(path: Path) -> Path | None:
         return None
 
 
-def git_env(token: str | None, username: str) -> dict[str, str] | None:
+def git_env(
+    token: str | None,
+    username: str,
+    identity: tuple[str, str] | None = None,
+) -> dict[str, str] | None:
     """Build environment for git subprocess calls.
 
     When a token is set, reuse the existing GIT_ASKPASS mechanism to avoid
     prompting interactively. This mirrors the push path and keeps the token
     out of command-line arguments.
+
+    When ``identity`` (``(name, email)``) is given, the environment also
+    carries it as ``GIT_AUTHOR_*`` / ``GIT_COMMITTER_*``.  Per-write commits
+    pass the identity as ``git -c user.name=… -c user.email=…``, but the
+    pull pipeline's ``git rebase`` and ``git rebase --continue`` create
+    commits too, and in a container with no ``~/.gitconfig`` they used to
+    die at the first replayed commit with ``Committer identity unknown`` —
+    zero unmerged paths, so the conflict resolver had nothing to resolve and
+    every later push was non-fast-forward while writes kept reporting
+    success.  Putting the same identity in the env closes that gap for
+    every git subprocess that receives it.
+
+    Returns ``None`` (inherit the parent environment unchanged) only when
+    there is neither a token nor an identity.
     """
-    if not token:
+    if not token and identity is None:
         return None
-    return _build_askpass_env(token, username)
+    env = _build_askpass_env(token, username) if token else {**os.environ}
+    if identity is not None:
+        name, email = identity
+        env["GIT_AUTHOR_NAME"] = name
+        env["GIT_AUTHOR_EMAIL"] = email
+        env["GIT_COMMITTER_NAME"] = name
+        env["GIT_COMMITTER_EMAIL"] = email
+    return env
 
 
 def cleanup_git_env(env: dict[str, str] | None) -> None:
