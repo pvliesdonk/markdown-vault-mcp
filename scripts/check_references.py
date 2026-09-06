@@ -201,6 +201,10 @@ def _check_markers(ref: Reference, source_ids: set[str], repo_root: Path) -> lis
                 problems.append("`[source]` marker without a source id")
             elif arg not in source_ids:
                 problems.append(f"`[source: {arg}]` names no declared source")
+        elif kind == "observed" and not arg:
+            problems.append(
+                "`[observed]` marker without its evidence: say what was run or which fixture"
+            )
         elif kind == "pins":
             problems.extend(
                 _check_pin(pin.strip(), repo_root)

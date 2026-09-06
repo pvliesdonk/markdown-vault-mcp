@@ -163,7 +163,7 @@ What git's command line does where `src/markdown_vault_mcp/git/` relies on it:
 how a push is refused and in what words, how credentials are requested, which
 URL forms mean SSH, how pathspecs are read, what `add`/`check-ignore`/`commit
 --only` accept, how a rebase leaves state on disk, how `log`/`diff`/`ls-tree`
-frame output. Not a tutorial, not branching strategy. `[observed]` claims were
+frame output. Not a tutorial, not branching strategy. `[observed: how]` claims were
 reproduced on git 2.43.0 in throwaway repositories under `/tmp/gitref/`;
 "gettext" says whether a string is `_()`/`N_()`-wrapped in git's source and so
 follows `LANG`/`LC_ALL`.
