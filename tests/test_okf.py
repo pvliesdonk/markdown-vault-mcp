@@ -148,6 +148,9 @@ class TestVaultIntegration:
             TRUST_HUMAN,
         ),
         ({"generated": {"by": "human:alice"}}, TRUST_UNVERIFIED),
+        # A bare mapping is a one-element list (field reference, #1357).
+        ({"verified": {"by": "human:alice", "at": "2026-01-01"}}, TRUST_HUMAN),
+        ({"verified": {"by": "process:ci"}}, TRUST_MACHINE),
     ],
 )
 def test_derive_trust_tier(metadata: dict, expected: str) -> None:
@@ -159,7 +162,11 @@ def test_derive_trust_tier(metadata: dict, expected: str) -> None:
     [
         ({}, False),
         ({"stale_after": dt.date(2026, 8, 6)}, True),
-        ({"stale_after": dt.date(2026, 8, 7)}, False),  # strictly before
+        # Stale when today >= stale_after (field reference, #1357): the
+        # date itself is the first stale day.
+        ({"stale_after": dt.date(2026, 8, 7)}, True),
+        ({"stale_after": dt.date(2026, 8, 8)}, False),
+        ({"stale_after": "2026-08-07"}, True),
         ({"stale_after": dt.date(2027, 1, 1)}, False),
         ({"stale_after": dt.datetime(2026, 1, 1, 12, 0)}, True),
         ({"stale_after": "2026-01-01"}, True),

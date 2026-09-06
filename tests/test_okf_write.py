@@ -139,7 +139,19 @@ class TestAppendOkfVerification:
         assert post.metadata["title"] == "T"
         assert "Body line." in post.content
 
-    def test_non_list_verified_is_replaced(self) -> None:
+    def test_a_bare_mapping_is_kept_as_the_first_entry(self) -> None:
+        # The spec's single-verifier shorthand is a one-element list; the
+        # existing attestation must survive the append (#1357).
+        text = "---\nverified:\n  by: human:alice\n  at: 2026-01-01\n---\n# N\n"
+        meta = fm.loads(
+            append_okf_verification(text, subject="peter", today=_TODAY)
+        ).metadata
+        assert meta["verified"] == [
+            {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
+            {"by": "human:peter", "at": _ISO},
+        ]
+
+    def test_scalar_verified_is_replaced(self) -> None:
         # A malformed scalar verified is treated as empty, not crashed on.
         text = "---\nverified: nonsense\n---\n# N\n"
         meta = fm.loads(
@@ -625,6 +637,24 @@ class TestOkfVerifyTrustAuth:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="changed since it was read"):
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+
+    async def test_counts_a_bare_mapping_as_one(
+        self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # verified_count is the list length after the append; a bare-mapping
+        # verified is one entry, not zero (#1357).
+        monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        (trust_auth_env / "guides" / "playbook.md").write_text(
+            "---\nverified:\n  by: human:alice\n  at: 2026-01-01\n---\n# P\n",
+            encoding="utf-8",
+        )
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            result = await client.call_tool(
+                "okf_verify", {"path": "guides/playbook.md"}
+            )
+            await wait_for_mcp_writer_drain(client)
+        assert _parse_tool_data(result)["verified_count"] == 2
 
 
 @pytest.mark.usefixtures("enforced_env")

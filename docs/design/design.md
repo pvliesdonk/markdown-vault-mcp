@@ -1382,10 +1382,12 @@ what is implemented today:
   `_server_tools/_common.py` mirroring `attach_conventions`): when active,
   `search` hits, whole-document `read`s, and `get_context` carry an `okf`
   key — `type` (when declared), `status` (absent ⇒ `stable` per spec),
-  `stale` (`stale_after` strictly before today, server-local date), and
+  `stale` (today on or after `stale_after`, server-local date), and
   `trust_tier` (`human-reviewed` if any `verified[].by` has the `human:`
   prefix, else `machine-confirmed` if `verified` is non-empty, else
-  `unverified`). Reads carry the full `sources` list; search hits carry
+  `unverified`; a bare `verified` mapping is a one-element list, as the
+  spec's single-verifier shorthand requires, at every site that reads
+  the field — tier, the `okf_verify` append and its count, #1357). Reads carry the full `sources` list; search hits carry
   `sources_count`. Section reads omit the key (no frontmatter to derive
   from). When inactive, no payload changes at all — the non-OKF baseline
   is byte-identical.

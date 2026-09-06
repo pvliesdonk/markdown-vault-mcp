@@ -25,7 +25,11 @@ from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     EditConflictError,
 )
-from markdown_vault_mcp.okf import _HUMAN_ACTOR_PREFIX, append_okf_verification
+from markdown_vault_mcp.okf import (
+    _HUMAN_ACTOR_PREFIX,
+    append_okf_verification,
+    verified_entries,
+)
 from markdown_vault_mcp.utils import is_note
 from markdown_vault_mcp.utils.text import decode_utf8
 from markdown_vault_mcp.vault import Vault
@@ -1023,8 +1027,7 @@ def register(mcp: FastMCP) -> None:
         note = await asyncio.to_thread(vault.reader.read, path)
         if note is None:
             raise ToolError(f"Note not found: {path}")
-        prior = note.frontmatter.get("verified")
-        verified_count = (len(prior) if isinstance(prior, list) else 0) + 1
+        verified_count = len(verified_entries(note.frontmatter)) + 1
         new_text = append_okf_verification(
             note.content, subject=subject, today=date.today()
         )
