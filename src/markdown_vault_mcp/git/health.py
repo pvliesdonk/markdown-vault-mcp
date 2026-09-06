@@ -20,9 +20,11 @@ Two properties matter for how it is used:
 * **The log records transitions, not cycles.** Entering the unsynced state
   logs once at ERROR, with the cause git gave, and recovery once at INFO.
   The repeating per-cycle warning is what let the incident in #1287 run for
-  hours unnoticed.  Push attempts are the exception (#1330): a push is
-  scheduled by a write rather than by a timer, so its rejection line repeats
-  once per burst of writes and is the evidence that retries are happening.
+  hours unnoticed.  Push attempts that a write, a flush, or startup caused
+  are the exception (#1330): each is one attempt per cause, so its rejection
+  line repeats once per burst of writes and is the evidence that retries are
+  happening.  The pull loop's timer-driven retry of a pending push stays at
+  DEBUG for the same reason the pull-side lines do.
 """
 
 from __future__ import annotations
@@ -234,14 +236,14 @@ class SyncHealthTracker:
                 # trailing spaces; the log line is key=value pairs, so the
                 # cause is flattened onto one line and placed last, where it
                 # cannot split an earlier field.
-                cause = " ".join(detail.split()) if detail else "unavailable"
+                cause = " ".join(detail.split()) if detail else ""
                 logger.error(
                     "git_remote_unsynced kind=%s reason=%s "
                     "detail=writes are committed locally and are not reaching "
                     "the remote cause=%s",
                     kind,
                     reason,
-                    cause,
+                    cause or "unavailable",
                 )
             else:
                 logger.debug("git_remote_unsynced_also kind=%s reason=%s", kind, reason)

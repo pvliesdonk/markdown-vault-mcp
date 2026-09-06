@@ -3874,21 +3874,24 @@ path reports it.
   argument, and every call site passes it: the two in `PushScheduler`
   (deferred and startup) and `GitWriteStrategy._record_push`, which forwards
   `PushResult.hint`.
-- **Push attempts log at WARNING; pull-cycle detail stays at DEBUG.** #1287
-  moved the per-attempt lines to DEBUG to stop a per-cycle warning from
-  drowning the transition. The two legs repeat on different clocks, and that
-  is what decides the level. The pull loop runs on a timer: the
+- **A push attempt logs at the level of what caused it.** #1287 moved the
+  per-attempt lines to DEBUG to stop a per-cycle warning from drowning the
+  transition, and the rule that decides the level is whether the attempt
+  fired on a timer or on a cause. The pull loop runs on a timer: the
   conflict-resolution loop cap, the "conflict resolution failed" line, and
   the sibling-commit failure fire every cycle with no operator or caller
   action, which is how they drowned the transition in the reported incident,
-  and they stay at DEBUG. A push is a per-write idle timer
-  (`PushScheduler.schedule_push` arms `threading.Timer(push_delay_s)`), so a
-  rejected push repeats once per write burst, and that line is the only
-  evidence retries are still happening (#1330). Hiding it at DEBUG left an
-  operator on a deployment running at INFO unable to tell a clone still
-  retrying from one that had stopped, or to see what git said. Both push
-  paths (deferred and startup) log at WARNING with redacted stderr; the fetch
-  leg was already there. Two classes stay loud for their own reasons: an
+  and they stay at DEBUG. So does the pull loop's retry of a still-pending
+  push (#957), which `_pull_loop` marks with `do_push_safe(retry=True)`: a
+  push that keeps failing would otherwise warn once per tick, indefinitely.
+  An attempt a write (`schedule_push`'s idle timer), a `flush`, or startup
+  caused is one attempt per cause, so its rejection repeats once per burst of
+  writes, and that line is the evidence retries are still happening (#1330).
+  Hiding it at DEBUG left an operator on a deployment running at INFO unable
+  to tell a clone still retrying from one that had stopped, or to see what
+  git said. Those attempts log at WARNING with redacted stderr on the
+  deferred and the startup path; the fetch leg was already there. Two
+  classes stay loud for their own reasons: an
   unexpected exception on either path (a bug, not a cycle), and a failure
   that can leave the working tree inconsistent (`abort_in_progress_rebase`,
   `restore_upstream_paths`). The guidance the incident produced still holds:

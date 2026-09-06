@@ -635,6 +635,37 @@ class TestPushFailureIsDiagnosable:
 
         assert len([r for r in caplog.records if "git_push_failed" in r.message]) == 3
 
+    def test_the_pull_loop_retry_of_a_pending_push_stays_at_debug(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A retry fires on the pull timer, so warning per tick is #1287 again."""
+        strategy = GitWriteStrategy(token=None, push_delay_s=0)
+        strategy._git_root = tmp_path
+        strategy._push_pending = True
+
+        with (
+            patch(
+                "markdown_vault_mcp.git.push_scheduler._push",
+                side_effect=self._rejected(),
+            ),
+            caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"),
+        ):
+            strategy._push_scheduler.do_push_safe(retry=True)
+
+        line = next(r for r in caplog.records if "git_push_failed" in r.message)
+        assert line.levelno == logging.DEBUG
+        assert "protected branches" in line.getMessage()
+
+    def test_a_whitespace_only_cause_reads_as_unavailable(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        tracker = SyncHealthTracker()
+        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"):
+            tracker.push_failed(PUSH_REASON_PUSH_FAILED, "  \n ")
+
+        line = next(r for r in caplog.records if "git_remote_unsynced" in r.message)
+        assert line.getMessage().endswith("cause=unavailable")
+
     def test_the_transition_line_names_the_cause_not_just_the_bucket(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:

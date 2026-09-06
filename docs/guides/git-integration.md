@@ -373,11 +373,14 @@ Credentials are redacted. These lines were at `DEBUG` until
 [#1330](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1330), which
 meant a deployment running at `INFO` saw the transition and nothing else.
 Because every retry was equally silent, it could not tell a clone that was
-still retrying from one that had stopped. A push is scheduled by a write, so
-this line repeats once per burst of writes, not on a timer, and it is the
-evidence the retries are happening. The per-cycle details of a divergence
-the resolver is working through do fire on a timer, and they stay at
-`DEBUG`. Two kinds of failure stay loud for their own reasons: an unexpected
+still retrying from one that had stopped. The level follows what caused the
+attempt: a push that a write, a `git_sync` flush, or startup caused warns,
+so the line repeats once per burst of writes and is the evidence the
+retries are happening. The pull loop's own retry of a still-pending push
+fires on its timer, and that one stays at `DEBUG` (a warning per tick,
+indefinitely, is the line #1287 removed), as do the per-cycle details of a
+divergence the resolver is working through. Two kinds of failure stay loud
+for their own reasons: an unexpected
 exception on the push or resolve path, and a failure that can leave the
 working tree inconsistent (a rebase that would not abort, an upstream file
 that would not restore).

@@ -113,26 +113,38 @@ class PushScheduler:
                 self._timer.daemon = True
                 self._timer.start()
 
-    def do_push_safe(self) -> None:
+    def do_push_safe(self, *, retry: bool = False) -> None:
         """Push wrapper that catches and logs errors.
 
         The outcome itself is recorded by :meth:`do_push`, while the shared
         lock still orders it against every other push (PR #1300); this wrapper
-        only logs.  A rejected push logs at WARNING with the git stderr that
-        says why, matching what the pull leg already does for a failed fetch
-        (#1330).  It was at DEBUG, and deployments run at INFO, so an operator
-        saw the tracker's one transition line naming the generic
-        ``push_failed`` bucket and nothing about the cause — and, because
-        every retry was equally silent, no way to tell a clone that is still
-        retrying from one that stopped.  Repeating per attempt is the point
-        here: it is the only evidence the retries are happening.  An
-        *unexpected* exception stays at ERROR with its traceback, since it
+        only logs.  The level follows what caused the attempt (#1330):
+
+        * An attempt a write, a flush, or startup caused logs a rejection at
+          WARNING with the git stderr that says why, matching what the pull
+          leg already does for a failed fetch.  It was at DEBUG, and
+          deployments run at INFO, so an operator saw the tracker's one
+          transition line naming the generic ``push_failed`` bucket and
+          nothing about the cause.  Each write is one attempt, so this line
+          repeats once per burst of writes and is the evidence that retries
+          are happening.
+        * A *retry* — the pull loop re-attempting a still-pending push on
+          every tick (#957) — logs at DEBUG.  That attempt fires on a timer
+          with no caller action, and a warning per tick is the repeating
+          line that let the incident behind #1287 run unnoticed.
+
+        An *unexpected* exception stays at ERROR with its traceback, since it
         means a bug on the push path rather than a remote that has moved on.
+
+        Args:
+            retry: ``True`` when the attempt is the pull loop's timer-driven
+                retry rather than one a write, flush, or startup caused.
         """
         try:
             self.do_push()
         except subprocess.CalledProcessError as exc:
-            logger.warning(
+            logger.log(
+                logging.DEBUG if retry else logging.WARNING,
                 "git_push_failed cmd=%s returncode=%d stderr=%s",
                 exc.cmd,
                 exc.returncode,
