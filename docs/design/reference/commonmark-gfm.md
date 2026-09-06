@@ -361,7 +361,8 @@ Behaviour lines are [observed: `extract_links`, `_strip_code_spans`,
   (`[a [b] c](x.md)` missed, `[a [b c](x.md)` links `b c`); `\[` ignored;
   escapes and entities kept raw; links inside HTML blocks and fence info
   strings extracted. Right: images by `!` lookbehind; `[a] (x.md)` rejected.
-  Decided in `docs/design/design.md` § Link Extraction, pending #1334.
+  Decided in `docs/design/design.md` § Link Extraction; the destination
+  spellings are #1353.
 - `_RE_REF_USAGE` / `_RE_REF_DEF` in `_extract_reference_links` —
   **partial.** Right: full and collapsed forms, title stripping,
   document-wide definitions, footnotes excluded. Wrong: shortcut `[label]`
@@ -433,12 +434,12 @@ regression).
 | Blank line, CRLF (`\r\n\r\n`) | §2.1 | yes | yes | `\r\n` | none; already LF on the `parse_note` path |
 | Blank line, lone CR (`\r\r`) | §2.1 | yes | yes | `\r` | none |
 | Whitespace-only line (spaces/tabs) | §2.1 | yes | yes | `   ` | none |
-| Bare quote marker line | §5.1 Ex. 244 | yes (`^ {0,3}>[ \t]*$`) | yes | `>` | none |
+| Bare quote marker line | §5.1 Ex. 244 | yes (`^ {0,3}>[ \t]*$`) | yes, at any depth (`>>`, `> >`) | `>` | none |
 | ATX heading | §4.2 | yes (`^ {0,3}#{1,6}([ \t]\|$)`) | yes, own region | `## See [t](n.md)` | **is a link** (inline content) |
 | Thematic break | §4.1 | yes | yes | `***` | none possible |
 | Setext underline (`===`/`---`) | §4.3 | yes, but it turns the *preceding* lines into a heading | yes | `---` after text | preceding lines' links stay links |
 | Fence opener, 3+ backticks or tildes | §4.5 | opener yes; the closer needs length and character | only if closed | ```` ```py ```` | info string: **not a link** |
-| Block quote line with text | §5.1 Ex. 245 | yes | yes, unless the line before is one too | `> see [t](n.md)` | **is a link** (paragraph in the quote) |
+| Block quote line with text | §5.1 Ex. 245 | yes | yes, when the quote depth grows | `> see [t](n.md)` | **is a link** (paragraph in the quote) |
 | Bullet item `-`/`+`/`*` + space | §5.3 Ex. 303 | yes | yes | `- see [t](n.md)` | **is a link** |
 | Ordered item `1.`/`1)` + space | §5.2 rule 1 | yes | yes | `1. see [t](n.md)` | **is a link** |
 | Ordered item not starting at 1 | §5.2 Ex. 304 | not a boundary | dep.: opens a region | `2. text` | continuation text |
@@ -459,4 +460,7 @@ as separators; each is spec-backed continuation text and deserves a test
 that the link survives. The decision taken on #1334 (2026-09-06) and its
 rationale for each "no, by choice" and "dep." cell is recorded in
 `docs/design/design.md`, "Link Extraction"; the "Now" column is what
-`_paragraph_regions` does since that change.
+`_paragraph_regions` does since that change. The quote prefix is stripped
+before a line's shape is read, so every row above applies inside a block
+quote too (`> ***`, `> # h`, `> - item`), and the "Link on the line" column
+holds there as well.

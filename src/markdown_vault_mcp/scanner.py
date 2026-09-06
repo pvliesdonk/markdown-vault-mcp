@@ -819,23 +819,25 @@ _FOOTNOTE_LABEL_PREFIX = "^"
 _RE_WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 
 # Line shapes at which a paragraph ends, each decidable from the line alone
-# (no container state). The rows come from
-# ``docs/design/reference/commonmark-gfm.md``, "Paragraph boundaries the
-# scanner should honour"; which rows are honoured, and the two departures,
-# are the decision on #1334. A separator carries no link content and is
-# dropped; a heading is a region by itself; a quote line with text or a list
-# item opens a region that includes the line, so links written on such a
-# line survive (the #1348 regression stated as a requirement).
+# (no container state beyond the quote depth read off the line itself). The
+# rows come from ``docs/design/reference/commonmark-gfm.md``, "Paragraph
+# boundaries the scanner should honour"; which rows are honoured, and the
+# departures, are the decision on #1334. The block-quote prefix is stripped
+# before a line's shape is read, so ``>>``, ``> ***`` and ``> # h`` are what
+# they are inside the quote (Codex on #1348: a blank line inside a quote is
+# spelled with the marker). A separator carries no link content and is
+# dropped; a heading is a region by itself; a list item, or a line whose
+# quote depth grew, opens a region that includes the line, so links written
+# on such a line survive (the #1348 regression stated as a requirement).
+_RE_LINE_QUOTE_PREFIX = re.compile(r"^(?: {0,3}>[ \t]?)+")
 _RE_LINE_SEPARATOR = re.compile(
     r"^(?:"
-    r"[ \t]*"  # blank or whitespace-only (§2.1, §4.8)
-    r"| {0,3}>[ \t]*"  # bare quote marker (§5.1 Ex. 244)
+    r"[ \t]*"  # blank or whitespace-only (§2.1, §4.8); a bare `>` after the strip
     r"| {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})"  # break (§4.1)
     r"| {0,3}(?:=+|-+)[ \t]*"  # setext underline (§4.3)
     r")$"
 )
 _RE_LINE_ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
-_RE_LINE_QUOTE = re.compile(r"^ {0,3}>")
 # Bullet or ordered item with content. Every ordered marker opens a region,
 # not only ``1.`` — §5.2 Ex. 304 makes ``2. text`` after prose continuation
 # text, but converted PDFs are numbered lists and a stray ``[`` in one item
@@ -879,15 +881,50 @@ def _normalise_line_endings(content: str) -> str:
     return content.replace("\r\n", "\n").replace("\r", "\n")
 
 
+_SEPARATOR = "separator"
+_HEADING = "heading"
+_OPENER = "opener"
+_CONTINUATION = "continuation"
+
+
+def _line_shape(line: str, previous_depth: int) -> tuple[str, int]:
+    """Classify one line for :func:`_paragraph_regions`.
+
+    The block-quote prefix is stripped first and its depth counted, so the
+    shape rules read the content *inside* the quote. A line opens a region
+    when it is a list item or when its quote depth grew — a block quote
+    interrupts a paragraph (§5.1), while a line at the same or a shallower
+    depth is the paragraph continuing (Ex. 233's lazy continuation).
+
+    Args:
+        line: One LF-terminated line, without its ending.
+        previous_depth: Quote depth of the line before, ``0`` at a region
+            start.
+
+    Returns:
+        ``(shape, depth)`` with *shape* one of the four module constants.
+    """
+    prefix = _RE_LINE_QUOTE_PREFIX.match(line)
+    depth = prefix.group(0).count(">") if prefix else 0
+    inner = line[prefix.end() :] if prefix else line
+    if _RE_LINE_SEPARATOR.match(inner):
+        return _SEPARATOR, depth
+    if _RE_LINE_ATX_HEADING.match(inner):
+        return _HEADING, depth
+    if depth > previous_depth or _RE_LINE_LIST_ITEM.match(inner):
+        return _OPENER, depth
+    return _CONTINUATION, depth
+
+
 def _paragraph_regions(clean: str) -> Iterator[str]:
     """Split code-stripped, LF-normalised content into paragraph regions.
 
     A region is the run of lines inside which a link may span a soft break;
     a stray ``[`` in one region cannot pair with a ``](`` in the next. The
-    walk is line-shape only (see :data:`_RE_LINE_SEPARATOR` and friends):
-    it tracks no open quotes, items or fences, so a nested item indented four
-    or more spaces is continuation text and a quote line is one paragraph
-    with the quote line before it.
+    walk reads line shapes only (see :func:`_line_shape`): it tracks no open
+    items or fences and no quote state beyond the depth on the line itself,
+    so a nested item indented four or more spaces is continuation text and a
+    quote line following a lazy continuation line opens a new region.
 
     Args:
         clean: Body text with code removed and line endings normalised.
@@ -896,30 +933,19 @@ def _paragraph_regions(clean: str) -> Iterator[str]:
         Each region's lines joined with ``\\n``, in document order.
     """
     lines: list[str] = []
-    previous_was_quote = False
+    previous_depth = 0
     for line in clean.split("\n"):
-        if _RE_LINE_SEPARATOR.match(line):
-            if lines:
-                yield "\n".join(lines)
-                lines = []
-            previous_was_quote = False
+        shape, previous_depth = _line_shape(line, previous_depth)
+        if shape is _CONTINUATION:
+            lines.append(line)
             continue
-        if _RE_LINE_ATX_HEADING.match(line):
-            if lines:
-                yield "\n".join(lines)
-                lines = []
-            yield line
-            previous_was_quote = False
-            continue
-        is_quote = _RE_LINE_QUOTE.match(line) is not None
-        opens = (is_quote and not previous_was_quote) or (
-            _RE_LINE_LIST_ITEM.match(line) is not None
-        )
-        if opens and lines:
+        if lines:
             yield "\n".join(lines)
             lines = []
-        lines.append(line)
-        previous_was_quote = is_quote
+        if shape is _HEADING:
+            yield line
+        elif shape is _OPENER:
+            lines.append(line)
     if lines:
         yield "\n".join(lines)
 

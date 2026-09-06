@@ -2093,17 +2093,27 @@ them. The returned list keeps its grouped order (inline, reference, wikilink).
 Which lines end a paragraph is taken row by row from
 [`reference/commonmark-gfm.md`](reference/commonmark-gfm.md) ("Paragraph
 boundaries the scanner should honour"), and the walk is *line shape only* — no
-open-quote, open-item or open-fence state:
+open-item or open-fence state, and no quote state beyond what the line itself
+carries. The block-quote prefix (`>`, `> >`, up to three leading spaces each)
+is stripped and its depth counted *before* the shape is read, so a blank line
+inside a quote — which is spelled `>` or `>>`, not as whitespace — and a
+break, heading or item inside a quote are what they are (the review finding
+that closed the second attempt's round on Codex's `>` case, generalised):
 
 - **Separators** (end the region, carry nothing): a blank or whitespace-only
-  line, a bare `>` marker, a thematic break, a setext underline.
+  line, a bare quote marker at any depth, a thematic break, a setext
+  underline.
 - **A heading** (`#`–`######` plus space, up to three leading spaces) is a
   region by itself, so a link written on the heading line survives — the
   second attempt (#1348) split on the heading and silently dropped
   `## See also: [[Related]]` edges.
-- **Openers** (start a region that includes the line): a quote line with text,
-  unless the line before was one too (consecutive quote lines are one
-  paragraph); a bullet item; an ordered item.
+- **Openers** (start a region that includes the line): a bullet item; an
+  ordered item; a line whose quote depth is greater than the line before
+  (a block quote interrupts a paragraph, §5.1), while a line at the same or a
+  shallower depth continues it (consecutive `> ` lines are one paragraph;
+  `> > a` then `> b` is Ex. 233's lazy continuation). Known cost, pinned: a
+  quote line after an *unquoted* lazy continuation line (`> a`, `b`, `> c`)
+  opens a new region, which the spec would not.
 - Everything else is continuation text, as the spec has it for indented code,
   `[r]: x.md` lines, HTML type-7 tags, table rows and lazy continuations.
 

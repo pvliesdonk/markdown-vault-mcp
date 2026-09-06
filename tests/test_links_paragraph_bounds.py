@@ -76,6 +76,10 @@ SEPARATORS = {
     "whitespace-only line": "\n \t \n",
     "bare quote marker": "\n>\n",
     "bare quote marker with trailing space": "\n> \n",
+    "nested bare quote marker": "\n>>\n",
+    "spaced nested bare quote marker": "\n> >\n",
+    "thematic break inside a quote": "\n> ***\n",
+    "setext underline inside a quote": "\n> ---\n",
     "thematic break stars": "\n***\n",
     "thematic break dashes": "\n---\n",
     "thematic break underscores": "\n_ _ _\n",
@@ -106,6 +110,35 @@ class TestSeparators:
         assert targets(content) == ["real"]
 
 
+QUOTED_SEPARATORS = {
+    "bare marker": ">",
+    "bare marker with trailing space": "> ",
+    "nested bare marker": ">>",
+    "spaced nested bare marker": "> >",
+    "thematic break inside the quote": "> ***",
+    "setext underline inside the quote": "> ---",
+    "heading inside the quote": "> ## Heading",
+}
+
+
+class TestSeparatorsInsideAQuote:
+    """The same boundaries, with quoted prose on both sides (#1348, Codex)."""
+
+    @pytest.mark.parametrize("line", QUOTED_SEPARATORS.values(), ids=QUOTED_SEPARATORS)
+    def test_a_stray_bracket_does_not_cross_it(self, line: str) -> None:
+        content = f"> See [item\n{line}\n> after: [real](note.md)"
+        assert texts(content) == ["real"]
+
+    @pytest.mark.parametrize("line", QUOTED_SEPARATORS.values(), ids=QUOTED_SEPARATORS)
+    def test_a_wikilink_does_not_cross_it(self, line: str) -> None:
+        content = f"> See [[item\n{line}\n> after: [[real]]"
+        assert targets(content) == ["real"]
+
+    def test_the_nested_quote_from_the_second_attempt_review(self) -> None:
+        content = ">> See item [3.\n>>\n>> More prose.\n>>\n>> A link: [x](note.md)\n"
+        assert texts(content) == ["x"]
+
+
 # ---------------------------------------------------------------------------
 # Openers: the line starts a new region and keeps its own links
 # ---------------------------------------------------------------------------
@@ -113,6 +146,9 @@ class TestSeparators:
 
 OPENERS = {
     "quote line with text": "> ",
+    "nested quote line with text": ">> ",
+    "bullet item inside a quote": "> - ",
+    "ordered item inside a quote": "> 1. ",
     "bullet dash": "- ",
     "bullet plus": "+ ",
     "bullet star": "* ",
@@ -142,6 +178,23 @@ class TestOpeners:
     def test_a_wikilink_on_a_heading_line_survives(self) -> None:
         content = "Some text.\n## Related: [[other note]]\n\nBody [link2](x.md)."
         assert targets(content) == ["x.md", "other note"]
+
+    def test_a_link_on_a_heading_inside_a_quote_survives(self) -> None:
+        assert targets("> intro\n> # See [target](note.md)\n> body") == ["note.md"]
+
+    def test_a_heading_inside_a_quote_is_a_region_by_itself(self) -> None:
+        assert texts("> # Stray [here\n> body [real](note.md)") == ["real"]
+
+    def test_a_second_item_inside_a_quote_is_a_new_region(self) -> None:
+        assert extract_links("> - [a\n> - b](note.md)", SRC) == []
+
+    def test_a_deeper_quote_interrupts_the_paragraph(self) -> None:
+        assert extract_links("> [a\n> > b](note.md)", SRC) == []
+
+    def test_a_shallower_quote_line_is_a_lazy_continuation(self) -> None:
+        # §5.1: the paragraph inside the inner quote continues on the
+        # less-nested line, so one link spans it.
+        assert targets("> > [a\n> b](note.md)") == ["note.md"]
 
     def test_a_heading_is_a_region_by_itself(self) -> None:
         # A stray ``[`` on the heading line pairs with nothing below it.
@@ -183,6 +236,12 @@ class TestContinuations:
 
     def test_a_lazy_continuation_of_a_quote_is_the_same_paragraph(self) -> None:
         assert targets("> [a\nb](note.md)") == ["note.md"]
+
+    def test_a_quote_line_after_a_lazy_line_is_the_known_cost(self) -> None:
+        # §5.1: ``> a`` / ``b`` / ``> c`` is one paragraph. The walk keeps no
+        # open-quote state, only the depth read off each line, so the third
+        # line's depth grows from 0 and it opens a new region. Pinned.
+        assert extract_links("> [a\nb\n> c](note.md)", SRC) == []
 
     def test_an_indented_continuation_of_an_item_is_the_same_paragraph(
         self,
