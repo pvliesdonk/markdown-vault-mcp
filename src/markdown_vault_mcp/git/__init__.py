@@ -1,11 +1,22 @@
 """Git integration package.
 
-What the git command line actually does where this package relies on it
-(refusal messages and their locale status, ``--porcelain``, askpass, URL
-forms, pathspec magic, ``log -z`` framing, identity) is recorded with sources
-and dates in ``docs/design/reference/git-cli.md``. Consult it before matching
-a new stderr string or adding a git invocation; a behaviour the reference
-does not settle is research first, not a guess.
+What the git command line actually does where this package relies on it is
+recorded with sources and dates under ``docs/design/reference/``, one page per
+consumer:
+
+* ``git-push-and-remotes.md`` (refusal messages and their locale status,
+  ``--porcelain``, askpass, URL forms, ``safe.directory``, ``symbolic-ref``)
+  is read by ``health``, ``push_scheduler``, ``_run``, ``bootstrap`` and the
+  repository-discovery part of ``conflict``;
+* ``git-staging-and-commits.md`` (pathspec magic, ``add``/``check-ignore``,
+  ``commit --only`` and identity, ancestry, rebase state) is read by
+  ``strategy``, ``conflict`` and the pathspec part of ``_run``;
+* ``git-history-queries.md`` (``log -z`` framing, ``--follow`` and renames,
+  ``--since``/``--until``, ``ls-tree -l``, LFS pointers) is read by ``query``.
+
+Consult the relevant page before matching a new stderr string or adding a git
+invocation; a behaviour the reference does not settle is research first, not
+a guess.
 
 ``markdown_vault_mcp.git`` was historically a single 2721-LOC module. It is now a
 package; this ``__init__`` preserves the public and test-relied-upon import

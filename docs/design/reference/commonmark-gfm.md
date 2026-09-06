@@ -1,35 +1,41 @@
 ---
+type: Reference
 title: CommonMark and GitHub Flavored Markdown
-subject: CommonMark block and inline rules (paragraph boundaries, links, code) and the GFM extensions, scoped to what the scanner depends on
+description: CommonMark block and inline rules (paragraph boundaries, links, code) and the GFM extensions, scoped to what the scanner depends on
 subject_version: "0.31.2"
 valid_for: "CommonMark 0.31.x; GFM as published at accessed date"
-researched: 2026-09-06
-review_by: 2027-09-06
-status: current
+generated:
+  by: process:researching-references
+  at: 2026-09-06
+verified:
+  - by: process:researching-references-refute
+    at: 2026-09-06
+stale_after: 2027-09-06
+status: stable
 sources:
   - id: cm
     title: CommonMark Spec, version 0.31.2 (2024-01-28), section-numbered HTML
-    url: https://spec.commonmark.org/0.31.2/
+    resource: https://spec.commonmark.org/0.31.2/
     accessed: 2026-09-06
   - id: cm-json
     title: CommonMark 0.31.2 spec.json (numbered examples with section names)
-    url: https://spec.commonmark.org/0.31.2/spec.json
+    resource: https://spec.commonmark.org/0.31.2/spec.json
     accessed: 2026-09-06
   - id: gfm
     title: GitHub Flavored Markdown Spec, version 0.29-gfm (2019-04-06)
-    url: https://github.github.com/gfm/
+    resource: https://github.github.com/gfm/
     accessed: 2026-09-06
   - id: gh-footnotes
     title: GitHub Docs, "Basic writing and formatting syntax", section "Footnotes"
-    url: https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax
+    resource: https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax
     accessed: 2026-09-06
   - id: cm-changelog
     title: commonmark-spec changelog.txt (0.30, 0.31, 0.31.1, 0.31.2 entries)
-    url: https://raw.githubusercontent.com/commonmark/commonmark-spec/master/changelog.txt
+    resource: https://raw.githubusercontent.com/commonmark/commonmark-spec/master/changelog.txt
     accessed: 2026-09-06
   - id: rfc3986
     title: RFC 3986, Uniform Resource Identifier (URI), section 3.1 Scheme
-    url: https://www.rfc-editor.org/rfc/rfc3986#section-3.1
+    resource: https://www.rfc-editor.org/rfc/rfc3986#section-3.1
     accessed: 2026-09-06
 ---
 

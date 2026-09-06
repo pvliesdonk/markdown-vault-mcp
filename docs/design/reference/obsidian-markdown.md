@@ -1,75 +1,81 @@
 ---
+type: Reference
 title: Obsidian markdown dialect and link resolution
-subject: "Obsidian desktop (1.x): wikilink syntax, link resolution, aliases, and the Obsidian-only syntax that shares characters with links"
+description: "Obsidian desktop (1.x): wikilink syntax, link resolution, aliases, and the Obsidian-only syntax that shares characters with links"
 subject_version: "1.14 (help pages state a version only for properties: 1.4 / 1.9)"
 valid_for: "Obsidian 1.x"
-researched: 2026-09-06
-review_by: 2027-03-06
-status: current
+generated:
+  by: process:researching-references
+  at: 2026-09-06
+verified:
+  - by: process:researching-references-refute
+    at: 2026-09-06
+stale_after: 2027-03-06
+status: stable
 sources:
   - id: help-links
     title: Internal links - Obsidian Help
-    url: https://obsidian.md/help/links
+    resource: https://obsidian.md/help/links
     accessed: 2026-09-06
   - id: help-embeds
     title: Embed files - Obsidian Help
-    url: https://obsidian.md/help/embeds
+    resource: https://obsidian.md/help/embeds
     accessed: 2026-09-06
   - id: help-tags
     title: Tags - Obsidian Help
-    url: https://obsidian.md/help/tags
+    resource: https://obsidian.md/help/tags
     accessed: 2026-09-06
   - id: help-callouts
     title: Callouts - Obsidian Help
-    url: https://obsidian.md/help/callouts
+    resource: https://obsidian.md/help/callouts
     accessed: 2026-09-06
   - id: help-properties
     title: Properties - Obsidian Help
-    url: https://obsidian.md/help/properties
+    resource: https://obsidian.md/help/properties
     accessed: 2026-09-06
   - id: help-aliases
     title: Aliases - Obsidian Help
-    url: https://obsidian.md/help/aliases
+    resource: https://obsidian.md/help/aliases
     accessed: 2026-09-06
   - id: help-syntax
     title: Basic formatting syntax - Obsidian Help
-    url: https://obsidian.md/help/syntax
+    resource: https://obsidian.md/help/syntax
     accessed: 2026-09-06
   - id: help-advanced
     title: Advanced formatting syntax - Obsidian Help
-    url: https://obsidian.md/help/advanced-syntax
+    resource: https://obsidian.md/help/advanced-syntax
     accessed: 2026-09-06
   - id: help-ofm
     title: Obsidian Flavored Markdown - Obsidian Help
-    url: https://obsidian.md/help/obsidian-flavored-markdown
+    resource: https://obsidian.md/help/obsidian-flavored-markdown
     accessed: 2026-09-06
   - id: help-formats
     title: Accepted file formats - Obsidian Help
-    url: https://obsidian.md/help/file-formats
+    resource: https://obsidian.md/help/file-formats
     accessed: 2026-09-06
   - id: help-settings
     title: Settings - Obsidian Help (section "Files and links")
-    url: https://obsidian.md/help/settings
+    resource: https://obsidian.md/help/settings
     accessed: 2026-09-06
   - id: api-dts
     title: obsidian-api obsidian.d.ts (master), the public API typings and their JSDoc
-    url: https://raw.githubusercontent.com/obsidianmd/obsidian-api/master/obsidian.d.ts
+    resource: https://raw.githubusercontent.com/obsidianmd/obsidian-api/master/obsidian.d.ts
     accessed: 2026-09-06
   - id: api-parselinktext
     title: parseLinktext - Obsidian Developer Documentation
-    url: https://docs.obsidian.md/Reference/TypeScript+API/parseLinktext
+    resource: https://docs.obsidian.md/Reference/TypeScript+API/parseLinktext
     accessed: 2026-09-06
   - id: api-metadatacache
     title: MetadataCache - Obsidian Developer Documentation
-    url: https://docs.obsidian.md/Reference/TypeScript+API/MetadataCache
+    resource: https://docs.obsidian.md/Reference/TypeScript+API/MetadataCache
     accessed: 2026-09-06
   - id: api-cachedmetadata
     title: CachedMetadata - Obsidian Developer Documentation
-    url: https://docs.obsidian.md/Reference/TypeScript+API/CachedMetadata
+    resource: https://docs.obsidian.md/Reference/TypeScript+API/CachedMetadata
     accessed: 2026-09-06
   - id: changelog
     title: Obsidian changelog
-    url: https://obsidian.md/changelog/
+    resource: https://obsidian.md/changelog/
     accessed: 2026-09-06
 ---
 
