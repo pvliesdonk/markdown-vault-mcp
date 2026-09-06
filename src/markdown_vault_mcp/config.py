@@ -664,7 +664,8 @@ class ProjectConfig:
                 "overrides GIT_COMMIT_NAME per request when an OIDC token is "
                 "present. The claim is resolved when the tool call arrives "
                 "and carried to the background commit, so it applies on "
-                "every write."
+                "every write. A configured claim the token does not carry "
+                "is reported once at WARNING and the static identity is used."
             ),
             "tags": ("git",),
             "wizard": {"group": "Git sync"},

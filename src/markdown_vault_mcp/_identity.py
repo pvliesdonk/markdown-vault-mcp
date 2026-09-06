@@ -47,6 +47,13 @@ _LOCAL_SUBJECT = "local"
 _name_claim: str | None = None
 _email_claim: str | None = None
 
+#: ``(field, key)`` pairs already reported unusable, so the diagnostic below
+#: is one line per field per process rather than one per write. Keyed on the
+#: pair, not the key alone: both fields may be configured to the same claim,
+#: and each deserves its own line. Cleared whenever the configured keys
+#: change, so a reconfiguration gets a fresh answer.
+_warned_absent_claims: set[tuple[str, str]] = set()
+
 
 def configure_identity_claims(
     *, name_claim: str | None, email_claim: str | None
@@ -65,6 +72,7 @@ def configure_identity_claims(
     global _name_claim, _email_claim
     _name_claim = name_claim
     _email_claim = email_claim
+    _warned_absent_claims.clear()
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +148,51 @@ def _claim_value(claims: dict[str, Any] | None, key: str | None) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _resolve_claim(
+    claims: dict[str, Any] | None, key: str | None, field: str
+) -> str | None:
+    """Read a configured claim, reporting once when it is not usable.
+
+    An operator who configures ``GIT_COMMIT_NAME_CLAIM`` has asked for
+    attribution deliberately. When the claim is not in the access token the
+    commit silently falls back to the static identity, which looks exactly
+    like a deployment that never configured it — and the one nearby startup
+    warning is suppressed precisely when a claim *is* configured (#1331).
+
+    Only fires for an authenticated caller: with no token there are no claims
+    to be missing, and the fallback is the intended behaviour.
+
+    Args:
+        claims: The token claims, or ``None`` when there is no token.
+        key: The configured claim key, or ``None`` when none is configured.
+        field: The identity field being resolved, for the log line.
+
+    Returns:
+        The claim value, or ``None`` when it is absent, empty, or not a
+        string; the log line says which.
+    """
+    value = _claim_value(claims, key)
+    if value is not None or key is None or claims is None:
+        return value
+    if (field, key) not in _warned_absent_claims:
+        _warned_absent_claims.add((field, key))
+        logger.warning(
+            "git_commit_claim_unusable field=%s claim=%s state=%s "
+            "detail=commits fall back to the static commit identity",
+            field,
+            key,
+            _claim_state(claims, key),
+        )
+    return None
+
+
+def _claim_state(claims: dict[str, Any], key: str) -> str:
+    """Name why a configured claim was unusable, for the diagnostic line."""
+    if key not in claims:
+        return "absent"
+    return "empty" if claims[key] == "" else "not_a_string"
+
+
 def resolve_mcp_principal() -> Principal:
     """Resolve the caller's :class:`Principal` from the MCP request context.
 
@@ -148,7 +201,9 @@ def resolve_mcp_principal() -> Principal:
     ``"local"`` sentinel makes a ``"human"`` principal; the sentinel or no
     subject makes a ``"local"`` one with ``subject=None``. Display name and
     email are read from the token claims using the keys registered via
-    :func:`configure_identity_claims` (non-empty strings only).
+    :func:`configure_identity_claims` (non-empty strings only); a configured
+    claim an authenticated caller's token does not carry is reported once
+    per process (#1331).
 
     Returns:
         The resolved principal. Never ``None`` — an unauthenticated caller
@@ -162,8 +217,8 @@ def resolve_mcp_principal() -> Principal:
 
     subject = get_subject()
     claims = get_claims()
-    display_name = _claim_value(claims, _name_claim)
-    email = _claim_value(claims, _email_claim)
+    display_name = _resolve_claim(claims, _name_claim, "display_name")
+    email = _resolve_claim(claims, _email_claim, "email")
     if subject and subject != _LOCAL_SUBJECT:
         return Principal(
             subject=subject, display_name=display_name, email=email, kind="human"

@@ -2578,6 +2578,17 @@ untouched. `GitWriteStrategy.__call__` consumes the Principal's
 identity); the `git/` package imports nothing from `fastmcp` (guard-tested),
 so non-MCP drivers supply a `Principal` instead of faking request context.
 
+A configured claim the token does not carry is reported, not just fallen
+back from (#1331). `_resolve_claim()` logs `git_commit_claim_unusable`
+once per process per `(field, key)` — naming the field, the key, and whether
+the claim was `absent`, `empty`, or `not_a_string` — and only for an
+authenticated caller, since with no token there is nothing to be missing.
+Per field rather than per key, because both fields may be configured to the
+same claim and each deserves its own line; the memory is cleared by
+`configure_identity_claims()`, so a reconfiguration gets a fresh answer. The
+startup warning in `git/strategy.py` is suppressed exactly when a claim *is*
+configured, which is why the signal lives at the resolution site.
+
 `resolve_mcp_principal()` is the **only** place the subject rules live
 (#1231) — `human:<subject>`, and the `"local"` sentinel counting as no human
 identity. `_okf_write.py` used to re-derive them in a fallback branch that

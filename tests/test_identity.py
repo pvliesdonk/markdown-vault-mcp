@@ -14,6 +14,7 @@ pattern ``_okf_write`` uses).
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -225,3 +226,115 @@ class TestConfigureIdentityClaims:
     def test_module_state_is_set(self) -> None:
         configure_identity_claims(name_claim="a", email_claim="b")
         assert (_identity._name_claim, _identity._email_claim) == ("a", "b")
+
+
+# ---------------------------------------------------------------------------
+# A configured claim the token does not carry (#1331)
+# ---------------------------------------------------------------------------
+
+
+def _claim_lines(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    """The claim diagnostic's records, matched on the event name."""
+    return [r for r in caplog.records if "git_commit_claim_unusable" in r.message]
+
+
+class TestAbsentCommitClaimIsReported:
+    """The silent half of #1331: a configured claim that never arrives.
+
+    The fallback itself is correct; what was missing is any signal that the
+    operator's configured attribution is inert. It looks identical to a
+    deployment that never configured it, and the one nearby startup warning
+    in ``git/strategy.py`` is suppressed exactly when a claim *is* configured.
+    """
+
+    def test_absent_claim_warns_once_and_falls_back(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure_identity_claims(name_claim="name", email_claim=None)
+        _patch_context(monkeypatch, subject="sub-1", claims={"sub": "sub-1"})
+        with caplog.at_level(logging.WARNING):
+            first = resolve_mcp_principal()
+            second = resolve_mcp_principal()
+        assert first.display_name is None
+        assert second.display_name is None
+        lines = _claim_lines(caplog)
+        assert len(lines) == 1, "one line per key per process, not one per write"
+        assert lines[0].args[-1] == "absent"
+
+    def test_an_empty_claim_is_reported_as_empty(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Present but empty has the same effect and a distinguishable cause."""
+        configure_identity_claims(name_claim="name", email_claim=None)
+        _patch_context(monkeypatch, subject="sub-1", claims={"name": ""})
+        with caplog.at_level(logging.WARNING):
+            resolve_mcp_principal()
+        assert _claim_lines(caplog)[0].args[-1] == "empty"
+
+    def test_a_non_string_claim_is_reported_as_such(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure_identity_claims(name_claim="name", email_claim=None)
+        _patch_context(monkeypatch, subject="sub-1", claims={"name": 123})
+        with caplog.at_level(logging.WARNING):
+            assert resolve_mcp_principal().display_name is None
+        assert _claim_lines(caplog)[0].args[-1] == "not_a_string"
+
+    def test_both_fields_are_reported_independently(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure_identity_claims(name_claim="name", email_claim="email")
+        _patch_context(monkeypatch, subject="sub-1", claims={"sub": "sub-1"})
+        with caplog.at_level(logging.WARNING):
+            resolve_mcp_principal()
+        assert {r.args[0] for r in _claim_lines(caplog)} == {"display_name", "email"}
+
+    def test_both_fields_on_the_same_claim_are_both_reported(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Dedup is per field, so a shared key cannot hide the second field."""
+        configure_identity_claims(name_claim="name", email_claim="name")
+        _patch_context(monkeypatch, subject="sub-1", claims={"sub": "sub-1"})
+        with caplog.at_level(logging.WARNING):
+            resolve_mcp_principal()
+        assert [r.args[0] for r in _claim_lines(caplog)] == ["display_name", "email"]
+
+    def test_a_present_claim_says_nothing(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure_identity_claims(name_claim="name", email_claim=None)
+        _patch_context(monkeypatch, subject="sub-1", claims={"name": "Ada"})
+        with caplog.at_level(logging.WARNING):
+            assert resolve_mcp_principal().display_name == "Ada"
+        assert _claim_lines(caplog) == []
+
+    def test_an_unauthenticated_caller_says_nothing(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No token means no claims to be missing; the fallback is intended."""
+        configure_identity_claims(name_claim="name", email_claim=None)
+        _patch_context(monkeypatch, subject=None, claims=None)
+        with caplog.at_level(logging.WARNING):
+            resolve_mcp_principal()
+        assert _claim_lines(caplog) == []
+
+    def test_no_configured_claim_says_nothing(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        configure_identity_claims(name_claim=None, email_claim=None)
+        _patch_context(monkeypatch, subject="sub-1", claims={"sub": "sub-1"})
+        with caplog.at_level(logging.WARNING):
+            resolve_mcp_principal()
+        assert _claim_lines(caplog) == []
+
+    def test_reconfiguring_clears_the_warned_set(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A reconfiguration is a new question and deserves a fresh answer."""
+        _patch_context(monkeypatch, subject="sub-1", claims={"sub": "sub-1"})
+        with caplog.at_level(logging.WARNING):
+            configure_identity_claims(name_claim="name", email_claim=None)
+            resolve_mcp_principal()
+            configure_identity_claims(name_claim="name", email_claim=None)
+            resolve_mcp_principal()
+        assert len(_claim_lines(caplog)) == 2
