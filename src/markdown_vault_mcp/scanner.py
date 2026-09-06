@@ -775,7 +775,17 @@ def _resolve_title(
     return path.stem
 
 
-_EXTERNAL_URL_PREFIXES = ("http://", "https://", "mailto:", "//")
+# Protocol-relative URLs (``//host/path``) carry no scheme for
+# :data:`_RE_URI_SCHEME` to match, so they are named here.
+_EXTERNAL_URL_PREFIXES = ("//",)
+# A URI scheme, per RFC 3986, anchored at the start of a destination. Two or
+# more characters are required before the colon: a single letter is a Windows
+# drive (``C:/notes/topic.md``), which is a path and not a scheme (#1335).
+# Matching the *shape* rather than an allowlist of four prefixes is what keeps
+# ``file:``, ``ftp:``, ``obsidian:`` and ``zotero:`` out of vault-path
+# resolution. The known cost: a file name shaped like ``draft:v2.md`` reads
+# as a scheme too.
+_RE_URI_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]+:")
 
 # Fenced code block: matches ``` or ~~~ delimiters (with optional language tag).
 _RE_FENCED_CODE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
@@ -792,6 +802,24 @@ _RE_REF_DEF = re.compile(r"^\s*\[([^\]]+)\]:\s*(.+)$", re.MULTILINE)
 _FOOTNOTE_LABEL_PREFIX = "^"
 # Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian table-cell escape)
 _RE_WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
+
+
+def _is_external_target(target: str) -> bool:
+    """Return whether a raw link destination points outside the vault.
+
+    A destination carrying a URI scheme names a resource somewhere else and is
+    not a vault-relative path, however unfamiliar the scheme (#1335).
+
+    Args:
+        target: Raw destination string as written in the document.
+
+    Returns:
+        ``True`` when *target* is external and should not be resolved as a
+        vault path.
+    """
+    return target.startswith(_EXTERNAL_URL_PREFIXES) or bool(
+        _RE_URI_SCHEME.match(target)
+    )
 
 
 def _strip_code_spans(content: str) -> str:
@@ -877,8 +905,10 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
     * **Wikilinks**: ``[[path]]`` or ``[[path|alias]]``
 
     Links inside fenced code blocks and inline code spans are ignored.
-    External URLs (``http://``, ``https://``, ``mailto:``) are skipped, as
-    are same-document anchors in every spelling — ``[text](#heading)``,
+    External destinations are skipped: any URI scheme (``https:``,
+    ``mailto:``, ``file:``, ``obsidian:``, and so on, by shape rather than
+    by allowlist, #1335) and protocol-relative ``//host`` targets. So are
+    same-document anchors in every spelling — ``[text](#heading)``,
     ``[text][ref]`` with a ``#`` target, and ``[[#heading]]``.
 
     Args:
@@ -910,7 +940,7 @@ def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
             continue
         text = m.group(1)
         raw_target = m.group(2).strip()
-        if any(raw_target.startswith(p) for p in _EXTERNAL_URL_PREFIXES):
+        if _is_external_target(raw_target):
             continue
         if raw_target.startswith("#"):
             # Pure anchor link — skip (points to a section in the same doc).
@@ -971,7 +1001,7 @@ def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
         raw_target = ref_defs.get(ref_key)
         if raw_target is None:
             continue
-        if any(raw_target.startswith(p) for p in _EXTERNAL_URL_PREFIXES):
+        if _is_external_target(raw_target):
             continue
         if raw_target.startswith("#"):
             continue
@@ -999,7 +1029,8 @@ def _extract_wikilinks(clean: str, source_path: str) -> list[LinkInfo]:
     for ``FTSIndex.resolve_vault_wikilinks()`` to resolve vault-wide.
 
     Fragment-only wikilinks (``[[#Heading]]``) are skipped, matching how
-    :func:`_extract_inline_links` treats ``[text](#heading)`` (#1107).
+    :func:`_extract_inline_links` treats ``[text](#heading)`` (#1107), and
+    so are targets carrying a URI scheme (#1335).
     """
     links: list[LinkInfo] = []
     for m in _RE_WIKILINK.finditer(clean):
@@ -1029,6 +1060,12 @@ def _extract_wikilinks(clean: str, source_path: str) -> list[LinkInfo]:
             # backlink counts. Appending ".md" to the empty path portion is
             # what used to store the literal target ".md", which cannot
             # exist and so was always reported broken (#1107).
+            continue
+
+        if _is_external_target(raw_path):
+            # [[https://example.com]] is a URL Obsidian renders as one; it
+            # used to gain a ``.md`` suffix and be stored as a vault target
+            # that could never exist (#1335).
             continue
 
         # raw_target for wikilinks: path portion before .md is appended,

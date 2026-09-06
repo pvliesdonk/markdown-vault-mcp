@@ -245,7 +245,13 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: ``documents``. An index built by an older pipeline has no tombstones, so
 #: its row absences are ambiguous (skipped vs. deleted); the bump forces the
 #: one cold rebuild that materialises tombstones for existing skips.
-INDEX_SEMANTICS_VERSION = 3
+#:
+#: Version 4 (#1335): a destination carrying any URI scheme is external.
+#: The filter was an allowlist of four prefixes, so ``file:``, ``ftp:``,
+#: ``obsidian:`` and the like were stored as vault-relative link rows, and a
+#: schemed wikilink gained a ``.md`` suffix. Those rows are gone from a fresh
+#: parse; the bump rebuilds notes whose bytes never changed.
+INDEX_SEMANTICS_VERSION = 4
 
 
 class ChunkingMeta(NamedTuple):
