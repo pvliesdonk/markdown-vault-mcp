@@ -126,8 +126,12 @@ def _as_date(value: object) -> dt.date | None:
 
 
 def _check_keys(ref: Reference) -> list[str]:
+    # A key written as `sources:` with nothing after it parses to None, which
+    # is as absent as a missing key; report it the same way.
     problems = [
-        f"missing frontmatter key `{k}`" for k in REQUIRED_KEYS if k not in ref.meta
+        f"missing frontmatter key `{k}`"
+        for k in REQUIRED_KEYS
+        if ref.meta.get(k) is None
     ]
     for key in ("researched", "review_by"):
         if key in ref.meta and _as_date(ref.meta[key]) is None:
@@ -165,8 +169,6 @@ def _check_superseded(ref: Reference, root: Path) -> list[str]:
 
 def _check_sources(ref: Reference) -> tuple[list[str], set[str]]:
     sources = ref.meta.get("sources")
-    if sources is None:
-        return [], set()
     if not isinstance(sources, list) or not sources:
         return ["`sources` must be a non-empty list"], set()
     problems: list[str] = []

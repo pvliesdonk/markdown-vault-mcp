@@ -319,8 +319,8 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   `title` frontmatter key, the first H1, or any title derivation; the note's
   name is its file name (`fileToLinktext` uses "the filename"), and
   `HeadingCache` records headings with `heading` text and `level` 1–6.
-  [source: api-dts] [source: help-properties]
-  [pins: tests/test_scanner.py::test_title_from_h1, tests/test_scanner.py::test_title_from_filename, tests/test_scanner.py::TestTitleField::test_falls_back_to_h1_then_stem]
+  [source: api-dts] [source: help-properties] The project's own title
+  derivation is a departure, pinned under "Where this project departs".
 - Whether a heading that contains a wikilink (`# See [[Other]]`) is stored
   with the raw `[[Other]]` text in `HeadingCache.heading`, and therefore how
   `[[Note#See [[Other]]]]` would have to be spelled, is [unverified].
@@ -418,7 +418,8 @@ Each entry names the function and the design section that decides it.
   vaults that predate 1.9. design.md § Link Extraction (Alias resolution).
 - `_resolve_title`: frontmatter `title` → first H1 → file stem is a project
   rule; Obsidian's note name is the file name only. design.md § Data model
-  (`title`).
+  (`title`). The departure, not Obsidian's behaviour, is what these tests
+  assert: [pins: tests/test_scanner.py::test_title_from_h1, tests/test_scanner.py::test_title_from_filename, tests/test_scanner.py::TestTitleField::test_falls_back_to_h1_then_stem]
 - `_extract_wikilinks` (#1107) and `_is_external_target` (#1335): skipping
   `[[#Heading]]` and schemed targets is consistent with the help but chosen by
   the project. design.md § Link Extraction.
