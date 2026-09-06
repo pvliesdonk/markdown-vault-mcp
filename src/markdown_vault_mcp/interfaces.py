@@ -204,6 +204,7 @@ class KeywordIndex(Protocol):
         title_field: str = "title",
         searchable_fields: str = "",
         indexed_frontmatter_fields: str = "",
+        attachment_extensions: str = "",
     ) -> None:
         """Record the settings the current rows were derived under.
 

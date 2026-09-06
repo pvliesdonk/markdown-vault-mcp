@@ -212,8 +212,10 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
 - Non-markdown targets keep their extension: "links to file formats other than
   Markdown needs to include a file extension, such as `[[Figure 1.png]]`".
   So `[[Figure 1.png]]` and `![[image.png]]` name a file `Figure 1.png`, not
-  `Figure 1.png.md` — the scanner's unconditional `.md` append is wrong for
-  them (#1333). [source: help-links]
+  `Figure 1.png.md`; the scanner appended `.md` unconditionally until #1333,
+  and now records no link for a target with an allowlisted extension (see
+  the departures section). [source: help-links]
+  [pins: tests/test_links_attachment_references.py::TestWikilinkSite::test_an_embed_of_an_attachment_is_not_a_link, tests/test_links_attachment_references.py::TestWikilinkSite::test_a_plain_wikilink_to_an_attachment_is_not_a_link]
 - Accepted formats: `.md`, `.base`, `.canvas`; images `.avif .bmp .gif .jpeg
   .jpg .png .svg .webp`; audio `.flac .m4a .mp3 .ogg .wav .webm .3gp`; video
   `.mkv .mov .mp4 .ogv .webm`; `.pdf`. "Show all file types" lets any
@@ -224,9 +226,10 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   `![[Engelbart.jpg|100]]` (the alias slot carries the size),
   `![[Document.pdf#page=3]]`, `![[Document.pdf#height=400]]`,
   `![[My note#^my-list-id]]`. [source: help-embeds]
-- `_RE_WIKILINK` has no `!` lookbehind, so a note embed is indexed as a link
-  and an attachment embed as a broken `.md` link; no test covers embeds.
-  [source: help-embeds]
+- `_RE_WIKILINK` has no `!` lookbehind, so a note embed is indexed as a
+  link; an attachment embed is skipped by its target's extension, not by the
+  `!` (#1333). [source: help-embeds]
+  [pins: tests/test_links_attachment_references.py::TestWikilinkSite::test_a_note_embed_is_still_a_link, tests/test_links_attachment_references.py::TestWikilinkSite::test_the_fragment_is_split_before_the_kind_is_decided]
 
 ### Folder-qualified targets and resolution
 
@@ -400,11 +403,14 @@ Each entry names the function and the design section that decides it.
   no `]` or `|` in the target, is narrower than anything Obsidian documents
   (the help gives a "may not work" list, not a grammar). Unverifiable rather
   than contrary. design.md § Link Extraction.
-- `_extract_wikilinks`: unconditional `.md` append is **contrary** to the
-  help for non-markdown targets (`[[Figure 1.png]]`, `![[image.png]]`) — #1333
-  open. design.md § Link Extraction (Wikilink resolution).
-- `_extract_wikilinks`: no `![[` discrimination, so embeds are links. Not
-  modelled; the help defines embeds as a distinct syntax.
+- `_extract_wikilinks` / `_extract_inline_links` / `_extract_reference_links`:
+  a target with an allowlisted attachment extension is not a link at all
+  (#1333), where Obsidian resolves `[[Figure 1.png]]` to the file and shows
+  it in the graph. A deliberate carve-out — the link graph is notes-only
+  until attachments become graph nodes (#1359). design.md § Link Extraction
+  ("The link graph is notes-only").
+- `_extract_wikilinks`: no `![[` discrimination, so a note embed is a link.
+  Not modelled; the help defines embeds as a distinct syntax.
 - `_extract_wikilinks`: `./` and `../` opt-out is a project convention; the
   help shows no relative wikilink form. Unverifiable.
 - `FTSIndex.resolve_vault_wikilinks`: suffix match "ends with `/stem.md`" is
@@ -443,7 +449,8 @@ Each entry names the function and the design section that decides it.
   the #1350 vault (three `Note.md` files, three source folders) read through
   `metadataCache.resolvedLinks`.
 - Block-fragment links (`[[note#^id]]`): stored as a plain fragment, no test.
-- Embeds `![[...]]` and attachment targets: no test; #1333 open.
+- Embeds of notes (`![[Note]]`) as distinct from links: the scanner treats
+  both as links; whether Obsidian's graph does is unknown.
 - Same-note `[[#Heading]]` inside Obsidian's own graph: unknown whether it is
   a self-edge there.
 - A wikilink inside a code span, `%%` comment, callout title, math, or

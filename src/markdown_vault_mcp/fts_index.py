@@ -217,6 +217,14 @@ _META_SEARCHABLE_FIELDS_KEY = "searchable_fields"
 # searchable_fields (which only shares its value when SEARCHABLE_FIELDS is
 # left to default to INDEXED_FIELDS).
 _META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields"
+# Link-extraction provenance: the attachment allowlist in force at build
+# time (#1333). The link graph is notes-only, so a reference whose target
+# carries an allowlisted extension stores no link row — which makes the
+# allowlist an input to row derivation, like the keys above. Canonical form
+# from ``utils.canonical_attachment_extensions``: "" for the default set (an
+# index predating the key reads back as the default), "(none)" for an
+# explicitly empty list, else the sorted members comma-joined.
+_META_ATTACHMENT_EXTENSIONS_KEY = "attachment_extensions"
 
 # Derived-content provenance: the version of this server's own parse-to-row
 # pipeline (#1124). Unlike every key above it, this records no operator input
@@ -257,7 +265,14 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: store the same ``target_path`` row. Encoded links previously stored their
 #: spelling verbatim and never resolved; the bump rebuilds notes whose bytes
 #: never changed so those rows gain their targets.
-INDEX_SEMANTICS_VERSION = 5
+#:
+#: Version 6 (#1333): a reference whose target names an attachment (an
+#: allowlisted extension) is not a link, at any of the three extraction
+#: sites. ``![[pic.png]]`` previously stored a ``pic.png.md`` row and
+#: ``[img](pic.png)`` a ``pic.png`` row, both broken by construction since
+#: attachments are never indexed; the bump drops those rows from notes whose
+#: bytes never changed.
+INDEX_SEMANTICS_VERSION = 6
 
 
 class ChunkingMeta(NamedTuple):
@@ -277,6 +292,9 @@ class ChunkingMeta(NamedTuple):
         indexed_frontmatter_fields: Comma-joined canonical form of the
             frontmatter fields promoted to ``document_tags`` for structured
             filtering (default ``""`` — none configured).
+        attachment_extensions: Canonical form of the attachment allowlist
+            link extraction consulted (default ``""`` — the built-in set;
+            see :data:`_META_ATTACHMENT_EXTENSIONS_KEY`).
         semantics_version: :data:`INDEX_SEMANTICS_VERSION` in force when the
             build ran (``0`` for an index written before the key existed).
     """
@@ -286,6 +304,7 @@ class ChunkingMeta(NamedTuple):
     title_field: str = "title"
     searchable_fields: str = ""
     indexed_frontmatter_fields: str = ""
+    attachment_extensions: str = ""
     semantics_version: int = 0
 
 
@@ -1275,15 +1294,17 @@ class FTSIndex:
         title_field: str = "title",
         searchable_fields: str = "",
         indexed_frontmatter_fields: str = "",
+        attachment_extensions: str = "",
     ) -> None:
         """Record the embedding/indexing provenance used for this build.
 
         Persists the stable inputs that determine the FTS build's contents —
         the embedding model name, the explicit char-cap override, the title
-        field, the searchable frontmatter fields, and the indexed
-        (structured-filter) frontmatter fields — so a later warm-restart can
-        detect a genuine option change and reject the short-circuit,
-        triggering a cold rebuild (#649, #927).
+        field, the searchable frontmatter fields, the indexed
+        (structured-filter) frontmatter fields, and the attachment allowlist
+        link extraction consulted — so a later warm-restart can detect a
+        genuine option change and reject the short-circuit, triggering a
+        cold rebuild (#649, #927, #1333).
 
         :data:`INDEX_SEMANTICS_VERSION` is written alongside them and is
         deliberately not a parameter: it records this build's *code*
@@ -1306,6 +1327,9 @@ class FTSIndex:
             indexed_frontmatter_fields: Comma-joined canonical
                 structured-filter field list. The default (no fields) is
                 already the empty string.
+            attachment_extensions: Canonical attachment allowlist, as
+                rendered by ``utils.canonical_attachment_extensions`` (the
+                default set is the empty string).
         """
         conn = self._conn()
         model_value = "" if model is None else model
@@ -1322,6 +1346,7 @@ class FTSIndex:
                 (_META_TITLE_FIELD_KEY, title_value),
                 (_META_SEARCHABLE_FIELDS_KEY, searchable_fields),
                 (_META_INDEXED_FIELDS_KEY, indexed_frontmatter_fields),
+                (_META_ATTACHMENT_EXTENSIONS_KEY, attachment_extensions),
                 (_META_INDEX_SEMANTICS_KEY, str(INDEX_SEMANTICS_VERSION)),
             ):
                 conn.execute(
@@ -1337,8 +1362,8 @@ class FTSIndex:
             A :class:`ChunkingMeta`. An absent key or a stored empty string
             reads back as the default (``None`` for ``model`` and
             ``max_chunk_chars_override``, ``"title"`` for ``title_field``,
-            ``""`` for ``searchable_fields`` and
-            ``indexed_frontmatter_fields``);
+            ``""`` for ``searchable_fields``, ``indexed_frontmatter_fields``
+            and ``attachment_extensions``);
             ``max_chunk_chars_override`` reads back as ``int``, and
             ``semantics_version`` as ``int`` (``0`` when absent or
             unparseable — either way the index predates the pipeline
@@ -1347,13 +1372,14 @@ class FTSIndex:
         conn = self._conn()
         with conn:
             rows = conn.execute(
-                "SELECT key, value FROM meta WHERE key IN (?, ?, ?, ?, ?, ?)",
+                "SELECT key, value FROM meta WHERE key IN (?, ?, ?, ?, ?, ?, ?)",
                 (
                     _META_EMBED_MODEL_KEY,
                     _META_MAX_CHUNK_CHARS_OVERRIDE_KEY,
                     _META_TITLE_FIELD_KEY,
                     _META_SEARCHABLE_FIELDS_KEY,
                     _META_INDEXED_FIELDS_KEY,
+                    _META_ATTACHMENT_EXTENSIONS_KEY,
                     _META_INDEX_SEMANTICS_KEY,
                 ),
             ).fetchall()
@@ -1376,6 +1402,7 @@ class FTSIndex:
             title_field=stored.get(_META_TITLE_FIELD_KEY) or "title",
             searchable_fields=stored.get(_META_SEARCHABLE_FIELDS_KEY) or "",
             indexed_frontmatter_fields=stored.get(_META_INDEXED_FIELDS_KEY) or "",
+            attachment_extensions=stored.get(_META_ATTACHMENT_EXTENSIONS_KEY) or "",
             semantics_version=semantics_version,
         )
 

@@ -7,11 +7,13 @@ from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.utils.content_kind import (
     artifact_suffix,
+    canonical_attachment_extensions,
     effective_attachment_extensions,
     has_md_suffix,
     is_allowed_artifact,
     is_allowed_artifact_suffix,
     is_note,
+    names_attachment,
 )
 
 if TYPE_CHECKING:
@@ -209,6 +211,7 @@ __all__ = [
     "apply_link_replacement",
     "artifact_suffix",
     "build_position_map",
+    "canonical_attachment_extensions",
     "compute_new_raw_target",
     "decode_link_target",
     "effective_attachment_extensions",
@@ -219,6 +222,7 @@ __all__ = [
     "is_allowed_artifact_suffix",
     "is_note",
     "is_path_excluded",
+    "names_attachment",
     "normalize_text",
     "resolve_inside",
     "validate_history_dir",

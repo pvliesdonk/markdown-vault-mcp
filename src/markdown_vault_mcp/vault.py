@@ -47,6 +47,10 @@ from markdown_vault_mcp.scanner import (
     WholeDocumentChunker,
 )
 from markdown_vault_mcp.tracker import ChangeTracker
+from markdown_vault_mcp.utils.content_kind import (
+    canonical_attachment_extensions,
+    effective_attachment_extensions,
+)
 from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 if TYPE_CHECKING:
@@ -595,6 +599,7 @@ class Vault:
             embed_model_name=self._embed_model_name,
             max_chunk_chars_override=self._max_chunk_chars_override,
             title_field=self._title_field,
+            attachment_extensions=self._attachment_extensions,
             embed_text_builder=self._embed_builder,
             embedding_batch_size=self._embedding_batch_size,
         )
@@ -612,6 +617,9 @@ class Vault:
             title_field=self._title_field,
             searchable_fields=",".join(self._searchable_frontmatter_fields),
             indexed_frontmatter_fields=",".join(self._indexed_frontmatter_fields),
+            attachment_extensions=canonical_attachment_extensions(
+                effective_attachment_extensions(self._attachment_extensions)
+            ),
         )
         # 3. SearchManager (receives IndexManager callbacks via constructor)
         self._search_mgr = SearchManager(

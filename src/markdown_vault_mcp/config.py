@@ -316,7 +316,9 @@ class ProjectConfig:
                 "Comma-separated allowed attachment extensions (e.g. "
                 "pdf,png,jpg); case and a leading dot are ignored, so PDF "
                 "and .pdf name the same type. Use * to allow every "
-                "non-markdown file. Unset selects the built-in allowlist."
+                "non-markdown file. Unset selects the built-in allowlist. "
+                "A link whose target has a listed extension is not part of "
+                "the link graph; changing the list rebuilds the index once."
             ),
             "tags": ("content",),
             "wizard": {"group": "Content"},

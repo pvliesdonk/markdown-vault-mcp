@@ -183,7 +183,9 @@ Hybrid approach:
    warm-restart short-circuit and cold-rebuilds `document_tags` for the
    whole vault once on next startup — a config-only change never alters any
    file's content hash, so the hash-based incremental `reindex()` cannot
-   detect it on its own.
+   detect it on its own. The attachment allowlist is recorded on the same
+   footing (#1333): link extraction consults it, so it too decides stored
+   rows (see Link Extraction).
 2. **Raw frontmatter JSON blob** stored in the `documents` table for display
    and retrieval only (not queried via index).
 
@@ -2089,6 +2091,41 @@ note using Obsidian's same-note heading reference contributed to
 avoided the false positive too, but at the cost of a self-edge that suppresses
 orphan detection and inflates backlink counts, so skipping is what keeps all three
 spellings consistent.
+
+**The link graph is notes-only: an attachment reference is not a link (#1333).**
+A target whose extension is on the attachment allowlist
+(`MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS`) names a file the index never
+holds — attachments are served from disk, never indexed — so recording the
+reference produced a link that was broken by construction. The wikilink site
+was the visible case: `![[diagram.png]]` gained the unconditional `.md` append
+and stored `diagram.png.md`, a target that cannot exist, so every image and
+PDF embed sat permanently in `get_broken_links` and inflated
+`broken_link_count` (about 12 of one vault's 90 reported broken links). The
+markdown and reference sites stored `[img](diagram.png)` as a link to
+`diagram.png`, which no `documents` row could match either. All three sites
+now skip such a reference, embed or not, the way `![alt](src)` was always
+skipped; `utils.names_attachment()` is the one classification they share,
+asked of the target after the fragment is split off (`![[Doc.pdf#page=3]]`)
+and, for markdown destinations, after percent-decoding. It decides a *name's*
+kind, not a path's routing: a `.md` target is a note in every configuration,
+a target without a suffix is a note, and under the `*` wildcard the suffix
+must additionally look like an extension (`[A-Za-z0-9]{1,8}`), or the note
+title `Version 2.0 plan` would read as a `0 plan` attachment. Obsidian
+itself resolves `[[Figure 1.png]]` to the file and shows it in its graph
+([`reference/obsidian-markdown.md`](reference/obsidian-markdown.md),
+"Extension, non-markdown targets, embeds"); making attachments graph nodes
+here — resolution, `exists`, backlinks, rename-rewrite — is the v5 feature
+#1359, and `rename` of an attachment says that `update_links` does not
+apply rather than reporting a silent `0` (#1338).
+
+Two consequences follow. The allowlist is now an input to what a note's
+stored rows are, so it is recorded as build provenance alongside
+`title_field` and the curated field lists and a change to it rejects the
+warm-restart short-circuit (the default set and an explicitly empty list are
+different configurations — with nothing allowlisted, `[[pic.png]]` is a note
+reference storing `pic.png.md` — and render differently). And
+`INDEX_SEMANTICS_VERSION` was bumped (5 → 6) so a deployed vault drops its
+`pic.png.md` rows once on upgrade.
 
 **Markdown footnotes are not links.** `[^label]` and `[^label]: body` differ
 from reference-style link syntax by one character, and both reference regexes
