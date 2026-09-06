@@ -91,8 +91,7 @@ class IndexWriteCoordinator:
         # the stored rows of notes whose bytes never moved. Hash-based
         # reindexing would never re-parse those notes, so without this key
         # the warm restart kept serving the previous interpretation forever.
-        # Canonical form ("" for the default set, "(none)" for an explicitly
-        # empty list).
+        # Canonical form ("" for the default set, else a sorted JSON list).
         self._attachment_extensions = attachment_extensions
         self._readiness = ReadinessState()
         # Deprecated background-build thread bookkeeping (guarded by the

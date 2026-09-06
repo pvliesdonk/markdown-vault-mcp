@@ -27,7 +27,11 @@ prose rather than in the type.
   :func:`has_md_suffix`.  ``DocumentManager.read``'s note-size cap uses a third
   spelling (``path.lower().endswith(".md")``) and stays inline, because that
   method validates no extension at all — a file named ``NOTE.MD`` really does
-  reach it and really does get the cap.
+  reach it and really does get the cap.  :func:`names_attachment` is a
+  fourth site and is case-*insensitive* on both halves (``[[NOTE.MD]]`` is a
+  note, ``[[PIC.PNG]]`` an attachment), so under the ``*`` wildcard a
+  ``[[NOTE.MD]]`` reference is a note link to a file routing never indexes:
+  a broken link, as it was before #1333, rather than a skipped one.
 * **Resolution.**  Some callers take the extension from the raw caller string
   (before the traversal guard), others from the ``.resolve()``d path (after).
   Symlinks make those differ: ``link.pdf -> target.bin`` is ``pdf`` by name and
@@ -55,6 +59,7 @@ it classifies a name in a document, not a path on disk.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -189,11 +194,6 @@ def effective_attachment_extensions(
 #: type is digits alone.
 _RE_EXTENSION_SHAPE = re.compile(r"(?=[0-9]*[A-Za-z])[A-Za-z0-9]{1,8}")
 
-#: Provenance rendering of an *explicitly empty* attachment allowlist,
-#: distinct from the empty string the default set renders as (see
-#: :func:`canonical_attachment_extensions`).
-_NO_EXTENSIONS = "(none)"
-
 
 def canonical_attachment_extensions(extensions: frozenset[str]) -> str:
     """Return the allowlist's canonical string form, for build provenance.
@@ -209,29 +209,28 @@ def canonical_attachment_extensions(extensions: frozenset[str]) -> str:
     equal to a default-configured server rather than force a rebuild on
     every such deployment.
 
-    An *explicitly empty* allowlist renders as :data:`_NO_EXTENSIONS`, not as
-    ``""``. The two are different configurations that derive different rows —
-    with nothing allowlisted, ``[[pic.png]]`` is a note reference storing
-    ``pic.png.md`` — so collapsing them onto one value would let a switch
-    between them keep the warm index and serve the previous interpretation
-    forever. Normalisation does not reject the sentinel as a member, so an
-    operator who configures the literal extension ``(none)`` renders the
-    same string as an empty list; the cost is one missed rebuild between
-    those two configurations, neither of which names a real file type.
+    Every other allowlist renders as a sorted JSON list, so an *explicitly
+    empty* one renders as ``[]``, not as ``""``. The two are different
+    configurations that derive different rows — with nothing allowlisted,
+    ``[[pic.png]]`` is a note reference storing ``pic.png.md`` — so
+    collapsing them onto one value would let a switch between them keep the
+    warm index and serve the previous interpretation forever. JSON rather
+    than a delimiter-joined string because normalisation restricts a member
+    very little (whitespace and leading dots only): a comma-joined form
+    rendered ``["a,b"]`` and ``["a", "b"]`` identically, and a bare sentinel
+    for the empty list was itself a configurable member.
 
     Args:
         extensions: The effective allowlist, as returned by
             :func:`effective_attachment_extensions`.
 
     Returns:
-        ``""`` for the default set, :data:`_NO_EXTENSIONS` for an explicitly
-        empty one, else the sorted members comma-joined.
+        ``""`` for the default set, else the sorted members as a JSON list
+        (``[]`` for an explicitly empty allowlist).
     """
     if extensions == DEFAULT_ATTACHMENT_EXTENSIONS:
         return ""
-    if not extensions:
-        return _NO_EXTENSIONS
-    return ",".join(sorted(extensions))
+    return json.dumps(sorted(extensions))
 
 
 def names_attachment(target: str, extensions: frozenset[str]) -> bool:

@@ -2111,7 +2111,8 @@ PDF embed sat permanently in `get_broken_links` and inflated
 markdown and reference sites stored `[img](diagram.png)` as a link to
 `diagram.png`, which no `documents` row could match either. All three sites
 now skip such a reference, embed or not, the way `![alt](src)` was always
-skipped; `utils.names_attachment()` is the one classification they share,
+skipped — so a note whose only references are attachments has no link rows
+and is an orphan to `get_orphan_notes` / `orphan_count`; `utils.names_attachment()` is the one classification they share,
 asked of the target after the fragment is split off (`![[Doc.pdf#page=3]]`)
 and, for markdown destinations, after percent-decoding. It decides a *name's*
 kind, not a path's routing: a `.md` target is a note in every configuration,
@@ -2132,7 +2133,10 @@ stored rows are, so it is recorded as build provenance alongside
 `title_field` and the curated field lists and a change to it rejects the
 warm-restart short-circuit (the default set and an explicitly empty list are
 different configurations — with nothing allowlisted, `[[pic.png]]` is a note
-reference storing `pic.png.md` — and render differently). And
+reference storing `pic.png.md` — so every non-default allowlist renders as a
+sorted JSON list, `[]` included; a delimiter-joined form with a bare sentinel
+for the empty list would have let `["a,b"]` collide with `["a", "b"]` and the
+sentinel itself be configured). And
 `INDEX_SEMANTICS_VERSION` was bumped (5 → 6) so a deployed vault drops its
 `pic.png.md` rows once on upgrade.
 
@@ -2176,7 +2180,9 @@ correctness one, and what let it go unnoticed.
 vault-wide resolution rules rather than relative path resolution:
 
 - **Bare wikilinks** (`[[Note]]`, `[[folder/Note]]`): the scanner stores the
-  path as-is after appending `.md` (such as `Note.md`, `folder/Note.md`). After
+  path as-is after appending `.md` (such as `Note.md`, `folder/Note.md`) —
+  for a note target; a target naming an attachment stores no row at all
+  (see "The link graph is notes-only" above). After
   all documents are indexed, `FTSIndex.resolve_vault_wikilinks()` performs a
   bulk SQL UPDATE that resolves each unmatched wikilink target vault-wide:
   it searches for any document whose path equals the target or ends with

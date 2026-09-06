@@ -222,8 +222,8 @@ _META_INDEXED_FIELDS_KEY = "indexed_frontmatter_fields"
 # carries an allowlisted extension stores no link row — which makes the
 # allowlist an input to row derivation, like the keys above. Canonical form
 # from ``utils.canonical_attachment_extensions``: "" for the default set (an
-# index predating the key reads back as the default), "(none)" for an
-# explicitly empty list, else the sorted members comma-joined.
+# index predating the key reads back as the default), else the sorted
+# members as a JSON list ("[]" for an explicitly empty allowlist).
 _META_ATTACHMENT_EXTENSIONS_KEY = "attachment_extensions"
 
 # Derived-content provenance: the version of this server's own parse-to-row

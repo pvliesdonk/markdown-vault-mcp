@@ -96,11 +96,23 @@ class TestCanonicalAttachmentExtensions:
             DEFAULT_ATTACHMENT_EXTENSIONS
         )
 
-    def test_an_explicit_allowlist_renders_sorted_and_comma_joined(self) -> None:
-        assert canonical_attachment_extensions(frozenset({"png", "csv"})) == "csv,png"
+    def test_an_explicit_allowlist_renders_as_a_sorted_json_list(self) -> None:
+        assert canonical_attachment_extensions(frozenset({"png", "csv"})) == (
+            '["csv", "png"]'
+        )
 
-    def test_the_wildcard_renders_as_itself(self) -> None:
-        assert canonical_attachment_extensions(frozenset({"*"})) == "*"
+    def test_the_wildcard_renders_as_a_list_too(self) -> None:
+        assert canonical_attachment_extensions(frozenset({"*"})) == '["*"]'
+
+    def test_a_member_containing_the_delimiter_cannot_collide(self) -> None:
+        """``["a,b"]`` and ``["a", "b"]`` derive different rows; they must differ."""
+        assert canonical_attachment_extensions(
+            frozenset({"a,b"})
+        ) != canonical_attachment_extensions(frozenset({"a", "b"}))
+
+    def test_a_member_spelled_like_the_empty_rendering_cannot_collide(self) -> None:
+        empty = canonical_attachment_extensions(frozenset())
+        assert canonical_attachment_extensions(frozenset({empty})) != empty
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +294,19 @@ class TestBuiltVault:
     def test_the_stats_count_agrees_with_the_list(self, tmp_path: Path) -> None:
         col = _build(tmp_path, ["png", "pdf"])
         assert col.reader.stats().broken_link_count == 0
+
+    def test_a_note_linking_only_attachments_is_an_orphan(self, tmp_path: Path) -> None:
+        """No link rows in either direction is what orphanhood means."""
+        src = tmp_path / "vault"
+        (src / "Images").mkdir(parents=True)
+        (src / "Images" / "pic.png").write_bytes(b"\x89PNG")
+        (src / "gallery.md").write_text(
+            "# G\n\n![[Images/pic.png]]\n", encoding="utf-8"
+        )
+        col = Vault(source_dir=src, attachment_extensions=["png"])
+        col.index.build_index()
+        assert [n.path for n in col.graph.get_orphan_notes()] == ["gallery.md"]
+        assert col.reader.stats().orphan_count == 1
 
     def test_with_nothing_allowlisted_the_references_are_note_links(
         self, tmp_path: Path

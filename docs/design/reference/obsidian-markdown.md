@@ -229,7 +229,7 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
 - `_RE_WIKILINK` has no `!` lookbehind, so a note embed is indexed as a
   link; an attachment embed is skipped by its target's extension, not by the
   `!` (#1333). [source: help-embeds]
-  [pins: tests/test_links_attachment_references.py::TestWikilinkSite::test_a_note_embed_is_still_a_link, tests/test_links_attachment_references.py::TestWikilinkSite::test_the_fragment_is_split_before_the_kind_is_decided]
+  [pins: tests/test_links_attachment_references.py::TestWikilinkSite::test_a_note_embed_is_still_a_link, tests/test_links_attachment_references.py::TestWikilinkSite::test_an_embed_of_an_attachment_is_not_a_link, tests/test_links_attachment_references.py::TestWikilinkSite::test_a_plain_wikilink_to_an_attachment_is_not_a_link]
 
 ### Folder-qualified targets and resolution
 
@@ -383,7 +383,7 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   and whether a bare `Note.md` markdown link is looked up vault-wide or only
   relative to the source, is [unverified]. Fixture: `[x](Sub/My%20Note.md)`
   from root and from `Sub/`, then `resolvedLinks`. The scanner resolves
-  markdown links source-relative without decoding.
+  markdown links source-relative after percent-decoding (#1332).
 
 ### File names
 

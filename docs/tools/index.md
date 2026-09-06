@@ -825,7 +825,7 @@ Find all links from a document, with existence check.
 
 **Returns:** List of link targets with an `exists` field indicating whether the target document is in the vault. Each entry has `target_path`, `link_text`, `link_type`, `fragment`, `raw_target`, and `exists` fields. Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
-The link graph covers notes only. A reference whose target carries a configured attachment extension (`![[diagram.png]]`, `[[Document.pdf#page=3]]`, `[paper](papers/x.pdf)`) is not a link and does not appear here, in `get_backlinks`, or in `get_broken_links`; image links `![alt](src)` never did. Which extensions count is `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` (see [Configuration](../configuration.md)).
+The link graph covers notes only. A reference whose target carries a configured attachment extension (`![[diagram.png]]`, `[[Document.pdf#page=3]]`, `[paper](papers/x.pdf)`) is not a link and does not appear here, in `get_backlinks`, or in `get_broken_links`; image links `![alt](src)` never did. A note whose only links are such references counts as an orphan in `get_orphan_notes` and `stats.orphan_count`. Which extensions count is `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` (see [Configuration](../configuration.md)).
 
 ### `get_broken_links`
 
@@ -839,7 +839,7 @@ Find all links across the vault pointing to non-existent documents.
 
 **Returns:** List of entries with `source_path`, `source_title`, `target_path`, `link_text`, `link_type`, `fragment`, and `raw_target` fields.
 
-A missing attachment is not reported: references to attachments are not links (see [`get_outlinks`](#get_outlinks)). What is listed is a target no indexed note matches, whether a note reference or a destination whose extension is not on the attachment allowlist. `stats.broken_link_count` counts the same population.
+A missing attachment is not reported: references to attachments are not links (see [`get_outlinks`](#get_outlinks)). What is listed is a target no indexed note matches, whether a note reference or a destination whose extension is not on the attachment allowlist. A destination written in a CommonMark spelling the scanner does not yet parse, such as `[paper](<my report.pdf>)` or `[paper](report.pdf "PDF")`, is classified as written and is still listed (#1353). `stats.broken_link_count` counts the same population.
 
 ### `get_similar`
 

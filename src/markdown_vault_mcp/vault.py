@@ -281,7 +281,10 @@ class Vault:
         attachment_extensions: Allowlist of extensions for binary
             attachments, in any case and with or without leading dots
             (``"pdf"``, ``"PDF"`` and ``".pdf"`` are the same type).
-            ``["*"]`` accepts all extensions.
+            ``["*"]`` accepts all extensions. Also decides which link
+            targets are attachment references rather than note links
+            (#1333), so it is recorded as index provenance and a change
+            rebuilds the index once.
         max_attachment_size_mb: Attachment context-size cap in megabytes,
             enforced by the ``read`` / ``write`` / ``fetch`` MCP tools (not by
             the vault library). ``0`` disables the limit (default ``1.0``).
