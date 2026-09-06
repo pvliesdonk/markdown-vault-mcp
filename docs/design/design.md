@@ -2052,7 +2052,14 @@ made:
   "Inline links": `[a](x\*.md)` names `x*.md`, `[a](x&#46;md)` names `x.md`)
   *before* the destination is a URL; percent-decoding is the URL layer after
   that. The scanner does not yet decode escapes or entities (#1353); when it
-  does, that step runs before `decode_link_target`, never after.
+  does, that step runs before `decode_link_target`, never after — and so
+  before the attachment classification below, which is asked of the decoded
+  destination. Until then a destination in one of those spellings is
+  classified as written, so `[paper](<my report.pdf>)` and
+  `[paper](report.pdf "PDF")` are still stored as (broken) links, exactly as
+  on the release before #1333; the reference-definition form
+  `[r]: report.pdf "PDF"` is excluded, because definitions already strip
+  the title.
 
 **Wikilinks are not decoded.** Obsidian writes wikilink targets literally, so
 `%20` in one is part of the name; decoding would break a note genuinely
