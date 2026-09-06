@@ -2057,6 +2057,16 @@ them was reachable on 4.1 and earlier:</p>
 <code>read(revision=)</code> all identify a note the same way, with the same rename
 following, the same threshold, and the same lineage boundary at the note's
 creation.</p>
+<p>One refusal message changed after the release candidate. <code>read(path,
+revision=)</code> correctly refuses when git records the note as a copy rather
+than a continuation, but the refusal then named the copy source as the thing
+to read
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1336">#1336</a>).
+That source is git's similarity match (in the case that surfaced this, an
+unrelated note that merely shared frontmatter scaffolding), and the
+documented next step after a revision read is to write the content back. The
+refusal still names what git found, and now points at <code>get_history</code> the way
+the neighbouring refusal already did.</p>
 <h2 id="one-commit-per-tool-call">One commit per tool call<a class="headerlink" href="#one-commit-per-tool-call" title="Permanent link">&para;</a></h2>
 <p>This one arrived from the field.
 <a href="https://github.com/mikebronner">@mikebronner</a> ran a single
@@ -2099,6 +2109,15 @@ claims are now resolved when the tool call arrives and carried to the
 background commit, so the commit author is the person who made the write.
 It also now agrees with the OKF provenance record for the same write, which
 was already stamped correctly.</p>
+<p>The release candidate found the other way the same claims fall back
+silently: the identity provider simply does not put them in the access
+token. That outcome looked exactly like a deployment that had never
+configured attribution, and the one nearby startup warning is suppressed
+precisely when a claim is configured
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1331">#1331</a>).
+The first authenticated write now reports the configured key and whether
+it was absent or empty, once per field per process; the commit still falls
+back to the static identity.</p>
 <h2 id="a-write-that-cannot-leave-the-host-says-so">A write that cannot leave the host says so<a class="headerlink" href="#a-write-that-cannot-leave-the-host-says-so" title="Permanent link">&para;</a></h2>
 <p>The sharpest report of the cycle came from a production deployment.
 <a href="https://github.com/FoundationOperations">@FoundationOperations</a> ran the
@@ -2241,6 +2260,16 @@ exempts from typing
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1267">#1267</a>). The
 histograms now cover the same note population <code>okf_validate</code> audits, and
 reserved files are reported separately as <code>reserved_count</code>.</p>
+<p><strong>A link with any URI scheme is external.</strong> The external-link filter was an
+allowlist of four prefixes, so a <code>file:</code>, <code>ftp:</code>, <code>obsidian:</code> or <code>zotero:</code>
+destination was resolved against the source note's folder and reported as a
+broken vault link, and a wikilink such as <code>[[https://example.com]]</code> was
+stored with <code>.md</code> appended
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1335">#1335</a>).
+The filter now recognises a scheme by its shape, at every extraction site.
+A single letter before the colon is still a Windows drive, not a scheme.
+Existing vaults rebuild their index once on first start after upgrade, so
+the stale rows go away.</p>
 <h2 id="configuration-and-its-documentation">Configuration and its documentation<a class="headerlink" href="#configuration-and-its-documentation" title="Permanent link">&para;</a></h2>
 <p><strong>The OIDC pages stopped steering readers into the wrong mode.</strong> The 4.1
 configuration reference documented only <code>oidc-proxy</code> and marked its client
