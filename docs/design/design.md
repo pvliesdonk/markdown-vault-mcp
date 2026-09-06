@@ -1367,8 +1367,9 @@ ones).
 
 The vault can declare itself an [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatform/knowledge-catalog)
 bundle via an `okf_version` field in the root `index.md` frontmatter. The
-full design (trust model, later phases) lives in `docs/design/okf.md`;
-what is implemented today:
+full design (trust model, later phases) lives in `docs/design/okf.md`; what
+the spec itself says, dated and sourced, in
+[`reference/okf-v0.2.md`](reference/okf-v0.2.md). What is implemented today:
 
 - **Detection** (`okf.py::OkfDetector`): a pure disk-I/O probe in the
   `ConventionsResolver` mold — no index coupling, works pre-clone, and a

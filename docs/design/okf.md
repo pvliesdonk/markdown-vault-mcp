@@ -13,6 +13,11 @@ proposals — tracking issue
 ([`GoogleCloudPlatform/knowledge-catalog` → `okf/SPEC.md`](https://github.com/GoogleCloudPlatform/knowledge-catalog),
 Apache 2.0; announced 2026-06-12 on the
 [Google Cloud blog](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing)).
+What the spec actually says, with sources, dates and the in-place amendment
+of 2026-08-21 (every timestamp an ISO 8601 datetime with an offset;
+`stale_after` an instant), is the reference page
+[`reference/okf-v0.2.md`](reference/okf-v0.2.md); the departures this
+document decides are listed there.
 
 This document is the authoritative design for OKF support. As phases land,
 the relevant subsections graduate into `design.md` alongside the features
