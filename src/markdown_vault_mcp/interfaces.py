@@ -214,6 +214,8 @@ class KeywordIndex(Protocol):
             title_field: The frontmatter field used as a title.
             searchable_fields: Serialized searchable frontmatter fields.
             indexed_frontmatter_fields: Serialized indexed frontmatter fields.
+            attachment_extensions: Serialized attachment allowlist consulted
+                by link extraction (``""`` for the default set).
         """
         ...
 

@@ -66,6 +66,13 @@ class TestNamesAttachment:
         """``Version 2.0 plan`` is a note title, not a ``0 plan`` file type."""
         assert names_attachment("Version 2.0 plan", frozenset({"*"})) is False
 
+    def test_the_wildcard_rejects_a_purely_numeric_suffix(self) -> None:
+        """``Python 3.12`` and ``v1.2`` are note titles; no file type is digits only."""
+        assert names_attachment("Python 3.12", frozenset({"*"})) is False
+        assert names_attachment("v1.2", frozenset({"*"})) is False
+        assert names_attachment("clip.3gp", frozenset({"*"})) is True
+        assert names_attachment("archive.7z", frozenset({"*"})) is True
+
     def test_an_empty_allowlist_names_nothing(self) -> None:
         assert names_attachment("diagram.png", frozenset()) is False
 

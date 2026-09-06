@@ -183,8 +183,11 @@ def effective_attachment_extensions(
 
 
 #: An extension-shaped suffix: what a file type looks like, used only under
-#: the ``*`` attachment wildcard (see :func:`names_attachment`).
-_RE_EXTENSION_SHAPE = re.compile(r"[A-Za-z0-9]{1,8}")
+#: the ``*`` attachment wildcard (see :func:`names_attachment`). One to eight
+#: alphanumerics with at least one letter: ``png``, ``3gp`` and ``7z`` pass;
+#: the ``12`` in the note title ``Python 3.12`` does not, because no file
+#: type is digits alone.
+_RE_EXTENSION_SHAPE = re.compile(r"(?=[0-9]*[A-Za-z])[A-Za-z0-9]{1,8}")
 
 #: Provenance rendering of an *explicitly empty* attachment allowlist,
 #: distinct from the empty string the default set renders as (see
@@ -211,8 +214,10 @@ def canonical_attachment_extensions(extensions: frozenset[str]) -> str:
     with nothing allowlisted, ``[[pic.png]]`` is a note reference storing
     ``pic.png.md`` — so collapsing them onto one value would let a switch
     between them keep the warm index and serve the previous interpretation
-    forever. The sentinel cannot collide with a real allowlist: an extension
-    is configured without its dot, so no member contains parentheses.
+    forever. Normalisation does not reject the sentinel as a member, so an
+    operator who configures the literal extension ``(none)`` renders the
+    same string as an empty list; the cost is one missed rebuild between
+    those two configurations, neither of which names a real file type.
 
     Args:
         extensions: The effective allowlist, as returned by
@@ -242,8 +247,10 @@ def names_attachment(target: str, extensions: frozenset[str]) -> bool:
     that one answers what ``read`` serves, where under the ``*`` wildcard an
     extensionless ``Makefile`` really is an attachment. A *name* in a
     document under the same wildcard must not read the note title
-    ``Version 2.0 plan`` as a ``0 plan`` attachment, so here the wildcard
-    additionally requires the suffix to look like an extension.
+    ``Version 2.0 plan`` as a ``0 plan`` attachment, nor ``Python 3.12`` as
+    a ``12`` one, so here the wildcard additionally requires the suffix to
+    look like an extension (:data:`_RE_EXTENSION_SHAPE`). The known cost is
+    a title such as ``Release 2.0a``, whose ``0a`` does look like one.
 
     Args:
         target: Link target with any fragment already split off, as written
@@ -266,6 +273,7 @@ def names_attachment(target: str, extensions: frozenset[str]) -> bool:
     if "*" in extensions:
         # The wildcard means "every non-.md file", which says nothing about
         # which *suffixes* are file types; taken literally it reads the note
-        # title ``Version 2.0 plan`` as a ``0 plan`` attachment.
+        # title ``Version 2.0 plan`` as a ``0 plan`` attachment and
+        # ``Python 3.12`` as a ``12`` one.
         return _RE_EXTENSION_SHAPE.fullmatch(suffix) is not None
     return suffix in extensions

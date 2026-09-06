@@ -2109,14 +2109,16 @@ asked of the target after the fragment is split off (`![[Doc.pdf#page=3]]`)
 and, for markdown destinations, after percent-decoding. It decides a *name's*
 kind, not a path's routing: a `.md` target is a note in every configuration,
 a target without a suffix is a note, and under the `*` wildcard the suffix
-must additionally look like an extension (`[A-Za-z0-9]{1,8}`), or the note
-title `Version 2.0 plan` would read as a `0 plan` attachment. Obsidian
+must additionally look like an extension (one to eight alphanumerics with
+at least one letter), or the note titles `Version 2.0 plan` and
+`Python 3.12` would read as `0 plan` and `12` attachments. The known cost
+is a title such as `Release 2.0a`, whose `0a` does look like one. Obsidian
 itself resolves `[[Figure 1.png]]` to the file and shows it in its graph
 ([`reference/obsidian-markdown.md`](reference/obsidian-markdown.md),
 "Extension, non-markdown targets, embeds"); making attachments graph nodes
 here — resolution, `exists`, backlinks, rename-rewrite — is the v5 feature
-#1359, and `rename` of an attachment says that `update_links` does not
-apply rather than reporting a silent `0` (#1338).
+#1359. Until then `rename` of an attachment reports `updated_links: 0`
+with no signal; making it say that `update_links` does not apply is #1338.
 
 Two consequences follow. The allowlist is now an input to what a note's
 stored rows are, so it is recorded as build provenance alongside
