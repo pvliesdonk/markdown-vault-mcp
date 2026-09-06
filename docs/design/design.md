@@ -485,6 +485,11 @@ The existing `reindex` MCP tool and startup reindex path handle this automatical
 
 ### Chunking Strategy
 
+What CommonMark says a line, a blank line and a paragraph are, and where the
+chunker's `splitlines()`-based notion is wider, is recorded in
+[`reference/commonmark-gfm.md`](reference/commonmark-gfm.md) (§ "Where this
+project departs", `HeadingChunker._budget_split`).
+
 A `ChunkStrategy` protocol enables extensible chunking:
 
 ```python
