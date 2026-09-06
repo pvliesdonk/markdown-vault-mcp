@@ -242,4 +242,5 @@ If a conflict marker appears in a copier-update bot PR, the conflict itself ofte
 - Library is sync; MCP layer uses `asyncio.to_thread()`
 - Indexing is hash-based, so an unchanged file is never re-parsed: any change to how a note's stored rows are derived from its bytes (link extraction, chunking, tag/alias/heading derivation) must bump `INDEX_SEMANTICS_VERSION` in `fts_index.py` in the same commit, or deployed vaults keep serving the rows the old code produced (#1124)
 - Full decision log in `docs/design/design.md` appendix
+- How the outside world behaves (Obsidian's dialect, CommonMark/GFM, git) is recorded in dated, sourced references under `docs/design/reference/`; read the relevant page before touching `scanner.py`, `fts_index.py` link resolution, or `git/`, and re-research rather than trust a page past its `review_by`
 <!-- DOMAIN-END -->

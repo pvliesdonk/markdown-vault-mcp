@@ -1990,6 +1990,12 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
 
 ### Link Extraction
 
+What the outside world does here (CommonMark's link and paragraph rules,
+Obsidian's wikilink resolution) is recorded with sources and dates in
+[`reference/commonmark-gfm.md`](reference/commonmark-gfm.md) and
+[`reference/obsidian-markdown.md`](reference/obsidian-markdown.md); this
+section records what this project does with those rules and why.
+
 Links are extracted from markdown content during `parse_note()` and stored in the
 `links` table. Three formats are supported:
 
