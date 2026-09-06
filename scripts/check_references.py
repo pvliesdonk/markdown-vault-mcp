@@ -9,12 +9,13 @@ describes how one is written; the directory is an Open Knowledge Format
 can be checked mechanically:
 
 * the YAML frontmatter carries every key in ``REQUIRED_KEYS``; ``type`` is
-  ``Reference``; ``generated`` is ``{by, at}`` with an actor and an ISO date;
-  ``stale_after`` is an ISO date; ``status``, when present, is one of OKF's
-  ``draft`` / ``stable`` / ``deprecated``; ``verified`` entries are ``{by, at}``;
-  a ``superseded_by`` names a file under the reference root;
+  ``Reference``; ``generated`` is ``{by, at}`` with an actor and an ISO date
+  or datetime; ``stale_after`` is a calendar date (``YYYY-MM-DD``); ``status``,
+  when present, is one of OKF's ``draft`` / ``stable`` / ``deprecated``;
+  ``verified`` is a list of ``{by, at}`` entries; a ``superseded_by`` names a
+  file under the reference root;
 * ``sources`` is a non-empty list, each entry with an ``id``, a ``resource``
-  and an ``accessed`` date;
+  and an ``accessed`` calendar date;
 * every ``[source: id]`` marker in the body names a declared source, and every
   ``[pins: tests/x.py::test_y]`` marker names a pytest node that exists;
 * the bundle root carries an ``index.md`` declaring ``okf_version``, and a
