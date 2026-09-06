@@ -2152,6 +2152,66 @@ class TestAliasResolution:
 
 
 # ---------------------------------------------------------------------------
+# extract_links: no link crosses a blank line (#1334)
+# ---------------------------------------------------------------------------
+
+
+class TestLinkSpanBounding:
+    def test_stray_bracket_does_not_pair_across_a_blank_line(self) -> None:
+        """An unmatched ``[`` cannot pair with a ``](`` in a later paragraph."""
+        content = "See item [3 below.\n\nAnother paragraph.\n\nAn image: [x](pic.md)"
+        links = extract_links(content, "index.md")
+        assert [lnk.link_text for lnk in links] == ["x"]
+        assert links[0].target_path == "pic.md"
+
+    def test_the_issue_shape_indexes_no_prose(self) -> None:
+        """The reported case: a stray ``[`` followed pages later by an image."""
+        content = (
+            "See item [3 below.\n\nSome other paragraph.\n\n"
+            "An image: ![Image](images/pic.png)"
+        )
+        assert extract_links(content, "index.md") == []
+
+    def test_link_text_may_span_a_soft_break(self) -> None:
+        """CommonMark allows a single newline inside link text."""
+        links = extract_links("[wrapped\ntext](note.md)", "index.md")
+        assert len(links) == 1
+        assert links[0].link_text == "wrapped\ntext"
+
+    def test_destination_never_contains_a_newline(self) -> None:
+        """A ``](`` whose closing paren is lines away is not a link."""
+        content = "[text](.\n2. The programme has objectives:\n3. (a)"
+        assert extract_links(content, "index.md") == []
+
+    def test_a_blank_line_with_trailing_whitespace_still_separates(self) -> None:
+        """Editors leave spaces on blank lines; the boundary must survive them."""
+        content = "A stray [bracket.\n   \nA real [x](pic.md)"
+        assert [lnk.link_text for lnk in extract_links(content, "index.md")] == ["x"]
+
+    def test_reference_usage_does_not_span_a_blank_line(self) -> None:
+        """``[text][ref]`` is bounded the same way inline link text is."""
+        content = "A stray [bracket.\n\nProse.\n\n[real][ref]\n\n[ref]: b.md"
+        links = extract_links(content, "index.md")
+        assert [lnk.link_text for lnk in links] == ["real"]
+
+    def test_reference_definition_far_from_its_usage_still_resolves(self) -> None:
+        """Definitions are document-wide; only usages are paragraph-local."""
+        content = "Intro [one][a] and [two][b].\n\nBody.\n\n[a]: a.md\n[b]: b.md"
+        links = extract_links(content, "index.md")
+        assert [lnk.target_path for lnk in links] == ["a.md", "b.md"]
+
+    def test_wikilink_target_never_spans_a_blank_line(self) -> None:
+        """``[[`` in one paragraph and ``]]`` in the next is not a wikilink."""
+        assert extract_links("[[stray\n\nprose]]", "index.md") == []
+
+    def test_result_order_stays_grouped_by_kind(self) -> None:
+        """Inline, then reference, then wikilinks, whatever their position."""
+        content = "[[w]] then [r][ref] then [i](i.md)\n\n[ref]: r.md"
+        kinds = [lnk.link_type for lnk in extract_links(content, "index.md")]
+        assert kinds == ["markdown", "reference", "wikilink"]
+
+
+# ---------------------------------------------------------------------------
 # extract_links: any URI scheme is external (#1335)
 # ---------------------------------------------------------------------------
 

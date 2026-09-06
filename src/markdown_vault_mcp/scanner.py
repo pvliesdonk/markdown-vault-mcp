@@ -791,8 +791,15 @@ _RE_URI_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]+:")
 _RE_FENCED_CODE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
 # Inline code: matches single backtick spans (non-greedy, no newlines inside).
 _RE_INLINE_CODE = re.compile(r"`[^`\n]+`")
-# Inline markdown link: [text](target)
-_RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)]+)\)")
+# A blank line: the paragraph boundary CommonMark says no link may cross.
+# Link extraction runs one paragraph at a time (#1334), so the negated
+# classes below are bounded by the split rather than by the pattern; a
+# bounded alternation inside the pattern measured 7-8x slower on a long run
+# of unmatched brackets, and matching per paragraph measured ~90x faster than
+# whole-document matching on ordinary multi-paragraph markdown.
+_RE_PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
+# Inline markdown link: [text](target). The destination never spans a line.
+_RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)\n]+)\)")
 # Reference-style link usage: [text][ref] or [text][]
 _RE_REF_USAGE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
 # Reference definition: [ref]: target  (at start of line, optional leading whitespace)
@@ -905,7 +912,9 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
     * **Wikilinks**: ``[[path]]`` or ``[[path|alias]]``
 
     Links inside fenced code blocks and inline code spans are ignored.
-    External destinations are skipped: any URI scheme (``https:``,
+    Matching runs one paragraph at a time, so no link crosses a blank line
+    (#1334); reference *definitions* are the exception and are collected
+    document-wide. External destinations are skipped: any URI scheme (``https:``,
     ``mailto:``, ``file:``, ``obsidian:``, and so on, by shape rather than
     by allowlist, #1335) and protocol-relative ``//host`` targets. So are
     same-document anchors in every spelling — ``[text](#heading)``,
@@ -920,11 +929,16 @@ def extract_links(content: str, source_path: str) -> list[LinkInfo]:
         List of :class:`~markdown_vault_mcp.types.LinkInfo` objects.
     """
     clean = _strip_code_spans(content)
-    return [
-        *_extract_inline_links(clean, source_path),
-        *_extract_reference_links(clean, source_path),
-        *_extract_wikilinks(clean, source_path),
-    ]
+    ref_defs = _collect_reference_definitions(clean)
+    inline: list[LinkInfo] = []
+    reference: list[LinkInfo] = []
+    wiki: list[LinkInfo] = []
+    for paragraph in _RE_PARAGRAPH_BREAK.split(clean):
+        inline.extend(_extract_inline_links(paragraph, source_path))
+        reference.extend(_extract_reference_links(paragraph, source_path, ref_defs))
+        wiki.extend(_extract_wikilinks(paragraph, source_path))
+    # Grouped by kind, as before the split: callers index into this list.
+    return [*inline, *reference, *wiki]
 
 
 def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
@@ -959,33 +973,53 @@ def _extract_inline_links(clean: str, source_path: str) -> list[LinkInfo]:
     return links
 
 
-def _extract_reference_links(clean: str, source_path: str) -> list[LinkInfo]:
-    """Extract reference-style ``[text][ref]`` links from code-stripped content.
+def _collect_reference_definitions(clean: str) -> dict[str, str]:
+    """Collect ``[ref]: path.md`` definitions from code-stripped content.
 
-    Collects the ``[ref]: path.md`` definitions first (optional CommonMark
-    titles stripped), then resolves each usage; an empty ``[ref]`` falls
-    back to the link text per CommonMark shortcut semantics. External URLs
-    and pure anchors are skipped.
+    Read from the whole document rather than per paragraph: a definition
+    lives wherever the author put it, usually far from the usages it serves,
+    so this is the one part of extraction that is not paragraph-local.
 
-    Markdown footnotes are skipped on both halves: a footnote definition
-    (``[^label]: body``) is prose, not a link target, and two adjacent
-    footnote references (``[^a][^b]``) are not one reference-style link
-    (#1104).
+    Optional CommonMark titles are stripped. A footnote definition
+    (``[^label]: body``) is prose, not a link target, and storing it resolved
+    whatever the footnote said as a vault path (#1104).
+
+    Args:
+        clean: Code-stripped markdown body.
+
+    Returns:
+        Lower-cased reference key to its raw target.
     """
-    links: list[LinkInfo] = []
-    # Collect reference definitions first.
     ref_defs: dict[str, str] = {}
     for m in _RE_REF_DEF.finditer(clean):
         ref_key = m.group(1).strip().lower()
         if ref_key.startswith(_FOOTNOTE_LABEL_PREFIX):
-            # Footnote definition: the body is prose, so storing it as a
-            # target resolved whatever the footnote said as a vault path.
             continue
         ref_target = m.group(2).strip()
         # Strip optional CommonMark title: "...", '...', or (...)
         ref_target = re.sub(r'\s+(?:"[^"]*"|\'[^\']*\'|\([^)]*\))\s*$', "", ref_target)
         ref_defs[ref_key] = ref_target
+    return ref_defs
 
+
+def _extract_reference_links(
+    clean: str, source_path: str, ref_defs: dict[str, str]
+) -> list[LinkInfo]:
+    """Extract reference-style ``[text][ref]`` usages from one paragraph.
+
+    Resolves each usage against *ref_defs*; an empty ``[ref]`` falls back to
+    the link text per CommonMark shortcut semantics. External destinations
+    and pure anchors are skipped.
+
+    Two adjacent footnote references (``[^a][^b]``) are not one
+    reference-style link (#1104).
+
+    Args:
+        clean: One code-stripped paragraph.
+        source_path: Relative POSIX path of the source document.
+        ref_defs: Definitions from :func:`_collect_reference_definitions`.
+    """
+    links: list[LinkInfo] = []
     for m in _RE_REF_USAGE.finditer(clean):
         text = m.group(1)
         ref = m.group(2).strip() or text  # empty [ref] falls back to link text

@@ -1997,6 +1997,19 @@ Links are extracted from markdown content during `parse_note()` and stored in th
 - **Reference-style**: `[text][ref]` with `[ref]: path.md` definitions
 - **Wikilinks**: `[[path]]`, `[[path|alias]]`, `[[path#heading]]`
 
+**Paragraph-local matching (#1334)**: reference definitions are collected
+document-wide first (a definition lives wherever the author put it), then the
+code-stripped body is split on blank lines and inline links, reference usages
+and wikilinks are matched one paragraph at a time. CommonMark allows no link to
+cross a blank line, and bounding the *input* rather than the *pattern* keeps
+the plain negated character classes: a bounded alternation in the pattern
+measured 7-8x slower on a long run of unmatched brackets, while the split
+measured ~100x faster than whole-document matching on multi-paragraph input.
+A destination class additionally excludes `\n`. The returned list stays
+grouped by kind (inline, reference, wikilink), which callers index into. A
+paragraph with no blank lines is still matched as one unit, so the wikilink
+pattern's quadratic cost on such input is unchanged (#1343).
+
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
 are not extracted. External destinations and pure anchors are skipped. "External"
 is decided by shape, not by allowlist (#1335): a destination carrying any URI
