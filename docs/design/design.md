@@ -2112,15 +2112,20 @@ that closed the second attempt's round on Codex's `>` case, generalised):
   (a block quote interrupts a paragraph, §5.1), while a line at the same or a
   shallower depth continues it (consecutive `> ` lines are one paragraph;
   `> > a` then `> b` is Ex. 233's lazy continuation). Known cost, pinned: a
-  quote line after an *unquoted* lazy continuation line (`> a`, `b`, `> c`)
-  opens a new region, which the spec would not.
+  line whose depth grows again after such a lazy line (`> a`, `b`, `> c`; or
+  `> > a`, `> b`, `> > c`) opens a new region, which the spec would not.
 - Everything else is continuation text, as the spec has it for indented code,
   `[r]: x.md` lines, HTML type-7 tags, table rows and lazy continuations.
 
 The patterns themselves keep their plain negated classes — the region bounds
 them — because a bounded alternation measured 7–8x slower on adversarial
-input (#1339); the inline destination class additionally excludes a line
-ending, since a destination never contains one. Line endings are normalised
+input (#1339); the inline destination class and the wikilink target class
+additionally exclude a line ending, since a destination never contains one
+(a name with one names no file). Code is stripped in two steps around the
+split: fenced blocks before it, both fences anchored to a line start so three
+backticks in prose cannot swallow the blank line after them; inline spans per
+region after it, so a span filling a whole line does not leave a blank line
+for the walker to split on. Line endings are normalised
 (`\r\n` and lone `\r` → `\n`) once before anything is matched, the way
 python-frontmatter already normalises CRLF on ingestion, so a CR-only note's
 reference definitions are found too. Two deliberate departures from the spec
@@ -2131,7 +2136,7 @@ soft-breaks onto a `2. ` line is the pinned cost); and a destination wrapped
 onto its own line inside the parentheses (`[a](\nx.md\n)`, legal in §6.3) is
 not recognised, since that shape is exactly what the defect produced. Not
 honoured, by choice: HTML block openers, GFM table delimiter rows, unclosed
-fences (a `_strip_code_spans` matter), and a nested item indented four or more
+fences (a `_strip_fenced_code` matter), and a nested item indented four or more
 spaces (continuation by the shape rule; the under-split is bounded by the next
 honoured boundary). The quadratic cost of the wikilink pattern *inside* one
 region with no boundaries is #1343 and is unchanged. `INDEX_SEMANTICS_VERSION`

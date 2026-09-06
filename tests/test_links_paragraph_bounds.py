@@ -342,3 +342,22 @@ class TestPreserved:
         # Fenced code is stripped before regions are formed, as before.
         content = "[a\n\n```\n[b](c.md)\n```\n\nd](note.md)"
         assert extract_links(content, SRC) == []
+
+    def test_a_whole_line_code_span_does_not_split_the_link(self) -> None:
+        # Stripping the span must not turn its line into a blank line.
+        assert targets("[a\n`code`\nb](note.md)") == ["note.md"]
+
+    def test_a_definition_line_cannot_be_spanned_by_any_link(self) -> None:
+        # The table's "link reference definition" row has no observable
+        # boundary behaviour: the definition's own brackets end any link
+        # text, so nothing can pair across it either way.
+        assert targets("[a\n[r]: x.md\nb](note.md)") == []
+
+    def test_backticks_in_prose_do_not_swallow_a_blank_line(self) -> None:
+        # A fence opens at the start of a line (§4.5); three backticks in
+        # running prose are not one, so the blank line below stays a boundary.
+        assert extract_links("a [stray ```\n\nfoo``` ](x.md)", SRC) == []
+
+    def test_a_wikilink_target_never_contains_a_line_ending(self) -> None:
+        # A target with a line ending names no file; it is not a link.
+        assert extract_links("see [[a\nb]] here", SRC) == []

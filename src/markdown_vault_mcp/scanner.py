@@ -799,10 +799,17 @@ _EXTERNAL_URL_PREFIXES = ("//",)
 # as a scheme too.
 _RE_URI_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]+:")
 
-# Fenced code block: matches ``` or ~~~ delimiters (with optional language tag).
-_RE_FENCED_CODE = re.compile(r"```.*?```|~~~.*?~~~", re.DOTALL)
-# Inline code: matches single backtick spans (non-greedy, no newlines inside).
-_RE_INLINE_CODE = re.compile(r"`[^`\n]+`")
+# Fenced code block: a ``` or ~~~ run opening a line (after indentation or
+# quote markers), with an optional info string, closed by the same run
+# opening a later line. Anchoring both fences to a line start is what keeps
+# three backticks in running prose from swallowing the blank line after
+# them, which would let a stray ``[`` pair across it (#1334); a same-line
+# multi-backtick span is a code span, matched by _RE_INLINE_CODE.
+_RE_FENCED_CODE = re.compile(
+    r"^[ \t>]*(```|~~~)[^\n]*\n.*?^[ \t>]*\1", re.DOTALL | re.MULTILINE
+)
+# Inline code: a backtick run and its closing run on one line.
+_RE_INLINE_CODE = re.compile(r"`+[^`\n]+`+")
 # Inline markdown link: [text](target). The text keeps the plain negated
 # class — a soft break inside link text is legal — and is bounded by the
 # paragraph region it is matched in (#1334); the destination excludes a line
@@ -815,8 +822,10 @@ _RE_REF_DEF = re.compile(r"^\s*\[([^\]]+)\]:\s*(.+)$", re.MULTILINE)
 # Markdown footnotes ([^label] / [^label]: body) differ from reference-style
 # links by exactly this character, and both reference regexes match them.
 _FOOTNOTE_LABEL_PREFIX = "^"
-# Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian table-cell escape)
-_RE_WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
+# Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian table-cell
+# escape). The target excludes a line ending: a name carrying one names no
+# file, and the row it stored was broken by construction (#1334).
+_RE_WIKILINK = re.compile(r"\[\[([^\]|\n]+)(?:\|([^\]]+))?\]\]")
 
 # Line shapes at which a paragraph ends, each decidable from the line alone
 # (no container state beyond the quote depth read off the line itself). The
@@ -898,8 +907,8 @@ def _line_shape(line: str, previous_depth: int) -> tuple[str, int]:
 
     Args:
         line: One LF-terminated line, without its ending.
-        previous_depth: Quote depth of the line before, ``0`` at a region
-            start.
+        previous_depth: Quote depth of the line before, ``0`` on the first
+            line of the body.
 
     Returns:
         ``(shape, depth)`` with *shape* one of the four module constants.
@@ -950,20 +959,37 @@ def _paragraph_regions(clean: str) -> Iterator[str]:
         yield "\n".join(lines)
 
 
-def _strip_code_spans(content: str) -> str:
-    """Remove fenced and inline code spans from markdown content.
+def _strip_fenced_code(content: str) -> str:
+    """Remove fenced code blocks from LF-normalised markdown content.
 
-    This prevents links inside code examples from being extracted.
+    Fences are block-level, so they go before the body is split into
+    paragraph regions; a fence ends the paragraph before it (§4.5), and the
+    line its removal leaves behind is blank, which is the right boundary.
 
     Args:
-        content: Raw markdown body text.
+        content: Body text with line endings normalised.
 
     Returns:
-        Content with fenced and inline code regions replaced by empty strings.
+        *content* with every closed fenced block replaced by nothing.
     """
-    content = _RE_FENCED_CODE.sub("", content)
-    content = _RE_INLINE_CODE.sub("", content)
-    return content
+    return _RE_FENCED_CODE.sub("", content)
+
+
+def _strip_inline_code(region: str) -> str:
+    """Remove inline code spans from one paragraph region.
+
+    Runs *after* the region split, not before: a span that fills a whole
+    line (`` `code` `` on its own) would otherwise leave an empty line
+    behind, and the walker would read that as a blank line and split the
+    paragraph the span sits in (#1334).
+
+    Args:
+        region: One paragraph region.
+
+    Returns:
+        *region* with every inline code span replaced by nothing.
+    """
+    return _RE_INLINE_CODE.sub("", region)
 
 
 def _resolve_link_path(
@@ -1078,7 +1104,7 @@ def extract_links(
     Returns:
         List of :class:`~markdown_vault_mcp.types.LinkInfo` objects.
     """
-    clean = _strip_code_spans(_normalise_line_endings(content))
+    body = _strip_fenced_code(_normalise_line_endings(content))
     extensions = (
         effective_attachment_extensions(None)
         if attachment_extensions is None
@@ -1087,12 +1113,15 @@ def extract_links(
     # Definitions live wherever the author put them, so they are collected
     # over the whole body; usages, inline links and wikilinks are matched one
     # paragraph region at a time so nothing pairs across a boundary (#1334).
-    # The result stays grouped by kind — callers index into it.
-    ref_defs = _collect_reference_definitions(clean)
+    # Inline code is stripped per region, after the split, so that a span
+    # filling a whole line does not read as a blank line. The result stays
+    # grouped by kind — callers index into it.
+    ref_defs = _collect_reference_definitions(_strip_inline_code(body))
     inline: list[LinkInfo] = []
     reference: list[LinkInfo] = []
     wiki: list[LinkInfo] = []
-    for region in _paragraph_regions(clean):
+    for raw_region in _paragraph_regions(body):
+        region = _strip_inline_code(raw_region)
         inline.extend(_extract_inline_links(region, source_path, extensions))
         reference.extend(
             _extract_reference_links(region, ref_defs, source_path, extensions)

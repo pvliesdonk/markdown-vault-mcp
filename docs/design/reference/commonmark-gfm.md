@@ -62,7 +62,7 @@ Python 3.13.
   extended autolinks; GitHub footnotes.
 - Does not cover: emphasis, rendering, Obsidian wikilinks/embeds/callouts.
 - Depended on by: `src/markdown_vault_mcp/scanner.py` (`extract_links`,
-  `_extract_inline_links`, `_extract_reference_links`, `_strip_code_spans`,
+  `_extract_inline_links`, `_extract_reference_links`, `_strip_fenced_code`,
   `_scan_headings`, `extract_section`, `HeadingChunker._budget_split`),
   `src/markdown_vault_mcp/utils/links.py` (`apply_link_replacement`);
   `docs/design/design.md` § Link Extraction, § Chunking Strategy.
@@ -334,19 +334,23 @@ Python 3.13.
 ## Where this project departs from the subject
 
 Each inventoried assumption, by function, judged right / partial / wrong.
-Behaviour lines are [observed: `extract_links`, `_strip_code_spans`,
+Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
 `_HEADING_RE` on the working tree, 2026-09-06].
 
-- `_RE_FENCED_CODE` in `_strip_code_spans` — **partial.** Right: backtick
-  and tilde fences. Wrong: not line-anchored (`` x ``` y … z ``` w `` in
-  prose is stripped); length ignored (a 4-backtick block "closes" at 3);
-  character ignored (a backtick block "closes" at `~~~`); an unclosed fence
-  is not stripped, so its links are extracted; `` `` `` on a line is
-  treated as a fence. Indented code, info strings, fences under list/quote
-  indentation are not modelled.
-- `_RE_INLINE_CODE` — **partial.** Single backtick, single line only: a span
-  with a line ending inside is not stripped; a double-backtick span is
-  stripped by accident when it holds no inner backtick.
+- `_RE_FENCED_CODE` in `_strip_fenced_code` — **partial.** Right: backtick
+  and tilde fences; both fences anchored to a line start after indentation
+  or quote markers, so `` x ``` y … z ``` w `` in prose is no longer
+  stripped and a backtick block no longer "closes" at `~~~` (#1334, since
+  2026-09-06). Wrong: length ignored (a 4-backtick block "closes" at 3); an
+  unclosed fence is not stripped, so its links are extracted. Indented code
+  and info strings are not modelled. [observed: `_strip_fenced_code`,
+  2026-09-06]
+- `_RE_INLINE_CODE` in `_strip_inline_code` — **partial.** A backtick run
+  and a closing run on one line, stripped per paragraph region after the
+  split so a span filling a whole line does not read as a blank line
+  (#1334). A span with a line ending inside is not stripped; a
+  double-backtick span holding an inner backtick is stripped up to that
+  backtick. [observed: `_strip_inline_code`, 2026-09-06]
 - `_RE_INLINE_LINK` in `_extract_inline_links` — **right** on the #1334
   boundaries the decision table below marks honoured, since 2026-09-06:
   each pattern runs inside one paragraph region (`_paragraph_regions`,
@@ -405,8 +409,11 @@ Behaviour lines are [observed: `extract_links`, `_strip_code_spans`,
 
 - `tests/test_links_paragraph_bounds.py` pins one case per row of the table
   below (a stray `[` across the boundary, a link *on* it, one link across
-  each continuation kind) since #1334; the HTML-block rows are the only ones
-  with no test, since the scanner does not honour them.
+  each continuation kind) since #1334. Untested rows: the HTML-block rows
+  (not honoured), end of document (trivial), and the link reference
+  definition, whose boundary behaviour is unobservable — the definition's
+  own brackets end any link text, so nothing can pair across it either way
+  (pinned as such).
 - Whether `parse_note` should normalise a lone CR is settled by #1334:
   `extract_links` normalises CRLF and CR to LF itself, so the question no
   longer reaches the parser.
