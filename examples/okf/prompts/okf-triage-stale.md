@@ -16,7 +16,7 @@ whole vault.
 Use the OKF filter dimensions (these work only on a detected bundle):
 
 - `list_documents(folder=<$folder or omit>, filters={"stale": "true"})` — notes
-  whose `stale_after` is in the past.
+  whose `stale_after` has arrived.
 - `list_documents(folder=<$folder or omit>, filters={"status": "deprecated"})` —
   notes explicitly retired.
 

@@ -231,8 +231,8 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
     Per the design (§3): ``human-reviewed`` when any well-formed
     ``verified[].by`` carries the ``human:`` prefix; ``machine-confirmed``
     when ``verified`` is non-empty (all verifiers non-human); ``unverified``
-    otherwise. Malformed entries are ignored (permissive consumer); a bare
-    mapping is one entry (:func:`verified_entries`).
+    otherwise. Entries that are not mappings are ignored (permissive
+    consumer); a bare mapping is one entry (:func:`verified_entries`).
 
     Args:
         metadata: The note's frontmatter dict.

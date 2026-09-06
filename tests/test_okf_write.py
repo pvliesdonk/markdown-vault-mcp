@@ -151,7 +151,7 @@ class TestAppendOkfVerification:
             {"by": "human:peter", "at": _ISO},
         ]
 
-    def test_non_list_verified_is_replaced(self) -> None:
+    def test_scalar_verified_is_replaced(self) -> None:
         # A malformed scalar verified is treated as empty, not crashed on.
         text = "---\nverified: nonsense\n---\n# N\n"
         meta = fm.loads(

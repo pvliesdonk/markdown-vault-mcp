@@ -28,7 +28,7 @@ Check the claims against the note's own `sources` and against the vault:
 
 - Are the assertions still accurate?
 - Do the `sources` support them?
-- Is anything out of date (a past `stale_after`, superseded facts)?
+- Is anything out of date (a `stale_after` that has arrived, superseded facts)?
 
 If the note needs changes, make them first with `edit` / `write` and stop —
 a content change invalidates any prior verification, so verify only once the
