@@ -2452,7 +2452,8 @@ unhandled exceptions are logged at `ERROR` but not propagated to the caller.
 Default: `None` (no callback). Built-in option: `GitWriteStrategy` (or the
 legacy factory `git_write_strategy(token=...)`) that auto-commits and pushes.
 
-**Every pathspec the git layer passes is literal (#1303, #1304).** A note may
+**Every pathspec the git layer passes is literal (#1303, #1304).** (Git's
+pathspec rules: [`reference/git-cli.md`](reference/git-cli.md) § Pathspecs.) A note may
 legitimately be named `star*note.md` or `b[1].md`, and git reads a pathspec as
 a wildmatch pattern, so such a name selected whichever sibling it matched: the
 note's history reported that sibling's commits, and its write swept that
@@ -2464,7 +2465,8 @@ git's `:(literal)` magic. `check-ignore` is the one exception and not an
 oversight: it takes pathnames, matches them literally already, and rejects
 pathspec magic outright.
 
-**Per-operation staging guarantee (#894).** One MCP write operation produces
+**Per-operation staging guarantee (#894).** (What `add` and `check-ignore`
+accept: [`reference/git-cli.md`](reference/git-cli.md) § Staging.) One MCP write operation produces
 one auto-commit containing *only* the paths that operation touched. A rename
 is the case where this is not free: it has two sides — the vanished old path
 and the new one — while the callback signature carries a single path, so the
@@ -2538,7 +2540,8 @@ git's own spelling of "the whole repository", returned only by the unscoped
 batch containing one widens its own check back to match, or a rename that
 reported no pathspec would be dropped from the check and its commit skipped.
 
-**Scoping the commit itself (#1273).** Scoping the decision left the act
+**Scoping the commit itself (#1273).** (What `commit --only` refuses:
+[`reference/git-cli.md`](reference/git-cli.md) § Committing and identity.) Scoping the decision left the act
 unscoped: `git commit` without a pathspec commits the **whole index**, so a
 write that *did* have a diff of its own still carried an operator's unrelated
 staged work into a commit titled after a vault write they never made.
@@ -2563,7 +2566,8 @@ exists to clean up, and cannot always — is unaffected in the other direction: 
 partial commit succeeds there, where the whole-index form fails outright on
 "unmerged files".
 
-**Write identity: the `Principal` value (#1160, fixes #1218).** "Who is
+**Write identity: the `Principal` value (#1160, fixes #1218).** (How git
+reads `--author` and the committer: [`reference/git-cli.md`](reference/git-cli.md) § Committing and identity.) "Who is
 acting" is resolved **once, at the MCP tool edge**, into a frozen
 `Principal` (`_identity.py`: `subject`, `display_name`, `email`,
 `kind: human|local`) — credentials (`GIT_TOKEN`) and permissions
@@ -4173,7 +4177,8 @@ in managed git mode with `GIT_PULL_INTERVAL_S=0` now runs the watcher while a
 `git_sync` call can rewrite the tree — exactly what the same deployment without
 a webhook credential already did.
 
-**Tracking-independent remote ref**: all sync operations (startup unpushed
+**Tracking-independent remote ref** (`symbolic-ref`, `origin/HEAD` and
+`safe.directory` in [`reference/git-cli.md`](reference/git-cli.md) § Repository discovery and refs): all sync operations (startup unpushed
 check, periodic `sync_once`, interactive `force_pull`/`force_push`, and the
 rebase-abort upstream restore) target `origin/<current-branch>` rather than the
 branch's configured upstream (`@{upstream}`). A managed clone is created and
@@ -4186,7 +4191,8 @@ resolves, the operation reports `no_remote` and is skipped.
 
 Safety branch mode for push failures is tracked separately (see #119).
 
-**Git history queries**: `GitWriteStrategy` exposes read-only methods for querying the git commit log and reading historical content, none of which modify repository state:
+**Git history queries** (`log -z` framing, `--follow`, rename detection and
+date semantics in [`reference/git-cli.md`](reference/git-cli.md) § History queries): `GitWriteStrategy` exposes read-only methods for querying the git commit log and reading historical content, none of which modify repository state:
 
 - `get_file_history(repo_path, path, since, limit, until=None, *, is_dir=False)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note, a folder subtree, or the entire vault. Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. A single-file query uses `--follow` (rename-tracking) pinned to `--find-renames=30` with `-c diff.renameLimit`, returns no per-commit paths, is filtered to the note's own lineage (see the lineage boundary below, #1285), and is supplemented with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306); a directory query (`is_dir=True`, dispatched by `GitQueryManager.get_history` when `path` resolves to a real directory) drops `--follow` and scopes to `git log --name-only -- <dir>`, and vault-wide queries append `--name-only` — both populate each commit's changed file paths (git scopes the `--name-only` output to the directory pathspec, so no sibling files leak in). Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary. The log runs under `-z` (#1282), which NUL-frames both the header fields and the `--name-only` paths: git's default `core.quotePath` otherwise renders a non-ASCII name octal-escaped inside double quotes, and `paths_changed` would carry paths no other tool accepts. `-z` is preferred over `-c core.quotePath=false` because it also covers the names git quotes unconditionally — a double quote, tab, or newline in the path — and it is what the `get_file_at_ref` walk already uses. One byte class still does not survive: the reply is decoded through `subprocess`'s text mode, whose universal-newline translation rewrites a lone `\r` and collapses a `\r\n` pair, so a path carrying either comes back altered even under `-z` (#1290) — a property this reader shares with every other `-z` reader in the module.
 - `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)`: runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,64}` — the upper bound admits the 64-hex commit IDs a `--object-format=sha256` repository yields, #1284), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant, meaning a commit whose committer date equals the timestamp is the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked, useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. `CalledProcessError` from an unknown ref is re-raised as `ValueError`. The `per_commit=True` walk (`_per_commit_rows`) enumerates commits with `git log -z --follow --name-only --find-renames=30`, filters them to the note's own lineage (the boundary below, #1285), supplements them with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306), and reuses each block's path as the pathspec for that commit's diff, so the same `-z` framing is what keeps a non-ASCII note's per-commit diff from coming back empty (#1282). The patch and `--stat` payloads are a separate half of that fix: they name files in their own body, nothing parses them, and they are handed to the caller as text — so `_range_diff`, `_root_commit_diff`, and the per-commit `git diff` render them under `-c core.quotePath=false` rather than under `-z`. Rendering and framing are different problems and take different tools: `-z` is not available for a patch body, and the config override cannot be trusted where output is parsed, because it leaves the unconditionally-quoted names quoted.
