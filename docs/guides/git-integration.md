@@ -379,7 +379,14 @@ so the line repeats once per burst of writes and is the evidence the
 retries are happening. The pull loop's own retry of a still-pending push
 fires on its timer, and that one stays at `DEBUG` (a warning per tick,
 indefinitely, is the line #1287 removed), as do the per-cycle details of a
-divergence the resolver is working through. Two kinds of failure stay loud
+divergence the resolver is working through. A pull that `git_sync` caused is
+the exception on that side too: when its rebase stops, git's words log at
+`WARNING`. Whichever entry point ran the pull, those words reach the
+transition line as its `cause=`, so a rebase that stopped for something
+other than a conflict is named once at `ERROR`. In
+[#1362](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1362) that
+something was a missing committer identity, and the only trace had been a
+line about a conflict-resolution loop. Two kinds of failure stay loud
 for their own reasons: an unexpected
 exception on the push or resolve path, and a failure that can leave the
 working tree inconsistent (a rebase that would not abort, an upstream file

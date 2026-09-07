@@ -57,6 +57,30 @@ def _seed_remote_commit(
     _run_git(sibling, "push", "origin", "main")
 
 
+def _diverge_behind_a_refusing_rebase_hook(pair: GitRepoPair) -> None:
+    """Diverge the clone from its remote, then make every rebase stop early.
+
+    A ``pre-rebase`` hook that exits non-zero aborts the rebase before any
+    commit is replayed, so it stops with **no unmerged paths** — the shape a
+    missing committer identity produced in #1362 — without depending on the
+    machine's own identity configuration.
+    """
+    _seed_remote_commit(
+        pair, clone_name="clone_hook", file_name="remote_only.md", body="remote\n"
+    )
+    (pair.local_path / "local_only.md").write_text("local\n")
+    _run_git(pair.local_path, "add", "local_only.md")
+    _run_git(pair.local_path, "commit", "-m", "local divergent")
+    hooks = pair.local_path.parent / "refusing_hooks"
+    hooks.mkdir()
+    hook = hooks / "pre-rebase"
+    hook.write_text(
+        "#!/bin/sh\necho 'pre-rebase hook: the operator said no' >&2\nexit 1\n"
+    )
+    hook.chmod(0o755)
+    _run_git(pair.local_path, "config", "core.hooksPath", str(hooks))
+
+
 class TestTrackerState:
     """What marks the clone unsynced, and what clears it again."""
 
@@ -484,9 +508,9 @@ class _LockObservingTracker(SyncHealthTracker):
         self.held.append(self._observed_lock.locked())
         super().push_succeeded()
 
-    def pull_failed(self, reason: str) -> None:
+    def pull_failed(self, reason: str, detail: str | None = None) -> None:
         self.held.append(self._observed_lock.locked())
-        super().pull_failed(reason)
+        super().pull_failed(reason, detail)
 
     def pull_succeeded(self) -> None:
         self.held.append(self._observed_lock.locked())
@@ -821,3 +845,95 @@ class TestPushFailureIsDiagnosable:
         text = " ".join(r.getMessage() for r in caplog.records)
         assert secret not in text
         assert "***" in text
+
+
+class TestPullFailureIsDiagnosable:
+    """What an operator can learn from the log when a pull cannot reconcile.
+
+    Observed on a live vault (#1362): the pull pipeline's rebase stopped at
+    its first replayed commit with ``Committer identity unknown`` and no
+    unmerged paths, and the only lines in the log named a conflict-resolution
+    loop that had nothing to resolve.
+    """
+
+    def test_the_transition_line_names_the_cause(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """``pull_failed`` carries what git said, as ``push_failed`` does."""
+        tracker = SyncHealthTracker()
+        stderr = "The pre-rebase hook refused to rebase.   \nhook says no"
+        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"):
+            tracker.pull_failed(PULL_REASON_CONFLICT_RESOLUTION_FAILED, stderr)
+
+        line = next(r for r in caplog.records if "git_remote_unsynced" in r.message)
+        message = line.getMessage()
+        assert "kind=pull" in message
+        assert "\n" not in message
+        assert message.endswith(
+            "cause=The pre-rebase hook refused to rebase. hook says no"
+        )
+
+    def test_a_pull_without_a_detail_reads_as_unavailable(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Outcomes that quote nothing still produce a readable line."""
+        tracker = SyncHealthTracker()
+        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"):
+            tracker.pull_failed(PULL_REASON_CONFLICT_RESOLUTION_FAILED)
+
+        line = next(r for r in caplog.records if "git_remote_unsynced" in r.message)
+        assert line.getMessage().endswith("cause=unavailable")
+
+    def test_a_rebase_that_stops_outside_a_conflict_carries_its_cause(
+        self, git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A rebase stopped by something other than a conflict is named once."""
+        _diverge_behind_a_refusing_rebase_hook(git_repo_pair)
+        strategy = GitWriteStrategy(
+            enable_pull=True, enable_push=False, repo_path=git_repo_pair.local_path
+        )
+
+        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"):
+            result = strategy.force_pull()
+
+        assert result.reason == PULL_REASON_CONFLICT_RESOLUTION_FAILED
+        assert result.detail is not None
+        assert "the operator said no" in result.detail
+        transition = next(
+            r for r in caplog.records if "git_remote_unsynced" in r.message
+        )
+        message = transition.getMessage()
+        assert "kind=pull" in message
+        assert "cause=" in message
+        assert "the operator said no" in message
+
+    def test_a_caused_pull_warns_and_a_timer_tick_does_not(
+        self, git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The rebase's stderr logs at the level of what caused the pull.
+
+        ``git_sync`` is one attempt per cause, so its line may warn; the pull
+        loop's tick repeats for as long as the divergence stands, which is the
+        per-cycle line #1287 removed — it stays at DEBUG, and nothing else on
+        the tick reaches WARNING.
+        """
+        _diverge_behind_a_refusing_rebase_hook(git_repo_pair)
+        strategy = GitWriteStrategy(
+            enable_pull=True, enable_push=False, repo_path=git_repo_pair.local_path
+        )
+
+        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
+            strategy.force_pull()
+            caused = [r for r in caplog.records if "rebase onto" in r.message]
+            caplog.clear()
+            strategy.sync_once(git_repo_pair.local_path, timer_driven=True)
+            ticked = [r for r in caplog.records if "rebase onto" in r.message]
+            loud_on_tick = [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+        assert [r.levelno for r in caused] == [logging.WARNING]
+        assert [r.levelno for r in ticked] == [logging.DEBUG]
+        assert all("the operator said no" in r.getMessage() for r in caused + ticked)
+        # Git's stderr spans lines (the hook's line, then git's own); the
+        # attempt line is one line, as every attempt line is (#1330).
+        assert all("\n" not in r.getMessage() for r in caused + ticked)
+        assert loud_on_tick == []

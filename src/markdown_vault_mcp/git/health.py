@@ -23,8 +23,10 @@ Two properties matter for how it is used:
   hours unnoticed.  Push attempts that a write, a flush, or startup caused
   are the exception (#1330): each is one attempt per cause, so its rejection
   line repeats once per burst of writes and is the evidence that retries are
-  happening.  The pull loop's timer-driven retry of a pending push stays at
-  DEBUG for the same reason the pull-side lines do.
+  happening.  A pull that ``git_sync`` caused is treated the same way: when
+  its rebase stops, git's words log at WARNING (#1362).  The pull loop's
+  timer-driven retry of a pending push stays at DEBUG for the same reason the
+  loop's own pull-side lines do.
 """
 
 from __future__ import annotations
@@ -203,15 +205,20 @@ class SyncHealthTracker:
         """Record that local commits reached the remote."""
         self._close("push")
 
-    def pull_failed(self, reason: str) -> None:
+    def pull_failed(self, reason: str, detail: str | None = None) -> None:
         """Record a pull that could not reconcile with the remote.
 
         Args:
             reason: A ``PULL_REASON_*`` code.  Codes that do not prove the
                 clone has diverged unrecoverably are ignored (see
                 :data:`_PULL_CONDITIONS`).
+            detail: What git said, when the caller has it — the stderr of
+                the rebase that stopped.  ``conflict_resolution_failed`` names
+                a state, and the rebase behind it can stop for a missing
+                committer identity, a hook or a lock as readily as for a
+                conflict (#1362).
         """
-        self._open("pull", reason, _PULL_CONDITIONS)
+        self._open("pull", reason, _PULL_CONDITIONS, detail=detail)
 
     def pull_succeeded(self) -> None:
         """Record that the clone reconciled with the remote."""

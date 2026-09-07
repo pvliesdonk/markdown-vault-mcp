@@ -2571,8 +2571,11 @@ class TestGitPullLoop:
             ),
         )
 
-        def fake_sync_once(repo_path: Path) -> bool:  # noqa: ARG001
+        timer_flags: list[object] = []
+
+        def fake_sync_once(repo_path: Path, **kwargs: object) -> bool:  # noqa: ARG001
             calls.append("sync")
+            timer_flags.append(kwargs.get("timer_driven"))
             return True
 
         monkeypatch.setattr(strategy, "sync_once", fake_sync_once)
@@ -2601,6 +2604,10 @@ class TestGitPullLoop:
         assert calls
         assert pause_calls
         assert on_pull_calls
+        # The loop's tick declares itself timer-driven, which is what keeps
+        # its per-cycle lines at DEBUG (#1362).
+        assert timer_flags
+        assert all(flag is True for flag in timer_flags)
 
     def test_start_runs_tick_without_pause(
         self,
@@ -2623,7 +2630,7 @@ class TestGitPullLoop:
             ),
         )
 
-        def fake_sync_once(repo_path: Path) -> bool:  # noqa: ARG001
+        def fake_sync_once(repo_path: Path, **_: object) -> bool:  # noqa: ARG001
             calls.append("sync")
             return True
 
@@ -2666,7 +2673,7 @@ class TestGitPullLoop:
             ),
         )
 
-        def boom(_repo_path: Path) -> bool:
+        def boom(_repo_path: Path, **_: object) -> bool:
             raise RuntimeError("boom")
 
         monkeypatch.setattr(strategy, "sync_once", boom)
@@ -2709,7 +2716,7 @@ class TestGitPullLoop:
                 returncode=0, stdout="", stderr=""
             ),
         )
-        monkeypatch.setattr(strategy, "sync_once", lambda _repo: True)
+        monkeypatch.setattr(strategy, "sync_once", lambda _repo, **_: True)
         strategy._git_root = tmp_path
         # Simulate a deferred push that failed and left the flag set.
         strategy._push_pending = True
@@ -2746,7 +2753,7 @@ class TestGitPullLoop:
                 returncode=0, stdout="", stderr=""
             ),
         )
-        monkeypatch.setattr(strategy, "sync_once", lambda _repo: True)
+        monkeypatch.setattr(strategy, "sync_once", lambda _repo, **_: True)
         strategy._git_root = tmp_path
         strategy._push_pending = True
         rejected = subprocess.CalledProcessError(
@@ -2844,7 +2851,7 @@ class TestGitPullLoop:
                 returncode=0, stdout="", stderr=""
             ),
         )
-        monkeypatch.setattr(strategy, "sync_once", lambda _p: True)
+        monkeypatch.setattr(strategy, "sync_once", lambda _p, **_: True)
 
         # A pending push exists, and the retry hook is observable.
         strategy._push_pending = True

@@ -68,7 +68,18 @@ def resolve_rebase_conflicts(
         )
         conflicting = [f for f in result.stdout.split("\0") if f]
         if not conflicting:
-            # No conflicts — rebase may have stopped for another reason.
+            # No unmerged paths: the rebase stopped for a reason this
+            # resolver cannot fix (missing committer identity, a hook, a
+            # lock).  Say so — the old silent ``break`` fell through to the
+            # "loop exceeded" line and sent operators hunting for a merge
+            # conflict that did not exist (#1362).  DEBUG for the reason
+            # given at the loop-cap line below: this repeats every pull
+            # cycle while the divergence stands; the rebase's own stderr
+            # reaches the one-time transition line as its ``cause=``.
+            logger.debug(
+                "Git pull: rebase stopped with no unmerged paths; not a "
+                "content conflict"
+            )
             break
 
         for rel_path in conflicting:

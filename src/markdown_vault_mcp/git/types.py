@@ -123,6 +123,13 @@ class PullResult:
             ``"conflicts_resolved_with_siblings"`` reason above).
             Empty for clean fast-forwards, dry-runs, and failure paths
             that did not write any siblings.
+        detail: What git said when the pull could not reconcile — the
+            rebase's stderr, token-redacted — or ``None`` when the outcome
+            came with nothing to quote.  It feeds the ``cause=`` field of the
+            sync-health transition line, so the one ERROR an operator sees
+            names why the clone stopped reconciling (a rebase that stopped
+            for a missing committer identity, not a conflict, in #1362).  Not
+            part of the ``git_sync`` response.
     """
 
     applied: bool
@@ -132,9 +139,12 @@ class PullResult:
     to_sha: str
     reason: str | None = None
     conflict_files: tuple[str, ...] = field(default=())
+    detail: str | None = None
 
     @classmethod
-    def head_unchanged_failure(cls, from_sha: str, reason: str) -> PullResult:
+    def head_unchanged_failure(
+        cls, from_sha: str, reason: str, detail: str | None = None
+    ) -> PullResult:
         """Construct a ``PullResult`` for a failure path where HEAD did not move.
 
         The failure paths in :meth:`GitWriteStrategy.force_pull` and its
@@ -149,10 +159,12 @@ class PullResult:
             from_sha: HEAD SHA before the failed operation.  Used for both
                 ``from_sha`` and ``to_sha`` since HEAD did not move.
             reason: One of the ``PULL_REASON_*`` constants.
+            detail: What git said, when the caller has it (see the
+                attribute).
 
         Returns:
             A ``PullResult`` with the failure-shape fields set and the
-            provided ``reason``.
+            provided ``reason`` and ``detail``.
         """
         return cls(
             applied=False,
@@ -161,6 +173,7 @@ class PullResult:
             from_sha=from_sha,
             to_sha=from_sha,
             reason=reason,
+            detail=detail,
         )
 
 

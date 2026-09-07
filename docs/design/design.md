@@ -4143,7 +4143,15 @@ path reports it.
   (#1330). `SyncHealthTracker.push_failed` takes that detail as a second
   argument, and every call site passes it: the two in `PushScheduler`
   (deferred and startup) and `GitWriteStrategy._record_push`, which forwards
-  `PushResult.hint`.
+  `PushResult.hint`. The pull side has the same field for the same reason
+  (#1362): `conflict_resolution_failed` names a state, and the rebase behind
+  it can stop for a missing committer identity, a hook or a lock as readily
+  as for a conflict — with no unmerged paths, so the resolver has nothing to
+  act on and the loop-cap line named a conflict that never happened.
+  `_force_pull_rebase_fallback` keeps the rebase's redacted stderr on
+  `PullResult.detail`, `_record_pull` forwards it to
+  `SyncHealthTracker.pull_failed`, and it is not part of the `git_sync`
+  response.
 - **A push attempt logs at the level of what caused it.** #1287 moved the
   per-attempt lines to DEBUG to stop a per-cycle warning from drowning the
   transition, and the rule that decides the level is whether the attempt
@@ -4154,6 +4162,11 @@ path reports it.
   and they stay at DEBUG. So does the pull loop's retry of a still-pending
   push (#957), which `_pull_loop` marks with `do_push_safe(retry=True)`: a
   push that keeps failing would otherwise warn once per tick, indefinitely.
+  The same split applies to the line that quotes a stopped rebase (#1362):
+  `_pull_loop` calls `sync_once(timer_driven=True)`, which runs the pipeline
+  as the `_LOOP_PULL` entry and logs it at DEBUG, while a pull that
+  `git_sync(direction="pull")` or startup caused is one attempt per cause and
+  logs it at WARNING with the redacted stderr.
   An attempt a write (`schedule_push`'s idle timer), a `flush`, or startup
   caused is one attempt per cause, so its rejection repeats once per burst of
   writes, and that line is the evidence retries are still happening (#1330).

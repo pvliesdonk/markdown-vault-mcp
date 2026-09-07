@@ -52,6 +52,7 @@ from markdown_vault_mcp.git.bootstrap import RepoBootstrap
 from markdown_vault_mcp.git.health import (
     SyncHealth,
     SyncHealthTracker,
+    one_line,
     push_failure_reason,
 )
 from markdown_vault_mcp.git.push_scheduler import PushScheduler
@@ -73,6 +74,27 @@ from markdown_vault_mcp.git.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _PullEntry:
+    """Which entry point is running the pull, for the lines it logs.
+
+    ``log_prefix`` names the entry point in every message.  ``timer_driven``
+    decides the level of the line that quotes a stopped rebase: the pull
+    loop's tick repeats for as long as a divergence stands, so its line stays
+    at DEBUG (the per-cycle warning #1287 removed), while a pull that
+    ``git_sync`` or startup caused is one attempt per cause and warns (#1362)
+    — the rule ``PushScheduler.do_push_safe(retry=...)`` applies to pushes.
+    """
+
+    log_prefix: str
+    timer_driven: bool = False
+
+
+_INTERACTIVE_PULL = _PullEntry("Git force_pull")
+_STARTUP_PULL = _PullEntry("Git pull")
+_LOOP_PULL = _PullEntry("Git pull", timer_driven=True)
 
 
 class GitWriteStrategy:
@@ -225,8 +247,18 @@ class GitWriteStrategy:
         When a token is set, reuse the existing GIT_ASKPASS mechanism to avoid
         prompting interactively. This mirrors the push path and keeps the token
         out of command-line arguments.
+
+        The configured commit identity always rides along as
+        ``GIT_AUTHOR_*`` / ``GIT_COMMITTER_*`` so that ``git rebase`` (which
+        commits) works in a checkout with no ``user.name`` / ``user.email``
+        of its own — the same identity the per-write commit passes with
+        ``-c``.  See :func:`~markdown_vault_mcp.git._run.git_env`.
         """
-        return git_env(self._token, self._username)
+        return git_env(
+            self._token,
+            self._username,
+            identity=(self._commit_name, self._commit_email),
+        )
 
     def _cleanup_git_env(self, env: dict[str, str] | None) -> None:
         cleanup_git_env(env)
@@ -875,7 +907,7 @@ class GitWriteStrategy:
         git_root: Path,
         *,
         dry_run: bool = False,
-        log_prefix: str = "Git force_pull",
+        entry: _PullEntry = _INTERACTIVE_PULL,
     ) -> PullResult:
         """Run the pull pipeline and record what it says about the remote.
 
@@ -892,7 +924,8 @@ class GitWriteStrategy:
             git_root: Resolved working-tree root.
             dry_run: Fetch and compute the would-be pull without touching
                 HEAD.
-            log_prefix: Message prefix identifying the calling entry point.
+            entry: The calling entry point: its message prefix, and whether
+                it fired on a timer (see :class:`_PullEntry`).
 
         Returns:
             The :class:`PullResult` the pipeline produced, unchanged.
@@ -900,9 +933,7 @@ class GitWriteStrategy:
         env = self._git_env()
         try:
             with self._quiesce_writes(skip=dry_run), self._lock:
-                result = self._pull_locked(
-                    git_root, env, dry_run=dry_run, log_prefix=log_prefix
-                )
+                result = self._pull_locked(git_root, env, dry_run=dry_run, entry=entry)
                 if not dry_run:
                     self._record_pull(result)
                 return result
@@ -915,7 +946,7 @@ class GitWriteStrategy:
         env: dict[str, str] | None,
         *,
         dry_run: bool = False,
-        log_prefix: str = "Git force_pull",
+        entry: _PullEntry = _INTERACTIVE_PULL,
     ) -> PullResult:
         """Run the shared fetch → classify → ff-only → rebase → sibling pipeline.
 
@@ -934,13 +965,14 @@ class GitWriteStrategy:
             env: The caller's git environment, cleaned up by the caller.
             dry_run: Fetch and project the would-be pull from the same
                 classification the real pull acts on, without touching HEAD.
-            log_prefix: Message prefix identifying the calling entry point
-                (``"Git force_pull"`` / ``"Git pull"``).
+            entry: The calling entry point (``"Git force_pull"`` /
+                ``"Git pull"``), and whether it fired on a timer.
 
         Returns:
             :class:`PullResult`; see :meth:`force_pull` for the outcome
             enumeration.
         """
+        log_prefix = entry.log_prefix
         from_sha = self.head_sha(git_root)
 
         # Always fetch first — both dry-run and real-pull need the
@@ -1028,7 +1060,7 @@ class GitWriteStrategy:
                 env=env,
                 from_sha=from_sha,
                 ref=ref,
-                log_prefix=log_prefix,
+                entry=entry,
             )
 
         # Fast-forward is available on the history; the merge can still fail
@@ -1047,7 +1079,7 @@ class GitWriteStrategy:
                 env=env,
                 from_sha=from_sha,
                 ref=ref,
-                log_prefix=log_prefix,
+                entry=entry,
             )
 
         # Fast-forward succeeded.  ``remote_sha`` is the new HEAD —
@@ -1068,7 +1100,7 @@ class GitWriteStrategy:
         env: dict[str, str] | None,
         from_sha: str,
         ref: str,
-        log_prefix: str = "Git force_pull",
+        entry: _PullEntry = _INTERACTIVE_PULL,
     ) -> PullResult:
         """Attempt rebase + Syncthing-style sibling resolution.
 
@@ -1089,8 +1121,9 @@ class GitWriteStrategy:
                 and verified non-``None`` by :meth:`_pull_pipeline` before
                 delegating here.  Used as the rebase target and the
                 post-abort upstream-restore ref.
-            log_prefix: Message prefix identifying the calling entry point
-                (``"Git force_pull"`` / ``"Git pull"``).
+            entry: The calling entry point (``"Git force_pull"`` /
+                ``"Git pull"``), and whether it fired on a timer, which
+                decides the level of the line quoting a stopped rebase.
 
         Returns:
             :class:`PullResult` whose ``reason`` is one of
@@ -1103,12 +1136,33 @@ class GitWriteStrategy:
             ``"non_fast_forward_with_conflicts"`` (rebase started but
             could not be cleanly resolved or aborted, ``applied=False``).
         """
+        log_prefix = entry.log_prefix
         # First try a plain rebase — this handles the common case where
         # local commits touch *different* files than the upstream commits
         # and replay cleanly with no manual intervention.
         try:
             self._git(git_root, "rebase", ref, env=env)
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as rebase_exc:
+            # Keep git's own words: a rebase stops for content conflicts, but
+            # also for a missing committer identity, a hook, or a lock — and
+            # the resolver below can only act on unmerged paths.  Without
+            # them those other causes were invisible (#1362).  The level
+            # follows what caused the pull (#1330's rule): a loop tick repeats
+            # while the divergence stands and stays at DEBUG; the words reach
+            # the one-time transition line as ``cause=`` either way, through
+            # ``PullResult.detail`` on the failure results below.  Flattened
+            # as every attempt line is (#1330): git wraps and pads its
+            # stderr, and a line-oriented collector reads the continuation
+            # lines as separate malformed entries.
+            rebase_stderr = self._redact((rebase_exc.stderr or "").strip())
+            logger.log(
+                logging.DEBUG if entry.timer_driven else logging.WARNING,
+                "%s: rebase onto %s stopped: %s",
+                log_prefix,
+                ref,
+                one_line(rebase_stderr) or "(no stderr)",
+            )
+            detail = rebase_stderr or None
             # Real conflicts during rebase — resolve by accepting upstream
             # and saving the local MCP versions as Syncthing-style siblings.
             #
@@ -1142,7 +1196,7 @@ class GitWriteStrategy:
                     git_root, env, token=self._token
                 ):
                     return PullResult.head_unchanged_failure(
-                        from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS
+                        from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS, detail
                     )
                 saved = conflict.restore_upstream_paths(
                     git_root, env, saved, ref, token=self._token
@@ -1157,7 +1211,7 @@ class GitWriteStrategy:
                     log_prefix,
                 )
                 return PullResult.head_unchanged_failure(
-                    from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED
+                    from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED, detail
                 )
 
             # Rebase has already completed via ``git rebase --continue`` — HEAD
@@ -1271,7 +1325,7 @@ class GitWriteStrategy:
         if result.applied:
             self._health.pull_succeeded()
         elif result.reason is not None:
-            self._health.pull_failed(result.reason)
+            self._health.pull_failed(result.reason, result.detail)
 
     def sync_health(self) -> SyncHealth | None:
         """Report whether this clone is known not to be reaching its remote.
@@ -1458,7 +1512,7 @@ class GitWriteStrategy:
             remote_sha_after=local_head,
         )
 
-    def sync_once(self, repo_path: Path) -> bool:
+    def sync_once(self, repo_path: Path, *, timer_driven: bool = False) -> bool:
         """Fetch and update once, returning True if HEAD advanced.
 
         Thin adapter over :meth:`_pull_pipeline` (#879) — the periodic
@@ -1476,6 +1530,13 @@ class GitWriteStrategy:
         merge — including the network round-trip — so MCP writes block
         for the pull's duration; acceptable for a periodic background
         pull (default every 600 s) and a fast fetch.
+
+        Args:
+            repo_path: The vault directory; its git root is resolved once.
+            timer_driven: ``True`` from the pull loop, whose tick repeats
+                while a divergence stands, so the line quoting a stopped
+                rebase logs at DEBUG rather than WARNING (#1362).  The
+                startup sync leaves it ``False``: one attempt, caused.
         """
         if self._closed or not self._enable_pull:
             return False
@@ -1494,7 +1555,9 @@ class GitWriteStrategy:
                     "Git pull: no remote-tracking ref resolvable; skipping fetch"
                 )
                 return False
-            result = self._pull_pipeline(git_root, log_prefix="Git pull")
+            result = self._pull_pipeline(
+                git_root, entry=_LOOP_PULL if timer_driven else _STARTUP_PULL
+            )
         except FileNotFoundError:
             logger.info("Git pull: git not found on PATH; pull loop disabled")
             return False
@@ -1621,7 +1684,7 @@ class GitWriteStrategy:
 
         while not self._pull_stop.is_set():
             try:
-                did_advance = self.sync_once(repo_path)
+                did_advance = self.sync_once(repo_path, timer_driven=True)
                 if did_advance and self._on_pull is not None:
                     pause = self._pause_writes
                     if pause is None:
