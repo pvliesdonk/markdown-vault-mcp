@@ -140,11 +140,12 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   implies `]`, `|` and `#` cannot be literal target characters, which is what
   `_RE_WIKILINK` assumes, but it is a warning, not a parse rule.
   [source: help-links]
-- Whether a `]` inside the target terminates the link, whether whitespace or a
-  newline inside `[[...]]` is tolerated, and how `[[a [[b]] c]]` parses are
-  not documented. [unverified] A fixture note with each of those, opened in
-  Obsidian, then read through `metadataCache.getFileCache(file).links` would
-  settle all three.
+- A single `]` inside the target does not end the link — only `]]` does:
+  `[[Sq]uare]]` is recorded as a link to `Sq]uare`. Whitespace is fine
+  (`[[Sp ace]]` → `Sp ace`). A line ending is not: `[[Multi⏎Line]]` is no
+  link. Nesting parses the inner one only: `[[Nested [[Inner]] x]]` yields
+  exactly `Inner`. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] The scanner's target class stops at the first `]`,
+  a departure recorded below (#1384).
 
 ### Fragments: headings and blocks
 
@@ -187,27 +188,29 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   file]]`". The help presents it as intra-note navigation, not a link to a
   file. [source: help-links]
   [pins: tests/test_links.py::TestExtractWikilinks::test_fragment_only_wikilink_skipped, tests/test_links.py::TestExtractWikilinks::test_fragment_only_wikilink_with_alias_skipped, tests/test_links.py::TestResolveVaultWikilinks::test_same_note_heading_wikilink_is_not_broken]
-- Whether Obsidian records `[[#Heading]]` in `resolvedLinks` as a self-edge
-  (source → source) is not documented. [unverified] A one-note fixture and a
-  dump of `metadataCache.resolvedLinks` would show whether Obsidian's own
-  backlink/graph counts include it; the project's choice to skip it (#1107)
-  is a design decision either way.
+- Obsidian records `[[#Heading]]` as a self-edge: a note holding `## H` and
+  `[[#H]]` has `resolvedLinks[note] == {note: 1}`, so its own backlink and
+  graph counts include it. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] The project skips it (#1107), a deliberate
+  departure recorded below.
 - The help does not document `[[https://...]]`; external links are written
   as `[text](url)`, with spaces escaped as `%20` or the URL wrapped in
   `< >`. The `:` in the "may not work as a link" list implies a schemed
   wikilink is not a valid file link. [source: help-syntax] [source: help-links]
   [pins: tests/test_links.py::TestExternalUriSchemes::test_schemed_wikilink_target_is_external]
-- How Obsidian renders `[[https://example.com]]` (as a URL, as an unresolved
-  note, or as a file named `https:`) is not documented. [unverified] Fixture:
-  the wikilink, then `unresolvedLinks` for the note.
+- `[[https://example.com]]` is an *unresolved note* to Obsidian: it appears in
+  the note's link cache with `link: "https://example.com"` and in
+  `unresolvedLinks`, not as a URL. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] The project skips it as external
+  (#1335), a deliberate departure recorded below.
 
 ### Extension, non-markdown targets, embeds
 
 - `.md` may be omitted or written; both forms link the same note.
   [source: help-links]
   [pins: tests/test_links.py::TestExtractWikilinks::test_wikilink_dotmd_raw_target_keeps_extension, tests/test_utils_links.py::TestComputeNewRawTarget::test_wikilink_with_md_extension, tests/test_utils_links.py::TestComputeNewRawTarget::test_wikilink_without_md_extension]
-- Whether the extension comparison is case-insensitive (`[[Note.MD]]`) is not
-  documented. [unverified] `compute_new_raw_target` assumes it is
+- The extension comparison is case-insensitive: `[[Ext.MD]]` resolves to
+  `Ext.md`. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] Observed on a case-insensitive filesystem, so whether the
+  comparison is Obsidian's or NTFS's is not separated. `compute_new_raw_target`
+  assumes it is
   [pins: tests/test_utils_links.py::TestComputeNewRawTarget::test_wikilink_case_insensitive_md].
 - Non-markdown targets keep their extension: "links to file formats other than
   Markdown needs to include a file extension, such as `[[Figure 1.png]]`".
@@ -301,29 +304,32 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
      existed (so not file-tree order).
   [observed: Obsidian 1.13.7, the fixture above, `getFirstLinkpathDest`]
   [pins: tests/test_links_wikilink_tie_break.py::TestVault1RootPresent::test_the_exact_root_path_wins_from_every_folder, tests/test_links_wikilink_tie_break.py::TestVault2RootDeleted::test_own_folder_then_shortest_string, tests/test_links_wikilink_tie_break.py::TestVault3MoreCandidates::test_shortest_string_not_tree_order_and_no_ancestor_preference, tests/test_links_wikilink_tie_break.py::TestVault4ExactPathBeatsOwnFolder::test_an_exact_path_beats_the_own_folder_suffix_match]
-- Not observed: what breaks a tie between two candidates of equal length
-  and equal folder standing, and whether aliases share this tie-break.
-  [unverified] Two `Note.md` files in two sibling folders of equal name
-  length, and two notes declaring the same alias, would settle both.
+- A tie between two candidates of equal length and equal folder standing
+  is not stable: with `bb/Tie.md` created before `aa/Tie.md`, `[[Tie]]` from
+  the root resolved to `bb/Tie.md`; after a third candidate `zz/Tie.md` was
+  added it resolved to `aa/Tie.md`. Not creation order, not alphabetical,
+  not reverse-alphabetical. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] The project takes the lexicographically
+  first of the shortest, its own rule (#1350). Aliases do not resolve links
+  at all (below), so there is no alias tie-break to observe.
 
 ### Case, aliases, properties
 
-- Case-insensitive file-name matching for links is not stated on any help or
-  API page read. [unverified] A forum thread (secondary, not a source) reports
-  `[[log]]` and `[[LOG]]` both resolving to `Log.md` on macOS; a fixture with
-  `Log.md` and `[[log]]` on a case-sensitive filesystem plus `resolvedLinks`
-  would verify. The project matches paths case-sensitively (#235).
+- File-name matching is case-insensitive: `[[log]]` and `[[LOG]]` both
+  resolve to `Log.md`. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] Observed on a case-insensitive filesystem; the
+  same fixture on a case-sensitive one would separate Obsidian's comparison
+  from the filesystem's. [unverified] for that platform. The project
+  matches paths case-sensitively (#235).
 - Aliases are declared in the `aliases` property, "always [...] formatted as
   a list in YAML"; when an alias is chosen from suggestions "Obsidian creates
   the link with the alias as its custom display text, for example
   `[[Artificial Intelligence|AI]]`". [source: help-aliases]
   [pins: tests/test_links.py::TestAliasResolution::test_wikilink_resolves_via_alias]
-- Whether a hand-typed `[[AI]]` (alias as target) resolves to the aliased
-  note, whether that match is case-insensitive, and what happens when two
-  notes share an alias are not documented; the help only says an alias
-  "shows up in the list of suggestions". [unverified] Fixture: `[[AI]]` and
-  `[[ai]]` with `aliases: [AI]` on one note, then on two, and
-  `resolvedLinks`.
+- A hand-typed `[[AL]]` with `aliases: [AL]` declared on one or two notes
+  does **not** resolve: `getFirstLinkpathDest("AL", …)` is `null` and the
+  link sits in `unresolvedLinks`; so does `[[al]]`. Obsidian uses aliases
+  for suggestions only, as the help says, and never resolves a link by one.
+  [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] The project's alias resolution is therefore its own feature, not a
+  mirror — recorded below as a departure.
   [pins: tests/test_links.py::TestAliasResolution::test_alias_resolution_case_insensitive, tests/test_links.py::TestAliasResolution::test_path_match_takes_priority_over_alias, tests/test_links.py::TestAliasResolution::test_alias_with_fragment]
 - Properties are YAML between `---` lines at the top of the file, name and
   value separated by `: `, each name unique. Types: Text, List, Number,
@@ -337,8 +343,9 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   with their modern equivalents. Support for them as Default properties is
   dropped in Obsidian 1.9." [source: help-properties]
   [pins: tests/test_links.py::TestAliasResolution::test_alias_singular_key]
-- Whether a scalar string in `aliases:` (not a list) is honoured is not
-  stated; the help says lists only. [unverified] Fixture: `aliases: AI`.
+- A scalar `aliases: SC` is parsed into the frontmatter cache as the string
+  `"SC"` (not a list). Whether suggestions honour it is not observed;
+  resolution never does (above). [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358]
 
 ### Titles
 
@@ -348,9 +355,9 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   `HeadingCache` records headings with `heading` text and `level` 1–6.
   [source: api-dts] [source: help-properties] The project's own title
   derivation is a departure, pinned under "Where this project departs".
-- Whether a heading that contains a wikilink (`# See [[Other]]`) is stored
-  with the raw `[[Other]]` text in `HeadingCache.heading`, and therefore how
-  `[[Note#See [[Other]]]]` would have to be spelled, is [unverified].
+- A heading that contains a wikilink is stored raw: `# See [[Other]]` gives
+  `HeadingCache.heading == "See [[Other]]"`, level 1. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] How a link to
+  that heading is spelled is not observed. [unverified]
 
 ### Syntax that shares characters with links
 
@@ -365,9 +372,10 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   match `_RE_WIKILINK`, but they do match reference-link regexes (#1104).
   [source: help-syntax] [source: help-ofm]
 - Comments: "You can add comments by wrapping text with `%%`", inline
-  (`%%inline%%`) or spanning lines, "only visible in Editing view". A link
-  inside a comment is still text the scanner sees; Obsidian's treatment of it
-  in `resolvedLinks` is [unverified]. [source: help-syntax]
+  (`%%inline%%`) or spanning lines, "only visible in Editing view".
+  [source: help-syntax] A link inside a comment still counts: `%%[[Hidden]]%%`
+  and a `[[Hidden2]]` inside a multi-line comment both appear in the link
+  cache and in `unresolvedLinks`. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] The scanner sees them too; agrees.
 - Math: inline `$...$` and block `$$...$$` (MathJax/LaTeX). `|` and `[` are
   common inside math and are not link syntax there. [source: help-advanced]
 - Callouts: `> [!type]`, `> [!type] Custom Title`, foldable `> [!type]+` /
@@ -397,30 +405,44 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
 - The path style follows "New link format" (shortest unique / relative /
   absolute), and "Automatically update internal links" rewrites links on
   rename. [source: help-settings]
-- Whether Obsidian percent-decodes a markdown destination when resolving it,
-  and whether a bare `Note.md` markdown link is looked up vault-wide or only
-  relative to the source, is [unverified]. Fixture: `[x](Sub/My%20Note.md)`
-  from root and from `Sub/`, then `resolvedLinks`. The scanner resolves
-  markdown links source-relative after percent-decoding (#1332).
+- Obsidian percent-decodes a markdown destination when resolving it, and
+  looks it up **vault-wide like a wikilink**, not relative to the source:
+  with `Sub/My Note.md` present, `[y](My%20Note.md)` written in a *root*
+  note resolves to `Sub/My Note.md`, as do `[x](Sub/My%20Note.md)` from the
+  root and both spellings from `Sub/`. The link cache holds the decoded text
+  (`link: "Sub/My Note.md"`). `[w](Sub/My Note.md)`, with a literal space,
+  is not a link. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] The scanner resolves markdown links source-relative
+  after decoding (#1332), a departure recorded below and filed as #1383.
+- What Obsidian *writes* for a markdown link (`fileManager.generateMarkdownLink`
+  with "Use [[Wikilinks]]" off) to `Sub/We!rd (name) [x] #1.md`, from the
+  root and from `Sub/` alike: `[We!rd (name) [x] #1](Sub/We!rd%20(name)%20[x]%20#1.md)`
+  — the vault path with no leading slash, only spaces percent-encoded, `(`
+  `)` `[` `]` `!` `#` literal. Obsidian's own reader then cannot resolve it:
+  the link cache decodes it to `Sub/We!rd (name) [x] #1.md` but
+  `unresolvedLinks` holds `Sub/We!rd (name) [x] ` — it splits at the `#`
+  exactly as the scanner does (#1353). [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358]
 
 ### File names
 
 - Characters that "may not work as a link": `# | ^ : %% [[ ]]`.
-  [source: help-links] Forum threads (secondary) report Obsidian Sync and
-  mobile rejecting `* " / < > : | ?`; no help page read states a
-  desktop-wide forbidden set. [unverified]
-- Unicode normalisation (NFC/NFD) of file names is not mentioned by any
-  source read. [unverified] Fixture: `Café.md` saved NFD, a note with
-  `[[Café]]` typed NFC, then `resolvedLinks`.
+  [source: help-links] Creating a file through `vault.create` with any of
+  `* " \ / < > : | ?` in its name fails with Obsidian's own message "File
+  name cannot contain any of the following characters: * \" \\ / < > : | ?";
+  `#`, `^`, `[` and `]` are accepted. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] Whether the set differs on
+  macOS or Linux is [unverified].
+- A file created with an NFD name (`Cafe` + U+0301) is listed by Obsidian
+  as NFC (`Café`, code point `e9`), and an NFC `[[Café]]` resolves to it.
+  [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] Whether the normalisation is Obsidian's or Windows' is not separated.
 
 ## Where this project departs from the subject
 
 Each entry names the function and the design section that decides it.
 
-- `_RE_WIKILINK` (scanner): the grammar `[[target]]` / `[[target|alias]]`,
-  no `]` or `|` in the target, is narrower than anything Obsidian documents
-  (the help gives a "may not work" list, not a grammar). Unverifiable rather
-  than contrary. design.md § Link Extraction.
+- `_RE_WIKILINK` (scanner): the target class stops at the first `]`, where
+  Obsidian stops only at `]]` (`[[Sq]uare]]` is a link to `Sq]uare` there,
+  and no link here). Contrary, observed; #1384. The class also excludes a
+  line ending, which agrees with Obsidian (`[[Multi⏎Line]]` is no link in
+  either). design.md § Link Extraction.
 - `_extract_wikilinks` / `_extract_inline_links` / `_extract_reference_links`:
   a target with an allowlisted attachment extension is not a link at all
   (#1333), where Obsidian resolves `[[Figure 1.png]]` to the file and shows
@@ -435,16 +457,26 @@ Each entry names the function and the design section that decides it.
   matches what was observed (`[[b/Note]]` → `a/b/Note.md`).
 - `FTSIndex.resolve_vault_wikilinks`: the tie-break is the observed
   three-rule one (exact path, own folder, shortest string) since #1350;
-  the design doc's earlier "fewest path components" was wrong. Equal-length
-  ties and the alias tie-break remain [unverified] and follow the same rule
-  by analogy. design.md § Link Extraction (Wikilink resolution).
-- `FTSIndex.resolve_vault_wikilinks`: path matching case-sensitive — #235
-  asked for case-insensitivity; Obsidian's behaviour is unverified.
+  the design doc's earlier "fewest path components" was wrong. An
+  equal-length tie is lexicographic here where Obsidian's is not stable
+  (observed above) — the project's own rule, deliberately deterministic.
+  design.md § Link Extraction (Wikilink resolution).
+- `FTSIndex.resolve_vault_wikilinks`: path matching case-sensitive, where
+  Obsidian matched `[[log]]` to `Log.md` (observed on Windows; the
+  case-sensitive-filesystem half is still unverified). #235.
 - `FTSIndex.resolve_vault_wikilinks` / `_insert_aliases`: `[[Alias]]` as a
   target, case-insensitive alias match, path-beats-alias, the path rule's
-  tie-break among alias holders (own folder, then shortest) — all project
-  rules; the help documents aliases only as
-  suggestion entries that expand to `[[Note|Alias]]`. Unverifiable.
+  tie-break among alias holders — a project **feature**, not a mirror:
+  Obsidian does not resolve a link by alias at all (observed above; the help
+  documents aliases only as suggestion entries that expand to
+  `[[Note|Alias]]`). Kept deliberately. design.md § Link Extraction (Alias
+  resolution).
+- `_resolve_link_path` for markdown links: source-relative resolution after
+  decoding, where Obsidian looks a markdown destination up **vault-wide**
+  like a wikilink (observed above: `[y](My%20Note.md)` from the root finds
+  `Sub/My Note.md`). Contrary, and it breaks the links Obsidian writes in
+  its default "shortest path" format from another folder; #1383.
+  design.md § Link Extraction.
 - `_insert_aliases`: honours the scalar `alias` key that Obsidian deprecated
   in 1.4 and dropped in 1.9. Wider than current Obsidian; harmless for
   vaults that predate 1.9. design.md § Link Extraction (Alias resolution).
@@ -453,21 +485,28 @@ Each entry names the function and the design section that decides it.
   (`title`). The departure, not Obsidian's behaviour, is what these tests
   assert: [pins: tests/test_scanner.py::test_title_from_h1, tests/test_scanner.py::test_title_from_filename, tests/test_scanner.py::TestTitleField::test_falls_back_to_h1_then_stem]
 - `_extract_wikilinks` (#1107) and `_is_external_target` (#1335): skipping
-  `[[#Heading]]` and schemed targets is consistent with the help but chosen by
-  the project. design.md § Link Extraction.
+  `[[#Heading]]` and schemed targets is the project's choice. Observed
+  above, Obsidian records the first as a self-edge (so its backlink and
+  graph counts include it) and the second as an unresolved note; the
+  project keeps both skips deliberately — a self-edge would suppress orphan
+  detection, and a URL reported as a broken note helps nobody. design.md §
+  Link Extraction.
 - `convert_wikilinks_to_markdown` (okf) and `apply_link_replacement`
   (utils/links): match `[[raw_target` literally, so the `\|` table escape
   and interior whitespace variants are not rewritten (documented limitation
   in both docstrings).
 - Not modelled at all: block identifiers `^id` as anchors, callouts, `%%`
-  comments (links inside them are still indexed), inline `#tags`, property
+  comments (links inside them are indexed — as Obsidian does, observed
+  above), inline `#tags`, property
   types, `cssclasses`, embed sizes, PDF `#page=`, `.base`/`.canvas` targets.
 
 ## Not covered
 
-- Everything marked `[unverified]` above; the #1350 tie-break fixture was
-  run on 2026-09-07 and is recorded above, and the same console session is
-  the cheapest way to settle the rest (#1358).
+- The `[unverified]` rows that remain: the case-sensitivity and NFC/NFD
+  rows on a case-sensitive filesystem (macOS/Linux), how a heading holding
+  a wikilink is linked to, and whether suggestions honour a scalar
+  `aliases:`. Everything else the page listed as a fixture was run on
+  2026-09-07 (#1350, #1358) and is recorded above.
 - Block-fragment links (`[[note#^id]]`): stored as a plain fragment, no test.
 - Embeds of notes (`![[Note]]`) as distinct from links: the scanner treats
   both as links; whether Obsidian's graph does is unknown.
