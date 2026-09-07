@@ -34,7 +34,7 @@ import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, datetime
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
@@ -185,6 +185,6 @@ def build_okf_write_enrich(
         if not detector.state().active:
             return text
         actor = intent.actor if intent is not None else default_actor
-        return apply_okf_write_stamp(text, actor=actor, today=date.today())
+        return apply_okf_write_stamp(text, actor=actor, now=datetime.now(UTC))
 
     return enrich

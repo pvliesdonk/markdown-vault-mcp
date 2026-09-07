@@ -5,7 +5,7 @@ import base64
 import contextlib
 import logging
 from dataclasses import asdict
-from datetime import date
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -987,7 +987,7 @@ def register(mcp: FastMCP) -> None:
 
         Part of the OKF (Open Knowledge Format) enforced-write layer, available
         only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. Appends a
-        `{by: human:<subject>, at: <date>}` entry to the note's `verified`
+        `{by: human:<subject>, at: <UTC instant>}` entry to the note's `verified`
         frontmatter list, promoting the note's trust tier to `human-reviewed`.
 
         How the review is confirmed depends on `MARKDOWN_VAULT_MCP_OKF_VERIFY`:
@@ -1029,7 +1029,7 @@ def register(mcp: FastMCP) -> None:
             raise ToolError(f"Note not found: {path}")
         verified_count = len(verified_entries(note.frontmatter)) + 1
         new_text = append_okf_verification(
-            note.content, subject=subject, today=date.today()
+            note.content, subject=subject, now=datetime.now(UTC)
         )
         # Verification attests to a specific set of bytes, so the read-modify-
         # write must be atomic: pass the read's etag as if_match so a concurrent

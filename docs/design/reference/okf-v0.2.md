@@ -108,10 +108,12 @@ months, not twelve.
   `generated.by` is required within `generated` and is an actor;
   `generated.at` is "an ISO 8601 datetime marking the content's last
   meaningful change". [source: spec] (§5.2) [source: spec-july] (§5.2)
+  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_stamps_generated_on_a_note_without_frontmatter, tests/test_okf_write.py::TestApplyOkfWriteStamp::test_a_local_offset_instant_is_written_as_utc]
 - `verified` is "a list of verification events, each with `by` (an actor)
   and `at` (an ISO 8601 datetime)"; it "is independent of `generated.at`:
   content can change without re-confirmation, and facts can be re-confirmed
   without regeneration". [source: spec] (§5.2)
+  [pins: tests/test_okf_write.py::TestAppendOkfVerification::test_creates_verified_list_when_absent]
 - "A single verifier MAY be written as one `{ by, at }` mapping without
   the list dash. Consumers MUST treat a bare mapping as a one-element
   list" — restated as a consumer MUST in §11. [source: spec] (§5.2, §11)
@@ -161,7 +163,10 @@ months, not twelve.
   reference agent now keeps every frontmatter value as the string the
   author wrote. [source: pr-323] [observed: `yaml.safe_load` on
   `stale_after: 2026-09-23T00:00:00Z` yields a `datetime`, on the quoted
-  form a `str`; python-frontmatter uses the same loader]
+  form a `str`; python-frontmatter uses the same loader] The server's own
+  stamps are therefore written as strings, UTC with `Z`, the spec's example
+  form (#1372).
+  [pins: tests/test_okf_write.py::TestApplyOkfWriteStamp::test_the_stamp_is_a_quoted_string_not_a_yaml_timestamp]
 
 ### Provenance: `sources` (§5.1)
 
@@ -227,11 +232,6 @@ tree, 2026-09-07].
   datetime *without* an offset — allowed by neither text — is ignored.
   Decided in `docs/design/okf.md` § 3 (#1373).
   [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day]
-- **Write stamps are dates.** `apply_okf_write_stamp` and
-  `append_okf_verification` write `generated.at` and `verified[].at` as
-  `YYYY-MM-DD` (`today.isoformat()`), where both texts of v0.2 say "an ISO
-  8601 datetime" and the August text adds "with an explicit UTC offset".
-  #1372, filed from this page.
 - **`verified` is cleared on a content-changing write.** The spec keeps
   `verified` "independent of `generated.at`: content can change without
   re-confirmation"; the server's enforced write layer clears it so an
@@ -280,7 +280,5 @@ tree, 2026-09-07].
 
 - Attested Computations (§10) and the `sources[]` credibility signals
   (`usage_count`, `usage_window`): nothing here reads or writes them.
-- Whether `generated.at`, once written as a datetime, should carry the
-  server's local offset or UTC; the spec only requires an explicit offset.
 - The v0.1 fallbacks (`timestamp`, `# Citations`): the server neither reads
   nor migrates them, and no test covers a v0.1 bundle.

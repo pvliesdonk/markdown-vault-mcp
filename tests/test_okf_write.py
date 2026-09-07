@@ -16,6 +16,7 @@ Covers the four pieces of the frontmatter-enforcement phase:
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from typing import TYPE_CHECKING, Any
 
 import frontmatter as fm
@@ -51,8 +52,17 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-_TODAY = _dt.date(2026, 8, 9)
-_ISO = _TODAY.isoformat()
+_NOW = _dt.datetime(2026, 8, 9, 14, 30, 5, tzinfo=_dt.UTC)
+#: The stamp the spec's examples show: UTC, ``Z``, seconds (#1372).
+_ISO = "2026-08-09T14:30:05Z"
+_STAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
+
+
+def _assert_recent_utc_stamp(value: object) -> None:
+    """A live stamp is a UTC instant in the spec's form, written just now."""
+    assert isinstance(value, str) and _STAMP_RE.match(value), value
+    written = _dt.datetime.fromisoformat(value)
+    assert abs(_dt.datetime.now(_dt.UTC) - written) < _dt.timedelta(minutes=5)
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +72,7 @@ _ISO = _TODAY.isoformat()
 
 class TestApplyOkfWriteStamp:
     def test_stamps_generated_on_a_note_without_frontmatter(self) -> None:
-        out = apply_okf_write_stamp("# Note\n\nBody.\n", actor="a/1", today=_TODAY)
+        out = apply_okf_write_stamp("# Note\n\nBody.\n", actor="a/1", now=_NOW)
         post = fm.loads(out)
         assert post.metadata["generated"] == {"by": "a/1", "at": _ISO}
         assert "Body." in post.content
@@ -77,7 +87,7 @@ class TestApplyOkfWriteStamp:
             "---\n"
             "# T\n"
         )
-        out = apply_okf_write_stamp(text, actor="human:x", today=_TODAY)
+        out = apply_okf_write_stamp(text, actor="human:x", now=_NOW)
         meta = fm.loads(out).metadata
         assert "verified" not in meta
         assert meta["generated"] == {"by": "human:x", "at": _ISO}
@@ -95,20 +105,36 @@ class TestApplyOkfWriteStamp:
             "---\n"
             "# P\n"
         )
-        meta = fm.loads(apply_okf_write_stamp(text, actor="t/1", today=_TODAY)).metadata
+        meta = fm.loads(apply_okf_write_stamp(text, actor="t/1", now=_NOW)).metadata
         assert meta["type"] == "Playbook"
         assert meta["sources"] == [{"resource": "https://example.com/a", "id": "a"}]
         # A producer-defined key survives the round trip (OKF v0.2 §4.1).
         assert meta["x_custom"] == 1
 
     def test_same_actor_same_day_re_stamp_is_idempotent(self) -> None:
-        # Once a note carries this exact actor/date stamp and no verified,
+        # Once a note carries this exact actor/instant stamp and no verified,
         # re-stamping is a byte-for-byte no-op — its YAML formatting is frozen.
-        once = apply_okf_write_stamp("# T\n\nBody.\n", actor="t/1", today=_TODAY)
-        assert apply_okf_write_stamp(once, actor="t/1", today=_TODAY) == once
+        once = apply_okf_write_stamp("# T\n\nBody.\n", actor="t/1", now=_NOW)
+        assert apply_okf_write_stamp(once, actor="t/1", now=_NOW) == once
+
+    def test_a_local_offset_instant_is_written_as_utc(self) -> None:
+        # 16:30:05 at +02:00 is 14:30:05Z; the stamp carries one spelling
+        # for every deployment (OKF v0.2 §5 as amended 2026-08-21; #1372).
+        local = _dt.datetime(
+            2026, 8, 9, 16, 30, 5, tzinfo=_dt.timezone(_dt.timedelta(hours=2))
+        )
+        out = apply_okf_write_stamp("# Note\n", actor="a/1", now=local)
+        assert fm.loads(out).metadata["generated"]["at"] == _ISO
+
+    def test_the_stamp_is_a_quoted_string_not_a_yaml_timestamp(self) -> None:
+        # A datetime value would be re-dumped as ``2026-08-09 14:30:05+00:00``,
+        # the corruption the amendment names; a string stays as written.
+        out = apply_okf_write_stamp("# Note\n", actor="a/1", now=_NOW)
+        assert "at: '2026-08-09T14:30:05Z'" in out
+        assert isinstance(fm.loads(out).metadata["generated"]["at"], str)
 
     def test_human_actor_is_recorded_verbatim(self) -> None:
-        out = apply_okf_write_stamp("body\n", actor="human:peter", today=_TODAY)
+        out = apply_okf_write_stamp("body\n", actor="human:peter", now=_NOW)
         assert fm.loads(out).metadata["generated"]["by"] == "human:peter"
 
 
@@ -119,14 +145,14 @@ class TestApplyOkfWriteStamp:
 
 class TestAppendOkfVerification:
     def test_creates_verified_list_when_absent(self) -> None:
-        out = append_okf_verification("# N\n", subject="peter", today=_TODAY)
+        out = append_okf_verification("# N\n", subject="peter", now=_NOW)
         meta = fm.loads(out).metadata
         assert meta["verified"] == [{"by": "human:peter", "at": _ISO}]
 
     def test_appends_to_existing_list(self) -> None:
         text = "---\nverified:\n  - by: human:alice\n    at: 2026-01-01\n---\n# N\n"
         meta = fm.loads(
-            append_okf_verification(text, subject="peter", today=_TODAY)
+            append_okf_verification(text, subject="peter", now=_NOW)
         ).metadata
         # The pre-existing unquoted YAML date round-trips as a date object; the
         # appended entry carries the ISO string we wrote.
@@ -137,7 +163,7 @@ class TestAppendOkfVerification:
 
     def test_preserves_body_and_other_fields(self) -> None:
         text = "---\ntitle: T\n---\n# T\n\nBody line.\n"
-        out = append_okf_verification(text, subject="peter", today=_TODAY)
+        out = append_okf_verification(text, subject="peter", now=_NOW)
         post = fm.loads(out)
         assert post.metadata["title"] == "T"
         assert "Body line." in post.content
@@ -147,7 +173,7 @@ class TestAppendOkfVerification:
         # existing attestation must survive the append (#1357).
         text = "---\nverified:\n  by: human:alice\n  at: 2026-01-01\n---\n# N\n"
         meta = fm.loads(
-            append_okf_verification(text, subject="peter", today=_TODAY)
+            append_okf_verification(text, subject="peter", now=_NOW)
         ).metadata
         assert meta["verified"] == [
             {"by": "human:alice", "at": _dt.date(2026, 1, 1)},
@@ -158,7 +184,7 @@ class TestAppendOkfVerification:
         # A malformed scalar verified is treated as empty, not crashed on.
         text = "---\nverified: nonsense\n---\n# N\n"
         meta = fm.loads(
-            append_okf_verification(text, subject="peter", today=_TODAY)
+            append_okf_verification(text, subject="peter", now=_NOW)
         ).metadata
         assert meta["verified"] == [{"by": "human:peter", "at": _ISO}]
 
@@ -363,7 +389,7 @@ class TestInvalidationMatrix:
         meta = _meta(enforced_vault, "note.md")
         assert "verified" not in meta
         assert meta["generated"]["by"].startswith("markdown-vault-mcp/")
-        assert meta["generated"]["at"] == _dt.date.today().isoformat()
+        _assert_recent_utc_stamp(meta["generated"]["at"])
 
     def test_body_edit_clears_verified(self, enforced_vault: Vault) -> None:
         enforced_vault.writer.write("note.md", _VERIFIED_NOTE)
@@ -606,9 +632,9 @@ class TestOkfVerifyTrustAuth:
         meta = fm.loads(
             (trust_auth_env / "guides" / "playbook.md").read_text(encoding="utf-8")
         ).metadata
-        assert meta["verified"] == [
-            {"by": "human:peter", "at": _dt.date.today().isoformat()}
-        ]
+        (entry,) = meta["verified"]
+        assert entry["by"] == "human:peter"
+        _assert_recent_utc_stamp(entry["at"])
 
     async def test_missing_note_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
@@ -629,11 +655,11 @@ class TestOkfVerifyTrustAuth:
 
         real_append = writer_mod.append_okf_verification
 
-        def racing_append(text: str, *, subject: str, today: Any) -> str:
+        def racing_append(text: str, *, subject: str, now: Any) -> str:
             (trust_auth_env / "guides" / "playbook.md").write_text(
                 "---\ntitle: Raced\n---\n# Raced\n", encoding="utf-8"
             )
-            return real_append(text, subject=subject, today=today)
+            return real_append(text, subject=subject, now=now)
 
         monkeypatch.setattr(writer_mod, "append_okf_verification", racing_append)
         async with Client(make_server()) as client:
@@ -679,9 +705,9 @@ class TestOkfVerifyElicit:
         payload = _parse_tool_data(result)
         assert payload["verifier"] == "human:peter"
         assert payload["verified_count"] == 1
-        assert _verified_meta(enforced_env / "guides" / "playbook.md") == [
-            {"by": "human:peter", "at": _dt.date.today().isoformat()}
-        ]
+        (entry,) = _verified_meta(enforced_env / "guides" / "playbook.md")
+        assert entry["by"] == "human:peter"
+        _assert_recent_utc_stamp(entry["at"])
 
     async def test_no_auth_stamps_local_after_confirmation(self) -> None:
         # With no auth the elicitation — not the token — proves a human is

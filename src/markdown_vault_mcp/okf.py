@@ -954,39 +954,59 @@ def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
     return "\n".join(parts) + "\n"
 
 
-def apply_okf_write_stamp(text: str, *, actor: str, today: _dt.date) -> str:
+def okf_timestamp(now: _dt.datetime) -> str:
+    """Spell an instant the way OKF's timestamp-valued keys require.
+
+    UTC with the ``Z`` designator at seconds precision — the spec's own
+    example form (``2026-06-30T14:00:00Z``; ``docs/design/reference/okf-v0.2.md``,
+    "Trust"). One spelling for every deployment, and a *string*: a
+    ``datetime`` value would be re-dumped by the YAML emitter as
+    ``2026-06-30 14:00:00+00:00``, the corruption the spec's amendment names
+    (#1372).
+
+    Args:
+        now: The instant to spell, timezone-aware.
+
+    Returns:
+        The ISO 8601 text.
+    """
+    return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
+
+
+def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
     """Stamp ``generated: {by, at}`` and clear ``verified`` on a note's frontmatter.
 
     The enforced-write layer's core transform (design §6). Operates on the final
     file text (frontmatter plus body), so it is uniform across the ``write``
     (frontmatter-param) and ``edit`` (raw-splice) paths. ``generated`` describes
-    the current bytes and is overwritten; ``verified`` is dropped because a
-    content change invalidates any prior attestation; ``sources`` and every other
-    field are untouched.
+    the current bytes and is overwritten with the instant of this write —
+    "the content's last meaningful change" — so it moves on every content
+    write; ``verified`` is dropped because a content change invalidates any
+    prior attestation; ``sources`` and every other field are untouched.
 
     Args:
         text: The full note file text (frontmatter and body).
         actor: The provenance actor — ``human:<subject>`` when authenticated,
             else a tool actor such as ``markdown-vault-mcp/<version>``.
-        today: The stamp date (server-local; ISO-formatted into ``at``).
+        now: The instant of the write, timezone-aware (spelled by
+            :func:`okf_timestamp`).
 
     Returns:
         The stamped file text, or *text* unchanged when the resulting frontmatter
-        is identical (a same-day, same-actor re-write of a note with no
-        ``verified``) — so an unchanged note keeps its exact bytes and YAML
-        formatting.
+        is identical (the same actor and instant, no ``verified``) — so a
+        repeated stamp keeps the note's exact bytes and YAML formatting.
     """
     post = fm.loads(text)
     meta: dict[str, Any] = dict(post.metadata)
     new_meta: dict[str, Any] = dict(meta)
-    new_meta["generated"] = {"by": actor, "at": today.isoformat()}
+    new_meta["generated"] = {"by": actor, "at": okf_timestamp(now)}
     new_meta.pop("verified", None)
     if new_meta == meta:
         return text
     return fm.dumps(fm.Post(post.content, **new_meta))
 
 
-def append_okf_verification(text: str, *, subject: str, today: _dt.date) -> str:
+def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> str:
     """Append a ``human:<subject>`` entry to a note's ``verified`` list.
 
     The ``okf_verify`` tool's core transform (design §6): records an attributable
@@ -997,7 +1017,8 @@ def append_okf_verification(text: str, *, subject: str, today: _dt.date) -> str:
     Args:
         text: The full note file text (frontmatter and body).
         subject: The authenticated subject (without the ``human:`` prefix).
-        today: The verification date (server-local; ISO-formatted into ``at``).
+        now: The instant of the verification, timezone-aware (spelled by
+            :func:`okf_timestamp`).
 
     Returns:
         The note text with the appended verification.
@@ -1005,6 +1026,6 @@ def append_okf_verification(text: str, *, subject: str, today: _dt.date) -> str:
     post = fm.loads(text)
     meta: dict[str, Any] = dict(post.metadata)
     verified = list(verified_entries(meta))
-    verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": today.isoformat()})
+    verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)})
     meta["verified"] = verified
     return fm.dumps(fm.Post(post.content, **meta))
