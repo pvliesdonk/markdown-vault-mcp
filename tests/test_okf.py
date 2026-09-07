@@ -26,6 +26,8 @@ from markdown_vault_mcp.okf import (
 )
 
 TODAY = dt.date(2026, 8, 7)
+#: The instant the staleness tests run at: 10:00 in a +02:00 zone on TODAY.
+NOW = dt.datetime(2026, 8, 7, 10, 0, tzinfo=dt.timezone(dt.timedelta(hours=2)))
 
 
 def _write_root_index(vault: Path, text: str) -> None:
@@ -168,20 +170,44 @@ def test_derive_trust_tier(metadata: dict, expected: str) -> None:
         ({"stale_after": dt.date(2026, 8, 8)}, False),
         ({"stale_after": "2026-08-07"}, True),
         ({"stale_after": dt.date(2027, 1, 1)}, False),
-        ({"stale_after": dt.datetime(2026, 1, 1, 12, 0)}, True),
         ({"stale_after": "2026-01-01"}, True),
         ({"stale_after": " 2026-01-01 "}, True),
         ({"stale_after": "not-a-date"}, False),
         ({"stale_after": 20260101}, False),
+        # An instant with an offset is compared as one (OKF v0.2 as amended
+        # 2026-08-21: "stale when now >= stale_after"; #1373). NOW is
+        # 2026-08-07T08:00:00Z.
+        ({"stale_after": dt.datetime(2026, 8, 7, 8, 0, tzinfo=dt.UTC)}, True),
+        ({"stale_after": dt.datetime(2026, 8, 7, 8, 1, tzinfo=dt.UTC)}, False),
+        ({"stale_after": "2026-08-07T08:00:00Z"}, True),
+        ({"stale_after": "2026-08-07T08:00:01Z"}, False),
+        ({"stale_after": "2026-08-07T10:00:00+02:00"}, True),
+        ({"stale_after": "2026-08-08T00:30:00+02:00"}, False),
+        # The offset decides, not the calendar day: 2026-08-07T02:00-08:00 is
+        # 10:00Z, two hours after NOW.
+        ({"stale_after": "2026-08-07T02:00:00-08:00"}, False),
+        # A time with no offset is allowed by neither text of v0.2 and the
+        # amendment says to ignore such a value: treated as absent.
+        ({"stale_after": dt.datetime(2026, 1, 1, 12, 0)}, False),
+        ({"stale_after": "2026-01-01T12:00:00"}, False),
     ],
 )
 def test_derive_stale(metadata: dict, expected: bool) -> None:
-    assert derive_stale(metadata, today=TODAY) is expected
+    assert derive_stale(metadata, now=NOW) is expected
+
+
+def test_derive_stale_bare_date_uses_the_server_local_day() -> None:
+    """A bare date is judged against now's local calendar day, not UTC's."""
+    # 2026-08-08T00:30 at +02:00 is still 2026-08-07 in UTC; the bare date
+    # 2026-08-08 is stale there because the server's day has turned.
+    now = dt.datetime(2026, 8, 8, 0, 30, tzinfo=dt.timezone(dt.timedelta(hours=2)))
+    assert derive_stale({"stale_after": dt.date(2026, 8, 8)}, now=now) is True
+    assert derive_stale({"stale_after": dt.date(2026, 8, 9)}, now=now) is False
 
 
 class TestDeriveAnnotation:
     def test_empty_metadata_defaults(self) -> None:
-        annotation = derive_annotation({}, today=TODAY)
+        annotation = derive_annotation({}, now=NOW)
         assert annotation == {
             "status": OKF_STATUS_DEFAULT,
             "stale": False,
@@ -196,7 +222,7 @@ class TestDeriveAnnotation:
                 "stale_after": "2020-01-01",
                 "verified": [{"by": "human:peter"}],
             },
-            today=TODAY,
+            now=NOW,
         )
         assert annotation == {
             "type": "Playbook",
@@ -206,21 +232,21 @@ class TestDeriveAnnotation:
         }
 
     def test_unknown_status_passes_through(self) -> None:
-        annotation = derive_annotation({"status": "archived"}, today=TODAY)
+        annotation = derive_annotation({"status": "archived"}, now=NOW)
         assert annotation["status"] == "archived"
 
     def test_non_string_type_omitted(self) -> None:
-        annotation = derive_annotation({"type": 5}, today=TODAY)
+        annotation = derive_annotation({"type": 5}, now=NOW)
         assert "type" not in annotation
 
     def test_blank_status_defaults(self) -> None:
-        annotation = derive_annotation({"status": "  "}, today=TODAY)
+        annotation = derive_annotation({"status": "  "}, now=NOW)
         assert annotation["status"] == OKF_STATUS_DEFAULT
 
     def test_search_mode_counts_sources(self) -> None:
         annotation = derive_annotation(
             {"sources": [{"resource": "https://a"}, {"resource": "https://b"}]},
-            today=TODAY,
+            now=NOW,
         )
         assert annotation["sources_count"] == 2
         assert "sources" not in annotation
@@ -228,14 +254,14 @@ class TestDeriveAnnotation:
     def test_read_mode_includes_sources(self) -> None:
         sources = [{"resource": "https://a", "id": "a"}]
         annotation = derive_annotation(
-            {"sources": sources}, today=TODAY, include_sources=True
+            {"sources": sources}, now=NOW, include_sources=True
         )
         assert annotation["sources"] == sources
         assert "sources_count" not in annotation
 
     def test_empty_or_malformed_sources_omitted(self) -> None:
         for metadata in ({"sources": []}, {"sources": "https://a"}):
-            annotation = derive_annotation(metadata, today=TODAY, include_sources=True)
+            annotation = derive_annotation(metadata, now=NOW, include_sources=True)
             assert "sources" not in annotation
             assert "sources_count" not in annotation
 
@@ -361,7 +387,7 @@ def test_matches_okf_filters(
 ) -> None:
     from markdown_vault_mcp.okf import matches_okf_filters
 
-    assert matches_okf_filters(metadata, okf_filters, today=TODAY) is expected
+    assert matches_okf_filters(metadata, okf_filters, now=NOW) is expected
 
 
 PLAYBOOK_NOTE = """---

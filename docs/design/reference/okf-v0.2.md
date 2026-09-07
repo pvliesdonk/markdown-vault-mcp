@@ -146,6 +146,7 @@ months, not twelve.
   `2026-06-30T14:00:00Z`", stated once in the §5 preamble; `stale_after` is
   "an absolute instant. A concept is stale when `now >= stale_after`".
   [source: spec] (§5, §5.5)
+  [pins: tests/test_okf.py::test_derive_stale]
 - The amendment's reason: a bare date "names a different instant in every
   timezone, so the same bundle can be stale in one office and fresh in
   another" (filed upstream as issue #242, still open). "Consumers are
@@ -216,17 +217,16 @@ months, not twelve.
 Behaviour lines are [observed: `okf.py`, `_okf_write.py` on the working
 tree, 2026-09-06].
 
-- **Staleness is a date comparison, on the July text.** `derive_stale`
-  compares `stale_after` to the server-local date, stale when the date is
-  on or before today (#1357, the July rule). Against the August text it is
-  lenient where the spec asks for strictness: a bare date is honoured
-  rather than ignored; a `datetime` value is truncated to its date, so its
-  offset is discarded (`2026-09-24T00:30:00+02:00`, which is
-  2026-09-23T22:30Z, reads as not stale on the 23rd); and a *quoted*
-  ISO datetime string (`'2026-09-23T00:00:00Z'`), which the amended
-  reference agent would accept, fails `date.fromisoformat` and is treated
-  as absent. Decided in `docs/design/okf.md` § 3 for the date rule; the
-  instant rule is #1373, filed from this page.
+- **Both texts' `stale_after` forms are honoured, and the bare date is
+  kept.** `derive_stale` compares an instant with an offset as an instant
+  (`now >= stale_after`, the August rule) and a bare date against the
+  server-local calendar day (the July rule, #1357). Against the August
+  text this is lenient on purpose: the amendment says to ignore an
+  offset-less value, but a bare date is what the July text prescribed and
+  what an Obsidian author writes, and upstream #242 is still open. A
+  datetime *without* an offset — allowed by neither text — is ignored.
+  Decided in `docs/design/okf.md` § 3 (#1373).
+  [pins: tests/test_okf.py::test_derive_stale, tests/test_okf.py::test_derive_stale_bare_date_uses_the_server_local_day]
 - **Write stamps are dates.** `apply_okf_write_stamp` and
   `append_okf_verification` write `generated.at` and `verified[].at` as
   `YYYY-MM-DD` (`today.isoformat()`), where both texts of v0.2 say "an ISO

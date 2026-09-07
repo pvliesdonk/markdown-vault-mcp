@@ -1383,7 +1383,9 @@ the spec itself says, dated and sourced, in
   `_server_tools/_common.py` mirroring `attach_conventions`): when active,
   `search` hits, whole-document `read`s, and `get_context` carry an `okf`
   key — `type` (when declared), `status` (absent ⇒ `stable` per spec),
-  `stale` (today on or after `stale_after`, server-local date), and
+  `stale` (a bare `stale_after` date: the server-local day has reached it;
+  an instant with an offset: `now >= stale_after`; an offset-less datetime
+  is ignored — #1357, #1373), and
   `trust_tier` (`human-reviewed` if any `verified[].by` has the `human:`
   prefix, else `machine-confirmed` if `verified` is non-empty, else
   `unverified`; a bare `verified` mapping is a one-element list, as the

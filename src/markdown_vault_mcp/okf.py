@@ -254,46 +254,83 @@ def derive_trust_tier(metadata: dict[str, Any]) -> str:
     return TRUST_UNVERIFIED
 
 
-def derive_stale(metadata: dict[str, Any], *, today: _dt.date) -> bool:
-    """Derive staleness from ``stale_after`` (date-only comparison).
+_DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
-    The field reference's rule: "Stale when ``today >= stale_after``", so
-    the date named is the first stale day (#1357).
+
+def _aware_or_none(value: _dt.datetime, raw: Any) -> _dt.datetime | None:
+    """Keep an instant that carries an offset; drop one that does not."""
+    if value.tzinfo is None:
+        logger.debug("okf_stale_after_naive value=%r", raw)
+        return None
+    return value
+
+
+def _parse_stale_after(raw: Any) -> _dt.date | _dt.datetime | None:
+    """Read a ``stale_after`` value into the shape its text of v0.2 gives it.
+
+    Returns a ``date`` for the July text's calendar-day form, an aware
+    ``datetime`` for the August text's instant form, and ``None`` for
+    anything else — including a datetime without an offset, which neither
+    text allows and the amendment says to ignore (#1373).
+    """
+    if isinstance(raw, _dt.datetime):
+        return _aware_or_none(raw, raw)
+    if isinstance(raw, _dt.date):
+        return raw
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    try:
+        parsed = (
+            _dt.date.fromisoformat(text)
+            if _DATE_ONLY_RE.match(text)
+            else _dt.datetime.fromisoformat(text)
+        )
+    except ValueError:
+        logger.debug("okf_stale_after_invalid value=%r", raw)
+        return None
+    return _aware_or_none(parsed, raw) if isinstance(parsed, _dt.datetime) else parsed
+
+
+def derive_stale(metadata: dict[str, Any], *, now: _dt.datetime) -> bool:
+    """Derive staleness from ``stale_after``.
+
+    Both texts of OKF v0.2 are honoured (``docs/design/reference/okf-v0.2.md``,
+    "Lifecycle"): a calendar date is stale from that day on, judged by the
+    server-local day of *now* (the July rule, #1357); an instant with an
+    offset is stale when ``now >= stale_after`` (the August rule, #1373). A
+    datetime without an offset is ignored, as the amendment asks.
 
     Args:
         metadata: The note's frontmatter dict. ``stale_after`` may be a
-            ``date`` (YAML parses bare ISO dates) or a ``YYYY-MM-DD``
-            string; anything else is treated as absent.
-        today: The server-local date to compare against.
+            ``date`` or ``datetime`` (YAML parses bare timestamps) or their
+            ISO 8601 string spellings; anything else is treated as absent.
+        now: The current instant, timezone-aware. Its local calendar day is
+            what a bare date is compared against.
 
     Returns:
-        ``True`` iff ``stale_after`` parses and is on or before *today*.
+        ``True`` iff ``stale_after`` parses and *now* has reached it.
     """
-    raw = metadata.get("stale_after")
-    if isinstance(raw, _dt.datetime):
-        raw = raw.date()
-    if isinstance(raw, _dt.date):
-        return raw <= today
-    if isinstance(raw, str):
-        try:
-            return _dt.date.fromisoformat(raw.strip()) <= today
-        except ValueError:
-            logger.debug("okf_stale_after_invalid value=%r", raw)
-            return False
-    return False
+    boundary = _parse_stale_after(metadata.get("stale_after"))
+    if boundary is None:
+        return False
+    if isinstance(boundary, _dt.datetime):
+        return now >= boundary
+    return now.date() >= boundary
 
 
 def derive_annotation(
     metadata: dict[str, Any],
     *,
-    today: _dt.date | None = None,
+    now: _dt.datetime | None = None,
     include_sources: bool = False,
 ) -> dict[str, Any]:
     """Derive the ``okf`` read-annotation payload for one note.
 
     Args:
         metadata: The note's frontmatter dict (may be empty).
-        today: Server-local date for staleness; defaults to today.
+        now: The current instant for staleness, timezone-aware; defaults to
+            the server's local now.
         include_sources: When true (``read`` payloads), include the raw
             ``sources`` list; otherwise (search hits) include only
             ``sources_count``, and only when non-zero.
@@ -303,7 +340,7 @@ def derive_annotation(
         ``stale``, and ``trust_tier`` always; ``type`` only when present
         and non-empty; sources per *include_sources*.
     """
-    today = today or _dt.date.today()
+    now = now or _dt.datetime.now().astimezone()
     annotation: dict[str, Any] = {}
     note_type = metadata.get("type")
     if isinstance(note_type, str) and note_type.strip():
@@ -314,7 +351,7 @@ def derive_annotation(
         if isinstance(status, str) and status.strip()
         else OKF_STATUS_DEFAULT
     )
-    annotation["stale"] = derive_stale(metadata, today=today)
+    annotation["stale"] = derive_stale(metadata, now=now)
     annotation["trust_tier"] = derive_trust_tier(metadata)
     sources = metadata.get("sources")
     source_list = sources if isinstance(sources, list) else []
@@ -376,7 +413,7 @@ def matches_okf_filters(
     metadata: dict[str, Any],
     okf_filters: dict[str, str],
     *,
-    today: _dt.date | None = None,
+    now: _dt.datetime | None = None,
 ) -> bool:
     """Evaluate the OKF filter dimensions against one note's frontmatter.
 
@@ -389,7 +426,8 @@ def matches_okf_filters(
         metadata: The note's frontmatter dict (may be empty).
         okf_filters: The OKF-dimension subset of a ``filters`` dict —
             keys from :data:`OKF_FILTER_KEYS` only.
-        today: Server-local date for staleness; defaults to today.
+        now: The current instant for staleness, timezone-aware; defaults to
+            the server's local now.
 
     Returns:
         ``True`` when every given dimension matches.
@@ -397,7 +435,7 @@ def matches_okf_filters(
     Raises:
         ValueError: If a ``stale`` value is not a true/false spelling.
     """
-    annotation = derive_annotation(metadata, today=today)
+    annotation = derive_annotation(metadata, now=now)
     for key, value in okf_filters.items():
         if key == "stale":
             if annotation["stale"] is not parse_stale_filter(value):

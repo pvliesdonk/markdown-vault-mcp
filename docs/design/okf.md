@@ -64,7 +64,8 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
   Actor convention `human:<id>` / `process:<id>` / `<tool>/<version>`.
   Derived tiers: **unverified → machine-confirmed → human-reviewed**.
 - **Lifecycle:** `status: draft|stable|deprecated` (default `stable`),
-  `stale_after: YYYY-MM-DD`.
+  `stale_after`: a `YYYY-MM-DD` date (the July 2026 text) or an ISO 8601
+  instant with an offset (the text since 2026-08-21).
 - **Bundle marker:** `okf_version: "0.2"` allowed only in the bundle-root
   `index.md` frontmatter.
 - **Reserved files:** `index.md` (progressive-disclosure directory listing)
@@ -158,9 +159,14 @@ server's ranking math — layer 1 surfaces signal and lets the agent judge.
 **Computed per-note properties** (derived at annotation time from the stored
 frontmatter blob; not persisted):
 
-- `staleness`: `stale` iff today ≥ `stale_after` (the spec's rule, date-only
-  comparison, server-local date — the named date is the first stale day,
-  #1357); absent field → not stale.
+- `staleness`: both texts of v0.2 honoured (#1357, #1373). A bare date is
+  stale from that server-local day on (the named date is the first stale
+  day); an instant with an offset is stale when `now >= stale_after`,
+  compared as instants; a datetime *without* an offset is allowed by neither
+  text and is ignored (treated as absent), as the 2026-08-21 amendment
+  asks; absent field → not stale. Accepting the bare date is a deliberate
+  lenience against the amended text's "ignore" — Obsidian authors write
+  dates, and the upstream issue behind the amendment is still open.
 - `trust_tier`: `human-reviewed` if any `verified[].by` has the `human:`
   prefix; else `machine-confirmed` if `verified` is non-empty (all
   verifiers non-human); else `unverified`. A bare `verified` mapping is
@@ -529,8 +535,9 @@ phase owns.
 - Trust-tier edge cases: `verified` entries by `process:` actors only —
   v0.2 tier language suggests machine-confirmed; confirm against SPEC.md
   examples before freezing the table.
-- `stale_after` timezone semantics (spec gives date only) — proposal:
-  server-local date, documented.
+- ~~`stale_after` timezone semantics~~ — settled by the spec's 2026-08-21
+  amendment and #1373: the value carries its own offset; a bare date is the
+  server-local day.
 - Whether `okf_export` should optionally include a generated bundle-root
   `index.md` when absent (spec allows synthesized indexes) — lean yes.
 - Community governance ("W3C Holon CG" / "DataBook" profile) is
