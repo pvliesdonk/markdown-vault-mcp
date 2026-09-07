@@ -2377,6 +2377,24 @@ stray <code>[</code> in one item must not pair into the next. And a destination
 wrapped onto its own line inside the parentheses is not accepted, because
 that shape is what the converted-PDF defect produced. Existing vaults
 rebuild once on first start after upgrade.</p>
+<p><strong>A link written in any CommonMark spelling names the same note.</strong> An
+inline link's destination was read as raw text up to the first <code>)</code>, so
+the spellings CommonMark defines beyond the literal one resolved to
+nothing: <code>[x](&lt;my note.md&gt;)</code> was stored as a link to <code>sub/&lt;my note.md&gt;</code>,
+<code>[x](note.md "title")</code> to <code>note.md "title"</code>, <code>[x](a(b).md)</code> to <code>a(b</code>, and
+<code>\(</code> or <code>&amp;amp;</code> stayed as typed
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1353">#1353</a>).
+The pointy-bracket form is how CommonMark spells a destination with a
+space in it, so a note titled with spaces could not be linked without
+percent-encoding. The destination is now read by the spec's grammar (the
+<code>&lt;…&gt;</code> form, escaped or balanced parentheses, a trailing title, backslash
+escapes and entity references) and decoded before it is resolved, in
+reference definitions as well as inline links; an attachment written in
+any of these spellings is excluded from the link graph like the literal
+one. A rename keeps the form the author used, so <code>&lt;my note.md&gt;</code> becomes
+<code>&lt;new name.md&gt;</code>. One limit is deliberate: parentheses balance to three
+levels, the depth the spec's own examples reach. Existing vaults rebuild
+once on first start after upgrade.</p>
 <p><strong>Renaming an attachment says when <code>update_links</code> does not apply.</strong> The
 attachment branch of <code>rename</code> never read the flag, so a call that asked
 for a rewrite answered <code>updated_links: 0</code> and nothing else, and "the two
@@ -2461,7 +2479,7 @@ meaning; the operator surface only grew (two GitLab webhook variables,
 <code>INSTANCE_DESCRIPTION</code>). A few things do change behavior without any action
 on your part:</p>
 <ul>
-<li><strong>The text index rebuilds once on first start.</strong> Five changes in this
+<li><strong>The text index rebuilds once on first start.</strong> Six changes in this
   release alter how stored rows derive from a note's bytes: skip
   tombstones
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1227">#1227</a>),
@@ -2471,10 +2489,12 @@ on your part:</p>
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1332">#1332</a>),
   attachment references leaving the link graph
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1333">#1333</a>),
-  and links bounded to one paragraph
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1334">#1334</a>).
-  <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 7. One rebuild covers all
-  five; it is automatic, costs CPU and local IO proportional to vault size,
+  links bounded to one paragraph
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1334">#1334</a>),
+  and destinations read in every CommonMark spelling
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1353">#1353</a>).
+  <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 8. One rebuild covers all
+  six; it is automatic, costs CPU and local IO proportional to vault size,
   and does not re-embed.</li>
 <li><strong>A note becomes stale one day earlier, and an instant is honoured.</strong>
   <code>stale_after</code> is now the first stale day rather than the last current
