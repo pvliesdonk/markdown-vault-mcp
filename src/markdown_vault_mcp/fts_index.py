@@ -241,12 +241,24 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: Current version of the parse-to-row pipeline whose output is stored in the
 #: index (link extraction, chunk boundaries, tag/alias/heading derivation).
 #:
-#: **Bump this in the same commit** as any change that makes an unchanged file
-#: yield different stored rows. The bump is what converts such a fix into a
-#: fix operators actually receive: on the next start, the warm-restart
-#: short-circuit is rejected and every file is re-parsed once. Changes that
-#: only affect how stored rows are *queried* or *rendered* (ranking, snippets,
-#: response shaping) need no bump — nothing on disk went stale.
+#: Any change that makes an unchanged file yield different stored rows must
+#: be covered by a bump of this value — landed in the same commit, since the
+#: bump is what converts such a fix into a fix operators actually receive:
+#: on the next start, the warm-restart short-circuit is rejected and every
+#: file is re-parsed once. Changes that only affect how stored rows are
+#: *queried* or *rendered* (ranking, snippets, response shaping) need no
+#: bump — nothing on disk went stale.
+#:
+#: **One bump per release** (#1365). A deployment can only ever hold a value
+#: that shipped in a stable or rc release, so bumping on every merged fix
+#: manufactures values nobody can be at (4 through 8 below never shipped;
+#: they are kept as history). Before bumping, check whether the commit that
+#: set the current value is contained in a stable or rc tag
+#: (``git tag --contains <sha>``): if it is not, the current value already
+#: covers the next release — add the change to that version's note instead.
+#: The edge channel does not count as a release here. A redundant bump is
+#: harmless (one extra rebuild that would have happened anyway), so this is
+#: a should, not a must.
 #:
 #: Version 3 (#1129): skipped files became part of the stored row set —
 #: every surfaced deterministic skip now writes a tombstone row into
