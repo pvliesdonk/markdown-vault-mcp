@@ -2,6 +2,7 @@
 
 ## 2026-09-07
 
+- `commonmark-gfm.md`: the `_RE_INLINE_LINK`, reference-definition and `apply_link_replacement` departure entries re-observed after #1353 (destination parsed by §6.3's grammar, entities by §2.5's rule; the three-level parenthesis cap recorded as the deliberate departure); pins added.
 - `okf-v0.2.md`: the write-stamp departure removed for #1372 — `generated.at` and `verified[].at` are now UTC instants in the spec's example form, written as strings; the `generated`/`verified` claims gain their pins and the open offset question closes.
 - `okf-v0.2.md`: the staleness departure rewritten for #1373 — an instant with an offset is now compared as one, the bare date stays as a recorded lenience, an offset-less datetime is ignored; the August `stale_after` claim gains its pin.
 - Every page's `generated.at` and `verified[].at` rewritten from a bare date to the author instant of the commit that did the research or the refute (Codex on #1374: the OKF page documented the datetime rule and stamped itself with a date, as the template-owned skill's own template prescribes). `stale_after` stays a calendar date because `scripts/check_references.py` requires one; both raised upstream as fastmcp-server-template#603; the plugin's stale digest as claude-plugins#47. `okf-v0.2.md` gains the reserved-frontmatter departure (`ReservedFrontmatterPolicy`, #1174/#1175) and the bundle's own `stale_after` shape.

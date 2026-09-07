@@ -848,7 +848,7 @@ Find all links across the vault pointing to non-existent documents.
 
 **Returns:** List of entries with `source_path`, `source_title`, `target_path`, `link_text`, `link_type`, `fragment`, and `raw_target` fields.
 
-A missing attachment is not reported: references to attachments are not links (see [`get_outlinks`](#get_outlinks)). What is listed is a target no indexed note matches, whether a note reference or a destination whose extension is not on the attachment allowlist. A destination written in a CommonMark spelling the scanner does not yet parse, such as `[paper](<my report.pdf>)` or `[paper](report.pdf "PDF")`, is classified as written and is still listed (#1353). `stats.broken_link_count` counts the same population.
+A missing attachment is not reported: references to attachments are not links (see [`get_outlinks`](#get_outlinks)). What is listed is a target no indexed note matches, whether a note reference or a destination whose extension is not on the attachment allowlist. Every CommonMark destination spelling is read (`<my report.pdf>`, `report.pdf "PDF"`, `a\(b\).md`, `a&amp;b.md`), so an attachment written in any of them is excluded like the literal spelling (#1353). `stats.broken_link_count` counts the same population.
 
 ### `get_similar`
 

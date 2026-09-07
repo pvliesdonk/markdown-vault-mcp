@@ -241,6 +241,12 @@ Python 3.13.
   `\[` makes `\[not a link](/foo)` text (Ex. 14, 563). [source: cm]
   [observed: markdown-it-py 3.0.0, `[a](x\*.md)` → `x*.md`;
   `[a](x&#46;md)` → `x.md`]
+  [pins: tests/test_links_destination_spellings.py::TestPlainForm::test_escaped_asterisk, tests/test_links_destination_spellings.py::TestPlainForm::test_numeric_entity]
+- A numeric character reference to U+0000, to a surrogate, or above
+  U+10FFFF is "replaced by the REPLACEMENT CHARACTER (U+FFFD)"; an entity
+  name must be one of the HTML5 names and carry its `;` (`&copy` and
+  `&MadeUpEntity;` stay literal, Ex. 29, 30). [source: cm] (§2.5)
+  [pins: tests/test_links_destination_spellings.py::TestPlainForm::test_a_surrogate_reference_becomes_the_replacement_character, tests/test_links_destination_spellings.py::TestPlainForm::test_entity_without_semicolon_stays_literal]
 - Images are `![`…`](`…`)` with the same grammar (§6.4). [source: cm]
   [pins: tests/test_links.py::TestExtractInlineLinks::test_image_link_excluded]
 - A soft break (§6.8) or hard break (§6.7) inside link text keeps the link.
@@ -351,7 +357,8 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   (#1334). A span with a line ending inside is not stripped; a
   double-backtick span holding an inner backtick is stripped up to that
   backtick. [observed: `_strip_inline_code`, 2026-09-06]
-- `_RE_INLINE_LINK` in `_extract_inline_links` — **right** on the #1334
+- `_RE_INLINE_LINK_OPEN` + `_parse_destination` in `_extract_inline_links` —
+  **right** on the #1334
   boundaries the decision table below marks honoured, since 2026-09-06:
   each pattern runs inside one paragraph region (`_paragraph_regions`,
   line-shape only) and the destination class excludes `\n`; line endings
@@ -359,22 +366,28 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   inside the parentheses (§6.3, one line ending allowed) is not recognised
   — a deliberate departure, pinned. [observed: `extract_links`, 2026-09-06]
   [pins: tests/test_links_paragraph_bounds.py::TestSeparators::test_a_stray_bracket_does_not_cross_it, tests/test_links_paragraph_bounds.py::TestOpeners::test_a_link_on_the_line_survives, tests/test_links_paragraph_bounds.py::TestIssueReproduction::test_a_destination_on_its_own_line_is_the_known_cost]
-  **Partial** elsewhere: no `<dest>` form (stored as `<x y.md>`); no title
-  (stored as `x.md "t"`); no balanced parentheses (`x(1).md` stored as
-  `x(1`); spaces in destinations accepted; no bracket balancing
-  (`[a [b] c](x.md)` missed, `[a [b c](x.md)` links `b c`); `\[` ignored;
-  escapes and entities kept raw; links inside HTML blocks and fence info
+  **Right** on the destination since #1353 (`_parse_destination`,
+  2026-09-07): the `<…>` form, escaped and balanced parentheses, a trailing
+  title in any of the three quotings, backslash escapes and entity
+  references (§2.5's rule: a valid name with its `;`, or a numeric
+  reference; `&notes` stays literal), decoded before the URL layer.
+  [observed: `extract_links`, 2026-09-07]
+  [pins: tests/test_links_destination_spellings.py::TestIssueTable::test_pointy_brackets_hold_spaces, tests/test_links_destination_spellings.py::TestPlainForm::test_three_levels_of_balanced_parentheses, tests/test_links_destination_spellings.py::TestPlainForm::test_entity_without_semicolon_stays_literal]
+  **Partial** elsewhere: parentheses balance to three levels, not any depth
+  (a deliberate cap, pinned); spaces in a plain destination accepted; no
+  bracket balancing in link text (`[a [b] c](x.md)` missed, `[a [b c](x.md)`
+  links `b c`); `\[` ignored; links inside HTML blocks and fence info
   strings extracted. Right: images by `!` lookbehind; `[a] (x.md)` rejected.
-  Decided in `docs/design/design.md` § Link Extraction; the destination
-  spellings are #1353.
+  Decided in `docs/design/design.md` § Link Extraction.
 - `_RE_REF_USAGE` / `_RE_REF_DEF` in `_extract_reference_links` —
   **partial.** Right: full and collapsed forms, title stripping,
   document-wide definitions, footnotes excluded. Wrong: shortcut `[label]`
   not extracted; the *last* definition wins; labels are lower-cased, not
   case-folded (`[ẞ]`/`[ss]` miss) and whitespace is not collapsed; a
   4-space-indented definition accepted, one inside `> ` rejected; trailing
-  garbage kept in the target; `<x y.md>` kept with brackets; label text may
-  span a blank line. A usage's text no longer spans a blank line, and the
+  garbage kept in the target; label text may span a blank line. A `<x y.md>`
+  definition resolves since #1353 (brackets, escapes and entities decoded as
+  for an inline destination). A usage's text no longer spans a blank line, and the
   CR-only miss is gone: line endings are normalised before `_RE_REF_DEF`
   runs, so `[t][r]\r[r]: x.md\r` links (#1334). [observed: `extract_links`,
   2026-09-06]
@@ -393,9 +406,13 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   `\x0c`, `\x1c`–`\x1e`, `\x85`, U+2028/2029 too and strips NBSP, so its
   lines and blanks are a superset of CommonMark's.
   [observed: `"a\r\nb\rc\nd\x0ce\x1cf\x85g h".splitlines()` gives 8 lines]
-- `apply_link_replacement` — **partial.** `[text](old title?)` and
-  `[label]: old title?` only; its title capture `(?:\s[^)]*)?` admits a line
-  ending; runs on raw content including code spans (documented there).
+- `apply_link_replacement` / `compute_new_raw_target` — **partial.**
+  `[text](old title?)` and `[label]: old title?` only; its title capture
+  `(?:\s[^)]*)?` admits a line ending; runs on raw content including code
+  spans (documented there). Since #1353 the rewrite keeps a `<…>`
+  destination pointy and compares the decoded spelling, but introduces no
+  escaping the author did not use.
+  [pins: tests/test_links_destination_spellings.py::TestRenameKeepsTheSpelling::test_pointy_relative_with_fragment_stays_pointy]
   [pins: tests/test_utils_links.py::TestApplyLinkReplacement::test_markdown_image_not_affected, tests/test_utils_links.py::TestApplyLinkReplacement::test_reference_link_with_title]
 - Ingestion: `parse_note` decodes `utf-8-sig`, then `frontmatter.loads`;
   python-frontmatter 1.3.0 replaces `\r\n` with `\n` in `frontmatter.util.u`

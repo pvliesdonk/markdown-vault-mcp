@@ -2057,20 +2057,17 @@ made:
   and entity references in a destination (`reference/commonmark-gfm.md`,
   "Inline links": `[a](x\*.md)` names `x*.md`, `[a](x&#46;md)` names `x.md`)
   *before* the destination is a URL; percent-decoding is the URL layer after
-  that. The scanner does not yet decode escapes or entities (#1353); when it
-  does, that step runs before `decode_link_target`, never after — and so
-  before the attachment classification below, which is asked of the decoded
-  destination. Until then a destination in one of those spellings is
-  classified as written, so `[paper](<my report.pdf>)` and
-  `[paper](report.pdf "PDF")` are still stored as (broken) links, exactly as
-  on the release before #1333; the reference-definition form
-  `[r]: report.pdf "PDF"` is excluded, because definitions already strip
-  the title.
+  that. The scanner decodes them in that order (#1353): backslash escapes
+  and entity references first, `decode_link_target` after, never before —
+  and so before the attachment classification below, which is asked of the
+  decoded destination; `[paper](<my report.pdf>)` and
+  `[paper](report.pdf "PDF")` therefore name an attachment and are not
+  links, like every other spelling of the same reference.
 
 **Wikilinks are not decoded.** Obsidian writes wikilink targets literally, so
 `%20` in one is part of the name; decoding would break a note genuinely
 carrying a `%`. This is the one place the two link families deliberately
-disagree, and `_resolve_link_path` takes a `decode_percent` flag rather than
+disagree, and `_resolve_link_path` takes a `decode_markdown` flag rather than
 guessing.
 
 **A rewrite keeps the spelling, not just the shape.** `compute_new_raw_target`
@@ -2082,9 +2079,56 @@ made against the decoded destination, and the replacement is re-encoded
 (`quote`, `safe="/"`) only when the original was encoded; a refused
 destination never decoded, so it is not re-encoded either. No encoding is
 introduced where the author used none, which also means a rename cannot repair
-a destination whose new name would need escaping to parse. The other CommonMark
-destination spellings (pointy brackets, backslash escapes, balanced
-parentheses, titles, entities) are a separate defect, #1353.
+a destination whose new name would need escaping to parse.
+
+**A destination is read by CommonMark's grammar, in any of its spellings
+(#1353).** It used to be everything up to the first `)`, so the five spellings
+§6.3 defines beyond the literal one stored targets no file can have:
+`[x](<my note.md>)` stored `sub/<my note.md>`, `[x](note.md "title")` stored
+`note.md "title"`, `[x](a(b).md)` stored `a(b`, and `\(` or `&amp;` stayed
+raw. `_parse_destination` now reads what follows `](` the way
+[`reference/commonmark-gfm.md`](reference/commonmark-gfm.md) ("Inline links")
+records the spec: optional spaces or tabs; either the `<…>` form (no line
+ending, no unescaped `<` or `>`; spaces and `)` allowed inside) or the plain
+form (parentheses escaped or balanced); then an optional title in `"…"`,
+`'…'` or `(…)`, escapes honoured; then `)`. Reference definitions get the same
+title stripping, escape-aware. The destination is then decoded by one
+function, `decode_markdown_destination` in `utils/links.py`: the `<…>`
+brackets come off, backslash escapes before ASCII punctuation and entity
+references are decoded — only a valid HTML5 entity name with its `;`, or a
+numeric reference, as §2.5 has it; `&notes` stays literal where
+`html.unescape` would read HTML5's legacy `&not` — and then
+`decode_link_target` runs the URL layer with its refusals. The fragment
+splits after the brackets come off and at the first `#` that is neither
+escaped (`\#`; an escaped backslash before it, `\\#`, does not count) nor
+the `#` of a well-formed numeric reference (`&#46;`), for the same reason
+`%23` splits after the percent-decode; `split_markdown_fragment` is shared
+with the rename path.
+
+`raw_target` keeps the destination **as written, title excluded** —
+`<my note.md>`, `a\(b\).md` — because `apply_link_replacement` searches the
+file for it; `target_path` comes from the decoded form. That is also why the
+rename path had to move with this: a `<…>` link that now resolves is a backlink
+a rename rewrites, and `compute_new_raw_target` compared the destination with
+its brackets on, fell into the relative branch and would have written
+`[x](new.md#frag>)`. It now takes the brackets off for the comparison, decodes
+escapes and entities as well as percent-escapes, and puts the brackets back
+on the answer: pointy stays pointy, plain stays plain, and no escaping is
+introduced where the author used none — with one bounded exception. A new
+name with a space or an unbalanced paren is written literally in plain form
+and comes back *broken*, the pre-existing class; but a new name containing
+`#` (or `<`/`>` inside the pointy form) would come back *re-pointed* — read as
+a fragment or an anchor, the backlink silently gone — so exactly those
+characters are backslash-escaped on rewrite (`\#y.md`, `<new\>x.md>`). A
+percent-encoded original already encodes them.
+
+Departures, pinned: parentheses balance to three levels, the depth §6.3's own
+examples reach, so a pathological line stays one linear regex pass (deeper
+nesting is no link); spaces and tabs stay accepted in a plain destination
+(only spaces and tabs are trimmed at its edges; a NBSP is a character of it); no line
+ending inside the parentheses (#1334); link text is still not
+bracket-balanced (`[a [b] c](x)`); wikilinks are untouched.
+`INDEX_SEMANTICS_VERSION` 7 → 8 gives those links their targets on upgrade.
 
 **A link is matched inside one paragraph, never across a boundary (#1334).**
 The three patterns used to run over the whole code-stripped body, and their
@@ -2156,8 +2200,11 @@ no scheme to detect. Two or more characters are required before the colon so a
 Windows drive (`C:/notes/x.md`) stays a path; the known cost is that a file
 name shaped like `draft:v2.md` reads as a scheme. The test applies at all three
 extraction sites, wikilinks included. "Pure anchor" covers every spelling of a same-document reference:
-`[text](#heading)`, a reference definition whose target starts with `#`, and the
-wikilink form `[[#heading]]` (issue #1107). The wikilink form was the exception
+a markdown destination whose *written* path part — brackets off, fragment
+split before any decoding — is empty (`#heading`, `<#heading>`, in an inline
+link or a reference definition), and the wikilink form `[[#heading]]` (issue
+#1107). Judged as written, not decoded: `%23x.md`, `\#x.md` and `&#35;x.md`
+are files whose name begins with a literal `#`, not anchors (#1353). The wikilink form was the exception
 until #1107: its fragment is split off before `.md` is appended, so the empty path
 portion became the literal target `".md"`, which no document can match, and every
 note using Obsidian's same-note heading reference contributed to

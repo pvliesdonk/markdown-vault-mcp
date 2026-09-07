@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os.path as osp
 import re
+from html.entities import html5 as _HTML5_ENTITIES
 from pathlib import Path
 from urllib.parse import quote, unquote
 
@@ -60,6 +61,179 @@ def decode_link_target(target: str) -> str:
         return target
 
 
+#: A backslash before an ASCII punctuation character is an escape (CommonMark
+#: §2.4); before anything else it is a literal backslash (Ex. 13).
+_RE_BACKSLASH_ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
+
+
+#: An entity or numeric character reference (CommonMark §2.5): a valid HTML5
+#: entity name, or a decimal (1-7 digits) or hexadecimal (1-6 digits)
+#: reference, always closed by ``;``. Anything else stays literal, which is
+#: stricter than ``html.unescape`` — that follows HTML5's legacy list and
+#: reads ``&not`` without a semicolon as ``¬``.
+_RE_CHARACTER_REFERENCE = re.compile(
+    r"&(?:#[xX](?P<hex>[0-9A-Fa-f]{1,6})|#(?P<dec>[0-9]{1,7})|(?P<name>[A-Za-z][A-Za-z0-9]{1,31}));"
+)
+#: Escapes and references in one pass, the escape leftmost, so ``\\&#46;``
+#: yields a literal ``&`` followed by ``#46;`` rather than an escaped ``&``
+#: that is then re-read as the start of a reference (CommonMark resolves
+#: §2.4 and §2.5 together).
+_RE_ESCAPE_OR_REFERENCE = re.compile(
+    rf"(?P<esc>{_RE_BACKSLASH_ESCAPE.pattern})|{_RE_CHARACTER_REFERENCE.pattern}"
+)
+
+
+def _decode_reference(match: re.Match[str]) -> str:
+    if match.group("esc") is not None:
+        return match.group("esc")[1]
+    if (name := match.group("name")) is not None:
+        return _HTML5_ENTITIES.get(name + ";", match.group(0))
+    codepoint = int(
+        match.group("hex") or match.group("dec"), 16 if match.group("hex") else 10
+    )
+    # U+0000, a surrogate, and anything outside Unicode become U+FFFD
+    # (§2.5, "invalid Unicode code points"); a lone surrogate would not
+    # even survive the trip into SQLite (UTF-8 refuses it).
+    if codepoint == 0 or 0xD800 <= codepoint <= 0xDFFF or codepoint > 0x10FFFF:
+        return "\ufffd"
+    return chr(codepoint)
+
+
+def _decode_escapes_and_entities(text: str) -> str:
+    return _RE_ESCAPE_OR_REFERENCE.sub(_decode_reference, text)
+
+
+#: A numeric character reference's body after its ``&#`` (§2.5).
+_RE_NUMERIC_REFERENCE_TAIL = re.compile(r"#(?:[xX][0-9A-Fa-f]{1,6}|[0-9]{1,7});")
+
+
+def _is_escaped(written: str, pos: int) -> bool:
+    """Whether an odd run of backslashes precedes *pos* (§2.4)."""
+    backslashes = 0
+    while pos - backslashes - 1 >= 0 and written[pos - backslashes - 1] == "\\":
+        backslashes += 1
+    return backslashes % 2 == 1
+
+
+def _is_fragment_marker(written: str, pos: int) -> bool:
+    """Whether the ``#`` at *pos* begins the fragment rather than the name.
+
+    Not when it is escaped (``\\#``; ``\\\\#`` is an escaped backslash then a
+    marker, §2.4), and not when it is the ``#`` of a well-formed numeric
+    character reference whose ``&`` is not itself escaped (``&#46;``, §2.5).
+    """
+    if _is_escaped(written, pos):
+        return False
+    return not (
+        pos > 0
+        and written[pos - 1] == "&"
+        and not _is_escaped(written, pos - 1)
+        and _RE_NUMERIC_REFERENCE_TAIL.match(written, pos) is not None
+    )
+
+
+def split_markdown_fragment(written: str) -> tuple[str, str | None]:
+    """Split a markdown destination, brackets already off, at its fragment.
+
+    Runs on the text *as written*, before any decoding, so an encoded or
+    escaped ``#`` stays in the name (#1332, #1353). Extraction and the
+    rename path both use it, so the two cannot disagree on where a
+    destination ends.
+
+    Args:
+        written: The destination without its ``<…>`` brackets, title
+            excluded.
+
+    Returns:
+        ``(path_part, fragment)``; *fragment* is ``None`` when absent or
+        empty.
+    """
+    pos = written.find("#")
+    while pos != -1 and not _is_fragment_marker(written, pos):
+        pos = written.find("#", pos + 1)
+    if pos == -1:
+        return written, None
+    return written[:pos], written[pos + 1 :] or None
+
+
+def is_anchor_destination(raw: str) -> bool:
+    """Whether a destination, as written, names only a fragment of its note.
+
+    ``#h`` and ``<#h>`` are same-document anchors; ``%23x.md``, ``\\#x.md``
+    and ``&#35;x.md`` are files whose name begins with a literal ``#`` and
+    must be judged on the written spelling, before any decoding turns that
+    ``#`` into a leading character (#1353).
+
+    Args:
+        raw: The destination exactly as written, title excluded.
+
+    Returns:
+        ``True`` when the written path part is empty.
+    """
+    written = raw[1:-1] if is_pointy_destination(raw) else raw
+    path_part, _fragment = split_markdown_fragment(written)
+    return not path_part
+
+
+def is_pointy_destination(raw: str) -> bool:
+    """Return whether *raw* is written in CommonMark's ``<…>`` destination form.
+
+    Args:
+        raw: A destination exactly as written, title excluded.
+
+    Returns:
+        ``True`` for ``<my note.md>``; ``False`` for a plain destination.
+    """
+    return len(raw) >= 2 and raw[0] == "<" and raw[-1] == ">"
+
+
+def decode_markdown_destination(raw: str) -> str:
+    """Decode a markdown destination, as written, into the name it spells.
+
+    CommonMark's inline-link destination has five spellings beyond the
+    literal one (#1353; ``docs/design/reference/commonmark-gfm.md``, "Inline
+    links"), decoded in the order ``docs/design/design.md`` fixes: the
+    ``<…>`` form loses its brackets, backslash escapes and entity references
+    are decoded (``\\(`` → ``(``, ``&amp;`` → ``&``, ``&#46;`` → ``.``; an
+    invalid entity stays literal), and only then the URL layer's
+    percent-escapes through :func:`decode_link_target`, with its refusals.
+    Extraction and the rename path both call this, so they cannot disagree
+    on what a spelling names.
+
+    Args:
+        raw: The destination exactly as written, title excluded, fragment
+            included.
+
+    Returns:
+        The decoded destination, fragment still attached.
+    """
+    inner = raw[1:-1] if is_pointy_destination(raw) else raw
+    return decode_link_target(_decode_escapes_and_entities(inner))
+
+
+def _escape_meaning_changers(name: str, *, pointy: bool) -> str:
+    """Backslash-escape the characters that would re-parse a rewritten link.
+
+    A rename introduces no escaping the author did not use — with one
+    bounded exception: a new name containing ``#`` would be read as a
+    fragment (and a name *beginning* with one as a same-document anchor),
+    and ``<`` / ``>`` inside the ``<…>`` form would end it early. Left
+    literal, the rewritten link would silently point elsewhere rather than
+    show up broken, so exactly those characters are escaped (#1353).
+
+    Args:
+        name: The new destination path, not percent-encoded.
+        pointy: Whether it will be wrapped in ``<…>``.
+
+    Returns:
+        *name* with ``#`` (and, in the pointy form, ``<`` and ``>``) escaped.
+    """
+    name = name.replace("#", "\\#")
+    if pointy:
+        name = name.replace("<", "\\<").replace(">", "\\>")
+    return name
+
+
 def compute_new_raw_target(
     link_type: str,
     raw_target: str,
@@ -107,16 +281,23 @@ def compute_new_raw_target(
         # Each is rewritten in its own shape: the link still resolves either
         # way, but silently converting one spelling to another undoes a
         # vault's OKF link conformance on any rename or folder move (#1105).
-        raw_path_part = raw_target.split("#")[0]
+        # A ``<…>`` destination keeps its brackets in raw_target (they are
+        # what the file holds); take them off for the shape test and put
+        # them back on the answer, so a rename keeps the form that let the
+        # author write a space (#1353).
+        pointy = is_pointy_destination(raw_target)
+        written = raw_target[1:-1] if pointy else raw_target
+        raw_path_part, _ = split_markdown_fragment(written)
         # The shape test below compares the destination to old_path, and
         # old_path is never encoded. Comparing the encoded spelling therefore
         # never matched, so a root-relative encoded link fell into the
         # relative-to-source branch and came back rewritten as a relative
         # one — the same fidelity defect as #1105, reached by a different
-        # route (#1332). Decode for the comparison; re-encode the answer only
-        # if the author was encoding.
-        decoded_path_part = decode_link_target(raw_path_part)
-        was_encoded = decoded_path_part != raw_path_part
+        # route (#1332). Decode for the comparison — escapes and entities
+        # too (#1353); re-encode the answer only if the author was
+        # percent-encoding.
+        decoded_path_part = decode_markdown_destination(raw_path_part)
+        was_encoded = decode_link_target(raw_path_part) != raw_path_part
 
         if raw_path_part.startswith("/"):
             new_path_part = "/" + new_path
@@ -131,7 +312,10 @@ def compute_new_raw_target(
             new_path_part = new_path
         if was_encoded:
             new_path_part = quote(new_path_part, safe=_QUOTE_SAFE)
-        return new_path_part + ("#" + fragment if fragment else "")
+        else:
+            new_path_part = _escape_meaning_changers(new_path_part, pointy=pointy)
+        new_raw = new_path_part + ("#" + fragment if fragment else "")
+        return f"<{new_raw}>" if pointy else new_raw
 
 
 def apply_link_replacement(

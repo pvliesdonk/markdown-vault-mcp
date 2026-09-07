@@ -26,7 +26,12 @@ from markdown_vault_mcp.utils.content_kind import (
     names_attachment,
 )
 from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
-from markdown_vault_mcp.utils.links import decode_link_target
+from markdown_vault_mcp.utils.links import (
+    decode_markdown_destination,
+    is_anchor_destination,
+    is_pointy_destination,
+    split_markdown_fragment,
+)
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
@@ -810,11 +815,19 @@ _RE_FENCED_CODE = re.compile(
 )
 # Inline code: a backtick run and its closing run on one line.
 _RE_INLINE_CODE = re.compile(r"`+[^`\n]+`+")
-# Inline markdown link: [text](target). The text keeps the plain negated
-# class — a soft break inside link text is legal — and is bounded by the
-# paragraph region it is matched in (#1334); the destination excludes a line
-# ending outright, since a destination never contains one.
-_RE_INLINE_LINK = re.compile(r"\[([^\]]*)\]\(([^)\n]+)\)")
+# Inline markdown link opener: [text]( — the text keeps the plain negated
+# class (a soft break inside link text is legal) and is bounded by the
+# paragraph region it is matched in (#1334); what follows the ``(`` is read
+# by _parse_destination against CommonMark §6.3's grammar (#1353), not by a
+# character class.
+_RE_INLINE_LINK_OPEN = re.compile(r"\[([^\]]*)\]\(")
+# An optional link title after the destination: "…", '…' or (…), escapes
+# honoured, whitespace-separated, at the end of the parenthesised text.
+# Spaces and tabs separate it (§6.3; a NBSP is an ordinary destination
+# character, Ex. 507); a line ending never reaches here (#1334).
+_RE_TRAILING_TITLE = re.compile(
+    r"""[ \t]+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\))[ \t]*$"""
+)
 # Reference-style link usage: [text][ref] or [text][]
 _RE_REF_USAGE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
 # Reference definition: [ref]: target  (at start of line, optional leading whitespace)
@@ -852,6 +865,102 @@ _RE_LINE_ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
 # text, but converted PDFs are numbered lists and a stray ``[`` in one item
 # must not pair into the next; the split soft-break link is the known cost.
 _RE_LINE_LIST_ITEM = re.compile(r"^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+\S")
+
+
+# The parenthesised text of a plain-form inline link, up to and including the
+# ``)`` that closes it: any character but a control character (tab excepted),
+# an escaped character, or a balanced parenthesis group nested up to three
+# deep — the depth §6.3's examples reach (Ex. 496-498). The three alternatives
+# are mutually exclusive per character, so the match runs in one linear pass
+# and unwinds linearly on failure. Spaces are accepted, the recorded departure
+# that keeps ``[x](my note.md)`` working; a line ending is a control character
+# and ends the match with no link (the #1334 rule).
+_PLAIN_CHAR = r"[^()\\\x00-\x08\x0a-\x1f\x7f]|\\."
+_RE_PLAIN_DESTINATION = re.compile(
+    rf"(?:{_PLAIN_CHAR}"
+    rf"|\((?:{_PLAIN_CHAR}|\((?:{_PLAIN_CHAR}|\((?:{_PLAIN_CHAR})*\))*\))*\)"
+    rf")*\)"
+)
+
+
+def _scan_plain_destination(region: str, pos: int) -> int | None:
+    """Find the ``)`` that closes a plain destination (and title) at *pos*.
+
+    See :data:`_RE_PLAIN_DESTINATION` for the grammar.
+
+    Returns:
+        The index of the closing ``)``, or ``None``.
+    """
+    m = _RE_PLAIN_DESTINATION.match(region, pos)
+    return None if m is None else m.end() - 1
+
+
+def _scan_pointy_destination(region: str, pos: int) -> int | None:
+    """Find the end of a ``<…>`` destination opening at *pos*.
+
+    No line ending and no unescaped ``<`` or ``>`` inside (§6.3, Ex. 491,
+    493); a ``)`` or a space is fine (Ex. 489, 492).
+
+    Returns:
+        The index just past the closing ``>``, or ``None``.
+    """
+    i = pos + 1
+    while i < len(region):
+        char = region[i]
+        if char == "\n" or char == "<":
+            return None
+        if char == "\\" and i + 1 < len(region) and region[i + 1] != "\n":
+            i += 2
+            continue
+        if char == ">":
+            return i + 1
+        i += 1
+    return None
+
+
+def _parse_destination(region: str, pos: int) -> tuple[str, int] | None:
+    """Read an inline link's destination starting just after its ``(``.
+
+    Implements §6.3's two destination forms and the optional title (#1353).
+    The returned destination is the text **as written**, title excluded —
+    ``<my note.md>`` keeps its brackets, ``a\\(b\\).md`` its escapes — since
+    that is what the rename path searches the file for; decoding is
+    :func:`~markdown_vault_mcp.utils.links.decode_markdown_destination`'s job.
+
+    Args:
+        region: The paragraph region being scanned.
+        pos: Index of the first character after ``(``.
+
+    Returns:
+        ``(raw_destination, end)`` with *end* the index just past the closing
+        ``)``, or ``None`` when no link is written here.
+    """
+    i = pos
+    while i < len(region) and region[i] in " \t":
+        i += 1
+    if i < len(region) and region[i] == "<":
+        return _parse_pointy_destination(region, i)
+    close = _scan_plain_destination(region, i)
+    if close is None:
+        return None
+    # Only spaces and tabs are trimmed: a NBSP is a destination character.
+    raw = _RE_TRAILING_TITLE.sub("", region[i:close]).strip(" \t")
+    return (raw, close + 1) if raw else None
+
+
+def _parse_pointy_destination(region: str, pos: int) -> tuple[str, int] | None:
+    """The ``<…>`` half of :func:`_parse_destination`; *pos* is at the ``<``."""
+    end = _scan_pointy_destination(region, pos)
+    if end is None:
+        return None
+    raw = region[pos:end]
+    close = _scan_plain_destination(region, end)
+    if close is None or raw == "<>":
+        return None
+    rest = region[end:close]
+    if rest.strip(" \t") and not _RE_TRAILING_TITLE.fullmatch(rest):
+        return None
+    return raw, close + 1
 
 
 def _is_external_target(target: str) -> bool:
@@ -993,7 +1102,7 @@ def _strip_inline_code(region: str) -> str:
 
 
 def _resolve_link_path(
-    target: str, source_rel: str, *, decode_percent: bool = False
+    target: str, source_rel: str, *, decode_markdown: bool = False
 ) -> tuple[str, str | None]:
     """Resolve a raw link target against the source document's directory.
 
@@ -1005,31 +1114,32 @@ def _resolve_link_path(
         target: Raw target string from the link (may include ``#fragment``).
         source_rel: Relative POSIX path of the source document
             (e.g. ``"Journal/2024/today.md"``).
-        decode_percent: Whether to percent-decode the path portion. True for
-            markdown and reference links, whose destination CommonMark
-            defines as a URL; False for wikilinks, which Obsidian writes
-            literally (#1332).
+        decode_markdown: Whether *target* is a markdown destination as
+            written — pointy brackets, backslash escapes, entities and
+            percent-escapes to decode (#1353, #1332). False for wikilinks,
+            which Obsidian writes literally.
 
     Returns:
         A ``(resolved_path, fragment)`` tuple where ``resolved_path`` is the
         vault-relative POSIX path with forward slashes and ``fragment`` is the
         heading identifier or ``None``.
     """
-    # Split fragment BEFORE decoding: an encoded ``%23`` is a literal ``#`` in
-    # the file name, and decoding first would read it as the fragment marker
-    # and truncate the target (#1332).
+    # Split fragment BEFORE decoding: an encoded ``%23`` or an escaped
+    # ``\#`` is a literal ``#`` in the file name, and decoding first would
+    # read it as the fragment marker and truncate the target (#1332, #1353).
+    # The ``<…>`` brackets come off first, since they enclose the fragment.
+    # A wikilink arrives with its fragment already split off by its
+    # extractor, so only a markdown destination is split here.
     fragment: str | None = None
-    if "#" in target:
-        idx = target.index("#")
-        fragment = target[idx + 1 :] or None
-        target = target[:idx]
-
-    if decode_percent:
-        # A refused escape leaves the whole target as written, so it never
+    if decode_markdown:
+        if is_pointy_destination(target):
+            target = target[1:-1]
+        target, fragment = split_markdown_fragment(target)
+        # A refused percent-escape leaves that layer as written, so it never
         # invents a resolvable name; the traversal clamp below still runs on
         # whatever comes out, so a decoded ``%2E%2E`` cannot climb above the
-        # root. See :func:`~markdown_vault_mcp.utils.links.decode_link_target`.
-        target = decode_link_target(target)
+        # root. See :func:`~markdown_vault_mcp.utils.links.decode_markdown_destination`.
+        target = decode_markdown_destination(target)
 
     if not target:
         # Link with only a fragment — points to the source document itself.
@@ -1140,19 +1250,30 @@ def _extract_inline_links(
     attachment (#1333).
     """
     links: list[LinkInfo] = []
-    for m in _RE_INLINE_LINK.finditer(region):
+    pos = 0
+    while (m := _RE_INLINE_LINK_OPEN.search(region, pos)) is not None:
+        parsed = _parse_destination(region, m.end())
+        if parsed is None:
+            pos = m.end()
+            continue
+        raw_target, end = parsed
+        # The search resumes after the whole link, so a ``[b](y)`` written
+        # inside this link's title is not read as a second link.
+        pos = end
         # Skip image links: ![alt](src) shares the same bracket syntax.
         if m.start() > 0 and region[m.start() - 1] == "!":
             continue
         text = m.group(1)
-        raw_target = m.group(2).strip()
-        if _is_external_target(raw_target):
+        # The external test looks at what the spelling names, not at its
+        # brackets or escapes; the anchor test at the spelling itself, since
+        # a decoded ``%23x.md`` begins with ``#`` and is not an anchor (#1353).
+        if _is_external_target(decode_markdown_destination(raw_target)):
             continue
-        if raw_target.startswith("#"):
+        if is_anchor_destination(raw_target):
             # Pure anchor link — skip (points to a section in the same doc).
             continue
         resolved, fragment = _resolve_link_path(
-            raw_target, source_path, decode_percent=True
+            raw_target, source_path, decode_markdown=True
         )
         if names_attachment(resolved, attachment_extensions):
             # [paper](x.pdf) names a file the index never holds; the
@@ -1193,9 +1314,12 @@ def _collect_reference_definitions(clean: str) -> dict[str, str]:
             # Footnote definition: the body is prose, so storing it as a
             # target resolved whatever the footnote said as a vault path.
             continue
-        ref_target = m.group(2).strip()
-        # Strip optional CommonMark title: "...", '...', or (...)
-        ref_target = re.sub(r'\s+(?:"[^"]*"|\'[^\']*\'|\([^)]*\))\s*$', "", ref_target)
+        # The destination as written, title stripped (escape-aware): the
+        # pointy, escaped and entity spellings are decoded at resolution,
+        # like an inline destination (#1353).
+        ref_target = _RE_TRAILING_TITLE.sub("", m.group(2).strip(" \t")).strip(" \t")
+        if not ref_target or ref_target == "<>":
+            continue
         ref_defs[ref_key] = ref_target
     return ref_defs
 
@@ -1232,12 +1356,12 @@ def _extract_reference_links(
         raw_target = ref_defs.get(ref_key)
         if raw_target is None:
             continue
-        if _is_external_target(raw_target):
+        if _is_external_target(decode_markdown_destination(raw_target)):
             continue
-        if raw_target.startswith("#"):
+        if is_anchor_destination(raw_target):
             continue
         resolved, fragment = _resolve_link_path(
-            raw_target, source_path, decode_percent=True
+            raw_target, source_path, decode_markdown=True
         )
         if names_attachment(resolved, attachment_extensions):
             continue

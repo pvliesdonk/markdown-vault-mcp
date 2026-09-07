@@ -279,7 +279,15 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: whatever followed as a broken target; the bump drops those rows, and
 #: records the links on heading, quote and list lines that the regions now
 #: bound correctly, for notes whose bytes never changed.
-INDEX_SEMANTICS_VERSION = 7
+#:
+#: Version 8 (#1353): a markdown destination is read by CommonMark's grammar
+#: — the ``<…>`` form, backslash escapes, balanced parentheses, a trailing
+#: title, entity references — and decoded before it is resolved. Such links
+#: previously stored a target no file can have (``sub/<my note.md>``,
+#: ``note.md "title"``) and never resolved; the bump rebuilds notes whose
+#: bytes never changed so those rows gain their targets, and drops the ones
+#: that turn out to name attachments (#1333).
+INDEX_SEMANTICS_VERSION = 8
 
 
 class ChunkingMeta(NamedTuple):
