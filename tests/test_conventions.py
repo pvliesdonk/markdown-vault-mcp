@@ -207,3 +207,16 @@ class TestVaultDerivedExclusion:
             assert col.conventions.enabled is False
         finally:
             col.close()
+
+
+def test_a_bom_prefixed_conventions_file_still_strips_its_frontmatter(
+    tmp_path: Path,
+) -> None:
+    """Vault-markdown reads strip a BOM (#673); this one did not."""
+    from markdown_vault_mcp.conventions import ConventionsResolver
+
+    (tmp_path / "_conventions.md").write_text(
+        "\ufeff---\ntitle: Rules\n---\nRoot rules.\n", encoding="utf-8"
+    )
+    entries = ConventionsResolver(tmp_path, "_conventions.md").for_path("note.md")
+    assert entries[0].content.strip() == "Root rules."

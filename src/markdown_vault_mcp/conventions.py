@@ -197,7 +197,11 @@ class ConventionsResolver:
         rel = f"{folder}/{self._filename}" if folder else self._filename
         file_path = self._source_dir / rel
         try:
-            with file_path.open(encoding="utf-8") as fh:
+            # ``utf-8-sig`` like every other vault-markdown read (#673): a
+            # BOM in front of the opening delimiter hides the frontmatter
+            # from the parser, and the stripper below would then hand the
+            # raw YAML to the agent as convention text.
+            with file_path.open(encoding="utf-8-sig") as fh:
                 raw = fh.read(_MAX_READ_CHARS)
         except FileNotFoundError:
             return None

@@ -183,7 +183,11 @@ class OkfDetector:
         """
         file_path = self._source_dir / _ROOT_INDEX
         try:
-            with file_path.open(encoding="utf-8") as fh:
+            # ``utf-8-sig`` for the reason the audit's own read gives (#673):
+            # a BOM in front of the opening delimiter hides the block from
+            # every parser, and here that would leave a declared bundle
+            # undeclared and inactive.
+            with file_path.open(encoding="utf-8-sig") as fh:
                 raw = fh.read(_MAX_READ_CHARS)
         except FileNotFoundError:
             return None
@@ -460,7 +464,9 @@ class OkfAuditReport:
     Degrees, not verdicts: during a migration the audit is a progress
     meter, so partial conformance is first-class. ``conformance`` findings
     violate the spec's single hard rule (parseable frontmatter with a
-    non-empty ``type``) or its placement rule for ``okf_version``;
+    non-empty ``type``), its placement rule for ``okf_version``, or its
+    no-frontmatter rule for ``index.md`` (§8, recorded in
+    ``docs/design/reference/okf-v0.2.md``);
     ``advisories`` are tolerated-by-spec deviations worth fixing;
     ``informational`` entries are not deviations at all (wikilinks only
     matter at export; recommended fields are optional).
@@ -482,6 +488,18 @@ class OkfAuditReport:
             not ``YYYY-MM-DD`` dates (advisory).
         root_index_missing: Whether the bundle-root ``index.md`` is absent
             (advisory; consumers must tolerate it).
+        index_frontmatter: ``index.md`` files carrying frontmatter the spec
+            does not allow — any key but ``okf_version`` on the bundle root,
+            any key at all on a folder index — beyond the fields the vault's
+            own ``required_frontmatter`` gate seeds (#1174), which are the
+            server's accepted departure (#1396). A block that carries no keys
+            or does not parse counts: it is still a block, and an unparseable
+            one is reported nowhere else, since a reserved file returns before
+            the note rules run. A folder index declaring ``okf_version`` is
+            reported here *and* under ``misplaced_okf_version`` — deliberate,
+            because the two say different things about it (frontmatter where
+            none belongs; the declaration in the wrong place) and an operator
+            may filter on either.
         wikilink_files: Notes containing wikilinks (informational; only
             matters at export).
         missing_recommended: Notes lacking a recommended ``title`` or
@@ -501,6 +519,7 @@ class OkfAuditReport:
     root_index_missing: bool
     wikilink_files: OkfFinding
     missing_recommended: OkfFinding
+    index_frontmatter: OkfFinding
 
 
 class _FindingAccumulator:
@@ -529,6 +548,7 @@ class _AuditCounters:
         self.misplaced = _FindingAccumulator(cap)
         self.unknown_status = _FindingAccumulator(cap)
         self.log_shape = _FindingAccumulator(cap)
+        self.index_frontmatter = _FindingAccumulator(cap)
         self.wikilinks = _FindingAccumulator(cap)
         self.missing_recommended = _FindingAccumulator(cap)
         self.total = 0
@@ -537,6 +557,36 @@ class _AuditCounters:
 
 
 _LOG_HEADING_RE = re.compile(r"^## (\d{4}-\d{2}-\d{2})\s*$")
+
+
+def _opens_with_frontmatter(text: str) -> bool:
+    """Whether *text* opens with a frontmatter block, parseable or not.
+
+    Detection is anchored at the start of the text, so a fenced example
+    further down is not mistaken for one. Presence is asked separately from
+    content because an empty or unparseable block yields no keys, and the
+    audit has to tell "no block" from "a block saying nothing".
+
+    The block must be *closed*: an opening delimiter alone is a Markdown
+    thematic break, and detection reads only that first line. The handler's
+    ``split`` supplies the rest of the answer, raising when the block never
+    closes — which is how ``frontmatter.parse`` itself reads one. A closed
+    block whose YAML is malformed still counts, since ``split`` succeeds and
+    only the load fails.
+
+    Expects the same normalised text the parse is given
+    (:func:`_audit_file`). ``frontmatter.parse`` strips before it detects, so
+    on raw text a file whose block sits behind a blank line is frontmatter to
+    the parser and no block at all to this check.
+    """
+    handler = fm.detect_format(text, fm.handlers)
+    if handler is None:
+        return False
+    try:
+        handler.split(text)
+    except ValueError:
+        return False
+    return True
 
 
 def _log_headings_conform(body: str) -> bool:
@@ -549,9 +599,16 @@ def _log_headings_conform(body: str) -> bool:
 
 
 def _read_capped(file_path: Path, rel: str) -> str | None:
-    """Read up to :data:`_MAX_READ_CHARS` of *file_path*, ``None`` on error."""
+    """Read up to :data:`_MAX_READ_CHARS` of *file_path*, ``None`` on error.
+
+    ``utf-8-sig``, so a leading BOM is stripped as every other vault read
+    strips one (#673, ``utils.text.read_text_utf8``). Reading these files as
+    plain ``utf-8`` left the BOM in front of the opening delimiter, where no
+    parser sees frontmatter: a BOM-prefixed note was counted as untyped and a
+    BOM-prefixed ``index.md`` hid whatever its block carried.
+    """
     try:
-        with file_path.open(encoding="utf-8") as fh:
+        with file_path.open(encoding="utf-8-sig") as fh:
             return fh.read(_MAX_READ_CHARS)
     except (OSError, UnicodeDecodeError):
         logger.debug("okf_audit_read_failed path=%s", rel, exc_info=True)
@@ -580,15 +637,30 @@ def _evaluate_note(
         acc.missing_recommended.add(rel)
 
 
-def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
-    """Classify one markdown file and update the audit counters."""
+def _audit_file(
+    rel: str, raw: str, acc: _AuditCounters, tolerated_index_keys: frozenset[str]
+) -> None:
+    """Classify one markdown file and update the audit counters.
+
+    Args:
+        rel: Vault-relative path.
+        raw: The file text (capped, BOM already stripped by the read).
+        acc: The run's counters.
+        tolerated_index_keys: Frontmatter keys an ``index.md`` may carry
+            without a finding, beyond the root's ``okf_version``: the fields
+            the vault's own gate seeds into generated reserved files.
+    """
+    # One string for the parse and the presence check below: the parse strips
+    # before it detects a block, so on raw text a block behind a blank line is
+    # frontmatter to one and absent to the other.
+    text = raw.strip()
     try:
-        post = fm.loads(raw)
+        post = fm.loads(text)
         metadata: dict[str, Any] = dict(post.metadata)
         body = post.content
         parse_ok = True
     except yaml.YAMLError:
-        metadata, body, parse_ok = {}, raw, False
+        metadata, body, parse_ok = {}, text, False
 
     name = rel.rsplit("/", 1)[-1]
     if rel == _ROOT_INDEX:
@@ -598,6 +670,18 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
     if name in OKF_RESERVED_FILENAMES:
         if name == "log.md" and not _log_headings_conform(body):
             acc.log_shape.add(rel)
+        if name == "index.md" and _opens_with_frontmatter(text):
+            allowed = tolerated_index_keys | (
+                {"okf_version"} if rel == _ROOT_INDEX else frozenset()
+            )
+            keys = set(metadata)
+            # A block the spec does not sanction, in any of three shapes: it
+            # carries a key that is not allowed here, it carries none at all
+            # (still a block, and nothing justifies it), or it does not parse
+            # — which no other rule would report, since a reserved file
+            # returns before the note rules run.
+            if not parse_ok or not keys or keys - allowed:
+                acc.index_frontmatter.add(rel)
         return
 
     acc.total += 1
@@ -613,6 +697,7 @@ def audit_bundle(
     exclude_patterns: list[str] | None = None,
     detector: OkfDetector | None = None,
     example_cap: int = 20,
+    reserved_frontmatter: ReservedFrontmatterPolicy | None = None,
 ) -> OkfAuditReport:
     """Audit the vault's OKF conformance from disk (design §4; #962).
 
@@ -630,6 +715,10 @@ def audit_bundle(
         detector: Optional detection probe for reporting mode/version
             state; ``None`` reports an inactive, mode-``"off"``-like state.
         example_cap: Maximum example paths kept per finding.
+        reserved_frontmatter: The vault's reserved-file frontmatter policy;
+            the fields it seeds are tolerated on ``index.md`` files
+            (``index_frontmatter``). ``None`` tolerates nothing but the
+            root's ``okf_version``.
 
     Returns:
         The audit report. Empty or missing vault directories yield an
@@ -645,6 +734,11 @@ def audit_bundle(
     )
     excludes = list(exclude_patterns or [])
     acc = _AuditCounters(example_cap)
+    tolerated = (
+        reserved_frontmatter.seeded_fields
+        if reserved_frontmatter is not None
+        else frozenset()
+    )
     paths = (
         sorted(
             p.relative_to(source_dir).as_posix()
@@ -658,7 +752,7 @@ def audit_bundle(
             continue
         raw = _read_capped(source_dir / rel, rel)
         if raw is not None:
-            _audit_file(rel, raw, acc)
+            _audit_file(rel, raw, acc, tolerated)
 
     return OkfAuditReport(
         mode=state.mode,
@@ -674,6 +768,7 @@ def audit_bundle(
         root_index_missing=not acc.root_index_seen,
         wikilink_files=acc.wikilinks.finding(),
         missing_recommended=acc.missing_recommended.finding(),
+        index_frontmatter=acc.index_frontmatter.finding(),
     )
 
 
@@ -795,7 +890,9 @@ class ReservedFrontmatterPolicy:
     ``missing_frontmatter`` skip, so the bundle's own navigation and change
     history disappear from ``search`` and ``list_documents`` while staying
     readable from disk (#1174, #1175). The generators consult this policy so
-    what they write satisfies the gate the same server enforces.
+    what they write satisfies the gate the same server enforces, and the
+    audit consults it so those seeded keys are not reported back to the
+    operator as a defect (:attr:`seeded_fields`, #1396).
 
     The policy is deliberately *conditional*. With no required fields
     configured a reserved file needs no frontmatter to be indexed, and
@@ -812,6 +909,17 @@ class ReservedFrontmatterPolicy:
 
     title_field: str = "title"
     required_fields: tuple[str, ...] = ()
+
+    @property
+    def seeded_fields(self) -> frozenset[str]:
+        """The keys :meth:`build` seeds into a generated reserved file.
+
+        Exactly the configured required fields — ``title_field`` only when
+        it is among them. The audit tolerates these on ``index.md`` files
+        (#1396): they are the server's own accepted departure from the
+        spec's no-frontmatter rule, not a defect to report to the operator.
+        """
+        return frozenset(self.required_fields)
 
     def build(
         self, existing: Mapping[str, Any] | None, *, title: str

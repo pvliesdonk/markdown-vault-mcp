@@ -1451,7 +1451,10 @@ the spec itself says, dated and sourced, in
   patterns double as the audit whitelist. Findings carry a count plus up
   to 20 example paths and come in three severities — conformance
   (missing ``type``, unparseable frontmatter, ``okf_version`` outside the
-  bundle root), advisory (unknown ``status`` vocabulary, ``log.md``
+  bundle root, an ``index.md`` carrying frontmatter §8 does not allow —
+  ``index_frontmatter``, #1396 — where an empty or unparseable block counts
+  and the vault's own ``required_frontmatter`` fields are tolerated),
+  advisory (unknown ``status`` vocabulary, ``log.md``
   heading shape, missing root ``index.md``), informational (wikilink
   usage, missing recommended fields). Reserved files are exempt from the
   ``type`` rule. The tool is registered with an ``okf`` tag and hidden
@@ -2910,7 +2913,13 @@ file does not abort the scan.
 
 **UTF-8 BOM normalization (#673).** All vault-markdown reads strip a leading
 UTF-8 BOM via `utils.text.read_text_utf8` (path → str) and `decode_utf8`
-(bytes → str), both using the `utf-8-sig` codec. The scanner hashes the raw
+(bytes → str), both using the `utf-8-sig` codec. Three capped readers open
+their own file handle rather than going through those helpers — the OKF
+audit, the OKF detection probe, and the conventions resolver — and pass the
+same codec for the same reason (#1396): a BOM in front of an opening
+delimiter hides the frontmatter from every parser, which left a declared
+bundle inactive, a typed note counted as untyped, and a convention file's
+raw YAML handed to the agent as guidance. The scanner hashes the raw
 on-disk bytes (BOM included) but decodes the text without the BOM, so a
 BOM-prefixed file's frontmatter parses and is indexed correctly. Writes are
 plain `utf-8` (no BOM), so the vault normalizes to no-BOM: a BOM-prefixed file

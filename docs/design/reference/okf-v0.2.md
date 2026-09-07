@@ -79,7 +79,7 @@ months, not twelve.
   `okf_version` key". The body is sections of `* [Title](url) - description`
   entries; producers MAY generate one, consumers MAY synthesise one when
   none is present. [source: spec] (§8, §12)
-  [pins: tests/test_okf.py::TestOkfDetector::test_declared_auto_active, tests/test_okf.py::TestBuildIndexMarkdown::test_entries_with_and_without_description]
+  [pins: tests/test_okf.py::TestOkfDetector::test_declared_auto_active, tests/test_okf.py::TestBuildIndexMarkdown::test_entries_with_and_without_description, tests/test_okf.py::TestAuditIndexFrontmatter::test_frontmatter_on_a_folder_index_is_flagged]
 - A `log.md` MAY appear at any level; it is "a flat list of date-grouped
   entries, newest first"; "Date headings MUST use ISO 8601 `YYYY-MM-DD`
   form"; the leading bold word of an entry is a convention, not a
@@ -252,7 +252,9 @@ tree, 2026-09-07].
   server enforces and vanish from `search` and `list_documents` (#1174,
   #1175). Existing keys, including the root `okf_version`, are preserved;
   `okf_version` is never synthesised into a folder index. With nothing
-  required, the files are written body-only as §8 and §9 have them.
+  required, the files are written body-only as §8 and §9 have them. The
+  audit reports any other key on an `index.md` as `index_frontmatter` and
+  tolerates exactly the seeded ones (#1396).
   Deliberate; decided in `docs/design/okf.md`, "Generated reserved files
   and the index gate".
   [pins: tests/test_okf.py::TestReservedFrontmatterPolicy::test_title_field_is_seeded_with_the_derived_title, tests/test_okf.py::TestReservedFrontmatterPolicy::test_other_required_fields_are_seeded_as_null, tests/test_okf.py::TestReservedFrontmatterPolicy::test_existing_frontmatter_is_preserved_unconfigured]

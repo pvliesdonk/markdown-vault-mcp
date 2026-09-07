@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from tests.conftest import wait_for_writer_drain
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -637,8 +639,21 @@ class TestOkfAudit:
         assert report.unknown_status.examples == ("guides/odd-status.md",)
         assert report.log_heading_shape.examples == ("junk/log.md",)
         assert report.root_index_missing is False
+        assert report.index_frontmatter.count == 0
         assert report.wikilink_files.examples == ("guides/untyped.md",)
         assert report.missing_recommended.count >= 3
+
+    def test_a_bom_prefixed_note_is_read_as_typed(self, tmp_path: Path) -> None:
+        """The audit read its files as plain utf-8, so a BOM hid the type."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "note.md").write_text(
+            "\ufeff---\ntype: Note\ntitle: N\ndescription: d\n---\n# N\n",
+            encoding="utf-8",
+        )
+        report = audit_bundle(tmp_path)
+        assert report.missing_type.count == 0
+        assert report.conformant_notes == 1
 
     def test_exclude_patterns_whitelist(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import audit_bundle
@@ -1047,3 +1062,194 @@ class TestStripReservedFrontmatter:
         body = "# Log\n\n## 2026-09-07\n\nSample:\n\n---\ntitle: Log\n---\n\n- after\n"
         assert strip_reserved_frontmatter("---\ntitle: Log\n---\n\n" + body) == body
         assert strip_reserved_frontmatter(body) == body
+
+
+class TestAuditIndexFrontmatter:
+    """``index.md`` frontmatter the spec does not allow is a finding (#1396).
+
+    The field reference: "No frontmatter, with exactly one exception: a
+    bundle-root ``index.md`` may carry ``okf_version``." The fields the
+    vault's own ``required_frontmatter`` gate seeds (#1174) are the server's
+    accepted departure and are tolerated; anything else is reported.
+    """
+
+    def test_root_index_with_only_okf_version_is_clean(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+        assert audit_bundle(tmp_path).index_frontmatter.count == 0
+
+    def test_extra_key_on_the_root_index_is_flagged(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(
+            tmp_path,
+            '---\nokf_version: "0.2"\nconflict_with: index.conflict-mcp-x.md\n---\n'
+            "# Bundle\n",
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.examples == ("index.md",)
+
+    def test_frontmatter_on_a_folder_index_is_flagged(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\ntitle: guides\n---\n# guides\n", encoding="utf-8"
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.examples == ("guides/index.md",)
+
+    def test_gate_seeded_fields_are_tolerated(self, tmp_path: Path) -> None:
+        """What the server itself writes under the gate is not a finding."""
+        from markdown_vault_mcp.okf import ReservedFrontmatterPolicy, audit_bundle
+
+        _write_root_index(
+            tmp_path, '---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n'
+        )
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\ntitle: guides\n---\n# guides\n", encoding="utf-8"
+        )
+        policy = ReservedFrontmatterPolicy(required_fields=("title",))
+        report = audit_bundle(tmp_path, reserved_frontmatter=policy)
+        assert report.index_frontmatter.count == 0
+
+    def test_a_seeded_field_does_not_excuse_an_extra_key(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import ReservedFrontmatterPolicy, audit_bundle
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\ntitle: guides\nconflict_with: x.md\n---\n# guides\n",
+            encoding="utf-8",
+        )
+        policy = ReservedFrontmatterPolicy(required_fields=("title",))
+        report = audit_bundle(tmp_path, reserved_frontmatter=policy)
+        assert report.index_frontmatter.examples == ("guides/index.md",)
+
+    def test_an_empty_block_is_flagged(self, tmp_path: Path) -> None:
+        """A block with no keys is still frontmatter, which §8 does not allow."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\n---\n\n# guides\n", encoding="utf-8"
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.examples == ("guides/index.md",)
+
+    def test_an_empty_block_on_the_root_is_flagged(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, "---\n---\n\n# Bundle\n")
+        assert audit_bundle(tmp_path).index_frontmatter.examples == ("index.md",)
+
+    def test_unparseable_index_frontmatter_is_flagged(self, tmp_path: Path) -> None:
+        """Reserved files skip the note rules, so nothing else would report it."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\ntitle: [\n---\n\n# guides\n", encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path)
+        assert report.index_frontmatter.examples == ("guides/index.md",)
+        assert report.unparseable_frontmatter.count == 0
+
+    def test_an_index_without_a_block_is_clean(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text("# guides\n", encoding="utf-8")
+        assert audit_bundle(tmp_path).index_frontmatter.count == 0
+
+    def test_a_folder_index_declaring_okf_version_reports_both_rules(
+        self, tmp_path: Path
+    ) -> None:
+        """Deliberate overlap: the two findings say different things about it."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(
+            '---\nokf_version: "0.2"\n---\n\n# guides\n', encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path)
+        assert report.misplaced_okf_version.examples == ("guides/index.md",)
+        assert report.index_frontmatter.examples == ("guides/index.md",)
+
+    def test_a_bom_does_not_hide_the_declaration(self, tmp_path: Path) -> None:
+        """The detector reads the root index too, and under the same contract."""
+        from markdown_vault_mcp.okf import OkfDetector, audit_bundle
+
+        _write_root_index(tmp_path, '\ufeff---\nokf_version: "0.2"\n---\n# Bundle\n')
+        report = audit_bundle(tmp_path, detector=OkfDetector(tmp_path, mode="auto"))
+        assert report.declared_version == "0.2"
+        assert report.active is True
+
+    def test_a_thematic_break_is_not_a_block(self, tmp_path: Path) -> None:
+        """``---`` opening a body-only index is a horizontal rule, not a block."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\n# guides\n\n- [a](/guides/a.md)\n", encoding="utf-8"
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.count == 0
+
+    def test_leading_blank_lines_do_not_hide_a_block(self, tmp_path: Path) -> None:
+        """The parser strips before it detects; presence must see what it sees."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(
+            "\n\n---\nconflict_with: x.md\n---\n\n# guides\n", encoding="utf-8"
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.examples == ("guides/index.md",)
+
+    def test_a_bom_does_not_hide_a_block(self, tmp_path: Path) -> None:
+        """Vault reads strip a leading BOM (#673); the audit reads the same way."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(
+            tmp_path,
+            '\ufeff---\nokf_version: "0.2"\nconflict_with: x.md\n---\n# Bundle\n',
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.examples == ("index.md",)
+
+    def test_log_frontmatter_is_not_a_finding(self, tmp_path: Path) -> None:
+        """The spec's log section imposes no frontmatter rule."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n# Bundle\n')
+        (tmp_path / "log.md").write_text(
+            "---\ntitle: Log\n---\n# Log\n\n## 2026-09-07\n\n- x\n", encoding="utf-8"
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.count == 0
+
+    def test_vault_passes_its_own_gate_policy(self, tmp_path: Path) -> None:
+        """A gated vault's generated indexes audit clean through the facade."""
+        from markdown_vault_mcp.vault import Vault
+
+        root = tmp_path / "vault"
+        (root / "guides").mkdir(parents=True)
+        _write_root_index(root, '---\nokf_version: "0.2"\ntitle: Root\n---\n# Root\n')
+        col = Vault(
+            source_dir=root,
+            read_only=False,
+            okf_mode="on",
+            okf_write=True,
+            required_frontmatter=["title"],
+        )
+        try:
+            col.index.build_index()
+            col.writer.write("guides/a.md", "---\ntitle: A\n---\n# A\n")
+            wait_for_writer_drain(col)
+            assert (root / "guides" / "index.md").read_text().startswith("---\ntitle:")
+            assert col.reader.okf_validate().index_frontmatter.count == 0
+        finally:
+            col.close()

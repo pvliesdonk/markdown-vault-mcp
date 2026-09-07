@@ -16,7 +16,9 @@ any write.
 
 Call `okf_validate`. Report the conformance ratio (`conformant_notes` of
 `total_notes`) and the per-rule findings — notes missing a `type`, unparseable
-frontmatter, unknown `status` values, misplaced `okf_version`. This reads from
+frontmatter, unknown `status` values, misplaced `okf_version`, and an
+`index.md` carrying frontmatter the spec does not allow
+(`index_frontmatter`). This reads from
 disk and works before anything is declared, so use it to decide where to start.
 
 ## Step 2: Declare
