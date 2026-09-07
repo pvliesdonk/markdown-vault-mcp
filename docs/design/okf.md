@@ -363,7 +363,11 @@ and none of it is implied by vault declaration.
   OKF consumers should calibrate to that.
 - **Convention maintenance:** on successful writes, append a `log.md` entry
   (newest-first, `## YYYY-MM-DD` section, `**Update**:`-style bullet) and
-  refresh the affected folder's `index.md` listing. Both are guaranteed
+  refresh the affected folder's `index.md` listing. The section heading is
+  the server's *local* calendar day, as §9 has it and as a reader of the
+  log expects, while the same write's `generated.at` is a UTC instant
+  (#1372); around local midnight the two can name different days, which is
+  the two rules stating what they each mean, not a defect. Both are guaranteed
   versions of what the advisory layer asks the agent to do. Generated
   `index.md` content derives from the same data as `get_toc`.
   **Status:** shipped in phase 5b (see §9). Maintenance runs only for

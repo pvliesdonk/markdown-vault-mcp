@@ -111,7 +111,7 @@ class TestApplyOkfWriteStamp:
         # A producer-defined key survives the round trip (OKF v0.2 §4.1).
         assert meta["x_custom"] == 1
 
-    def test_same_actor_same_day_re_stamp_is_idempotent(self) -> None:
+    def test_same_actor_same_instant_re_stamp_is_idempotent(self) -> None:
         # Once a note carries this exact actor/instant stamp and no verified,
         # re-stamping is a byte-for-byte no-op — its YAML formatting is frozen.
         once = apply_okf_write_stamp("# T\n\nBody.\n", actor="t/1", now=_NOW)
@@ -125,6 +125,15 @@ class TestApplyOkfWriteStamp:
         )
         out = apply_okf_write_stamp("# Note\n", actor="a/1", now=local)
         assert fm.loads(out).metadata["generated"]["at"] == _ISO
+
+    def test_a_naive_instant_is_refused(self) -> None:
+        # A naive value would be read as the host's local time and silently
+        # become an offset the caller never stated — the class of ambiguity
+        # the amendment exists to remove. Callers pass an aware instant.
+        with pytest.raises(ValueError, match="aware"):
+            apply_okf_write_stamp(
+                "# Note\n", actor="a/1", now=_dt.datetime(2026, 8, 9, 14, 30, 5)
+            )
 
     def test_the_stamp_is_a_quoted_string_not_a_yaml_timestamp(self) -> None:
         # A datetime value would be re-dumped as ``2026-08-09 14:30:05+00:00``,

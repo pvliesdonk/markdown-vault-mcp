@@ -57,7 +57,7 @@ sources:
     id: handbook
 verified:
   - by: human:alex
-    at: 2026-08-01
+    at: "2026-08-01T09:14:00Z"
 ---
 ```
 

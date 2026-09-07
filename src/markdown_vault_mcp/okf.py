@@ -969,7 +969,13 @@ def okf_timestamp(now: _dt.datetime) -> str:
 
     Returns:
         The ISO 8601 text.
+
+    Raises:
+        ValueError: If *now* carries no offset — it would be read as the
+            host's local time and gain an offset the caller never stated.
     """
+    if now.tzinfo is None:
+        raise ValueError("okf_timestamp needs an aware datetime")
     return now.astimezone(_dt.UTC).replace(microsecond=0).isoformat()[:-6] + "Z"
 
 
