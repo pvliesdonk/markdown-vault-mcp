@@ -717,9 +717,16 @@ Two methods manage the index:
   every upgrade that fixes how those rows are derived. That is what #1124
   observed after the link-extraction fixes in #1104 / #1107: new notes got
   the corrected extraction, every pre-existing note kept its wrong link
-  rows, and no tool exposed a way to force the re-parse. The constant is
-  bumped in the same commit as any change that makes unchanged bytes yield
-  different stored rows; `_chunking_meta_matches` compares it like every
+  rows, and no tool exposed a way to force the re-parse. Any change that
+  makes unchanged bytes yield different stored rows is covered by a bump of
+  the constant, landed in the same commit — but **one bump per release**
+  (#1365): a deployment can only hold a value a stable or rc release
+  shipped, so when no such tag contains the commit that set the current
+  value, that value already covers the next release and the new change
+  joins its history note instead of bumping again (the v4.2 cycle went
+  3 → 9 before this rule; 4 through 8 never shipped and are kept as history).
+  The edge channel is not a release for this purpose, and a redundant bump
+  is harmless. `_chunking_meta_matches` compares the value like every
   other key, so the first start after such an upgrade rejects the
   short-circuit and cold-rebuilds once. An index written before the key
   existed reads back as `0` and rebuilds on the same rule; a corrupted or

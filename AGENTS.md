@@ -242,7 +242,7 @@ If a conflict marker appears in a copier-update bot PR, the conflict itself ofte
 - Hybrid search: Reciprocal Rank Fusion (RRF)
 - Tool semantics: mirror Claude Code Read/Write/Edit patterns
 - Library is sync; MCP layer uses `asyncio.to_thread()`
-- Indexing is hash-based, so an unchanged file is never re-parsed: any change to how a note's stored rows are derived from its bytes (link extraction, chunking, tag/alias/heading derivation) must bump `INDEX_SEMANTICS_VERSION` in `fts_index.py` in the same commit, or deployed vaults keep serving the rows the old code produced (#1124)
+- Indexing is hash-based, so an unchanged file is never re-parsed: any change to how a note's stored rows are derived from its bytes (link extraction, chunking, tag/alias/heading derivation) must be covered by an `INDEX_SEMANTICS_VERSION` bump in `fts_index.py`, or deployed vaults keep serving the rows the old code produced (#1124). The bump is **once per release** (#1365): if no stable or rc tag contains the commit that set the current value, the value already covers the next release — extend its history note with the new change instead of bumping again (`git tag --contains <that commit>` empty → no bump). The edge channel is not a release for this purpose. A redundant bump is harmless, not a defect
 - Full decision log in `docs/design/design.md` appendix
 - How the outside world behaves (Obsidian's dialect, CommonMark/GFM, git) is recorded in dated, sourced references under `docs/design/reference/` (an OKF v0.2 bundle; start at its `index.md`); read the relevant page before touching `scanner.py`, `fts_index.py` link resolution, or `git/`, and re-research rather than trust a page past its `stale_after`
 <!-- DOMAIN-END -->
