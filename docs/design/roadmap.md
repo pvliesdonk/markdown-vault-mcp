@@ -21,8 +21,10 @@ closes, it does not.
 
 Companion pages: `release-vision.md` covers the release *mechanism* (how a
 version is computed and shipped); this page covers *what* the next releases
-carry and why. The architectural studies referenced below live on the branch
-behind PR #1152 until that PR merges.
+carry and why. The architectural studies and the git-robustness study
+referenced below live on their own branches by decision (constraint 10) and
+are not going to be merged; the issues that cite them are the durable record,
+and the branch links in those issues hold only as long as the branches do.
 
 ## How milestones are read in this repository
 
@@ -71,6 +73,10 @@ another locator is given.
    policy applies to every instance and nothing the CLI git layer serves today
    is withdrawn. Milestone `git` is about the libgit2 backend, not about
    everything git.
+10. `stated` (2026-09-07, on reading this page's first draft): the
+    architectural studies (PR #1152) and the git-robustness study branch are
+    never going to be merged, because "I don't think these studies belong on
+    main". They stay on their branches as working material.
 
 `derived` from 3: bugs and `docs:`-typed work do not count toward the feature
 budget. Under the commit convention only `feat` reaches the Features section of
@@ -80,6 +86,8 @@ reads as three features.
 ## Direction, by tier
 
 ### v4.3 — link fidelity and git operability
+
+Milestone: <https://github.com/pvliesdonk/markdown-vault-mcp/milestone/9>
 
 **Acceptance criterion** (`derived`, outcome-level, frozen through refinement):
 a vault whose links Obsidian wrote from another folder resolves them to the
@@ -123,6 +131,8 @@ that fits the same minor. The shared-vault conflict guidance (#1294) and the
   field before refining #1299.
 
 ### v4.4 — creating a vault, and knowing the envelope
+
+Milestone: <https://github.com/pvliesdonk/markdown-vault-mcp/milestone/10>
 
 **Acceptance criterion** (`derived`): an operator with no vault reaches a
 running, indexed, git-managed server by following one page, on either
@@ -169,6 +179,8 @@ observed to approach the line.
 
 ### v5.0 — the breaking bundle
 
+Milestone: <https://github.com/pvliesdonk/markdown-vault-mcp/milestone/7>
+
 **Acceptance criterion** (`derived`): every default flip and library removal
 announced during 4.x lands in one upgrade with one migration page, and the
 project runs on the current FastMCP line through the current template.
@@ -200,6 +212,8 @@ operator or library surface under the two-part test in `AGENTS.md`.
 
 ### Milestone `git` — the opt-in libgit2 backend (epic #1313)
 
+Milestone: <https://github.com/pvliesdonk/markdown-vault-mcp/milestone/8>
+
 Already charted by its epic, whose "What changes for the user" is the
 acceptance criterion; constraint 9 fixes its scope. This page adds only an
 ordering argument.
@@ -220,7 +234,8 @@ and should be fixed *in* that shared layer rather than at its five sites.
 
 ### Platform tier — no milestone
 
-`evidenced` (#1232, #1233, #1234, #1367, #1369, #225; studies on PR #1152):
+`evidenced` (#1232, #1233, #1234, #1367, #1369, #225; the decoupling study on
+the unmerged PR #1152 branch, per constraint 10):
 multi-vault plumbing, per-user permissions, non-markdown documents, AST
 chunking and attachment metadata together map the project's potential as a
 layered vault platform. Constraint 5 places any surface change for
