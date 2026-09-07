@@ -59,7 +59,7 @@ sources:
     id: handbook
 verified:
   - by: human:alex
-    at: 2026-08-01
+    at: "2026-08-01T09:14:00Z"
 ---
 ```
 
@@ -99,14 +99,14 @@ The steps above keep a bundle conformant by convention. The enforced write layer
 
 With the layer on, and only while the vault is an active OKF bundle, every `write` and `edit` does two things to the note that lands:
 
-- **Stamps provenance.** The server writes `generated: {by, at}` describing the bytes it just saved. `at` is the write date. `by` is `human:<subject>` when the caller is authenticated, and a tool actor such as `markdown-vault-mcp/1.4.0` otherwise. Any existing `generated` value is replaced.
+- **Stamps provenance.** The server writes `generated: {by, at}` describing the bytes it just saved. `at` is the instant of the write, in UTC (`2026-09-07T05:32:29Z`), as the OKF spec requires of every timestamp. `by` is `human:<subject>` when the caller is authenticated, and a tool actor such as `markdown-vault-mcp/1.4.0` otherwise. Any existing `generated` value is replaced.
 - **Invalidates prior review.** A content change means an earlier human review no longer describes the current note, so the server clears `verified`. This fires on any content-changing write, including an edit that touches only a frontmatter line. A `rename` moves the file without changing its content, so it leaves both fields alone.
 
 The one-shot migration transforms above (`okf_convert_links`, `okf_generate_index`, `okf_seed_log`) are exempt: a mechanical rewrite does not re-stamp provenance or discard a human attestation.
 
 ### Recording a human review
 
-Enabling the layer also exposes the [`okf_verify`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
+Enabling the layer also exposes the [`okf_verify`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry (`at` a UTC instant) to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
 
 One subtlety is worth understanding before you rely on the `human-reviewed` tier. The authenticated subject is *whose token* made the call, not proof that a person read the note. When an agent holds your token and attribution rests on the token alone, the model could promote a note to `human-reviewed` on its own, and the tier would mean nothing. `MARKDOWN_VAULT_MCP_OKF_VERIFY` controls how the tool guards against that. It applies only when `OKF_WRITE` is on. Setting it to a non-default value with the layer off is a configuration error, because the tool is hidden and the setting would have no effect.
 

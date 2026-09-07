@@ -546,7 +546,7 @@ Seed a folder's reserved `log.md` change history from the vault's git commit his
 
 #### `okf_verify`
 
-Attest a note as human-reviewed by appending a `{by: human:<subject>, at: <date>}` entry to its `verified` frontmatter list, promoting the note's trust tier to `human-reviewed`. Part of the [enforced write layer](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/#the-enforced-write-layer): registered only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. The append itself does not clear `verified`; only content-changing writes do that.
+Attest a note as human-reviewed by appending a `{by: human:<subject>, at: <UTC instant>}` entry to its `verified` frontmatter list, promoting the note's trust tier to `human-reviewed`. Part of the [enforced write layer](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/#the-enforced-write-layer): registered only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. The append itself does not clear `verified`; only content-changing writes do that.
 
 How the review is confirmed depends on [`MARKDOWN_VAULT_MCP_OKF_VERIFY`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md):
 

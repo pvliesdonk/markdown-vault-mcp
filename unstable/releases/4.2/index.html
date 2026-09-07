@@ -2299,6 +2299,16 @@ form included) is stale from that moment on, with its offset respected. A
 time without an offset is allowed by neither text and is ignored. What the
 spec says in each of its texts, with sources, is recorded in
 <code>docs/design/reference/okf-v0.2.md</code>.</p>
+<p><strong>Provenance stamps are instants.</strong> The <code>generated.at</code> the server stamps
+on every content write, and the <code>verified[].at</code> that <code>okf_verify</code> appends,
+were bare dates where the OKF spec says "an ISO 8601 datetime" and, since
+its in-place amendment of 2026-08-21, one "with an explicit UTC offset"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1372">#1372</a>).
+They are now UTC instants in the spec's own example form,
+<code>2026-09-07T05:32:29Z</code>, written as strings so the YAML emitter cannot
+re-spell them, and a bundle this server has written is accepted by a
+consumer that is strict about offsets. What the spec says in each of its
+texts, with sources, is in <code>docs/design/reference/okf-v0.2.md</code>.</p>
 <p><strong>A link with any URI scheme is external.</strong> The external-link filter was an
 allowlist of four prefixes, so a <code>file:</code>, <code>ftp:</code>, <code>obsidian:</code> or <code>zotero:</code>
 destination was resolved against the source note's folder and reported as a
@@ -2478,6 +2488,12 @@ on your part:</p>
   may lose one for a note whose <code>stale_after</code> carried a time but no
   offset (previously read as its date, now ignored). No stored rows
   change, so no rebuild.</li>
+<li><strong><code>generated.at</code> moves on every content write.</strong> It is now the UTC
+  instant of the write rather than the date
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1372">#1372</a>),
+  so two writes of a note on one day no longer leave its frontmatter
+  byte-identical; on a git-backed vault each such write is its own commit,
+  as any content write already was.</li>
 <li><strong>A Voyage vault also re-embeds once</strong>, through a separate mechanism
   with a separate trigger: the provider's embedding behavior is part of the
   vector sidecar's identity, and asymmetric embedding changed it
