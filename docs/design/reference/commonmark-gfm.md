@@ -6,10 +6,10 @@ subject_version: "0.31.2"
 valid_for: "CommonMark 0.31.x; GFM as published at accessed date"
 generated:
   by: process:researching-references
-  at: 2026-09-06
+  at: 2026-09-06T12:14:49+02:00
 verified:
   - by: process:researching-references-refute
-    at: 2026-09-06
+    at: 2026-09-06T12:14:49+02:00
 stale_after: 2027-09-06
 status: stable
 sources:

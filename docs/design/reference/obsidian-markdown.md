@@ -6,10 +6,10 @@ subject_version: "1.14 (help pages state a version only for properties: 1.4 / 1.
 valid_for: "Obsidian 1.x"
 generated:
   by: process:researching-references
-  at: 2026-09-06
+  at: 2026-09-06T12:14:49+02:00
 verified:
   - by: process:researching-references-refute
-    at: 2026-09-06
+    at: 2026-09-06T12:14:49+02:00
 stale_after: 2027-03-06
 status: stable
 sources:

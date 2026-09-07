@@ -1,5 +1,9 @@
 # Log
 
+## 2026-09-07
+
+- Every page's `generated.at` and `verified[].at` rewritten from a bare date to the author instant of the commit that did the research or the refute (Codex on #1374: the OKF page documented the datetime rule and stamped itself with a date, as the template-owned skill's own template prescribes). `stale_after` stays a calendar date because `scripts/check_references.py` requires one; both raised upstream as fastmcp-server-template#603; the plugin's stale digest as claude-plugins#47. `okf-v0.2.md` gains the reserved-frontmatter departure (`ReservedFrontmatterPolicy`, #1174/#1175) and the bundle's own `stale_after` shape.
+
 ## 2026-09-06
 
 - `okf-v0.2.md` created from `okf/SPEC.md` at commit 62432a09 and the July 2026 text it amended (Codex on #1371: #1357 changed runtime semantics on a digest of the spec with no reference page behind it). Records that the spec's timestamp contract moved in place on 2026-08-21 (`stale_after` is an instant, every timestamp carries an offset) while the header stayed 0.2; departures on staleness and write stamps recorded and filed as #1373 and #1372; the root `index.md` trimmed to `okf_version` only, which §8 requires and the plugin validator enforced.

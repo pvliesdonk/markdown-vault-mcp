@@ -6,10 +6,10 @@ subject_version: "git-scm.com manual pages ('last updated in' 2.42.0–2.55.0; p
 valid_for: "git 2.x"
 generated:
   by: process:researching-references
-  at: 2026-09-06
+  at: 2026-09-06T12:14:49+02:00
 verified:
   - by: process:researching-references-refute
-    at: 2026-09-06
+    at: 2026-09-06T13:18:18+02:00
 stale_after: 2027-03-06
 status: stable
 sources:

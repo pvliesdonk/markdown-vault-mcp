@@ -6,10 +6,10 @@ subject_version: "0.2 (spec commit 62432a09, 2026-08-21)"
 valid_for: "OKF 0.2 as amended 2026-08-21; re-research on any later commit to okf/SPEC.md or a 0.3 draft"
 generated:
   by: process:researching-references
-  at: 2026-09-06
+  at: 2026-09-06T21:59:57+02:00
 verified:
   - by: process:researching-references-refute
-    at: 2026-09-06
+    at: 2026-09-06T22:11:28+02:00
 stale_after: 2027-03-06
 status: stable
 sources:
@@ -242,6 +242,27 @@ tree, 2026-09-06].
   stats** (#1251, #962). The spec's conformance rule 2 applies to "every
   frontmatter block", but reserved files carry none by §8, so exempting
   them is the spec's own consequence rather than a departure.
+- **A generated reserved file carries frontmatter when the operator requires
+  it.** §8 allows frontmatter in an `index.md` only for the bundle root's
+  `okf_version`, and none in `log.md`. With `required_frontmatter`
+  configured, the server's own `index.md` / `log.md` generators
+  (`ReservedFrontmatterPolicy` in `okf.py`) seed the configured keys — the
+  title field with the file's title, any other as `null` — because a
+  generated file with no frontmatter would fail the same index gate the
+  server enforces and vanish from `search` and `list_documents` (#1174,
+  #1175). Existing keys, including the root `okf_version`, are preserved;
+  `okf_version` is never synthesised into a folder index. With nothing
+  required, the files are written body-only as §8 and §9 have them.
+  Deliberate; decided in `docs/design/okf.md`, "Generated reserved files
+  and the index gate".
+  [pins: tests/test_okf.py::TestReservedFrontmatterPolicy::test_title_field_is_seeded_with_the_derived_title, tests/test_okf.py::TestReservedFrontmatterPolicy::test_other_required_fields_are_seeded_as_null, tests/test_okf.py::TestReservedFrontmatterPolicy::test_existing_frontmatter_is_preserved_unconfigured]
+- **This bundle's own `stale_after` is a calendar date.** The
+  template-owned `scripts/check_references.py` requires
+  `stale_after` to be `YYYY-MM-DD` and reads `verified` only as a list, both
+  the July text's shape; the pages' `generated.at` / `verified[].at` are
+  offset datetimes as both texts require. Filed upstream as
+  pvliesdonk/fastmcp-server-template#603; the plugin digest #1357 followed
+  is pvliesdonk/claude-plugins#47.
 - **Ranking downweights** deprecated (×0.5), stale (×0.75) and reserved
   (×0.5) notes when a bundle is detected. The spec keeps `status` and
   staleness as advisory annotations and says nothing about ranking; trust
