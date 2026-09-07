@@ -215,7 +215,7 @@ months, not twelve.
 ## Where this project departs from the subject
 
 Behaviour lines are [observed: `okf.py`, `_okf_write.py` on the working
-tree, 2026-09-06].
+tree, 2026-09-07].
 
 - **Both texts' `stale_after` forms are honoured, and the bare date is
   kept.** `derive_stale` compares an instant with an offset as an instant
