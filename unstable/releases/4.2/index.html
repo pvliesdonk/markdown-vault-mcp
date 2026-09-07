@@ -1958,7 +1958,7 @@
 
 
 <h1 id="42">4.2<a class="headerlink" href="#42" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: e24837818b579aec1959a8bc5607606e4649664d -->
+<!-- notes-range-end: 60111e3fb38efdf54b78bc6fc1f5ca9acc2ff883 -->
 
 <!-- RELEASE-SUMMARY v4.2.0 START -->
 <p>This release is about trusting the git layer. On a git-backed vault, an
@@ -1972,9 +1972,12 @@ rejected SHA, vanished history) are fixed. GitLab-hosted vaults gain the
 push-triggered reindex GitHub vaults already had, Voyage vaults get better
 search relevance with nothing to configure, and server instructions now
 arrive in full on Claude Code instead of losing their tail to a 2,048-unit
-cap. Nothing breaks: no env var, tool, or library import changes meaning.
-Two one-time costs on first start after upgrade: every vault rebuilds its
-text index once, and a Voyage vault re-embeds once.</p>
+cap. Seven link-extraction fixes reshape the link graph: broken-link counts
+drop, notes whose only links were embeds become orphans, and a duplicate-name
+<code>[[Note]]</code> resolves as Obsidian does. Nothing breaks: no env var, tool, or
+library import changes meaning. Two one-time costs on first start after
+upgrade: every vault rebuilds its text index once, and a Voyage vault
+re-embeds once.</p>
 <!-- RELEASE-SUMMARY v4.2.0 END -->
 
 <p>This is the first release since <a href="../4.1/">4.1</a>. Most of it happened in one
@@ -2012,12 +2015,17 @@ beyond recognition, the revision is off the current history), the read
 <strong>fails rather than returning content</strong>, because the next thing a caller
 does with the result is write it back. The
 <a href="../../tools/#reading-an-earlier-revision">tools reference</a> lists every
-refusal case. In the same spirit, <code>previous_revision</code> is absent whenever no
+refusal case. Every refusal, including the one where git records the note
+as a copy of another, ends by pointing at <code>get_history</code>; none suggests
+reading a different note, because the copy source is only git's similarity
+match. In the same spirit, <code>previous_revision</code> is absent whenever no
 commit provably holds the replaced content, such as a brand-new note or a
 vault without git.</p>
-<p>Requires a git-backed vault; revision reads cover <code>.md</code> notes. No <code>restore</code>
-tool ships with this, deliberately: the read/write round trip above is the
-restore, and it keeps the caller in charge of what gets written.</p>
+<p>Requires a git-backed vault; revision reads cover <code>.md</code> notes and do not go
+through LFS. No <code>restore</code> tool ships with this, deliberately: the read/write
+round trip above is the restore, and it keeps the caller in charge of what
+gets written. See "Getting an overwritten note back" in the
+<a href="../../guides/git-integration/">git integration guide</a>.</p>
 <h2 id="history-that-describes-the-right-note">History that describes the right note<a class="headerlink" href="#history-that-describes-the-right-note" title="Permanent link">&para;</a></h2>
 <p>Building the revision reader forced a hard look at what the history readers
 were actually reporting, and six long-standing bugs fell out. Every one of
@@ -2057,16 +2065,6 @@ them was reachable on 4.1 and earlier:</p>
 <code>read(revision=)</code> all identify a note the same way, with the same rename
 following, the same threshold, and the same lineage boundary at the note's
 creation.</p>
-<p>One refusal message changed after the release candidate. <code>read(path,
-revision=)</code> correctly refuses when git records the note as a copy rather
-than a continuation, but the refusal then named the copy source as the thing
-to read
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1336">#1336</a>).
-That source is git's similarity match (in the case that surfaced this, an
-unrelated note that merely shared frontmatter scaffolding), and the
-documented next step after a revision read is to write the content back. The
-refusal still names what git found, and now points at <code>get_history</code> the way
-the neighbouring refusal already did.</p>
 <h2 id="one-commit-per-tool-call">One commit per tool call<a class="headerlink" href="#one-commit-per-tool-call" title="Permanent link">&para;</a></h2>
 <p>This one arrived from the field.
 <a href="https://github.com/mikebronner">@mikebronner</a> ran a single
@@ -2109,15 +2107,16 @@ claims are now resolved when the tool call arrives and carried to the
 background commit, so the commit author is the person who made the write.
 It also now agrees with the OKF provenance record for the same write, which
 was already stamped correctly.</p>
-<p>The release candidate found the other way the same claims fall back
-silently: the identity provider simply does not put them in the access
-token. That outcome looked exactly like a deployment that had never
-configured attribution, and the one nearby startup warning is suppressed
-precisely when a claim is configured
+<p>The same claims also fall back silently when the identity provider does
+not put them in the access token at all. That outcome looked exactly like a
+deployment that had never configured attribution (the only trace was a
+<code>DEBUG</code> line), and the one nearby startup warning is suppressed precisely
+when a claim is configured
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1331">#1331</a>).
 The first authenticated write now reports the configured key and whether
 it was absent or empty, once per field per process; the commit still falls
-back to the static identity.</p>
+back to the static identity. See "What a commit covers" in the
+<a href="../../guides/git-integration/">git integration guide</a>.</p>
 <h2 id="a-write-that-cannot-leave-the-host-says-so">A write that cannot leave the host says so<a class="headerlink" href="#a-write-that-cannot-leave-the-host-says-so" title="Permanent link">&para;</a></h2>
 <p>The sharpest report of the cycle came from a production deployment.
 <a href="https://github.com/FoundationOperations">@FoundationOperations</a> ran the
@@ -2137,9 +2136,15 @@ clone is not reaching its remote
 it is committed locally only, so an agent knows to keep its own copy and
 alert its user. When there is nothing to report, the key is absent rather
 than null.
-The log marks the transition once (<code>git_remote_unsynced</code>, and
-<code>git_remote_resynced</code> on recovery) instead of repeating the failure every
-push cycle. Writes are warned, never refused; the same report asked for a
+The log marks the transition once (<code>git_remote_unsynced</code> at <code>ERROR</code>,
+carrying git's own words as <code>cause=</code>, and <code>git_remote_resynced</code> on
+recovery). A push that a write, a <code>git_sync</code> flush, or startup caused logs
+its rejection once at <code>WARNING</code> with the redacted git stderr, so the line
+repeats once per burst of writes and shows the retries are happening; the
+pull loop's timer-driven retry of a still-pending push stays at <code>DEBUG</code>, as
+does the per-cycle detail of a divergence the resolver is working through
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1330">#1330</a>).
+Writes are warned, never refused; the same report asked for a
 configurable block, which is tracked separately as
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1299">#1299</a>.</p>
 <p>The same incident exposed a lie in <code>git_sync</code>: a dry-run pull "reported
@@ -2154,27 +2159,10 @@ anything: a divergence reports <code>fast_forward=false</code> with
 reporting the remote tip as its projected target, which had been triggering
 pointless full reindexes through the sync paths
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1301">#1301</a>).</p>
-<p>The release candidate then showed the other half of the problem: the
-noticing worked, and the diagnosing did not. When a clone could not reach
-its remote, the only line in the log was that one transition, naming the
-generic <code>push_failed</code> bucket; git's own words sat at <code>DEBUG</code>, and
-deployments run at <code>INFO</code>
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1330">#1330</a>). An
-operator learned the vault was stranded but not why, and because every retry
-was equally silent, could not tell a clone that was still retrying from one
-that had stopped. The transition line now carries the cause alongside the
-reason code, and a rejected push logs at <code>WARNING</code> with the git stderr, on
-the deferred and the startup path alike. That is a deliberate step back from
-the quieting #1287 introduced, and it is bounded by what caused the attempt:
-a push that a write caused is one attempt per write, so the line repeats
-once per burst of writes, whereas the pull loop's timer-driven retry of a
-still-pending push, like the pull-side detail that drowned the transition
-in the original incident, stays at <code>DEBUG</code>. Credentials are redacted as
-before.</p>
-<p>The same deployment then found the pull side's own blind spot, and fixed
-it. When another writer pushed while the instance held local commits, the
-clone "stops syncing" while every write kept "returning success" and the
-log showed a conflict-resolution loop that "exceeded 50 iterations" (the
+<p>The pull side had a blind spot of its own, found and fixed by the same
+deployment. When another writer pushed while the instance held local commits, the
+clone "stops syncing" while every <code>write</code> and <code>edit</code> "returns success" and
+the log showed a conflict-resolution loop that "exceeded 50 iterations" (the
 reporter's words in
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1362">#1362</a>).
 There was no conflict: the pull pipeline's <code>git rebase</code> ran with no
@@ -2292,38 +2280,32 @@ exempts from typing
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1267">#1267</a>). The
 histograms now cover the same note population <code>okf_validate</code> audits, and
 reserved files are reported separately as <code>reserved_count</code>.</p>
-<p><strong>OKF staleness and the single-verifier shorthand now follow the spec.</strong>
-The OKF v0.2 field reference says a note is "stale when <code>today &gt;=
-stale_after</code>" and that consumers "must treat a bare mapping as a
-one-element list" for <code>verified</code>
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1357">#1357</a>).
-The server did neither: on the <code>stale_after</code> date itself it still reported
-the note current, and a note whose <code>verified</code> was written as a single
-mapping rather than a list read as <code>unverified</code>. Worse, <code>okf_verify</code> on
-such a note replaced that mapping with its own entry, so the earlier
-attestation was lost. The <code>stale</code> flag, the <code>stale</code> filter, the <code>stats</code>
-stale count and ranking now turn stale on the named date; the trust tier,
-the <code>okf_verify</code> append and its <code>verified_count</code> all read a bare mapping as
-one entry. The spec itself moved while this was being fixed: on 2026-08-21
-its maintainer amended "Version 0.2" in place so that <code>stale_after</code> is
-"an absolute instant" with an offset, "stale when <code>now &gt;= stale_after</code>"
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1373">#1373</a>).
-Both spellings now work: a bare date (<code>2026-12-31</code>) is stale from that
-server-local day on, and an instant (<code>2026-12-31T00:00:00Z</code>, the quoted
-form included) is stale from that moment on, with its offset respected. A
-time without an offset is allowed by neither text and is ignored. What the
-spec says in each of its texts, with sources, is recorded in
-<code>docs/design/reference/okf-v0.2.md</code>.</p>
-<p><strong>Provenance stamps are instants.</strong> The <code>generated.at</code> the server stamps
-on every content write, and the <code>verified[].at</code> that <code>okf_verify</code> appends,
-were bare dates where the OKF spec says "an ISO 8601 datetime" and, since
-its in-place amendment of 2026-08-21, one "with an explicit UTC offset"
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1372">#1372</a>).
-They are now UTC instants in the spec's own example form,
-<code>2026-09-07T05:32:29Z</code>, written as strings so the YAML emitter cannot
-re-spell them, and a bundle this server has written is accepted by a
-consumer that is strict about offsets. What the spec says in each of its
-texts, with sources, is in <code>docs/design/reference/okf-v0.2.md</code>.</p>
+<p><strong>OKF staleness, the single-verifier shorthand and the provenance stamps
+now follow the spec.</strong> OKF v0.2 says a note is stale from its <code>stale_after</code>
+on, that consumers "must treat a bare mapping as a one-element list" for
+<code>verified</code>, and that <code>generated.at</code> and <code>verified[].at</code> are "an ISO 8601
+datetime"; the spec was amended in place on 2026-08-21 to make every such
+timestamp one "with an explicit UTC offset" and <code>stale_after</code> "an absolute
+instant"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1357">#1357</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1373">#1373</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1372">#1372</a>).
+The server departed on all three. A note was reported current on its
+<code>stale_after</code> date, and a quoted instant (<code>'2026-01-01T00:00:00Z'</code>) was
+ignored altogether. A <code>verified</code> written as a single mapping read as
+<code>unverified</code>, and <code>okf_verify</code> on such a note replaced that mapping with its
+own entry, losing the earlier attestation. And both stamps were bare dates,
+which a consumer strict about offsets rejects. Now both <code>stale_after</code>
+spellings work: a bare date (<code>2026-12-31</code>) is stale from that server-local
+day on, and an instant (<code>2026-12-31T00:00:00Z</code>, quoted or not) is stale
+from that moment on, with its offset respected; a time without an offset is
+allowed by neither text of the spec and is ignored. The <code>stale</code> flag, the
+<code>stale</code> filter, the <code>stats</code> stale count and ranking all agree. A bare
+<code>verified</code> mapping is one entry for the trust tier, the <code>okf_verify</code> append
+and its <code>verified_count</code>. And every stamp the server writes is a UTC instant
+in the spec's example form, <code>2026-09-07T05:32:29Z</code>, written as a string so
+the YAML emitter cannot re-spell it; stamps already on disk are left as they
+are until the note is next written.</p>
 <p><strong>A link with any URI scheme is external.</strong> The external-link filter was an
 allowlist of four prefixes, so a <code>file:</code>, <code>ftp:</code>, <code>obsidian:</code> or <code>zotero:</code>
 destination was resolved against the source note's folder and reported as a
@@ -2362,7 +2344,9 @@ the vault, about 12 of one vault's 90 reported broken links in one case
 The link graph is now notes-only: a reference whose target has an
 allowlisted extension is not a link, in any of the three link spellings and
 whether or not it is an embed, the way image links <code>![alt](src)</code> always
-were. A note whose only links were embeds is now an orphan in
+were. Under the <code>*</code> wildcard a suffix counts as an extension only when it
+holds a letter, so <code>[[Python 3.12]]</code> and <code>[[Version 2.0 plan]]</code> stay notes.
+A note whose only links were embeds is now an orphan in
 <code>get_orphan_notes</code> and <code>stats.orphan_count</code>, which is what it was to the
 note graph all along. The attachment allowlist has become an input to the index, so
 changing <code>MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS</code> rebuilds it once on the
@@ -2381,12 +2365,13 @@ several multi-kilobyte blobs of document prose"
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1334">#1334</a>).
 Links are now matched inside one paragraph at a time, with the boundaries
 taken from the CommonMark spec row by row (a blank line in any line-ending
-spelling, a bare <code>&gt;</code>, a thematic break, a heading, a quote line, a list
-item), and a destination never contains a line ending. A link written <em>on</em> a
-heading, quote or list line still counts, as does a link whose text
-soft-breaks onto the next line. Three limits are deliberate. The scanner
-tracks no open quotes, items or fences, so a nested item indented four or
-more spaces is continuation text. Every numbered-list marker starts a new
+spelling, a bare <code>&gt;</code>, a thematic break, an underline heading, a heading, a
+line that opens or deepens a block quote, a list item), and a destination
+never contains a line ending. A link written <em>on</em> a heading, quote or list
+line still counts, as does a link whose text soft-breaks onto the next
+line. Three limits were chosen rather than met. The scanner tracks no open
+quotes, items or fences, so a nested item indented four or more spaces is
+continuation text. Every numbered-list marker starts a new
 paragraph, not only <code>1.</code>, because converted PDFs are numbered lists and a
 stray <code>[</code> in one item must not pair into the next. And a destination
 wrapped onto its own line inside the parentheses is not accepted, because
@@ -2407,20 +2392,22 @@ escapes and entity references) and decoded before it is resolved, in
 reference definitions as well as inline links; an attachment written in
 any of these spellings is excluded from the link graph like the literal
 one. A rename keeps the form the author used, so <code>&lt;my note.md&gt;</code> becomes
-<code>&lt;new name.md&gt;</code>. One limit is deliberate: parentheses balance to three
-levels, the depth the spec's own examples reach. Existing vaults rebuild
-once on first start after upgrade.</p>
+<code>&lt;new name.md&gt;</code>; only a new name containing <code>#</code>, <code>&lt;</code> or <code>&gt;</code> gains a
+backslash escape, so it cannot be misread as a fragment. One new limit is
+deliberate: parentheses balance to three levels, the depth the spec's own
+examples reach. Existing vaults rebuild once on first start after upgrade.</p>
 <p><strong>A duplicate note name resolves the way Obsidian resolves it.</strong> When
 several notes share a name, a bare <code>[[Note]]</code> picked the shortest path
 everywhere, and the design doc claimed a different rule (fewest path
-components); neither was Obsidian's, and neither had a source. The
-maintainer ran the discriminating fixture on Obsidian 1.13.7
+components); neither had a source, and only the design doc's was wrong
+outright. The maintainer ran the discriminating fixture on Obsidian 1.13.7
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1350">#1350</a>):
 an exact vault path wins, otherwise a note in the linking note's own
 folder, otherwise the shortest path. The resolver now does the same, so a
 <code>[[Note]]</code> written beside a same-named note points at that neighbour, as it
-does in Obsidian; the reference page records the fixture and its output.
-Existing vaults rebuild once on first start after upgrade.</p>
+does in Obsidian, and a tie between equally short candidates now falls the
+same way on a cold build and an incremental one. Existing vaults rebuild
+once on first start after upgrade.</p>
 <p><strong>Renaming an attachment says when <code>update_links</code> does not apply.</strong> The
 attachment branch of <code>rename</code> never read the flag, so a call that asked
 for a rewrite answered <code>updated_links: 0</code> and nothing else, and "the two
@@ -2469,10 +2456,12 @@ same normalization.</p>
 <p><strong>The git guide now says what the remote must permit.</strong> It documented which
 credentials to configure but not what the token had to be allowed to do, so
 two ordinary first-run conditions each cost a long detour before the real git
-error was found: a read-only token, and a protected default branch that
-refused the push
+error was found: a protected default branch that refused the push, and a
+clone with no usable token, whose fetches failed
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1337">#1337</a>). The
-managed-git section now states both prerequisites and points at
+managed-git section now states both prerequisites (push access to the
+tracked branch, and a branch protection that refuses regardless of the
+token's scopes) and points at
 <code>git_sync(direction="push")</code> as the call that returns the remote's own
 refusal message, with a note on why <code>git push --dry-run</code> is not a substitute
 for it.</p>
@@ -2521,9 +2510,16 @@ on your part:</p>
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1353">#1353</a>),
   and the wikilink tie-break observed on Obsidian
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1350">#1350</a>).
-  <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 9. One rebuild covers all
-  seven; it is automatic, costs CPU and local IO proportional to vault size,
-  and does not re-embed.</li>
+  <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 9 (the values between never
+  shipped; a vault on 4.2.0-rc.0 holds 3 and rebuilds once more). One
+  rebuild covers all seven; it is automatic, costs CPU and local IO
+  proportional to vault size, and does not re-embed. Expect the link graph
+  to change on it: <code>get_broken_links</code> and <code>stats.broken_link_count</code> drop
+  (attachment embeds, schemed URLs and stray-bracket prose leave, encoded
+  and CommonMark-spelled links now resolve), <code>get_orphan_notes</code> and
+  <code>stats.orphan_count</code> can gain notes whose only links were embeds, and in
+  a vault with duplicate note names a bare <code>[[Note]]</code> can re-point to the
+  note beside it, as it does in Obsidian.</li>
 <li><strong>A note becomes stale one day earlier, and an instant is honoured.</strong>
   <code>stale_after</code> is now the first stale day rather than the last current
   one
@@ -2539,9 +2535,14 @@ on your part:</p>
 <li><strong><code>generated.at</code> moves on every content write.</strong> It is now the UTC
   instant of the write rather than the date
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1372">#1372</a>),
-  so two writes of a note on one day no longer leave its frontmatter
-  byte-identical; on a git-backed vault each such write is its own commit,
-  as any content write already was.</li>
+  so a rewrite of unchanged content, which used to leave the file
+  byte-identical when the same actor wrote it on the same day, now changes
+  the stamp and, on a git-backed vault, produces a commit. Stamps already
+  on disk stay bare dates until the note is next written.</li>
+<li><strong>Two <code>fix(release)</code> entries in the changelog</strong>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1327">#1327</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1329">#1329</a>) are
+  repairs to the release pipeline itself, with no runtime effect.</li>
 <li><strong>A Voyage vault also re-embeds once</strong>, through a separate mechanism
   with a separate trigger: the provider's embedding behavior is part of the
   vector sidecar's identity, and asymmetric embedding changed it
