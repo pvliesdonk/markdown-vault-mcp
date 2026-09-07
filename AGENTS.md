@@ -5,6 +5,8 @@ Generic markdown vault MCP with hybrid search
 ## Design
 <!-- DOMAIN-START -->
 The authoritative design specification lives at [`docs/design/design.md`](docs/design/design.md). All implementation must conform to this spec. When in doubt, the design doc wins.
+
+Direction beyond the current release lives in [`docs/design/roadmap.md`](docs/design/roadmap.md): an agent-authored, in-repo-reviewed argument for which milestones come next, in what order, and what is not yet known. Milestones on GitHub carry the payload; the page carries only the argument. Read it before planning work that spans more than one release, and update it when direction changes, never when an issue closes.
 <!-- DOMAIN-END -->
 
 ## Project Structure
