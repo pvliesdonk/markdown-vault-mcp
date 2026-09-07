@@ -2289,7 +2289,16 @@ such a note replaced that mapping with its own entry, so the earlier
 attestation was lost. The <code>stale</code> flag, the <code>stale</code> filter, the <code>stats</code>
 stale count and ranking now turn stale on the named date; the trust tier,
 the <code>okf_verify</code> append and its <code>verified_count</code> all read a bare mapping as
-one entry.</p>
+one entry. The spec itself moved while this was being fixed: on 2026-08-21
+its maintainer amended "Version 0.2" in place so that <code>stale_after</code> is
+"an absolute instant" with an offset, "stale when <code>now &gt;= stale_after</code>"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1373">#1373</a>).
+Both spellings now work: a bare date (<code>2026-12-31</code>) is stale from that
+server-local day on, and an instant (<code>2026-12-31T00:00:00Z</code>, the quoted
+form included) is stale from that moment on, with its offset respected. A
+time without an offset is allowed by neither text and is ignored. What the
+spec says in each of its texts, with sources, is recorded in
+<code>docs/design/reference/okf-v0.2.md</code>.</p>
 <p><strong>A link with any URI scheme is external.</strong> The external-link filter was an
 allowlist of four prefixes, so a <code>file:</code>, <code>ftp:</code>, <code>obsidian:</code> or <code>zotero:</code>
 destination was resolved against the source note's folder and reported as a
@@ -2457,12 +2466,18 @@ on your part:</p>
   <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 7. One rebuild covers all
   five; it is automatic, costs CPU and local IO proportional to vault size,
   and does not re-embed.</li>
-<li><strong>A note becomes stale one day earlier.</strong> <code>stale_after</code> is now the first
-  stale day rather than the last current one
+<li><strong>A note becomes stale one day earlier, and an instant is honoured.</strong>
+  <code>stale_after</code> is now the first stale day rather than the last current
+  one
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1357">#1357</a>),
-  so a note dated today flips to <code>stale: true</code> on upgrade; triage listings
-  built with <code>{"stale": "true"}</code> may gain an entry. No stored rows change,
-  so no rebuild.</li>
+  so a note dated today flips to <code>stale: true</code> on upgrade; a note whose
+  <code>stale_after</code> was a quoted instant (<code>'2026-01-01T00:00:00Z'</code>), which the
+  server used to ignore, is now stale when that instant has passed
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1373">#1373</a>).
+  Triage listings built with <code>{"stale": "true"}</code> may gain entries, and
+  may lose one for a note whose <code>stale_after</code> carried a time but no
+  offset (previously read as its date, now ignored). No stored rows
+  change, so no rebuild.</li>
 <li><strong>A Voyage vault also re-embeds once</strong>, through a separate mechanism
   with a separate trigger: the provider's embedding behavior is part of the
   vector sidecar's identity, and asymmetric embedding changed it
