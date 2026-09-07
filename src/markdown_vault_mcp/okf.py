@@ -945,6 +945,162 @@ def strip_reserved_frontmatter(text: str) -> str:
     return str(body).lstrip("\n")
 
 
+#: A list item in a log section: any of CommonMark's three bullet markers
+#: followed by a space *or a tab*, as ``docs/design/reference/commonmark-gfm.md``
+#: records the rule. Not the one spelling the server writes — an entry this
+#: pattern misses contributes nothing to a merge and is lost with no sibling
+#: to recover it from (#1395).
+_LOG_BULLET_RE = re.compile(r"^[-*+][ \t]")
+
+
+def _log_sections(text: str) -> list[tuple[str, list[list[str]]]]:
+    """Return ``(date, entries)`` per dated ``##`` section of a log body.
+
+    An entry is its bullet line plus the lines that continue it — an
+    indented detail line, a lazy continuation — because a list item is not
+    always one line, and a merge that carried only the marker line would
+    drop the rest of a hand-written entry (#1395). An entry ends at the next
+    bullet, the next heading, or a blank line.
+    """
+    sections: list[tuple[str, list[list[str]]]] = []
+    entry: list[str] | None = None
+    for line in text.splitlines():
+        heading = _LOG_HEADING_RE.match(line)
+        if heading:
+            sections.append((heading.group(1), []))
+            entry = None
+        elif not sections:
+            continue
+        elif _LOG_BULLET_RE.match(line):
+            entry = [line.rstrip()]
+            sections[-1][1].append(entry)
+        elif entry is not None and line.strip():
+            entry.append(line.rstrip())
+        else:
+            entry = None
+    return sections
+
+
+def _log_headings(lines: list[str]) -> list[tuple[int, str | None]]:
+    """Return ``(line_index, date)`` for every ``##`` heading in *lines*.
+
+    ``date`` is ``None`` for a heading that is not a date, which still ends
+    the section above it.
+    """
+    headings: list[tuple[int, str | None]] = []
+    for index, line in enumerate(lines):
+        if not line.startswith("## "):
+            continue
+        match = _LOG_HEADING_RE.match(line)
+        headings.append((index, match.group(1) if match else None))
+    return headings
+
+
+def _append_to_section(
+    lines: list[str], start: int, end: int, entry: list[str]
+) -> list[str]:
+    """Return *lines* with *entry* at the end of the section it spans.
+
+    Unchanged when the section already carries that entry, compared as
+    stripped text so indentation and trailing spaces do not make a duplicate
+    look new. The entry goes before the blank lines that close the section,
+    so the spacing between sections survives.
+    """
+    if _entry_text(entry) in {
+        _entry_text(existing) for _, existing in _entries_in(lines[start:end])
+    }:
+        return lines
+    insert = end
+    while insert - 1 > start and not lines[insert - 1].strip():
+        insert -= 1
+    return [*lines[:insert], *entry, *lines[insert:]]
+
+
+def _entry_text(entry: list[str]) -> str:
+    """The comparable text of an entry: its lines stripped and joined."""
+    return "\n".join(line.strip() for line in entry).strip()
+
+
+def _entries_in(lines: list[str]) -> list[tuple[int, list[str]]]:
+    """Return ``(start_index, entry_lines)`` for each entry in *lines*."""
+    found: list[tuple[int, list[str]]] = []
+    current: list[str] | None = None
+    for index, line in enumerate(lines):
+        if _LOG_BULLET_RE.match(line):
+            current = [line.rstrip()]
+            found.append((index, current))
+        elif current is not None and line.strip() and not line.startswith("## "):
+            current.append(line.rstrip())
+        else:
+            current = None
+    return found
+
+
+def _insert_new_section(
+    lines: list[str],
+    headings: list[tuple[int, str | None]],
+    date: str,
+    entry: list[str],
+) -> list[str]:
+    """Return *lines* with a new ``## date`` section carrying *entry*.
+
+    Placed before the first section older than *date*, so the log stays
+    newest-first, or at the end when every section is newer.
+    """
+    older = next((i for i, d in headings if d is not None and d < date), len(lines))
+    head = list(lines[:older])
+    while head and not head[-1].strip():
+        head.pop()
+    tail = lines[older:]
+    section = [f"## {date}", "", *entry]
+    merged = [*head, "", *section] if head else section
+    return [*merged, "", *tail] if tail else merged
+
+
+def _insert_log_entry(lines: list[str], date: str, entry: list[str]) -> list[str]:
+    """Insert *entry* into the ``## date`` section of *lines*, creating it.
+
+    Everything already in *lines* is kept verbatim; only the entry's own
+    lines, and the section heading when there is none for *date*, are added.
+    """
+    headings = _log_headings(lines)
+    for position, (start, heading_date) in enumerate(headings):
+        if heading_date != date:
+            continue
+        end = headings[position + 1][0] if position + 1 < len(headings) else len(lines)
+        return _append_to_section(lines, start, end, entry)
+    return _insert_new_section(lines, headings, date, entry)
+
+
+def merge_okf_logs(upstream: str, local: str) -> str:
+    """Union two versions of a ``log.md`` for rebase-conflict resolution (#1395).
+
+    Insert-only: *upstream* is kept verbatim (frontmatter, header, prose,
+    order), and each bullet found under a dated section of *local* that the
+    same section of *upstream* lacks is inserted there — at the section's
+    end, or in a new section placed newest-first when *upstream* has none for
+    that day. Lines of *local* that are not bullets under a dated section
+    are ignored; so is its frontmatter. Two clones that each created a
+    folder's first log therefore still end with one header.
+
+    Args:
+        upstream: The version the rebase keeps (the remote's).
+        local: The version being replayed (this server's).
+
+    Returns:
+        The merged text, newline-terminated.
+    """
+    try:
+        local_body = fm.loads(local).content
+    except yaml.YAMLError:
+        local_body = local
+    lines = upstream.splitlines()
+    for date, entries in _log_sections(local_body):
+        for entry in entries:
+            lines = _insert_log_entry(lines, date, entry)
+    return "\n".join(lines) + "\n"
+
+
 def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
     """Append a dated bullet to an OKF ``log.md``, newest date section on top.
 

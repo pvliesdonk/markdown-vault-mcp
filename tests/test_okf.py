@@ -1047,3 +1047,157 @@ class TestStripReservedFrontmatter:
         body = "# Log\n\n## 2026-09-07\n\nSample:\n\n---\ntitle: Log\n---\n\n- after\n"
         assert strip_reserved_frontmatter("---\ntitle: Log\n---\n\n" + body) == body
         assert strip_reserved_frontmatter(body) == body
+
+
+class TestMergeOkfLogs:
+    """Insert-only union of two ``log.md`` versions for conflict resolution (#1395).
+
+    Upstream is kept verbatim; bullets present only on the local side are
+    inserted into their date section, creating the section in newest-first
+    order when upstream lacks it. Nothing on either side is rewritten.
+    """
+
+    def test_same_day_bullets_from_both_sides_are_kept(self) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-07\n\n- edited a.md in Obsidian\n"
+        local = "# Log\n\n## 2026-09-07\n\n- **Update**: wrote `b.md`\n"
+        assert merge_okf_logs(up, local) == (
+            "# Log\n\n## 2026-09-07\n\n- edited a.md in Obsidian\n"
+            "- **Update**: wrote `b.md`\n"
+        )
+
+    def test_a_bullet_already_upstream_is_not_doubled(self) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-07\n\n- shared\n- only upstream\n"
+        local = "# Log\n\n## 2026-09-07\n\n- shared\n"
+        assert merge_okf_logs(up, local) == up
+
+    def test_a_newer_local_day_becomes_the_top_section(self) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-06\n\n- old\n"
+        local = "# Log\n\n## 2026-09-07\n\n- new\n\n## 2026-09-06\n\n- old\n"
+        assert merge_okf_logs(up, local) == (
+            "# Log\n\n## 2026-09-07\n\n- new\n\n## 2026-09-06\n\n- old\n"
+        )
+
+    def test_an_older_local_day_is_inserted_in_order(self) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-08\n\n- newest\n\n## 2026-09-06\n\n- oldest\n"
+        local = "# Log\n\n## 2026-09-07\n\n- middle\n"
+        assert merge_okf_logs(up, local) == (
+            "# Log\n\n## 2026-09-08\n\n- newest\n\n## 2026-09-07\n\n- middle\n\n"
+            "## 2026-09-06\n\n- oldest\n"
+        )
+
+    def test_upstream_frontmatter_and_prose_survive(self) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = (
+            "---\ntitle: Log\n---\n\n# Log\n\nHand-written intro.\n\n"
+            "## 2026-09-07\n\nSome prose under the day.\n\n- a\n"
+        )
+        local = "---\ntitle: Log\n---\n\n# Log\n\n## 2026-09-07\n\n- b\n"
+        assert merge_okf_logs(up, local) == (
+            "---\ntitle: Log\n---\n\n# Log\n\nHand-written intro.\n\n"
+            "## 2026-09-07\n\nSome prose under the day.\n\n- a\n- b\n"
+        )
+
+    def test_add_add_keeps_one_header(self) -> None:
+        """Both clones created the folder's first log on the same day."""
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-07\n\n- theirs\n"
+        local = "# Log\n\n## 2026-09-07\n\n- ours\n"
+        out = merge_okf_logs(up, local)
+        assert out.count("# Log\n") == 1
+        assert out.count("## 2026-09-07") == 1
+        assert "- theirs\n- ours\n" in out
+
+    def test_local_non_bullet_lines_are_ignored(self) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-07\n\n- a\n"
+        local = "# Log\n\nLocal-only prose.\n\n## 2026-09-07\n\nMore prose.\n\n- b\n"
+        assert merge_okf_logs(up, local) == "# Log\n\n## 2026-09-07\n\n- a\n- b\n"
+
+    def test_star_bullets_count_as_bullets(self) -> None:
+        """The spec's own examples use ``*``; the server writes ``-``."""
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-07\n\n* a\n"
+        local = "# Log\n\n## 2026-09-07\n\n* a\n* b\n"
+        assert merge_okf_logs(up, local) == "# Log\n\n## 2026-09-07\n\n* a\n* b\n"
+
+    def test_upstream_without_sections_gets_the_section_after_the_header(
+        self,
+    ) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        assert merge_okf_logs("# Log\n", "# Log\n\n## 2026-09-07\n\n- b\n") == (
+            "# Log\n\n## 2026-09-07\n\n- b\n"
+        )
+
+    def test_bullet_lands_before_the_blank_lines_that_close_a_section(self) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-07\n\n- a\n\n\n## 2026-09-06\n\n- old\n"
+        local = "# Log\n\n## 2026-09-07\n\n- b\n"
+        assert merge_okf_logs(up, local) == (
+            "# Log\n\n## 2026-09-07\n\n- a\n- b\n\n\n## 2026-09-06\n\n- old\n"
+        )
+
+    def test_malformed_local_frontmatter_is_read_as_text(self) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-07\n\n- a\n"
+        local = "---\nfoo: [\n---\n# Log\n\n## 2026-09-07\n\n- b\n"
+        assert merge_okf_logs(up, local) == "# Log\n\n## 2026-09-07\n\n- a\n- b\n"
+
+    def test_plus_bullets_are_merged(self) -> None:
+        """CommonMark allows `+`; a local log using it must not lose entries."""
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-07\n\n- theirs\n"
+        local = "# Log\n\n## 2026-09-07\n\n+ ours\n"
+        assert (
+            merge_okf_logs(up, local) == "# Log\n\n## 2026-09-07\n\n- theirs\n+ ours\n"
+        )
+
+    def test_tab_delimited_bullets_are_merged(self) -> None:
+        """CommonMark allows a tab after the marker (the project's reference)."""
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-07\n\n- theirs\n"
+        local = "# Log\n\n## 2026-09-07\n\n-\tours\n"
+        assert merge_okf_logs(up, local) == (
+            "# Log\n\n## 2026-09-07\n\n- theirs\n-\tours\n"
+        )
+
+    def test_a_multiline_entry_keeps_its_continuation(self) -> None:
+        """A list item is not always one line; the rest must not be dropped."""
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-07\n\n- theirs\n"
+        local = "# Log\n\n## 2026-09-07\n\n- ours\n  with a detail line\n"
+        assert merge_okf_logs(up, local) == (
+            "# Log\n\n## 2026-09-07\n\n- theirs\n- ours\n  with a detail line\n"
+        )
+
+    def test_a_multiline_entry_already_upstream_is_not_doubled(self) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        text = "# Log\n\n## 2026-09-07\n\n- shared\n  detail\n"
+        assert merge_okf_logs(text, text) == text
+
+    def test_a_multiline_entry_starts_a_new_section_intact(self) -> None:
+        from markdown_vault_mcp.okf import merge_okf_logs
+
+        up = "# Log\n\n## 2026-09-06\n\n- old\n"
+        local = "# Log\n\n## 2026-09-07\n\n- new\n  detail\n"
+        assert merge_okf_logs(up, local) == (
+            "# Log\n\n## 2026-09-07\n\n- new\n  detail\n\n## 2026-09-06\n\n- old\n"
+        )

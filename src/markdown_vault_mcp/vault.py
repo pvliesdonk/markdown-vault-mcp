@@ -742,6 +742,29 @@ class Vault:
                 write_lock=self._file_write_lock,
                 reserved_frontmatter=reserved_frontmatter,
             )
+        # The reserved files are conflict projections only while this
+        # server maintains them; the strategy asks per pull (#1395). An
+        # optional capability, not part of the store seam: a store without
+        # it keeps the sibling policy every store had before.
+        if self._git_strategy is not None:
+            from markdown_vault_mcp._okf_convention import build_projection_rules
+            from markdown_vault_mcp.git.interfaces import ProjectionAware
+
+            if isinstance(self._git_strategy, ProjectionAware):
+                self._git_strategy.set_projection_provider(
+                    lambda: build_projection_rules(
+                        detector=self._okf,
+                        enabled=self._okf_convention is not None,
+                        source_dir=self._source_dir,
+                    )
+                )
+            elif self._okf_convention is not None:
+                logger.warning(
+                    "okf_projection_hook_unsupported store=%s: a conflict on "
+                    "the reserved index.md/log.md will be saved as a "
+                    "conflict-mcp sibling instead of resolved in place",
+                    type(self._git_strategy).__name__,
+                )
         self._writer_facet = WriterFacet(
             self._doc_mgr,
             okf_migrate=self._okf_migrate,

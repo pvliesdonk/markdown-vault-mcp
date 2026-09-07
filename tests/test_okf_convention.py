@@ -14,6 +14,7 @@ Two layers:
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import frontmatter
@@ -27,7 +28,6 @@ from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
 _FIXED = date(2026, 8, 9)
 
@@ -463,3 +463,63 @@ class TestUpkeepUnderRequiredFrontmatter:
             assert "wrote `guides/a.md`" in on_disk
         finally:
             col.close()
+
+
+class TestProjectionRules:
+    """The reserved files are conflict projections only when the server owns them (#1395)."""
+
+    def test_no_rules_when_the_maintainer_is_off(self) -> None:
+        from markdown_vault_mcp._okf_convention import build_projection_rules
+
+        assert (
+            build_projection_rules(
+                detector=_FakeDetector(True),  # type: ignore[arg-type]
+                enabled=False,
+                source_dir=Path("/vault"),
+            )
+            is None
+        )
+
+    def test_no_rules_when_okf_is_inactive(self) -> None:
+        from markdown_vault_mcp._okf_convention import build_projection_rules
+
+        assert (
+            build_projection_rules(
+                detector=_FakeDetector(False),  # type: ignore[arg-type]
+                enabled=True,
+                source_dir=Path("/vault"),
+            )
+            is None
+        )
+
+    def test_reserved_names_are_projections_and_notes_are_not(self) -> None:
+        from markdown_vault_mcp._okf_convention import build_projection_rules
+
+        rules = build_projection_rules(
+            detector=_FakeDetector(True),  # type: ignore[arg-type]
+            enabled=True,
+            source_dir=Path("/"),
+        )
+        assert rules is not None
+        root = Path("/")
+        assert rules.is_projection(root, "index.md")
+        assert rules.is_projection(root, "guides/log.md")
+        assert not rules.is_projection(root, "guides/note.md")
+        assert not rules.is_projection(root, "guides/index.conflict-mcp-1.md")
+
+    def test_index_takes_upstream_and_log_merges(self) -> None:
+        from markdown_vault_mcp._okf_convention import build_projection_rules
+
+        rules = build_projection_rules(
+            detector=_FakeDetector(True),  # type: ignore[arg-type]
+            enabled=True,
+            source_dir=Path("/"),
+        )
+        assert rules is not None
+        assert rules.merge("guides/index.md", "# up\n", "# local\n") is None
+        merged = rules.merge(
+            "guides/log.md",
+            "# Log\n\n## 2026-09-07\n\n- a\n",
+            "# Log\n\n## 2026-09-07\n\n- b\n",
+        )
+        assert merged == "# Log\n\n## 2026-09-07\n\n- a\n- b\n"

@@ -23,15 +23,17 @@ from __future__ import annotations
 import logging
 from contextlib import nullcontext
 from datetime import date
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_write import current_okf_intent, okf_write_suppressed
+from markdown_vault_mcp.git.conflict import ProjectionRules
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
     OKF_RESERVED_FILENAMES,
     ReservedFrontmatterPolicy,
     append_okf_log_entry,
+    merge_okf_logs,
     strip_reserved_frontmatter,
 )
 
@@ -183,3 +185,52 @@ class ConventionMaintainer:
             logger.warning(
                 "okf_convention_index_failed path=%s", index_path, exc_info=True
             )
+
+
+def build_projection_rules(
+    *, detector: OkfDetector, enabled: bool, source_dir: Path
+) -> ProjectionRules | None:
+    """Return the rebase-conflict rules for the reserved files, or ``None`` (#1395).
+
+    The reserved ``index.md`` / ``log.md`` are projections of vault state
+    only while this server maintains them: the maintainer is *enabled*
+    (``OKF_WRITE``) and the vault is OKF-active. Otherwise they are ordinary
+    notes — the advisory layer even asks the agent to hand-maintain them —
+    and a conflict on one keeps the sibling policy so no content is lost.
+
+    Under the rules an ``index.md`` takes upstream as is (the next
+    regeneration re-derives it) and a ``log.md`` keeps both sides' bullets
+    (:func:`~markdown_vault_mcp.okf.merge_okf_logs`).
+
+    Args:
+        detector: The vault's OKF detector; ``active`` is read now, so call
+            this before the rebase can disturb the root ``index.md``.
+        enabled: Whether the convention maintainer is built.
+        source_dir: The vault root. Conflict paths are *repository*-relative
+            and a vault may be a subdirectory of its repository, so a
+            reserved name is a projection only inside the vault: an
+            ``index.md`` elsewhere in the repository belongs to no bundle
+            this server maintains, and taking upstream for it without a
+            sibling would discard someone's file.
+
+    Returns:
+        The rules, or ``None`` when the files are not the server's to resolve.
+    """
+    if not enabled or not detector.state().active:
+        return None
+    vault = source_dir.resolve()
+
+    def is_projection(git_root: Path, rel_path: str) -> bool:
+        if PurePosixPath(rel_path).name not in OKF_RESERVED_FILENAMES:
+            return False
+        # Pure path arithmetic on resolved roots: the file is mid-conflict,
+        # and whether it is ours to regenerate is a question about where it
+        # sits, not about what the filesystem currently holds.
+        return (git_root.resolve() / rel_path).is_relative_to(vault)
+
+    def merge(rel_path: str, upstream: str, local: str) -> str | None:
+        if PurePosixPath(rel_path).name != "log.md":
+            return None
+        return merge_okf_logs(upstream, local)
+
+    return ProjectionRules(is_projection=is_projection, merge=merge)

@@ -4315,7 +4315,48 @@ interactive `git_sync(direction='pull')` tool (`force_pull`) are thin entry
 points over one implementation, `GitWriteStrategy._pull_pipeline` (quiesce +
 lock → `git fetch origin` → resolve tracking ref → classify divergence →
 ff-only merge → rebase →
-Syncthing-style sibling conflict resolution → LFS pull). `force_pull` returns
+Syncthing-style sibling conflict resolution → LFS pull). The sibling policy
+has one carve-out (#1395): paths the owner declares *projections* through
+`GitWriteStrategy.set_projection_provider` — the vault names the OKF reserved
+`index.md` / `log.md` while it maintains them under `OKF_WRITE` on an
+OKF-active vault — are resolved in place by `conflict.ProjectionRules`:
+upstream is staged, the rules may merge the local side back in (`log.md`
+keeps both sides' bullets through `okf.merge_okf_logs`; `index.md` takes
+upstream and is re-derived by the next regeneration), and no sibling or
+`conflict_with` marker is written, since those turned every collision into a
+stray concept file and a nonconformant root index. The provider is asked once
+per pull, *before* the rebase, because the OKF detector reads the root
+`index.md` from disk and that file may itself be mid-conflict afterwards. A
+completed rebase whose every conflict was a projection reports `rebased`;
+the "nothing saved" failure applies only to a rebase that had to be aborted,
+because HEAD has advanced in the former case and the old guard reported it as
+unchanged.
+
+Two properties of that carve-out are load-bearing. The hook is its own
+`ProjectionAware` protocol rather than a member of `Syncer`: `Syncer` is
+`runtime_checkable` and a real `isinstance` check gates the `git_sync` tool,
+so a method added there would silently reject every store that predates it.
+A store without the hook keeps the sibling policy, which is what every store
+did before, and the vault warns once at construction when the maintainer is
+enabled but the store cannot take the rules. And because `git rebase --abort`
+undoes the in-place resolutions — the merged `log.md` and the upstream
+`index.md` revert to their pre-pull local content — a pass that resolved any
+projection and then had to abort fails the pull with HEAD unchanged instead
+of committing the notes' siblings on top of reverted projections and calling
+it a success. `conflict.ConflictResolution` carries the two sets apart so the
+strategy can tell. The predicate is handed the repository *toplevel*
+alongside the path, because conflict paths are relative to that while a vault
+may be a subdirectory of its repository: a reserved name is a projection only
+inside the vault, or an `index.md` belonging to no bundle this server
+maintains would be taken from upstream with no sibling and its local version
+discarded. The toplevel is resolved rather than assumed — the `force_*` entry
+points pass the configured vault as their working tree, so joining a
+repository-relative path onto it would answer "inside the vault" for
+everything. Every operation in the conflict path resolves it the same way,
+not only the predicate: the checkout, the staging, the merged write and the
+sibling files all address `<toplevel>/<reported path>`, which on a vault
+below its repository is the difference between `vault/log.md` and
+`vault/vault/log.md`. `force_pull` returns
 the pipeline's structured `PullResult` directly; `sync_once` adapts it to its
 historical bool (`applied and to_sha != from_sha`), pre-checks the tracking ref
 so a remoteless checkout skips quietly at INFO level, and maps

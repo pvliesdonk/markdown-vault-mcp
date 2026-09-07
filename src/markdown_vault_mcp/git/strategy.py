@@ -97,6 +97,31 @@ _STARTUP_PULL = _PullEntry("Git pull")
 _LOOP_PULL = _PullEntry("Git pull", timer_driven=True)
 
 
+@dataclass(frozen=True)
+class _ResolutionContext:
+    """One pull's coordinates, for the conflict-settling helpers.
+
+    Grouped rather than passed one by one: the six travel together for the
+    whole of a pull attempt, and the helpers that read them are decisions
+    about that attempt, not about six independent values.
+
+    Attributes:
+        git_root: Working-tree root.
+        env: Optional GIT_ASKPASS environment.
+        ref: Remote-tracking ref, for restoring upstream after an abort.
+        from_sha: HEAD before the rebase.
+        detail: Git's own words about why the rebase stopped.
+        log_prefix: The calling entry point's log prefix.
+    """
+
+    git_root: Path
+    env: dict[str, str] | None
+    ref: str
+    from_sha: str
+    detail: str | None
+    log_prefix: str
+
+
 class GitWriteStrategy:
     """Stateful git strategy: commit per tool call, deferred push.
 
@@ -234,6 +259,10 @@ class GitWriteStrategy:
             Callable[[], contextlib.AbstractContextManager[None]] | None
         ) = None
         self._drain_writes: Callable[[], bool] | None = None
+        # Resolved once per pull, before the rebase runs (#1395).
+        self._projection_provider: (
+            Callable[[], conflict.ProjectionRules | None] | None
+        ) = None
         self._on_pull: Callable[[], object] | None = None
         if repo_path is not None:
             if self._managed:
@@ -1093,6 +1122,88 @@ class GitWriteStrategy:
             to_sha=remote_sha,
         )
 
+    def _settle_resolution(
+        self, ctx: _ResolutionContext, resolution: conflict.ConflictResolution
+    ) -> list[tuple[str, str]] | PullResult:
+        """Decide what a finished resolution pass leaves the caller to do.
+
+        Reads the rebase state rather than the resolution's contents: still
+        in progress means the resolver stopped early (its iteration cap, or a
+        stop it cannot act on), finished means HEAD has moved.
+
+        Args:
+            ctx: The current pull's coordinates.
+            resolution: What the pass resolved, split by how.
+
+        Returns:
+            The paths owed a sibling, or the :class:`PullResult` the caller
+            should return unchanged.
+        """
+        if conflict.rebase_in_progress(ctx.git_root, ctx.env, token=self._token):
+            return self._settle_aborted_rebase(ctx, resolution)
+        return self._settle_completed_rebase(ctx, resolution)
+
+    def _settle_completed_rebase(
+        self, ctx: _ResolutionContext, resolution: conflict.ConflictResolution
+    ) -> list[tuple[str, str]] | PullResult:
+        """Settle a pass the rebase ran to completion (or never started)."""
+        if resolution.saved:
+            return resolution.saved
+        if self.head_sha(ctx.git_root) != ctx.from_sha:
+            # Nothing is owed a sibling and HEAD moved: every conflict was a
+            # projection resolved in place (#1395), or no local version could
+            # be read, which the resolver warned about. The caller has
+            # nothing left to reconcile, which is what ``rebased`` means.
+            logger.info(
+                "%s: rebase completed, conflicts resolved in place", ctx.log_prefix
+            )
+            return self._build_pull_result_advanced(
+                ctx.git_root, ctx.env, from_sha=ctx.from_sha, reason=PULL_REASON_REBASED
+            )
+        # HEAD where it was: the rebase never started, a dirty tree being the
+        # usual reason.
+        return self._resolution_failed(ctx)
+
+    def _settle_aborted_rebase(
+        self, ctx: _ResolutionContext, resolution: conflict.ConflictResolution
+    ) -> list[tuple[str, str]] | PullResult:
+        """Abort a rebase still in progress and settle what survives it."""
+        if not conflict.abort_in_progress_rebase(
+            ctx.git_root, ctx.env, token=self._token
+        ):
+            return PullResult.head_unchanged_failure(
+                ctx.from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS, ctx.detail
+            )
+        if resolution.projections:
+            # The abort undid every in-place resolution (#1395): the merged
+            # log.md and the upstream index.md are back at their pre-pull
+            # local content, and committing the notes' siblings on top of
+            # that would report a partial resolution as a success.
+            logger.debug(
+                "%s: rebase aborted after resolving %d projection(s) in place",
+                ctx.log_prefix,
+                len(resolution.projections),
+            )
+            return self._resolution_failed(ctx)
+        saved = conflict.restore_upstream_paths(
+            ctx.git_root, ctx.env, resolution.saved, ctx.ref, token=self._token
+        )
+        return saved or self._resolution_failed(ctx)
+
+    def _resolution_failed(self, ctx: _ResolutionContext) -> PullResult:
+        """The shared "HEAD unchanged, nothing resolved" outcome.
+
+        DEBUG since #1287: this repeats every pull cycle while the divergence
+        stands.  Entering the unsynced state is logged once at ERROR by
+        ``SyncHealthTracker``, which this outcome feeds.
+        """
+        logger.debug(
+            "%s: conflict resolution failed, leaving HEAD unchanged", ctx.log_prefix
+        )
+        return PullResult.head_unchanged_failure(
+            ctx.from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED, ctx.detail
+        )
+
     def _force_pull_rebase_fallback(
         self,
         *,
@@ -1127,7 +1238,8 @@ class GitWriteStrategy:
 
         Returns:
             :class:`PullResult` whose ``reason`` is one of
-            ``"rebased"`` (plain rebase succeeded, HEAD advanced,
+            ``"rebased"`` (plain rebase succeeded, or every conflict was a
+            projection resolved in place (#1395); HEAD advanced,
             ``applied=True``),
             ``"conflicts_resolved_with_siblings"`` (HEAD advanced,
             siblings written, ``applied=True``),
@@ -1137,6 +1249,13 @@ class GitWriteStrategy:
             could not be cleanly resolved or aborted, ``applied=False``).
         """
         log_prefix = entry.log_prefix
+        # Snapshot the projection rules before the rebase can put conflict
+        # markers into the very files the owner reads to decide them (#1395).
+        projection = (
+            self._projection_provider()
+            if self._projection_provider is not None
+            else None
+        )
         # First try a plain rebase — this handles the common case where
         # local commits touch *different* files than the upstream commits
         # and replay cleanly with no manual intervention.
@@ -1172,47 +1291,29 @@ class GitWriteStrategy:
             # ``conflict.resolve_conflicts_safely`` wraps that in a defensive
             # abort so a subsequent ``force_pull`` (or any per-write commit
             # path) does not trip over the leftover ``rebase-merge`` directory.
-            saved, early_exit = conflict.resolve_conflicts_safely(
-                git_root, env, from_sha, token=self._token
+            outcome = conflict.resolve_conflicts_safely(
+                git_root, env, from_sha, token=self._token, projection=projection
             )
-            if early_exit is not None:
-                return early_exit
-            # ``resolve_conflicts_safely`` returns ``(saved, None)`` on
-            # success and ``(None, PullResult)`` on failure — exactly one
-            # is non-None.  After the early-exit guard above, ``saved`` is
-            # guaranteed non-None; assert so mypy can narrow.
-            assert saved is not None
+            if isinstance(outcome, PullResult):
+                # Resolution itself failed; it already aborted the rebase.
+                return outcome
+            resolution = outcome
+            saved = resolution.saved
 
-            # If a rebase is still in progress (loop hit its iteration
-            # limit, or exited via ``break`` without completing), abort
-            # cleanly so the working tree is consistent before we write
-            # conflict files.
-            rebase_in_progress = conflict.rebase_in_progress(
-                git_root, env, token=self._token
+            settled = self._settle_resolution(
+                _ResolutionContext(
+                    git_root=git_root,
+                    env=env,
+                    ref=ref,
+                    from_sha=from_sha,
+                    detail=detail,
+                    log_prefix=log_prefix,
+                ),
+                resolution,
             )
-
-            if rebase_in_progress:
-                if not conflict.abort_in_progress_rebase(
-                    git_root, env, token=self._token
-                ):
-                    return PullResult.head_unchanged_failure(
-                        from_sha, PULL_REASON_NON_FAST_FORWARD_WITH_CONFLICTS, detail
-                    )
-                saved = conflict.restore_upstream_paths(
-                    git_root, env, saved, ref, token=self._token
-                )
-
-            if not saved:
-                # DEBUG since #1287: this repeats every pull cycle while the
-                # divergence stands.  Entering the unsynced state is logged
-                # once at ERROR by SyncHealthTracker, which this outcome feeds.
-                logger.debug(
-                    "%s: conflict resolution failed, leaving HEAD unchanged",
-                    log_prefix,
-                )
-                return PullResult.head_unchanged_failure(
-                    from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED, detail
-                )
+            if isinstance(settled, PullResult):
+                return settled
+            saved = settled
 
             # Rebase has already completed via ``git rebase --continue`` — HEAD
             # has advanced even if the sibling-files commit below fails.
@@ -1593,6 +1694,24 @@ class GitWriteStrategy:
         """
         self._pause_writes = pause_writes
         self._drain_writes = drain_writes
+
+    def set_projection_provider(
+        self, provider: Callable[[], conflict.ProjectionRules | None]
+    ) -> None:
+        """Wire the owner's conflict rules for regenerable files (#1395).
+
+        *provider* is called once per pull, before the rebase starts, so the
+        rules reflect the vault's state as it was before any conflict marker
+        landed in the working tree (the OKF detector reads the root
+        ``index.md`` from disk, which is one of the files that may be mid
+        conflict). ``None`` from the provider keeps every path on the
+        sibling policy for that pull.
+
+        Args:
+            provider: Returns the :class:`~.conflict.ProjectionRules` for
+                the coming pull, or ``None``.
+        """
+        self._projection_provider = provider
 
     @contextlib.contextmanager
     def _quiesce_writes(self, *, skip: bool = False) -> Iterator[None]:

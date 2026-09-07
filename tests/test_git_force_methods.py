@@ -957,8 +957,8 @@ class TestForceMethodsErrorBranches:
         # was "saved" but DO NOT run the checkout/add/--continue dance, so
         # the rebase remains in progress when control returns to
         # ``_force_pull_rebase_fallback``.
-        def _stub_resolve(*_args: object, **_kwargs: object) -> list[tuple[str, str]]:
-            return [("README.md", "# local\n")]
+        def _stub_resolve(*_args: object, **_kwargs: object) -> object:
+            return conflict.ConflictResolution([("README.md", "# local\n")], ())
 
         monkeypatch.setattr(conflict, "resolve_rebase_conflicts", _stub_resolve)
 
@@ -1107,9 +1107,10 @@ class TestForceMethodsErrorBranches:
         # DEBUG since #1287: the cap is hit on every cycle while the same
         # divergence stands, so the detail line moved down there.
         with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
-            saved = conflict.resolve_rebase_conflicts(
+            resolution = conflict.resolve_rebase_conflicts(
                 git_repo_pair.local_path, env=None
             )
+            saved = resolution.saved
 
         # README.md was "saved" on every iteration; dict dedup leaves one entry.
         assert saved == [("README.md", "# local\n")]
@@ -1148,8 +1149,8 @@ class TestForceMethodsErrorBranches:
 
         # Stub the helper: claim a save but DO NOT finish the rebase, so
         # _rebase_in_progress reports True.
-        def _stub_resolve(*_args: object, **_kwargs: object) -> list[tuple[str, str]]:
-            return [("README.md", "# local\n")]
+        def _stub_resolve(*_args: object, **_kwargs: object) -> object:
+            return conflict.ConflictResolution([("README.md", "# local\n")], ())
 
         monkeypatch.setattr(conflict, "resolve_rebase_conflicts", _stub_resolve)
 

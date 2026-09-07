@@ -1813,6 +1813,10 @@ class TestConcurrentWrites:
                 self.stopped = False
                 self.closed = False
 
+            def set_projection_provider(self, provider: object) -> None:
+                # Vault wires the conflict rules here at construction (#1395).
+                self.projection_provider = provider
+
             def set_write_quiescer(
                 self, *, pause_writes: object, drain_writes: object
             ) -> None:
@@ -1872,6 +1876,9 @@ class TestConcurrentWrites:
         class DummyGitStrategy:
             def __init__(self) -> None:
                 self.calls: list[Path] = []
+
+            def set_projection_provider(self, provider: object) -> None:
+                pass
 
             def set_write_quiescer(
                 self, *, pause_writes: object, drain_writes: object

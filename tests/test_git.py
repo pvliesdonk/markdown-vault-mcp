@@ -2214,8 +2214,8 @@ class TestGitSyncOnce:
 
         # The same file conflicted in all 50 iterations; deduplication keeps only
         # the last version, so the result is a single unique entry.
-        assert len(result) == 1
-        assert result[0] == ("README.md", "# MCP content\n")
+        assert result.saved == [("README.md", "# MCP content\n")]
+        assert result.projections == ()
 
     def test_write_conflict_files_commit_failure_returns_none(
         self,

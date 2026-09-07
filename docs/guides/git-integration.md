@@ -311,6 +311,23 @@ commits) reports `would_apply=false`. The push leg has no safe local
     sibling(s), reconcile the local content against the remote, and
     `delete` the sibling once merged.
 
+    The OKF reserved files are the exception. When the server maintains
+    them (`OKF_WRITE` on an OKF-active vault), `index.md` and `log.md`
+    are projections of vault state rather than notes, so a conflict on
+    one is resolved in place: the remote's `index.md` is kept and the
+    next regeneration re-derives it, and `log.md` keeps both sides'
+    bullets. No sibling and no `conflict_with` marker is written, and a
+    pull whose only conflicts were reserved files reports
+    `reason="rebased"`. Without `OKF_WRITE` they are ordinary notes and
+    get siblings like any other file.
+
+    If the rebase cannot be completed at all — a failing hook, or more
+    conflicting commits than the resolver's limit — and a reserved file was
+    among the conflicts, the pull fails with `applied=false` and
+    `reason="conflict_resolution_failed"` rather than reporting a partial
+    result. Aborting the rebase puts those files back to their local
+    content, so nothing is lost and the next pull retries.
+
 !!! note "Writes landing during a pull"
     A write whose deferred git commit has not yet run when a pull starts is
     never lost. Before every real (non-dry-run) pull (periodic or `git_sync`),

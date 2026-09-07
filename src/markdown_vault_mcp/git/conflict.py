@@ -13,6 +13,7 @@ from __future__ import annotations
 import datetime
 import logging
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -31,10 +32,156 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class ProjectionRules:
+    """Conflict handling for files that are projections of vault state (#1395).
+
+    A note's two versions need a human, so a conflicting note keeps upstream
+    and saves the local version as a ``.conflict-mcp-*`` sibling. A file the
+    server regenerates from vault state — an OKF ``index.md`` / ``log.md``
+    under ``OKF_WRITE`` — has no such reader, and the sibling policy turned
+    every collision into a stray concept file plus ``conflict_with`` keys the
+    spec forbids on an index. Such a path is instead resolved *in place*:
+    upstream wins, :attr:`merge` may fold the local side back in, and no
+    sibling or marker is written.
+
+    The rules are injected by the owner (the vault) so this package keeps no
+    domain knowledge; ``None`` keeps every path on the sibling policy.
+
+    Attributes:
+        is_projection: ``(repo_root, rel_path)`` → whether that path is a
+            projection. The repository *toplevel* travels with the path
+            because conflict paths are relative to it while a vault may be a
+            subdirectory of the repository, so the owner can answer from
+            neither alone.
+        merge: ``(rel_path, upstream_text, local_text)`` → the text to keep,
+            or ``None`` to keep upstream verbatim.
+    """
+
+    is_projection: collections.abc.Callable[[Path, str], bool]
+    merge: collections.abc.Callable[[str, str, str], str | None]
+
+
+@dataclass(frozen=True)
+class ConflictResolution:
+    """What one resolution pass did, split by how each path was handled.
+
+    Attributes:
+        saved: ``(relative_path, mcp_content)`` for the paths owed a
+            ``.conflict-mcp-*`` sibling.
+        projections: Paths resolved in place instead (:class:`ProjectionRules`).
+            The caller needs these separately because an abort undoes them:
+            the merged ``log.md`` and the upstream ``index.md`` go back to
+            their pre-pull local content, and committing the notes' siblings
+            on top of that would report a partial resolution as a success.
+    """
+
+    saved: list[tuple[str, str]]
+    projections: tuple[str, ...]
+
+
+def repo_root(git_root: Path, env: dict[str, str] | None) -> Path:
+    """Return the repository toplevel that git's own paths are relative to.
+
+    ``git diff --name-only`` reports repository-relative paths whatever
+    directory it was run from, while the working tree handed to this package
+    may be a subdirectory of the repository — the ``force_*`` entry points
+    pass the configured vault, not the toplevel. Joining a repository-relative
+    path onto the wrong root silently answers "inside the vault" for every
+    path (#1395). Falls back to *git_root* when the toplevel cannot be read,
+    which is the pre-existing assumption.
+    """
+    proc = run_git_capturing(git_root, "rev-parse", "--show-toplevel", env=env)
+    if proc.returncode != 0:
+        logger.debug("git_toplevel_unresolved path=%s", git_root)
+        return git_root
+    return Path(proc.stdout.strip() or git_root)
+
+
+def _local_version(root: str, rel_path: str, env: dict[str, str] | None) -> str | None:
+    """Return the MCP version of a conflicting path, or ``None`` if unreadable.
+
+    Read from ``REBASE_HEAD`` — the commit being replayed — before the
+    working tree takes upstream's side. ``None`` means nothing can be saved
+    for this path, which is logged and then left to the caller.
+    """
+    show_result = subprocess.run(
+        ["git", "-C", root, "show", f"REBASE_HEAD:{rel_path}"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    if show_result.returncode == 0:
+        return str(show_result.stdout)
+    logger.warning(
+        "Git pull: could not read MCP version of %s, skipping conflict file",
+        rel_path,
+    )
+    return None
+
+
+def _accept_upstream(root: str, rel_path: str, env: dict[str, str] | None) -> None:
+    """Take the upstream side of *rel_path* and stage it.
+
+    During a rebase ``--ours`` is the branch being rebased onto (upstream)
+    and ``--theirs`` the commit being replayed (the local MCP commit).
+    """
+    subprocess.run(
+        ["git", "-C", root, "checkout", "--ours", "--", literal_pathspec(rel_path)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", root, "add", "--", literal_pathspec(rel_path)],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=True,
+    )
+
+
+def _resolve_projection(
+    top: Path,
+    rel_path: str,
+    local_text: str | None,
+    rules: ProjectionRules,
+    env: dict[str, str] | None,
+) -> None:
+    """Resolve a projection in place: upstream already staged, maybe merged.
+
+    Called after :func:`_accept_upstream`, so the working tree holds the
+    upstream version. *top* is the repository toplevel, which the
+    repository-relative *rel_path* is resolved against. When the rules produce a merge that differs from it,
+    the merged text replaces it and is staged; either way nothing is saved
+    for a sibling.
+    """
+    rewritten = False
+    if local_text is not None:
+        upstream_text = read_text_utf8(top / rel_path)
+        merged = rules.merge(rel_path, upstream_text, local_text)
+        if merged is not None and merged != upstream_text:
+            (top / rel_path).write_text(merged, encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(top), "add", "--", literal_pathspec(rel_path)],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=True,
+            )
+            rewritten = True
+    # ``merged`` reports what happened to the file, not whether the rules
+    # returned something: the log merge always returns text, and returns it
+    # unchanged when the local side added nothing.
+    logger.info("conflict_projection_resolved path=%s merged=%s", rel_path, rewritten)
+
+
 def resolve_rebase_conflicts(
     git_root: Path,
     env: dict[str, str] | None,
-) -> list[tuple[str, str]]:
+    projection: ProjectionRules | None = None,
+) -> ConflictResolution:
     """Resolve rebase conflicts by accepting theirs and saving ours.
 
     Called when ``git rebase <ref>`` (the resolved ``origin/<branch>``
@@ -44,15 +191,25 @@ def resolve_rebase_conflicts(
     ``git checkout --ours``.  Continues the rebase, looping if
     multiple commits conflict.
 
+    A path *projection* recognises is resolved in place instead
+    (:class:`ProjectionRules`): upstream is kept, possibly merged with the
+    local side, and nothing is saved for it.
+
     Returns:
-        A list of ``(relative_path, saved_content)`` tuples for the
-        files that had conflicts.  May be partial (not all commits
-        resolved) if the iteration limit is hit; the caller is
-        responsible for aborting any in-progress rebase before
-        writing the conflict files.
+        A :class:`ConflictResolution`: the paths owed a sibling, and the
+        paths resolved in place.  Either may be partial (not all commits
+        resolved) if the iteration limit is hit; the caller is responsible
+        for aborting any in-progress rebase before writing the conflict
+        files, and for the fact that an abort undoes the in-place
+        resolutions.
     """
-    root = str(git_root)
+    # Every path below is repository-relative, whichever directory git ran
+    # from, while the caller's working tree may sit under the repository:
+    # addressing them from anywhere else builds ``vault/vault/log.md``.
+    top = repo_root(git_root, env)
+    root = str(top)
     saved: dict[str, str] = {}
+    projections: list[str] = []
     max_iterations = 50  # safety limit
 
     for _ in range(max_iterations):
@@ -83,46 +240,14 @@ def resolve_rebase_conflicts(
             break
 
         for rel_path in conflicting:
-            # Save the MCP version (the commit being rebased).
-            show_result = subprocess.run(
-                ["git", "-C", root, "show", f"REBASE_HEAD:{rel_path}"],
-                capture_output=True,
-                text=True,
-                env=env,
-            )
-            if show_result.returncode == 0:
-                saved[rel_path] = show_result.stdout
-            else:
-                logger.warning(
-                    "Git pull: could not read MCP version of %s, skipping conflict file",
-                    rel_path,
-                )
-
-            # Accept upstream's version.  During rebase, --ours is the
-            # branch being rebased onto (upstream), --theirs is the
-            # commit being replayed (our local MCP commit).
-            subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    root,
-                    "checkout",
-                    "--ours",
-                    "--",
-                    literal_pathspec(rel_path),
-                ],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=True,
-            )
-            subprocess.run(
-                ["git", "-C", root, "add", "--", literal_pathspec(rel_path)],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=True,
-            )
+            local_text = _local_version(root, rel_path, env)
+            _accept_upstream(root, rel_path, env)
+            if projection is not None and projection.is_projection(top, rel_path):
+                _resolve_projection(top, rel_path, local_text, projection, env)
+                if rel_path not in projections:
+                    projections.append(rel_path)
+            elif local_text is not None:
+                saved[rel_path] = local_text
 
         # Continue the rebase.  If another commit conflicts, the loop
         # iterates again.  ``--no-edit`` avoids opening an editor for
@@ -135,7 +260,7 @@ def resolve_rebase_conflicts(
         )
         if cont.returncode == 0:
             # Rebase completed successfully.
-            return list(saved.items())
+            return ConflictResolution(list(saved.items()), tuple(projections))
         # returncode != 0 means the next commit also has conflicts —
         # loop around and resolve again.
 
@@ -148,7 +273,7 @@ def resolve_rebase_conflicts(
     logger.debug(
         "Git pull: conflict resolution loop exceeded %d iterations", max_iterations
     )
-    return list(saved.items())
+    return ConflictResolution(list(saved.items()), tuple(projections))
 
 
 def resolve_conflicts_safely(
@@ -157,11 +282,13 @@ def resolve_conflicts_safely(
     from_sha: str,
     *,
     token: str | None,
+    projection: ProjectionRules | None = None,
     resolve_fn: collections.abc.Callable[
-        [Path, dict[str, str] | None], list[tuple[str, str]]
+        [Path, dict[str, str] | None, ProjectionRules | None],
+        ConflictResolution,
     ]
     | None = None,
-) -> tuple[list[tuple[str, str]] | None, PullResult | None]:
+) -> ConflictResolution | PullResult:
     """Defensive wrapper around :func:`resolve_rebase_conflicts`.
 
     Catches the case where conflict resolution itself raises mid-loop,
@@ -179,6 +306,8 @@ def resolve_conflicts_safely(
             attempt; reused on the failure path so the returned result
             has consistent ``from_sha == to_sha`` semantics.
         token: PAT used for redacting sensitive text in log messages.
+        projection: Rules for paths resolved in place rather than saved
+            for a sibling (:class:`ProjectionRules`), or ``None``.
         resolve_fn: Optional override for the conflict-resolution
             callable.  Defaults to :func:`resolve_rebase_conflicts`
             (resolved from this module's globals at call time, so tests
@@ -186,16 +315,15 @@ def resolve_conflicts_safely(
             #893 removed the strategy-level delegation shims).
 
     Returns:
-        ``(saved, None)`` on success — ``saved`` is the list of
-        ``(rel_path, mcp_content)`` tuples from
-        :func:`resolve_rebase_conflicts`.
-
-        ``(None, PullResult)`` on failure — caller should return the
-        ``PullResult`` immediately.
+        The :class:`ConflictResolution` from :func:`resolve_rebase_conflicts`
+        on success, or a :class:`PullResult` the caller should return
+        immediately on failure. One value rather than a pair of optionals,
+        so the caller narrows by type instead of asserting which half is
+        populated.
     """
     _resolve = resolve_fn if resolve_fn is not None else resolve_rebase_conflicts
     try:
-        saved = _resolve(git_root, env)
+        resolution = _resolve(git_root, env, projection)
     except Exception:
         logger.error(
             "Git force_pull: conflict resolution raised — aborting rebase",
@@ -208,10 +336,10 @@ def resolve_conflicts_safely(
                 "after conflict-resolution failure also failed: %s",
                 redact((abort_proc.stderr or "").strip(), token),
             )
-        return None, PullResult.head_unchanged_failure(
+        return PullResult.head_unchanged_failure(
             from_sha, PULL_REASON_CONFLICT_RESOLUTION_FAILED
         )
-    return saved, None
+    return resolution
 
 
 def rebase_in_progress(
@@ -380,7 +508,11 @@ def write_conflict_files(
         implying a successful conflict-resolution commit.  Returns an
         empty list when *saved* is empty (nothing to do).
     """
-    root = str(git_root)
+    # Repository-relative paths again (see ``resolve_rebase_conflicts``): the
+    # sibling belongs beside the conflicting file, not beside a repeat of its
+    # path under the working tree.
+    top = repo_root(git_root, env)
+    root = str(top)
     now = datetime.datetime.now(tz=datetime.UTC)
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     conflict_date = now.isoformat(timespec="seconds")
@@ -410,12 +542,12 @@ def write_conflict_files(
         post.metadata["conflict_with"] = rel_path
         post.metadata["conflict_date"] = conflict_date
 
-        conflict_abs = git_root / conflict_rel
+        conflict_abs = top / conflict_rel
         conflict_abs.parent.mkdir(parents=True, exist_ok=True)
         conflict_abs.write_text(frontmatter.dumps(post), encoding="utf-8")
 
         # --- Update original file with conflict_with frontmatter ---
-        original_abs = git_root / rel_path
+        original_abs = top / rel_path
         if original_abs.exists():
             try:
                 # Read once and reuse this content for the parse-failure

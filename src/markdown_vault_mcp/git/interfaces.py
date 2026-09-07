@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp._identity import Principal
+    from markdown_vault_mcp.git.conflict import ProjectionRules
     from markdown_vault_mcp.git.health import SyncHealth
     from markdown_vault_mcp.git.types import PullResult, PushResult, RevisionQuery
     from markdown_vault_mcp.types import (
@@ -342,6 +343,32 @@ class Versioner(Protocol):
             operation: Which kind of write occurred.
             old_path: The previous path, for a rename.
             principal: Who performed the write, for attribution.
+        """
+        ...
+
+
+@runtime_checkable
+class ProjectionAware(Protocol):
+    """A store that can be told which paths are projections of vault state.
+
+    Deliberately its own protocol rather than a member of :class:`Syncer`
+    (#1395): ``Syncer`` is ``runtime_checkable`` and a real ``isinstance``
+    check gates the ``git_sync`` tool, so a method added there silently
+    rejects every store that predates it. Conflict handling for regenerable
+    files is an optional capability — a store without it keeps the sibling
+    policy, which is what every store did before.
+    """
+
+    def set_projection_provider(
+        self, provider: Callable[[], ProjectionRules | None]
+    ) -> None:
+        """Wire the owner's conflict rules for regenerable files.
+
+        Args:
+            provider: Called once per pull, before the rebase; returns the
+                :class:`~markdown_vault_mcp.git.conflict.ProjectionRules`
+                for that pull, or ``None`` to keep every path on the
+                sibling policy.
         """
         ...
 

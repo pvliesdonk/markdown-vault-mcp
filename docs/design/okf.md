@@ -385,6 +385,24 @@ and none of it is implied by vault declaration.
   warning can ride the existing write-result `conventions`/advisory channel
   without a new mechanism.
 
+Conflict note (#1395): while the maintainer owns them, the reserved files are
+*projections* to the git layer too. A rebase conflict on `index.md` keeps
+upstream (the next regeneration re-derives it); one on `log.md` keeps upstream
+and inserts the local side's missing entries (`merge_okf_logs`, insert-only,
+newest-first sections created as needed). An entry is read as the dialect
+defines it rather than as the server happens to write it — any of the three
+bullet markers, a space *or* a tab after it, and the continuation lines that
+belong to the item — because an entry the merge cannot see is lost with no
+sibling to recover it from; neither gets a `.conflict-mcp-*`
+sibling or `conflict_with` frontmatter. `build_projection_rules`
+(`_okf_convention.py`) hands the git strategy these rules per pull, and
+returns `None` — the ordinary sibling policy — when `OKF_WRITE` is off or the
+vault is not OKF-active, because then the files are notes whose content a
+sibling must preserve. The same fallback covers a git store that cannot take
+the rules at all (the hook is an optional `ProjectionAware` capability), and
+a pull that resolved a reserved file in place and then had to abort its
+rebase fails rather than reporting the partial result. See `design.md`, "Shared pull pipeline".
+
 Concurrency note: log-append and index-refresh are secondary writes riding an
 existing primary write; they flow through the same single-writer index path
 and git-commit callback as any other write, and failures degrade to a logged
