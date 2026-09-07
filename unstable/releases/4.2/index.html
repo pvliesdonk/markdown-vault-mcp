@@ -2395,6 +2395,17 @@ one. A rename keeps the form the author used, so <code>&lt;my note.md&gt;</code>
 <code>&lt;new name.md&gt;</code>. One limit is deliberate: parentheses balance to three
 levels, the depth the spec's own examples reach. Existing vaults rebuild
 once on first start after upgrade.</p>
+<p><strong>A duplicate note name resolves the way Obsidian resolves it.</strong> When
+several notes share a name, a bare <code>[[Note]]</code> picked the shortest path
+everywhere, and the design doc claimed a different rule (fewest path
+components); neither was Obsidian's, and neither had a source. The
+maintainer ran the discriminating fixture on Obsidian 1.13.7
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1350">#1350</a>):
+an exact vault path wins, otherwise a note in the linking note's own
+folder, otherwise the shortest path. The resolver now does the same, so a
+<code>[[Note]]</code> written beside a same-named note points at that neighbour, as it
+does in Obsidian; the reference page records the fixture and its output.
+Existing vaults rebuild once on first start after upgrade.</p>
 <p><strong>Renaming an attachment says when <code>update_links</code> does not apply.</strong> The
 attachment branch of <code>rename</code> never read the flag, so a call that asked
 for a rewrite answered <code>updated_links: 0</code> and nothing else, and "the two
@@ -2479,7 +2490,7 @@ meaning; the operator surface only grew (two GitLab webhook variables,
 <code>INSTANCE_DESCRIPTION</code>). A few things do change behavior without any action
 on your part:</p>
 <ul>
-<li><strong>The text index rebuilds once on first start.</strong> Six changes in this
+<li><strong>The text index rebuilds once on first start.</strong> Seven changes in this
   release alter how stored rows derive from a note's bytes: skip
   tombstones
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1227">#1227</a>),
@@ -2491,10 +2502,12 @@ on your part:</p>
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1333">#1333</a>),
   links bounded to one paragraph
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1334">#1334</a>),
-  and destinations read in every CommonMark spelling
-  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1353">#1353</a>).
-  <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 8. One rebuild covers all
-  six; it is automatic, costs CPU and local IO proportional to vault size,
+  destinations read in every CommonMark spelling
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1353">#1353</a>),
+  and the wikilink tie-break observed on Obsidian
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1350">#1350</a>).
+  <code>INDEX_SEMANTICS_VERSION</code> moved from 2 to 9. One rebuild covers all
+  seven; it is automatic, costs CPU and local IO proportional to vault size,
   and does not re-embed.</li>
 <li><strong>A note becomes stale one day earlier, and an instant is honoured.</strong>
   <code>stale_after</code> is now the first stale day rather than the last current
