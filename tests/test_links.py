@@ -2129,11 +2129,15 @@ class TestAliasResolution:
         assert col.reader.stats().broken_link_count == 0
 
     def test_alias_resolution_shortest_path_wins(self) -> None:
-        """When multiple documents share an alias, shortest path wins."""
+        """When multiple documents share an alias, shortest path wins.
+
+        The source sits in a folder holding no alias candidate, so the
+        own-folder rule (#1350) stays out of it and length decides.
+        """
         idx = FTSIndex(":memory:")
         notes = [
             make_note(
-                path="source.md",
+                path="src/source.md",
                 links=[
                     LinkInfo(
                         target_path="JS.md",
@@ -2157,7 +2161,7 @@ class TestAliasResolution:
         idx.build_from_notes(notes)
         idx.resolve_vault_wikilinks()
 
-        outlinks = idx.get_outlinks("source.md")
+        outlinks = idx.get_outlinks("src/source.md")
         assert outlinks[0]["target_path"] == "javascript.md"
 
     def test_alias_with_fragment(self) -> None:

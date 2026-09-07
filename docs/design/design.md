@@ -2301,8 +2301,17 @@ vault-wide resolution rules rather than relative path resolution:
   all documents are indexed, `FTSIndex.resolve_vault_wikilinks()` performs a
   bulk SQL UPDATE that resolves each unmatched wikilink target vault-wide:
   it searches for any document whose path equals the target or ends with
-  `/target`. When multiple candidates match, the shortest path (fewest path
-  components) wins. This mirrors Obsidian's tie-breaking rule.
+  `/target`. When several match, the tie-break is the one observed on
+  Obsidian 1.13.7 (#1350; the fixtures are on
+  [`reference/obsidian-markdown.md`](reference/obsidian-markdown.md), "The
+  tie-break"): **an exact vault path wins** (`[[Note]]` is `Note.md` at the
+  root, `[[b/Note]]` is `b/Note.md`, even over a match beside the source);
+  otherwise **a match in the source note's own folder** (an ancestor folder
+  counts for nothing); otherwise **the shortest path string** — not fewest
+  components, which the earlier text of this section claimed, and not
+  file-tree order. What Obsidian does when two candidates tie on length is
+  not observed; the resolver takes the lexicographically first of the
+  shortest, so the answer does not depend on index history.
 
 - **Explicit relative wikilinks** (`[[./note]]`, `[[../note]]`): the `./` or
   `../` prefix opts out of vault-wide resolution. These are resolved against
@@ -2316,7 +2325,9 @@ vault-wide resolution rules rather than relative path resolution:
   `alias` (string) frontmatter field. `[[AI]]` resolves to a
   document with `aliases: [AI, A.I.]` in its frontmatter. Alias matching
   is case-insensitive. When multiple documents share the same alias, the
-  shortest path wins. Path matches always take priority over alias matches.
+  path rule's tie-break applies by analogy (own folder, then shortest
+  path); Obsidian's own alias tie-break was not observed. Path matches
+  always take priority over alias matches.
 
 `resolve_vault_wikilinks()` is called automatically at the end of
 `IndexFacet.build_index()`, `IndexFacet.reindex()`, and every

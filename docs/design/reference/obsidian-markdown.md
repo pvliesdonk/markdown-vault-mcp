@@ -2,7 +2,7 @@
 type: Reference
 title: Obsidian markdown dialect and link resolution
 description: "Obsidian desktop (1.x): wikilink syntax, link resolution, aliases, and the Obsidian-only syntax that shares characters with links"
-subject_version: "1.14 (help pages state a version only for properties: 1.4 / 1.9)"
+subject_version: "1.14 (help pages state a version only for properties: 1.4 / 1.9); link resolution observed on 1.13.7"
 valid_for: "Obsidian 1.x"
 generated:
   by: process:researching-references
@@ -245,9 +245,11 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   spellings exist in Obsidian's model, but the help never shows one inside
   `[[ ]]`. [source: api-dts]
   [pins: tests/test_links.py::TestExtractWikilinks::test_wikilink_explicit_relative_resolved_against_source]
-- Whether `[[../note]]` resolves relative to the source note or is treated as
-  a literal name is [unverified]. Fixture: `a/x.md` containing `[[../y]]`
-  with `y.md` at root, then `resolvedLinks`.
+- `[[../note]]` resolves relative to the source note: `a/x.md` containing
+  `[[../y]]` with `y.md` at root resolved to `y.md`.
+  [observed: Obsidian 1.13.7, `getFirstLinkpathDest("../y", "a/x.md")`,
+  2026-09-07]
+  [pins: tests/test_links_wikilink_tie_break.py::TestVault1RootPresent::test_a_relative_wikilink_resolves_against_the_source]
 - Resolution is a "best match": `getFirstLinkpathDest(linkpath, sourcePath)`
   is documented only as "Get the best match for a linkpath"; the `sourcePath`
   parameter is present but its role is not described. [source: api-dts]
@@ -258,10 +260,13 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   path to the linked file"), "Relative path to file" ("Uses a path relative
   to the current file") and "Absolute path in vault" ("Uses the full path
   from the vault root"). [source: api-dts] [source: help-settings]
-- The design doc's "ends with `/target`" suffix match is not documented by
-  Obsidian; the help shows only full vault-root paths. Whether `[[b/Note]]`
-  resolves `a/b/Note.md` is [unverified]. Fixture: `a/b/Note.md` only, a note
-  containing `[[b/Note]]`, then `unresolvedLinks`.
+- The "ends with `/target`" suffix match is not documented by Obsidian; the
+  help shows only full vault-root paths. It is real: `[[b/Note]]` resolved
+  to `a/b/Note.md` while no `b/Note.md` existed, and to `b/Note.md` once
+  one did (rule 1 of the tie-break below).
+  [observed: Obsidian 1.13.7, `getFirstLinkpathDest("b/Note", "suffix.md")`,
+  2026-09-07]
+  [pins: tests/test_links_wikilink_tie_break.py::TestVault1RootPresent::test_a_path_suffix_matches_when_no_exact_path_exists]
 
 #### The tie-break (#1350)
 
@@ -272,21 +277,34 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
 - What it leaves open: how `getFirstLinkpathDest` picks among several files
   that all match an ambiguous bare name typed by hand or left behind by a
   later duplicate. Neither "shortest path", "fewest components", "closest to
-  the source", nor "first in file-tree order" appears in any source read;
-  the `sourcePath` parameter hints that the source note's location may
-  matter. [unverified]
-- The project's two rules (code `min(candidates, key=len)`, design doc
-  "fewest path components") both claim to mirror Obsidian, and neither can be
-  sourced. The pinned tests use fixtures where the two rules agree
-  (`a/Note.md` vs `a/b/Note.md`; `javascript.md` vs
-  `deep/nested/javascript.md`), so they do not discriminate.
-  [pins: tests/test_links.py::TestResolveVaultWikilinks::test_bare_wikilink_shortest_path_wins, tests/test_links.py::TestAliasResolution::test_alias_resolution_shortest_path_wins]
-- A settling fixture, in one vault: `Note.md` at root, `zzzz/Note.md` (one
-  component, longer string), `a/b/Note.md` (two components, shorter string),
-  and a source note containing `[[Note]]` at root, in `zzzz/`, and in `a/b/`;
-  `resolvedLinks` then shows (1) whether root wins, (2) with `Note.md`
-  removed, whether string length or depth decides, and (3) whether the
-  source note's folder changes the answer.
+  the source", nor "first in file-tree order" appears in any source read.
+  [source: api-dts]
+- Observed instead, on Obsidian 1.13.7, by the maintainer in a scratch vault
+  through `app.metadataCache.getFirstLinkpathDest(link, sourcePath)` in the
+  developer console (2026-09-07; the console output is quoted verbatim on
+  issue #1350). Fixture: `Note.md`, `zzzz/Note.md`, `a/b/Note.md`; sources
+  `src-root.md`, `zzzz/src-zzzz.md`, `a/b/src-ab.md`, each `[[Note]]`; then
+  root `Note.md` deleted; then `b/Note.md`, `aaaaaaaa/Note.md` and
+  `zzzz/deep/src-deep.md` added; then `a/b/src-ab-path.md` holding
+  `[[b/Note]]`. Three rules, in order:
+  1. **An exact vault path wins.** With root `Note.md` present, `[[Note]]`
+     resolved to `Note.md` from all three sources, including from `a/b/`
+     beside `a/b/Note.md`; `[[b/Note]]` resolved to `b/Note.md` from
+     `a/b/`, over the own-folder suffix match `a/b/Note.md`.
+  2. **Otherwise the source note's own folder wins**: with root gone,
+     `zzzz/src-zzzz.md` → `zzzz/Note.md` (over the shorter `b/Note.md`),
+     `a/b/src-ab.md` → `a/b/Note.md`. An ancestor folder counts for
+     nothing: `zzzz/deep/src-deep.md` → `b/Note.md`.
+  3. **Otherwise the shortest path string wins**: `src-root.md` →
+     `a/b/Note.md` (11 characters) over `zzzz/Note.md` (12; so not fewest
+     components), and → `b/Note.md` over `a/b/Note.md` once `b/Note.md`
+     existed (so not file-tree order).
+  [observed: Obsidian 1.13.7, the fixture above, `getFirstLinkpathDest`]
+  [pins: tests/test_links_wikilink_tie_break.py::TestVault1RootPresent::test_the_exact_root_path_wins_from_every_folder, tests/test_links_wikilink_tie_break.py::TestVault2RootDeleted::test_own_folder_then_shortest_string, tests/test_links_wikilink_tie_break.py::TestVault3MoreCandidates::test_shortest_string_not_tree_order_and_no_ancestor_preference, tests/test_links_wikilink_tie_break.py::TestVault4ExactPathBeatsOwnFolder::test_an_exact_path_beats_the_own_folder_suffix_match]
+- Not observed: what breaks a tie between two candidates of equal length
+  and equal folder standing, and whether aliases share this tie-break.
+  [unverified] Two `Note.md` files in two sibling folders of equal name
+  length, and two notes declaring the same alias, would settle both.
 
 ### Case, aliases, properties
 
@@ -411,19 +429,21 @@ Each entry names the function and the design section that decides it.
   ("The link graph is notes-only").
 - `_extract_wikilinks`: no `![[` discrimination, so a note embed is a link.
   Not modelled; the help defines embeds as a distinct syntax.
-- `_extract_wikilinks`: `./` and `../` opt-out is a project convention; the
-  help shows no relative wikilink form. Unverifiable.
-- `FTSIndex.resolve_vault_wikilinks`: suffix match "ends with `/stem.md`" is
-  wider than the help's vault-root folder paths. Unverifiable.
-- `FTSIndex.resolve_vault_wikilinks`: `min(candidates, key=len)` versus the
-  design doc's "fewest path components" — #1350 open; neither is sourced,
-  and Obsidian only documents the *writing* rule (shortest unique path).
-  design.md § Link Extraction (Wikilink resolution).
+- `_extract_wikilinks`: `./` and `../` resolve against the source note, as
+  observed (`[[../y]]`, above); the help shows no relative wikilink form.
+- `FTSIndex.resolve_vault_wikilinks`: suffix match "ends with `/stem.md`"
+  matches what was observed (`[[b/Note]]` → `a/b/Note.md`).
+- `FTSIndex.resolve_vault_wikilinks`: the tie-break is the observed
+  three-rule one (exact path, own folder, shortest string) since #1350;
+  the design doc's earlier "fewest path components" was wrong. Equal-length
+  ties and the alias tie-break remain [unverified] and follow the same rule
+  by analogy. design.md § Link Extraction (Wikilink resolution).
 - `FTSIndex.resolve_vault_wikilinks`: path matching case-sensitive — #235
   asked for case-insensitivity; Obsidian's behaviour is unverified.
 - `FTSIndex.resolve_vault_wikilinks` / `_insert_aliases`: `[[Alias]]` as a
-  target, case-insensitive alias match, path-beats-alias, shortest path among
-  alias holders — all project rules; the help documents aliases only as
+  target, case-insensitive alias match, path-beats-alias, the path rule's
+  tie-break among alias holders (own folder, then shortest) — all project
+  rules; the help documents aliases only as
   suggestion entries that expand to `[[Note|Alias]]`. Unverifiable.
 - `_insert_aliases`: honours the scalar `alias` key that Obsidian deprecated
   in 1.4 and dropped in 1.9. Wider than current Obsidian; harmless for
@@ -445,9 +465,9 @@ Each entry names the function and the design section that decides it.
 
 ## Not covered
 
-- Everything marked `[unverified]` above; the single most valuable fixture is
-  the #1350 vault (three `Note.md` files, three source folders) read through
-  `metadataCache.resolvedLinks`.
+- Everything marked `[unverified]` above; the #1350 tie-break fixture was
+  run on 2026-09-07 and is recorded above, and the same console session is
+  the cheapest way to settle the rest (#1358).
 - Block-fragment links (`[[note#^id]]`): stored as a plain fragment, no test.
 - Embeds of notes (`![[Note]]`) as distinct from links: the scanner treats
   both as links; whether Obsidian's graph does is unknown.

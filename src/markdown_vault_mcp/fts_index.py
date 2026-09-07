@@ -287,7 +287,13 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: ``note.md "title"``) and never resolved; the bump rebuilds notes whose
 #: bytes never changed so those rows gain their targets, and drops the ones
 #: that turn out to name attachments (#1333).
-INDEX_SEMANTICS_VERSION = 8
+#:
+#: Version 9 (#1350): the wikilink tie-break is Obsidian's, observed — an
+#: exact vault path, else the source note's own folder, else the shortest
+#: path string. A vault holding duplicate note names resolved a bare
+#: ``[[Note]]`` to the shortest path everywhere; the bump re-resolves the
+#: rows whose source sits beside a same-named note, which now win.
+INDEX_SEMANTICS_VERSION = 9
 
 
 class ChunkingMeta(NamedTuple):
@@ -401,6 +407,28 @@ def _derive_folder(path: str) -> str:
     # PurePosixPath('.') means no parent directory.
     folder = parent.as_posix()
     return "" if folder == "." else folder
+
+
+def _pick_wikilink_candidate(candidates: list[str], source_path: str) -> str:
+    """Tie-break among several documents matching one wikilink.
+
+    Observed on Obsidian 1.13.7 (#1350): once no exact vault path matches,
+    a candidate in the source note's own folder wins — an ancestor folder
+    counts for nothing — and otherwise the shortest path *string* does (not
+    fewest components, not file-tree order). Two candidates of equal length
+    and standing were not observed; the lexicographically first is taken so
+    the answer does not depend on index history.
+
+    Args:
+        candidates: Vault-relative paths of the matching documents.
+        source_path: Vault-relative path of the note holding the link.
+
+    Returns:
+        The chosen candidate.
+    """
+    source_dir = source_path.rpartition("/")[0]
+    own_folder = [p for p in candidates if p.rpartition("/")[0] == source_dir]
+    return min(own_folder or candidates, key=lambda p: (len(p), p))
 
 
 class FTSIndex:
@@ -1961,12 +1989,14 @@ class FTSIndex:
     def resolve_vault_wikilinks(self) -> int:
         """Resolve vault-wide wikilink ``target_path`` values against the document set.
 
-        Obsidian resolves bare wikilinks (e.g. ``[[Note]]``) by searching the
-        entire vault for a document whose filename matches, picking the shortest
-        path (fewest path components) when multiple candidates exist.  Wikilinks
-        with an explicit path (e.g. ``[[folder/Note]]``) are resolved to any
-        document whose path ends with ``folder/Note.md``, again preferring the
-        shortest match.
+        Obsidian resolves a bare wikilink (``[[Note]]``) by searching the
+        whole vault for a document whose name matches, and a path-qualified
+        one (``[[folder/Note]]``) against any document whose path ends with
+        ``folder/Note.md``. When several match, the tie-break is the one
+        observed on Obsidian 1.13.7 (#1350; ``docs/design/reference/
+        obsidian-markdown.md``, "The tie-break"): an exact vault path wins;
+        otherwise a match in the source note's own folder; otherwise the
+        shortest path string.
 
         Resolution anchors on ``raw_target`` (the original wikilink text as
         written) rather than the current ``target_path``.  This ensures
@@ -1978,7 +2008,9 @@ class FTSIndex:
         ``document_aliases`` table — if a document declares an ``aliases``
         frontmatter field containing the wikilink stem, the link resolves to
         that document.  This mirrors Obsidian's alias resolution behaviour
-        (e.g. ``[[AI]]`` resolves to a document with ``aliases: [AI]``).
+        (e.g. ``[[AI]]`` resolves to a document with ``aliases: [AI]``); the
+        tie-break among several is the path rule's, by analogy — Obsidian's
+        own alias tie-break was not observed.
 
         Wikilinks with an explicit relative prefix (``./`` or ``../``) are
         skipped; they are resolved relative to the source document at scan time
@@ -2003,6 +2035,7 @@ class FTSIndex:
             r["path"]
             for r in conn.execute("SELECT path FROM documents_live").fetchall()
         ]
+        doc_paths_set = set(doc_paths)
 
         # Build alias → document path mapping for fallback resolution.
         # Case-insensitive: Obsidian alias matching is case-insensitive.
@@ -2014,7 +2047,7 @@ class FTSIndex:
             """
         ).fetchall()
         # Map lowercased alias to list of document paths (multiple docs could
-        # share an alias; pick shortest path like the path-based resolution).
+        # share an alias; the path rule's tie-break applies).
         alias_map: dict[str, list[str]] = {}
         for ar in alias_rows:
             alias_map.setdefault(ar["alias"].lower(), []).append(ar["path"])
@@ -2024,11 +2057,12 @@ class FTSIndex:
         # resolved at scan time and must not be overwritten.
         rows = conn.execute(
             """
-            SELECT id, raw_target, target_path
-            FROM links
-            WHERE link_type = 'wikilink'
-              AND raw_target NOT LIKE './%'
-              AND raw_target NOT LIKE '../%'
+            SELECT l.id, l.raw_target, l.target_path, d.path AS source_path
+            FROM links l
+            JOIN documents d ON d.id = l.source_id
+            WHERE l.link_type = 'wikilink'
+              AND l.raw_target NOT LIKE './%'
+              AND l.raw_target NOT LIKE '../%'
             """
         ).fetchall()
 
@@ -2045,21 +2079,19 @@ class FTSIndex:
             # 2. Append .md if not already present.
             search_target = stem if stem.lower().endswith(".md") else stem + ".md"
 
-            # Find the best match: exact path or suffix match, shortest wins.
-            candidates = [
-                p
-                for p in doc_paths
-                if p == search_target or p.endswith("/" + search_target)
-            ]
-            if not candidates:
-                # Fallback: check if the stem matches a document alias.
-                # Use the raw stem (without .md) for alias matching.
-                alias_candidates = alias_map.get(stem.lower(), [])
-                if alias_candidates:
-                    candidates = alias_candidates
-            if not candidates:
-                continue  # Genuinely broken — no document matches.
-            new_path = min(candidates, key=len)
+            # An exact vault path wins outright (rule 1); the suffix matches
+            # and the alias fallback go through the tie-break (rules 2, 3).
+            if search_target in doc_paths_set:
+                new_path = search_target
+            else:
+                candidates = [p for p in doc_paths if p.endswith("/" + search_target)]
+                if not candidates:
+                    # Fallback: check if the stem matches a document alias.
+                    # Use the raw stem (without .md) for alias matching.
+                    candidates = alias_map.get(stem.lower(), [])
+                if not candidates:
+                    continue  # Genuinely broken — no document matches.
+                new_path = _pick_wikilink_candidate(candidates, row["source_path"])
             if new_path != row["target_path"]:
                 updates.append((new_path, row["id"]))
 

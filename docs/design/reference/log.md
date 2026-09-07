@@ -2,6 +2,7 @@
 
 ## 2026-09-07
 
+- `obsidian-markdown.md`: the #1350 tie-break fixture run by the maintainer on Obsidian 1.13.7 through `getFirstLinkpathDest`; the tie-break section rewritten from `[unverified]` to the observed three rules (exact vault path, own folder, shortest path string) with the fixture and pins; the relative-wikilink and path-suffix rows settled by the same run; departure entries updated.
 - `commonmark-gfm.md`: the `_RE_INLINE_LINK`, reference-definition and `apply_link_replacement` departure entries re-observed after #1353 (destination parsed by §6.3's grammar, entities by §2.5's rule; the three-level parenthesis cap recorded as the deliberate departure); pins added.
 - `okf-v0.2.md`: the write-stamp departure removed for #1372 — `generated.at` and `verified[].at` are now UTC instants in the spec's example form, written as strings; the `generated`/`verified` claims gain their pins and the open offset question closes.
 - `okf-v0.2.md`: the staleness departure rewritten for #1373 — an instant with an offset is now compared as one, the bare date stays as a recorded lenience, an offset-less datetime is ignored; the August `stale_after` claim gains its pin.
