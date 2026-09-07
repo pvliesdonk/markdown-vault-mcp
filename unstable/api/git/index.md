@@ -236,13 +236,20 @@ Returns:
 |      | \`SyncHealth | None\`      |
 |      | \`SyncHealth | None\`      |
 
-### `sync_once(repo_path)`
+### `sync_once(repo_path, *, timer_driven=False)`
 
 Fetch and update once, returning True if HEAD advanced.
 
 Thin adapter over :meth:`_pull_pipeline` (#879) — the periodic pull loop and the interactive `git_sync` tool now share one fetch → classify → ff-only → rebase → sibling implementation, so the loop gets the pipeline's safe conflict handling: defensive rebase abort and an upstream restore that drops paths whose restore failed instead of committing stale local content over them.
 
 The pipeline self-quiesces before the merge via :meth:`_quiesce_writes` (pause new writes + drain the deferred-commit queue, best-effort/time-bounded) so a write racing the periodic pull is committed first and the merge runs on a clean tree (#571). The pause is held for the whole fetch + merge — including the network round-trip — so MCP writes block for the pull's duration; acceptable for a periodic background pull (default every 600 s) and a fast fetch.
+
+Parameters:
+
+| Name           | Type   | Description                                                                                                                                                                                                   | Default    |
+| -------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `repo_path`    | `Path` | The vault directory; its git root is resolved once.                                                                                                                                                           | *required* |
+| `timer_driven` | `bool` | True from the pull loop, whose tick repeats while a divergence stands, so the line quoting a stopped rebase logs at DEBUG rather than WARNING (#1362). The startup sync leaves it False: one attempt, caused. | `False`    |
 
 ### `set_write_quiescer(pause_writes, drain_writes)`
 

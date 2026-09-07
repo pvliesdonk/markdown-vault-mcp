@@ -2171,6 +2171,21 @@ once per burst of writes, whereas the pull loop's timer-driven retry of a
 still-pending push, like the pull-side detail that drowned the transition
 in the original incident, stays at <code>DEBUG</code>. Credentials are redacted as
 before.</p>
+<p>The same deployment then found the pull side's own blind spot, and fixed
+it. When another writer pushed while the instance held local commits, the
+clone "stops syncing" while every write kept "returning success" and the
+log showed a conflict-resolution loop that "exceeded 50 iterations" (the
+reporter's words in
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1362">#1362</a>).
+There was no conflict: the pull pipeline's <code>git rebase</code> ran with no
+committer identity, which the published container does not have, so it
+stopped at the first replayed commit with <code>Committer identity unknown</code> and
+nothing half-merged for the resolver to act on. The rebase now runs under the
+configured commit identity, the same one every per-write commit uses, and
+the transition line's <code>cause=</code> carries the rebase's stderr on the pull side
+as it already did for pushes. Contributed by
+<a href="https://github.com/FoundationOperations">@FoundationOperations</a>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1363">#1363</a>).</p>
 <p>See "When the clone stops reaching its remote" in the
 <a href="../../guides/git-integration/">git integration guide</a>.</p>
 <h2 id="push-triggered-reindex-for-gitlab-hosted-vaults">Push-triggered reindex for GitLab-hosted vaults<a class="headerlink" href="#push-triggered-reindex-for-gitlab-hosted-vaults" title="Permanent link">&para;</a></h2>
