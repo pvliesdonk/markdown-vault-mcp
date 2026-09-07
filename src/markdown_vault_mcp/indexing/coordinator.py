@@ -307,6 +307,7 @@ class IndexWriteCoordinator:
                 documents_indexed=live,
                 chunks_indexed=0,
                 skipped=0,
+                rebuilt=False,
             )
         self._readiness.begin_sync_build()
         self._fts.clear_build_completed()
@@ -397,6 +398,7 @@ class IndexWriteCoordinator:
                     documents_indexed=live,
                     chunks_indexed=0,
                     skipped=0,
+                    rebuilt=False,
                 )
             )
             return fut

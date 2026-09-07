@@ -370,16 +370,70 @@ and none of it is implied by vault declaration.
   the two rules stating what they each mean, not a defect. Both are guaranteed
   versions of what the advisory layer asks the agent to do. Generated
   `index.md` content derives from the same data as `get_toc`.
-  **Status:** shipped in phase 5b (see §9). Maintenance runs only for
+  **Status:** shipped in phase 5b (see §9). The `log.md` append runs only for
   `write` / `edit` on an OKF-active vault, skips a write whose target is
   itself a reserved file (`index.md` / `log.md`) so it never recurses, and is
   skipped for suppressed writes (`okf_verify`, the one-shot migrations) so an
   attestation or mechanical rewrite does not churn the reserved files. The
-  affected folder is the one directly containing the written note; the
   `index.md` refresh reuses the migration `generate_index`, draining the
-  single-writer index first so a just-created note is listed. A brand-new
-  subfolder's pointer in its parent `index.md` lands on the next write into
-  the parent (per-write scope, not a full-tree walk).
+  single-writer index first so a just-created note is listed, and covers the
+  written note's folder *and its ancestors*, so a brand-new subfolder's
+  pointer lands in the parent at once. Because the listing is a projection
+  of the index, the same refresh (`ConventionMaintainer.refresh_folders`)
+  also follows every other change to what a folder holds (#1392): the
+  writer facet calls it after `rename`, `delete` and `move_folder` (a move
+  regenerates both parents and every listing carried along, whose links are
+  root-absolute), and `IndexFacet.reindex` calls it — through the vault's
+  `after_reindex` hook, on the caller's thread — with the
+  `ReindexResult.folders_changed` a pass reports, which covers a git pull,
+  the file watcher, the webhook and an explicit `reindex`. `generate_index`
+  skips the write when the file already holds the same body and
+  frontmatter, which is what keeps the watcher from reindexing its own
+  regeneration without end (#830). The refresh always binds a commit
+  scope of its own (`okf_index_refresh`), so N regenerated folders are one
+  commit and never the caller's: a slow reindex is promoted to a background
+  job and the tool's scope closes at promotion, so writes joining it would
+  wait for an end marker already consumed. A *full build* is the case a
+  reindex cannot report — it names no delta, everything it indexed being new
+  to the index — so it refreshes every folder instead: the folders the index
+  knows, and the folders only a listing on disk attests to. The second half
+  matters because a listing whose folder holds no indexed note left — every
+  note excluded by the vault's own gate, or since deleted — is exactly the
+  one nothing will ever write to again. A folder move enumerates the
+  listings it carried from disk for the same reason, the move having landed
+  there while the index catches up behind a drain that may time out. One bounded gap is accepted rather than
+  closed: a folder whose *only* indexable file is the listing this pass
+  repairs gains its pointer in the parent one event later, because the
+  parent renders before that write is indexed. Converging inside a single
+  pass would need a drain between folders or a second pass over all of
+  them, and the listing is correct again after the next write into the
+  parent or the next full build. Two
+  further rules keep the refresh from destroying what it did not write in
+  the operation that would otherwise do it. They do not make content parked
+  at a reserved path durable: reserved files stay server-owned, so an
+  `index.md` holding anything else is regenerated over by the next refresh
+  of that folder, whatever put it there. A
+  rename whose destination is the folder's `index.md` leaves that folder
+  alone, since regenerating it would overwrite the note just moved there,
+  exactly as a write to a reserved file is skipped — a rename to `log.md` is
+  not spared, because the listing must still lose the note's old entry and
+  generating it cannot touch the log; and the folder-exists check and the
+  generation are held under the shared write lock, so a concurrent move
+  cannot slip between them and have the write recreate the folder it just
+  emptied. That covers a cold
+  start, whose build absorbs the startup pull into its own baseline, and
+  `reindex(force=True)`. The warm-restart short-circuit rebuilt nothing and
+  refreshes nothing (`IndexStats.rebuilt`). The follow-up threads are owned
+  rather than abandoned: `Vault.close` closes the facet, which both stops new
+  follow-ups and waits for those in flight before the index connection
+  beneath them goes away — waiting alone would race a job still queued at
+  shutdown, whose follow-up registers only as the drain completes it. The
+  disk walk that finds listings goes through the shared walker so excluded
+  subtrees are pruned before they are descended, and always starts at the
+  vault root even when scoped to a subtree, since the patterns it prunes by
+  are written relative to the root. A read-only vault wires no hook: nobody maintains
+  its listings. `log.md` is history, not a projection, and none of these
+  paths touch it.
 - **Optional conformance gate:** rejected for this design. `required_frontmatter=["type"]`
   already exists for operators who want hard exclusion; a softer write-time
   warning can ride the existing write-result `conventions`/advisory channel
@@ -398,7 +452,12 @@ Cost note (accepted trade-offs, not defects): the index refresh drains the
 single-writer (a *global* wait, embeddings included, bounded at 10s) before it
 regenerates so a just-created note is listed — this is the price of reusing
 the FTS-backed `generate_index` rather than a disk scan, and it adds latency to
-every enforced write on a busy vault. And because the secondary writes are
+every enforced write on a busy vault (one drain per refresh batch, not per
+folder). Since #1392 the refresh also walks the ancestors, so every write
+regenerates the root listing, and `generate_index("")` enumerates the whole
+vault to build it — a full listing per write on a large vault where before
+only the note's own folder was listed; the write itself is skipped when the
+bytes are unchanged, the enumeration is not. And because the secondary writes are
 ordinary `DocumentManager` writes, a git-backed vault commits each separately,
 so one logical note write can produce up to three commits. Both are documented
 in the guide; a scoped (FTS-only) drain and commit coalescing are possible

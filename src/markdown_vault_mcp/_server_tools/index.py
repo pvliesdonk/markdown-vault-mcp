@@ -200,6 +200,8 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
               force=True rebuild).
             - skipped (int): Files deliberately not indexed (missing required
               frontmatter, exclude patterns, unparseable).
+            - folders_changed (list[str]): Folders holding a changed path
+              (absent on a force=True rebuild).
             - full_rebuild (bool): True when force=True re-parsed everything.
 
             When promoted, a dict with ``"status": "working"``, a ``job_id``,

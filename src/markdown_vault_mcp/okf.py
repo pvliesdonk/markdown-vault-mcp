@@ -63,7 +63,11 @@ _HUMAN_ACTOR_PREFIX = "human:"
 #: Reserved bundle filenames (navigation, not concepts). Not consumed in
 #: phase 1 — staged for the conformance audit (#962: reserved files are
 #: exempt from the ``type`` rule) and ranking downweights (#965).
-OKF_RESERVED_FILENAMES: tuple[str, ...] = ("index.md", "log.md")
+#: The reserved listing. Named on its own because rules differ between the
+#: two reserved files: the listing is generated, the log is history.
+OKF_INDEX_FILENAME = "index.md"
+
+OKF_RESERVED_FILENAMES: tuple[str, ...] = (OKF_INDEX_FILENAME, "log.md")
 
 #: H1 heading, and title, of a generated ``log.md``. Shared by the two body
 #: builders and the reserved-frontmatter policy so the heading a reader sees

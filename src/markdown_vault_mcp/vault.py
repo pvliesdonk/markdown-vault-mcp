@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
 # state-path default historically lived in this module; domain.py still
 # imports it from here).
+from markdown_vault_mcp._commit_scope import bound_commit_scope
 from markdown_vault_mcp.config_sections.vault_settings import (
     _DEFAULT_STATE_FILENAME as _DEFAULT_STATE_FILENAME,
 )
@@ -67,6 +68,9 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+
+#: The reserved listing filename, for the disk-backed folder enumeration.
+_OKF_INDEX_NAME = "index.md"
 
 #: Bound on how long OKF convention maintenance (#964) waits for the
 #: single-writer index to drain before refreshing a folder's ``index.md`` so a
@@ -741,6 +745,9 @@ class Vault:
                 ),
                 write_lock=self._file_write_lock,
                 reserved_frontmatter=reserved_frontmatter,
+                folder_exists=lambda folder: (self._source_dir / folder).is_dir(),
+                list_listing_folders=self._folders_with_listings,
+                subtree_has_notes=self._subtree_has_notes,
             )
         self._writer_facet = WriterFacet(
             self._doc_mgr,
@@ -757,8 +764,17 @@ class Vault:
             require_built=self._require_built,
             okf_detector=self._okf,
         )
+        # A reindex may have changed what a folder holds; the listings follow
+        # (#1392). Not on a read-only vault, whose listings nobody maintains.
+        after_index_change = (
+            self._refresh_listings
+            if self._okf_convention is not None and not self._read_only
+            else None
+        )
         self._index_facet = IndexFacet(
-            coordinator=self._coordinator, index_mgr=self._index_mgr
+            coordinator=self._coordinator,
+            index_mgr=self._index_mgr,
+            after_index_change=after_index_change,
         )
         # Summarize facet is present only when a backend was supplied (the
         # summarize tool is otherwise hidden at the server layer). Promotion
@@ -889,8 +905,11 @@ class Vault:
         """One-time git fetch + ff-only update before build_index().
 
         Intended to run during server startup before the initial index build.
-        No reindex is triggered here because build_index() will scan the updated
-        working tree.
+        No reindex is triggered here because build_index() will scan the
+        updated working tree. That build absorbs the pull into its own
+        baseline, so the boot reindex behind it reports nothing changed; what
+        keeps the OKF listings honest on that path is the full build itself
+        refreshing them all (#1392, :meth:`_refresh_listings`).
         """
         if self._git_strategy is None or self._git_pull_interval_s <= 0:
             return
@@ -947,6 +966,95 @@ class Vault:
         if self._git_strategy is not None:
             self._git_strategy.stop()
 
+    def _folders_with_listings(self, subtree: str = "") -> set[str]:
+        """Return the vault-relative folders under *subtree* holding an index.
+
+        Read from disk, and deliberately not from the index: a listing whose
+        folder holds no *indexed* note — every note excluded by the vault's
+        own gate, or the notes since deleted — is exactly the one that goes
+        stale unnoticed, because nothing will ever write there again (#1392).
+        Excluded paths are skipped, so a templates folder gains no listing.
+        """
+        from markdown_vault_mcp.utils import is_path_excluded
+        from markdown_vault_mcp.utils.fs import iter_markdown_files
+
+        folders: set[str] = set()
+        if not self._source_dir.is_dir():
+            return folders
+        # Always from the vault root, even for a subtree: the shared walker
+        # prunes excluded directories before descending, and the patterns it
+        # prunes by are relative to the root — handing it a subtree would
+        # measure them from the wrong place and prune nothing.
+        prefix = f"{subtree}/" if subtree else ""
+        for path in iter_markdown_files(self._source_dir, self._exclude_patterns):
+            if path.name != _OKF_INDEX_NAME:
+                continue
+            try:
+                rel = path.relative_to(self._source_dir).as_posix()
+            except ValueError:  # pragma: no cover - the walk stays under root
+                continue
+            if not rel.startswith(prefix) or is_path_excluded(
+                rel, self._exclude_patterns
+            ):
+                continue
+            folders.add(rel.rsplit("/", 1)[0] if "/" in rel else "")
+        return folders
+
+    def _subtree_has_notes(self, subtree: str) -> bool:
+        """Whether *subtree* holds any note, reserved files aside (#1392).
+
+        Read from disk like the listing enumeration beside it, and for the
+        same reason: a move has already landed there while the index catches
+        up behind a drain that may time out.
+        """
+        from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
+        from markdown_vault_mcp.utils.fs import iter_markdown_files
+
+        base = self._source_dir / subtree if subtree else self._source_dir
+        if not base.is_dir():
+            return False
+        return any(
+            path.name not in OKF_RESERVED_FILENAMES
+            for path in iter_markdown_files(base, None)
+        )
+
+    def _refresh_listings(self, folders: tuple[str, ...] | None) -> None:
+        """Regenerate the OKF listings the index says are affected (#1392).
+
+        Runs on the thread that asked for the index change — the pull loop,
+        the watcher (which holds the write lock, re-entered here), the
+        webhook, a tool, or the follow-up thread of an async build/reindex.
+
+        *folders* is what a reindex reported, or ``None`` after a full
+        build, which cannot name a delta: everything it indexed is new to the
+        index, so every folder is refreshed — the ones the index knows and
+        the ones only a listing on disk attests to. That covers the two paths a
+        reindex cannot report — a cold start, whose build absorbs the startup
+        pull into its own baseline, and ``reindex(force=True)``.
+
+        A scope of its own is always bound, never the caller's: a slow
+        reindex is promoted to a background job and the tool's scope closes
+        at promotion, so writes joining it would wait for an end marker that
+        has already been consumed. N regenerated folders are still one
+        commit.
+        """
+        if self._okf_convention is None:
+            return
+        if folders is None:
+            # Both halves are needed: the index knows folders whose listing
+            # does not exist yet, and the disk knows listings whose folder
+            # has no indexed note left.
+            every = set(self._search_mgr.list_folders()) | self._folders_with_listings()
+            folders = tuple(sorted(every))
+            logger.info("okf_listing_refresh_all folders=%d", len(folders))
+        if not folders:
+            return
+        with bound_commit_scope("okf_index_refresh") as scope:
+            try:
+                self._okf_convention.refresh_folders(folders)
+            finally:
+                self.end_commit_scope(scope)
+
     def end_commit_scope(self, scope: CommitScope) -> None:
         """Close a tool call's commit scope, grouping its writes into one commit.
 
@@ -966,6 +1074,9 @@ class Vault:
         Flushes deferred embeddings and pending write callbacks, then
         closes the SQLite connection and git strategy.
         """
+        # A post-index follow-up writes through the index; let it finish
+        # before the connection under it is closed (#1392).
+        self._index_facet.stop_followers()
         # 0. Close the coordinator FIRST: it joins the legacy background-build
         # thread (whose worker submits to the writer) and THEN closes the
         # single-owner IndexWriter, draining pending jobs.  Must precede the

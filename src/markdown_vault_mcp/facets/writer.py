@@ -291,7 +291,10 @@ class WriterFacet:
                 not match.
             DocumentNotFoundError: If *path* does not exist.
         """
-        return self._doc_mgr.delete(path, if_match=if_match)
+        result = self._doc_mgr.delete(path, if_match=if_match)
+        if self._convention_maintainer is not None:
+            self._convention_maintainer.after_delete(path)
+        return result
 
     def rename(
         self,
@@ -329,12 +332,15 @@ class WriterFacet:
             ValueError: If *old_path* or *new_path* escapes the source
                 directory.
         """
-        return self._doc_mgr.rename(
+        result = self._doc_mgr.rename(
             old_path,
             new_path,
             if_match=if_match,
             update_links=update_links,
         )
+        if self._convention_maintainer is not None:
+            self._convention_maintainer.after_rename(old_path, new_path)
+        return result
 
     def move_folder(self, old_dir: str, new_dir: str) -> MoveFolderResult:
         """Move a folder subtree to a new prefix, rewriting links vault-wide.
@@ -366,7 +372,10 @@ class WriterFacet:
                 destination clashes, but a mid-move OS error leaves the subtree
                 partially moved with the index unchanged; reindex recovers.
         """
-        return self._doc_mgr.move_folder(old_dir, new_dir)
+        result = self._doc_mgr.move_folder(old_dir, new_dir)
+        if self._convention_maintainer is not None:
+            self._convention_maintainer.after_move(result.old_dir, result.new_dir)
+        return result
 
     def write_attachment(
         self,

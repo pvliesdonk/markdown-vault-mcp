@@ -407,3 +407,19 @@ class TestReservedFilesUnderRequiredFrontmatter:
             "- [archive/](/archive/index.md)"
             in gated_vault.reader.read("index.md").content
         )
+
+
+def test_same_file_treats_unparseable_existing_as_different() -> None:
+    """A malformed on-disk file is never mistaken for the fresh listing."""
+    from markdown_vault_mcp.managers.okf_migrate import _same_file
+    from markdown_vault_mcp.types import NoteContent
+
+    existing = NoteContent(
+        path="index.md",
+        title="Index",
+        folder="",
+        content="---\nfoo: [\n---\n# Index\n",
+        frontmatter={},
+        modified_at=0.0,
+    )
+    assert _same_file(existing, "# Index\n", None) is False

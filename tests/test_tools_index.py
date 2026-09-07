@@ -108,3 +108,32 @@ async def test_reindex_force_reparses_every_document(
     assert data["added"] == 2
     assert data["modified"] == data["deleted"] == data["unchanged"] == 0
     assert status["documents_indexed"] == 2
+
+
+async def test_reindex_regenerates_okf_listings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The tool's async reindex runs the listing refresh before it returns (#1392)."""
+    (tmp_path / "guides").mkdir()
+    (tmp_path / "index.md").write_text(
+        '---\nokf_version: "0.2"\n---\n# Root\n', encoding="utf-8"
+    )
+    (tmp_path / "guides" / "a.md").write_text(
+        "---\ntitle: A\ntype: Note\n---\n# A\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_MODE", "on")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_WRITE", "true")
+    for var in _CLEAR_VARS:
+        monkeypatch.delenv(var, raising=False)
+    server = make_server()
+    async with Client(server) as client:
+        await wait_for_mcp_writer_drain(client)
+        (tmp_path / "guides" / "b.md").write_text(
+            "---\ntitle: B\ntype: Note\n---\n# B\n", encoding="utf-8"
+        )
+        data = (await client.call_tool("reindex", {})).data
+        assert "guides" in data["folders_changed"]
+        listing = (tmp_path / "guides" / "index.md").read_text(encoding="utf-8")
+        assert "[B](/guides/b.md)" in listing

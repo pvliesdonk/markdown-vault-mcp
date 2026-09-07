@@ -43,7 +43,7 @@ from markdown_vault_mcp.utils import (
 from markdown_vault_mcp.utils.fs import iter_markdown_files
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
     from pathlib import Path
 
     from markdown_vault_mcp.interfaces import KeywordGraphIndex, VectorStore
@@ -52,6 +52,33 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.tracker import ChangeTracker
 
 logger = logging.getLogger(__name__)
+
+
+def _folder_of(path: str) -> str:
+    """Return the vault-relative folder of a POSIX *path* (``""`` at the root)."""
+    return path.rsplit("/", 1)[0] if "/" in path else ""
+
+
+def _folders_touched(
+    changes: Any, newly_skipped: Iterable[str], purged: Iterable[str] = ()
+) -> tuple[str, ...]:
+    """Return the folders a scan changed something in, sorted and unique.
+
+    Everything a folder listing can depend on: a note added, modified,
+    deleted, or newly skipped by the index gate, and one purged for newly
+    matching an exclude pattern. The last two matter for the same reason —
+    a note dropping out of the index drops out of its folder's listing — and
+    the purged ones are named nowhere else, since the file did not change,
+    the patterns did.
+    """
+    touched = (
+        *changes.added,
+        *changes.modified,
+        *changes.deleted,
+        *newly_skipped,
+        *purged,
+    )
+    return tuple(sorted({_folder_of(path) for path in touched}))
 
 
 class IndexManager:
@@ -344,7 +371,7 @@ class IndexManager:
         vectors: VectorStore | None,
         *,
         keep_paths: set[str] | None = None,
-    ) -> tuple[int, VectorStore | None]:
+    ) -> tuple[list[str], VectorStore | None]:
         """Delete indexed rows that now match ``exclude_patterns`` (#255).
 
         Shared by :meth:`build_index` and :meth:`reindex`, carrying the
@@ -372,7 +399,7 @@ class IndexManager:
             lazily loaded, so callers must adopt the returned handle.
         """
         if not self._exclude_patterns:
-            return 0, vectors
+            return [], vectors
         stale_paths = [
             row["path"]
             for row in self._fts.list_notes()
@@ -388,13 +415,14 @@ class IndexManager:
             self._load_vectors()
             vectors = self._get_vectors()
 
-        purged = 0
         for stale_path in stale_paths:
             self._fts.delete_by_path(stale_path)
             if vectors is not None:
                 vectors.delete_by_path(stale_path)
-            purged += 1
-        return purged, vectors
+        # The paths, not a count: a folder whose listing linked to one of
+        # them has to be regenerated, and nothing else in a reindex names
+        # them (they did not change on disk — the patterns did) (#1392).
+        return stale_paths, vectors
 
     # ------------------------------------------------------------------
     # Index building
@@ -471,9 +499,10 @@ class IndexManager:
         # before exclude_patterns were configured (upgrade scenario, #255).
         indexed_paths = {note.path for note in notes}
         docs_before_purge = self._fts.count_documents()
-        purged, vectors = self._purge_stale_excluded(
+        purged_paths, vectors = self._purge_stale_excluded(
             self._get_vectors(), keep_paths=indexed_paths
         )
+        purged = len(purged_paths)
         embeddings_path = self._embeddings.embeddings_path
         if purged and vectors is not None and embeddings_path is not None:
             vectors.save(embeddings_path)
@@ -625,7 +654,8 @@ class IndexManager:
         # the vector-sidecar load until stale rows are confirmed, keeping
         # the per-note loop below on its lazy-load (converge-and-skip)
         # semantics — see test_embedding_convergence.
-        stale_excluded, vectors = self._purge_stale_excluded(vectors)
+        purged_paths, vectors = self._purge_stale_excluded(vectors)
+        stale_excluded = len(purged_paths)
         if stale_excluded:
             logger.info(
                 "reindex: purged %d stale excluded document(s)",
@@ -683,6 +713,7 @@ class IndexManager:
             deleted=len(changes.deleted),
             unchanged=changes.unchanged,
             skipped=changes.skipped_unchanged + len(newly_skipped),
+            folders_changed=_folders_touched(changes, newly_skipped, purged_paths),
         )
 
     def _parse_changed_notes(

@@ -442,11 +442,17 @@ class IndexStats:
         documents_indexed: Number of documents successfully indexed.
         chunks_indexed: Total number of chunks indexed.
         skipped: Number of documents skipped due to parse errors.
+
+        rebuilt: Whether a build actually ran. ``False`` on the warm-restart
+            short-circuit, which reports the existing index rather than
+            rebuilding it — the difference decides whether projections of the
+            index, such as the OKF listings, have to be regenerated (#1392).
     """
 
     documents_indexed: int
     chunks_indexed: int
     skipped: int
+    rebuilt: bool = True
 
 
 @dataclass
@@ -462,6 +468,10 @@ class ReindexResult:
             (missing required frontmatter, matching an exclude pattern, or
             unparseable), whether newly skipped this scan or unchanged since
             they were last skipped (#665).
+        folders_changed: Vault-relative folders (``""`` for the root) holding
+            a path this pass added, modified, deleted, or newly skipped —
+            sorted, unique. What a folder listing can depend on; the OKF
+            maintainer regenerates these folders' ``index.md`` (#1392).
     """
 
     added: int
@@ -469,6 +479,7 @@ class ReindexResult:
     deleted: int
     unchanged: int
     skipped: int = 0
+    folders_changed: tuple[str, ...] = ()
 
 
 @dataclass

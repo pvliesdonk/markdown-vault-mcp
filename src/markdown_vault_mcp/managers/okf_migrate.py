@@ -26,7 +26,10 @@ enforcement.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import frontmatter as fm
+import yaml
 
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
@@ -43,12 +46,13 @@ from markdown_vault_mcp.okf import (
 from markdown_vault_mcp.utils import normalize_folder
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
     from markdown_vault_mcp.managers.document import DocumentManager
     from markdown_vault_mcp.managers.git_query import GitQueryManager
     from markdown_vault_mcp.managers.link import LinkManager
     from markdown_vault_mcp.managers.search import SearchManager
+    from markdown_vault_mcp.types import NoteContent
 
 logger = logging.getLogger(__name__)
 
@@ -197,14 +201,18 @@ class OkfMigrationManager:
         preserved = bool(existing_fm)
         heading = folder.rsplit("/", 1)[-1] if folder else OKF_ROOT_INDEX_TITLE
         body = build_index_markdown(heading, entries)
-        self._doc_mgr.write(
-            index_path,
-            body,
-            frontmatter=self._reserved_frontmatter.build(
-                existing_fm if preserved else None, title=heading
-            ),
-            allow_overwrite=True,
+        frontmatter = self._reserved_frontmatter.build(
+            existing_fm if preserved else None, title=heading
         )
+        if existing is not None and _same_file(existing, body, frontmatter):
+            # Regeneration runs after every reindex (#1392); rewriting
+            # identical bytes would still bump the mtime, and the file
+            # watcher would then reindex its own write without end (#830).
+            logger.debug("okf_generate_index_unchanged path=%s", index_path)
+        else:
+            self._doc_mgr.write(
+                index_path, body, frontmatter=frontmatter, allow_overwrite=True
+            )
         return OkfIndexResult(
             path=index_path, entries=len(entries), frontmatter_preserved=preserved
         )
@@ -256,3 +264,16 @@ class OkfMigrationManager:
             frontmatter=self._reserved_frontmatter.build(None, title=OKF_LOG_TITLE),
         )
         return OkfLogResult(path=log_path, commits=commits, dates=dates)
+
+
+def _same_file(
+    existing: NoteContent, body: str, frontmatter: Mapping[str, Any] | None
+) -> bool:
+    """Whether *existing* already holds *body* under *frontmatter*."""
+    if dict(existing.frontmatter) != dict(frontmatter or {}):
+        return False
+    try:
+        current_body = fm.loads(existing.content).content
+    except yaml.YAMLError:
+        return False
+    return current_body.strip() == body.strip()

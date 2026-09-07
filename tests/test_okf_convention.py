@@ -103,7 +103,9 @@ class TestMaintainerGuards:
                 "# Log\n\n## 2026-08-09\n\n- **Update**: wrote `guides/note.md`\n",
             )
         ]
-        assert migrate.index_calls == ["guides"]
+        # The folder and its ancestors: a new subfolder's pointer lands in
+        # the parent at once (#1392).
+        assert migrate.index_calls == ["", "guides"]
 
     def test_edit_uses_edited_verb(self) -> None:
         m, doc, _ = _maintainer()
@@ -394,3 +396,130 @@ class TestUpkeepUnderRequiredFrontmatter:
             assert "guides/log.md" in {n.path for n in col.reader.list_documents()}
         finally:
             col.close()
+
+
+class TestRefreshFolders:
+    """Batch regeneration of listings, parents included (#1392)."""
+
+    def test_refreshes_each_folder_and_its_ancestors_once(self) -> None:
+        m, _doc, migrate = _maintainer()
+        m.refresh_folders(["a/b", "a/c", "a/b"])
+        assert migrate.index_calls == ["", "a", "a/b", "a/c"]
+
+    def test_skips_folders_that_no_longer_exist(self) -> None:
+        doc, migrate = _FakeDoc(), _FakeMigrate()
+        m = ConventionMaintainer(
+            doc_mgr=doc,  # type: ignore[arg-type]
+            okf_migrate=migrate,  # type: ignore[arg-type]
+            detector=_FakeDetector(True),  # type: ignore[arg-type]
+            sync_index=lambda: None,
+            folder_exists=lambda f: f != "gone",
+        )
+        m.refresh_folders(["gone", "kept"])
+        assert migrate.index_calls == ["", "kept"]
+
+    def test_inactive_vault_refreshes_nothing(self) -> None:
+        m, _doc, migrate = _maintainer(active=False)
+        m.refresh_folders(["a"])
+        assert migrate.index_calls == []
+
+    def test_write_now_refreshes_the_parent_too(self) -> None:
+        m, _doc, migrate = _maintainer()
+        m.maintain("guides/deep/note.md", "write")
+        assert migrate.index_calls == ["", "guides", "guides/deep"]
+
+    def test_after_move_refreshes_parents_and_every_carried_listing(self) -> None:
+        doc, migrate = _FakeDoc(), _FakeMigrate()
+        m = ConventionMaintainer(
+            doc_mgr=doc,  # type: ignore[arg-type]
+            okf_migrate=migrate,  # type: ignore[arg-type]
+            detector=_FakeDetector(True),  # type: ignore[arg-type]
+            sync_index=lambda: None,
+            list_listing_folders=lambda folder: [folder, f"{folder}/sub"],
+        )
+        m.after_move("old/guides", "docs/guides")
+        assert migrate.index_calls == [
+            "",
+            "docs",
+            "docs/guides",
+            "docs/guides/sub",
+            "old",
+        ]
+
+    def test_after_move_on_an_inactive_vault_does_nothing(self) -> None:
+        m, _doc, migrate = _maintainer(active=False)
+        m.after_move("a", "b")
+        assert migrate.index_calls == []
+
+    def test_a_failing_drain_does_not_stop_the_refresh(self) -> None:
+        def _boom() -> None:
+            raise RuntimeError("writer dead")
+
+        doc, migrate = _FakeDoc(), _FakeMigrate()
+        m = ConventionMaintainer(
+            doc_mgr=doc,  # type: ignore[arg-type]
+            okf_migrate=migrate,  # type: ignore[arg-type]
+            detector=_FakeDetector(True),  # type: ignore[arg-type]
+            sync_index=_boom,
+        )
+        m.refresh_folders(["a"])
+        assert migrate.index_calls == ["", "a"]
+
+    def test_a_rename_into_the_listing_skips_that_folder(self) -> None:
+        """Regenerating there would overwrite the note the rename just made."""
+        m, _doc, migrate = _maintainer()
+        m.after_rename("notes/n.md", "guides/index.md")
+        assert migrate.index_calls == ["", "notes"]
+
+    def test_a_rename_into_the_log_still_refreshes(self) -> None:
+        """The listing must lose the note; generating it cannot touch the log."""
+        m, _doc, migrate = _maintainer()
+        m.after_rename("notes/n.md", "notes/log.md")
+        assert migrate.index_calls == ["", "notes"]
+
+    def test_an_ordinary_rename_refreshes_both_folders(self) -> None:
+        m, _doc, migrate = _maintainer()
+        m.after_rename("notes/n.md", "guides/n.md")
+        assert migrate.index_calls == ["", "guides", "notes"]
+
+    def test_an_attachment_delete_creates_no_listing(self) -> None:
+        """A listing names notes; refreshing would invent one for attachments."""
+        m, _doc, migrate = _maintainer()
+        m.after_delete("assets/diagram.png")
+        assert migrate.index_calls == []
+
+    def test_a_note_delete_still_refreshes(self) -> None:
+        m, _doc, migrate = _maintainer()
+        m.after_delete("guides/n.md")
+        assert migrate.index_calls == ["", "guides"]
+
+    def test_an_attachment_rename_creates_no_listing(self) -> None:
+        m, _doc, migrate = _maintainer()
+        m.after_rename("assets/a.png", "media/a.png")
+        assert migrate.index_calls == []
+
+    def test_an_attachments_only_move_creates_no_listings(self) -> None:
+        """`move_folder` supports attachment-only subtrees; they warrant none."""
+        doc, migrate = _FakeDoc(), _FakeMigrate()
+        m = ConventionMaintainer(
+            doc_mgr=doc,  # type: ignore[arg-type]
+            okf_migrate=migrate,  # type: ignore[arg-type]
+            detector=_FakeDetector(True),  # type: ignore[arg-type]
+            sync_index=lambda: None,
+            subtree_has_notes=lambda _folder: False,
+        )
+        m.after_move("assets", "media/assets")
+        assert migrate.index_calls == []
+
+    def test_a_move_carrying_a_listing_still_refreshes(self) -> None:
+        doc, migrate = _FakeDoc(), _FakeMigrate()
+        m = ConventionMaintainer(
+            doc_mgr=doc,  # type: ignore[arg-type]
+            okf_migrate=migrate,  # type: ignore[arg-type]
+            detector=_FakeDetector(True),  # type: ignore[arg-type]
+            sync_index=lambda: None,
+            list_listing_folders=lambda folder: [folder],
+            subtree_has_notes=lambda _folder: False,
+        )
+        m.after_move("old/guides", "docs/guides")
+        assert migrate.index_calls == ["", "docs", "docs/guides", "old"]
