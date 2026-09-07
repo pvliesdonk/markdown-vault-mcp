@@ -467,11 +467,17 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
   trade one defect for another.
 
 The `OKF_WRITE` maintainer needs this for a second reason: `_append_log` is a
-read-modify-write and `DocumentManager.read` returns the body without
-frontmatter, so the log's frontmatter has to be carried across the rewrite
-explicitly. Since the maintainer runs after *every* content write, the
-alternative is not a one-time gap but frontmatter stripped again after each
-save — including frontmatter an operator seeded by hand.
+read-modify-write, and `DocumentManager.read` returns the *whole file*,
+frontmatter included (`NoteContent.content`). The maintainer therefore drops
+the frontmatter from the text (`strip_reserved_frontmatter`) and carries it
+across the rewrite explicitly through `frontmatter=`. Since the maintainer
+runs after *every* content write, getting either half wrong compounds per
+save rather than once: not carrying it over stripped hand-seeded frontmatter
+again after each save (#1174); re-emitting it above text that still contained
+it stacked one more identical block per write (#1391). The strip drops the
+block that opens the text and nothing else: it never inspects the body, so a
+log quoting its own frontmatter as a sample keeps it, and the blocks a
+defective release already stacked stay where they are until #1403.
 
 ### Export
 
