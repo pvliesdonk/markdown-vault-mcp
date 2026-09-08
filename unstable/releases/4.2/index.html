@@ -2280,6 +2280,16 @@ exempts from typing
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1267">#1267</a>). The
 histograms now cover the same note population <code>okf_validate</code> audits, and
 reserved files are reported separately as <code>reserved_count</code>.</p>
+<p><strong>The maintained <code>log.md</code> no longer stacks a frontmatter block per write.</strong>
+On a vault that requires frontmatter, the 4.1.0 fix that gave the generated
+<code>log.md</code> the fields the index gate demands re-emitted them above text that
+still contained them, so every enforced write added one more identical block
+to the top of the folder's log; one live folder had accumulated eighteen
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1391">#1391</a>). The
+append now drops the frontmatter from the text before carrying it across the
+rewrite. A log 4.1.0 already stacked stops growing; the blocks it accumulated
+stay in its body, which
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1403">#1403</a> covers.</p>
 <p><strong>OKF staleness, the single-verifier shorthand and the provenance stamps
 now follow the spec.</strong> OKF v0.2 says a note is stale from its <code>stale_after</code>
 on, that consumers "must treat a bare mapping as a one-element list" for
