@@ -716,6 +716,8 @@ class Vault:
             title_field=self._title_field,
             required_fields=tuple(self._required_frontmatter or ()),
         )
+        # The audit tolerates what this policy seeds (#1396).
+        self._reserved_frontmatter = reserved_frontmatter
         self._okf_migrate = OkfMigrationManager(
             doc_mgr=self._doc_mgr,
             link_mgr=self._link_mgr,
@@ -841,6 +843,7 @@ class Vault:
             self._source_dir,
             exclude_patterns=self._exclude_patterns,
             detector=self._okf,
+            reserved_frontmatter=self._reserved_frontmatter,
         )
 
     @property

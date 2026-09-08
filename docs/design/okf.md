@@ -260,9 +260,24 @@ during migration it is a progress meter:
 
 - Per-rule counts + capped example lists: notes missing parseable
   frontmatter; notes missing non-empty `type`; unknown `status` values;
-  `okf_version` outside bundle root; reserved-file convention violations
-  (structural only — `log.md` heading shape, root `index.md` presence:
-  advisory findings, since the spec tolerates their absence).
+  `okf_version` outside bundle root; `index.md` frontmatter the spec does
+  not allow (`index_frontmatter`: any key but `okf_version` on the root,
+  any key on a folder index — the fields the vault's own
+  `required_frontmatter` gate seeds are tolerated as the accepted #1174
+  departure; the git conflict resolver's `conflict_with` injection is the
+  motivating case, #1396). Presence is detected separately from content, so
+  a block carrying no keys is reported, as is one that does not parse —
+  which nothing else would report, a reserved file returning before the note
+  rules run. A block counts only once it is *closed*, so a `---` opening a
+  body-only index is the thematic break it looks like. Presence and content
+  are read from one normalised string, since the parser strips before it
+  detects and the two would otherwise disagree about a block behind a blank
+  line, and the audit's own read strips a BOM like every other vault read
+  (#673), which it did not before. A folder index declaring `okf_version` is
+  reported twice, here and as `misplaced`: deliberate, the two findings say
+  different things about it. Reserved-file convention violations (structural
+  only — `log.md` heading shape, root `index.md` presence: advisory
+  findings, since the spec tolerates their absence).
 - Informational (non-conformance) counts: wikilink usage (matters at export
   only), notes lacking recommended fields.
 - Summary ratio ("N of M notes conformant") + the same exclude patterns as
