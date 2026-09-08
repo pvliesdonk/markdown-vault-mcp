@@ -488,10 +488,21 @@ instances would each advance it to a different sha and conflict on that
 line on every concurrent pass, while a boundary read from the graph
 needs no line and cannot conflict; when two instances' passes both
 reach a clone, the newer one is the boundary and the other's examined
-commits are re-examined idempotently by their keys. A (note, day) is
-pending when a candidate commit changed the note's blob and its entry is
-missing, or its covered sha is behind, or the entry is a placeholder,
-and not pending when a keyed negative comment covers that sha. So no
+commits are re-examined idempotently by their keys. The pending set is
+the union of two sources, because the boundary advances past a
+placeholder the moment the placeholder's own accounting commit lands
+(`A..A` is empty): first, every (note, day) for which a commit above the
+boundary changed the note's blob and no keyed line covers that sha;
+second, every placeholder line in any `log.md`, read from the files and
+not from the range, whose date is within a nag window (candidate
+default seven days, so a foreign change pulled on Tuesday and dated
+Monday is still nagged, and a vault whose agents never declare does not
+accumulate an ever-growing list). A keyed negative comment covering the
+sha removes a pair from both. Placeholders older than the window stay
+in the log as the honest record they are and stop being nagged; that
+cut-off is a decision to write into the guide, not a heuristic. Neither source is read per request: the set is computed when an
+accounting pass runs and when an intent lands, held in memory, and
+re-derived on start, so decorating a result costs a lookup, not a scan. So no
 stored state outside `log.md` and the graph, restart-proof, correct
 across replicas,
 a foreign commit ingested just before a restart still pending
@@ -548,14 +559,23 @@ lines. Then "take upstream, then re-insert my missing keyed entries under
 their date headings" loses nothing on either side: hand-written entries
 survive, the server's entries are re-derived from their keys, and the
 only structure touched is the date heading, which `append_okf_log_entry`
-already finds. That premise is decidable per conflict: the lines added
-to `log.md` between the merge base and the local head are either all
-keyed (`git diff <merge-base> HEAD -- log.md`, added lines; a keyed
-negative comment counts as keyed) or not. When
-they are, this is the resolver policy. When they are not, someone edited
-the served clone directly (a shared filesystem with the watcher on), and
-the sibling policy of today stays so that nothing is lost. No list
-merger in either branch.
+already finds. That premise is decidable per conflict by classifying
+the *whole* local patch to `log.md` between the merge base and the local
+head (`git diff <merge-base> HEAD -- log.md`), every line of it, by
+shape and never by prose. The server's writer produces exactly these
+line changes and no others: added keyed bullets and keyed comments;
+added `## YYYY-MM-DD` headings; the `# Log` title and a seeded
+frontmatter block when the file is new; added or removed blank lines
+(`append_okf_log_entry` trims trailing blanks before inserting a
+section); and a removed keyed line whose key reappears in an added line,
+which is a recompute. A patch made only of those is server-written and
+takes the lossless branch. Anything else, an added unkeyed line, a
+removed keyed line with no re-add, a removed heading or a modified
+prose line, means someone edited the served clone directly (a shared
+filesystem with the watcher on), and the sibling policy of today stays
+so that nothing is lost. A deletion by hand is therefore caught, where
+an added-lines-only test would have passed it vacuously and then thrown
+the deletion away by taking upstream. No list merger in either branch.
 
 **Cost** is bounded by notes touched per day, not by writes; the
 mechanical filter makes a layout-only day free. A large pulled range gets
