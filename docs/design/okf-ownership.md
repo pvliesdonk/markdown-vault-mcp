@@ -1,9 +1,9 @@
 # OKF administration under more than one author
 
-**Status:** analysis, 2026-09-08, revised the same day after the owner's
-first reading (5.0 room, the commit-accounted log, the overwrite
-variant). Nothing here is implemented; the decisions recorded as the
-owner's are quoted.
+**Status:** design, approved by the owner on 2026-09-08 after three
+rounds of discussion; the decisions recorded as the owner's are quoted.
+Nothing here is implemented. Implementation is tracked by the epic
+linked from §10.1.
 It exists to inform the clean re-implementation of #1391, #1392, #1395,
 #1396 and #1403 after `main` was rewound on 2026-09-08, and to give #1393
 and #1394 a design to argue against.
@@ -86,12 +86,12 @@ document argues the rows.
 | `generated {by, at}` | Whoever produced the bytes | **Yes**: commit author and committer timestamp of the last content commit | Stamped on own writes | Re-derive from git on ingest of an external change | Annotate at read that the stamp predates the bytes; never write |
 | `verified [{by, at}]` | The verifier. Only *invalidation* is derivable | Invalidation: yes (content commit after `at`) | Cleared on own writes | Clear on ingest of an external content change | Treat entries older than the last content change as void at read time |
 | `index.md` | Nobody; it is a function of the tree | Fully (it is a projection) | Regenerated after own writes only (#1392) | Regenerate on every ingest; resolve conflicts by regenerating | Never write it, even after own writes |
-| `log.md` | Depends on the model (§6 below) | Fully, if it is a rendering of `git log` | Appended after own writes only | Render from history on every ingest; resolve conflicts by regenerating | Never write it |
+| `log.md` | The author of the change; a knowledge event, not a byte event (§6) | Only the *fact* of a change and its diff; the description is curated | Appended after own writes only | Curate one keyed entry per note per day from intent, diff, or file list; conflicts by take-upstream-then-reinsert | Never write it |
 
 Two rows carry most of the weight: `generated`/`verified`, where git is
-strong evidence and the server has been ignoring it, and `log.md`, where
-the choice of model decides whether the file is history (merge it) or a
-projection (regenerate it).
+strong evidence and the server has been ignoring it, and `log.md`, which
+is history and must stay history: git supplies the *when* and the
+*what bytes*, never the entry.
 
 ## 4. The ownership model
 
@@ -179,6 +179,31 @@ Two consequences for existing surfaces:
   position (2026-09-07, from #1393) is "If we choose 'server managed'
   then clobbering is fine and maybe even preferred." That should be
   documented as the contract rather than left to be discovered.
+
+### 4.3 What the 2026-07-28 protocol revision allows
+
+The server's next major runs on FastMCP 4 and the `2026-07-28` MCP
+revision (#1271), whose core is stateless. Read on 2026-09-08 from the
+revision's changelog and its Streamable HTTP and MRTR pages; the facts
+that bound this design:
+
+- **There is no protocol session.** `Mcp-Session-Id` is removed;
+  "servers that need cross-call state use explicit, server-minted handles
+  passed as ordinary tool arguments". FastMCP 4 offers `UserSession`
+  (one bucket keyed by the authenticated principal, requires auth) and
+  `SessionId` (a handle the model passes on every call). Neither is used
+  here: nothing below keys on a conversation.
+- **Server-to-client requests are multi round-trip.** Elicitation is
+  returned as an `input_required` result the client answers on a retry;
+  "servers MUST NOT assume that clients will fulfill the inputRequests or
+  retry". `okf_verify` keeps working through FastMCP 4's input-required
+  rounds. Nothing below may *depend* on a retry.
+- **Sampling is deprecated**, with "integrate directly with LLM provider
+  APIs" as the suggested migration. The summarizer seam is that
+  integration; "use the client's own model" is not an option.
+- **Tool lists are static and cacheable** (`ttlMs`, deterministic
+  order, no per-connection variation). A tool gated by configuration is
+  fine; a tool that appears per conversation is not.
 
 ## 5. The ingest hook
 
@@ -291,236 +316,171 @@ at `own` should **drop** `generated` and `verified` rather than
 invent an actor. Absence is the honest signal; `process:unknown` would be
 fabricated provenance.
 
-## 6. `log.md`: history or projection
+## 6. `log.md`: a knowledge history, not a rendering of git
 
-The append model (today) records only this server's writes into a file
-that claims to be the folder's change history. Under any second author it
-is a partial history by construction (#1393). Four models are on the
-table; the fourth is the owner's (2026-09-08) and is stress-tested in
-§6.2.
+### 6.1 The distinction that decides the model
 
-| Model | The file is | Conflict policy | Records external changes | Hand-written entries | Extra machinery |
-|---|---|---|---|---|---|
-| Append (today) | History, hand-extendable | Merge it (the markdown list merger that cost #1399 three rounds and 312 lines) or keep the sibling | No | Survive | none |
-| Rendered | A projection of `git log` for the subtree | Regenerate, like `index.md` | Yes, every commit, from any clone | Die | The renderer that exists: `okf_seed_log` / `build_log_markdown` |
-| Hybrid | Rendered entries plus hand-written ones in a marked section | Regenerate the derived part, merge the rest | Yes | Survive | Both |
-| Commit-accounted (§6.2) | History, one keyed entry per commit, written at ingest | Take upstream, then re-account | Yes | Survive if keyed; otherwise per §6.3 | Sha-keyed entries; the ingest hook |
+The owner (2026-09-08): "From my perspective log.md and git are
+semantically different." Git records byte events: every edit, every
+auto-backup, every typo fix, every reserved-file refresh, exhaustively,
+at commit granularity. `log.md` records knowledge events. The spec's own
+examples are "**Update**: Added a BigQuery table reference for Customer
+Metrics", "**Creation**: Established the Dataplex Playbook",
+"**Initialization**: Created foundational directory structure". Many
+commits map to no entry; one entry may span several commits; the entry
+says what changed for a reader of the knowledge, not which bytes moved.
+This repository lives the same split: `CHANGELOG.md` is derived from the
+subset of commits that carry a counted type, not from `git log`.
 
-**On reopening #1399.** The first draft flagged that a rendered or
-accounted `log.md` reopens the 2026-09-08 decision ("`index.md` treated
-as a projection of vault state, `log.md` left on the sibling policy").
-The owner's answer, same day: "This is fine, it is reopened on
-new/extended information". The earlier remark from #1393 points the same
-way: "We might be able to get that information from commit messages,
-with an honest question on whether (in a git managed environment) we
-should not use those as a source of truth anyway".
+Two earlier drafts of this section got that wrong and are recorded here
+so they are not re-proposed:
 
-### 6.1 Requirements common to every git-fed model
+- **Rendering `log.md` from `git log`** (with or without a sha-keyed
+  carry-over of entry text, with or without a window) produces a commit
+  log in OKF clothing. Every `vault backup` and every typo fix becomes an
+  entry, hand-written entries die, and the window question was a symptom
+  of treating history as a rendering.
+- **Validating that a commit's `log.md` change mentions every file the
+  commit touched** (the second half of the owner's 2026-09-08
+  "commit-accounted" proposal) is undecidable over prose: a renamed file
+  has two paths, a deleted one none on disk, "fixed typos" across twelve
+  notes has no path at all. Enforcing it fights the human, relaxing it
+  makes it a heuristic, and a failure has no good action. It is rejected.
+  The decidable residue survives below: a commit whose `log.md` diff adds
+  at least one bullet line has accounted for itself.
 
-- **It must not log itself.** A maintenance commit touches only reserved
-  files. Any model skips commits whose changed paths in scope are all
-  reserved names.
-- **Per-folder scope is the subtree**, as `okf_seed_log(folder=...)`
-  already does; the root log is the whole vault.
-- **Opaque subjects need a fallback.** obsidian-git's default subject is
-  `vault backup: {{date}}` (its `DEFAULT_SETTINGS`, fetched 2026-09-08).
-  For such a commit the entry text is the changed-file list, or a
-  description generated from the diff (#1405, §9). What counts as opaque
-  is a small rule (the plugin's default template, a subject that is only
-  a timestamp), not a heuristic over prose.
-- **The server's own subjects are opaque too.** `write: guides/a.md`
-  renders as `**write: guides/a.md** (abc1234)`, which is what
-  `build_log_markdown` produces today. #1405 is what makes any git-fed
-  log readable.
-- **Byte-stable for unchanged input**, so a pass with nothing new writes
-  nothing (the `diff --cached --quiet` guard supplies the second half).
+### 6.2 The model: one curated entry per note per day
 
-### 6.2 The commit-accounted log, stress-tested
+**Grain.** The unit is (note, day): at most one entry per note per
+calendar day, whatever the number of writes or commits behind it. That is
+the grain the log already has (date sections), it matches the spec's
+entry shape (an entry links a concept and says what happened to it), and
+it is what makes a session of fifteen small writes produce one line. A
+per-write intent was considered and rejected by the owner as the wrong
+grain: "if we make many *small* changes (changing layout) it would get
+swamped."
 
-The owner's proposal (2026-09-08), quoted:
+**Sources of an entry's text, in order of preference.**
 
-> if a commit has changes but does not include log.md then it must be
-> written (e.g. using the summary we described above on git diff, or
-> 'external changes'), or if it does include one it can check whether
-> those changes are actually compatible with the files changed (every
-> file in the commits must be mentioned).
+1. **Declared intent.** The agent that made the change knows why. A tool
+   `okf_intent(paths, intent, kind)` records the knowledge-level
+   description for the pending (note, day) pairs; `kind` is the spec's
+   bold word (`Update`, `Creation`, `Deprecation`), and `kind: none`
+   declares that nothing knowledge-level changed, which clears the
+   pending set without an entry. A declaration for a subset leaves the
+   rest pending. The intent is the primary channel because it is the
+   author's own words at the moment the work is coherent.
+2. **Generated from the cumulative diff.** When the summarizer backend
+   is configured and no intent arrives, the (note, day) diff — the note
+   at the start of the day, or at the last entry, against the note now,
+   plus any hints the agent attached — goes to the model, which answers
+   two questions: did the information change, and how would a reader
+   describe it. "No" is a legitimate answer and yields no entry. Under the
+   `2026-07-28` revision this is the only model available (§4.3).
+3. **The file list.** With neither, the entry names the note and the
+   kind of change the diff shows. Honest and dull; never invented.
 
-Restated as a rule per folder scope: *every commit in the ingested range
-that changes a note in scope is accounted for in that scope's `log.md`,
-either by the commit itself or by an entry the server adds at ingest.*
-The rule has two halves, and they fare very differently.
+**Two filters before any model call.** A mechanical one: strip markdown
+syntax, collapse whitespace, compare the word sequence; identical means
+layout only, no entry, no call. Section reordering changes the sequence
+but not the multiset and is a judgement to write down, not a heuristic.
+A structural one: frontmatter-only diffs (a stamp, a `verified` entry, a
+tag) and reserved-file diffs produce no entry.
 
-**Half one, "if the commit does not touch `log.md`, the server writes the
-entry", holds up, under six conditions.**
+**The nag.** The server tells the model what is pending. There is no
+session to hang the list on (§4.3) and none is needed: which (note, day)
+pairs lack an entry is a fact about the vault. Under git it is fully
+derivable — paths in server-committed commits today whose entry is
+missing or whose covered sha is behind — so no stored state, restart-proof,
+correct across replicas. Without git it lives in the state directory.
+The channel is in-band: every write result, and every read or search
+result after writes, carries `intent_pending: [...]` with one instruction
+line. A result field costs nothing from the instruction budget, where a
+guidance sentence would. The nag cannot block (§4.3), and the fallback
+sources above are what make it safe to ignore.
 
-1. **Entries are keyed by commit.** "Is C accounted for" must be a token
-   search, not a reading of prose: an entry carries `(abc1234)` as the
-   seeded log already does, and the check is "does a bullet line in this
-   file end with C's short sha". Without a key the check becomes
-   path-matching over prose, which is the class of decision the #1397
-   and #1399 retrospectives say to delete, not refine.
-2. **Candidates are the ingested range**, `from_sha..to_sha` of this pull
-   (or the full-build case of §5), never a date watermark. A merge that
-   brings in an old-dated commit is then logged; a re-pull of the same
-   range is idempotent by the key check.
-3. **Reserved-only commits are exempt**, which the rule gives for free: a
-   commit whose in-scope changes are all reserved files has nothing to
-   account for. The server's own log commit therefore never triggers a
-   further entry, and the loop closes by construction.
-4. **The log entry for a commit is written after that commit exists.**
-   A commit's sha is computed over its tree, so a `log.md` line keyed by
-   the commit's sha cannot be inside that commit; the seeded log gets
-   away with keys because it renders after the fact. The hook is
-   therefore post-commit, on the write-callback worker after
-   `_stage_and_commit`, and it produces a follow-on commit. On a git
-   vault that is two commits per logical write, note first, then both
-   reserved files together, which is neither today's up-to-three nor the
-   one the first draft of this section promised. The same post-commit
-   hook is where the server's own subjects get their entries, so own and
-   foreign commits are accounted by one path.
-5. **One accounting commit per ingested range**, all folders, pushed on
-   the normal schedule. Same shape and cost as the reconciliation commit
-   of §5.2, and it can be the same commit.
-6. **Conflict policy: take upstream, then re-account.** A same-day append
-   on both sides conflicts exactly as today's probes showed. Resolution
-   takes the upstream file and re-runs the rule over the range: every
-   entry the server had added is re-derivable (its text is cached by sha,
-   §9.3) and every missing key is appended under its date heading. No
-   list merger; the only structure touched is the date heading, which
-   `append_okf_log_entry` already finds.
+**Keys and idempotence.** A server-written entry carries its (path, day)
+and the short sha of the latest commit it covers. Re-ingesting the same
+range is a no-op; a later commit to the same note on the same day
+recomputes the entry rather than adding a second. A commit whose `log.md`
+diff adds a bullet line accounts for itself and is not re-described.
 
-With those six, the model is decidable end to end, stateless beyond the
-file itself (the keys *are* the state, shared through git with every
-clone), and it keeps hand-written entries because it only ever appends.
+**Foreign commits** get the same treatment at ingest (§5), dated by the
+commit, so a pull on Tuesday of Monday's Obsidian edits lands under
+Monday. Their subject (`vault backup: 2026-09-08 07:12:03` by obsidian-git
+default) is opaque by a small rule, not a heuristic, so source 2 or 3
+applies. With #1405 the server's own subjects become useful hints to
+source 2, and the two features share the backend but never the text:
+commit subjects stay at git's grain.
 
-**Half two, "if the commit touches `log.md`, check that every changed
-file is mentioned", does not survive.**
+**Post-commit, always.** A commit's sha cannot appear inside that
+commit, so an entry keyed by the commit it covers is written after the
+commit exists: on the write-callback worker after `_stage_and_commit`,
+producing a follow-on commit that carries both reserved files. On a git
+vault that is two commits per logical write, not today's up to three.
 
-- It is undecidable in the way that matters. "Mentioned" means a path
-  string appears in prose under some heading: a renamed file has two
-  paths, a deleted one has none on disk, an attachment may be mentioned
-  for another reason, and a human who fixed the same typo in twelve
-  notes writes "fixed typos", not twelve paths. Enforcing it fights the
-  human; relaxing it makes it a heuristic; both are what the retros
-  warn against.
-- It duplicates git. If the log is required to be a complete file list,
-  git already is one, and rendering it (§6.1) needs no validation.
-- The failure mode it creates has no good action. When the check fails,
-  the server either appends a completion entry (now there are two
-  entries for one commit, the human's prose and the server's list) or
-  warns (and the warning has no audience, per #1394's argument).
+**Conflicts, without a list merger and without overwrite.** On the
+server's clone every unkeyed line in `log.md` came from upstream, because
+the server writes only keyed lines. So "take upstream, then re-insert my
+missing keyed entries under their date headings" loses nothing on either
+side: hand-written entries survive, the server's entries are re-derived
+from their keys, and the only structure touched is the date heading,
+which `append_okf_log_entry` already finds. This is the resolver policy
+for `log.md` and it replaces both the sibling and the 312-line merger.
 
-There is a decidable *fragment* worth keeping: "the commit's diff of
-`log.md` adds at least one bullet line". That is a line-shape test on
-the diff, not prose parsing, and it closes the one realistic hole in
-half one: obsidian-git's auto-commit bundles everything changed in the
-interval, so a human who touched `log.md` to fix a typo in the same
-interval as five note edits would otherwise leave those five
-unaccounted. With the fragment, a `log.md` change that adds no entry
-does not count as accounting, and the server adds the entries.
+**Cost** is bounded by notes touched per day, not by writes; the
+mechanical filter makes a layout-only day free. A large pulled range gets
+a cap with the file list as the floor; bootstrap stays with
+`okf_seed_log`, whose rendered-from-git output is the one place a commit
+log is the right content, because it is a seed for a bundle that had no
+history.
 
-**Where the accounted model beats rendering**, and this is the finding
-of the stress-test rather than the premise: the description of a
-foreign commit generated from its diff (#1405) has a durable, shared
-home. Under rendering it must be cached per clone in the state
-directory, or attached as a git note that obsidian-git neither pushes
-nor reads, or regenerated (unstable text, a model call per pass). Under
-accounting it is written once into `log.md`, committed, and pushed, and
-every clone has it. The log becomes the OKF-native place for the
-narrative git lacks, which is the only thing a git-hosted `log.md`
-"earns its keep" for, in the spec's phrase.
+### 6.3 Where the append model stays
 
-**Where it is weaker:** it trusts a commit that adds a log bullet to
-have described itself, it grows without bound (the seeded log's `limit`
-has no counterpart; a per-folder window with older sections left as
-they are is the natural bound), and a pruned entry is re-added on the
-next pull only if its commit is in the ingested range, which is the
-right behaviour but must be documented so pruning old sections is known
-to be safe.
+A vault without git has no commit to key on. There, own writes keep
+today's append (one bullet per write, now filtered by the two filters
+and keyed by (path, day) so repeated writes collapse), foreign changes
+seen by the watcher produce no entry (nothing honest to say beyond a
+path), and `okf_intent` works as above with the pending set in the state
+directory.
 
-### 6.3 The overwrite variant
+## 7. `index.md`, and the reserved files as protected paths
 
-The owner's second proposal (2026-09-08), quoted: "take ownership of
-log.md (and maybe index.md) and *always* overwrite. *Assume* that the
-external party does not maintain it properly and just overwrite."
+`index.md` is a projection of the tree, regenerated on every ingest and
+on every own write, conflicts resolved by regenerating; the owner's #1399
+decision covers the mechanics. Two contracts the re-implementation
+should state because #1400's review rounds turned on them: regeneration
+is gated on markdown changes (deleting or moving an attachment does not
+create a listing in a folder that never had one), and a reserved file is
+server-owned content, not a note.
 
-For `index.md` this is the projection model, already decided. For
-`log.md` the honest form of "always overwrite" is: on every ingest,
-re-render the whole file from the git window, taking each entry's
-*text* from the previous file when an entry with that commit's key
-exists there, and generating it otherwise. That is the accounted model
-with a different write shape, and the difference is worth stating:
+The owner (2026-09-08): "log.md and index.md should probably be
+inaccessible (or at least read-only) to the mcp client." Read-only is the
+form:
 
-| | Accounted, append in place | Overwrite with keyed carry-over |
-|---|---|---|
-| Format damage by the external party (stacked frontmatter, a broken heading, a `+` bullet) | Persists until someone fixes it | Healed on every ingest |
-| Hand-written entries without a key | Survive | Die, every time |
-| In-place editing logic | Needed (find the date section, insert) | None; the file is rendered from scratch |
-| Reading the old file | Key search | Key search plus taking the line's text |
-| Window / growth | Unbounded unless windowed | Window decides: recent-changes page, or history with out-of-window sections carried over verbatim (below) |
+- **Under `maintain` and `own`, the write tools refuse `index.md` and
+  `log.md`** with a reason naming the setting. "Accepted, then destroyed
+  by the next regeneration" is worse than a refusal, and a guard at the
+  write kernel covers every path at once, including a `rename` onto a
+  reserved name that #1400 had to special-case.
+- **Reads stay open.** Both files are what a client is told to read first
+  in a bundle, and ranking already downweights them. Hiding them would
+  break progressive disclosure and hide the log the intent flow fills.
+- **Under `off` and `stamp` the guard is off**, because those postures say
+  someone else may maintain the files, including an agent asked to by
+  its human. Protected means server-owned; one concept.
+- **The server's own writers pass through** on the suppressed intent they
+  already run under (`okf_generate_index`, `okf_seed_log`, the
+  maintainer), so no new bypass is invented.
+- **The same guard protects the conventions file** (#1411, filed
+  2026-09-08 with the overwrite and delete reproduced): a set of
+  server-protected paths the write tools decline, one mechanism, two
+  reasons.
 
-Under the stated assumption ("the external party does not maintain it
-properly"), overwrite is the stronger form: every ingest converges the
-file to canonical shape, there is no insertion code to get wrong, and
-the sha-key carry-over is a per-line token match. Of the six conditions
-in §6.2, 1, 3, 5 and 6 carry over unchanged, 2 becomes "the render
-window" rather than the ingested range, and 4 stays as the post-commit
-hook. The "adds at least one bullet" fragment is moot: nothing is
-accounted, everything in the window is rendered, and a second server
-instance converges on take-upstream because keys are unique and the
-render is total. The cost is the death of unkeyed entries, and the
-answer to that is the contract the model implies anyway: **in a git
-vault, your log entry is your commit message.** A human who wants prose
-in the log writes it in the commit; the render picks it up, or #1405's
-description does when the subject is opaque. Hand editing `log.md` is
-then as pointless as hand editing `index.md`, and the guide can say so
-in one sentence.
-
-**The window is a decision, not a feature.** "Bounded by the render
-window" in the table means commits older than the window leave
-`log.md` for good, and the file becomes a recent-changes page while
-history stays in git. The alternative keeps it a history: sections
-whose date heading is older than the window are carried over verbatim
-(a split at the first out-of-window heading, no merge), and only the
-in-window sections are re-rendered. Either is implementable; which one
-`log.md` is *for* is the owner's call, and the spec's phrase ("earns its
-keep when bundles travel without version-control history") argues for
-the second, since a bundle exported without git wants the whole
-record.
-
-One caveat to write down: the carry-over reads the previous file's
-lines for text, so a keyed line must be single-line by construction
-(the server writes them that way). A human's multi-line keyed entry is
-truncated to its first line on the next render, and that is accepted
-under the assumption.
-
-### 6.4 Recommendation for `log.md`
-
-Overwrite with keyed carry-over (§6.3) for git-backed vaults at
-`maintain` and above, rendered post-commit; the append model stays for
-non-git vaults, where there is no commit to key on. Conflict policy for
-both reserved files is then "regenerate", the list merger does not come
-back, and the LLM description of a foreign commit has one durable home.
-The hybrid model is not needed: the "hand-written" channel is the
-commit message. The window question (recent-changes page or carried-over
-history) is left to the owner.
-
-## 7. `index.md`: settled, with two contracts to write down
-
-The owner's #1399 decision covers the mechanics. Two contracts the
-re-implementation should state because #1400's review rounds turned on
-them:
-
-- A reserved file is **server-owned content**, not a note. A `rename`
-  or `move_folder` whose destination is `index.md` is not honoured as a
-  note operation; a concurrent hand edit is overwritten by the next
-  regeneration; there is no "is this really a listing" check under the
-  lock because that question is undecidable. (#1400 R10 declined the
-  concurrent-overwrite finding on this ground and documented it; keep
-  that.)
-- Regeneration is gated on **markdown** changes. Deleting or moving an
-  attachment does not create an `index.md` in a folder that never had
-  one (#1400 R10/R11 found this three times over three sibling hooks).
+Two surfaces change with it: the agent instruction snippet must stop
+saying "update `log.md`/`index.md`" where the write would be refused, and
+the write tools need one shared sentence about protected paths, in one
+place, because the client-surface budget is nearly spent.
 
 ## 8. The untyped human note
 
@@ -607,78 +567,90 @@ renaming env vars is operator-surface.
 - **Cost** is one short call per commit. Haiku-class pricing makes it
   negligible; a self-hosted model makes it free.
 
-### 9.3 Log entries
+### 9.3 Relation to `log.md`
 
-With `log.md` fed from git (§6) the commit subject *is* the log entry for
-the server's own commits, so "log updates from diff" is not a second
-feature there: it is the same generated line rendered twice. That is the
-synergy that makes the two ideas one design, and the reason to sequence
-§6 before #1405.
+Commit subjects stay at git's grain, one per commit, describing the
+edit. Log entries are at the knowledge grain (§6.2). They share the
+backend and possibly the agent's hints, never the text. #1405 is
+therefore not on the OKF ladder: it is a git-integration feature, useful
+on a vault that has never heard of OKF, with its own flag, off by
+default.
 
-Foreign commits (`vault backup: 2026-09-08 07:12:03`) cannot be
-rewritten. Under the accounted or overwrite model (§6.2, §6.3) the
-description generated from the pulled diff at ingest is written into the
-`log.md` entry itself, keyed by sha, committed and pushed: durable,
-shared with every clone, and never regenerated. A sha-keyed cache in the
-state directory is still useful as the *source* the carry-over falls
-back to when the previous file is missing, but it is no longer where the
-text lives. Git notes remain the option that keeps the text out of the
-tree, and obsidian-git neither pushes nor reads them.
+## 10. The design, and its defaults
 
-## 10. Recommendation
+1. **Annotate always.** A `verified` entry whose `at` predates the note's
+   last external content change (last commit not committed by the
+   server, §5.1) is void in the server's own annotations; a `generated`
+   stamp in the same state is flagged. On a non-git vault there is no
+   evidence and the frontmatter is trusted. Recorded as a departure in
+   `reference/okf-v0.2.md` beside the existing "verified is cleared" row.
+2. **One ingest event** from the reindex, naming the changed paths and
+   whether a full build ran, consumed by `index.md` regeneration (#1392),
+   `log.md` curation (§6), provenance reconciliation (§5), and the
+   warn-once (#1394). Queued ordinary writes; no new threads.
+3. **One ladder.** `OKF_WRITE=off|stamp|maintain|own`, `true`/`false`
+   kept as aliases for `maintain`/`off`. The instruction snippet follows
+   the posture.
+4. **`log.md` is curated, one entry per (note, day)**, from declared
+   intent, else the summarizer over the cumulative diff, else the file
+   list; two filters in front; keyed; post-commit; conflicts by
+   take-upstream-then-reinsert. The append model stays for non-git
+   vaults.
+5. **`okf_intent` and the in-band pending nag**, config-gated with the
+   ladder, state derived from git where git exists.
+6. **Reserved files and the conventions file are protected paths** under
+   `maintain` and `own` (#1411 for conventions).
+7. **Reconcile external notes at `own`** from git evidence, one commit
+   per ingested range; drop rather than invent without git.
+8. **Untyped notes:** an absence filter for `type` now; `OKF_DEFAULT_TYPE`
+   plus `status: draft` only at `own`; Obsidian template guidance in the
+   guide.
+9. **LLM commit subjects** (#1405), independent of OKF, off by default.
 
-1. **Annotate always.** Extend the read layer's derivation with the
-   evidence the server has: a `verified` entry whose `at` predates the
-   note's last external content change (last commit not committed by the
-   server, §5.1) is void; a `generated` stamp in the same state is
-   flagged. Where the evidence comes from is the one real
-   design question: a per-read `git log -1 -- path` is honest but costs a
-   subprocess per `read` and cannot serve search hits, so the practical
-   form is a column computed at ingest (from the pulled range, the
-   watcher delta, or the server's own write) and recomputed from git on a
-   full build. Record the new departure in `reference/okf-v0.2.md`
-   beside the existing "verified is cleared" row.
-2. **Raise one ingest event** from the reindex, naming the changed paths
-   and whether a full build ran, and consume it for: `index.md`
-   regeneration (#1392), `log.md` regeneration (§6), provenance
-   reconciliation (§5), and the warn-once (#1394). Design the listener as
-   queued ordinary writes; keep threading out of it.
-3. **Make ownership one ladder.** `OKF_WRITE=off|stamp|maintain|own`,
-   with `true`/`false` kept as aliases for `maintain`/`off` (additive;
-   the 5.0 room is free for dropping the aliases if wanted). Make the
-   instruction snippet posture-dependent. Write the "reserved files are
-   server-owned content; in a git vault your log entry is your commit
-   message" contract into the guide.
-4. **`log.md` is overwritten from git with keyed carry-over** (§6.3) on a
-   git-backed vault at `maintain` and above; the append model stays for
-   non-git vaults. Conflict policy for both reserved files is then
-   "regenerate" and the list merger does not come back. The render is
-   post-commit, so a git vault sees two commits per logical write, the
-   note and then its reserved files. The owner has accepted that this
-   reopens #1399; the window question in §6.3 is still theirs.
-5. **LLM commit subjects** (#1405) after 4, opt-in, on the existing
-   OpenAI-compat seam, with the constraints in §9.2; the description of a
-   foreign commit lands in its `log.md` entry.
-6. **Untyped notes:** an "untyped" filter now; `OKF_DEFAULT_TYPE` plus
-   `status: draft` only at `own`; Obsidian template guidance in
-   the guide.
+### 10.1 Every optional path, with its default
 
-### 10.1 Where this lands relative to the open issues
+The rule: an absent capability removes a behaviour, never substitutes an
+invented one; nothing here blocks a write, a commit, or a pull; anything
+that writes files nobody asked for, or sends note content out, is off
+unless set.
 
-Proposed, not filed or moved. The 4.2 bugs stay 4.2 and stay narrow; the
-posture model is 4.3 or later work.
+| Path | Default | Annotate | Stamps | `index.md` | `log.md` entries | `okf_intent` / nag | Reconcile | Protected paths |
+|---|---|---|---|---|---|---|---|---|
+| OKF not active | yes | off | off | off | off | hidden | off | conventions only (#1411) |
+| OKF active, `OKF_WRITE=off` | yes | on with git, else trust | off | never written | never written | hidden | off | conventions only |
+| `stamp` | | on | own writes | never written | never written | hidden | off | conventions only |
+| `maintain` | | on | own writes | regenerated on ingest | curated at ingest and post-commit | on | off | reserved + conventions |
+| `own` | | on | own writes | regenerated | curated | on | one commit per range | reserved + conventions |
+
+| Dimension | Absent or off | Present |
+|---|---|---|
+| Git | No ingest from pulls; watcher deltas only. No foreign log entries; own writes keep the filtered append. Reconcile drops `generated`/`verified` rather than inventing an actor. Annotate trusts the frontmatter. Pending set in the state directory. | Full design. Without a remote, maintenance commits stay local. Pending set derived from history. |
+| Summarizer | No generated text. Entry text: declared intent, else the file list. #1405 inert. | Used for entries and subjects behind the layout filter. Timeout, error, refusal, empty reply: mechanical text, logged once. |
+| Auth | Nag vault-global; `okf_verify` under `elicit` stamps `human:local`. | Nag scoped by principal; `generated.by` from the claim. |
+| Transport | stdio: single-tenant, all of the above. | Modern HTTP: no per-connection state anywhere. Legacy HTTP: same code, session unused. |
+| Client capabilities | No elicitation: `okf_verify` fails closed; nothing else depends on it. | |
+| File watcher | Off: non-git external changes seen at the next reindex. | On: deltas feed the same ingest event. |
+| Read-only vault | Everything that writes is off; annotate on. | |
+| `required_frontmatter` | Reserved files body-only. | Seeded keys, the existing departure. |
+| Two server instances | Committer identity plus the `Vault-Operation:` trailer mark both as server; reserved files converge on take-upstream, stamps are idempotent. | |
+
+### 10.2 Where this lands relative to the open issues
+
+The 4.2 bugs stay 4.2 and stay narrow; the design is later work, tracked
+by an epic whose children are the numbered items above.
 
 | Existing | Relationship |
 |---|---|
-| #1391, #1403 (log frontmatter stacking, repair) | Unchanged; fix under the append model. If §6 lands later the append path survives for non-git vaults, so the fix is not wasted. |
-| #1392 (index.md stale) | Becomes "consume the ingest event for `index.md`". The event itself is the new piece; the 4.2 fix can raise it minimally (paths from the reindex delta, plus the full-build rule). |
-| #1395 (resolver sibling on reserved files) | `index.md`: regenerate, no sibling, no injected keys. `log.md`: sibling under the append model until §6.3 lands; then regenerate too. |
+| #1391, #1403 (log frontmatter stacking, repair) | Unchanged; fix under the append model, which stays for non-git vaults. |
+| #1392 (index.md stale) | Consumes the ingest event; the 4.2 fix may raise it minimally. |
+| #1395 (resolver sibling on reserved files) | `index.md`: regenerate. `log.md`: take upstream, re-insert keyed entries (§6.2); sibling until then. |
 | #1396 (audit misses root-index keys) | Unchanged. |
-| #1393 (one maintainer) | Becomes the posture ladder, §4, plus §6.3. Split into: the `OKF_WRITE` enum, log-from-git with keyed carry-over, reconcile-on-ingest. |
+| #1393 (one maintainer) | Superseded by items 3 and 4; proposed for closing as a duplicate of the epic once filed, the owner's call. |
 | #1394 (warn once) | A consumer of the ingest event. |
 | #1401 (facade stamps provenance) | Unchanged. |
-| #1405 (LLM commit subjects) | Filed 2026-09-08 from §9. |
-| New | Read-side derivation of void `verified` (§10, item 1). Untyped filter (§8). Obsidian-side guide section (§8). An `obsidian-git` reference page under `docs/design/reference/`, per `researching-references`: the facts in this document about its defaults and mobile limits are cited inline and dated, not yet a reference. |
+| #1405 (LLM commit subjects) | Item 9, filed 2026-09-08. |
+| #1411 (conventions file overwritable) | Item 6, filed 2026-09-08. |
+| Not yet a reference | An `obsidian-git` page under `docs/design/reference/`, per `researching-references`: the facts in §11 are cited inline and dated, not yet a reference. |
 
 ## 11. External facts used, and their limits
 
