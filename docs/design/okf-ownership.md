@@ -4,8 +4,9 @@
 rounds of discussion; the decisions recorded as the owner's are quoted.
 Nothing here is implemented. Implementation is tracked by the epic
 linked from §10.1.
-It exists to inform the clean re-implementation of #1391, #1392, #1395,
-#1396 and #1403 after `main` was rewound on 2026-09-08, and to give #1393
+It exists to inform the clean re-implementation of #1392, #1395, #1396
+and #1403 after `main` was rewound on 2026-09-08 (#1391's fix was
+re-landed the same day as PR #1406 and is on `main`), and to give #1393
 and #1394 a design to argue against.
 **Scope:** the OKF frontmatter families on notes, and the reserved files
 `index.md` / `log.md`, in a vault that is written both by this server and
@@ -174,11 +175,11 @@ Two consequences for existing surfaces:
   measurement) means the replacement cannot be longer than what it
   replaces.
 - An agent `write` whose target is a reserved file is accepted today
-  and simply not maintained. At `maintain` or above it should be
-  accepted and then overwritten by the next regeneration; the owner's
-  position (2026-09-07, from #1393) is "If we choose 'server managed'
-  then clobbering is fine and maybe even preferred." That should be
-  documented as the contract rather than left to be discovered.
+  and simply not maintained. At `maintain` or above the write is
+  refused (§7). The owner's earlier position (2026-09-07, from #1393),
+  "If we choose 'server managed' then clobbering is fine and maybe even
+  preferred", was superseded on 2026-09-08 by "inaccessible (or at
+  least read-only)"; a refusal is the read-only form.
 
 ### 4.3 What the 2026-07-28 protocol revision allows
 
@@ -218,9 +219,11 @@ no such event today. It has:
   only place that knows *which* paths changed on either route.
 
 The reindex is therefore where the event should be raised, and PR #1400
-(still open on `fix/1392-index-regeneration-triggers`; the rewind removed
-only the merged #1397 and #1398) found the traps by walking into each of
-them. The owner recorded them on #1392 and
+(closed unmerged on 2026-09-08, "Closed as too messy to merge. needs
+reimplementation"; its branch `fix/1392-index-regeneration-triggers`
+remains) found the traps by walking into each of them. Nothing from
+#1399 or #1400 is on `main`: `git/conflict.py` today has no
+reserved-file handling at all. The owner recorded them on #1392 and
 #1395 on 2026-09-08 as "facts established while implementing"; they are
 listed here so the re-implementation designs around them instead of
 rediscovering them:
@@ -270,9 +273,13 @@ document: "the note's last content change" means the last commit
 touching the path **whose committer is not the server**. Without that
 qualifier the server's own asynchronous commit, landing seconds after
 the write it records, would supersede the stamp it carries, and every
-server-written note would read as stale. On the watcher route the
-exclusion is structural: the server's own writes go through the index
-writer and never arrive as a watcher event.
+server-written note would read as stale. On the watcher route there is
+no committer: the watcher sees the server's own writes like any other,
+and today's reindex only drops them because their hash already matches
+the tracker, which is a race against the write's own index update, not a
+guarantee. A non-git classification must therefore compare a watcher
+delta against the hashes the write path itself recorded when it wrote,
+not against the tracker.
 
 Three edges to state in the design rather than discover:
 
@@ -281,16 +288,24 @@ Three edges to state in the design rather than discover:
   instance stamped at write time too.
 - A human whose git committer equals the server's identity would be
   invisible. Not far-fetched: an operator running a personal vault may set
-  `GIT_COMMIT_NAME` to their own name so the history reads uniformly. The
-  `Vault-Operation:` trailer proposed in §9.2 is the second discriminator
-  (committer *or* trailer marks a server commit), and it costs nothing to
-  add now.
+  `GIT_COMMIT_NAME` to their own name so the history reads uniformly. So
+  every server commit carries a `Vault-Operation: <operation> <path>`
+  trailer **unconditionally**, independent of #1405 (which only moves
+  the mechanical text from the subject line to that trailer when it is
+  on). Committer *or* trailer marks a server commit.
 - Rebasing relabels the committer of every replayed commit. obsidian-git
   defaults to `merge`, which keeps committers; a human who rebases the
-  server's commits on the command line turns them "external", and the
-  next ingest re-derives their stamps from the commit (same actor, `at`
-  moved to the commit time): one frontmatter-only pass, then quiet. The
-  trailer closes this edge as well.
+  server's commits on the command line turns them "external" by
+  committer, and the trailer is what still identifies them.
+- **The author field is not always a human.** `GitWriteStrategy` falls
+  back to the configured commit identity as author when no principal is
+  bound (unauthenticated, stdio, a non-tool write). Re-deriving
+  `generated.by = human:<author>` from such a commit would stamp
+  `human:markdown-vault-mcp`, which is the fabricated provenance §2
+  rules out. The rule is therefore: an external commit whose author is
+  the configured server identity, or that carries the trailer, keeps the
+  note's existing stamp; only an author that is neither becomes
+  `human:<author>`.
 
 Idempotency follows from deriving the new stamp from the commit, not
 from the clock: `generated.at` = the external commit's committer
@@ -417,7 +432,21 @@ commit subjects stay at git's grain.
 commit, so an entry keyed by the commit it covers is written after the
 commit exists: on the write-callback worker after `_stage_and_commit`,
 producing a follow-on commit that carries both reserved files. On a git
-vault that is two commits per logical write, not today's up to three.
+vault that is two commits per logical write. Today it is one: the
+maintainer's secondary writes fire inside the tool call's commit scope
+(#1264) and are batched with the note, so the guide's "up to three
+commits" and the matching sentence in `okf.md` §6 are stale and owe a
+docs fix. The second commit is the price of a keyed entry.
+
+**When the fallback fires.** "Pending" means the (note, day) entry has
+not been written yet, and the follow-on commit does not write the
+fallback at once: it waits a settle window (the push scheduler's
+debounce is the natural one, so the entry lands before the push). An
+intent declared inside the window is the entry; the summarizer or the
+file list fills it when the window closes; an intent declared after
+that recomputes the entry under the same key, one more commit. So the
+nag names entries not yet written *and* entries carrying only the
+fallback, and both are cleared by one `okf_intent` call.
 
 **Conflicts, without a list merger and without overwrite.** On the
 server's clone every unkeyed line in `log.md` came from upstream, because
@@ -546,12 +575,12 @@ renaming env vars is operator-surface.
   and on timeout, error, refusal or an empty reply the subject is the
   mechanical one. Amending after the fact is not an option once the push
   scheduler may have pushed.
-- **Keep the mechanical subject as a trailer.** `operation: path` is
-  what `git log` readers and the `seed_log` renderer see today. An
-  LLM subject on line one plus a `Vault-Operation: write guides/a.md`
-  trailer keeps both. Nothing in `git/` parses the subject
-  (`build_log_markdown` only renders it), so this is a compatibility
-  courtesy, not a requirement.
+- **The mechanical text moves to the trailer, which exists anyway.**
+  §5.1 makes `Vault-Operation: write guides/a.md` an unconditional
+  trailer on every server commit; with #1405 on, the LLM subject takes
+  line one and the trailer is where the mechanical text already lives.
+  Nothing in `git/` parses the subject (`build_log_markdown` only renders
+  it), so this is a compatibility courtesy, not a requirement.
 - **Commit scopes already batch.** A tool call that touched many files
   commits once, titled after the tool. A diff-based subject is strictly
   better for that case than `okf_convert_links: 2,595 files`.
@@ -641,7 +670,8 @@ by an epic whose children are the numbered items above.
 
 | Existing | Relationship |
 |---|---|
-| #1391, #1403 (log frontmatter stacking, repair) | Unchanged; fix under the append model, which stays for non-git vaults. |
+| #1391 (log frontmatter stacking) | Fixed on `main` by PR #1406 (re-landed after the rewind); shipped in 4.2.0-rc.2. |
+| #1403 (repair of stacked files) | Unchanged; a fix under the append model, which stays for non-git vaults. |
 | #1392 (index.md stale) | Consumes the ingest event; the 4.2 fix may raise it minimally. |
 | #1395 (resolver sibling on reserved files) | `index.md`: regenerate. `log.md`: take upstream, re-insert keyed entries (§6.2); sibling until then. |
 | #1396 (audit misses root-index keys) | Unchanged. |
@@ -650,6 +680,7 @@ by an epic whose children are the numbered items above.
 | #1401 (facade stamps provenance) | Unchanged. |
 | #1405 (LLM commit subjects) | Item 9, filed 2026-09-08. |
 | #1411 (conventions file overwritable) | Item 6, filed 2026-09-08. |
+| New, docs | The guide and `okf.md` §6 say a note write can produce "up to three commits"; since #1264 the secondary writes share the tool call's commit scope and it is one (§6.2). |
 | Not yet a reference | An `obsidian-git` page under `docs/design/reference/`, per `researching-references`: the facts in §11 are cited inline and dated, not yet a reference. |
 
 ## 11. External facts used, and their limits
