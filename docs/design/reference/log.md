@@ -1,5 +1,9 @@
 # Log
 
+## 2026-09-08
+
+- `obsidian-git.md` created for the OKF ownership design (#1424, PR #1426; Codex on that PR: the design rested on plugin behaviour cited inline and dated, with no reference page behind it). Sources: the plugin's README, `constants.ts`, the desktop (`simpleGit.ts`) and mobile (`isomorphicGit.ts`) managers, isomorphic-git's `merge` and `pull` pages, Obsidian's properties and templates help pages. Left `[unverified]`: whether desktop obsidian-git honours `.gitattributes` merge drivers; the docs site's placeholder list; that a new Obsidian note carries no frontmatter (the negative reading of the help page).
+
 ## 2026-09-07
 
 - `obsidian-markdown.md`: eleven `[unverified]` rows settled by the maintainer's console session on Obsidian 1.13.7 / Windows (#1358): wikilink shape (`]` inside a target, no line ending, nesting), `[[#H]]` self-edge, schemed wikilink as unresolved note, extension case, unstable equal-length tie, name case, aliases never resolving links, scalar alias parse, heading holding a wikilink, links in `%%` comments, the desktop forbidden set, NFC/NFD, markdown destinations decoded and looked up vault-wide, what `generateMarkdownLink` writes. Departures rewritten from "unverifiable" to contrary-or-deliberate; two contrary ones filed.

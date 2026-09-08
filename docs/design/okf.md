@@ -19,6 +19,14 @@ of 2026-08-21 (every timestamp an ISO 8601 datetime with an offset;
 [`reference/okf-v0.2.md`](reference/okf-v0.2.md); the departures this
 document decides are listed there.
 
+**Ownership under more than one author:** the maintenance model in §6
+(append a bullet per own write; regenerate `index.md` after own writes
+only) is superseded by the approved design in
+[`okf-ownership.md`](okf-ownership.md) (epic #1425): an `OKF_WRITE`
+ladder, a curated `log.md`, protected reserved paths, and reconciliation
+of externally written notes. Until its children land, §6 describes what
+runs; `okf-ownership.md` describes what will.
+
 This document is the authoritative design for OKF support. As phases land,
 the relevant subsections graduate into `design.md` alongside the features
 they describe (phases 1-3 and the migration transforms of phase 4 have);

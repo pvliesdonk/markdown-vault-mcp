@@ -55,8 +55,10 @@ design space:
   concept for missing any optional family"; a concept with no trust
   frontmatter at all "is still consumable". Situation A is therefore a
   *bundle* quality problem, not a *serving* problem.
-- Trust tiers are "derived, never stored". A consumer computes the tier
-  from `verified` at read time. Nothing in the spec forbids a consumer
+- Trust tiers are derived by the consumer: "Consumers derive a trust
+  tier from `verified`", and "Trust tiers are advisory signals, not access
+  control" (spec §5.3; credibility likewise is "*inferred* from the
+  signals ... not stored", §5.1). Nothing in the spec forbids a consumer
   from applying further evidence when it derives.
 - `generated.at` is "the content's last meaningful change". `generated`
   and `verified` "are independent: content can change without
@@ -67,9 +69,15 @@ design space:
 - `index.md`: "Producers may generate index files; consumers may
   synthesise one when none is present." A listing is regenerable by
   definition.
-- `log.md`: "In a git-hosted bundle `log.md` largely duplicates the commit
-  log; it earns its keep when bundles travel without version-control
-  history."
+- `log.md`: "A `log.md` file MAY appear at any level of the hierarchy to
+  record the history of changes to that scope" and "Log entries are
+  prose; the leading bold word (`**Update**`, `**Creation**`,
+  `**Deprecation**`) is a convention, not a requirement" (spec §9). The
+  spec recommends distributing a bundle as a git repository "since it
+  provides history, attribution, and diffs" (§3). The reading that a
+  git-hosted bundle's `log.md` "earns its keep when bundles travel without
+  version-control history" is the OKF plugin skill's digest, not the
+  spec's words, and is cited here as an interpretation.
 - From the OKF skill's guidance rather than the spec: "Fabricated
   provenance is worse than absent provenance, because absence is itself a
   legible signal." This rules out several tempting fixes below.
@@ -84,8 +92,8 @@ document argues the rows.
 | Family | Who can know it | Derivable from git? | Server today | What "ownership" could mean | What "back off" means |
 |---|---|---|---|---|---|
 | `type`, `title`, `description`, `tags`, `sources`, `status`, `stale_after` | The author. Semantic. | No | Gate (`required_frontmatter`), report (`okf_validate`), advise (instructions) | Only a pre-authorised default (`type: Capture`) paired with a triage signal | Report the gap; leave the note alone |
-| `generated {by, at}` | Whoever produced the bytes | **Yes**: commit author and committer timestamp of the last content commit | Stamped on own writes | Re-derive from git on ingest of an external change | Annotate at read that the stamp predates the bytes; never write |
-| `verified [{by, at}]` | The verifier. Only *invalidation* is derivable | Invalidation: yes (content commit after `at`) | Cleared on own writes | Clear on ingest of an external content change | Treat entries older than the last content change as void at read time |
+| `generated {by, at}` | Whoever produced the bytes | The *time* of the last content commit, yes; the *actor*, no (a git author is not evidence of a human, §5.1) | Stamped on own writes | On ingest of an external change that left the stamp untouched, remove it rather than invent an actor | Annotate at read that the stamp predates the bytes; never write |
+| `verified [{by, at}]` | The verifier. Only *invalidation* is derivable | Invalidation: yes (content commit after `at`) | Cleared on own writes | Clear on ingest of an external content change that did not itself re-verify | Treat entries older than the last content change as void at read time |
 | `index.md` | Nobody; it is a function of the tree | Fully (it is a projection) | Regenerated after own writes only (#1392) | Regenerate on every ingest; resolve conflicts by regenerating | Never write it, even after own writes |
 | `log.md` | The author of the change; a knowledge event, not a byte event (§6) | Only the *fact* of a change and its diff; the description is curated | Appended after own writes only | Curate one keyed entry per note per day from intent, diff, or file list; conflicts by take-upstream-then-reinsert | Never write it |
 
@@ -107,9 +115,9 @@ honest under any mix of authors:
    note's last content change, and flag a `generated` stamp in the same
    state. On disk the frontmatter still lies for other consumers; in this
    server's answers it does not.
-2. **Own.** On every ingest of an external change, rewrite what git can
-   prove and regenerate what is a projection. Produces commits into the
-   human's clone.
+2. **Own.** On every ingest of an external change, remove what git shows
+   to be stale and regenerate what is a projection. Produces commits into
+   the human's clone.
 3. **Defer.** Another maintainer administers the bundle. The server
    stamps nothing it did not write, maintains no reserved file, and
    warns once when it sees the other maintainer's work arrive (#1394).
@@ -170,7 +178,11 @@ Two consequences for existing surfaces:
   edits, update 'log.md'/'index.md'". At `maintain` or above that
   instruction is wrong (the server does it, and will overwrite the
   agent's version); at `stamp` it is wrong too if someone else
-  maintains them. The snippet has to become posture-dependent, and the
+  maintains them. The replacement cannot be longer than what it replaces:
+  the instructions budget is 1,536 UTF-16 units
+  (`tests/test_client_surface_budget.py`) and the maximal surface measures
+  1,507 today (`make_server` with every feature on, 2026-09-08), which
+  leaves 29. The snippet has to become posture-dependent, and the
   client-surface budget (23,149 of 23,500 characters as of the last
   measurement) means the replacement cannot be longer than what it
   replaces.
@@ -261,12 +273,18 @@ Posture 2 must not react to the server's own writes (they were stamped
 at write time) and must be idempotent (a second ingest of the same state
 changes no bytes, or the vault ping-pongs commits with itself).
 
-The discriminator is the **committer** identity. `_commit_staged` sets
-the committer from the static `GIT_COMMIT_NAME` / `GIT_COMMIT_EMAIL`
-configuration (default `markdown-vault-mcp` / `noreply@markdown-vault-mcp`)
-and overrides only the *author* from OIDC claims. So a commit whose
-committer is the configured server identity is a server write; any other
-committer is external. No timestamp tolerance is needed.
+The discriminator is a **trailer** on every server commit,
+`Vault-Operation: <operation> <path>` (a batched call names the tool),
+written unconditionally at every posture. A commit that carries it is the
+server's; a commit that does not is external. The committer identity
+(`_commit_staged` sets it from the static `GIT_COMMIT_NAME` /
+`GIT_COMMIT_EMAIL`, default `markdown-vault-mcp` /
+`noreply@markdown-vault-mcp`, and overrides only the *author* from OIDC
+claims) classifies only commits that predate the trailer, so that
+history from before this design is not read as external. It is not an
+alternative signal for new commits: an operator who sets the committer
+to their own name would otherwise make every human commit look like the
+server's. No timestamp tolerance is needed.
 
 The same discriminator fixes the *base* for every comparison in this
 document: "the note's last content change" means the last commit
@@ -286,50 +304,54 @@ Three edges to state in the design rather than discover:
 - Two server instances on one vault with the same committer identity
   would treat each other's commits as "own". That is correct: the other
   instance stamped at write time too.
-- A human whose git committer equals the server's identity would be
-  invisible. Not far-fetched: an operator running a personal vault may set
-  `GIT_COMMIT_NAME` to their own name so the history reads uniformly. So
-  every server commit carries a `Vault-Operation: <operation> <path>`
-  trailer **unconditionally**, independent of #1405 (which only moves
-  the mechanical text from the subject line to that trailer when it is
-  on). Committer *or* trailer marks a server commit.
+- A human whose git committer equals the server's identity (an operator
+  running a personal vault may set `GIT_COMMIT_NAME` to their own name so
+  the history reads uniformly) is exactly why the trailer, not the
+  committer, is the signal for new commits. obsidian-git puts the human's
+  configured identity on its commits on both platforms and never a
+  plugin identity (`reference/obsidian-git.md`), so the two identities
+  coincide whenever the operator chooses to make them.
 - Rebasing relabels the committer of every replayed commit. obsidian-git
   defaults to `merge`, which keeps committers; a human who rebases the
-  server's commits on the command line turns them "external" by
-  committer, and the trailer is what still identifies them.
-- **The author field is not always a human.** `GitWriteStrategy` falls
-  back to the configured commit identity as author when no principal is
-  bound (unauthenticated, stdio, a non-tool write). Re-deriving
-  `generated.by = human:<author>` from such a commit would stamp
-  `human:markdown-vault-mcp`, which is the fabricated provenance §2
-  rules out. The rule is therefore: an external commit whose author is
-  the configured server identity, or that carries the trailer, keeps the
-  note's existing stamp; only an author that is neither becomes
-  `human:<author>`.
+  server's commits on the command line changes their committer, and the
+  trailer is unaffected.
+- **A git author is not evidence of a human.** An external commit may be
+  authored by a person, by a backup tool, by a second instance of this
+  server, or by an agent, and the author field does not say which. Nor
+  is the server's own author field always a person: `GitWriteStrategy`
+  uses the configured commit identity as author when no principal is
+  bound. Deriving `generated.by = human:<author>` from a commit would
+  therefore fabricate provenance in every one of those cases, which §2
+  rules out, and it would overwrite the correct stamp a second
+  maintainer wrote (situation C). So reconciliation never derives an
+  actor from git. What it can read from git is the *time* of the change
+  and whether the external writer maintained the stamp itself.
 
-Idempotency follows from deriving the new stamp from the commit, not
-from the clock: `generated.at` = the external commit's committer
-timestamp, `generated.by` = `human:<author>` from the commit's author
-field. `apply_okf_write_stamp` already returns the input bytes unchanged
-when the resulting mapping is equal, so re-ingesting the same commit is a
-no-op and produces no commit of its own.
+The reconciliation rule at `own` is therefore: if the external commit
+changed the note's `generated` (the external writer maintains provenance;
+situation C), leave the note alone; if it did not, the stamp describes
+bytes that no longer exist, and the server **removes** `generated` and
+`verified` rather than inventing an actor. Absence is the legible
+signal. Idempotency is immediate: a note with no stamp needs nothing on
+re-ingest, and a note whose stamp the external writer maintains is never
+touched. An operator-configured mapping from git author to actor is a
+conceivable later feature and is not designed here.
 
 ### 5.2 What the reconciliation commit looks like
 
 One pulled range can touch many notes. The reconciliation should be
-**one commit per ingested range** under the server's committer identity,
-with a subject that says what it is, and it should be pushed with the
-next scheduled push, not immediately. Every clone then receives one
+**one commit per ingested range**, carrying the trailer, with a subject
+that says what it is, and it should be pushed with the next scheduled
+push, not immediately. Every clone then receives one
 frontmatter-only commit after each burst of human edits. That is the
 cost of posture 2 and it should be written in the guide as such.
 
 ### 5.3 Without git
 
-The watcher route has no author and no timestamp beyond the file's
-mtime. Applying the skill's rule, an external change on a non-git vault
-at `own` should **drop** `generated` and `verified` rather than
-invent an actor. Absence is the honest signal; `process:unknown` would be
-fabricated provenance.
+The watcher route has no commit at all. The rule is the same as with
+git, with less evidence: an external change on a non-git vault at `own`
+drops `generated` and `verified` unless the change itself rewrote
+`generated`. `process:unknown` would be fabricated provenance.
 
 ## 6. `log.md`: a knowledge history, not a rendering of git
 
@@ -385,8 +407,11 @@ swamped."
    pending set without an entry. A declaration for a subset leaves the
    rest pending. The intent is the primary channel because it is the
    author's own words at the moment the work is coherent.
-2. **Generated from the cumulative diff.** When the summarizer backend
-   is configured and no intent arrives, the (note, day) diff — the note
+2. **Generated from the cumulative diff.** When the operator has opted
+   in (a separate setting, off by default; a configured summarizer
+   backend is consent to the explicit `summarize` tool, not to sending
+   every changed note's diff automatically, exactly as §9.2 requires for
+   commit subjects) and no intent arrives, the (note, day) diff — the note
    at the start of the day, or at the last entry, against the note now,
    plus any hints the agent attached — goes to the model, which answers
    two questions: did the information change, and how would a reader
@@ -448,14 +473,20 @@ that recomputes the entry under the same key, one more commit. So the
 nag names entries not yet written *and* entries carrying only the
 fallback, and both are cleared by one `okf_intent` call.
 
-**Conflicts, without a list merger and without overwrite.** On the
-server's clone every unkeyed line in `log.md` came from upstream, because
-the server writes only keyed lines. So "take upstream, then re-insert my
-missing keyed entries under their date headings" loses nothing on either
-side: hand-written entries survive, the server's entries are re-derived
-from their keys, and the only structure touched is the date heading,
-which `append_okf_log_entry` already finds. This is the resolver policy
-for `log.md` and it replaces both the sibling and the 312-line merger.
+**Conflicts, without a list merger and without overwrite.** When the
+server's clone is written only through the server, every unkeyed line in
+its `log.md` came from upstream, because the server writes only keyed
+lines. Then "take upstream, then re-insert my missing keyed entries under
+their date headings" loses nothing on either side: hand-written entries
+survive, the server's entries are re-derived from their keys, and the
+only structure touched is the date heading, which `append_okf_log_entry`
+already finds. That premise is decidable per conflict: the lines added
+to `log.md` between the merge base and the local head are either all
+keyed (`git diff <merge-base> HEAD -- log.md`, added lines) or not. When
+they are, this is the resolver policy. When they are not, someone edited
+the served clone directly (a shared filesystem with the watcher on), and
+the sibling policy of today stays so that nothing is lost. No list
+merger in either branch.
 
 **Cost** is bounded by notes touched per day, not by writes; the
 mechanical filter makes a layout-only day free. A large pulled range gets
@@ -501,15 +532,19 @@ form:
 - **The server's own writers pass through** on the suppressed intent they
   already run under (`okf_generate_index`, `okf_seed_log`, the
   maintainer), so no new bypass is invented.
-- **The same guard protects the conventions file** (#1411, filed
+- **The same guard can protect the conventions file** (#1411, filed
   2026-09-08 with the overwrite and delete reproduced): a set of
   server-protected paths the write tools decline, one mechanism, two
-  reasons.
+  reasons. Whether and when the conventions file is protected is #1411's
+  decision and does not follow the OKF ladder; a vault that never heard
+  of OKF still has a conventions file.
 
 Two surfaces change with it: the agent instruction snippet must stop
-saying "update `log.md`/`index.md`" where the write would be refused, and
-the write tools need one shared sentence about protected paths, in one
-place, because the client-surface budget is nearly spent.
+saying "update `log.md`/`index.md`" where the write would be refused
+(the instructions budget has 29 units of headroom, §4.2), and the write
+tools need one shared sentence about protected paths, in one place,
+because the tool-description budget is nearly spent too (23,149 of
+23,500 at the last measurement).
 
 ## 8. The untyped human note
 
@@ -517,9 +552,10 @@ Situation A has no derivable answer. What the server can offer:
 
 1. **Report**, which it does: `okf_validate` lists `missing_type`,
    `stats.okf` counts it. Missing today is a *working* view: a
-   `list_documents` / `search` filter for "untyped" (`matches_okf_filters`
-   compares the derived `type` with the given value and an absent `type`
-   matches nothing, so there is no way to ask for absence), so an agent can
+   `list_documents` / `search` filter for "untyped" (`type` is deliberately
+   not an OKF filter dimension; it is an ordinary `document_tags` equality
+   lookup in the structured-filter path, and an equality lookup has no
+   value that means "absent"), so an agent can
    triage from the same tools it writes with.
 2. **Default on ingest**, at `OKF_WRITE=own` only: a
    configured `OKF_DEFAULT_TYPE` (the PARA guide already recommends
@@ -608,8 +644,8 @@ default.
 ## 10. The design, and its defaults
 
 1. **Annotate always** (#1413). A `verified` entry whose `at` predates the note's
-   last external content change (last commit not committed by the
-   server, §5.1) is void in the server's own annotations; a `generated`
+   last external content change (last commit without the server's
+   trailer, §5.1) is void in the server's own annotations; a `generated`
    stamp in the same state is flagged. On a non-git vault there is no
    evidence and the frontmatter is trusted. Recorded as a departure in
    `reference/okf-v0.2.md` beside the existing "verified is cleared" row.
@@ -621,17 +657,20 @@ default.
    kept as aliases for `maintain`/`off`. The instruction snippet follows
    the posture.
 4. **`log.md` is curated, one entry per (note, day)** (#1416), from declared
-   intent, else the summarizer over the cumulative diff, else the file
-   list; two filters in front; keyed; post-commit; conflicts by
-   take-upstream-then-reinsert. The append model stays for non-git
+   intent, else (opted in separately) the summarizer over the cumulative
+   diff, else the file list; two filters in front; keyed; post-commit;
+   conflicts by take-upstream-then-reinsert when every local addition is
+   keyed, the sibling otherwise. The append model stays for non-git
    vaults.
 5. **`okf_intent` and the in-band pending nag** (#1417; summarised
    entries #1418), config-gated with the
    ladder, state derived from git where git exists.
-6. **Reserved files and the conventions file are protected paths** under
-   `maintain` and `own` (#1419; #1411 for conventions).
-7. **Reconcile external notes at `own`** (#1420) from git evidence, one commit
-   per ingested range; drop rather than invent without git.
+6. **Reserved files are protected paths** under `maintain` and `own`
+   (#1419). The conventions file's protection is independent of the OKF
+   posture and is decided in #1411; the two share one mechanism.
+7. **Reconcile external notes at `own`** (#1420): a stamp the external
+   writer left untouched is removed, never re-derived from a git author;
+   one commit per ingested range; the same rule without git.
 8. **Untyped notes:** an absence filter for `type` now (#1421);
    `OKF_DEFAULT_TYPE` plus `status: draft` only at `own` (#1422); Obsidian template guidance in the
    guide.
@@ -646,30 +685,30 @@ unless set.
 
 | Path | Default | Annotate | Stamps | `index.md` | `log.md` entries | `okf_intent` / nag | Reconcile | Protected paths |
 |---|---|---|---|---|---|---|---|---|
-| OKF not active | yes | off | off | off | off | hidden | off | conventions only (#1411) |
-| OKF active, `OKF_WRITE=off` | yes | on with git, else trust | off | never written | never written | hidden | off | conventions only |
-| `stamp` | | on | own writes | never written | never written | hidden | off | conventions only |
-| `maintain` | | on | own writes | regenerated on ingest | curated at ingest and post-commit | on | off | reserved + conventions |
-| `own` | | on | own writes | regenerated | curated | on | one commit per range | reserved + conventions |
+| OKF not active | yes | off | off | off | off | hidden | off | none from OKF (conventions per #1411) |
+| OKF active, `OKF_WRITE=off` | yes | on with git, else trust | off | never written | never written | hidden | off | none from OKF |
+| `stamp` | | on | own writes | never written | never written | hidden | off | none from OKF |
+| `maintain` | | on | own writes | regenerated on ingest | curated at ingest and post-commit | on | off | reserved files |
+| `own` | | on | own writes | regenerated | curated | on | one commit per range | reserved files |
 
 | Dimension | Absent or off | Present |
 |---|---|---|
-| Git | No ingest from pulls; watcher deltas only. No foreign log entries; own writes keep the filtered append. Reconcile drops `generated`/`verified` rather than inventing an actor. Annotate trusts the frontmatter. Pending set in the state directory. | Full design. Without a remote, maintenance commits stay local. Pending set derived from history. |
-| Summarizer | No generated text. Entry text: declared intent, else the file list. #1405 inert. | Used for entries and subjects behind the layout filter. Timeout, error, refusal, empty reply: mechanical text, logged once. |
+| Git | No ingest from pulls; watcher deltas only. No foreign log entries; own writes keep the filtered append. Reconcile drops a stale `generated`/`verified`. Annotate trusts the frontmatter. Pending set in the state directory. | Full design. Without a remote, maintenance commits stay local. Pending set derived from history. |
+| Summarizer | No generated text. Entry text: declared intent, else the file list. #1405 inert. | Still nothing automatic: summarised log entries (#1418) and commit subjects (#1405) each need their own opt-in. When opted in, behind the layout filter; timeout, error, refusal, empty reply: mechanical text, logged once. |
 | Auth | Nag vault-global; `okf_verify` under `elicit` stamps `human:local`. | Nag scoped by principal; `generated.by` from the claim. |
 | Transport | stdio: single-tenant, all of the above. | Modern HTTP: no per-connection state anywhere. Legacy HTTP: same code, session unused. |
 | Client capabilities | No elicitation: `okf_verify` fails closed; nothing else depends on it. | |
 | File watcher | Off: non-git external changes seen at the next reindex. | On: deltas feed the same ingest event. |
 | Read-only vault | Everything that writes is off; annotate on. | |
 | `required_frontmatter` | Reserved files body-only. | Seeded keys, the existing departure. |
-| Two server instances | Committer identity plus the `Vault-Operation:` trailer mark both as server; reserved files converge on take-upstream, stamps are idempotent. | |
+| Two server instances | The `Vault-Operation:` trailer marks both as server; reserved files converge on take-upstream; a stamp the other instance wrote is a maintained stamp and is left alone. | |
 
 ### 10.2 Where this lands relative to the open issues
 
 The 4.2 bugs stay 4.2 and stay narrow; the design is later work, tracked
-by epic #1425, whose children are the numbered items above plus the
+by epic #1425, whose children are items 1 to 8 above plus the
 `Vault-Operation:` trailer (#1415), the docs fix for the commit count
-(#1423) and the obsidian-git reference page (#1424).
+(#1423) and #1394. Item 9 (#1405) is related, not a child.
 
 | Existing | Relationship |
 |---|---|
@@ -684,28 +723,18 @@ by epic #1425, whose children are the numbered items above plus the
 | #1405 (LLM commit subjects) | Item 9, filed 2026-09-08. |
 | #1411 (conventions file overwritable) | Item 6, filed 2026-09-08. |
 | #1423 (docs) | The guide and `okf.md` §6 say a note write can produce "up to three commits"; since #1264 it is one (§6.2). |
-| #1424 (reference) | An `obsidian-git` page under `docs/design/reference/`, per `researching-references`: the facts in §11 are cited inline and dated, not yet a reference. |
+| #1424 (reference) | Closed by this document's change: `reference/obsidian-git.md`, which §11 now points at. |
 
-## 11. External facts used, and their limits
+## 11. External facts used
 
-All fetched 2026-09-08; none has a reference page yet.
-
-- obsidian-git `src/constants.ts` `DEFAULT_SETTINGS`: `commitMessage` and
-  `autoCommitMessage` are `"vault backup: {{date}}"`;
-  `commitDateFormat` is `YYYY-MM-DD HH:mm:ss`; `syncMethod` is `"merge"`;
-  `mergeStrategy` is `"none"`. Its README: mobile runs on isomorphic-git
-  with "No rebase merge strategy" among the listed limitations.
-- isomorphic-git `merge` docs: a conflict the built-in diff3 cannot
-  resolve aborts with `MergeNotSupportedError` unless
-  `abortOnConflict: false`; only a `mergeDriver` callback is mentioned,
-  not `.gitattributes`. So the `merge=union` guidance from the 2026-09-07
-  probe is desktop-only. `[unverified]` whether obsidian-git on desktop,
-  which shells out to the system git, honours `.gitattributes`; it
-  should, and it was not tested.
-- Obsidian help, properties: default properties `tags`, `aliases`,
-  `cssclasses`; nested properties "not supported" in the visual editor.
-  Obsidian help, templates: insertion is on command; variables `{{title}}`,
-  `{{date}}`, `{{time}}`.
-- OKF v0.2 field reference (skill copy, 2026-08 digest of `okf/SPEC.md`),
-  cross-checked against `reference/okf-v0.2.md` for the rules quoted in
-  §2.
+The obsidian-git, isomorphic-git and Obsidian facts this design rests on
+(default subject `vault backup: {{date}}`, identity from the user's git
+config on both platforms, `syncMethod: "merge"`, no rebase and only a
+`mergeDriver` callback on mobile, no automatic frontmatter on a new note,
+nested properties unsupported in the visual editor) are recorded with
+sources and dates in [`reference/obsidian-git.md`](reference/obsidian-git.md),
+including what stays `[unverified]` (whether desktop obsidian-git honours
+`.gitattributes` merge drivers). The OKF v0.2 rules quoted in §2 are from
+`okf/SPEC.md` as recorded in [`reference/okf-v0.2.md`](reference/okf-v0.2.md);
+where this document uses the OKF plugin skill's digest as an
+interpretation, it says so.
