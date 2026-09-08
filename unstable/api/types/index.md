@@ -14,15 +14,15 @@ Full content of a document, returned by :meth:`~markdown_vault_mcp.facets.reader
 
 Attributes:
 
-| Name          | Type             | Description                                                   |
-| ------------- | ---------------- | ------------------------------------------------------------- |
-| `path`        | `str`            | Relative path from the vault root (e.g. Journal/note.md).     |
-| `title`       | `str`            | Document title derived from the first H1 heading or filename. |
-| `folder`      | `str`            | Parent folder path (empty string for root-level documents).   |
-| `content`     | `str`            | Raw markdown body including frontmatter.                      |
-| `frontmatter` | `dict[str, Any]` | Parsed YAML frontmatter as a dict.                            |
-| `modified_at` | `float`          | Last-modified time as a Unix timestamp float.                 |
-| `etag`        | \`str            | None\`                                                        |
+| Name          | Type             | Description                                                                                                                                                                                       |
+| ------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`        | `str`            | Relative path from the vault root (e.g. Journal/note.md).                                                                                                                                         |
+| `title`       | `str`            | Document title derived from the first H1 heading or filename.                                                                                                                                     |
+| `folder`      | `str`            | Parent folder path (empty string for root-level documents).                                                                                                                                       |
+| `content`     | `str`            | The note's raw file text, frontmatter block included. A caller rewriting this through write(body, frontmatter=...) takes the block off first, or the writer stacks a second one above it (#1391). |
+| `frontmatter` | `dict[str, Any]` | Parsed YAML frontmatter as a dict.                                                                                                                                                                |
+| `modified_at` | `float`          | Last-modified time as a Unix timestamp float.                                                                                                                                                     |
+| `etag`        | \`str            | None\`                                                                                                                                                                                            |
 
 ## `RevisionContent(path, historical_path, revision, content)`
 

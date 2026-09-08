@@ -2306,6 +2306,21 @@ and its <code>verified_count</code>. And every stamp the server writes is a UTC 
 in the spec's example form, <code>2026-09-07T05:32:29Z</code>, written as a string so
 the YAML emitter cannot re-spell it; stamps already on disk are left as they
 are until the note is next written.</p>
+<p><strong>A maintained <code>log.md</code> stops collecting frontmatter blocks.</strong> With
+<code>OKF_WRITE</code> on and a <code>required_frontmatter</code> configured, every write into a
+folder added one more identical <code>---\ntitle: Log\n---</code> block to the top of
+that folder's <code>log.md</code>; one live folder had accumulated eighteen
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1391">#1391</a>). The
+per-write log append reads the file, adds its bullet and writes it back with
+the frontmatter carried across. But the read hands back the whole file, block
+included, and the write puts the carried block above whatever body it is
+given. The append now takes the opening block off the text first, so the file
+keeps exactly one however many writes the folder receives. Nothing reported
+the defect because the bullets were always correct and the file stayed
+indexed throughout. Blocks a 4.1.0 or 4.2.0-rc.0 vault already wrote stay
+where they are, in the body: removing them means telling a stacked block
+apart from one a log quotes on purpose, and that is
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1403">#1403</a>.</p>
 <p><strong>A link with any URI scheme is external.</strong> The external-link filter was an
 allowlist of four prefixes, so a <code>file:</code>, <code>ftp:</code>, <code>obsidian:</code> or <code>zotero:</code>
 destination was resolved against the source note's folder and reported as a

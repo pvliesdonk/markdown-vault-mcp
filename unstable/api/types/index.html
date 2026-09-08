@@ -2708,7 +2708,10 @@
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Raw markdown body including frontmatter.</p>
+                <p>The note's raw file text, frontmatter block included.
+A caller rewriting this through <code>write(body, frontmatter=...)</code>
+takes the block off first, or the writer stacks a second one
+above it (#1391).</p>
               </div>
             </td>
           </tr>
