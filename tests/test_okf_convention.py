@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+import frontmatter as fm
 import pytest
 
 from markdown_vault_mcp._okf_convention import ConventionMaintainer
@@ -64,10 +65,18 @@ class _FakeDoc:
         self.existing: tuple[str, dict[str, Any]] | None = None
 
     def read(self, _path: str) -> Any:
+        """Model ``DocumentManager.read``: ``content`` is the *whole file*.
+
+        The frontmatter block is serialised back into ``content`` exactly as
+        the real read hands it back. A double that returned the body alone is
+        what let #1391 stay green: the maintainer fed the block back to a
+        ``write(frontmatter=...)``, which stacked a second one.
+        """
         if self.existing is None:
             return None
         body, metadata = self.existing
-        return type("N", (), {"content": body, "frontmatter": metadata})()
+        raw = fm.dumps(fm.Post(body, **metadata)) if metadata else body
+        return type("N", (), {"content": raw, "frontmatter": metadata})()
 
     def write(self, path: str, content: str, **kw: object) -> None:
         if self.raise_on_write:
@@ -155,10 +164,12 @@ class TestMaintainerFailureIsolation:
 class TestMaintainedLogFrontmatter:
     """The maintained ``log.md`` keeps satisfying the vault's index gate (#1174).
 
-    ``_append_log`` is a read-modify-write and ``read()`` returns the body
-    without frontmatter, so the log's frontmatter has to be carried across
-    the rewrite explicitly — the maintainer runs on *every* enforced write,
-    so getting this wrong strips it again after each save.
+    ``_append_log`` is a read-modify-write, so the log's frontmatter has to be
+    carried across the rewrite explicitly — the maintainer runs on *every*
+    enforced write, so getting this wrong strips it again after each save.
+    ``read()`` returns the whole file, block included, and ``write()`` puts
+    the ``frontmatter=`` mapping above the body it is given, so the block also
+    has to come *off* the text before the append (#1391).
     """
 
     def test_unconfigured_vault_writes_no_frontmatter(self) -> None:
@@ -174,6 +185,24 @@ class TestMaintainedLogFrontmatter:
             "title": "Change history",
             "type": "log",
         }
+        # ...and comes off the text, or write() serialises a second block
+        # above the one still in it (#1391).
+        assert "---" not in doc.writes[0][1]
+
+    def test_an_empty_block_is_dropped_on_an_unconfigured_vault(self) -> None:
+        """A block with no keys does not survive the rewrite, deliberately.
+
+        Taking the block off is unconditional; putting one back is the
+        policy's call, and with no required fields it returns ``None``. So a
+        hand-seeded ``---\n---`` goes away on the next append. It carried
+        nothing, and leaving it in the body is what stacks (#1391) — a block
+        with keys is still carried across, which is the case #1174 is about.
+        """
+        m, doc, _ = _maintainer()
+        doc.existing = ("---\n---\n# Log\n", {})
+        m.maintain("note.md", "write")
+        assert doc.write_kwargs[0]["frontmatter"] is None
+        assert "---" not in doc.writes[0][1]
 
     def test_required_field_is_seeded_on_a_fresh_log(self) -> None:
         m, doc, _ = _maintainer(
@@ -392,5 +421,55 @@ class TestUpkeepUnderRequiredFrontmatter:
             assert "wrote `guides/a.md`" in log.content
             assert "wrote `guides/b.md`" in log.content
             assert "guides/log.md" in {n.path for n in col.reader.list_documents()}
+        finally:
+            col.close()
+
+    def test_repeated_writes_keep_exactly_one_frontmatter_block(
+        self, tmp_path: Path
+    ) -> None:
+        """#1391: the read-modify-write stacked one block per write.
+
+        ``read()`` hands back the whole file, frontmatter included; the append
+        passed that straight to ``write(frontmatter=...)``, which serialises a
+        fresh block above whatever it is given. Three writes, three blocks.
+        """
+        root = tmp_path / "gated_vault_thrice"
+        (root / "guides").mkdir(parents=True)
+        (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
+        col = _build_vault(root, okf_write=True, required_frontmatter=["title"])
+        try:
+            for name in ("a", "b", "c"):
+                col.writer.write(
+                    f"guides/{name}.md", f"---\ntitle: {name}\n---\n# {name}\n"
+                )
+                wait_for_writer_drain(col)
+
+            text = (root / "guides" / "log.md").read_text(encoding="utf-8")
+            assert text.count("title: Log") == 1
+            assert text.count("- **Update**:") == 3
+        finally:
+            col.close()
+
+    def test_an_empty_seeded_block_is_replaced_not_stacked_above(
+        self, tmp_path: Path
+    ) -> None:
+        """#1391: an empty block carries no keys but is still a block.
+
+        A guard that asked "did the frontmatter parse to anything?" would read
+        ``---\\n---`` as no block at all and leave it in the body, so the
+        seeded ``title`` would land above it — the exact defect.
+        """
+        root = tmp_path / "gated_vault_empty_block"
+        (root / "guides").mkdir(parents=True)
+        (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
+        (root / "guides" / "log.md").write_text("---\n---\n# Log\n", encoding="utf-8")
+        col = _build_vault(root, okf_write=True, required_frontmatter=["title"])
+        try:
+            col.writer.write("guides/a.md", "---\ntitle: A\n---\n# A\n")
+            wait_for_writer_drain(col)
+
+            text = (root / "guides" / "log.md").read_text(encoding="utf-8")
+            assert text.count("---") == 2
+            assert text.startswith("---\ntitle: Log\n---\n\n# Log\n")
         finally:
             col.close()

@@ -467,11 +467,23 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
   trade one defect for another.
 
 The `OKF_WRITE` maintainer needs this for a second reason: `_append_log` is a
-read-modify-write and `DocumentManager.read` returns the body without
-frontmatter, so the log's frontmatter has to be carried across the rewrite
-explicitly. Since the maintainer runs after *every* content write, the
+read-modify-write, so the log's frontmatter has to be carried across the
+rewrite explicitly. Since the maintainer runs after *every* content write, the
 alternative is not a one-time gap but frontmatter stripped again after each
 save — including frontmatter an operator seeded by hand.
+
+The split is the maintainer's own work, and getting it backwards is #1391.
+`DocumentManager.read` returns the *whole file* in `NoteContent.content`,
+block included, while `DocumentManager.write` puts a `frontmatter=` mapping
+above the body it is handed. Feeding the read text straight back therefore
+serialises a second block above the one still in it, once per write; a live
+folder accumulated eighteen. `scanner.strip_frontmatter_block` takes the
+block off first, delegating detection to `python-frontmatter` so it agrees
+with `parse_note` about where the block ends, and returning the remainder
+unnormalised. Only the block that *opens* the text comes off: an identical
+block further down is body, because separating "stacked by the defect" from
+"quoted on purpose" needs a rule about body content that this layer does not
+have. Repairing files the defective releases already stacked is #1403.
 
 ### Export
 

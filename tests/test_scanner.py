@@ -18,6 +18,7 @@ from markdown_vault_mcp.scanner import (
     normalize_heading,
     parse_note,
     scan_directory,
+    strip_frontmatter_block,
 )
 from markdown_vault_mcp.types import Chunk
 
@@ -1043,3 +1044,42 @@ class TestContentChars:
         (tmp_path / "n.md").write_text("---\ntitle: T\n---\n", encoding="utf-8")
 
         assert parse_note(tmp_path / "n.md", tmp_path).content_chars == 0
+
+
+class TestStripFrontmatterBlock:
+    """The read side of a ``write(body, frontmatter=...)`` round-trip (#1391)."""
+
+    def test_the_opening_block_comes_off_with_its_separator(self) -> None:
+        assert strip_frontmatter_block("---\ntitle: Log\n---\n\n# Log\n") == "# Log\n"
+
+    def test_a_file_with_no_block_is_returned_unchanged(self) -> None:
+        text = "# Log\n\n## 2026-09-08\n"
+        assert strip_frontmatter_block(text) == text
+
+    def test_an_empty_block_is_still_a_block(self) -> None:
+        # ``---\n---`` parses to empty metadata, so "carried no keys" does not
+        # distinguish it from "carried no block" — the delimiters do.
+        assert strip_frontmatter_block("---\n---\n# Log\n") == "# Log\n"
+
+    def test_an_unterminated_block_is_not_frontmatter(self) -> None:
+        # How ``frontmatter.parse`` reads it, and so how the indexer does.
+        text = "---\ntitle: Log\n# Log\n"
+        assert strip_frontmatter_block(text) == text
+
+    def test_only_the_block_that_opens_the_text_comes_off(self) -> None:
+        # An identical block further down is body — a log quoting its own
+        # frontmatter as a sample keeps it. Deciding otherwise needs a rule
+        # about body content, which this function does not have (#1403).
+        text = "---\ntitle: Log\n---\n\n---\ntitle: Log\n---\n\n# Log\n"
+        assert strip_frontmatter_block(text) == "---\ntitle: Log\n---\n\n# Log\n"
+
+    def test_the_body_is_not_normalised(self) -> None:
+        # ``frontmatter.parse`` strips the body at both ends, which silently
+        # de-indents a leading code block; this returns the raw remainder.
+        body = "    indented code\n\nprose\n\n\n"
+        assert strip_frontmatter_block(f"---\ntitle: T\n---\n\n{body}") == body
+
+    def test_blank_lines_before_the_block_do_not_hide_it(self) -> None:
+        # ``frontmatter.parse`` strips before detecting, so the indexer reads
+        # this as frontmatter; leaving the block in the body would stack it.
+        assert strip_frontmatter_block("\n\n---\ntitle: T\n---\n\n# T\n") == "# T\n"
