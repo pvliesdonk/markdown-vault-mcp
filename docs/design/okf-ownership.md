@@ -152,10 +152,19 @@ reserved files without stamping):
 | `own` | yes | yes | yes |
 
 One setting, monotone, and the posture is legible from its value. The
-shipped `true` is `maintain`; accepting `true`/`false` as aliases for
-`maintain`/`off` makes the change additive after all, so the 5.0 room
-is not needed for this and can be spent elsewhere. If the owner prefers
-the enum without the boolean aliases, 5.0 is when to drop them.
+shipped `true` is `maintain`, and `true`/`false` stay accepted as
+aliases for `maintain`/`off`. The aliases do **not** make the change
+additive, though an earlier draft said so: §7 makes the write tools
+refuse a target that is a reserved file at `maintain`, and today the
+shipped `OKF_WRITE=true` accepts such a write. Under the breaking-change
+policy's first refinement (a tool keeps its shape but the old behaviour
+is gone), the old behaviour is reachable only by lowering the posture
+to `stamp`, an operator-surface change forced by the upgrade, so the
+ladder together with the refusal is a `!` and ships in 5.0 with the
+breaking changes already planned there. The aliases remain a
+convenience for the upgrade, not the reason it is non-breaking. An
+operator who wants the reserved files maintained *and* writable by the
+agent has no rung, by design (§7).
 
 "Maintains reserved files" means the new behaviour, regenerate on every
 ingest rather than after own writes only, without a `!` either way:
@@ -182,10 +191,8 @@ Two consequences for existing surfaces:
   the instructions budget is 1,536 UTF-16 units
   (`tests/test_client_surface_budget.py`) and the maximal surface measures
   1,507 today (`make_server` with every feature on, 2026-09-08), which
-  leaves 29. The snippet has to become posture-dependent, and the
-  client-surface budget (23,149 of 23,500 characters as of the last
-  measurement) means the replacement cannot be longer than what it
-  replaces.
+  leaves 29. The snippet has to become posture-dependent within that
+  headroom.
 - An agent `write` whose target is a reserved file is accepted today
   and simply not maintained. At `maintain` or above the write is
   refused (§7). The owner's earlier position (2026-09-07, from #1393),
@@ -362,10 +369,10 @@ conceivable later feature and is not designed here.
 
 ### 5.2 What the reconciliation commit looks like
 
-One pulled range can touch many notes. The reconciliation should be
-**one commit per ingested range**, carrying the trailer, with a subject
-that says what it is, and it should be pushed with the next scheduled
-push, not immediately. Every clone then receives one
+One pulled range can touch many notes. The reconciliation rides in the
+accounting pass's single commit for that ingest (§6.2), carrying the
+trailer, with a subject that says what it is, and it is pushed with the
+next scheduled push, not immediately. Every clone then receives one
 frontmatter-only commit after each burst of human edits. That is the
 cost of posture 2 and it should be written in the guide as such.
 
@@ -474,7 +481,13 @@ syntax, collapse whitespace, compare the word sequence; identical means
 layout only, no entry, no call. Section reordering changes the sequence
 but not the multiset and is a judgement to write down, not a heuristic.
 A structural one: frontmatter-only diffs (a stamp, a `verified` entry, a
-tag) and reserved-file diffs produce no entry.
+tag) and reserved-file diffs produce no entry. Both filters are pure
+functions of a commit's diff, so they run *inside* the pending
+derivation below as well as before a model call: a filtered change is
+never pending, needs no persisted decision, and is re-derived on any
+replica from the same diff (verdicts cached per (sha, path) in memory).
+Only judgements are persisted, the model's "no" and a declared
+`kind: none`, because they cannot be re-derived.
 
 **The nag.** The server tells the model what is pending. There is no
 session to hang the list on (§4.3) and none is needed: which (note, day)
@@ -499,7 +512,12 @@ commits are re-examined idempotently by their keys. The pending set is
 the union of two sources, because the boundary advances past a
 placeholder the moment the placeholder's own accounting commit lands
 (`A..A` is empty): first, every (note, day) for which a commit above the
-boundary changed the note's blob and no keyed line covers that sha;
+boundary changed the note's blob in a way that passes both filters, did
+not itself add a bullet line to that scope's `log.md` (the
+self-accounting rule of §6.1, applied here and nowhere else: one bullet
+added by a commit accounts for every note that commit changed in the
+scope, which is the accepted coarseness of that rule), and for which no
+keyed line covers that sha;
 second, every placeholder line in any `log.md`, read from the files and
 not from the range, whose date is within a nag window (candidate
 default seven days, so a foreign change pulled on Tuesday and dated
@@ -535,17 +553,28 @@ entry rather than adding a second. A commit whose `log.md`
 diff adds a bullet line accounts for itself and is not re-described.
 
 **Foreign commits** get the same treatment at ingest (§5), dated by the
-commit, so a pull on Tuesday of Monday's Obsidian edits lands under
+commit's *author* date, which a rebase keeps, so a pull on Tuesday of Monday's Obsidian edits lands under
 Monday. Their subject (`vault backup: 2026-09-08 07:12:03` by obsidian-git
 default) is opaque by a small rule, not a heuristic, so source 2 or 3
 applies. With #1405 the server's own subjects become useful hints to
 source 2, and the two features share the backend but never the text:
 commit subjects stay at git's grain.
 
-**Post-commit, always.** A commit's sha cannot appear inside that
-commit, so an entry keyed by the commit it covers is written after the
-commit exists: on the write-callback worker after `_stage_and_commit`,
-producing a follow-on commit that carries both reserved files. On a git
+**The accounting pass, and post-commit always.** Everything the server
+owes after a change is written by one *accounting pass*, which runs
+after each ingest and when a settle window closes, and which makes
+**one commit** carrying all of it: the regenerated `index.md`, the
+`log.md` lines, and at `own` the reconciled notes (§5.2 is the same
+commit, not a second one). That commit carries
+`Vault-Operation: okf_accounting` and is the boundary the nag reads. A
+pass with nothing to write makes no commit, except the first pass after
+enabling `maintain`, which makes an empty one so that activation is a
+commit; until the next pass that writes, the boundary stays where it is
+and the same few commits are re-derived from cached verdicts. A commit's
+sha cannot appear inside that commit, so an entry keyed by the commit it
+covers is written after the commit exists: on the write-callback worker
+after `_stage_and_commit`, in the accounting pass, which is the
+follow-on commit. On a git
 vault that is two commits per logical write. Today it is one: the
 maintainer's secondary writes fire inside the tool call's commit scope
 (#1264) and are batched with the note, so the guide's "up to three
@@ -618,7 +647,8 @@ inaccessible (or at least read-only) to the mcp client." Read-only is the
 form:
 
 - **Under `maintain` and `own`, the write tools refuse `index.md` and
-  `log.md`** with a reason naming the setting. "Accepted, then destroyed
+  `log.md`** with a reason naming the setting. This is the change that
+  makes the ladder a `!` (§4.2). "Accepted, then destroyed
   by the next regeneration" is worse than a refusal, and a guard at the
   write kernel covers every path at once, including a `rename` onto a
   reserved name that #1400 had to special-case.
@@ -749,15 +779,16 @@ drifted from them within a day.
 
 1. **Annotate always** (#1413): the server's own annotations derive
    staleness of `verified` and `generated` from git evidence, at every
-   posture including `off`. Rules: §5.1. Recorded as a departure in
+   posture including `off`. Rules: §4.1 and §5.1. Recorded as a departure in
    `reference/okf-v0.2.md`.
 2. **One ingest event** (#1414) raised by the reindex and consumed by
    regeneration, curation, reconciliation and the warn-once. Rules: §5.
 3. **One ladder** (#1412): `OKF_WRITE=off|stamp|maintain|own`, aliases
-   for the shipped boolean, instruction snippet per posture. Rules: §4.2.
+   for the shipped boolean, instruction snippet per posture; a `!`
+   because of item 6, shipping in 5.0. Rules: §4.2.
 4. **`log.md` is curated** (#1416): one entry per (note, day), history
-   not a rendering, appended never overwritten. Rules: §6.2; the non-git
-   case §6.3.
+   not a rendering, appended and recomputed by key, never regenerated
+   wholesale. Rules: §6.2; the non-git case §6.3.
 5. **`okf_intent` and the in-band nag** (#1417), summarised entries as a
    separate opt-in (#1418). Rules: §6.2.
 6. **Reserved files are protected paths** at `maintain` and `own`

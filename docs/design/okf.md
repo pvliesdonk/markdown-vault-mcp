@@ -25,7 +25,9 @@ only) is superseded by the approved design in
 [`okf-ownership.md`](okf-ownership.md) (epic #1425): an `OKF_WRITE`
 ladder, a curated `log.md`, protected reserved paths, and reconciliation
 of externally written notes. Until its children land, §6 describes what
-runs; `okf-ownership.md` describes what will.
+runs, except its cost note on commit count, which is stale (#1423: one
+commit per tool call since #1264); `okf-ownership.md` describes what
+will.
 
 This document is the authoritative design for OKF support. As phases land,
 the relevant subsections graduate into `design.md` alongside the features
