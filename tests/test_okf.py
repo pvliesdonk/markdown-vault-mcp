@@ -640,6 +640,179 @@ class TestOkfAudit:
         assert report.wikilink_files.examples == ("guides/untyped.md",)
         assert report.missing_recommended.count >= 3
 
+    def test_root_index_extra_keys_are_a_finding(self, tmp_path: Path) -> None:
+        """#1396: the audit read the root index's keys nowhere.
+
+        The motivating state is the ``conflict_with`` marker the git conflict
+        resolver injects into a conflicting root ``index.md`` (#1395); §8
+        permits ``okf_version`` there and nothing else.
+        """
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _build_audit_vault(tmp_path)
+        _write_root_index(
+            tmp_path,
+            '---\nokf_version: "0.2"\nconflict_with: other\n---\n# Bundle\n',
+        )
+        report = audit_bundle(tmp_path)
+        assert report.index_frontmatter.examples == ("index.md",)
+
+    def test_folder_index_frontmatter_is_a_finding(self, tmp_path: Path) -> None:
+        """§8 permits the exception on the bundle root only."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _build_audit_vault(tmp_path)
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\ntitle: Guides\n---\n# Guides\n", encoding="utf-8"
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.examples == ("guides/index.md",)
+
+    def test_a_hand_authored_root_title_is_a_finding_without_a_gate(
+        self, tmp_path: Path
+    ) -> None:
+        """Disclosed design call: only what the *server* seeds is tolerated.
+
+        With no ``required_frontmatter`` the generators write reserved files
+        body-only, so a ``title`` on the root index is the operator's, and §8
+        does not permit it. On a gated vault the same key is the server's own
+        and is tolerated — ``test_seeded_fields_are_tolerated``.
+        """
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _build_audit_vault(tmp_path)
+        _write_root_index(
+            tmp_path, '---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n'
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.count == 1
+
+    def test_seeded_fields_are_tolerated(self, tmp_path: Path) -> None:
+        """#1174's departure is not reported back at the operator."""
+        from markdown_vault_mcp.okf import ReservedFrontmatterPolicy, audit_bundle
+
+        _build_audit_vault(tmp_path)
+        _write_root_index(
+            tmp_path, '---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n'
+        )
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\ntitle: Guides\n---\n# Guides\n", encoding="utf-8"
+        )
+        report = audit_bundle(
+            tmp_path,
+            reserved_frontmatter=ReservedFrontmatterPolicy(required_fields=("title",)),
+        )
+        assert report.index_frontmatter.count == 0
+
+    def test_a_key_beyond_the_seeded_set_is_still_a_finding(
+        self, tmp_path: Path
+    ) -> None:
+        """The exemption is per key, not a blanket pass for gated vaults."""
+        from markdown_vault_mcp.okf import ReservedFrontmatterPolicy, audit_bundle
+
+        _build_audit_vault(tmp_path)
+        _write_root_index(
+            tmp_path,
+            '---\nokf_version: "0.2"\ntitle: B\nconflict_with: other\n---\n# B\n',
+        )
+        report = audit_bundle(
+            tmp_path,
+            reserved_frontmatter=ReservedFrontmatterPolicy(required_fields=("title",)),
+        )
+        assert report.index_frontmatter.examples == ("index.md",)
+
+    def test_the_audit_tolerates_exactly_what_the_policy_seeds(self) -> None:
+        """The audit reads ``required_fields`` as "what ``build`` emits".
+
+        Pinning the two together, so a policy that grows a seeded key the
+        audit does not tolerate cannot ship silently.
+        """
+        from markdown_vault_mcp.okf import ReservedFrontmatterPolicy
+
+        policy = ReservedFrontmatterPolicy(required_fields=("title", "type"))
+        seeded = policy.build(None, title="Index")
+        assert seeded is not None
+        assert set(seeded) == set(policy.required_fields)
+
+    def test_an_empty_block_on_an_index_is_a_finding(self, tmp_path: Path) -> None:
+        """§8 asks for no block; one that declares nothing is still a block."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _build_audit_vault(tmp_path)
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\n---\n# Guides\n", encoding="utf-8"
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.count == 1
+
+    def test_an_unparseable_index_block_is_a_finding(self, tmp_path: Path) -> None:
+        """The only rule that sees it: reserved files skip ``unparseable``."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _build_audit_vault(tmp_path)
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\n: [broken\n---\n# Guides\n", encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path)
+        assert report.index_frontmatter.examples == ("guides/index.md",)
+        assert report.unparseable_frontmatter.examples == ("guides/broken.md",)
+
+    def test_a_block_behind_a_blank_line_is_still_found(self, tmp_path: Path) -> None:
+        """Presence and content must agree on the file the parser sees.
+
+        ``frontmatter.parse`` strips before it detects, so this block is
+        frontmatter to the parse. A presence check reading the raw text would
+        call it absent, and the file would audit clean while carrying a key
+        §8 forbids — the composed path, not just the splitter.
+        """
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _build_audit_vault(tmp_path)
+        (tmp_path / "guides" / "index.md").write_text(
+            "\n\n---\ntitle: Guides\n---\n# Guides\n", encoding="utf-8"
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.examples == ("guides/index.md",)
+
+    def test_a_thematic_break_is_not_frontmatter(self, tmp_path: Path) -> None:
+        """A body-only index may open with a horizontal rule."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _build_audit_vault(tmp_path)
+        (tmp_path / "guides" / "index.md").write_text(
+            "---\n\n# Guides\n\n- [A](/a.md)\n", encoding="utf-8"
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.count == 0
+
+    def test_a_folder_index_declaration_reports_both_findings(
+        self, tmp_path: Path
+    ) -> None:
+        """Deliberate overlap: the two say different things about one file."""
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _build_audit_vault(tmp_path)
+        (tmp_path / "guides" / "index.md").write_text(
+            '---\nokf_version: "0.2"\n---\n# Guides\n', encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path)
+        assert report.misplaced_okf_version.examples == (
+            "guides/index.md",
+            "guides/misplaced.md",
+        )
+        assert report.index_frontmatter.examples == ("guides/index.md",)
+
+    def test_log_frontmatter_is_not_a_finding(self, tmp_path: Path) -> None:
+        """Scoped to ``index.md``: §9 says nothing about frontmatter.
+
+        §8 states the no-frontmatter rule for index files; the log section
+        states the date-heading rule and is silent on frontmatter, so a
+        ``log.md`` carrying a block is not a departure to report.
+        """
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _build_audit_vault(tmp_path)
+        (tmp_path / "guides" / "log.md").write_text(
+            "---\ntitle: Log\n---\n# Log\n\n## 2026-08-07\n\n- **Update**: x\n",
+            encoding="utf-8",
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.count == 0
+
     def test_exclude_patterns_whitelist(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import audit_bundle
 
@@ -721,6 +894,34 @@ class TestOkfAudit:
             assert report.missing_type.count == 1
         finally:
             vault.close()
+
+    def test_vault_hands_its_frontmatter_policy_to_the_audit(
+        self, tmp_path: Path
+    ) -> None:
+        """The exemption has to survive the wiring, not just the unit (#1396).
+
+        The gate the generators satisfy is the vault's ``required_frontmatter``;
+        the audit tolerates a seeded key only because the vault passes the same
+        policy through. An unconfigured vault reports the identical file.
+        """
+        from markdown_vault_mcp.vault import Vault
+
+        _build_audit_vault(tmp_path)
+        _write_root_index(
+            tmp_path, '---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n'
+        )
+        gated = Vault(source_dir=tmp_path, required_frontmatter=["title"])
+        try:
+            assert gated.reader.okf_validate().index_frontmatter.count == 0
+        finally:
+            gated.close()
+        ungated = Vault(source_dir=tmp_path)
+        try:
+            assert ungated.reader.okf_validate().index_frontmatter.examples == (
+                "index.md",
+            )
+        finally:
+            ungated.close()
 
 
 # --- Phase 4 (#963): migration transform pure helpers -----------------------

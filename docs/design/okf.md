@@ -260,7 +260,9 @@ during migration it is a progress meter:
 
 - Per-rule counts + capped example lists: notes missing parseable
   frontmatter; notes missing non-empty `type`; unknown `status` values;
-  `okf_version` outside bundle root; reserved-file convention violations
+  `okf_version` outside bundle root; frontmatter on an `index.md` beyond
+  what §8 permits (`index_frontmatter`, #1396); reserved-file convention
+  violations
   (structural only — `log.md` heading shape, root `index.md` presence:
   advisory findings, since the spec tolerates their absence).
 - Informational (non-conformance) counts: wikilink usage (matters at export
@@ -463,8 +465,9 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
   emit); any other required field is seeded as `null`, since the gate tests
   presence rather than value and the server has nothing truthful to put there.
 - **`okf_version` is never synthesized.** The audit flags it on any file but
-  the bundle root as `misplaced`, so seeding it into a folder's index would
-  trade one defect for another.
+  the bundle root as `misplaced` — and, since #1396, as `index_frontmatter`
+  too — so seeding it into a folder's index would trade one defect for two
+  findings.
 
 The `OKF_WRITE` maintainer needs this for a second reason: `_append_log` is a
 read-modify-write, so the log's frontmatter has to be carried across the

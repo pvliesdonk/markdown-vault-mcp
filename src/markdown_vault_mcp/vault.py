@@ -716,6 +716,9 @@ class Vault:
             title_field=self._title_field,
             required_fields=tuple(self._required_frontmatter or ()),
         )
+        # The audit reads the same policy, so a key the generators seeded is
+        # not reported back as a conformance defect (#1174, #1396).
+        self._reserved_frontmatter = reserved_frontmatter
         self._okf_migrate = OkfMigrationManager(
             doc_mgr=self._doc_mgr,
             link_mgr=self._link_mgr,
@@ -834,13 +837,15 @@ class Vault:
         """Run the OKF conformance audit over this vault (#962).
 
         Bound into :class:`ReaderFacet` so the audit uses the vault's
-        effective exclude patterns as its whitelist and reports the live
-        detection state.
+        effective exclude patterns as its whitelist, reports the live
+        detection state, and tolerates in a reserved file exactly the
+        frontmatter this vault's own generators seed there (#1174, #1396).
         """
         return audit_bundle(
             self._source_dir,
             exclude_patterns=self._exclude_patterns,
             detector=self._okf,
+            reserved_frontmatter=self._reserved_frontmatter,
         )
 
     @property

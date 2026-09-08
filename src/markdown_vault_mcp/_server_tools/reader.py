@@ -1016,7 +1016,10 @@ def register(mcp: FastMCP) -> None:
 
         Findings come in three severities. Conformance (spec violations):
         notes missing a non-empty 'type', notes with unparseable
-        frontmatter, and 'okf_version' declared outside the root index.md.
+        frontmatter, 'okf_version' declared outside the root index.md, and
+        index.md files carrying frontmatter the format does not permit
+        there (only the root index may carry 'okf_version'; keys the
+        vault's own required_frontmatter seeds are tolerated).
         Advisory (tolerated but worth fixing): 'status' values outside
         draft/stable/deprecated, log.md files whose '##' headings are not
         YYYY-MM-DD dates, and a missing root index.md. Informational (not
@@ -1030,7 +1033,8 @@ def register(mcp: FastMCP) -> None:
             state); 'total_notes' and 'conformant_notes' (the progress
             ratio); per-rule findings each carrying 'count' and up to 20
             'examples' paths ('missing_type', 'unparseable_frontmatter',
-            'misplaced_okf_version', 'unknown_status', 'log_heading_shape',
+            'misplaced_okf_version', 'index_frontmatter', 'unknown_status',
+            'log_heading_shape',
             'wikilink_files', 'missing_recommended'); and
             'root_index_missing' (bool).
         """

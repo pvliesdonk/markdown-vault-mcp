@@ -1451,7 +1451,9 @@ the spec itself says, dated and sourced, in
   patterns double as the audit whitelist. Findings carry a count plus up
   to 20 example paths and come in three severities — conformance
   (missing ``type``, unparseable frontmatter, ``okf_version`` outside the
-  bundle root), advisory (unknown ``status`` vocabulary, ``log.md``
+  bundle root, frontmatter on an ``index.md`` beyond the root's own
+  ``okf_version`` and the keys this vault's ``required_frontmatter``
+  seeds), advisory (unknown ``status`` vocabulary, ``log.md``
   heading shape, missing root ``index.md``), informational (wikilink
   usage, missing recommended fields). Reserved files are exempt from the
   ``type`` rule. The tool is registered with an ``okf`` tag and hidden

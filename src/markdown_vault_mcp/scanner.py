@@ -686,6 +686,48 @@ def _scan_headings(lines: list[str]) -> list[tuple[int, int, str]]:
     return out
 
 
+def split_frontmatter_block(text: str) -> tuple[str | None, str]:
+    """Split *text* into its leading frontmatter block and the body.
+
+    The one place this package decides *where* a frontmatter block is.
+    Detection is delegated to ``python-frontmatter``, so the answer agrees
+    with :func:`parse_note`: the same handlers, the same offset-zero
+    anchoring after leading whitespace (a block later in the body is body
+    text), and the same reading of a block that never closes — the parser
+    treats that as a file with no frontmatter, so this does too.
+
+    Two callers need two different halves of that one decision, and they
+    must not answer it separately or they disagree on the awkward files. The
+    block text answers *is there a block at all*, which parsed keys cannot:
+    an empty block and an unparseable one both yield no keys while plainly
+    being blocks. The body is returned verbatim — unlike
+    :func:`frontmatter.parse`, which strips it at both ends and so silently
+    de-indents a first line that is an indented code block.
+
+    Args:
+        text: Raw markdown file text (frontmatter included).
+
+    Returns:
+        ``(block, body)``. *block* is the block's raw inner text, or ``None``
+        when *text* opens with no block — test it with ``is not None``, since
+        the inner text of an empty block is falsy. The newlines separating
+        the block from the body belong to the delimiter and are not part of
+        either: ``frontmatter.dumps`` re-inserts them, and keeping them would
+        add a blank line per rewrite.
+    """
+    candidate = text.lstrip()
+    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
+    if handler is None:
+        return None, text
+    try:
+        block, body = handler.split(candidate)
+    except ValueError:
+        # Never closed — frontmatter.parse reads that as a file with no
+        # frontmatter, and so does the indexer that calls it.
+        return None, text
+    return block, body.lstrip("\n")
+
+
 def strip_frontmatter_block(text: str) -> str:
     """Return *text* without its leading frontmatter block, body verbatim.
 
@@ -695,34 +737,14 @@ def strip_frontmatter_block(text: str) -> str:
     ``NoteContent.content`` — and every other raw file text in this package —
     includes the block, so it has to come off first.
 
-    Detection is delegated to ``python-frontmatter`` and so agrees with
-    :func:`parse_note` about *where* the block ends: the same handlers, the
-    same offset-zero anchoring (an identical block later in the body is body
-    text), and the same reading of an unterminated block as no frontmatter at
-    all. Unlike :func:`frontmatter.parse` the body is not stripped, so a first
-    line that is an indented code block keeps its indentation.
-
-    The newlines separating the block from the body are dropped — they are the
-    delimiter's, not the body's, and ``frontmatter.dumps`` re-inserts them on
-    the way back. Keeping them would add a blank line per rewrite.
-
     Args:
         text: Raw markdown file text (frontmatter included).
 
     Returns:
-        The body. *text* unchanged when it opens with no frontmatter block.
+        The body, per :func:`split_frontmatter_block`. *text* unchanged when
+        it opens with no frontmatter block.
     """
-    candidate = text.lstrip()
-    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
-    if handler is None:
-        return text
-    try:
-        _, body = handler.split(candidate)
-    except ValueError:
-        # Never closed — frontmatter.parse reads that as a file with no
-        # frontmatter, and so does the indexer that calls it.
-        return text
-    return body.lstrip("\n")
+    return split_frontmatter_block(text)[1]
 
 
 def list_section_headings(text: str) -> list[str]:

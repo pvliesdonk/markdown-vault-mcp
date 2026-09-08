@@ -18,6 +18,7 @@ from markdown_vault_mcp.scanner import (
     normalize_heading,
     parse_note,
     scan_directory,
+    split_frontmatter_block,
     strip_frontmatter_block,
 )
 from markdown_vault_mcp.types import Chunk
@@ -1083,3 +1084,33 @@ class TestStripFrontmatterBlock:
         # ``frontmatter.parse`` strips before detecting, so the indexer reads
         # this as frontmatter; leaving the block in the body would stack it.
         assert strip_frontmatter_block("\n\n---\ntitle: T\n---\n\n# T\n") == "# T\n"
+
+
+class TestSplitFrontmatterBlockPresence:
+    """The half that answers *is there a block*, which keys cannot (#1396)."""
+
+    def test_a_block_with_keys_is_present(self) -> None:
+        block, body = split_frontmatter_block("---\ntitle: T\n---\n\n# T\n")
+        assert block is not None and "title: T" in block
+        assert body == "# T\n"
+
+    def test_an_empty_block_is_present_though_it_has_no_keys(self) -> None:
+        # The reason presence cannot be read from parsed keys: this and a
+        # body-only file both parse to ``{}``.
+        block, _ = split_frontmatter_block("---\n---\n# T\n")
+        assert block is not None
+        assert not block.strip()
+
+    def test_an_unparseable_block_is_present(self) -> None:
+        # The split is textual, so malformed YAML is still a block. The audit
+        # needs that: a reserved file never reaches the unparseable rule.
+        block, _ = split_frontmatter_block("---\n: [broken\n---\n# T\n")
+        assert block is not None
+
+    def test_a_body_only_file_has_no_block(self) -> None:
+        assert split_frontmatter_block("# T\n\ntext\n")[0] is None
+
+    def test_a_thematic_break_alone_is_not_a_block(self) -> None:
+        # A body-only index.md may open with a horizontal rule. Detection
+        # matches that first line; only closing the block makes it one.
+        assert split_frontmatter_block("---\n\n# T\n\ntext\n")[0] is None

@@ -1,5 +1,9 @@
 # Log
 
+## 2026-09-08
+
+- `okf-v0.2.md`: the reserved-frontmatter departure said §8 allows no frontmatter in a `log.md`. §8 states the rule for index files only, and §9 says nothing about frontmatter at all — re-read at the page's own source commit (62432a09) rather than inferred. Corrected, the silence recorded on the §9 row, and the `index_frontmatter` audit rule (#1396) pinned on both the §8 row and the departure it tolerates.
+
 ## 2026-09-07
 
 - `obsidian-markdown.md`: eleven `[unverified]` rows settled by the maintainer's console session on Obsidian 1.13.7 / Windows (#1358): wikilink shape (`]` inside a target, no line ending, nesting), `[[#H]]` self-edge, schemed wikilink as unresolved note, extension case, unstable equal-length tie, name case, aliases never resolving links, scalar alias parse, heading holding a wikilink, links in `%%` comments, the desktop forbidden set, NFC/NFD, markdown destinations decoded and looked up vault-wide, what `generateMarkdownLink` writes. Departures rewritten from "unverifiable" to contrary-or-deliberate; two contrary ones filed.

@@ -309,7 +309,7 @@ Audit the vault's [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPl
 
 No parameters.
 
-**Returns:** Report object with the detection state (`mode`, `declared_version`, `active`), the progress ratio (`total_notes`, `conformant_notes`), `root_index_missing` (bool), and per-rule findings that each carry `count` and up to 20 `examples` paths. Conformance findings: `missing_type`, `unparseable_frontmatter`, `misplaced_okf_version`. Advisory: `unknown_status`, `log_heading_shape`. Informational: `wikilink_files`, `missing_recommended`. Reserved files (`index.md`, `log.md`) are exempt from the `type` rule.
+**Returns:** Report object with the detection state (`mode`, `declared_version`, `active`), the progress ratio (`total_notes`, `conformant_notes`), `root_index_missing` (bool), and per-rule findings that each carry `count` and up to 20 `examples` paths. Conformance findings: `missing_type`, `unparseable_frontmatter`, `misplaced_okf_version`, `index_frontmatter`. Advisory: `unknown_status`, `log_heading_shape`. Informational: `wikilink_files`, `missing_recommended`. Reserved files (`index.md`, `log.md`) are exempt from the `type` rule. `index_frontmatter` lists `index.md` files carrying frontmatter the format does not permit there: only the bundle-root index may carry `okf_version`, and keys the vault's own `required_frontmatter` seeds are tolerated.
 
 ## Index Management
 
