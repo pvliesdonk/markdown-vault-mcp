@@ -2290,6 +2290,16 @@ append now drops the frontmatter from the text before carrying it across the
 rewrite. A log 4.1.0 already stacked stops growing; the blocks it accumulated
 stay in its body, which
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1403">#1403</a> covers.</p>
+<p><strong><code>okf_validate</code> now reports <code>index.md</code> frontmatter the spec forbids.</strong>
+The field reference allows no frontmatter on an index except <code>okf_version</code>
+on the bundle root, but the audit never looked: a root index that had picked
+up extra keys audited clean, and the <code>conflict_with</code> marker the git conflict
+resolver writes is one such key
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1396">#1396</a>). A
+new <code>index_frontmatter</code> finding lists such files, including one whose block
+is empty or does not parse. The fields the vault's own <code>required_frontmatter</code>
+setting seeds into generated indexes are tolerated, since the server wrote
+them on purpose.</p>
 <p><strong>OKF staleness, the single-verifier shorthand and the provenance stamps
 now follow the spec.</strong> OKF v0.2 says a note is stale from its <code>stale_after</code>
 on, that consumers "must treat a bare mapping as a one-element list" for

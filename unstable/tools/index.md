@@ -286,7 +286,7 @@ Audit the vault's [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPl
 
 No parameters.
 
-**Returns:** Report object with the detection state (`mode`, `declared_version`, `active`), the progress ratio (`total_notes`, `conformant_notes`), `root_index_missing` (bool), and per-rule findings that each carry `count` and up to 20 `examples` paths. Conformance findings: `missing_type`, `unparseable_frontmatter`, `misplaced_okf_version`. Advisory: `unknown_status`, `log_heading_shape`. Informational: `wikilink_files`, `missing_recommended`. Reserved files (`index.md`, `log.md`) are exempt from the `type` rule.
+**Returns:** Report object with the detection state (`mode`, `declared_version`, `active`), the progress ratio (`total_notes`, `conformant_notes`), `root_index_missing` (bool), and per-rule findings that each carry `count` and up to 20 `examples` paths. Conformance findings: `missing_type`, `unparseable_frontmatter`, `misplaced_okf_version`, `index_frontmatter` (an `index.md` carrying frontmatter the spec does not allow: any key but the bundle root's `okf_version`, beyond the fields your own `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` makes the server seed; a block that is empty or does not parse counts). Advisory: `unknown_status`, `log_heading_shape`. Informational: `wikilink_files`, `missing_recommended`. Reserved files (`index.md`, `log.md`) are exempt from the `type` rule.
 
 ## Index Management
 
