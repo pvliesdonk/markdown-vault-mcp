@@ -917,13 +917,18 @@ def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
     under a date — is preserved verbatim; only the one bullet is inserted.
 
     Args:
-        text: The current ``log.md`` file text, or ``None`` when absent.
+        text: The current ``log.md`` **body**, frontmatter excluded, or
+            ``None`` when the log does not exist yet. A caller holding raw
+            file text takes the block off first
+            (:func:`~markdown_vault_mcp.scanner.strip_frontmatter_block`):
+            the result is written back as a body, so a block left in it is
+            serialised under a second one (#1391).
         date: The ISO date (``YYYY-MM-DD``) of the entry's section.
         summary: The bullet text (without the leading ``- ``), e.g.
             ``"**Update**: wrote `guides/note.md`"``.
 
     Returns:
-        The updated ``log.md`` text (always newline-terminated).
+        The updated body (always newline-terminated).
     """
     heading = f"## {date}"
     bullet = f"- {summary}"

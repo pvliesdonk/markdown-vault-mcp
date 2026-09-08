@@ -263,7 +263,10 @@ class NoteContent:
         path: Relative path from the vault root (e.g. ``Journal/note.md``).
         title: Document title derived from the first H1 heading or filename.
         folder: Parent folder path (empty string for root-level documents).
-        content: Raw markdown body including frontmatter.
+        content: The note's raw file text, frontmatter block included.
+            A caller rewriting this through ``write(body, frontmatter=...)``
+            takes the block off first, or the writer stacks a second one
+            above it (#1391).
         frontmatter: Parsed YAML frontmatter as a dict.
         modified_at: Last-modified time as a Unix timestamp float.
         etag: Opaque hash of file content for optimistic concurrency checks.

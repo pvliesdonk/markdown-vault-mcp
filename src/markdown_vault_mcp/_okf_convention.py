@@ -33,6 +33,7 @@ from markdown_vault_mcp.okf import (
     ReservedFrontmatterPolicy,
     append_okf_log_entry,
 )
+from markdown_vault_mcp.scanner import strip_frontmatter_block
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -135,10 +136,14 @@ class ConventionMaintainer:
     def _append_log(self, folder: str, path: str, operation: WriteOperation) -> None:
         """Append a dated ``**Update**`` bullet to the folder's ``log.md``.
 
-        The read-modify-write splits frontmatter from body: ``read()`` hands
-        back the body alone, so the log's frontmatter has to be carried over
-        explicitly or the rewrite would strip it — including frontmatter an
-        operator seeded by hand to satisfy ``required_frontmatter`` (#1174).
+        The read-modify-write splits frontmatter from body itself. ``read()``
+        hands back the *whole file*, block included, while ``write()`` puts a
+        ``frontmatter=`` mapping above the body it is given — so the block has
+        to come off the text before the append and be carried across as the
+        mapping, or the log grows one more identical block per write (#1391).
+        Carrying it across at all is #1174: frontmatter an operator seeded by
+        hand to satisfy ``required_frontmatter`` must survive the rewrite, or
+        the vault's own change history stops being indexed.
         """
         log_path = f"{folder}/log.md" if folder else "log.md"
         verb = _OPERATION_VERB.get(operation, operation)
@@ -150,9 +155,13 @@ class ConventionMaintainer:
             # re-enters this same re-entrant lock.
             with self._write_lock:
                 existing = self._doc_mgr.read(log_path)
-                text = existing.content if existing is not None else None
+                body = (
+                    strip_frontmatter_block(existing.content)
+                    if existing is not None
+                    else None
+                )
                 new_text = append_okf_log_entry(
-                    text, date=self._today().isoformat(), summary=summary
+                    body, date=self._today().isoformat(), summary=summary
                 )
                 self._doc_mgr.write(
                     log_path,

@@ -686,6 +686,45 @@ def _scan_headings(lines: list[str]) -> list[tuple[int, int, str]]:
     return out
 
 
+def strip_frontmatter_block(text: str) -> str:
+    """Return *text* without its leading frontmatter block, body verbatim.
+
+    The counterpart of a ``write(body, frontmatter=...)``: a read-modify-write
+    that carries frontmatter across the rewrite must hand the writer the body
+    alone, or the serializer stacks a second block above the first (#1391).
+    ``NoteContent.content`` — and every other raw file text in this package —
+    includes the block, so it has to come off first.
+
+    Detection is delegated to ``python-frontmatter`` and so agrees with
+    :func:`parse_note` about *where* the block ends: the same handlers, the
+    same offset-zero anchoring (an identical block later in the body is body
+    text), and the same reading of an unterminated block as no frontmatter at
+    all. Unlike :func:`frontmatter.parse` the body is not stripped, so a first
+    line that is an indented code block keeps its indentation.
+
+    The newlines separating the block from the body are dropped — they are the
+    delimiter's, not the body's, and ``frontmatter.dumps`` re-inserts them on
+    the way back. Keeping them would add a blank line per rewrite.
+
+    Args:
+        text: Raw markdown file text (frontmatter included).
+
+    Returns:
+        The body. *text* unchanged when it opens with no frontmatter block.
+    """
+    candidate = text.lstrip()
+    handler = frontmatter.detect_format(candidate, frontmatter.handlers)
+    if handler is None:
+        return text
+    try:
+        _, body = handler.split(candidate)
+    except ValueError:
+        # Never closed — frontmatter.parse reads that as a file with no
+        # frontmatter, and so does the indexer that calls it.
+        return text
+    return body.lstrip("\n")
+
+
 def list_section_headings(text: str) -> list[str]:
     """Return the document's ATX heading texts in document order.
 
