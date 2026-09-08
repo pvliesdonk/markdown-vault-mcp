@@ -367,14 +367,17 @@ entry", holds up, under six conditions.**
    commit whose in-scope changes are all reserved files has nothing to
    account for. The server's own log commit therefore never triggers a
    further entry, and the loop closes by construction.
-4. **The server's own note writes ride in the same commit as their log
-   entry.** Today a note write and its `log.md` append are separate
-   commits. If they stay separate, a *second* server instance sees the
-   note commit as unaccounted and logs it again. Joining the append to
-   the write's commit scope (`_commit_scope.py` already batches one tool
-   call into one commit) makes every server commit self-accounting and,
-   as a side effect, removes the "up to three commits per write" cost
-   the guide apologises for.
+4. **The log entry for a commit is written after that commit exists.**
+   A commit's sha is computed over its tree, so a `log.md` line keyed by
+   the commit's sha cannot be inside that commit; the seeded log gets
+   away with keys because it renders after the fact. The hook is
+   therefore post-commit, on the write-callback worker after
+   `_stage_and_commit`, and it produces a follow-on commit. On a git
+   vault that is two commits per logical write, note first, then both
+   reserved files together, which is neither today's up-to-three nor the
+   one the first draft of this section promised. The same post-commit
+   hook is where the server's own subjects get their entries, so own and
+   foreign commits are accounted by one path.
 5. **One accounting commit per ingested range**, all folders, pushed on
    the normal schedule. Same shape and cost as the reconciliation commit
    of §5.2, and it can be the same commit.
@@ -454,18 +457,36 @@ with a different write shape, and the difference is worth stating:
 | Hand-written entries without a key | Survive | Die, every time |
 | In-place editing logic | Needed (find the date section, insert) | None; the file is rendered from scratch |
 | Reading the old file | Key search | Key search plus taking the line's text |
-| Window / growth | Unbounded unless windowed | Bounded by the render window by construction |
+| Window / growth | Unbounded unless windowed | Window decides: recent-changes page, or history with out-of-window sections carried over verbatim (below) |
 
 Under the stated assumption ("the external party does not maintain it
 properly"), overwrite is the stronger form: every ingest converges the
 file to canonical shape, there is no insertion code to get wrong, and
-the sha-key carry-over is a per-line token match. The cost is the
-death of unkeyed entries, and the answer to that is the contract the
-model implies anyway: **in a git vault, your log entry is your commit
-message.** A human who wants prose in the log writes it in the commit;
-the render picks it up, or #1405's description does when the subject is
-opaque. Hand editing `log.md` is then as pointless as hand editing
-`index.md`, and the guide can say so in one sentence.
+the sha-key carry-over is a per-line token match. Of the six conditions
+in §6.2, 1, 3, 5 and 6 carry over unchanged, 2 becomes "the render
+window" rather than the ingested range, and 4 stays as the post-commit
+hook. The "adds at least one bullet" fragment is moot: nothing is
+accounted, everything in the window is rendered, and a second server
+instance converges on take-upstream because keys are unique and the
+render is total. The cost is the death of unkeyed entries, and the
+answer to that is the contract the model implies anyway: **in a git
+vault, your log entry is your commit message.** A human who wants prose
+in the log writes it in the commit; the render picks it up, or #1405's
+description does when the subject is opaque. Hand editing `log.md` is
+then as pointless as hand editing `index.md`, and the guide can say so
+in one sentence.
+
+**The window is a decision, not a feature.** "Bounded by the render
+window" in the table means commits older than the window leave
+`log.md` for good, and the file becomes a recent-changes page while
+history stays in git. The alternative keeps it a history: sections
+whose date heading is older than the window are carried over verbatim
+(a split at the first out-of-window heading, no merge), and only the
+in-window sections are re-rendered. Either is implementable; which one
+`log.md` is *for* is the owner's call, and the spec's phrase ("earns its
+keep when bundles travel without version-control history") argues for
+the second, since a bundle exported without git wants the whole
+record.
 
 One caveat to write down: the carry-over reads the previous file's
 lines for text, so a keyed line must be single-line by construction
@@ -476,11 +497,13 @@ under the assumption.
 ### 6.4 Recommendation for `log.md`
 
 Overwrite with keyed carry-over (§6.3) for git-backed vaults at
-`maintain` and above; the append model stays for non-git vaults, where
-there is no commit to key on. Conflict policy for both reserved files is
-then "regenerate", the list merger does not come back, and the LLM
-description of a foreign commit has one durable home. The hybrid model
-is not needed: the "hand-written" channel is the commit message.
+`maintain` and above, rendered post-commit; the append model stays for
+non-git vaults, where there is no commit to key on. Conflict policy for
+both reserved files is then "regenerate", the list merger does not come
+back, and the LLM description of a foreign commit has one durable home.
+The hybrid model is not needed: the "hand-written" channel is the
+commit message. The window question (recent-changes page or carried-over
+history) is left to the owner.
 
 ## 7. `index.md`: settled, with two contracts to write down
 
@@ -629,9 +652,10 @@ tree, and obsidian-git neither pushes nor reads them.
 4. **`log.md` is overwritten from git with keyed carry-over** (§6.3) on a
    git-backed vault at `maintain` and above; the append model stays for
    non-git vaults. Conflict policy for both reserved files is then
-   "regenerate", the list merger does not come back, and the server's own
-   log entry rides in the same commit as the note it describes. The
-   owner has accepted that this reopens #1399.
+   "regenerate" and the list merger does not come back. The render is
+   post-commit, so a git vault sees two commits per logical write, the
+   note and then its reserved files. The owner has accepted that this
+   reopens #1399; the window question in §6.3 is still theirs.
 5. **LLM commit subjects** (#1405) after 4, opt-in, on the existing
    OpenAI-compat seam, with the constraints in §9.2; the description of a
    foreign commit lands in its `log.md` entry.
