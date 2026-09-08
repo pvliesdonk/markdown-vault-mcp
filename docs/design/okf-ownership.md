@@ -95,7 +95,7 @@ document argues the rows.
 | `generated {by, at}` | Whoever produced the bytes | The *time* of the last content commit, yes; the *actor*, no (a git author is not evidence of a human, §5.1) | Stamped on own writes | On ingest of an external change that left the stamp untouched, remove it rather than invent an actor | Annotate at read that the stamp predates the bytes; never write |
 | `verified [{by, at}]` | The verifier. Only *invalidation* is derivable | Invalidation: yes (content commit after `at`) | Cleared on own writes | Clear on ingest of an external content change that did not itself re-verify | Treat entries older than the last content change as void at read time |
 | `index.md` | Nobody; it is a function of the tree | Fully (it is a projection) | Regenerated after own writes only (#1392) | Regenerate on every ingest; resolve conflicts by regenerating | Never write it, even after own writes |
-| `log.md` | The author of the change; a knowledge event, not a byte event (§6) | Only the *fact* of a change and its diff; the description is curated | Appended after own writes only | Curate one keyed entry per note per day from intent, diff, or file list; conflicts by take-upstream-then-reinsert | Never write it |
+| `log.md` | The author of the change; a knowledge event, not a byte event (§6) | Only the *fact* of a change and its diff; the description is curated | Appended after own writes only | Curate one keyed entry per note per day from intent, diff, or a placeholder; conflicts by take-upstream-then-reinsert | Never write it |
 
 Two rows carry most of the weight: `generated`/`verified`, where git is
 strong evidence and the server has been ignoring it, and `log.md`, which
@@ -287,11 +287,19 @@ to their own name would otherwise make every human commit look like the
 server's. No timestamp tolerance is needed.
 
 The same discriminator fixes the *base* for every comparison in this
-document: "the note's last content change" means the last commit
-touching the path **whose committer is not the server**. Without that
-qualifier the server's own asynchronous commit, landing seconds after
-the write it records, would supersede the stamp it carries, and every
-server-written note would read as stale. On the watcher route there is
+document: "the note's last external content change" means the last
+commit **without the server's trailer** (committer identity only for
+commits that predate the trailer) **whose diff changes the note's
+blob**. Two qualifiers, two reasons. Without the first, the server's own
+asynchronous commit, landing seconds after the write it records, would
+supersede the stamp it carries, and every server-written note would read
+as stale. Without the second, a commit that only renames the note
+touches its path without touching its bytes and would void a
+verification the existing contract preserves on rename
+(`tests/test_okf_write.py::TestInvalidationMatrix::test_rename_preserves_verified`);
+the walk therefore reads `--name-status` with rename detection, as the
+history queries already do (#1297), and a rename with no blob change is
+not a content change. On the watcher route there is
 no committer: the watcher sees the server's own writes like any other,
 and today's reindex only drops them because their hash already matches
 the tracker, which is a race against the write's own index update, not a
@@ -327,14 +335,18 @@ Three edges to state in the design rather than discover:
   actor from git. What it can read from git is the *time* of the change
   and whether the external writer maintained the stamp itself.
 
-The reconciliation rule at `own` is therefore: if the external commit
-changed the note's `generated` (the external writer maintains provenance;
-situation C), leave the note alone; if it did not, the stamp describes
-bytes that no longer exist, and the server **removes** `generated` and
-`verified` rather than inventing an actor. Absence is the legible
-signal. Idempotency is immediate: a note with no stamp needs nothing on
-re-ingest, and a note whose stamp the external writer maintains is never
-touched. An operator-configured mapping from git author to actor is a
+The reconciliation rule at `own` is therefore two independent rules, one
+per family, applied to an external content change (as defined above,
+so a pure rename triggers neither): if the change did not touch
+`generated`, the stamp describes bytes that no longer exist and the
+server **removes** it rather than inventing an actor; if the change did
+not touch `verified`, the attestations describe bytes that no longer
+exist and the server **removes** them. A writer that maintained one
+family and not the other (updated `generated`, left an old `verified`)
+keeps the one it maintained and loses the one it did not, which is what
+the §3 table already says. Absence is the legible signal. Idempotency is
+immediate: a family that is absent needs nothing on re-ingest, and a
+family the external writer maintains is never touched. An operator-configured mapping from git author to actor is a
 conceivable later feature and is not designed here.
 
 ### 5.2 What the reconciliation commit looks like
@@ -417,8 +429,17 @@ swamped."
    two questions: did the information change, and how would a reader
    describe it. "No" is a legitimate answer and yields no entry. Under the
    `2026-07-28` revision this is the only model available (§4.3).
-3. **The file list.** With neither, the entry names the note and the
-   kind of change the diff shows. Honest and dull; never invented.
+3. **The placeholder.** With neither, the server does not know whether
+   the information changed, and must not say it did: an Obsidian typo fix
+   passes both filters, and an `**Update**` line for it would be exactly
+   the commit-log-in-OKF-clothing that §6.1 rejects. So the fallback
+   writes at most one *placeholder* per (note, day), under a distinct
+   word (`**Change**: undescribed change to [Title](/path.md)`), which
+   asserts only that the bytes changed. It stays pending (below) until an
+   intent or a summary replaces it, and a reader can tell it apart from a
+   curated entry. Whether an operator would rather have no line than a
+   placeholder is a setting worth offering; the default is the
+   placeholder, so the log stays complete.
 
 **Two filters before any model call.** A mechanical one: strip markdown
 syntax, collapse whitespace, compare the word sequence; identical means
@@ -429,20 +450,26 @@ tag) and reserved-file diffs produce no entry.
 
 **The nag.** The server tells the model what is pending. There is no
 session to hang the list on (§4.3) and none is needed: which (note, day)
-pairs lack an entry is a fact about the vault. Under git it is fully
-derivable — paths in server-committed commits today whose entry is
-missing or whose covered sha is behind — so no stored state, restart-proof,
-correct across replicas. Without git it lives in the state directory.
+pairs lack a curated entry is a fact about the vault. Under git it is
+fully derivable, from *every* content commit in the window, the server's
+and foreign ones alike (classified by the trailer, §5.1): a (note, day)
+is pending when its entry is missing, or its covered sha is behind the
+latest content commit, or the entry is a placeholder. So no stored state,
+restart-proof, correct across replicas, and a foreign commit ingested
+just before a restart is still pending afterwards. Without git it lives in the state directory.
 The channel is in-band: every write result, and every read or search
 result after writes, carries `intent_pending: [...]` with one instruction
 line. A result field costs nothing from the instruction budget, where a
 guidance sentence would. The nag cannot block (§4.3), and the fallback
 sources above are what make it safe to ignore.
 
-**Keys and idempotence.** A server-written entry carries its (path, day)
-and the short sha of the latest commit it covers. Re-ingesting the same
-range is a no-op; a later commit to the same note on the same day
-recomputes the entry rather than adding a second. A commit whose `log.md`
+**Keys and idempotence.** A server-written entry carries its (path, day),
+the short sha of the latest commit it covers, and its *source*: curated
+(intent or summary) or placeholder, distinguished by the bold word so
+that the nag can tell, after a restart or on another replica, which
+keyed entries still want an intent. Re-ingesting the same range is a
+no-op; a later commit to the same note on the same day recomputes the
+entry rather than adding a second. A commit whose `log.md`
 diff adds a bullet line accounts for itself and is not re-described.
 
 **Foreign commits** get the same treatment at ingest (§5), dated by the
@@ -467,11 +494,11 @@ docs fix. The second commit is the price of a keyed entry.
 not been written yet, and the follow-on commit does not write the
 fallback at once: it waits a settle window (the push scheduler's
 debounce is the natural one, so the entry lands before the push). An
-intent declared inside the window is the entry; the summarizer or the
-file list fills it when the window closes; an intent declared after
-that recomputes the entry under the same key, one more commit. So the
-nag names entries not yet written *and* entries carrying only the
-fallback, and both are cleared by one `okf_intent` call.
+intent declared inside the window is the entry; the summarizer (opted
+in) or the placeholder fills it when the window closes; an intent
+declared after that recomputes the entry under the same key, one more
+commit. So the nag names entries not yet written *and* placeholders, and
+both are cleared by one `okf_intent` call.
 
 **Conflicts, without a list merger and without overwrite.** When the
 server's clone is written only through the server, every unkeyed line in
@@ -490,7 +517,7 @@ merger in either branch.
 
 **Cost** is bounded by notes touched per day, not by writes; the
 mechanical filter makes a layout-only day free. A large pulled range gets
-a cap with the file list as the floor; bootstrap stays with
+a cap with placeholders as the floor; bootstrap stays with
 `okf_seed_log`, whose rendered-from-git output is the one place a commit
 log is the right content, because it is a seed for a bundle that had no
 history.
@@ -658,7 +685,7 @@ default.
    the posture.
 4. **`log.md` is curated, one entry per (note, day)** (#1416), from declared
    intent, else (opted in separately) the summarizer over the cumulative
-   diff, else the file list; two filters in front; keyed; post-commit;
+   diff, else a placeholder that claims nothing; two filters in front; keyed; post-commit;
    conflicts by take-upstream-then-reinsert when every local addition is
    keyed, the sibling otherwise. The append model stays for non-git
    vaults.
@@ -668,9 +695,10 @@ default.
 6. **Reserved files are protected paths** under `maintain` and `own`
    (#1419). The conventions file's protection is independent of the OKF
    posture and is decided in #1411; the two share one mechanism.
-7. **Reconcile external notes at `own`** (#1420): a stamp the external
-   writer left untouched is removed, never re-derived from a git author;
-   one commit per ingested range; the same rule without git.
+7. **Reconcile external notes at `own`** (#1420): `generated` and
+   `verified` independently, each removed when an external content change
+   (blob changed, not a rename) left it untouched, never re-derived from a
+   git author; one commit per ingested range; the same rule without git.
 8. **Untyped notes:** an absence filter for `type` now (#1421);
    `OKF_DEFAULT_TYPE` plus `status: draft` only at `own` (#1422); Obsidian template guidance in the
    guide.
@@ -693,8 +721,8 @@ unless set.
 
 | Dimension | Absent or off | Present |
 |---|---|---|
-| Git | No ingest from pulls; watcher deltas only. No foreign log entries; own writes keep the filtered append. Reconcile drops a stale `generated`/`verified`. Annotate trusts the frontmatter. Pending set in the state directory. | Full design. Without a remote, maintenance commits stay local. Pending set derived from history. |
-| Summarizer | No generated text. Entry text: declared intent, else the file list. #1405 inert. | Still nothing automatic: summarised log entries (#1418) and commit subjects (#1405) each need their own opt-in. When opted in, behind the layout filter; timeout, error, refusal, empty reply: mechanical text, logged once. |
+| Git | No ingest from pulls; watcher deltas only. No foreign log entries; own writes keep the filtered append. Reconcile drops a stale `generated` or `verified`, each on its own. Annotate trusts the frontmatter. Pending set in the state directory. | Full design. Without a remote, maintenance commits stay local. Pending set derived from history. |
+| Summarizer | No generated text. Entry text: declared intent, else a placeholder. #1405 inert. | Still nothing automatic: summarised log entries (#1418) and commit subjects (#1405) each need their own opt-in. When opted in, behind the layout filter; timeout, error, refusal, empty reply: mechanical text, logged once. |
 | Auth | Nag vault-global; `okf_verify` under `elicit` stamps `human:local`. | Nag scoped by principal; `generated.by` from the claim. |
 | Transport | stdio: single-tenant, all of the above. | Modern HTTP: no per-connection state anywhere. Legacy HTTP: same code, session unused. |
 | Client capabilities | No elicitation: `okf_verify` fails closed; nothing else depends on it. | |
