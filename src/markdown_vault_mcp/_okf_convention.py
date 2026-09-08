@@ -32,6 +32,7 @@ from markdown_vault_mcp.okf import (
     OKF_RESERVED_FILENAMES,
     ReservedFrontmatterPolicy,
     append_okf_log_entry,
+    strip_reserved_frontmatter,
 )
 
 if TYPE_CHECKING:
@@ -135,9 +136,11 @@ class ConventionMaintainer:
     def _append_log(self, folder: str, path: str, operation: WriteOperation) -> None:
         """Append a dated ``**Update**`` bullet to the folder's ``log.md``.
 
-        The read-modify-write splits frontmatter from body: ``read()`` hands
-        back the body alone, so the log's frontmatter has to be carried over
-        explicitly or the rewrite would strip it — including frontmatter an
+        The read-modify-write splits frontmatter from body. ``read()`` hands
+        back the *whole file*, so the frontmatter is dropped from the text
+        before the append and carried over through ``frontmatter=`` instead;
+        re-emitting it above text that still contained it stacked one block
+        per write (#1391), and not carrying it over stripped frontmatter an
         operator seeded by hand to satisfy ``required_frontmatter`` (#1174).
         """
         log_path = f"{folder}/log.md" if folder else "log.md"
@@ -150,7 +153,11 @@ class ConventionMaintainer:
             # re-enters this same re-entrant lock.
             with self._write_lock:
                 existing = self._doc_mgr.read(log_path)
-                text = existing.content if existing is not None else None
+                text = (
+                    strip_reserved_frontmatter(existing.content)
+                    if existing is not None
+                    else None
+                )
                 new_text = append_okf_log_entry(
                     text, date=self._today().isoformat(), summary=summary
                 )

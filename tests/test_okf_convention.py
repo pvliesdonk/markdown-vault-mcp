@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
+import frontmatter
 import pytest
 
 from markdown_vault_mcp._okf_convention import ConventionMaintainer
@@ -67,7 +68,12 @@ class _FakeDoc:
         if self.existing is None:
             return None
         body, metadata = self.existing
-        return type("N", (), {"content": body, "frontmatter": metadata})()
+        # Mirror the real ``DocumentManager.read``: ``NoteContent.content`` is
+        # the raw file text *including* its frontmatter block (#1391).
+        content = (
+            frontmatter.dumps(frontmatter.Post(body, **metadata)) if metadata else body
+        )
+        return type("N", (), {"content": content, "frontmatter": metadata})()
 
     def write(self, path: str, content: str, **kw: object) -> None:
         if self.raise_on_write:
@@ -155,10 +161,11 @@ class TestMaintainerFailureIsolation:
 class TestMaintainedLogFrontmatter:
     """The maintained ``log.md`` keeps satisfying the vault's index gate (#1174).
 
-    ``_append_log`` is a read-modify-write and ``read()`` returns the body
-    without frontmatter, so the log's frontmatter has to be carried across
-    the rewrite explicitly — the maintainer runs on *every* enforced write,
-    so getting this wrong strips it again after each save.
+    ``_append_log`` is a read-modify-write and ``read()`` returns the whole
+    file, frontmatter included. The frontmatter has to be dropped from the
+    text and carried across the rewrite explicitly — the maintainer runs on
+    *every* enforced write, so getting either half wrong compounds per save:
+    stripped again (#1174) or stacked again (#1391).
     """
 
     def test_unconfigured_vault_writes_no_frontmatter(self) -> None:
@@ -174,6 +181,17 @@ class TestMaintainedLogFrontmatter:
             "title": "Change history",
             "type": "log",
         }
+
+    def test_rewrite_body_carries_no_frontmatter_block(self) -> None:
+        """The read hands back the whole file; the body written back must not
+        still contain the block that ``frontmatter=`` re-emits (#1391)."""
+        m, doc, _ = _maintainer()
+        doc.existing = ("# Log\n", {"title": "Log"})
+        m.maintain("note.md", "write")
+        path, content = doc.writes[0]
+        assert path == "log.md"
+        assert content.startswith("# Log\n")
+        assert "---" not in content
 
     def test_required_field_is_seeded_on_a_fresh_log(self) -> None:
         m, doc, _ = _maintainer(
@@ -392,5 +410,56 @@ class TestUpkeepUnderRequiredFrontmatter:
             assert "wrote `guides/a.md`" in log.content
             assert "wrote `guides/b.md`" in log.content
             assert "guides/log.md" in {n.path for n in col.reader.list_documents()}
+            # Exactly one frontmatter block on disk, not one per write (#1391).
+            on_disk = (root / "guides" / "log.md").read_text(encoding="utf-8")
+            assert on_disk.count("title: Log") == 1
+            assert on_disk.startswith("---\ntitle: Log\n---\n")
+        finally:
+            col.close()
+
+    def test_an_empty_frontmatter_block_is_replaced_not_stacked_above(
+        self, tmp_path: Path
+    ) -> None:
+        """A hand-emptied block carries no keys but still occupies the top."""
+        root = tmp_path / "gated_vault_empty_fm"
+        (root / "guides").mkdir(parents=True)
+        (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
+        (root / "guides" / "log.md").write_text(
+            "---\n---\n\n# Log\n\n## 2026-09-06\n\n- **Update**: wrote `old.md`\n",
+            encoding="utf-8",
+        )
+        col = _build_vault(root, okf_write=True, required_frontmatter=["title"])
+        try:
+            col.writer.write("guides/a.md", "---\ntitle: A\n---\n# A\n")
+            wait_for_writer_drain(col)
+
+            on_disk = (root / "guides" / "log.md").read_text(encoding="utf-8")
+            assert on_disk.startswith("---\ntitle: Log\n---\n")
+            assert on_disk.count("---\n") == 2
+            assert "wrote `old.md`" in on_disk
+        finally:
+            col.close()
+
+    def test_an_already_stacked_log_stops_growing(self, tmp_path: Path) -> None:
+        """A vault that ran the defective release keeps the blocks it has.
+
+        The append adds no more; removing the accumulated ones is #1403.
+        """
+        root = tmp_path / "gated_vault_stacked"
+        (root / "guides").mkdir(parents=True)
+        (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
+        stacked = "---\ntitle: Log\n---\n\n" * 3 + (
+            "# Log\n\n## 2026-09-06\n\n- **Update**: wrote `guides/old.md`\n"
+        )
+        (root / "guides" / "log.md").write_text(stacked, encoding="utf-8")
+        col = _build_vault(root, okf_write=True, required_frontmatter=["title"])
+        try:
+            col.writer.write("guides/a.md", "---\ntitle: A\n---\n# A\n")
+            wait_for_writer_drain(col)
+
+            on_disk = (root / "guides" / "log.md").read_text(encoding="utf-8")
+            assert on_disk.count("title: Log") == 3
+            assert "wrote `guides/old.md`" in on_disk
+            assert "wrote `guides/a.md`" in on_disk
         finally:
             col.close()

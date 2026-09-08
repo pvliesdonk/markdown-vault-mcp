@@ -899,6 +899,52 @@ def build_log_markdown(entries: Any) -> tuple[str, int, int]:
     return body, sum(len(v) for v in by_date.values()), len(order)
 
 
+def strip_reserved_frontmatter(text: str) -> str:
+    """Return the body of a reserved file's raw text, frontmatter dropped.
+
+    ``DocumentManager.read`` hands back the whole file, frontmatter included
+    (``NoteContent.content``), so a read-modify-write that re-emits the
+    frontmatter through ``frontmatter=`` has to drop it from the text first,
+    or every rewrite stacks one more block above the body (#1391).
+
+    The block is found by python-frontmatter's own format detection, which is
+    anchored at the start of the text, and removed by the matching handler's
+    ``split``. The remainder comes back as written: a second block, a
+    malformed one, a log quoting its own frontmatter as a sample, and an
+    indented first line all survive — the parser's parsed ``content`` would
+    have stripped the whitespace around the body, silently de-indenting a
+    leading code block. An empty block (``---`` immediately closed) is a
+    block: it carries no keys, but leaving it would put the re-emitted
+    frontmatter above it and stack exactly what this fix removes.
+
+    Two narrow rules, both the library's own:
+
+    - Only the newlines separating the block from the body are dropped.
+      The write re-inserts that separator, so keeping them would add a blank
+      line per write — the same growth in another guise.
+    - A block with no closing delimiter is not frontmatter, which is how
+      ``frontmatter.parse`` itself reads one.
+
+    Removing the blocks a defective release already stacked is #1403 and is
+    deliberately not done here: from inside this function such a block and a
+    quoted example are the same bytes.
+
+    Args:
+        text: The raw file text.
+
+    Returns:
+        The body, or *text* unchanged when it opens with no frontmatter block.
+    """
+    handler = fm.detect_format(text, fm.handlers)
+    if handler is None:
+        return text
+    try:
+        _, body = handler.split(text)
+    except ValueError:
+        return text
+    return str(body).lstrip("\n")
+
+
 def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
     """Append a dated bullet to an OKF ``log.md``, newest date section on top.
 
@@ -917,7 +963,8 @@ def append_okf_log_entry(text: str | None, *, date: str, summary: str) -> str:
     under a date — is preserved verbatim; only the one bullet is inserted.
 
     Args:
-        text: The current ``log.md`` file text, or ``None`` when absent.
+        text: The current ``log.md`` body — frontmatter already dropped, see
+            :func:`strip_reserved_frontmatter` — or ``None`` when absent.
         date: The ISO date (``YYYY-MM-DD``) of the entry's section.
         summary: The bullet text (without the leading ``- ``), e.g.
             ``"**Update**: wrote `guides/note.md`"``.

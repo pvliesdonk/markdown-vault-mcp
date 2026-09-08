@@ -979,3 +979,71 @@ class TestReservedFrontmatterPolicy:
             title_field="heading", required_fields=("heading",)
         )
         assert policy.build(None, title="Log") == {"heading": "Log"}
+
+
+class TestStripReservedFrontmatter:
+    """The body of a reserved file's raw text, for the log read-modify-write (#1391)."""
+
+    def test_text_without_frontmatter_is_unchanged(self) -> None:
+        from markdown_vault_mcp.okf import strip_reserved_frontmatter
+
+        assert strip_reserved_frontmatter("# Log\n\n## 2026-09-07\n\n- x\n") == (
+            "# Log\n\n## 2026-09-07\n\n- x\n"
+        )
+
+    def test_the_opening_block_is_dropped(self) -> None:
+        from markdown_vault_mcp.okf import strip_reserved_frontmatter
+
+        out = strip_reserved_frontmatter("---\ntitle: Log\n---\n\n# Log\n\n- x\n")
+        assert out == "# Log\n\n- x\n"
+
+    @pytest.mark.parametrize(
+        "second",
+        [
+            "---\ntitle: Log\n---\n\n# Log\n",
+            "---\ntitle: Other\n---\n\n# Log\n",
+            "---\nfoo: [\n---\n\n# Log\n",
+            '{\n"not valid"\n}\n\n# Log\n',
+        ],
+        ids=["identical", "different", "malformed-yaml", "json-lookalike"],
+    )
+    def test_only_the_opening_block_is_dropped(self, second: str) -> None:
+        """Whatever follows is body: it is returned as written, never parsed.
+
+        A block the defect stacked is indistinguishable here from one a log
+        quotes on purpose, so neither is touched (#1403).
+        """
+        from markdown_vault_mcp.okf import strip_reserved_frontmatter
+
+        assert strip_reserved_frontmatter("---\ntitle: Log\n---\n\n" + second) == (
+            second
+        )
+
+    def test_an_empty_block_is_dropped(self) -> None:
+        """A block with no keys is still a block; leaving it would stack."""
+        from markdown_vault_mcp.okf import strip_reserved_frontmatter
+
+        assert strip_reserved_frontmatter("---\n---\n\n# Log\n\n- x\n") == (
+            "# Log\n\n- x\n"
+        )
+
+    def test_the_body_comes_back_as_written(self) -> None:
+        """The parser's own ``content`` would de-indent a leading code block."""
+        from markdown_vault_mcp.okf import strip_reserved_frontmatter
+
+        body = "    indented code\n\n# Log\n\n- x\n"
+        assert strip_reserved_frontmatter("---\ntitle: Log\n---\n\n" + body) == body
+
+    def test_an_unterminated_block_is_not_frontmatter(self) -> None:
+        from markdown_vault_mcp.okf import strip_reserved_frontmatter
+
+        text = "---\nnever closed\n\n# Log\n"
+        assert strip_reserved_frontmatter(text) == text
+
+    def test_an_interior_block_is_not_a_header(self) -> None:
+        """A log quoting its own frontmatter keeps its heading and history."""
+        from markdown_vault_mcp.okf import strip_reserved_frontmatter
+
+        body = "# Log\n\n## 2026-09-07\n\nSample:\n\n---\ntitle: Log\n---\n\n- after\n"
+        assert strip_reserved_frontmatter("---\ntitle: Log\n---\n\n" + body) == body
+        assert strip_reserved_frontmatter(body) == body
