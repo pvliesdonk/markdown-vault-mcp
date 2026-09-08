@@ -2,8 +2,8 @@
 
 **Status:** design, approved by the owner on 2026-09-08 after three
 rounds of discussion; the decisions recorded as the owner's are quoted.
-Nothing here is implemented. Implementation is tracked by the epic
-linked from §10.1.
+Nothing here is implemented. Implementation is tracked by epic #1425
+and the children listed in §10.2.
 It exists to inform the clean re-implementation of #1392, #1395, #1396
 and #1403 after `main` was rewound on 2026-09-08 (#1391's fix was
 re-landed the same day as PR #1406 and is on `main`), and to give #1393
@@ -607,32 +607,33 @@ default.
 
 ## 10. The design, and its defaults
 
-1. **Annotate always.** A `verified` entry whose `at` predates the note's
+1. **Annotate always** (#1413). A `verified` entry whose `at` predates the note's
    last external content change (last commit not committed by the
    server, §5.1) is void in the server's own annotations; a `generated`
    stamp in the same state is flagged. On a non-git vault there is no
    evidence and the frontmatter is trusted. Recorded as a departure in
    `reference/okf-v0.2.md` beside the existing "verified is cleared" row.
-2. **One ingest event** from the reindex, naming the changed paths and
+2. **One ingest event** (#1414) from the reindex, naming the changed paths and
    whether a full build ran, consumed by `index.md` regeneration (#1392),
    `log.md` curation (§6), provenance reconciliation (§5), and the
    warn-once (#1394). Queued ordinary writes; no new threads.
-3. **One ladder.** `OKF_WRITE=off|stamp|maintain|own`, `true`/`false`
+3. **One ladder** (#1412). `OKF_WRITE=off|stamp|maintain|own`, `true`/`false`
    kept as aliases for `maintain`/`off`. The instruction snippet follows
    the posture.
-4. **`log.md` is curated, one entry per (note, day)**, from declared
+4. **`log.md` is curated, one entry per (note, day)** (#1416), from declared
    intent, else the summarizer over the cumulative diff, else the file
    list; two filters in front; keyed; post-commit; conflicts by
    take-upstream-then-reinsert. The append model stays for non-git
    vaults.
-5. **`okf_intent` and the in-band pending nag**, config-gated with the
+5. **`okf_intent` and the in-band pending nag** (#1417; summarised
+   entries #1418), config-gated with the
    ladder, state derived from git where git exists.
 6. **Reserved files and the conventions file are protected paths** under
-   `maintain` and `own` (#1411 for conventions).
-7. **Reconcile external notes at `own`** from git evidence, one commit
+   `maintain` and `own` (#1419; #1411 for conventions).
+7. **Reconcile external notes at `own`** (#1420) from git evidence, one commit
    per ingested range; drop rather than invent without git.
-8. **Untyped notes:** an absence filter for `type` now; `OKF_DEFAULT_TYPE`
-   plus `status: draft` only at `own`; Obsidian template guidance in the
+8. **Untyped notes:** an absence filter for `type` now (#1421);
+   `OKF_DEFAULT_TYPE` plus `status: draft` only at `own` (#1422); Obsidian template guidance in the
    guide.
 9. **LLM commit subjects** (#1405), independent of OKF, off by default.
 
@@ -666,7 +667,9 @@ unless set.
 ### 10.2 Where this lands relative to the open issues
 
 The 4.2 bugs stay 4.2 and stay narrow; the design is later work, tracked
-by an epic whose children are the numbered items above.
+by epic #1425, whose children are the numbered items above plus the
+`Vault-Operation:` trailer (#1415), the docs fix for the commit count
+(#1423) and the obsidian-git reference page (#1424).
 
 | Existing | Relationship |
 |---|---|
@@ -680,8 +683,8 @@ by an epic whose children are the numbered items above.
 | #1401 (facade stamps provenance) | Unchanged. |
 | #1405 (LLM commit subjects) | Item 9, filed 2026-09-08. |
 | #1411 (conventions file overwritable) | Item 6, filed 2026-09-08. |
-| New, docs | The guide and `okf.md` §6 say a note write can produce "up to three commits"; since #1264 the secondary writes share the tool call's commit scope and it is one (§6.2). |
-| Not yet a reference | An `obsidian-git` page under `docs/design/reference/`, per `researching-references`: the facts in §11 are cited inline and dated, not yet a reference. |
+| #1423 (docs) | The guide and `okf.md` §6 say a note write can produce "up to three commits"; since #1264 it is one (§6.2). |
+| #1424 (reference) | An `obsidian-git` page under `docs/design/reference/`, per `researching-references`: the facts in §11 are cited inline and dated, not yet a reference. |
 
 ## 11. External facts used, and their limits
 
