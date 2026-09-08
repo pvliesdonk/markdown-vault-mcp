@@ -273,23 +273,34 @@ Posture 2 must not react to the server's own writes (they were stamped
 at write time) and must be idempotent (a second ingest of the same state
 changes no bytes, or the vault ping-pongs commits with itself).
 
-The discriminator is a **trailer** on every server commit,
-`Vault-Operation: <operation> <path>` (a batched call names the tool),
-written unconditionally at every posture. A commit that carries it is the
-server's; a commit that does not is external. The committer identity
-(`_commit_staged` sets it from the static `GIT_COMMIT_NAME` /
-`GIT_COMMIT_EMAIL`, default `markdown-vault-mcp` /
-`noreply@markdown-vault-mcp`, and overrides only the *author* from OIDC
-claims) classifies only commits that predate the trailer, so that
-history from before this design is not read as external. It is not an
-alternative signal for new commits: an operator who sets the committer
-to their own name would otherwise make every human commit look like the
-server's. No timestamp tolerance is needed.
+The discriminator is a **trailer** on every server commit, written
+unconditionally at every posture, and it records what the committing
+instance *did*, not only that it was a server: `Vault-Operation:
+<operation> <path>` (a batched call names the tool) and `Vault-OKF:
+none|stamp|maintain|own`, the effective OKF level at commit time (`none`
+when the bundle was inactive or the posture `off`). Every rule that
+reads the trailer asks whether the recorded level performed the work
+the rule would otherwise do: a commit at `stamp` or above already
+carries its provenance stamp, so reconciliation and the comparison base
+skip it; a commit at `maintain` or above already refreshed its reserved
+files, so regeneration skips it; a commit at `none` did neither and is
+external for both purposes although a server made it. Two instances at
+different postures on one vault therefore leave nothing stale, and a
+uniform posture is a recommendation, not a precondition. A commit with
+no trailer is external. The committer identity (`_commit_staged` sets it
+from the static `GIT_COMMIT_NAME` / `GIT_COMMIT_EMAIL`, default
+`markdown-vault-mcp` / `noreply@markdown-vault-mcp`, and overrides only
+the *author* from OIDC claims) classifies only commits that predate the
+trailer, and those count as `maintain`, which is what `OKF_WRITE=true`
+did. It is not an alternative signal for new commits: an operator who
+sets the committer to their own name would otherwise make every human
+commit look like the server's. No timestamp tolerance is needed.
 
 The same discriminator fixes the *base* for every comparison in this
 document: "the note's last external content change" means the last
-commit **without the server's trailer** (committer identity only for
-commits that predate the trailer) **whose diff changes the note's
+commit **whose trailer does not record a level at which the stamp was
+written** (no trailer, or `Vault-OKF: none`; committer identity only for
+commits that predate the trailer) **and whose diff changes the note's
 blob**. Two qualifiers, two reasons. Without the first, the server's own
 asynchronous commit, landing seconds after the write it records, would
 supersede the stamp it carries, and every server-written note would read
@@ -360,10 +371,14 @@ cost of posture 2 and it should be written in the guide as such.
 
 ### 5.3 Without git
 
-The watcher route has no commit at all. The rule is the same as with
-git, with less evidence: an external change on a non-git vault at `own`
-drops `generated` and `verified` unless the change itself rewrote
-`generated`. `process:unknown` would be fabricated provenance.
+The watcher route has no commit at all, but it is not without evidence:
+the index holds the note's frontmatter as last indexed, so whether an
+external change touched `generated`, and separately whether it touched
+`verified`, is a comparison of the prior row with the new bytes. The
+two families are therefore reconciled independently here too, exactly
+as with git: each is removed when the change left it untouched and kept
+when the change maintained it. `process:unknown` would be fabricated
+provenance.
 
 ## 6. `log.md`: a knowledge history, not a rendering of git
 
@@ -418,7 +433,11 @@ swamped."
    declares that nothing knowledge-level changed, which clears the
    pending set without an entry. A declaration for a subset leaves the
    rest pending. The intent is the primary channel because it is the
-   author's own words at the moment the work is coherent.
+   author's own words at the moment the work is coherent. A `kind: none`
+   is a decision and must survive a restart and reach every replica, so
+   it is persisted where the keys are: as a keyed HTML comment under the
+   date heading (`<!-- none: /path.md (abc1234) -->`), invisible to a
+   reader of the log, present to the pending derivation below.
 2. **Generated from the cumulative diff.** When the operator has opted
    in (a separate setting, off by default; a configured summarizer
    backend is consent to the explicit `summarize` tool, not to sending
@@ -427,7 +446,9 @@ swamped."
    at the start of the day, or at the last entry, against the note now,
    plus any hints the agent attached — goes to the model, which answers
    two questions: did the information change, and how would a reader
-   describe it. "No" is a legitimate answer and yields no entry. Under the
+   describe it. "No" is a legitimate answer and yields no rendered entry;
+   it is persisted as the same keyed negative comment as a declared
+   `kind: none`, so it is not re-asked after a restart. Under the
    `2026-07-28` revision this is the only model available (§4.3).
 3. **The placeholder.** With neither, the server does not know whether
    the information changed, and must not say it did: an Obsidian typo fix
@@ -451,23 +472,43 @@ tag) and reserved-file diffs produce no entry.
 **The nag.** The server tells the model what is pending. There is no
 session to hang the list on (§4.3) and none is needed: which (note, day)
 pairs lack a curated entry is a fact about the vault. Under git it is
-fully derivable, from *every* content commit in the window, the server's
-and foreign ones alike (classified by the trailer, §5.1): a (note, day)
-is pending when its entry is missing, or its covered sha is behind the
-latest content commit, or the entry is a placeholder. So no stored state,
-restart-proof, correct across replicas, and a foreign commit ingested
-just before a restart is still pending afterwards. Without git it lives in the state directory.
+fully derivable from *every* content commit, the server's and foreign
+ones alike, in one bounded range whose lower end is itself derived from
+git: every accounting pass is a commit carrying the trailer
+(`Vault-Operation: okf_accounting`), so the boundary is the newest such
+commit reachable from `HEAD`, and the candidates are the commits in
+`<that commit>..HEAD`. When `maintain` is first enabled the first pass
+regenerates the reserved files, which produces that commit; if nothing
+needs writing it makes an empty one, so activation is always a commit.
+Git's range semantics make the scan bounded (the new commits, not the
+history) and complete (a branch merged late is not reachable from the
+boundary and so appears in the range, which a date watermark would
+miss). A marker line inside `log.md` was considered and rejected: two
+instances would each advance it to a different sha and conflict on that
+line on every concurrent pass, while a boundary read from the graph
+needs no line and cannot conflict; when two instances' passes both
+reach a clone, the newer one is the boundary and the other's examined
+commits are re-examined idempotently by their keys. A (note, day) is
+pending when a candidate commit changed the note's blob and its entry is
+missing, or its covered sha is behind, or the entry is a placeholder,
+and not pending when a keyed negative comment covers that sha. So no
+stored state outside `log.md` and the graph, restart-proof, correct
+across replicas,
+a foreign commit ingested just before a restart still pending
+afterwards, and history before activation left to `okf_seed_log`, which
+is the one place a rendering of git is the right content. Without git it lives in the state directory.
 The channel is in-band: every write result, and every read or search
 result after writes, carries `intent_pending: [...]` with one instruction
 line. A result field costs nothing from the instruction budget, where a
 guidance sentence would. The nag cannot block (§4.3), and the fallback
 sources above are what make it safe to ignore.
 
-**Keys and idempotence.** A server-written entry carries its (path, day),
+**Keys and idempotence.** A server-written line carries its (path, day),
 the short sha of the latest commit it covers, and its *source*: curated
-(intent or summary) or placeholder, distinguished by the bold word so
-that the nag can tell, after a restart or on another replica, which
-keyed entries still want an intent. Re-ingesting the same range is a
+(intent or summary) or placeholder, distinguished by the bold word, or
+negative, as the keyed comment above; so the nag can tell, after a
+restart or on another replica, which keyed entries still want an
+intent and which decisions were already taken. Re-ingesting the same range is a
 no-op; a later commit to the same note on the same day recomputes the
 entry rather than adding a second. A commit whose `log.md`
 diff adds a bullet line accounts for itself and is not re-described.
@@ -509,7 +550,8 @@ survive, the server's entries are re-derived from their keys, and the
 only structure touched is the date heading, which `append_okf_log_entry`
 already finds. That premise is decidable per conflict: the lines added
 to `log.md` between the merge base and the local head are either all
-keyed (`git diff <merge-base> HEAD -- log.md`, added lines) or not. When
+keyed (`git diff <merge-base> HEAD -- log.md`, added lines; a keyed
+negative comment counts as keyed) or not. When
 they are, this is the resolver policy. When they are not, someone edited
 the served clone directly (a shared filesystem with the watcher on), and
 the sibling policy of today stays so that nothing is lost. No list
@@ -679,7 +721,9 @@ default.
 2. **One ingest event** (#1414) from the reindex, naming the changed paths and
    whether a full build ran, consumed by `index.md` regeneration (#1392),
    `log.md` curation (§6), provenance reconciliation (§5), and the
-   warn-once (#1394). Queued ordinary writes; no new threads.
+   warn-once (#1394). Each consumer skips a commit whose `Vault-OKF:`
+   level already did its work (§5.1). Queued ordinary writes; no new
+   threads.
 3. **One ladder** (#1412). `OKF_WRITE=off|stamp|maintain|own`, `true`/`false`
    kept as aliases for `maintain`/`off`. The instruction snippet follows
    the posture.
@@ -690,8 +734,9 @@ default.
    keyed, the sibling otherwise. The append model stays for non-git
    vaults.
 5. **`okf_intent` and the in-band pending nag** (#1417; summarised
-   entries #1418), config-gated with the
-   ladder, state derived from git where git exists.
+   entries #1418), config-gated with the ladder; state derived from git
+   over the range above the newest accounting commit where git exists,
+   negative decisions persisted as keyed comments in `log.md`.
 6. **Reserved files are protected paths** under `maintain` and `own`
    (#1419). The conventions file's protection is independent of the OKF
    posture and is decided in #1411; the two share one mechanism.
@@ -729,7 +774,7 @@ unless set.
 | File watcher | Off: non-git external changes seen at the next reindex. | On: deltas feed the same ingest event. |
 | Read-only vault | Everything that writes is off; annotate on. | |
 | `required_frontmatter` | Reserved files body-only. | Seeded keys, the existing departure. |
-| Two server instances | The `Vault-Operation:` trailer marks both as server; reserved files converge on take-upstream; a stamp the other instance wrote is a maintained stamp and is left alone. | |
+| Two server instances | The `Vault-OKF:` level in each commit's trailer says what the other instance did, so a `maintain` instance regenerates after a `stamp` instance's commit and reconciles after an `off` one's; reserved files converge on take-upstream; a stamp the other instance wrote is left alone. A uniform posture is recommended, not required. | |
 
 ### 10.2 Where this lands relative to the open issues
 
