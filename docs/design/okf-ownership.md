@@ -95,7 +95,7 @@ document argues the rows.
 | `generated {by, at}` | Whoever produced the bytes | The *time* of the last content commit, yes; the *actor*, no (a git author is not evidence of a human, §5.1) | Stamped on own writes | On ingest of an external change that left the stamp untouched, remove it rather than invent an actor | Annotate at read that the stamp predates the bytes; never write |
 | `verified [{by, at}]` | The verifier. Only *invalidation* is derivable | Invalidation: yes (content commit after `at`) | Cleared on own writes | Clear on ingest of an external content change that did not itself re-verify | Treat entries older than the last content change as void at read time |
 | `index.md` | Nobody; it is a function of the tree | Fully (it is a projection) | Regenerated after own writes only (#1392) | Regenerate on every ingest; resolve conflicts by regenerating | Never write it, even after own writes |
-| `log.md` | The author of the change; a knowledge event, not a byte event (§6) | Only the *fact* of a change and its diff; the description is curated | Appended after own writes only | Curate one keyed entry per note per day from intent, diff, or a placeholder; conflicts by take-upstream-then-reinsert | Never write it |
+| `log.md` | The author of the change; a knowledge event, not a byte event (§6) | Only the *fact* of a change and its diff; the description is curated | Appended after own writes only | Curate one keyed entry per note per day (§6.2) | Never write it |
 
 Two rows carry most of the weight: `generated`/`verified`, where git is
 strong evidence and the server has been ignoring it, and `log.md`, which
@@ -427,12 +427,19 @@ swamped."
 **Sources of an entry's text, in order of preference.**
 
 1. **Declared intent.** The agent that made the change knows why. A tool
-   `okf_intent(paths, intent, kind)` records the knowledge-level
-   description for the pending (note, day) pairs; `kind` is the spec's
-   bold word (`Update`, `Creation`, `Deprecation`), and `kind: none`
-   declares that nothing knowledge-level changed, which clears the
-   pending set without an entry. A declaration for a subset leaves the
-   rest pending. The intent is the primary channel because it is the
+   `okf_intent(targets, intent, kind)` records the knowledge-level
+   description for pending (note, day) pairs. A target is a path or a
+   `path@YYYY-MM-DD` key; a bare path resolves to that note's single
+   pending day and is *refused*, naming the pending days, when more than
+   one is pending, so a Tuesday intent can never overwrite Monday's
+   placeholder with Tuesday's words. The day is the change's date, not
+   the declaration's: an intent declared on Tuesday for Monday's pair
+   lands under Monday. A target whose pair is already curated revises it
+   under the same key; a target with no pair and no change is refused.
+   `kind` is the spec's bold word (`Update`, `Creation`, `Deprecation`),
+   and `kind: none` declares that nothing knowledge-level changed, which
+   clears the pair without an entry. A declaration for a subset leaves
+   the rest pending. The intent is the primary channel because it is the
    author's own words at the moment the work is coherent. A `kind: none`
    is a decision and must survive a restart and reach every replica, so
    it is persisted where the keys are: as a keyed HTML comment under the
@@ -500,8 +507,9 @@ Monday is still nagged, and a vault whose agents never declare does not
 accumulate an ever-growing list). A keyed negative comment covering the
 sha removes a pair from both. Placeholders older than the window stay
 in the log as the honest record they are and stop being nagged; that
-cut-off is a decision to write into the guide, not a heuristic. Neither source is read per request: the set is computed when an
-accounting pass runs and when an intent lands, held in memory, and
+cut-off is a decision to write into the guide, not a heuristic. Neither
+source is read per request: the set is computed after each ingest, when
+an accounting pass runs and when an intent lands, held in memory, and
 re-derived on start, so decorating a result costs a lookup, not a scan. So no
 stored state outside `log.md` and the graph, restart-proof, correct
 across replicas,
@@ -509,8 +517,10 @@ a foreign commit ingested just before a restart still pending
 afterwards, and history before activation left to `okf_seed_log`, which
 is the one place a rendering of git is the right content. Without git it lives in the state directory.
 The channel is in-band: every write result, and every read or search
-result after writes, carries `intent_pending: [...]` with one instruction
-line. A result field costs nothing from the instruction budget, where a
+result after writes, carries `intent_pending`, a list of `{path, day,
+state}` with `state` either `missing` or `placeholder`, and one
+instruction line; the `path@day` form of each item is what `okf_intent`
+accepts back, so the model never has to construct a key. A result field costs nothing from the instruction budget, where a
 guidance sentence would. The nag cannot block (§4.3), and the fallback
 sources above are what make it safe to ignore.
 
@@ -732,42 +742,34 @@ default.
 
 ## 10. The design, and its defaults
 
-1. **Annotate always** (#1413). A `verified` entry whose `at` predates the note's
-   last external content change (last commit without the server's
-   trailer, §5.1) is void in the server's own annotations; a `generated`
-   stamp in the same state is flagged. On a non-git vault there is no
-   evidence and the frontmatter is trusted. Recorded as a departure in
-   `reference/okf-v0.2.md` beside the existing "verified is cleared" row.
-2. **One ingest event** (#1414) from the reindex, naming the changed paths and
-   whether a full build ran, consumed by `index.md` regeneration (#1392),
-   `log.md` curation (§6), provenance reconciliation (§5), and the
-   warn-once (#1394). Each consumer skips a commit whose `Vault-OKF:`
-   level already did its work (§5.1). Queued ordinary writes; no new
-   threads.
-3. **One ladder** (#1412). `OKF_WRITE=off|stamp|maintain|own`, `true`/`false`
-   kept as aliases for `maintain`/`off`. The instruction snippet follows
-   the posture.
-4. **`log.md` is curated, one entry per (note, day)** (#1416), from declared
-   intent, else (opted in separately) the summarizer over the cumulative
-   diff, else a placeholder that claims nothing; two filters in front; keyed; post-commit;
-   conflicts by take-upstream-then-reinsert when every local addition is
-   keyed, the sibling otherwise. The append model stays for non-git
-   vaults.
-5. **`okf_intent` and the in-band pending nag** (#1417; summarised
-   entries #1418), config-gated with the ladder; state derived from git
-   over the range above the newest accounting commit where git exists,
-   negative decisions persisted as keyed comments in `log.md`.
-6. **Reserved files are protected paths** under `maintain` and `own`
-   (#1419). The conventions file's protection is independent of the OKF
-   posture and is decided in #1411; the two share one mechanism.
-7. **Reconcile external notes at `own`** (#1420): `generated` and
-   `verified` independently, each removed when an external content change
-   (blob changed, not a rename) left it untouched, never re-derived from a
-   git author; one commit per ingested range; the same rule without git.
-8. **Untyped notes:** an absence filter for `type` now (#1421);
-   `OKF_DEFAULT_TYPE` plus `status: draft` only at `own` (#1422); Obsidian template guidance in the
-   guide.
+The decisions, each with the section that holds its rules and the issue
+that implements it. This list states no mechanism: a rule lives in one
+section only, and an earlier draft of this list that restated rules
+drifted from them within a day.
+
+1. **Annotate always** (#1413): the server's own annotations derive
+   staleness of `verified` and `generated` from git evidence, at every
+   posture including `off`. Rules: §5.1. Recorded as a departure in
+   `reference/okf-v0.2.md`.
+2. **One ingest event** (#1414) raised by the reindex and consumed by
+   regeneration, curation, reconciliation and the warn-once. Rules: §5.
+3. **One ladder** (#1412): `OKF_WRITE=off|stamp|maintain|own`, aliases
+   for the shipped boolean, instruction snippet per posture. Rules: §4.2.
+4. **`log.md` is curated** (#1416): one entry per (note, day), history
+   not a rendering, appended never overwritten. Rules: §6.2; the non-git
+   case §6.3.
+5. **`okf_intent` and the in-band nag** (#1417), summarised entries as a
+   separate opt-in (#1418). Rules: §6.2.
+6. **Reserved files are protected paths** at `maintain` and `own`
+   (#1419); the conventions file's protection is #1411's, independent of
+   the ladder, sharing the mechanism. Rules: §7.
+7. **Reconcile external notes at `own`** (#1420), never deriving an actor
+   from git. Rules: §5.1 to §5.3.
+8. **Untyped notes:** an absence filter (#1421); a default type with
+   `status: draft` at `own` (#1422); Obsidian guidance in the guide.
+   Rules: §8.
 9. **LLM commit subjects** (#1405), independent of OKF, off by default.
+   Rules: §9.
 
 ### 10.1 Every optional path, with its default
 
@@ -794,7 +796,7 @@ unless set.
 | File watcher | Off: non-git external changes seen at the next reindex. | On: deltas feed the same ingest event. |
 | Read-only vault | Everything that writes is off; annotate on. | |
 | `required_frontmatter` | Reserved files body-only. | Seeded keys, the existing departure. |
-| Two server instances | The `Vault-OKF:` level in each commit's trailer says what the other instance did, so a `maintain` instance regenerates after a `stamp` instance's commit and reconciles after an `off` one's; reserved files converge on take-upstream; a stamp the other instance wrote is left alone. A uniform posture is recommended, not required. | |
+| Two server instances | Each reads the other's commits by the level in their trailer and does only the work its own posture allows and the other did not do (§5.1); reserved files converge (§6.2, §7). A uniform posture is recommended, not required. | |
 
 ### 10.2 Where this lands relative to the open issues
 
@@ -808,7 +810,7 @@ by epic #1425, whose children are items 1 to 8 above plus the
 | #1391 (log frontmatter stacking) | Fixed on `main` by PR #1406 (re-landed after the rewind); shipped in 4.2.0-rc.2. |
 | #1403 (repair of stacked files) | Unchanged; a fix under the append model, which stays for non-git vaults. |
 | #1392 (index.md stale) | Consumes the ingest event; the 4.2 fix may raise it minimally. |
-| #1395 (resolver sibling on reserved files) | `index.md`: regenerate. `log.md`: take upstream, re-insert keyed entries (§6.2); sibling until then. |
+| #1395 (resolver sibling on reserved files) | `index.md`: regenerate. `log.md`: the §6.2 conflict rule; sibling until it lands. |
 | #1396 (audit misses root-index keys) | Unchanged. |
 | #1393 (one maintainer) | Superseded by items 3 and 4; proposed for closing as a duplicate of the epic once filed, the owner's call. |
 | #1394 (warn once) | A consumer of the ingest event. |
