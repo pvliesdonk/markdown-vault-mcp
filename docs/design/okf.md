@@ -330,7 +330,10 @@ and each behaviour below names the switch that owns it. Until §6.0 lands,
 
 **Status:** design, 2026-09-09; not implemented. Supersedes the single
 `OKF_WRITE` ladder (`off|stamp|maintain|own`) that #1412 was filed for and
-that both earlier ownership drafts (PR #1426, PR #1429) carried.
+that both earlier ownership drafts (PR #1426, PR #1429) carried. This
+section records the decision and its compatibility argument; the
+constraints an implementer needs are on the issues it names, next to the
+code they constrain.
 
 The server can write into an OKF bundle in three ways, and they differ in
 what else they can collide with:
@@ -347,131 +350,47 @@ the last) and so forbade combinations that exist: a vault whose provenance
 is stamped by a git hook for every writer, human included, that still wants
 the server to keep `index.md` current (maintain without stamp); a vault
 where another tool owns the listing but the server should stamp what it
-writes (stamp without maintain, the case #1393 asks for); a read-mostly
-mirror that repairs stale claims it ingests without stamping anything of
-its own (reconcile without stamp). Three switches cover all eight
-combinations; the four rungs of the ladder are four of them.
+writes (stamp without maintain, the case #1393 asks for). Three switches
+cover all eight combinations; the four rungs of the ladder are four of
+them.
 
 | Question | Switch | Yes | No |
 |---|---|---|---|
 | Does the server stamp what it writes? | `OKF_WRITE` (exists) | `generated` set and `verified` cleared on own `write`/`edit`/`append`; `okf_verify` exposed under `OKF_VERIFY` | the note is written as given; `okf_verify` hidden |
-| Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change (#1392), curates `log.md` per the log design (separate), and from 5.0 refuses client writes to those paths (#1419) | no automatic maintenance; the instruction snippet keeps asking the agent to update them |
-| May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | removes demonstrably stale `generated` / `verified` on ingested external changes, per the provenance design (separate, #1420) | no automatic repair of another party's note |
+| Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change (#1392), curates `log.md` per the log design (separate), and from 5.0 refuses client writes to those paths (#1419) | no automatic maintenance |
+| May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | removes demonstrably stale `generated` / `verified` on ingested external changes, per the provenance design (separate, #1420) | no automatic repair |
 
-What every switch does **not** do, so the boundaries are decidable:
+The switches govern what the server does **on its own**: stamping as a
+side effect of its write, maintenance and repair as reactions to changes.
+An explicit, client-invoked operation, whether an agent's edit of any note
+or one of the `okf_*` migration tools, is governed by read-only mode and
+`OKF_MODE` as today (§7), whatever the switches say; a "no" above means
+the server initiates nothing, not that an operation is unreachable. A
+switch's *effective* value is its configured value after inheritance
+(`OKF_MAINTAIN` unset follows `OKF_WRITE`); what the server then actually
+does additionally requires an active bundle and a writable vault, so all
+three are inert on `auto` with no declaration and on a read-only vault,
+and `OKF_MODE=off` conflicts with a switch only when it is effectively
+true, as with `OKF_WRITE=true` today. Read-side behaviour is not an
+ownership question and never depends on the switches. The switches are per
+instance; how one instance treats another's commits is the ingest
+design's question (#1414).
 
-- The switches govern what the server does *on its own*: stamping as a
-  side effect of a write, maintenance and repair as reactions to changes.
-  An explicit, client-invoked operation is not theirs to permit or
-  forbid: an agent editing any note, `okf_convert_links` rewriting links
-  in notes another party authored, `okf_generate_index` and
-  `okf_seed_log` writing the reserved files, are governed by read-only
-  mode and `OKF_MODE` only, whatever the three switches say. A "no" in
-  the table above means the server initiates nothing, not that the
-  operation is unreachable.
-
-- `OKF_MAINTAIN` off does not hide or refuse the explicit migration tools.
-  `okf_generate_index` and `okf_seed_log` are one-shot, operator-invoked
-  writes to the reserved files, registered under the `okf` tag and so
-  hidden only when `OKF_MODE=off`, and they respect read-only mode (§7);
-  they check no activation, because they are one-shot transforms invoked
-  deliberately rather than ongoing enforcement (§7), and an operator runs
-  them before declaring a vault, when the root `index.md` the declaration
-  goes into may not exist yet and `auto` reports the bundle inactive. They
-  stay so at both values of the switch. Once the
-  refusal of #1419 lands they are the sanctioned way to write those paths
-  from a client: the guard admits them because they are the server's own
-  generators, the same code the maintainer runs, and not because of the
-  suppression flag they happen to run under, which also covers
-  `okf_verify` and must not become a general bypass.
-
-- None is implied by the vault's declaration. `OKF_MODE=off` with any of
-  the three *effectively true* is rejected at start-up, as `OKF_WRITE=true`
-  is today; a switch explicitly `false`, or `OKF_MAINTAIN` inheriting a
-  false `OKF_WRITE`, conflicts with nothing. On `auto` with no
-  `okf_version` declared all three are inert, which the maintainer
-  already re-probes per write.
-- A change to a reserved file is never itself a trigger: the ingest path
-  excludes `index.md` and `log.md` from the changes that cause a
-  regeneration, as the write path already excludes a write targeting
-  them, so a hand edit to `index.md` is not overwritten by its own
-  indexing. It is overwritten by the next *note* change in that folder,
-  and from 5.0 the write is refused instead (#1419).
-- All three are inert on a read-only vault (`READ_ONLY=true`): the write
-  tools are hidden, so stamping has nothing to stamp, and maintenance or
-  repair would be writes the operator forbade. A read-only instance with
-  any of the three effectively true should log one `WARNING` at start-up
-  naming the inert setting (#1434); today the combination is silent, and
-  undocumented.
-- Two projections of the switches exist, and each consumer is told
-  which one it gets. The **configured posture** is the three booleans
-  after inheritance and nothing else: a pure function of configuration,
-  computed once at start-up, feeding the `OKF_MODE=off` validation, the
-  read-only warning, and tool registration (a tool registered under a
-  switch cannot disappear because a declaration is momentarily absent;
-  activation is checked per call, as the maintainer does today). The
-  **runnable posture** is the configured posture and the bundle active
-  and the vault writable, evaluated when asked because activation can
-  flip mid-session; it gates stamping, maintenance and repair on each
-  call, and it is what "the instance actually does" means. Each
-  projection has one derivation and the second is defined in terms of the
-  first, so no consumer can disagree with another about either.
-- Read-side behaviour (annotations, filters, the trust tier) is not an
-  ownership question and never depends on these switches; the provenance
-  design decides what the annotations derive from git evidence.
-- The switches are per instance. How one instance treats another's
-  commits is the ingest design's question (#1414); nothing here assumes a
-  uniform posture across instances.
-
-**Tool surface.** Tool gating follows the switch that owns the tool, one
-tag per switch (`tool-registration` skill): `okf_verify` stays on the tag
-that means "off when `OKF_WRITE` is off" (`okf-enforce` today); a tool
-that exists only because the server maintains the reserved files, such
-as an intent tool for the curated log, gets a tag tied to `OKF_MAINTAIN`;
-the migration tools keep `okf` + `write` and no ownership tag.
-
-**Reporting.** The two surfaces report the two projections, which is the
-split they already embody: `config://vault`, the configuration resource,
-gains the configured posture (`okf_write`, `okf_maintain`,
-`okf_reconcile`, after inheritance) beside the `okf_mode` and
-`okf_active` it already carries; `stats.okf` gains the runnable posture
-(`write`, `maintain`, `reconcile`) beside the `mode` and
-`declared_version` it already carries. An operator who sees a switch
-configured on and running off reads the reason off the same payloads:
-`okf_active` false, or the read-only flag (#1432). `stats.okf` is absent
-altogether on an inactive bundle, as today, so the runnable posture is
-reported only when there is one; inactivity itself is read from
-`config://vault`.
-
-**Instructions.** The OKF instruction snippet currently tells every agent
-"For edits, update 'log.md'/'index.md'" whatever the configuration. With
-`OKF_MAINTAIN` on that sentence directs the agent to do the server's job
-and the next regeneration discards its work (#1431). The clause is emitted
-only when `OKF_MAINTAIN` is off; dropping it shortens the snippet, which
-matters because the instructions budget is 1,536 UTF-16 units and the
-maximal surface measures 1,507 (`tests/test_client_surface_budget.py`).
-
-**Compatibility, staged.** The split itself is additive: `OKF_MAINTAIN`
-unset follows `OKF_WRITE`, so a deployment with `OKF_WRITE=true` keeps
+**Compatibility, staged.** The split is additive: `OKF_MAINTAIN` unset
+follows `OKF_WRITE`, so a deployment with `OKF_WRITE=true` keeps
 maintaining, and `OKF_RECONCILE` defaults to off. No enum, no aliases:
 `OKF_WRITE` stays a boolean.
 
 Regenerating after an ingested change (#1392) widens what
-`OKF_WRITE=true` does at the same setting, and the guide describes
-today's narrower trigger as a boundary ("editing `index.md` by hand is
-left alone"). That sentence describes the write path, which does not
-recurse into a reserved target; it is not a survival promise, since the
-next server write into the folder regenerates the listing today. But an
-operator who hand-curates a root `index.md` while stamping notes, on a
-vault the server rarely writes into, would lose that listing on the
-first pull after the fix, with `OKF_WRITE=false` as the only escape and
-the stamps with it. The fix is therefore not breaking **on condition
-that `OKF_MAINTAIN` ships no later than the ingest regeneration**: with
-the switch, "maintain the listing myself" stays reachable at the same
-stamping posture, which is the old behaviour's only coherent reading.
-#1392 is milestoned v4.2; either the switch joins it or the regeneration
-waits for the switch. The guide sentence is rewritten with the fix to
-say what happens to a hand edit.
+`OKF_WRITE=true` does at the same setting. An operator who hand-curates a
+root `index.md` while stamping notes, on a vault the server rarely writes
+into, keeps that listing today (only a server write into the folder
+regenerates it) and would lose it on the first pull after the fix, with
+`OKF_WRITE=false` as the only escape and the stamps with it. The fix is
+therefore not breaking **on condition that `OKF_MAINTAIN` ships no later
+than the ingest regeneration**: with the switch, "maintain the listing
+myself" stays reachable at the same stamping posture. #1392 is milestoned
+v4.2; either the switch joins it or the regeneration waits for the switch.
 
 The one breaking piece is refusing client writes to the reserved files
 under `OKF_MAINTAIN` (#1419): the shipped `OKF_WRITE=true` accepts such a
@@ -481,12 +400,17 @@ old behaviour is gone at the same setting, reachable only by turning
 changes; the switches and the regeneration can ship in 4.x before it.
 
 **Rejected.** The ladder, above. A single set-valued setting
-(`OKF_WRITE=stamp,maintain,reconcile`): expresses the same eight
-combinations with more parsing, a worse wizard entry, and a `true` alias
-that means one particular set; three booleans are what the questions are.
-Stamping on by default whenever a bundle is active: it is what a
-conformant producer does, but it changes bytes in existing vaults on
-upgrade and is a separate decision for a major, not this one.
+(`OKF_WRITE=stamp,maintain,reconcile`): the same eight combinations with
+more parsing and a worse wizard entry. Stamping on by default whenever a
+bundle is active: what a conformant producer does, but it changes bytes in
+existing vaults on upgrade and is a separate decision for a major.
+
+**Where the implementation constraints live.** The configured-versus-
+runnable projections and the two reporting surfaces: #1432. The
+instruction snippet's clause: #1431. The read-only warning: #1434. The
+reserved-file guard's admission of the server's own generators: #1419.
+A reserved-file change never triggering its own regeneration: #1414.
+Tool tags following switches: #1412.
 
 - **Provenance stamping** (`OKF_WRITE`): writes through `write`/`edit` set/update
   `generated: {by, at}`, `at` the UTC instant of the write in the spec's
