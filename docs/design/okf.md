@@ -388,11 +388,19 @@ What every switch does **not** do, so the boundaries are decidable:
   any of the three effectively true should log one `WARNING` at start-up
   naming the inert setting (#1434); today the combination is silent, and
   undocumented.
-- The effective values are computed once, after inheritance and before
-  inertness, and that one derivation feeds the start-up validation, the
-  read-only warning, the reporting keys and the gating of tools and
-  maintenance. Four consumers of one function cannot disagree; four
-  re-derivations would.
+- Two projections of the switches exist, and each consumer is told
+  which one it gets. The **configured posture** is the three booleans
+  after inheritance and nothing else: a pure function of configuration,
+  computed once at start-up, feeding the `OKF_MODE=off` validation, the
+  read-only warning, and tool registration (a tool registered under a
+  switch cannot disappear because a declaration is momentarily absent;
+  activation is checked per call, as the maintainer does today). The
+  **runnable posture** is the configured posture and the bundle active
+  and the vault writable, evaluated when asked because activation can
+  flip mid-session; it gates stamping, maintenance and repair on each
+  call, and it is what "the instance actually does" means. Each
+  projection has one derivation and the second is defined in terms of the
+  first, so no consumer can disagree with another about either.
 - Read-side behaviour (annotations, filters, the trust tier) is not an
   ownership question and never depends on these switches; the provenance
   design decides what the annotations derive from git evidence.
@@ -407,10 +415,15 @@ that exists only because the server maintains the reserved files, such
 as an intent tool for the curated log, gets a tag tied to `OKF_MAINTAIN`;
 the migration tools keep `okf` + `write` and no ownership tag.
 
-**Reporting.** `stats.okf` and `config://vault` gain the three effective
-booleans (`write`, `maintain`, `reconcile`), computed after inheritance
-and inertness, so an operator can see the posture the instance actually
-runs (#1432).
+**Reporting.** The two surfaces report the two projections, which is the
+split they already embody: `config://vault`, the configuration resource,
+gains the configured posture (`okf_write`, `okf_maintain`,
+`okf_reconcile`, after inheritance) beside the `okf_mode` and
+`okf_active` it already carries; `stats.okf` gains the runnable posture
+(`write`, `maintain`, `reconcile`) beside the `mode` and
+`declared_version` it already carries. An operator who sees a switch
+configured on and running off reads the reason off the same payloads:
+`okf_active` false, or the read-only flag (#1432).
 
 **Instructions.** The OKF instruction snippet currently tells every agent
 "For edits, update 'log.md'/'index.md'" whatever the configuration. With
