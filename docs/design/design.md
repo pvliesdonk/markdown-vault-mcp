@@ -885,8 +885,7 @@ The event says:
 
 - **Which paths entered, changed, or left the index.** "Left" covers every
   reason a row goes: deleted on disk, newly matching an exclude pattern,
-  newly skipped for missing required frontmatter. Today's
-  `ReindexResult` reports those as counts.
+  newly skipped for missing required frontmatter.
 - **Moves, as the route knows them.** The own write path knows a rename as
   a pair; a scan reports a removal and an addition.
 - **Not who made the change.** The event carries no origin. Whose bytes
