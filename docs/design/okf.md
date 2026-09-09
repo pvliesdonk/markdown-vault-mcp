@@ -133,9 +133,9 @@ placement in `config.py`, wizard metadata via field
 | Env var | Values | Default | Meaning |
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_OKF_MODE` | `auto` / `off` / `on` | `auto` | `auto`: read semantics + advisory conventions when the vault declares `okf_version` in root `index.md`. `off`: never apply OKF semantics (collision escape hatch). `on`: force read semantics even without the marker (bundle the operator cannot edit). |
-| `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Stamp provenance on the server's own writes and expose `okf_verify` (§6). Requires effective read mode on (declared under `auto`, or mode `on`); `true` with mode `off` is a config validation error. Today it also switches on reserved-file maintenance; §6.0 moves that to its own switch. |
+| `MARKDOWN_VAULT_MCP_OKF_WRITE` | bool | `false` | Stamp provenance on the server's own writes and expose `okf_verify` (§6). Requires effective read mode on (declared under `auto`, or mode `on`); `true` with mode `off` is a config validation error. In the shipped code it also switches on reserved-file maintenance, which §6.0 gives its own switch. |
 | `MARKDOWN_VAULT_MCP_OKF_VERIFY` | `elicit` / `off` / `trust-auth` | `elicit` | How `okf_verify` attributes a human review (§6). Only meaningful with `OKF_WRITE` on; a non-default value with it off is a config validation error. |
-| `MARKDOWN_VAULT_MCP_OKF_MAINTAIN` (proposed, #1412) | `true` / `false` / unset | unset = follows `OKF_WRITE` | The server is the maintainer of `index.md` / `log.md` (§6.0). Same read-mode requirement as `OKF_WRITE`. |
+| `MARKDOWN_VAULT_MCP_OKF_MAINTAIN` (proposed, #1412) | bool | `false` | The server is the maintainer of `index.md` / `log.md` (§6.0). Same read-mode requirement as `OKF_WRITE`. |
 | `MARKDOWN_VAULT_MCP_OKF_RECONCILE` (proposed, #1412) | bool | `false` | The server may repair provenance on notes it did not write (§6.0). Same read-mode requirement. |
 
 The names of the two proposed settings are candidates; the `config-contract`
@@ -331,9 +331,9 @@ and each behaviour below names the switch that owns it. Until §6.0 lands,
 **Status:** design, 2026-09-09; not implemented. Supersedes the single
 `OKF_WRITE` ladder (`off|stamp|maintain|own`) that #1412 was filed for and
 that both earlier ownership drafts (PR #1426, PR #1429) carried. This
-section records the decision and its compatibility argument; the
-constraints an implementer needs are on the issues it names, next to the
-code they constrain.
+section says what to build; how to get there from the shipped code is
+the epic's plan (#1425), and the constraints an implementer needs are on
+the issues this section names, next to the code they constrain.
 
 The server can write into an OKF bundle in three ways, and they differ in
 what else they can collide with:
@@ -370,41 +370,25 @@ alone, and the `okf_*` migration tools and `okf_verify` additionally by
 does forbid is a client write to a reserved file while the server
 maintains it (#1419); the migration tools that generate those files are
 admitted as the server's own generators. A "no" above means the server
-initiates nothing, not that an operation is unreachable. A
-switch's *effective* value is its configured value after inheritance
-(`OKF_MAINTAIN` unset follows `OKF_WRITE`); what the server then actually
-does additionally requires an active bundle and a writable vault, so all
-three are inert on `auto` with no declaration and on a read-only vault,
-and `OKF_MODE=off` conflicts with a switch only when it is effectively
-true, as with `OKF_WRITE=true` today. Read-side behaviour is not an
+initiates nothing, not that an operation is unreachable. Each
+switch defaults to off, and none implies another. What the server then
+actually does additionally requires an active bundle and a writable
+vault, so all three are inert on `auto` with no declaration and on a
+read-only vault, and `OKF_MODE=off` conflicts with a switch only when it
+is true, as with `OKF_WRITE=true` today. Read-side behaviour is not an
 ownership question and never depends on the switches. The switches are per
 instance; how one instance treats another's commits is the ingest
 design's question (#1414).
 
-**Compatibility.** The split is additive by construction: `OKF_MAINTAIN`
-unset follows `OKF_WRITE`, so a deployment with `OKF_WRITE=true` keeps
-maintaining, and `OKF_RECONCILE` defaults to off; `OKF_WRITE` stays a
-boolean, no enum, no aliases. Two behaviours then ride on the inherited
-value at the shipped setting: regeneration after an ingested change
-(#1392) and the refusal of client writes to the reserved files (#1419).
-The facts an implementer classifies them against are these, as the
-documentation stands: the guide says maintenance "runs only for content
-writes on an active bundle", that a write whose target is a reserved file
-"is left alone", and tells an operator who prefers to maintain the files
-themselves to "Turn `OKF_WRITE` off", which also costs the stamps; the
-configuration reference says the layer "keeps each written folder's
-log.md and index.md current". Whether either
-change carries the `!` is decided on its own pull request against the
-stable release at that time, under the breaking-change policy; this
-design does not decide it. What it does decide is that `OKF_MAINTAIN` is
-the escape both changes need, an escape that keeps the stamping posture,
-which today's has not got.
-
 **Rejected.** The ladder, above. A single set-valued setting
 (`OKF_WRITE=stamp,maintain,reconcile`): the same eight combinations with
-more parsing and a worse wizard entry. Stamping on by default whenever a
-bundle is active: what a conformant producer does, but it changes bytes in
-existing vaults on upgrade and is a separate decision for a major.
+more parsing and a worse wizard entry. `OKF_MAINTAIN` defaulting to
+`OKF_WRITE`'s value: it is what the shipped code does, but it makes one
+answer imply another, which is the ladder's mistake in a smaller form.
+Stamping on by default whenever a bundle is active: it is what a
+conformant producer does, but §2's trust model says a vault-side
+declaration buys advice and annotations, never authority to change
+bytes, and a default-on stamp would make the declaration do exactly that.
 
 **Where the implementation constraints live.** The configured-versus-
 runnable projections and the two reporting surfaces: #1432. The
@@ -644,7 +628,7 @@ so new vaults are conformant from note one.
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
 | 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
 | 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes | 5a |
-| 5c | Ownership switches (§6.0): `OKF_MAINTAIN` (inherits `OKF_WRITE`), `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only warning (#1434), reserved-file write refusal (#1419) | 5b |
+| 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only warning (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |
 | Docs | Guide, interop sections, examples/prompt packs | trails each phase; guide lands with 4 |
 
