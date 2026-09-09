@@ -318,10 +318,13 @@ byte-identical.
 
 ---
 
-## 6. Layer 4 — enforced write layer (`OKF_WRITE=true`)
+## 6. Layer 4 — the write-side switches
 
 Everything here changes bytes or write outcomes; all of it is operator-gated
-and none of it is implied by vault declaration.
+by one of the switches in §6.0, none of it is implied by vault declaration,
+and each behaviour below names the switch that owns it. Until §6.0 lands,
+`OKF_WRITE` is the only switch and owns all of it; the section was headed
+"enforced write layer (`OKF_WRITE=true`)" for that reason.
 
 ### 6.0 Ownership: three independent switches (proposed, #1412)
 
@@ -347,15 +350,25 @@ where another tool owns the listing but the server should stamp what it
 writes (stamp without maintain, the case #1393 asks for); a read-mostly
 mirror that repairs stale claims it ingests without stamping anything of
 its own (reconcile without stamp). Three switches cover all eight
-combinations; the two the ladder could express are two of them.
+combinations; the four rungs of the ladder are four of them.
 
 | Question | Switch | Yes | No |
 |---|---|---|---|
 | Does the server stamp what it writes? | `OKF_WRITE` (exists) | `generated` set and `verified` cleared on own `write`/`edit`/`append`; `okf_verify` exposed under `OKF_VERIFY` | the note is written as given; `okf_verify` hidden |
-| Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change (#1392), curates `log.md` per the log design (separate), and from 5.0 refuses client writes to those paths (#1419) | never writes them; the instruction snippet keeps asking the agent to update them |
+| Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change (#1392), curates `log.md` per the log design (separate), and from 5.0 refuses client writes to those paths (#1419) | no automatic maintenance; the instruction snippet keeps asking the agent to update them |
 | May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | removes demonstrably stale `generated` / `verified` on ingested external changes, per the provenance design (separate, #1420) | never touches another party's note |
 
 What every switch does **not** do, so the boundaries are decidable:
+
+- `OKF_MAINTAIN` off does not hide or refuse the explicit migration tools.
+  `okf_generate_index` and `okf_seed_log` are one-shot, operator-invoked
+  writes to the reserved files, gated by read-only mode and OKF activation
+  only (§7), and they stay so at both values of the switch. Once the
+  refusal of #1419 lands they are the sanctioned way to write those paths
+  from a client: the guard admits them because they are the server's own
+  generators, the same code the maintainer runs, and not because of the
+  suppression flag they happen to run under, which also covers
+  `okf_verify` and must not become a general bypass.
 
 - None is implied by the vault's declaration. `OKF_MODE=off` with any of
   the three set is rejected at start-up, as `OKF_WRITE` is today; on
@@ -378,6 +391,13 @@ What every switch does **not** do, so the boundaries are decidable:
 - The switches are per instance. How one instance treats another's
   commits is the ingest design's question (#1414); nothing here assumes a
   uniform posture across instances.
+
+**Tool surface.** Tool gating follows the switch that owns the tool, one
+tag per switch (`tool-registration` skill): `okf_verify` stays on the tag
+that means "off when `OKF_WRITE` is off" (`okf-enforce` today); a tool
+that exists only because the server maintains the reserved files, such
+as an intent tool for the curated log, gets a tag tied to `OKF_MAINTAIN`;
+the migration tools keep `okf` + `write` and no ownership tag.
 
 **Reporting.** `stats.okf` and `config://vault` gain the three effective
 booleans (`write`, `maintain`, `reconcile`), computed after inheritance
@@ -429,7 +449,7 @@ Stamping on by default whenever a bundle is active: it is what a
 conformant producer does, but it changes bytes in existing vaults on
 upgrade and is a separate decision for a major, not this one.
 
-- **Provenance stamping:** writes through `write`/`edit` set/update
+- **Provenance stamping** (`OKF_WRITE`): writes through `write`/`edit` set/update
   `generated: {by, at}`, `at` the UTC instant of the write in the spec's
   example form (`2026-06-30T14:00:00Z`, a string; #1372). Actor string:
   authenticated identity when available
@@ -437,13 +457,13 @@ upgrade and is a separate decision for a major, not this one.
   `markdown-vault-mcp/<version>` as a tool actor. Existing `generated`
   values are overwritten (it describes the current bytes); `sources` are
   never touched.
-- **Verification invalidation:** a content-changing `write`/`edit` to a note
+- **Verification invalidation** (`OKF_WRITE`): a content-changing `write`/`edit` to a note
   carrying `verified` clears the `verified` list — verification attests to
   bytes that no longer exist. Frontmatter-only edits that do not touch the
   body also invalidate (the spec ties verification to the concept, not the
   body alone); rename does not. This is the highest-value enforcement:
   it is exactly the invariant an advisory-only setup eventually misses.
-- **`okf_verify` tool:** appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
+- **`okf_verify` tool** (`OKF_WRITE`, attribution per `OKF_VERIFY`): appends `{by: human:<subject>, at}` (`at` a UTC instant, #1372) to `verified`,
   promoting the note's tier. `destructiveHint=False`, `idempotentHint=False`.
 
   The authenticated subject is *whose token* is in play, not evidence that a
@@ -496,6 +516,9 @@ upgrade and is a separate decision for a major, not this one.
   single-writer index first so a just-created note is listed. A brand-new
   subfolder's pointer in its parent `index.md` lands on the next write into
   the parent (per-write scope, not a full-tree walk).
+- **Reconciliation of notes the server did not write** (`OKF_RECONCILE`,
+  proposed): designed separately with the provenance evidence it depends
+  on (#1420); named here so the switch has an owner in this section.
 - **Optional conformance gate:** rejected for this design. `required_frontmatter=["type"]`
   already exists for operators who want hard exclusion; a softer write-time
   warning can ride the existing write-result `conventions`/advisory channel
@@ -582,7 +605,8 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
   the bundle root as `misplaced`, so seeding it into a folder's index would
   trade one defect for another.
 
-The `OKF_WRITE` maintainer needs this for a second reason: `_append_log` is a
+The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
+reason: `_append_log` is a
 read-modify-write, so the log's frontmatter has to be carried across the
 rewrite explicitly. Since the maintainer runs after *every* content write, the
 alternative is not a one-time gap but frontmatter stripped again after each
@@ -656,6 +680,7 @@ so new vaults are conformant from note one.
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
 | 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
 | 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes | 5a |
+| 5c | Ownership switches (§6.0): `OKF_MAINTAIN` (inherits `OKF_WRITE`), `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only warning (#1434); the reserved-file write refusal (#1419) is the `!` and waits for 5.0 | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |
 | Docs | Guide, interop sections, examples/prompt packs | trails each phase; guide lands with 4 |
 
