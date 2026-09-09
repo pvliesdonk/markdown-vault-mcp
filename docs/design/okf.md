@@ -357,17 +357,20 @@ them.
 | Question | Switch | Yes | No |
 |---|---|---|---|
 | Does the server stamp what it writes? | `OKF_WRITE` (exists) | `generated` set and `verified` cleared on own `write`/`edit`/`append`; `okf_verify` exposed under `OKF_VERIFY` | the note is written as given; `okf_verify` hidden |
-| Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change (#1392), curates `log.md` per the log design (separate), and from 5.0 refuses client writes to those paths (#1419) | no automatic maintenance |
+| Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change (#1392), curates `log.md` per the log design (separate), and refuses client writes to those paths (#1419) | no automatic maintenance |
 | May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | removes demonstrably stale `generated` / `verified` on ingested external changes, per the provenance design (separate, #1420) | no automatic repair |
 
 The switches govern what the server does **on its own**: stamping as a
 side effect of its write, maintenance and repair as reactions to changes.
-An explicit, client-invoked operation is not theirs to permit or forbid,
-whatever the switches say: an agent's `write`/`edit`/`append` of any note
-is governed by read-only mode alone, and the `okf_*` migration tools and
-`okf_verify` additionally by `OKF_MODE` (their `okf` tag; §7). A "no"
-above means the server initiates nothing, not that an operation is
-unreachable. A
+An explicit, client-invoked operation on a non-reserved note is not
+theirs to permit or forbid, whatever the switches say: an agent's
+`write`/`edit`/`append` of such a note is governed by read-only mode
+alone, and the `okf_*` migration tools and `okf_verify` additionally by
+`OKF_MODE` (their `okf` tag; §7). The one explicit operation a switch
+does forbid is a client write to a reserved file while the server
+maintains it (#1419); the migration tools that generate those files are
+admitted as the server's own generators. A "no" above means the server
+initiates nothing, not that an operation is unreachable. A
 switch's *effective* value is its configured value after inheritance
 (`OKF_MAINTAIN` unset follows `OKF_WRITE`); what the server then actually
 does additionally requires an active bundle and a writable vault, so all
@@ -378,36 +381,24 @@ ownership question and never depends on the switches. The switches are per
 instance; how one instance treats another's commits is the ingest
 design's question (#1414).
 
-**Compatibility, staged.** The split is additive: `OKF_MAINTAIN` unset
-follows `OKF_WRITE`, so a deployment with `OKF_WRITE=true` keeps
-maintaining, and `OKF_RECONCILE` defaults to off. No enum, no aliases:
-`OKF_WRITE` stays a boolean.
-
-Two changes fire at the same shipped setting (`OKF_WRITE=true`,
-`OKF_MAINTAIN` inheriting it) and are escapable only by the new switch,
-and they are classified differently. The criterion is what the
-documentation of the last stable release promised, which is how the
-policy is applied to any `fix:` that changes behaviour.
-
-Regenerating after an ingested change (#1392) restores promised
-behaviour: the guide says the server "keeps each written folder's
-`log.md` and `index.md` current" and tells an operator who would rather
-maintain them "Turn `OKF_WRITE` off". A listing that went stale after a
-pull was the filed defect, and a hand-curated `index.md` kept alive by
-that defect was never a supported workflow. So the regeneration is a fix,
-not a `!`. It still owes that operator an escape that does not cost the
-stamps, because today's only escape does: `OKF_MAINTAIN` ships no later
-than the regeneration, so "maintain the listing myself" stays reachable
-at the same stamping posture. #1392 is milestoned v4.2; either the switch
-joins it or the regeneration waits for the switch.
-
-Refusing client writes to the reserved files under `OKF_MAINTAIN` (#1419)
-removes promised behaviour: the same guide says a write whose target is a
-reserved file is left alone. Under the breaking-change policy's first
-refinement the old behaviour is gone at the same setting and reachable
-only by turning `OKF_MAINTAIN` off, so it is the one `!`, and it ships in
-5.0 with the planned breaking changes; the switches and the regeneration
-can ship in 4.x before it.
+**Compatibility.** The split is additive by construction: `OKF_MAINTAIN`
+unset follows `OKF_WRITE`, so a deployment with `OKF_WRITE=true` keeps
+maintaining, and `OKF_RECONCILE` defaults to off; `OKF_WRITE` stays a
+boolean, no enum, no aliases. Two behaviours then ride on the inherited
+value at the shipped setting: regeneration after an ingested change
+(#1392) and the refusal of client writes to the reserved files (#1419).
+The facts an implementer classifies them against are these, as the
+documentation stands: the guide says maintenance "runs only for content
+writes on an active bundle", that a write whose target is a reserved file
+"is left alone", and tells an operator who prefers to maintain the files
+themselves to "Turn `OKF_WRITE` off", which also costs the stamps; the
+configuration reference says the layer "keeps each written folder's
+`log.md` and `index.md` current". Whether either
+change carries the `!` is decided on its own pull request against the
+stable release at that time, under the breaking-change policy; this
+design does not decide it. What it does decide is that `OKF_MAINTAIN` is
+the escape both changes need, an escape that keeps the stamping posture,
+which today's has not got.
 
 **Rejected.** The ladder, above. A single set-valued setting
 (`OKF_WRITE=stamp,maintain,reconcile`): the same eight combinations with
@@ -653,7 +644,7 @@ so new vaults are conformant from note one.
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
 | 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
 | 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes | 5a |
-| 5c | Ownership switches (§6.0): `OKF_MAINTAIN` (inherits `OKF_WRITE`), `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only warning (#1434); the reserved-file write refusal (#1419) is the `!` and waits for 5.0 | 5b |
+| 5c | Ownership switches (§6.0): `OKF_MAINTAIN` (inherits `OKF_WRITE`), `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only warning (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |
 | Docs | Guide, interop sections, examples/prompt packs | trails each phase; guide lands with 4 |
 
