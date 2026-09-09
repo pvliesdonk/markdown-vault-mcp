@@ -144,17 +144,31 @@ line-author views, and submodules.
   [source: og-settings] [source: og-localstorage]
 - On desktop the plugin commits through simple-git as
   `git.commit(<formatted message>)` with no `--author` option, so author
-  and committer are whatever the repository's or the user's git
-  configuration resolves, exactly as a command-line commit would.
-  [source: og-simplegit]
+  and committer resolve as for any command-line commit run in that
+  process's environment. [source: og-simplegit] That environment is
+  Obsidian's own, copied from `process.env`, with the plugin's
+  desktop-only settings applied on top: "Additional PATH environment
+  variable paths" prepended to `PATH`, `GIT_DIR` and `GIT_WORK_TREE` when
+  a custom git directory is set, and "Additional environment variables"
+  ("Use each line for a new environment variable in the format
+  KEY=VALUE .") merged in, before the whole map is handed to simple-git
+  through `.env(envs)`. [source: og-simplegit] [source: og-settings]
+  Git reads `GIT_AUTHOR_*` and `GIT_COMMITTER_*` from that environment
+  ahead of any `user.*` configuration, including the values the "Commit
+  author" settings wrote into the repository; the precedence is recorded
+  in [git-staging-and-commits.md](/git-staging-and-commits.md)
+  ("Committing and identity") and is not restated here.
 - On mobile the manager reads `user.name` and `user.email` from the
   repository configuration and throws `Git author name and email are not
   set.` when either is missing; there is no fallback identity.
   [source: og-isogit]
-- Consequence: an obsidian-git commit carries the human's configured
-  identity on both platforms and never a plugin identity. A server that
-  classifies commits by committer can tell a plugin commit from its own
-  only while the two configured identities differ. [source: og-simplegit]
+- Consequence: an obsidian-git commit carries an identity the human
+  controls on both platforms, from the environment or the repository
+  configuration on desktop and from the repository configuration on
+  mobile, and never a plugin identity. A server that classifies commits
+  by committer can tell a plugin commit from its own only while the two
+  *resolved* identities differ, and resolution on the server's side also
+  starts with its environment (the same git page). [source: og-simplegit]
   [source: og-isogit]
 
 ### When it commits
@@ -234,9 +248,12 @@ line-author views, and submodules.
   file will automatically be deleted before commit)", followed by links
   to the conflicted files, and opens it. [source: og-main]
   [source: og-constants] Consequence for this server: that note is an
-  ordinary non-reserved markdown file until the plugin deletes it, so it
-  is indexed, searchable and listed in a generated `index.md` while it
-  exists.
+  ordinary non-reserved, body-only markdown file until the plugin deletes
+  it. Where the vault's settings admit it, it is indexed, searchable and
+  listed in a generated `index.md` while it exists; with
+  `required_frontmatter` configured the scanner skips it as
+  `missing_frontmatter` (it carries no frontmatter at all), and an
+  exclusion pattern that matches it hides it likewise.
 - On mobile the manager calls isomorphic-git's `merge` with
   `abortOnConflict: false`, supplies a `mergeDriver` callback only when
   `mergeStrategy` is not `"none"` (the callback runs `diff3Merge` and
