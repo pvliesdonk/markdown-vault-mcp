@@ -397,7 +397,8 @@ bytes, and a default-on stamp would make the declaration do exactly that.
 runnable projections and the two reporting surfaces: #1432. The
 instruction snippet's clause: #1431. The read-only warning: #1434. The
 reserved-file guard's admission of the server's own generators: #1419.
-A reserved-file change never triggering its own regeneration: #1414.
+A reserved-file change never triggering its own regeneration: #1414; the
+event the maintainer subscribes to is `design.md` "Change Event".
 Tool tags following switches: #1412.
 
 - **Provenance stamping** (`OKF_WRITE`): writes through `write`/`edit` set/update

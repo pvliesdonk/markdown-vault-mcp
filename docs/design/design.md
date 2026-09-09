@@ -849,6 +849,58 @@ chunks embedded by a different model are invisible to the chunk-set diff
 (the persisted provider/model fingerprint check normally catches this case
 at load time and forces the rebuild automatically).
 
+### Change Event (proposed, #1414)
+
+**Status:** design, 2026-09-09; not implemented. This says what to build;
+the constraints the first attempt (PR #1400, closed) established are on
+#1414, beside the code they constrain.
+
+The vault raises one event whenever the index has applied a change to what
+it holds, whatever route the change took: the server's own write path, an
+incremental reindex (a pull, the file watcher, the boot reindex, the
+`reindex` tool), or a full build. Everything that keeps something derived
+from vault state current subscribes to this event and to nothing else: the
+reserved-file maintainer (#1392), log curation (#1416), provenance
+assessment (#1413, #1420), the second-maintainer warning (#1394). None of
+them subscribes to git, to the filesystem, or to the tool that happened to
+write.
+
+The event says:
+
+- **Which paths entered, changed, or left the index.** "Left" covers every
+  reason a row goes: deleted on disk, newly matching an exclude pattern,
+  newly skipped for missing required frontmatter. Today's
+  `ReindexResult` reports those as counts.
+- **Moves, as the route knows them.** The own write path knows a rename as
+  a pair; a scan reports a removal and an addition.
+- **The origin of the change:** *own*, made through the server's write
+  path, or *observed*, found by a scan. A consumer that must not react to
+  the server's own work reads this. Who authored the bytes of an observed
+  change is not this event's to say; that is the provenance design's.
+- **Whether a full build ran.** A full build names no delta and means
+  everything may have changed, so consumers refresh everything. The cold
+  start, where the pull before the first build is absorbed by that build
+  and the boot reindex then reports no change, is the case this covers.
+
+Guarantees: the event is raised after the index reflects the change, so a
+consumer reads a consistent index; every change the index applies appears
+in exactly one event; a consumer's own writes go through the ordinary
+write path and raise their own *own* events, and the rule that a change to
+a reserved file never triggers its own regeneration is the consumer's
+(`okf.md` §6.0), not the event's.
+
+What it is not: not a git event, since it carries no commits and exists on
+vaults without git; not the write callback (`on_write`, the git-commit
+hook), which fires per write to commit bytes and never sees an observed
+change; not a filesystem event.
+
+Rejected: a git-commit-based event, which misses vaults without git, the
+watcher and the boot build, and whose unit is wrong anyway ("even another
+server's correctly stamped write can require a local index projection to
+be refreshed", PR #1429); one hook per route (pull, watcher, write), three
+sources that drift; `ReindexResult` as the event, which is a count summary
+returned to the caller of one route, not a delivery to subscribers.
+
 ### Embedding Convergence (#665)
 
 Since #1157 the whole embedding lifecycle — the cold build, this
@@ -4791,3 +4843,4 @@ Later decisions (2026-08-18, #1082/#1086):
 |-|-|-|-|
 | 24 | Release mechanics — how a release is cut | The knope release-PR flow replaces python-semantic-release: `Release Prepare` computes the version into a reviewed release PR, merging the PR tags and publishes, promotion is a plain stable prepare guarded by the same-source promotion guard, and a bookkeeping port PR replaces the mandatory merge-back. Decision 23's channel model (trunk-first, short-lived `release/X.Y`, rolling `edge`) survives intact; superseded within it are the semantic-release branch groups, the `finalize`/`force` inputs, the merge-back, and the rc-only-from-branch rule (an rc may continue a reachable series from quiescent trunk) | The version becomes a reviewed decision instead of a publish-time computation, and the "already released forever" failure class dies with the reachability requirement. Authoritative pair: [`release-vision.md`](release-vision.md) (target design) and [`release-migration.md`](release-migration.md) (decisions M1–M6 and the migration record); the implemented behaviour is summarised under [Release channels](#release-channels) above |
 | 25 | OKF ownership — how an operator declares what the server may write into a shared bundle | Three independent boolean switches, each default off and none implying another (`OKF_WRITE` stamps own writes; proposed `OKF_MAINTAIN` owns `index.md`/`log.md`; proposed `OKF_RECONCILE` repairs external notes), not a single ladder | The three writes collide with different things and an operator may want any combination (a git-hook-stamped vault still wants the listing maintained); a ladder forbids valid combinations and forces an enum with aliases; a default that follows another switch is the ladder's mistake in a smaller form. How shipped `OKF_WRITE=true` deployments get there is the epic's plan, not the design (`docs/design/okf.md` §6.0, 2026-09-09) |
+| 26 | Vault change event — how anything derived from vault state learns that the state changed | One event raised by the index after it applies a change, on every route (own write, pull, watcher, boot, `reindex` tool, full build), carrying the paths that entered/changed/left, the origin (own or observed) and a full-build flag; consumers subscribe to it and to nothing else | One source cannot drift where per-route hooks do; a git-commit event misses non-git vaults, the watcher and the boot build, and a foreign commit is not the unit a projection needs; `ReindexResult` is a count summary for one caller, not a delivery (`design.md` "Change Event", 2026-09-09) |
