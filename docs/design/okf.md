@@ -357,7 +357,7 @@ them.
 | Question | Switch | Yes | No |
 |---|---|---|---|
 | Does the server stamp what it writes? | `OKF_WRITE` (exists) | `generated` set and `verified` cleared on own `write`/`edit`/`append`; `okf_verify` exposed under `OKF_VERIFY` | the note is written as given; `okf_verify` hidden |
-| Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change (#1392), curates `log.md` per the log design (separate), and refuses client writes to those paths (#1419) | no automatic maintenance |
+| Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change to a non-reserved note (#1392; a reserved-file change never triggers its own regeneration, #1414), curates `log.md` per the log design (separate), and refuses client writes to those paths (#1419) | no automatic maintenance |
 | May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | removes demonstrably stale `generated` / `verified` on ingested external changes, per the provenance design (separate, #1420) | no automatic repair |
 
 The switches govern what the server does **on its own**: stamping as a
@@ -365,11 +365,12 @@ side effect of its write, maintenance and repair as reactions to changes.
 An explicit, client-invoked operation on a non-reserved note is not
 theirs to permit or forbid, whatever the switches say: an agent's
 `write`/`edit`/`append` of such a note is governed by read-only mode
-alone, and the `okf_*` migration tools and `okf_verify` additionally by
-`OKF_MODE` (their `okf` tag; §7). The one explicit operation a switch
-does forbid is a client write to a reserved file while the server
-maintains it (#1419); the migration tools that generate those files are
-admitted as the server's own generators. A "no" above means the server
+alone, and the `okf_*` migration tools additionally by `OKF_MODE` (their
+`okf` tag; §7). Two explicit operations are the switches' own: a client
+write to a reserved file is refused while the server maintains it
+(#1419), with the migration tools that generate those files admitted as
+the server's own generators; and `okf_verify` exists only under
+`OKF_WRITE`, as the table says. A "no" above means the server
 initiates nothing, not that an operation is unreachable. Each
 switch defaults to off, and none implies another. What the server then
 actually does additionally requires an active bundle and a writable
