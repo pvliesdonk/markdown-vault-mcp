@@ -371,9 +371,11 @@ What every switch does **not** do, so the boundaries are decidable:
   `okf_verify` and must not become a general bypass.
 
 - None is implied by the vault's declaration. `OKF_MODE=off` with any of
-  the three set is rejected at start-up, as `OKF_WRITE` is today; on
-  `auto` with no `okf_version` declared all three are inert, which the
-  maintainer already re-probes per write.
+  the three *effectively true* is rejected at start-up, as `OKF_WRITE=true`
+  is today; a switch explicitly `false`, or `OKF_MAINTAIN` inheriting a
+  false `OKF_WRITE`, conflicts with nothing. On `auto` with no
+  `okf_version` declared all three are inert, which the maintainer
+  already re-probes per write.
 - A change to a reserved file is never itself a trigger: the ingest path
   excludes `index.md` and `log.md` from the changes that cause a
   regeneration, as the write path already excludes a write targeting
@@ -383,8 +385,14 @@ What every switch does **not** do, so the boundaries are decidable:
 - All three are inert on a read-only vault (`READ_ONLY=true`): the write
   tools are hidden, so stamping has nothing to stamp, and maintenance or
   repair would be writes the operator forbade. A read-only instance with
-  any of the three set should log one `WARNING` at start-up naming the
-  inert setting; today the combination is silent, and undocumented.
+  any of the three effectively true should log one `WARNING` at start-up
+  naming the inert setting (#1434); today the combination is silent, and
+  undocumented.
+- The effective values are computed once, after inheritance and before
+  inertness, and that one derivation feeds the start-up validation, the
+  read-only warning, the reporting keys and the gating of tools and
+  maintenance. Four consumers of one function cannot disagree; four
+  re-derivations would.
 - Read-side behaviour (annotations, filters, the trust tier) is not an
   ownership question and never depends on these switches; the provenance
   design decides what the annotations derive from git evidence.
