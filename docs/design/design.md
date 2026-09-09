@@ -855,10 +855,15 @@ at load time and forces the rebuild automatically).
 the constraints the first attempt (PR #1400, closed) established are on
 #1414, beside the code they constrain.
 
-The vault raises one event whenever the index has applied a change to what
-it holds, whatever route the change took: the server's own write path, an
-incremental reindex (a pull, the file watcher, the boot reindex, the
-`reindex` tool), or a full build. Everything that keeps something derived
+The vault raises one event whenever the index has applied a change to the
+documents it holds, whatever route that change took: the server's own
+write path, an incremental reindex (a pull, the file watcher, the boot
+reindex, the `reindex` tool), or a full build (a cold start, `reindex`
+with `force`). The event is about documents: which ones the vault holds
+and what they contain. Embeddings are a derived representation of those
+documents that converges on its own route and never adds, changes or
+removes a document, so an embedding build raises nothing. Everything that
+keeps something derived
 from vault state current subscribes to this event and to nothing else: the
 reserved-file maintainer (#1392), log curation (#1416), provenance
 assessment (#1413, #1420), the second-maintainer warning (#1394). None of
@@ -882,9 +887,9 @@ The event says:
   start, where the pull before the first build is absorbed by that build
   and the boot reindex then reports no change, is the case this covers.
 
-Guarantees: the event is raised after the index reflects the change, so a
-consumer reads a consistent index; every change the index applies appears
-in exactly one event; a consumer's own writes go through the ordinary
+Guarantees: the event is raised after the document rows reflect the
+change, so a consumer reads them consistently; every document change the
+index applies appears in exactly one event; a consumer's own writes go through the ordinary
 write path and raise their own *own* events, and the rule that a change to
 a reserved file never triggers its own regeneration is the consumer's
 (`okf.md` §6.0), not the event's.
@@ -4843,4 +4848,4 @@ Later decisions (2026-08-18, #1082/#1086):
 |-|-|-|-|
 | 24 | Release mechanics — how a release is cut | The knope release-PR flow replaces python-semantic-release: `Release Prepare` computes the version into a reviewed release PR, merging the PR tags and publishes, promotion is a plain stable prepare guarded by the same-source promotion guard, and a bookkeeping port PR replaces the mandatory merge-back. Decision 23's channel model (trunk-first, short-lived `release/X.Y`, rolling `edge`) survives intact; superseded within it are the semantic-release branch groups, the `finalize`/`force` inputs, the merge-back, and the rc-only-from-branch rule (an rc may continue a reachable series from quiescent trunk) | The version becomes a reviewed decision instead of a publish-time computation, and the "already released forever" failure class dies with the reachability requirement. Authoritative pair: [`release-vision.md`](release-vision.md) (target design) and [`release-migration.md`](release-migration.md) (decisions M1–M6 and the migration record); the implemented behaviour is summarised under [Release channels](#release-channels) above |
 | 25 | OKF ownership — how an operator declares what the server may write into a shared bundle | Three independent boolean switches, each default off and none implying another (`OKF_WRITE` stamps own writes; proposed `OKF_MAINTAIN` owns `index.md`/`log.md`; proposed `OKF_RECONCILE` repairs external notes), not a single ladder | The three writes collide with different things and an operator may want any combination (a git-hook-stamped vault still wants the listing maintained); a ladder forbids valid combinations and forces an enum with aliases; a default that follows another switch is the ladder's mistake in a smaller form. How shipped `OKF_WRITE=true` deployments get there is the epic's plan, not the design (`docs/design/okf.md` §6.0, 2026-09-09) |
-| 26 | Vault change event — how anything derived from vault state learns that the state changed | One event raised by the index after it applies a change, on every route (own write, pull, watcher, boot, `reindex` tool, full build), carrying the paths that entered/changed/left, the origin (own or observed) and a full-build flag; consumers subscribe to it and to nothing else | One source cannot drift where per-route hooks do; a git-commit event misses non-git vaults, the watcher and the boot build, and a foreign commit is not the unit a projection needs; `ReindexResult` is a count summary for one caller, not a delivery (`design.md` "Change Event", 2026-09-09) |
+| 26 | Vault change event — how anything derived from vault state learns that the state changed | One event raised by the index after it applies a change to the documents it holds, on every route (own write, pull, watcher, boot, `reindex` tool, full build; embeddings are a derived representation and raise nothing), carrying the paths that entered/changed/left, the origin (own or observed) and a full-build flag; consumers subscribe to it and to nothing else | One source cannot drift where per-route hooks do; a git-commit event misses non-git vaults, the watcher and the boot build, and a foreign commit is not the unit a projection needs; `ReindexResult` is a count summary for one caller, not a delivery (`design.md` "Change Event", 2026-09-09) |
