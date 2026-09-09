@@ -362,10 +362,12 @@ them.
 
 The switches govern what the server does **on its own**: stamping as a
 side effect of its write, maintenance and repair as reactions to changes.
-An explicit, client-invoked operation, whether an agent's edit of any note
-or one of the `okf_*` migration tools, is governed by read-only mode and
-`OKF_MODE` as today (§7), whatever the switches say; a "no" above means
-the server initiates nothing, not that an operation is unreachable. A
+An explicit, client-invoked operation is not theirs to permit or forbid,
+whatever the switches say: an agent's `write`/`edit`/`append` of any note
+is governed by read-only mode alone, and the `okf_*` migration tools and
+`okf_verify` additionally by `OKF_MODE` (their `okf` tag; §7). A "no"
+above means the server initiates nothing, not that an operation is
+unreachable. A
 switch's *effective* value is its configured value after inheritance
 (`OKF_MAINTAIN` unset follows `OKF_WRITE`); what the server then actually
 does additionally requires an active bundle and a writable vault, so all
@@ -381,23 +383,31 @@ follows `OKF_WRITE`, so a deployment with `OKF_WRITE=true` keeps
 maintaining, and `OKF_RECONCILE` defaults to off. No enum, no aliases:
 `OKF_WRITE` stays a boolean.
 
-Regenerating after an ingested change (#1392) widens what
-`OKF_WRITE=true` does at the same setting. An operator who hand-curates a
-root `index.md` while stamping notes, on a vault the server rarely writes
-into, keeps that listing today (only a server write into the folder
-regenerates it) and would lose it on the first pull after the fix, with
-`OKF_WRITE=false` as the only escape and the stamps with it. The fix is
-therefore not breaking **on condition that `OKF_MAINTAIN` ships no later
-than the ingest regeneration**: with the switch, "maintain the listing
-myself" stays reachable at the same stamping posture. #1392 is milestoned
-v4.2; either the switch joins it or the regeneration waits for the switch.
+Two changes fire at the same shipped setting (`OKF_WRITE=true`,
+`OKF_MAINTAIN` inheriting it) and are escapable only by the new switch,
+and they are classified differently. The criterion is what the
+documentation of the last stable release promised, which is how the
+policy is applied to any `fix:` that changes behaviour.
 
-The one breaking piece is refusing client writes to the reserved files
-under `OKF_MAINTAIN` (#1419): the shipped `OKF_WRITE=true` accepts such a
-write today, and under the breaking-change policy's first refinement the
-old behaviour is gone at the same setting, reachable only by turning
-`OKF_MAINTAIN` off. That piece ships in 5.0 with the planned breaking
-changes; the switches and the regeneration can ship in 4.x before it.
+Regenerating after an ingested change (#1392) restores promised
+behaviour: the guide says the server "keeps each written folder's
+`log.md` and `index.md` current" and tells an operator who would rather
+maintain them "Turn `OKF_WRITE` off". A listing that went stale after a
+pull was the filed defect, and a hand-curated `index.md` kept alive by
+that defect was never a supported workflow. So the regeneration is a fix,
+not a `!`. It still owes that operator an escape that does not cost the
+stamps, because today's only escape does: `OKF_MAINTAIN` ships no later
+than the regeneration, so "maintain the listing myself" stays reachable
+at the same stamping posture. #1392 is milestoned v4.2; either the switch
+joins it or the regeneration waits for the switch.
+
+Refusing client writes to the reserved files under `OKF_MAINTAIN` (#1419)
+removes promised behaviour: the same guide says a write whose target is a
+reserved file is left alone. Under the breaking-change policy's first
+refinement the old behaviour is gone at the same setting and reachable
+only by turning `OKF_MAINTAIN` off, so it is the one `!`, and it ships in
+5.0 with the planned breaking changes; the switches and the regeneration
+can ship in 4.x before it.
 
 **Rejected.** The ladder, above. A single set-valued setting
 (`OKF_WRITE=stamp,maintain,reconcile`): the same eight combinations with
