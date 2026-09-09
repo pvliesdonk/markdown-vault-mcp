@@ -19,15 +19,14 @@ of 2026-08-21 (every timestamp an ISO 8601 datetime with an offset;
 [`reference/okf-v0.2.md`](reference/okf-v0.2.md); the departures this
 document decides are listed there.
 
-**Ownership under more than one author:** the maintenance model in §6
-(append a bullet per own write; regenerate `index.md` after own writes
-only) is superseded by the approved design in
-[`okf-ownership.md`](okf-ownership.md) (epic #1425): an `OKF_WRITE`
-ladder, a curated `log.md`, protected reserved paths, and reconciliation
-of externally written notes. Until its children land, §6 describes what
-runs, except its cost note on commit count, which is stale (#1423: one
-commit per tool call since #1264); `okf-ownership.md` describes what
-will.
+**Ownership under more than one author:**
+[`okf-ownership.md`](okf-ownership.md) proposes a replacement maintenance
+model for epic #1425: an `OKF_WRITE` ladder, a curated `log.md`, protected
+reserved paths, and evidence-based repair of externally written notes.
+The 2026-09-09 revision separates the owner's recorded choices from proposed
+simplifications; it is not an implemented or newly approved contract.
+Until implementation lands, §6 describes the running behavior, except its
+stale commit-count note (#1423: writes are batched per tool call since #1264).
 
 This document is the authoritative design for OKF support. As phases land,
 the relevant subsections graduate into `design.md` alongside the features
