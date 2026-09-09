@@ -362,8 +362,11 @@ What every switch does **not** do, so the boundaries are decidable:
 
 - `OKF_MAINTAIN` off does not hide or refuse the explicit migration tools.
   `okf_generate_index` and `okf_seed_log` are one-shot, operator-invoked
-  writes to the reserved files, gated by read-only mode and OKF activation
-  only (§7), and they stay so at both values of the switch. Once the
+  writes to the reserved files, registered under the `okf` tag and so
+  hidden only when `OKF_MODE=off`, and they respect read-only mode (§7);
+  they check no activation, because generating the index of a vault that
+  is not yet declared is the migration ratchet's first step. They stay so
+  at both values of the switch. Once the
   refusal of #1419 lands they are the sanctioned way to write those paths
   from a client: the guard admits them because they are the server's own
   generators, the same code the maintainer runs, and not because of the
@@ -423,7 +426,10 @@ gains the configured posture (`okf_write`, `okf_maintain`,
 (`write`, `maintain`, `reconcile`) beside the `mode` and
 `declared_version` it already carries. An operator who sees a switch
 configured on and running off reads the reason off the same payloads:
-`okf_active` false, or the read-only flag (#1432).
+`okf_active` false, or the read-only flag (#1432). `stats.okf` is absent
+altogether on an inactive bundle, as today, so the runnable posture is
+reported only when there is one; inactivity itself is read from
+`config://vault`.
 
 **Instructions.** The OKF instruction snippet currently tells every agent
 "For edits, update 'log.md'/'index.md'" whatever the configuration. With
