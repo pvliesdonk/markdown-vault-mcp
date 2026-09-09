@@ -863,12 +863,23 @@ with `force`). The event is about documents: which ones the vault holds
 and what they contain. Embeddings are a derived representation of those
 documents that converges on its own route and never adds, changes or
 removes a document, so an embedding build raises nothing. Everything that
-keeps something derived
-from vault state current subscribes to this event and to nothing else: the
-reserved-file maintainer (#1392), log curation (#1416), provenance
-assessment (#1413, #1420), the second-maintainer warning (#1394). None of
-them subscribes to git, to the filesystem, or to the tool that happened to
-write.
+keeps something derived from vault state current learns *that* the state
+changed from this event and from nothing else: the reserved-file
+maintainer (#1392), log curation (#1416), provenance assessment (#1413,
+#1420), the second-maintainer warning (#1394). None of them is triggered
+by git, by the filesystem, or by the tool that happened to write. What a
+consumer then does may draw on other inputs, a declared intent, the
+note's content, git history, and those are the consumer's designs to
+name; the event is the trigger, not the material.
+
+The event has the granularity of the index, not of operations. Several
+writes to one path before the index applies them are one change; a full
+build names no change at all; the event does not say which tool wrote,
+how many times, or what the operation was. It replaces the per-write
+trigger that today's convention maintenance runs on (`okf.md` §6), and
+the per-write `log.md` bullet that trigger produces is what the log
+design (#1416) supersedes, not something this event preserves. A
+consumer that needs per-operation facts is not a consumer of this event.
 
 The event says:
 
@@ -890,7 +901,7 @@ The event says:
 Guarantees: the event is raised after the document rows reflect the
 change, so a consumer reads them consistently; every document change the
 index applies appears in exactly one event; a consumer's own writes go through the ordinary
-write path and raise their own *own* events, and the rule that a change to
+write path and raise events of origin *own*, and the rule that a change to
 a reserved file never triggers its own regeneration is the consumer's
 (`okf.md` §6.0), not the event's.
 
