@@ -357,9 +357,16 @@ combinations; the two the ladder could express are two of them.
 
 What every switch does **not** do, so the boundaries are decidable:
 
-- None is implied by the vault's declaration; all three are inert on an
-  inactive bundle (`OKF_MODE=off`, or `auto` with no `okf_version`), which
-  the maintainer already re-probes per write.
+- None is implied by the vault's declaration. `OKF_MODE=off` with any of
+  the three set is rejected at start-up, as `OKF_WRITE` is today; on
+  `auto` with no `okf_version` declared all three are inert, which the
+  maintainer already re-probes per write.
+- A change to a reserved file is never itself a trigger: the ingest path
+  excludes `index.md` and `log.md` from the changes that cause a
+  regeneration, as the write path already excludes a write targeting
+  them, so a hand edit to `index.md` is not overwritten by its own
+  indexing. It is overwritten by the next *note* change in that folder,
+  and from 5.0 the write is refused instead (#1419).
 - All three are inert on a read-only vault (`READ_ONLY=true`): the write
   tools are hidden, so stamping has nothing to stamp, and maintenance or
   repair would be writes the operator forbade. A read-only instance with
@@ -387,15 +394,32 @@ maximal surface measures 1,507 (`tests/test_client_surface_budget.py`).
 
 **Compatibility, staged.** The split itself is additive: `OKF_MAINTAIN`
 unset follows `OKF_WRITE`, so a deployment with `OKF_WRITE=true` keeps
-maintaining, and `OKF_RECONCILE` defaults to off. Regenerating after an
-ingested change is the fix for #1392 and not a mode change. The one
-breaking piece is refusing client writes to the reserved files under
-`OKF_MAINTAIN` (#1419): the shipped `OKF_WRITE=true` accepts such a write
-today, and under the breaking-change policy's first refinement the old
-behaviour is gone at the same setting, reachable only by turning
+maintaining, and `OKF_RECONCILE` defaults to off. No enum, no aliases:
+`OKF_WRITE` stays a boolean.
+
+Regenerating after an ingested change (#1392) widens what
+`OKF_WRITE=true` does at the same setting, and the guide describes
+today's narrower trigger as a boundary ("editing `index.md` by hand is
+left alone"). That sentence describes the write path, which does not
+recurse into a reserved target; it is not a survival promise, since the
+next server write into the folder regenerates the listing today. But an
+operator who hand-curates a root `index.md` while stamping notes, on a
+vault the server rarely writes into, would lose that listing on the
+first pull after the fix, with `OKF_WRITE=false` as the only escape and
+the stamps with it. The fix is therefore not breaking **on condition
+that `OKF_MAINTAIN` ships no later than the ingest regeneration**: with
+the switch, "maintain the listing myself" stays reachable at the same
+stamping posture, which is the old behaviour's only coherent reading.
+#1392 is milestoned v4.2; either the switch joins it or the regeneration
+waits for the switch. The guide sentence is rewritten with the fix to
+say what happens to a hand edit.
+
+The one breaking piece is refusing client writes to the reserved files
+under `OKF_MAINTAIN` (#1419): the shipped `OKF_WRITE=true` accepts such a
+write today, and under the breaking-change policy's first refinement the
+old behaviour is gone at the same setting, reachable only by turning
 `OKF_MAINTAIN` off. That piece ships in 5.0 with the planned breaking
-changes; the switches and the regeneration can ship in 4.x before it. No
-enum, no aliases: `OKF_WRITE` stays a boolean.
+changes; the switches and the regeneration can ship in 4.x before it.
 
 **Rejected.** The ladder, above. A single set-valued setting
 (`OKF_WRITE=stamp,maintain,reconcile`): expresses the same eight
