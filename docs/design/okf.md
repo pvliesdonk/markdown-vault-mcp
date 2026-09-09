@@ -364,9 +364,11 @@ The switches govern what the server does **on its own**: stamping as a
 side effect of its write, maintenance and repair as reactions to changes.
 An explicit, client-invoked operation on a non-reserved note is not
 theirs to permit or forbid, whatever the switches say: an agent's
-`write`/`edit`/`append` of such a note is governed by read-only mode
-alone, and the `okf_*` migration tools additionally by `OKF_MODE` (their
-`okf` tag; §7). Two explicit operations are the switches' own: a client
+`write`/`edit`/`append` of such a note answers to the vault's general
+write policies (read-only mode, write protection, conditional writes,
+and whatever else `design.md` gives the write path) and to no OKF
+switch; the `okf_*` migration tools additionally answer to `OKF_MODE`
+(their `okf` tag; §7). Two explicit operations are the switches' own: a client
 write to a reserved file is refused while the server maintains it
 (#1419), with the migration tools that generate those files admitted as
 the server's own generators; and `okf_verify` exists only under
