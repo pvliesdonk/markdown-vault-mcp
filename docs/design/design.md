@@ -856,13 +856,13 @@ the constraints the first attempt (PR #1400, closed) established are on
 #1414, beside the code they constrain.
 
 The vault raises one event whenever the index has applied a change to the
-documents it holds, whatever route that change took: the server's own
-write path, an incremental reindex (a pull, the file watcher, the boot
-reindex, the `reindex` tool), or a full build (a cold start, `reindex`
-with `force`). The event is about documents: which ones the vault holds
-and what they contain. Embeddings are a derived representation of those
-documents that converges on its own route and never adds, changes or
-removes a document, so an embedding build raises nothing. Everything that
+notes it serves, on every route by which a change can reach the index;
+the routes today are the server's own write path, an incremental reindex
+(a pull, the file watcher, the boot reindex, the `reindex` tool) and a
+full build (a cold start, `reindex` with `force`). A note is a markdown
+document the index holds. Attachments are never indexed, and embeddings
+are a derived representation that converges on its own route and adds,
+changes or removes no note, so neither raises anything. Everything that
 keeps something derived from vault state current learns *that* the state
 changed from this event and from nothing else: the reserved-file
 maintainer (#1392), log curation (#1416), provenance assessment (#1413,
@@ -883,11 +883,13 @@ consumer that needs per-operation facts is not a consumer of this event.
 
 The event says:
 
-- **Which paths entered, changed, or left the index.** "Left" covers every
-  reason a row goes: deleted on disk, newly matching an exclude pattern,
-  newly skipped for missing required frontmatter.
-- **Moves, as the route knows them.** The own write path knows a rename as
-  a pair; a scan reports a removal and an addition.
+- **Which notes entered, changed, or left.** A note has left when the
+  index stops serving it, for whatever reason; the Skip Tombstones
+  contract above is what defines that: the note's row is gone (deleted,
+  or newly excluded by pattern) or has become a tombstone (any surfaced
+  deterministic skip).
+- **Moves, when the route that reported the change knows both ends;**
+  otherwise a removal and an addition.
 - **Not who made the change.** The event carries no origin. Whose bytes
   the index applied, the server's own or another editor's, is evidence a
   consumer that needs it derives under its own design: provenance
@@ -897,16 +899,14 @@ The event says:
   reserved-file maintainer needs no such knowledge; it regenerates from
   the state it finds.
 - **Whether a full build ran.** A full build names no delta and means
-  everything may have changed, so consumers refresh everything. The cold
-  start, where the pull before the first build is absorbed by that build
-  and the boot reindex then reports no change, is the case this covers.
+  everything may have changed, so consumers refresh everything.
 
-Guarantees: the event is raised after the document rows reflect the
-change, so a consumer reads them consistently; every document change the
-index applies appears in exactly one event; a consumer's own writes go
-through the ordinary write path and raise events like any other, and the
-rule that a change to a reserved file never triggers its own regeneration
-is the consumer's (`okf.md` §6.0), not the event's.
+Guarantees: the event is raised after the index reflects the change, so a
+consumer reads a consistent index; every change the index applies appears
+in exactly one event; a consumer's own writes go through the ordinary
+write path and raise events like any other, and the rule that a change to
+a reserved file never triggers its own regeneration is the consumer's
+(`okf.md` §6.0), not the event's.
 
 What it is not: not a git event, since it carries no commits and exists on
 vaults without git; not the write callback (`on_write`, the git-commit
