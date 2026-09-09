@@ -393,7 +393,7 @@ writes on an active bundle", that a write whose target is a reserved file
 "is left alone", and tells an operator who prefers to maintain the files
 themselves to "Turn `OKF_WRITE` off", which also costs the stamps; the
 configuration reference says the layer "keeps each written folder's
-`log.md` and `index.md` current". Whether either
+log.md and index.md current". Whether either
 change carries the `!` is decided on its own pull request against the
 stable release at that time, under the breaking-change policy; this
 design does not decide it. What it does decide is that `OKF_MAINTAIN` is
