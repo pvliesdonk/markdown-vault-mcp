@@ -356,9 +356,19 @@ combinations; the four rungs of the ladder are four of them.
 |---|---|---|---|
 | Does the server stamp what it writes? | `OKF_WRITE` (exists) | `generated` set and `verified` cleared on own `write`/`edit`/`append`; `okf_verify` exposed under `OKF_VERIFY` | the note is written as given; `okf_verify` hidden |
 | Is the server the maintainer of the reserved files? | `OKF_MAINTAIN` (proposed) | regenerates `index.md` after any indexed change (#1392), curates `log.md` per the log design (separate), and from 5.0 refuses client writes to those paths (#1419) | no automatic maintenance; the instruction snippet keeps asking the agent to update them |
-| May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | removes demonstrably stale `generated` / `verified` on ingested external changes, per the provenance design (separate, #1420) | never touches another party's note |
+| May the server repair notes it did not write? | `OKF_RECONCILE` (proposed) | removes demonstrably stale `generated` / `verified` on ingested external changes, per the provenance design (separate, #1420) | no automatic repair of another party's note |
 
 What every switch does **not** do, so the boundaries are decidable:
+
+- The switches govern what the server does *on its own*: stamping as a
+  side effect of a write, maintenance and repair as reactions to changes.
+  An explicit, client-invoked operation is not theirs to permit or
+  forbid: an agent editing any note, `okf_convert_links` rewriting links
+  in notes another party authored, `okf_generate_index` and
+  `okf_seed_log` writing the reserved files, are governed by read-only
+  mode and `OKF_MODE` only, whatever the three switches say. A "no" in
+  the table above means the server initiates nothing, not that the
+  operation is unreachable.
 
 - `OKF_MAINTAIN` off does not hide or refuse the explicit migration tools.
   `okf_generate_index` and `okf_seed_log` are one-shot, operator-invoked
@@ -366,9 +376,9 @@ What every switch does **not** do, so the boundaries are decidable:
   hidden only when `OKF_MODE=off`, and they respect read-only mode (§7);
   they check no activation, because they are one-shot transforms invoked
   deliberately rather than ongoing enforcement (§7), and an operator runs
-  them before declaring a vault (the root `index.md` the declaration goes
-  into may not exist yet) or under `OKF_MODE=on` on a bundle they cannot
-  declare. They stay so at both values of the switch. Once the
+  them before declaring a vault, when the root `index.md` the declaration
+  goes into may not exist yet and `auto` reports the bundle inactive. They
+  stay so at both values of the switch. Once the
   refusal of #1419 lands they are the sanctioned way to write those paths
   from a client: the guard admits them because they are the server's own
   generators, the same code the maintainer runs, and not because of the
