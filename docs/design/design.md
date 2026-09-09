@@ -889,10 +889,16 @@ The event says:
   `ReindexResult` reports those as counts.
 - **Moves, as the route knows them.** The own write path knows a rename as
   a pair; a scan reports a removal and an addition.
-- **The origin of the change:** *own*, made through the server's write
-  path, or *observed*, found by a scan. A consumer that must not react to
-  the server's own work reads this. Who authored the bytes of an observed
-  change is not this event's to say; that is the provenance design's.
+- **The origin of the change:** *own* when the bytes the index applied
+  are the bytes the server's write path wrote, *observed* otherwise. The
+  label is about the bytes that became index state, not about which route
+  reported the path: the index reads the file when it processes the
+  change, so a server write overtaken on disk by another editor before
+  then is indexed as that editor's bytes and raises one *observed* event
+  and no *own* one, its own bytes never having become index state. A
+  consumer that must not react to the server's own work reads this. Who
+  authored the bytes of an observed change is not this event's to say;
+  that is the provenance design's.
 - **Whether a full build ran.** A full build names no delta and means
   everything may have changed, so consumers refresh everything. The cold
   start, where the pull before the first build is absorbed by that build
