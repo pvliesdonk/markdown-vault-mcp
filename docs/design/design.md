@@ -889,16 +889,14 @@ The event says:
   `ReindexResult` reports those as counts.
 - **Moves, as the route knows them.** The own write path knows a rename as
   a pair; a scan reports a removal and an addition.
-- **The origin of the change:** *own* when the bytes the index applied
-  are the bytes the server's write path wrote, *observed* otherwise. The
-  label is about the bytes that became index state, not about which route
-  reported the path: the index reads the file when it processes the
-  change, so a server write overtaken on disk by another editor before
-  then is indexed as that editor's bytes and raises one *observed* event
-  and no *own* one, its own bytes never having become index state. A
-  consumer that must not react to the server's own work reads this. Who
-  authored the bytes of an observed change is not this event's to say;
-  that is the provenance design's.
+- **Not who made the change.** The event carries no origin. Whose bytes
+  the index applied, the server's own or another editor's, is evidence a
+  consumer that needs it derives under its own design: provenance
+  assessment from git and the note (#1413, #1420), the second-maintainer
+  warning by comparing what it finds with what the maintainer last wrote
+  (#1394), log curation from a declared intent or history (#1416). The
+  reserved-file maintainer needs no such knowledge; it regenerates from
+  the state it finds.
 - **Whether a full build ran.** A full build names no delta and means
   everything may have changed, so consumers refresh everything. The cold
   start, where the pull before the first build is absorbed by that build
@@ -906,10 +904,10 @@ The event says:
 
 Guarantees: the event is raised after the document rows reflect the
 change, so a consumer reads them consistently; every document change the
-index applies appears in exactly one event; a consumer's own writes go through the ordinary
-write path and raise events of origin *own*, and the rule that a change to
-a reserved file never triggers its own regeneration is the consumer's
-(`okf.md` §6.0), not the event's.
+index applies appears in exactly one event; a consumer's own writes go
+through the ordinary write path and raise events like any other, and the
+rule that a change to a reserved file never triggers its own regeneration
+is the consumer's (`okf.md` §6.0), not the event's.
 
 What it is not: not a git event, since it carries no commits and exists on
 vaults without git; not the write callback (`on_write`, the git-commit
@@ -4865,4 +4863,4 @@ Later decisions (2026-08-18, #1082/#1086):
 |-|-|-|-|
 | 24 | Release mechanics — how a release is cut | The knope release-PR flow replaces python-semantic-release: `Release Prepare` computes the version into a reviewed release PR, merging the PR tags and publishes, promotion is a plain stable prepare guarded by the same-source promotion guard, and a bookkeeping port PR replaces the mandatory merge-back. Decision 23's channel model (trunk-first, short-lived `release/X.Y`, rolling `edge`) survives intact; superseded within it are the semantic-release branch groups, the `finalize`/`force` inputs, the merge-back, and the rc-only-from-branch rule (an rc may continue a reachable series from quiescent trunk) | The version becomes a reviewed decision instead of a publish-time computation, and the "already released forever" failure class dies with the reachability requirement. Authoritative pair: [`release-vision.md`](release-vision.md) (target design) and [`release-migration.md`](release-migration.md) (decisions M1–M6 and the migration record); the implemented behaviour is summarised under [Release channels](#release-channels) above |
 | 25 | OKF ownership — how an operator declares what the server may write into a shared bundle | Three independent boolean switches, each default off and none implying another (`OKF_WRITE` stamps own writes; proposed `OKF_MAINTAIN` owns `index.md`/`log.md`; proposed `OKF_RECONCILE` repairs external notes), not a single ladder | The three writes collide with different things and an operator may want any combination (a git-hook-stamped vault still wants the listing maintained); a ladder forbids valid combinations and forces an enum with aliases; a default that follows another switch is the ladder's mistake in a smaller form. How shipped `OKF_WRITE=true` deployments get there is the epic's plan, not the design (`docs/design/okf.md` §6.0, 2026-09-09) |
-| 26 | Vault change event — how anything derived from vault state learns that the state changed | One event raised by the index after it applies a change to the documents it holds, on every route (own write, pull, watcher, boot, `reindex` tool, full build; embeddings are a derived representation and raise nothing), carrying the paths that entered/changed/left, the origin (own or observed) and a full-build flag; consumers subscribe to it and to nothing else | One source cannot drift where per-route hooks do; a git-commit event misses non-git vaults, the watcher and the boot build, and a foreign commit is not the unit a projection needs; `ReindexResult` is a count summary for one caller, not a delivery (`design.md` "Change Event", 2026-09-09) |
+| 26 | Vault change event — how anything derived from vault state learns that the state changed | One event raised by the index after it applies a change to the documents it holds, on every route (own write, pull, watcher, boot, `reindex` tool, full build; embeddings are a derived representation and raise nothing), carrying the paths that entered/changed/left, moves as known, and a full-build flag, and not who made the change (a consumer that needs that derives it under its own design); consumers learn that state changed from it and from nothing else | One source cannot drift where per-route hooks do; a git-commit event misses non-git vaults, the watcher and the boot build, and a foreign commit is not the unit a projection needs; `ReindexResult` is a count summary for one caller, not a delivery (`design.md` "Change Event", 2026-09-09) |
