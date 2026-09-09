@@ -364,9 +364,11 @@ What every switch does **not** do, so the boundaries are decidable:
   `okf_generate_index` and `okf_seed_log` are one-shot, operator-invoked
   writes to the reserved files, registered under the `okf` tag and so
   hidden only when `OKF_MODE=off`, and they respect read-only mode (§7);
-  they check no activation, because generating the index of a vault that
-  is not yet declared is the migration ratchet's first step. They stay so
-  at both values of the switch. Once the
+  they check no activation, because they are one-shot transforms invoked
+  deliberately rather than ongoing enforcement (§7), and an operator runs
+  them before declaring a vault (the root `index.md` the declaration goes
+  into may not exist yet) or under `OKF_MODE=on` on a bundle they cannot
+  declare. They stay so at both values of the switch. Once the
   refusal of #1419 lands they are the sanctioned way to write those paths
   from a client: the guard admits them because they are the server's own
   generators, the same code the maintainer runs, and not because of the
