@@ -557,7 +557,12 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
 - **`okf_version` is never synthesized.** The audit flags it on any file but
   the bundle root as `misplaced` — and, since #1396, as `index_frontmatter`
   too — so seeding it into a folder's index would trade one defect for two
-  findings.
+  findings. `required_frontmatter` is operator-set and nothing rejects the
+  key in it, so this holds in `seeded_fields` rather than in the operator's
+  restraint. That one property is also what the audit tolerates, which
+  matters: were tolerance read from `required_frontmatter` directly, naming
+  the key there would silence the `index_frontmatter` half of that overlap
+  on exactly the vaults where the server had just written it.
 
 The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
 reason: `_append_log` is a

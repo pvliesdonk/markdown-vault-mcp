@@ -713,10 +713,11 @@ def audit_bundle(
     )
     excludes = list(exclude_patterns or [])
     # Exactly the keys ``ReservedFrontmatterPolicy.build`` emits into a
-    # generated reserved file; pinned against ``build`` by
+    # generated reserved file: both read ``seeded_fields``, so the two cannot
+    # drift. Pinned against ``build`` by
     # ``test_the_audit_tolerates_exactly_what_the_policy_seeds``.
     permitted = frozenset(
-        reserved_frontmatter.required_fields if reserved_frontmatter else ()
+        reserved_frontmatter.seeded_fields if reserved_frontmatter else ()
     )
     acc = _AuditCounters(example_cap)
     paths = (
@@ -891,11 +892,27 @@ class ReservedFrontmatterPolicy:
         title_field: The frontmatter key the indexer resolves titles from.
             The one required field given a derived value rather than a
             placeholder, since the server knows the title it just wrote.
-        required_fields: The vault's configured ``required_frontmatter``.
+        required_fields: The vault's configured ``required_frontmatter``, as
+            the operator set it. :attr:`seeded_fields` is what :meth:`build`
+            actually writes, and what the audit tolerates.
     """
 
     title_field: str = "title"
     required_fields: tuple[str, ...] = ()
+
+    @property
+    def seeded_fields(self) -> tuple[str, ...]:
+        """The required fields :meth:`build` actually seeds.
+
+        ``required_frontmatter`` is operator-configured and nothing rejects
+        ``okf_version`` in it, so this drops that one key: §8 gives it a
+        meaning tied to the bundle root, and a value the server invents for a
+        folder's index would be a declaration the format forbids there. Both
+        readers derive from this one property so "the audit tolerates exactly
+        what :meth:`build` emits" holds by construction rather than by two
+        rules kept in step.
+        """
+        return tuple(f for f in self.required_fields if f != "okf_version")
 
     def build(
         self, existing: Mapping[str, Any] | None, *, title: str
@@ -910,9 +927,13 @@ class ReservedFrontmatterPolicy:
         (:func:`~markdown_vault_mcp.scanner.parse_note_categorized`), and the
         server has nothing truthful to put there.
 
-        ``okf_version`` is never synthesized. The conformance audit flags it
-        on any file but the bundle root as ``misplaced``, so seeding it into
-        a folder's generated index would trade one defect for another.
+        ``okf_version`` is never synthesized: :attr:`seeded_fields` drops it,
+        so configuring it as a required field cannot make this method write
+        it. The conformance audit flags it on any file but the bundle root as
+        ``misplaced`` — and, since #1396, as ``index_frontmatter`` too — so
+        seeding it into a folder's generated index would trade one defect for
+        two findings. A root ``okf_version`` still survives regeneration,
+        because it arrives through *existing* rather than through seeding.
 
         Args:
             existing: The file's current frontmatter, or ``None`` when the
@@ -925,7 +946,7 @@ class ReservedFrontmatterPolicy:
             no frontmatter at all.
         """
         merged: dict[str, Any] = dict(existing or {})
-        for field in self.required_fields:
+        for field in self.seeded_fields:
             if field in merged:
                 continue
             merged[field] = title if field == self.title_field else None

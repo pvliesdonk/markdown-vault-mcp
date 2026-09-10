@@ -720,17 +720,47 @@ class TestOkfAudit:
         assert report.index_frontmatter.examples == ("index.md",)
 
     def test_the_audit_tolerates_exactly_what_the_policy_seeds(self) -> None:
-        """The audit reads ``required_fields`` as "what ``build`` emits".
+        """The audit reads ``seeded_fields`` as "what ``build`` emits".
 
         Pinning the two together, so a policy that grows a seeded key the
-        audit does not tolerate cannot ship silently.
+        audit does not tolerate cannot ship silently. ``okf_version`` is in
+        *required_fields* here on purpose: it is the one configured key
+        ``build`` declines to seed, so it is the case where the two tuples
+        differ and the pin has something to say.
         """
         from markdown_vault_mcp.okf import ReservedFrontmatterPolicy
 
-        policy = ReservedFrontmatterPolicy(required_fields=("title", "type"))
+        policy = ReservedFrontmatterPolicy(
+            required_fields=("title", "type", "okf_version")
+        )
         seeded = policy.build(None, title="Index")
         assert seeded is not None
-        assert set(seeded) == set(policy.required_fields)
+        assert set(seeded) == set(policy.seeded_fields)
+
+    def test_build_never_seeds_okf_version_even_when_required(self) -> None:
+        """Nothing rejects ``okf_version`` in ``required_frontmatter``.
+
+        So the "never synthesized" invariant has to hold in ``build`` rather
+        than in the operator's restraint: §8 ties the key to the bundle root,
+        and a value the server invents for a folder's index is a declaration
+        the format forbids there.
+        """
+        from markdown_vault_mcp.okf import ReservedFrontmatterPolicy
+
+        policy = ReservedFrontmatterPolicy(required_fields=("title", "okf_version"))
+        assert policy.build(None, title="Guides") == {"title": "Guides"}
+
+    def test_a_hand_authored_okf_version_still_survives_regeneration(self) -> None:
+        """Declining to *seed* it must not start stripping the root's own.
+
+        The root declaration arrives through ``existing``, which wins over
+        seeding, so the two rules do not collide.
+        """
+        from markdown_vault_mcp.okf import ReservedFrontmatterPolicy
+
+        policy = ReservedFrontmatterPolicy(required_fields=("title", "okf_version"))
+        built = policy.build({"okf_version": "0.2"}, title="Bundle")
+        assert built == {"okf_version": "0.2", "title": "Bundle"}
 
     def test_an_empty_block_on_an_index_is_a_finding(self, tmp_path: Path) -> None:
         """§8 asks for no block; one that declares nothing is still a block."""
@@ -795,6 +825,33 @@ class TestOkfAudit:
             "guides/index.md",
             "guides/misplaced.md",
         )
+        assert report.index_frontmatter.examples == ("guides/index.md",)
+
+    def test_the_overlap_survives_a_gate_that_requires_okf_version(
+        self, tmp_path: Path
+    ) -> None:
+        """The tolerance is derived from config, so config could silence it.
+
+        ``required_frontmatter`` is operator-set and nothing rejects
+        ``okf_version`` in it. Were the audit to tolerate whatever it names,
+        adding that one key would drop a folder index out of
+        ``index_frontmatter`` — the documented overlap quietly reduced to one
+        finding by a config value. ``build`` declines to seed the key, so the
+        audit has no reason to tolerate it, and both findings still fire.
+        """
+        from markdown_vault_mcp.okf import ReservedFrontmatterPolicy, audit_bundle
+
+        _build_audit_vault(tmp_path)
+        (tmp_path / "guides" / "index.md").write_text(
+            '---\nokf_version: "0.2"\n---\n# Guides\n', encoding="utf-8"
+        )
+        report = audit_bundle(
+            tmp_path,
+            reserved_frontmatter=ReservedFrontmatterPolicy(
+                required_fields=("title", "okf_version")
+            ),
+        )
+        assert "guides/index.md" in report.misplaced_okf_version.examples
         assert report.index_frontmatter.examples == ("guides/index.md",)
 
     def test_log_frontmatter_is_not_a_finding(self, tmp_path: Path) -> None:

@@ -261,7 +261,7 @@ tree, 2026-09-07].
   and the index gate". The `index_frontmatter` audit rule tolerates exactly
   these keys, so the server never reports its own departure back at the
   operator (#1396).
-  [pins: tests/test_okf.py::TestReservedFrontmatterPolicy::test_title_field_is_seeded_with_the_derived_title, tests/test_okf.py::TestReservedFrontmatterPolicy::test_other_required_fields_are_seeded_as_null, tests/test_okf.py::TestReservedFrontmatterPolicy::test_existing_frontmatter_is_preserved_unconfigured, tests/test_okf.py::TestOkfAudit::test_seeded_fields_are_tolerated]
+  [pins: tests/test_okf.py::TestReservedFrontmatterPolicy::test_title_field_is_seeded_with_the_derived_title, tests/test_okf.py::TestReservedFrontmatterPolicy::test_other_required_fields_are_seeded_as_null, tests/test_okf.py::TestReservedFrontmatterPolicy::test_existing_frontmatter_is_preserved_unconfigured, tests/test_okf.py::TestOkfAudit::test_seeded_fields_are_tolerated, tests/test_okf.py::TestOkfAudit::test_build_never_seeds_okf_version_even_when_required, tests/test_okf.py::TestOkfAudit::test_the_overlap_survives_a_gate_that_requires_okf_version]
 - **This bundle's own `stale_after` is a calendar date.** The
   template-owned `scripts/check_references.py` requires
   `stale_after` to be `YYYY-MM-DD` and reads `verified` only as a list, both
