@@ -916,11 +916,11 @@ class ReservedFrontmatterPolicy:
         exactly what :meth:`build` emits" holds by construction rather than
         by two rules kept in step.
 
-        A gate requiring ``okf_version`` is therefore one this policy cannot
-        satisfy, and its generated indexes stay unindexed. That is the
-        disclosed trade: such a gate demands of every note what §8 permits
-        on one file, and the audit says so under two findings rather than
-        the server quietly writing what the format forbids.
+        Consequence: a gate requiring ``okf_version`` is one this policy does
+        not satisfy, so its generated indexes stay unindexed. Whether the gate
+        should reach the server's own generated files at all is #1438 — that
+        premise is unrecorded, and this method is not the place it gets
+        decided.
         """
         return tuple(f for f in self.required_fields if f != "okf_version")
 

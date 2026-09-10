@@ -1208,24 +1208,6 @@ class TestReservedFrontmatterPolicy:
         policy = ReservedFrontmatterPolicy(required_fields=("title", "type"))
         assert policy.build(None, title="guides") == {"title": "guides", "type": None}
 
-    def test_requiring_okf_version_leaves_generated_indexes_ungated(self) -> None:
-        """Disclosed consequence: that gate is one the policy cannot satisfy.
-
-        Requiring ``okf_version`` on every note demands what §8 permits on
-        one file in the bundle, so the two rules cannot both hold and the
-        policy keeps the spec: it declines to seed, and a generated folder
-        index then misses a field the operator's gate requires. The operator
-        is told rather than silently served a non-conformant bundle — the
-        audit reports the folder index under ``misplaced_okf_version`` and
-        ``index_frontmatter`` both. Seeding it instead would satisfy the gate
-        by writing a declaration the format forbids there, which is the
-        trade this rule exists to refuse.
-        """
-        policy = ReservedFrontmatterPolicy(required_fields=("title", "okf_version"))
-        built = policy.build(None, title="guides")
-        assert built == {"title": "guides"}
-        assert "okf_version" not in (built or {})
-
     def test_existing_values_win_over_seeded_ones(self) -> None:
         """A hand-authored title survives regeneration untouched."""
         policy = ReservedFrontmatterPolicy(required_fields=("title",))

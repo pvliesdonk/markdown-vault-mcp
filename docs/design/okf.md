@@ -540,6 +540,15 @@ whose only indexed file would have been its generated `index.md` loses its
 pointer in the parent listing, because `generate_index` synthesises sub-folder
 pointers from index entries.
 
+**The first sentence above is an unrecorded premise, not a decision this
+document made (#1438).** Nothing here or in `scanner.py` argues that a gate
+written for authored notes should reach the files the server writes itself; the
+rest of this section is what follows if it does. `OKF_RESERVED_FILENAMES` is
+consulted in six modules and in none of `scanner.py`, so the codebase already
+treats reserved files as structural rather than as concepts everywhere except
+the one place this chain starts. Read what follows as consequences of that
+premise, and treat none of them as settled while #1438 is open.
+
 `ReservedFrontmatterPolicy` (`okf.py`) is the single owner of what those files
 carry. Both generators and the `OKF_WRITE` maintainer write through it:
 
@@ -563,13 +572,16 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
   matters: were tolerance read from `required_frontmatter` directly, naming
   the key there would silence the `index_frontmatter` half of that overlap
   on exactly the vaults where the server had just written it.
-  The consequence is disclosed rather than papered over: a gate that
-  requires `okf_version` is one the policy cannot satisfy, so a generated
-  folder index misses a required field and stays unindexed. That gate asks
-  of every note what §8 permits on one file, so no policy satisfies both it
-  and the format; the operator gets told — the audit reports the folder
-  index under both findings — rather than silently served a bundle the
-  server itself made non-conformant.
+  Consequence, unresolved: a gate that requires `okf_version` is one the
+  policy does not satisfy, so a generated folder index misses a required
+  field and stays unindexed, which is #1174 again in a corner. That is a
+  symptom of the premise this section opens with, not a settled trade.
+  **Whether the gate governs the server's own generated files at all is
+  undecided (#1438); none of the layers built on that premise is a fixed
+  point** — not the seeding, not the §8 departure, not the audit's
+  tolerance, not this carve-out. The `okf-design` milestone reaches the same
+  question from the other side: #1412 makes the reserved files server-owned
+  state, and a gate written for authored notes may not apply to them at all.
 
 The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
 reason: `_append_log` is a
@@ -667,3 +679,8 @@ phase owns.
   `index.md` when absent (spec allows synthesized indexes) — lean yes.
 - Community governance ("W3C Holon CG" / "DataBook" profile) is
   single-sourced; ignore until corroborated.
+- Whether the `required_frontmatter` index gate governs the server's own
+  generated reserved files (#1438). Stated as a given in "Generated reserved
+  files and the index gate" and never decided; four layers of code now
+  compensate for the answer. #1412's `OKF_MAINTAIN` framing, which makes those
+  files server-owned state, reaches the same question from the other side.
