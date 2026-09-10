@@ -563,6 +563,13 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
   matters: were tolerance read from `required_frontmatter` directly, naming
   the key there would silence the `index_frontmatter` half of that overlap
   on exactly the vaults where the server had just written it.
+  The consequence is disclosed rather than papered over: a gate that
+  requires `okf_version` is one the policy cannot satisfy, so a generated
+  folder index misses a required field and stays unindexed. That gate asks
+  of every note what §8 permits on one file, so no policy satisfies both it
+  and the format; the operator gets told — the audit reports the folder
+  index under both findings — rather than silently served a bundle the
+  server itself made non-conformant.
 
 The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
 reason: `_append_log` is a

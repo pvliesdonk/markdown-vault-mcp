@@ -905,12 +905,22 @@ class ReservedFrontmatterPolicy:
         """The required fields :meth:`build` actually seeds.
 
         ``required_frontmatter`` is operator-configured and nothing rejects
-        ``okf_version`` in it, so this drops that one key: §8 gives it a
-        meaning tied to the bundle root, and a value the server invents for a
-        folder's index would be a declaration the format forbids there. Both
-        readers derive from this one property so "the audit tolerates exactly
-        what :meth:`build` emits" holds by construction rather than by two
-        rules kept in step.
+        ``okf_version`` in it, so this drops that one key — in a folder's
+        index it is a declaration §8 forbids outright, and in the root's it
+        would be a spec version the server invented rather than one the
+        bundle declared. Either way the value would be fiction, so neither
+        placement earns a seed; a real declaration still survives, arriving
+        through *existing* in :meth:`build`.
+
+        Both readers derive from this one property so "the audit tolerates
+        exactly what :meth:`build` emits" holds by construction rather than
+        by two rules kept in step.
+
+        A gate requiring ``okf_version`` is therefore one this policy cannot
+        satisfy, and its generated indexes stay unindexed. That is the
+        disclosed trade: such a gate demands of every note what §8 permits
+        on one file, and the audit says so under two findings rather than
+        the server quietly writing what the format forbids.
         """
         return tuple(f for f in self.required_fields if f != "okf_version")
 
