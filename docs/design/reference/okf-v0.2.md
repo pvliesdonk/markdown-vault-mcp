@@ -79,12 +79,13 @@ months, not twelve.
   `okf_version` key". The body is sections of `* [Title](url) - description`
   entries; producers MAY generate one, consumers MAY synthesise one when
   none is present. [source: spec] (§8, §12)
-  [pins: tests/test_okf.py::TestOkfDetector::test_declared_auto_active, tests/test_okf.py::TestBuildIndexMarkdown::test_entries_with_and_without_description]
+  [pins: tests/test_okf.py::TestOkfDetector::test_declared_auto_active, tests/test_okf.py::TestBuildIndexMarkdown::test_entries_with_and_without_description, tests/test_okf.py::TestIndexFrontmatterAudit::test_root_index_finding, tests/test_okf.py::TestIndexFrontmatterAudit::test_folder_index_declaring_okf_version_is_both_findings]
 - A `log.md` MAY appear at any level; it is "a flat list of date-grouped
   entries, newest first"; "Date headings MUST use ISO 8601 `YYYY-MM-DD`
   form"; the leading bold word of an entry is a convention, not a
-  requirement. [source: spec] (§9)
-  [pins: tests/test_okf.py::TestBuildLogMarkdown::test_groups_by_date_newest_first, tests/test_okf.py::TestAppendOkfLogEntry::test_inserts_new_day_section_on_top]
+  requirement. §9 says nothing about frontmatter in a `log.md`; the
+  no-frontmatter rule is §8's, and names index files only. [source: spec] (§9)
+  [pins: tests/test_okf.py::TestBuildLogMarkdown::test_groups_by_date_newest_first, tests/test_okf.py::TestAppendOkfLogEntry::test_inserts_new_day_section_on_top, tests/test_okf.py::TestIndexFrontmatterAudit::test_log_frontmatter_is_not_an_index_finding]
 - The August amendment left the log's date headings alone: "`## 2026-05-22`
   groups a day's entries and is not a field value." [source: pr-323]
 
@@ -240,12 +241,14 @@ tree, 2026-09-07].
   [pins: tests/test_okf_write.py::TestInvalidationMatrix::test_body_write_clears_verified_and_stamps, tests/test_okf_write.py::TestInvalidationMatrix::test_rename_preserves_verified]
 - **Reserved files are exempt from the `type` rule in the audit and the
   stats** (#1251, #962). The spec's conformance rule 2 applies to "every
-  frontmatter block", but reserved files carry none by §8, so exempting
-  them is the spec's own consequence rather than a departure.
+  frontmatter block". §8 allows an index file none beyond the root's
+  `okf_version`, and §9 says nothing about frontmatter in `log.md`, so the
+  exemption reads rule 2 as a rule for concepts, which §3.1 bars reserved
+  files from being.
 - **A generated reserved file carries frontmatter when the operator requires
   it.** §8 allows frontmatter in an `index.md` only for the bundle root's
-  `okf_version`, and none in `log.md`. With `required_frontmatter`
-  configured, the server's own `index.md` / `log.md` generators
+  `okf_version`; §9 is silent on frontmatter in `log.md`. With
+  `required_frontmatter` configured, the server's own `index.md` / `log.md` generators
   (`ReservedFrontmatterPolicy` in `okf.py`) seed the configured keys — the
   title field with the file's title, any other as `null` — because a
   generated file with no frontmatter would fail the same index gate the
@@ -254,8 +257,10 @@ tree, 2026-09-07].
   `okf_version` is never synthesised into a folder index. With nothing
   required, the files are written body-only as §8 and §9 have them.
   Deliberate; decided in `docs/design/okf.md`, "Generated reserved files
-  and the index gate".
-  [pins: tests/test_okf.py::TestReservedFrontmatterPolicy::test_title_field_is_seeded_with_the_derived_title, tests/test_okf.py::TestReservedFrontmatterPolicy::test_other_required_fields_are_seeded_as_null, tests/test_okf.py::TestReservedFrontmatterPolicy::test_existing_frontmatter_is_preserved_unconfigured]
+  and the index gate". The audit does not exempt the result: keys seeded
+  into an `index.md` are reported as `index_frontmatter` (#1396); whether
+  the gate should reach generated files at all is #1438.
+  [pins: tests/test_okf.py::TestReservedFrontmatterPolicy::test_title_field_is_seeded_with_the_derived_title, tests/test_okf.py::TestReservedFrontmatterPolicy::test_other_required_fields_are_seeded_as_null, tests/test_okf.py::TestReservedFrontmatterPolicy::test_existing_frontmatter_is_preserved_unconfigured, tests/test_okf_migrate.py::TestReservedFilesUnderRequiredFrontmatter::test_generated_index_is_audited_like_any_index]
 - **This bundle's own `stale_after` is a calendar date.** The
   template-owned `scripts/check_references.py` requires
   `stale_after` to be `YYYY-MM-DD` and reads `verified` only as a list, both

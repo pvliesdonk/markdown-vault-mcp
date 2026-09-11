@@ -460,10 +460,10 @@ class OkfAuditReport:
     Degrees, not verdicts: during a migration the audit is a progress
     meter, so partial conformance is first-class. ``conformance`` findings
     violate the spec's single hard rule (parseable frontmatter with a
-    non-empty ``type``) or its placement rule for ``okf_version``;
-    ``advisories`` are tolerated-by-spec deviations worth fixing;
-    ``informational`` entries are not deviations at all (wikilinks only
-    matter at export; recommended fields are optional).
+    non-empty ``type``), its placement rule for ``okf_version``, or its
+    index-file rule; ``advisories`` are tolerated-by-spec deviations worth
+    fixing; ``informational`` entries are not deviations at all (wikilinks
+    only matter at export; recommended fields are optional).
 
     Attributes:
         mode: Configured OKF mode at audit time.
@@ -486,6 +486,17 @@ class OkfAuditReport:
             matters at export).
         missing_recommended: Notes lacking a recommended ``title`` or
             ``description`` (informational).
+        index_frontmatter: ``index.md`` files carrying frontmatter the
+            format does not allow there: any block on a folder index, and
+            on the bundle root anything but a lone ``okf_version`` key.
+            Server-generated indexes are held to the same rule. An empty or
+            non-mapping block, or YAML that does not parse, counts, since
+            presence is read from the block rather than its keys; keys are
+            read by the same parser as every other rule, so JSON frontmatter
+            is judged by its keys and its syntax is not checked. A folder
+            index declaring ``okf_version`` is also
+            ``misplaced_okf_version``. Declared last and defaulted so earlier
+            positional construction still works.
     """
 
     mode: str
@@ -501,6 +512,7 @@ class OkfAuditReport:
     root_index_missing: bool
     wikilink_files: OkfFinding
     missing_recommended: OkfFinding
+    index_frontmatter: OkfFinding = OkfFinding(count=0, examples=())
 
 
 class _FindingAccumulator:
@@ -531,6 +543,7 @@ class _AuditCounters:
         self.log_shape = _FindingAccumulator(cap)
         self.wikilinks = _FindingAccumulator(cap)
         self.missing_recommended = _FindingAccumulator(cap)
+        self.index_frontmatter = _FindingAccumulator(cap)
         self.total = 0
         self.conformant = 0
         self.root_index_seen = False
@@ -546,6 +559,22 @@ def _log_headings_conform(body: str) -> bool:
         for line in body.splitlines()
         if line.startswith("## ")
     )
+
+
+def _index_frontmatter_conforms(rel: str, raw: str, metadata: dict[str, Any]) -> bool:
+    """Whether an ``index.md`` carries only the frontmatter §8 allows.
+
+    Presence is read from the block, not from *metadata*: an empty,
+    comment-only, non-mapping or unparseable block parses to no keys yet is
+    still a block. The splitter agrees with the parse about where a block
+    is — after leading blank lines, and never when the opening ``---`` is
+    left unclosed.
+    """
+    from markdown_vault_mcp.scanner import strip_frontmatter_block
+
+    if strip_frontmatter_block(raw) == raw:
+        return True
+    return rel == _ROOT_INDEX and set(metadata) == {"okf_version"}
 
 
 def _read_capped(file_path: Path, rel: str) -> str | None:
@@ -598,6 +627,8 @@ def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
     if name in OKF_RESERVED_FILENAMES:
         if name == "log.md" and not _log_headings_conform(body):
             acc.log_shape.add(rel)
+        elif name == "index.md" and not _index_frontmatter_conforms(rel, raw, metadata):
+            acc.index_frontmatter.add(rel)
         return
 
     acc.total += 1
@@ -674,6 +705,7 @@ def audit_bundle(
         root_index_missing=not acc.root_index_seen,
         wikilink_files=acc.wikilinks.finding(),
         missing_recommended=acc.missing_recommended.finding(),
+        index_frontmatter=acc.index_frontmatter.finding(),
     )
 
 

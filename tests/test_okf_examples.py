@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _EXAMPLES = _REPO_ROOT / "examples"
 
-_DECLARED_INDEX = '---\nokf_version: "0.2"\ntitle: Root\n---\n# Root\n'
+_DECLARED_INDEX = '---\nokf_version: "0.2"\n---\n# Root\n'
 
 # The note templates each pack ships (index.md is the reserved declaration and
 # is excluded from the conformance count).
@@ -58,6 +58,7 @@ def test_example_templates_pass_okf_validate(tmp_path: Path, pack: str) -> None:
         assert report.conformant_notes == report.total_notes
         assert report.missing_type.count == 0
         assert report.unparseable_frontmatter.count == 0
+        assert report.index_frontmatter.count == 0
     finally:
         vault.close()
 
