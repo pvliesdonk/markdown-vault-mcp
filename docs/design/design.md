@@ -2,6 +2,16 @@
 
 > Generic markdown vault MCP with hybrid search.
 
+## OKF direction and implementation status
+
+The adopted [OKF north star](okf-north-star.md) governs the intended OKF end
+state. Its [roadmap](okf-roadmap.md) records the sequence from the current
+implementation. Descriptions of current OKF behavior below remain the
+implementation baseline; conflicting earlier policy decisions, including decision 25's exact
+three-switch design, are superseded as targets. Each implementation change
+updates the affected behavior sections; this adoption does not change runtime
+behavior.
+
 ## Terminology
 
 This spec uses the following terms consistently:
