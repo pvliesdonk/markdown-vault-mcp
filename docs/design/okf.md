@@ -19,7 +19,15 @@ of 2026-08-21 (every timestamp an ISO 8601 datetime with an offset;
 [`reference/okf-v0.2.md`](reference/okf-v0.2.md); the departures this
 document decides are listed there.
 
-This document is the authoritative design for OKF support. As phases land,
+**Authority update (11 September 2026):** the adopted [north star](okf-north-star.md)
+governs the intended OKF end state; the [roadmap](okf-roadmap.md) sequences the
+transition. Conflicting policies below, including the exact three switches,
+write stamping, verification deletion and reserved-file admission exceptions,
+are historical decisions rather than requirements for new implementation.
+Descriptions of shipped behavior remain evidence, not a claim of north-star
+completion.
+
+This document records the earlier design for OKF support. As phases land,
 the relevant subsections graduate into `design.md` alongside the features
 they describe (phases 1-3 and the migration transforms of phase 4 have);
 sections below covering unimplemented phases remain proposals.

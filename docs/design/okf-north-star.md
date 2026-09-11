@@ -1,6 +1,6 @@
 # OKF in markdown-vault-mcp: a north star
 
-- **Status:** proposed north star, informed by research; not yet adopted. Revised after review on 11 September 2026.
+- **Status:** adopted north star, 11 September 2026. The owner selected this as the intended OKF end state. The [sequenced roadmap](okf-roadmap.md) and [tracking epic #1425](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1425) track the transition; the research narrative below retains its proposal-time wording.
 - **Relates to:** OKF support (#959), multi-author administration (#1425), and the existing OKF design and backlog, considered as evidence rather than constraints.
 - **Scope:** the desired end state, reconsidered from first principles. Adoption, backlog reconciliation, migration, and implementation sequencing are separate work.
 
@@ -10,7 +10,7 @@ The recurring failures point to a confused model of responsibility. A storage op
 
 The recommended direction is a format-aware knowledge service with explicit curation capabilities. Reading, navigation, validation, preservation, and faithful exchange are foundational. Authoring, review, and maintenance are useful services with their own evidence and authority. Automatic administration is justified by the operation being performed and the information available, rather than by a general promise to keep the vault “correct.”
 
-This is a proposed direction for decision, not an adopted specification. It deliberately reopens assumptions in the existing design and backlog. It specifies desired behavior and the boundaries of the product; release sequencing, migration, configuration spelling, and implementation architecture are left for a subsequent decision.
+This direction is adopted as the intended end state. It supersedes conflicting assumptions in the existing design and backlog. The [roadmap](okf-roadmap.md) supplies the high-level sequence and transition boundaries; detailed migration, configuration spelling and implementation architecture remain subsequent work.
 
 **The external baseline is narrower than the existing administration design.** OKF's canonical home is now `GoogleCloudPlatform/open-knowledge-format`. The former `knowledge-catalog/okf` README marks its copy as frozen. The current canonical specification is still v0.2 and its text matches that frozen snapshot; relocation is a source-maintenance problem, not evidence of a newly incompatible format.[^1]
 
@@ -178,7 +178,7 @@ The three-switch decision in #1433 is a useful recognition that capabilities are
 
 Read the backlog accordingly. The problems in #1438, #1392, and #1395 remain real and fit the role-and-state model. The desired freshness awareness in #1413 remains valuable, while its equation between an older verification and a void verification needs replacement. #1420 should be reconsidered as evidence-aware review and explicit repair, not accepted as an automatic metadata-deletion requirement. #1416–#1418 should be recast around editorial events and optional assistance. This is a judgment about their desired outcomes, not a proposal to sequence or implement those issues now.
 
-Adoption would supersede `okf.md` as the authority for the intended OKF end state; its description of shipped behavior remains historical evidence. That is conditional on adoption, not an authority change made by this proposal. Subsequent adoption work should reconcile retained, retired, and open decisions and give every affected backlog item a disposition before contradictory designs proceed. This report intentionally supplies neither that issue-by-issue plan nor an implementation order: choosing the destination is the present task.
+Adoption supersedes `okf.md` as the authority for the intended OKF end state; its description of shipped behavior remains historical evidence. The [roadmap](okf-roadmap.md) records sequencing and transition boundaries; [epic #1425](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1425) records live backlog dispositions. Detailed implementation choices remain with the corresponding work.
 
 The strongest alternative is an administered knowledge system with mandatory schemas, revision-bound reviews, exhaustive change accounting, and one publishing authority. That can be a coherent product if all participating writers accept its protocol. It is a poor default description of a generic Markdown vault shared with independent editors. A managed workflow can be offered as an explicit profile without making ordinary OKF consumption depend on it.
 
