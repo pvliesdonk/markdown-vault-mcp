@@ -2,7 +2,7 @@
 
 This release is mostly about the server making better choices on its own. A `search` call that omits `mode` now runs the best mode the vault can actually serve, so a vault with embeddings built stops answering conversational questions with keyword-only results. `list_documents` and `get_toc` report how big each note is, so a client can plan batched work without reading every file first. Voyage joins the embedding providers, and an optional guard refuses a `write` that would silently replace a note the caller never read. Two things change on upgrade with no configuration edit on your part: search results move on any vault with embeddings, and the server rebuilds its text index once on first start. A downstream library consumer that read `ProjectConfig.instructions` needs a change; operators do not.
 
-This is the first release since [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/4.1/releases/4.0/index.md). Its through-line is defaults: several places where the server knew enough to do the right thing but waited to be told. Alongside that sit two contributor features brought current, a size signal for planning, and a correctness pass on the OKF reserved files 4.0 introduced.
+This is the first release since [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/4.1/releases/4.0/index.md). Its through-line is defaults: several places where the server knew enough to do the right thing but waited to be told. It also brings two contributor features current. A size signal helps with planning, while a correctness pass covers the OKF reserved files 4.0 introduced.
 
 ## Upgrade notes
 
