@@ -47,6 +47,14 @@ class TestOkfDetector:
         assert state.active is True
         assert state.declared_version == "0.2"
 
+    def test_malformed_json_root_index_reports_undeclared(self, tmp_path: Path) -> None:
+        # The probe guards yaml.YAMLError only, so a `{` block the JSON
+        # handler rejects escaped it and broke detection outright (#1408).
+        (tmp_path / "index.md").write_text("{\n  not json,\n}\n# Bundle\n")
+        state = OkfDetector(tmp_path, mode="auto").state()
+        assert state.declared_version is None
+        assert state.active is False
+
     def test_declaration_behind_a_bom_is_detected(self, tmp_path: Path) -> None:
         # A BOM before the opening delimiter used to hide the declaration, so
         # a declared bundle stayed inactive (#1407).
@@ -714,6 +722,32 @@ class TestOkfAudit:
         report = audit_bundle(tmp_path)
         assert report.conformant_notes == 1
         assert report.missing_type.count == 0
+
+    def test_malformed_json_block_is_a_finding_not_a_crash(
+        self, tmp_path: Path
+    ) -> None:
+        # python-frontmatter picks its handler by the opening delimiter, so a
+        # `{` block raises JSONDecodeError where YAML raises YAMLError. That
+        # escaped the audit and failed the whole tool call, naming no path
+        # (#1408). One bad note must not take down the bundle's report.
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "good.md").write_text("---\ntype: Note\n---\n# G\n")
+        (tmp_path / "bad.md").write_text("{\n  not json,\n}\n# body\n")
+        report = audit_bundle(tmp_path)
+        assert report.unparseable_frontmatter.examples == ("bad.md",)
+        # The rest of the bundle is still audited: both files were examined,
+        # and the readable one was not swept up in the failure.
+        assert report.total_notes == 2
+        assert report.missing_type.count == 0
+
+    def test_well_formed_json_frontmatter_still_parses(self, tmp_path: Path) -> None:
+        # The guard normalises the JSON handler's *failures*; a block it reads
+        # is as valid here as a YAML one (#1408).
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "note.md").write_text('{\n"type": "Note"\n}\n# N\n')
+        assert audit_bundle(tmp_path).conformant_notes == 1
 
     def test_unreadable_file_skipped(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import audit_bundle

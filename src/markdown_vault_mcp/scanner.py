@@ -686,6 +686,57 @@ def _scan_headings(lines: list[str]) -> list[tuple[int, int, str]]:
     return out
 
 
+# PyYAML ships no stubs and no `py.typed`, so `yaml.YAMLError` types as `Any`
+# and strict mypy rejects subclassing it. The base is the point of the class
+# (see below), so the alternative is adding `types-PyYAML` and re-typing every
+# yaml call site in the package — a wider change than this fix.
+class MalformedFrontmatterError(yaml.YAMLError):  # type: ignore[misc]
+    """A leading frontmatter block no parser could read (#1408).
+
+    ``python-frontmatter`` picks a handler by the block's opening delimiter
+    and lets that handler's own error escape: YAML raises ``yaml.YAMLError``,
+    the JSON handler raises ``json.JSONDecodeError``, and a TOML handler —
+    registered whenever ``toml`` is importable in the consumer's
+    environment — raises ``toml.TomlDecodeError``. Only the first was ever
+    guarded, so a ``{``-delimited block that is not valid JSON aborted the
+    whole OKF audit and escaped ``DocumentManager.read``.
+
+    Subclassing ``yaml.YAMLError`` is what keeps that from needing a guard
+    change per call site: every guard in this package, and any downstream
+    consumer's, already names it, and the failure it describes — *this block
+    did not parse* — is the same one whatever dialect the block was written
+    in. Raised by :func:`parse_frontmatter`; the original error is the
+    ``__cause__``.
+    """
+
+
+def parse_frontmatter(text: str) -> frontmatter.Post:
+    """Parse *text* as markdown-with-frontmatter, one error for one failure.
+
+    The package's single entry point to ``frontmatter.loads``, so no caller
+    has to know which handler will run or which error it raises (#1408). A
+    YAML failure propagates as the ``yaml.YAMLError`` it already was; every
+    other handler's failure — all of them ``ValueError`` subclasses — is
+    re-raised as :class:`MalformedFrontmatterError`, which is one.
+
+    Args:
+        text: Raw markdown text, frontmatter block included.
+
+    Returns:
+        The parsed post (metadata plus body). Text with no frontmatter
+        yields empty metadata, exactly as ``frontmatter.loads`` does.
+
+    Raises:
+        MalformedFrontmatterError: The block is present but unreadable.
+    """
+    try:
+        return frontmatter.loads(text)
+    except ValueError as exc:
+        # yaml.YAMLError is not a ValueError, so it is never caught here and
+        # reaches the caller unchanged.
+        raise MalformedFrontmatterError(str(exc)) from exc
+
+
 def strip_frontmatter_block(text: str) -> str:
     """Return *text* without its leading frontmatter block, body verbatim.
 
@@ -737,7 +788,7 @@ def list_section_headings(text: str) -> list[str]:
     Returns:
         Heading strings as written (whitespace not normalised), in order.
     """
-    body = frontmatter.loads(text).content
+    body = parse_frontmatter(text).content
     return [h for _, _, h in _scan_headings(body.splitlines(keepends=True))]
 
 
@@ -764,7 +815,7 @@ def extract_section(text: str, heading: str) -> str | None:
     norm_query = normalize_heading(heading)
     if not norm_query:
         return None
-    body = frontmatter.loads(text).content
+    body = parse_frontmatter(text).content
     lines = body.splitlines(keepends=True)
     headings = _scan_headings(lines)
     for i, (idx, level, htext) in enumerate(headings):
@@ -1553,7 +1604,7 @@ def parse_note(
     text = decode_utf8(raw_bytes)
 
     # python-frontmatter strips the YAML block and returns the body separately.
-    post = frontmatter.loads(text)
+    post = parse_frontmatter(text)
     metadata: dict[str, Any] = dict(post.metadata)
     body: str = post.content
 

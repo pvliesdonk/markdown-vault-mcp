@@ -174,6 +174,25 @@ class TestRead:
             for record in caplog.records
         ), f"expected a degrade-to-None warning for {path!r}; got {caplog.records!r}"
 
+    def test_read_degrades_to_none_on_malformed_json_frontmatter(
+        self,
+        doc_mgr: DocumentManager,
+        doc_vault: Path,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A `{` block the JSON handler rejects degrades like malformed YAML.
+
+        The guard names ``yaml.YAMLError``, but ``python-frontmatter`` picks
+        its handler by the opening delimiter, so this file raised
+        ``json.JSONDecodeError`` straight through ``read`` (#1408).
+        """
+        (doc_vault / "badjson.md").write_text(
+            "{\n  not json,\n}\n# body\n", encoding="utf-8"
+        )
+        with caplog.at_level(logging.WARNING):
+            assert doc_mgr.read("badjson.md") is None
+        self._assert_degrade_warning(caplog, "badjson.md")
+
     def test_read_degrades_to_none_if_content_read_fails(
         self,
         doc_mgr: DocumentManager,

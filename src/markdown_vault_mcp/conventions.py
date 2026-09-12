@@ -20,9 +20,9 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import frontmatter as fm
 import yaml
 
+from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils import (
     is_note,
     is_path_excluded,
@@ -224,7 +224,7 @@ class ConventionsResolver:
             block fails to parse.
         """
         try:
-            return fm.loads(raw).content.strip()
+            return parse_frontmatter(raw).content.strip()
         except yaml.YAMLError:
             logger.debug("conventions_frontmatter_invalid path=%s", rel, exc_info=True)
             return raw.strip()

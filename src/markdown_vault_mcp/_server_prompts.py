@@ -19,10 +19,10 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-import frontmatter
 from fastmcp import FastMCP
 
 from ._icons import _TOOL_ICONS
+from .scanner import parse_frontmatter
 from .utils.text import read_text_utf8
 
 _BUILTIN_PROMPTS_DIR = importlib.resources.files("markdown_vault_mcp").joinpath(
@@ -173,7 +173,7 @@ def _load_user_prompt_defs(prompts_folder: str | None) -> dict[str, dict[str, An
     for md_file in sorted(folder.glob("*.md")):
         name = md_file.stem
         try:
-            post = frontmatter.loads(read_text_utf8(md_file))
+            post = parse_frontmatter(read_text_utf8(md_file))
         except Exception:
             logger.warning(
                 "Failed to parse user prompt file %r — skipping",
@@ -283,7 +283,7 @@ def _load_builtin_prompt(name: str) -> dict[str, Any] | None:
         logger.warning("Built-in prompt file %s.md not found — skipping", name)
         return None
     try:
-        post = frontmatter.loads(text)
+        post = parse_frontmatter(text)
     except Exception:
         logger.warning(
             "Failed to parse built-in prompt file %s.md — skipping",

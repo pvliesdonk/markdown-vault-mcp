@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -965,6 +966,25 @@ class TestParseNoteCategorized:
         assert outcome.skip.category == "missing_frontmatter"
         assert outcome.content_hash == compute_file_hash(note)
 
+    def test_malformed_json_block_is_a_parse_error(self, tmp_path: Path) -> None:
+        """A ``{``-delimited block the JSON handler rejects is a parse error.
+
+        ``python-frontmatter`` picks its handler by the opening delimiter, so
+        this raises ``json.JSONDecodeError`` where a broken YAML block raises
+        ``yaml.YAMLError`` — it used to fall through to the generic branch and
+        be recorded as ``internal_error`` (#1408).
+        """
+        from markdown_vault_mcp.scanner import (
+            CategorizedSkip,
+            parse_note_categorized,
+        )
+
+        note = tmp_path / "bad.md"
+        note.write_text("{\n  not json,\n}\n# body\n", encoding="utf-8")
+        outcome = parse_note_categorized(note, tmp_path, None, rel_path="bad.md")
+        assert isinstance(outcome, CategorizedSkip)
+        assert outcome.skip.category == "parse_error"
+
     def test_exception_categories_have_no_hash(self, tmp_path: Path) -> None:
         """Exception skips carry no hash — parsing never produced a note."""
         from markdown_vault_mcp.scanner import (
@@ -978,6 +998,39 @@ class TestParseNoteCategorized:
         assert isinstance(outcome, CategorizedSkip)
         assert outcome.skip.category == "encoding_error"
         assert outcome.content_hash is None
+
+
+class TestParseFrontmatter:
+    """#1408: one exception for a block no handler could read."""
+
+    def test_malformed_json_raises_the_normalised_error(self) -> None:
+        import yaml
+
+        from markdown_vault_mcp.scanner import (
+            MalformedFrontmatterError,
+            parse_frontmatter,
+        )
+
+        with pytest.raises(MalformedFrontmatterError) as excinfo:
+            parse_frontmatter("{\n  not json,\n}\n# body\n")
+        # A subclass of the error every existing guard already names, so the
+        # guards keep working and a consumer's `except yaml.YAMLError` does too.
+        assert isinstance(excinfo.value, yaml.YAMLError)
+        assert isinstance(excinfo.value.__cause__, json.JSONDecodeError)
+
+    def test_malformed_yaml_still_raises_the_yaml_error_itself(self) -> None:
+        import yaml
+
+        from markdown_vault_mcp.scanner import parse_frontmatter
+
+        with pytest.raises(yaml.YAMLError):
+            parse_frontmatter("---\ntitle: [unclosed\n---\n# body\n")
+
+    def test_well_formed_json_frontmatter_parses(self) -> None:
+        from markdown_vault_mcp.scanner import parse_frontmatter
+
+        post = parse_frontmatter('{\n"title": "T"\n}\n# body\n')
+        assert post.metadata == {"title": "T"}
 
 
 class TestContentChars:

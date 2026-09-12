@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
+from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
@@ -192,7 +193,7 @@ class OkfDetector:
             logger.debug("okf_probe_read_failed path=%s", _ROOT_INDEX, exc_info=True)
             return None
         try:
-            metadata = fm.loads(raw).metadata
+            metadata = parse_frontmatter(raw).metadata
         except yaml.YAMLError:
             logger.debug(
                 "okf_probe_frontmatter_invalid path=%s", _ROOT_INDEX, exc_info=True
@@ -612,7 +613,7 @@ def _evaluate_note(
 def _audit_file(rel: str, raw: str, acc: _AuditCounters) -> None:
     """Classify one markdown file and update the audit counters."""
     try:
-        post = fm.loads(raw)
+        post = parse_frontmatter(raw)
         metadata: dict[str, Any] = dict(post.metadata)
         body = post.content
         parse_ok = True
@@ -1039,7 +1040,7 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
         is identical (the same actor and instant, no ``verified``) — so a
         repeated stamp keeps the note's exact bytes and YAML formatting.
     """
-    post = fm.loads(text)
+    post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     new_meta: dict[str, Any] = dict(meta)
     new_meta["generated"] = {"by": actor, "at": okf_timestamp(now)}
@@ -1066,7 +1067,7 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
     Returns:
         The note text with the appended verification.
     """
-    post = fm.loads(text)
+    post = parse_frontmatter(text)
     meta: dict[str, Any] = dict(post.metadata)
     verified = list(verified_entries(meta))
     verified.append({"by": f"{_HUMAN_ACTOR_PREFIX}{subject}", "at": okf_timestamp(now)})

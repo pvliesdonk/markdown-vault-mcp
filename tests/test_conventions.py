@@ -89,6 +89,14 @@ class TestForPath:
         entries = resolver.for_path("")
         assert entries[0].content == raw.strip()
 
+    def test_malformed_json_frontmatter_falls_back_to_raw(self, tmp_path: Path) -> None:
+        # Same fallback as malformed YAML: the JSON handler's error is the
+        # block failing to parse, not a reason to lose the entry (#1408).
+        raw = "{\n  not json,\n}\nBody text."
+        (tmp_path / "_conventions.md").write_text(raw, encoding="utf-8")
+        resolver = ConventionsResolver(tmp_path, "_conventions.md")
+        assert resolver.for_path("")[0].content == raw.strip()
+
     def test_backslashes_and_slashes_normalized(self, vault_dir: Path) -> None:
         resolver = ConventionsResolver(vault_dir, "_conventions.md")
         entries = resolver.for_path("\\3-Resources\\CRA.md")
