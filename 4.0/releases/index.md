@@ -4,6 +4,8 @@ Human-readable notes for each minor release: what changed, who is affected, and 
 
 ## Available pages
 
+- [4.2](https://pvliesdonk.github.io/markdown-vault-mcp/4.0/releases/4.2/index.md)
+- [4.1](https://pvliesdonk.github.io/markdown-vault-mcp/4.0/releases/4.1/index.md)
 - [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/4.0/releases/4.0/index.md).
 - [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/4.0/releases/3.1/index.md) (released July 8, 2026). Backfilled.
 - [3.0](https://pvliesdonk.github.io/markdown-vault-mcp/4.0/releases/3.0/index.md) (released June 17, 2026, with patch releases through v3.0.4). Backfilled.
@@ -13,7 +15,7 @@ Human-readable notes for each minor release: what changed, who is affected, and 
 
 **One page per minor version.** Each minor release gets a single page, named for the minor (`3.1`, `3.2`, and so on). This matches how the documentation site is deployed: each minor is published as its own site version, so the notes for a release always travel with the documentation that describes it.
 
-**Patch releases append to the minor's page.** A patch release adds a dated section to its minor's page rather than getting a page of its own, so the full story of a minor stays in one linkable document.
+**Patch releases append to the minor's page.** A patch release adds a versioned section to its minor's page rather than getting a page of its own, so the full story of a minor stays in one linkable document.
 
 **The GitHub release links here.** The release body on GitHub carries a short summary and a link to the matching page on this site. These pages are the canonical narrative; the release body is the pointer.
 

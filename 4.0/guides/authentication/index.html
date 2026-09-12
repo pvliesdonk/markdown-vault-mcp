@@ -2577,8 +2577,8 @@
 <p>The bearer-token mode above shares one subject across every authenticated caller (by default the library's <code>bearer-anon</code>, override with <code>MARKDOWN_VAULT_MCP_BEARER_DEFAULT_SUBJECT</code>). For audit logs and authorization that distinguish callers, switch to mapped-token mode by pointing <code>MARKDOWN_VAULT_MCP_BEARER_TOKENS_FILE</code> at a TOML file:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># tokens.toml</span>
 <span class="k">[tokens]</span>
-<span class="s2">&quot;ghp_alice_xxxxxxxx&quot;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;user:alice@example.com&quot;</span>
-<span class="s2">&quot;sk_ci_yyyyyyyy&quot;</span><span class="w">     </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;service:ci-bot&quot;</span>
+<span class="s2">"ghp_alice_xxxxxxxx"</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"user:alice@example.com"</span>
+<span class="s2">"sk_ci_yyyyyyyy"</span><span class="w">     </span><span class="o">=</span><span class="w"> </span><span class="s2">"service:ci-bot"</span>
 </code></pre></div>
 <p>Each token resolves to a distinct subject string for downstream attribution. Subject strings are opaque: the <code>&lt;kind&gt;:&lt;id&gt;</code> convention (<code>user:</code>, <code>service:</code>, <code>token:</code>) is documentation only. When <code>BEARER_TOKENS_FILE</code> is set it overrides <code>BEARER_TOKEN</code> (a <code>WARNING</code> is logged if both are present). A missing or malformed file aborts startup with <code>ConfigurationError</code> rather than silently denying every request.</p>
 <hr />
@@ -2765,9 +2765,9 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <span class="nt">lifespans</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">custom</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">mcp_long_lived</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">access_token</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;8h&#39;</span>
-<span class="w">      </span><span class="nt">id_token</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;8h&#39;</span><span class="w">        </span><span class="c1"># must match access_token for verify_id_token mode</span>
-<span class="w">      </span><span class="nt">refresh_token</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;30d&#39;</span>
+<span class="w">      </span><span class="nt">access_token</span><span class="p">:</span><span class="w"> </span><span class="s">'8h'</span>
+<span class="w">      </span><span class="nt">id_token</span><span class="p">:</span><span class="w"> </span><span class="s">'8h'</span><span class="w">        </span><span class="c1"># must match access_token for verify_id_token mode</span>
+<span class="w">      </span><span class="nt">refresh_token</span><span class="p">:</span><span class="w"> </span><span class="s">'30d'</span>
 </code></pre></div>
 <p>See the <a href="../oidc-providers/#authelia">Authelia provider guide</a> for the full configuration.</p>
 <h3 id="opaque-access-tokens-authelia">Opaque access tokens (Authelia)<a class="headerlink" href="#opaque-access-tokens-authelia" title="Permanent link">&para;</a></h3>

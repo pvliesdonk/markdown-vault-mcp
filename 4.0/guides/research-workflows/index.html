@@ -2612,16 +2612,16 @@
 <p><strong>Claude.ai:</strong> add scholar-mcp as a connector from the settings page. See the <a href="https://github.com/pvliesdonk/scholar-mcp">scholar-mcp repository</a> for the connector URL and auth details.</p>
 <p><strong>Claude Desktop:</strong> add a second entry to <code>mcpServers</code> in your config. The vault entry stays as it was; scholar-mcp lives alongside:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;mcpServers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;vault&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uvx&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;--from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;markdown-vault-mcp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;serve&quot;</span><span class="p">]</span>
+<span class="w">  </span><span class="nt">"mcpServers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"vault"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"command"</span><span class="p">:</span><span class="w"> </span><span class="s2">"uvx"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"--from"</span><span class="p">,</span><span class="w"> </span><span class="s2">"markdown-vault-mcp"</span><span class="p">,</span><span class="w"> </span><span class="s2">"markdown-vault-mcp"</span><span class="p">,</span><span class="w"> </span><span class="s2">"serve"</span><span class="p">]</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;scholar&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;command&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uvx&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;--from&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;pvliesdonk-scholar-mcp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;scholar-mcp&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;serve&quot;</span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;env&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;SCHOLAR_MCP_S2_API_KEY&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;your-key-optional&quot;</span>
+<span class="w">    </span><span class="nt">"scholar"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"command"</span><span class="p">:</span><span class="w"> </span><span class="s2">"uvx"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"--from"</span><span class="p">,</span><span class="w"> </span><span class="s2">"pvliesdonk-scholar-mcp"</span><span class="p">,</span><span class="w"> </span><span class="s2">"scholar-mcp"</span><span class="p">,</span><span class="w"> </span><span class="s2">"serve"</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">"env"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"SCHOLAR_MCP_S2_API_KEY"</span><span class="p">:</span><span class="w"> </span><span class="s2">"your-key-optional"</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
@@ -2650,7 +2650,7 @@
 <p>All three paths end at the same place: a new note in the vault with a title and a rough body, with <code>[citation needed]</code> or <code>[verify]</code> markers on anything that isn't yet grounded. You are not trying to produce polished prose; you are trying to produce something you can come back to.</p>
 <p>Claude composes <code>write(path="research/consent-dynamics.md", content=..., frontmatter={"tags": ["draft"], "created": "2026-04-19"})</code> and you have a seed. A reasonable seed looks like this:</p>
 <div class="highlight"><pre><span></span><code>---
-title: &quot;Consent dynamics in platform terms of service&quot;
+title: "Consent dynamics in platform terms of service"
 tags: [draft]
 <span class="gu">created: 2026-04-19</span>
 <span class="gu">---</span>
@@ -2664,7 +2664,7 @@ and the cost of reading is asymmetric with the benefit. [citation needed]
 <span class="gu">## Open claims</span>
 
 <span class="k">-</span><span class="w"> </span>Cost asymmetry claim above
-<span class="k">-</span><span class="w"> </span>Are there empirical studies on the &quot;unreadable at scale&quot; assertion?
+<span class="k">-</span><span class="w"> </span>Are there empirical studies on the "unreadable at scale" assertion?
 </code></pre></div>
 <h3 id="with-scholar-mcp">With scholar-mcp<a class="headerlink" href="#with-scholar-mcp" title="Permanent link">&para;</a></h3>
 <p>Not meaningfully different. scholar-mcp doesn't participate in capture; it enters the picture during grounding, when you need to verify what's true, not when you need to get a thought into the vault. The seeding phase is the same with or without it.</p>
@@ -2722,10 +2722,10 @@ and the cost of reading is asymmetric with the benefit. [citation needed]
 <h3 id="baseline-flow_2">Baseline flow<a class="headerlink" href="#baseline-flow_2" title="Permanent link">&para;</a></h3>
 <p>Once a source is identified, you write a literature note against it. The shape follows the existing Zettelkasten <a href="../../examples/zettelkasten/"><code>literature.md</code> template</a> (under <code>templates/</code>), adapted to the research-specific concerns of relevance and open questions:</p>
 <div class="highlight"><pre><span></span><code>---
-title: &quot;Platform terms of service as adhesion contracts&quot;
+title: "Platform terms of service as adhesion contracts"
 type: literature
 tags: [literature]
-source: &quot;https://doi.org/10.XXXX/example&quot;
+source: "https://doi.org/10.XXXX/example"
 <span class="gu">created: 2026-04-19</span>
 <span class="gu">---</span>
 
@@ -2740,11 +2740,11 @@ source: &quot;https://doi.org/10.XXXX/example&quot;
   other accepts without negotiation.
 <span class="k">-</span><span class="w"> </span>Empirically, over 90% of users accept ToS without reading any portion.
 <span class="k">-</span><span class="w"> </span>The authors argue adhesion-contract doctrine has evolved to tolerate
-  asymmetric drafting as long as the terms are not &quot;unconscionable.&quot;
+  asymmetric drafting as long as the terms are not "unconscionable."
 
 <span class="gu">## Relevance</span>
 
-Supports the &quot;structural impossibility&quot; framing in
+Supports the "structural impossibility" framing in
 [[consent-dynamics]]. The 90% statistic is the number I was after.
 
 <span class="gu">## Open Questions</span>

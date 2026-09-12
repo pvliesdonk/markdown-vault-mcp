@@ -2158,9 +2158,9 @@ last body records why the backfill had to be done by hand: a literal update
 from the template flipped the license and replaced the command line, so the
 repository had to be reshaped before the automation could be trusted.</p>
 <p>The line closes with the search work that the 3.0 release then had to correct.
-v1.28.0 introduced four ranking knobs at once: a per-document cap on result
-slots, a length downweight, snippet truncation, and an adaptive chunker that
-descends heading levels when a chunk runs over budget
+v1.28.0 introduced four ranking controls at once. It capped result slots per
+document and downweighted long notes. It also truncated snippets and added an
+adaptive chunker that descends heading levels when a chunk runs over budget
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/433">PR #433</a>, closing
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/432">#432</a>). The
 adaptive chunker is what later caused several chunks of one document to crowd

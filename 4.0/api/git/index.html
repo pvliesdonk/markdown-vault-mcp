@@ -2251,18 +2251,18 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
 
 <span class="n">strategy</span> <span class="o">=</span> <span class="n">GitWriteStrategy</span><span class="p">(</span>
-    <span class="n">token</span><span class="o">=</span><span class="s2">&quot;ghp_your_token&quot;</span><span class="p">,</span>
+    <span class="n">token</span><span class="o">=</span><span class="s2">"ghp_your_token"</span><span class="p">,</span>
     <span class="n">push_delay_s</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span>
-    <span class="n">source_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">&quot;/path/to/vault&quot;</span><span class="p">),</span>
+    <span class="n">source_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/path/to/vault"</span><span class="p">),</span>
     <span class="n">read_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
     <span class="n">on_write</span><span class="o">=</span><span class="n">strategy</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="c1"># Writes are now auto-committed and pushed</span>
-<span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;notes/new.md&quot;</span><span class="p">,</span> <span class="s2">&quot;Hello world&quot;</span><span class="p">)</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">"notes/new.md"</span><span class="p">,</span> <span class="s2">"Hello world"</span><span class="p">)</span>
 
 <span class="c1"># Clean up on shutdown</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
@@ -2276,7 +2276,7 @@
 
 
 <h2 id="markdown_vault_mcp.git.GitWriteStrategy" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">GitWriteStrategy</span><span class="p">(</span><span class="n">token</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="s1">&#39;x-access-token&#39;</span><span class="p">,</span> <span class="n">repo_url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">managed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">enable_pull</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">enable_push</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">push_delay_s</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">commit_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_email</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_name_claim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_email_claim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_lfs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">repo_path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">GitWriteStrategy</span><span class="p">(</span><span class="n">token</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="s1">'x-access-token'</span><span class="p">,</span> <span class="n">repo_url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">managed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">enable_pull</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">enable_push</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">push_delay_s</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">commit_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_email</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_name_claim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_email_claim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_lfs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">repo_path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.git.GitWriteStrategy" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -2501,7 +2501,7 @@ if <code>origin</code> uses SSH transport instead of HTTPS.</p>
       </tbody>
     </table>
         <p>Example::</p>
-<div class="highlight"><pre><span></span><code>strategy = GitWriteStrategy(token=&quot;ghp_...&quot;, push_delay_s=30)
+<div class="highlight"><pre><span></span><code>strategy = GitWriteStrategy(token="ghp_...", push_delay_s=30)
 vault = Vault(on_write=strategy, ...)
 # ... writes happen, push deferred ...
 strategy.close()  # final flush

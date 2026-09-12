@@ -2409,7 +2409,7 @@ cp<span class="w"> </span>examples/obsidian-readonly.env<span class="w"> </span>
 <span class="c1"># Then start the service</span>
 docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
 
-<span class="c1"># Check it&#39;s running</span>
+<span class="c1"># Check it's running</span>
 curl<span class="w"> </span>http://localhost:8000/health
 </code></pre></div>
 <h2 id="image-tags">Image tags<a class="headerlink" href="#image-tags" title="Permanent link">&para;</a></h2>
@@ -2451,7 +2451,7 @@ curl<span class="w"> </span>http://localhost:8000/health
 </table>
 <p>Rolling tags are ordering-aware: a patch release cut from an old <code>release/X.Y</code> branch after a newer stable has shipped updates its own series tags but never <code>latest</code>. The same rule governs <code>rc</code>: a candidate only moves the tag while its version is still ahead of the newest stable, so a candidate for an already-released version never pulls <code>rc</code> behind <code>latest</code>.</p>
 <p>The three rolling tags answer different questions. Use <code>latest</code> to run released code, <code>rc</code> to test the candidate for the next release, and <code>edge</code> to run the newest merged commit. Note that <code>rc</code> is not cleared when its release ships: it keeps pointing at the last candidate until the next one is cut, so <code>latest</code> is the tag to follow in production. To find the commit behind an <code>edge</code> image, read its <code>org.opencontainers.image.revision</code> label:</p>
-<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>inspect<span class="w"> </span>--format<span class="w"> </span><span class="s1">&#39;{{ index .Config.Labels &quot;org.opencontainers.image.revision&quot; }}&#39;</span><span class="w"> </span><span class="se">\</span>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>inspect<span class="w"> </span>--format<span class="w"> </span><span class="s1">'{{ index .Config.Labels "org.opencontainers.image.revision" }}'</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>ghcr.io/pvliesdonk/markdown-vault-mcp:edge
 </code></pre></div>
 <h2 id="docker-compose-configuration">Docker Compose Configuration<a class="headerlink" href="#docker-compose-configuration" title="Permanent link">&para;</a></h2>
@@ -2472,9 +2472,9 @@ curl<span class="w"> </span>http://localhost:8000/health
 <span class="w">      </span><span class="nt">FASTMCP_HOME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/state/fastmcp</span>
 <span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unless-stopped</span>
 <span class="w">    </span><span class="nt">labels</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.enable=true&quot;</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.markdown-vault-mcp.rule=Host(`${MARKDOWN_VAULT_MCP_HOST:-markdown-vault-mcp.local}`)&quot;</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000&quot;</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.enable=true"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.markdown-vault-mcp.rule=Host(`${MARKDOWN_VAULT_MCP_HOST:-markdown-vault-mcp.local}`)"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"</span>
 
 <span class="nt">volumes</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">state-data</span><span class="p">:</span>
@@ -2544,8 +2544,8 @@ curl<span class="w"> </span>http://localhost:8000/health
 </code></pre></div>
 <p>And use a path-aware Traefik rule:</p>
 <div class="highlight"><pre><span></span><code><span class="nt">labels</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">PathPrefix(`/vault/mcp`)&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">PathPrefix(`/vault/mcp`)"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"</span>
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">OIDC subpath deployments use a different pattern</p>
@@ -2553,8 +2553,8 @@ curl<span class="w"> </span>http://localhost:8000/health
 </div>
 <h3 id="tls-with-lets-encrypt">TLS with Let's Encrypt<a class="headerlink" href="#tls-with-lets-encrypt" title="Permanent link">&para;</a></h3>
 <p>Add a <code>certificatesResolvers</code> block to your Traefik static config and these labels to the service:</p>
-<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.markdown-vault-mcp.tls.certresolver=letsencrypt&quot;</span>
-<span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.markdown-vault-mcp.entrypoints=websecure&quot;</span>
+<div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.markdown-vault-mcp.tls.certresolver=letsencrypt"</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.markdown-vault-mcp.entrypoints=websecure"</span>
 </code></pre></div>
 <p>See the <a href="https://doc.traefik.io/traefik/https/acme/">Traefik ACME documentation</a> for the full setup.</p>
 <h2 id="git-backed-write-support">Git-Backed Write Support<a class="headerlink" href="#git-backed-write-support" title="Permanent link">&para;</a></h2>
@@ -2633,7 +2633,7 @@ Writes are committed locally; run <code>git pull</code>/<code>git push</code> ex
 <div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">markdown-vault-mcp</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">extra_hosts</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;host.docker.internal:host-gateway&quot;</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"host.docker.internal:host-gateway"</span>
 </code></pre></div>
 <h2 id="remote-debugging">Remote debugging<a class="headerlink" href="#remote-debugging" title="Permanent link">&para;</a></h2>
 <p>Production images ship without <code>debugpy</code> to keep the image lean. To attach a remote Python debugger from VS Code or PyCharm:</p>
@@ -2675,10 +2675,10 @@ Writes are committed locally; run <code>git pull</code>/<code>git push</code> ex
 <li>
 <p><strong>Attach from VS Code:</strong> add a launch config:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Attach to markdown-vault-mcp&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;debugpy&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;request&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;attach&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;connect&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5678</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Attach to markdown-vault-mcp"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"debugpy"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"request"</span><span class="p">:</span><span class="w"> </span><span class="s2">"attach"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"connect"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="s2">"localhost"</span><span class="p">,</span><span class="w"> </span><span class="nt">"port"</span><span class="p">:</span><span class="w"> </span><span class="mi">5678</span><span class="w"> </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>PyCharm uses <em>Run → Edit Configurations → Python Debug Server</em> with the same host/port.</p>
