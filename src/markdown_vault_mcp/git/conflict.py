@@ -23,6 +23,7 @@ from markdown_vault_mcp.git.types import (
     PULL_REASON_CONFLICT_RESOLUTION_FAILED,
     PullResult,
 )
+from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
@@ -397,7 +398,7 @@ def write_conflict_files(
 
         # --- Write conflict file (MCP version) ---
         try:
-            post = frontmatter.loads(mcp_content)
+            post = parse_frontmatter(mcp_content)
         except Exception:
             # If frontmatter parsing fails, treat as plain content.
             logger.warning(
@@ -427,7 +428,7 @@ def write_conflict_files(
                 # whole pull.
                 content = read_text_utf8(original_abs)
                 try:
-                    orig_post = frontmatter.loads(content)
+                    orig_post = parse_frontmatter(content)
                 except Exception:
                     logger.warning(
                         "Git pull: failed to parse frontmatter for original file %s; treating as plain content",

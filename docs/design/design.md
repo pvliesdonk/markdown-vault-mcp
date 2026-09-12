@@ -2913,6 +2913,21 @@ def parse_note(path: Path, source_dir: Path) -> ParsedNote: ...
 **Frontmatter parsing**: use `python-frontmatter` library. Schema-agnostic.
 Documents without frontmatter get an empty dict and proceed normally.
 
+**One parse entry point, one parse error (#1408).** Every call into
+`frontmatter.loads` in this package goes through `scanner.parse_frontmatter`.
+The library picks a handler by the block's opening delimiter and lets that
+handler's own error escape — YAML raises `yaml.YAMLError`, the JSON handler
+`json.JSONDecodeError`, a TOML handler (registered whenever `toml` is
+importable in the consumer's environment) `toml.TomlDecodeError` — and every
+guard in the package named only the first, so a `{`-delimited block that was
+not valid JSON aborted the whole OKF audit and escaped
+`DocumentManager.read`. `parse_frontmatter` re-raises the non-YAML failures
+as `MalformedFrontmatterError`, **a subclass of `yaml.YAMLError`**: the
+failure is the same one in any dialect, and the nine existing guards (and any
+downstream consumer's) keep working without a per-site change. A block that
+parses in any supported dialect is unaffected; syntax conformance is not a
+rule this package enforces.
+
 **Exclude patterns**: glob patterns (such as `[".obsidian/**", "_templates/**"]`)
 matched against relative paths from `source_dir` using `pathlib.Path.match()`.
 
