@@ -486,7 +486,11 @@ Tool tags following switches: #1412.
   `write` / `edit` on an OKF-active vault, skips a write whose target is
   itself a reserved file (`index.md` / `log.md`) so it never recurses, and is
   skipped for suppressed writes (`okf_verify`, the one-shot migrations) so an
-  attestation or mechanical rewrite does not churn the reserved files. The
+  attestation or mechanical rewrite does not churn the reserved files. A
+  transform suppresses each write it issues from inside `OkfMigrationManager`,
+  so the exemption is the transform's own and does not depend on which entry
+  point called it (#1401); it had been entered in the MCP tool handlers alone,
+  which left a library caller's bundle stamped by its own migration. The
   affected folder is the one directly containing the written note; the
   `index.md` refresh reuses the migration `generate_index`, draining the
   single-writer index first so a just-created note is listed. A brand-new

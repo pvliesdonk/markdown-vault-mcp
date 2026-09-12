@@ -880,12 +880,9 @@ def register(mcp: FastMCP) -> None:
             Dict with files_changed, links_converted, links_skipped, and
             notes_scanned.
         """
-        # Mechanical migration: suppress the enforced-write enricher so a link
-        # rewrite does not re-stamp provenance or clear human verification (#964).
-        with okf_write_suppressed():
-            result = await asyncio.to_thread(
-                vault.writer.okf_convert_links, folder=folder
-            )
+        # The suppression lives on the transform itself (#1401), so the
+        # library facade and this tool get the same mechanical write.
+        result = await asyncio.to_thread(vault.writer.okf_convert_links, folder=folder)
         return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
@@ -918,10 +915,7 @@ def register(mcp: FastMCP) -> None:
         Returns:
             Dict with path, entries (count), and frontmatter_preserved (bool).
         """
-        with okf_write_suppressed():
-            result = await asyncio.to_thread(
-                vault.writer.okf_generate_index, folder=folder
-            )
+        result = await asyncio.to_thread(vault.writer.okf_generate_index, folder=folder)
         return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
@@ -959,10 +953,7 @@ def register(mcp: FastMCP) -> None:
             Dict with path, commits (count), and dates (distinct-day count).
         """
         try:
-            with okf_write_suppressed():
-                result = await asyncio.to_thread(
-                    vault.writer.okf_seed_log, folder=folder
-                )
+            result = await asyncio.to_thread(vault.writer.okf_seed_log, folder=folder)
         except FileExistsError as exc:
             raise ToolError(str(exc)) from exc
         return attach_remote_health(vault, asdict(result))

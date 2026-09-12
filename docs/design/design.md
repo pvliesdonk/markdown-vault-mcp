@@ -1496,7 +1496,11 @@ the spec itself says, dated and sourced, in
   bundle root seeds whole-vault history (#974). The
   tools are tagged ``{"okf", "write"}`` — hidden in read-only mode and
   under ``OKF_MODE=off`` — and gate on read-only only, not a future
-  ``OKF_WRITE`` flag (they are migrations, not enforcement). Bundle export
+  ``OKF_WRITE`` flag (they are migrations, not enforcement). Every write
+  a transform issues is entered under ``okf_write_suppressed`` **in the
+  manager**, not in the tool handler (#1401): being mechanical is a
+  property of the transform, so a library caller of ``vault.writer.okf_*``
+  gets the same unstamped rewrite the tool does. Bundle export
   ships as an overloaded download ref rather than a bespoke tool: the domain
   ``VaultTransferSink`` recognises an ``okf-bundle`` / ``okf-bundle:<folder>``
   ref on pvl-core's ``create_download_link`` and generates the archive at

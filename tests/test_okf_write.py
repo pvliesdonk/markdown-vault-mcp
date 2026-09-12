@@ -603,8 +603,9 @@ class TestWriteToolThreadsActor:
     async def test_convert_links_migration_does_not_restamp(
         self, enforced_env: Path
     ) -> None:
-        # A migration transform is wrapped in okf_write_suppressed: converting a
-        # wikilink must not clear a note's human verification nor stamp it.
+        # A migration transform suppresses the enricher on every write it
+        # issues (#1401), so converting a wikilink must not clear a note's
+        # human verification nor stamp it — through this tool or the facade.
         (enforced_env / "guides" / "plain.md").write_text(
             "---\nverified:\n  - by: human:peter\n    at: 2026-01-01\n---\n"
             + _PLAIN_NOTE,
