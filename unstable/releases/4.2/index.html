@@ -2346,6 +2346,30 @@ and reports the rest of the bundle; <code>read</code> returns nothing and logs a
 warning; the indexer records the file as a <code>parse_error</code> skip rather than an
 <code>internal_error</code> one, so <code>get_index_status.skipped_files</code> names the real
 cause. A well-formed JSON block still parses as it always did.</p>
+<p><strong>The agent is no longer told to maintain navigation the server maintains.</strong>
+On any OKF-active vault the server's instructions asked the agent to update
+<code>log.md</code> and <code>index.md</code> when it edited. With
+<code>MARKDOWN_VAULT_MCP_OKF_WRITE</code> on, the server regenerates a written folder's
+<code>index.md</code> itself, so an agent that followed the instruction lost its edit at
+the next write into that folder, with nothing reporting it
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1431">#1431</a>). The
+sentence now depends on who is doing the upkeep: with the layer on the agent
+is told the server keeps those files current and to leave them alone, and
+without it the original advice stands. The OKF guide carries the same
+correction, along with what that means for a shared vault, and it no longer
+claims a hand-edited <code>index.md</code> survives.</p>
+<p>Two other guide corrections ride along. Saving a note into a folder produces
+<strong>one</strong> commit naming the note, its <code>log.md</code> and its <code>index.md</code>, not one commit
+per file, which the guide and the design notes still described from before the
+per-tool-call commit boundary
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1423">#1423</a>). And
+the enforcement, upkeep and export sections now state their limits rather
+than reading as guarantees
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1449">#1449</a>): what
+the provenance stamp does and does not evidence, which write paths keep
+navigation current and which leave it stale, that export packages what the
+index holds without validating the result, and what disabling the layer does
+not repair.</p>
 <p><strong>A migration transform stays mechanical for library callers too.</strong> With
 <code>MARKDOWN_VAULT_MCP_OKF_WRITE</code> on, the one-shot transforms
 (<code>okf_convert_links</code>, <code>okf_generate_index</code>, <code>okf_seed_log</code>) are exempt from
