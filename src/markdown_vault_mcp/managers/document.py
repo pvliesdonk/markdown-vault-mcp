@@ -694,9 +694,25 @@ class DocumentManager:
             content: Full file content to persist.
             operation: The write operation reported to the enricher and the
                 write callback.
+
+        Raises:
+            ValueError: The enforced-write layer is on and *content* opens
+                with a frontmatter block it cannot parse.
         """
         if self._okf_write_enrich is not None:
-            content = self._okf_write_enrich(content, operation)
+            try:
+                content = self._okf_write_enrich(content, operation)
+            except yaml.YAMLError as exc:
+                # The stamp is written *into* the note's frontmatter, so a
+                # block the parser cannot read leaves the enforced-write layer
+                # nothing to stamp and the write is refused. The parser's own
+                # exception named no path and reached the client looking like a
+                # server fault, so it is restated as the refusal it is (#1454).
+                raise ValueError(
+                    f"Cannot {operation} {path}: its frontmatter block is not "
+                    f"parseable, so the OKF enforced-write layer cannot stamp "
+                    f"provenance on it — {exc}"
+                ) from exc
         atomic_write(abs_path, content)
         if self._mark_paths_dirty is not None:
             self._mark_paths_dirty([path])

@@ -422,6 +422,17 @@ Tool tags following switches: #1412.
   `markdown-vault-mcp/<version>` as a tool actor. Existing `generated`
   values are overwritten (it describes the current bytes); `sources` are
   never touched.
+
+  A stamp is written *into* the note's frontmatter, so content whose block
+  no parser can read leaves nothing to stamp and the write is **refused**
+  (#1454). Writing it unstamped was the alternative and is worse: the layer's
+  whole claim is that every write it passes carries current provenance, and a
+  silent exception to that is the kind an operator finds months later. The
+  refusal is raised where the path is known (`_finalize_content_write`) as the
+  `ValueError` this layer uses for every other rejected write, so a caller is
+  told which note and why rather than being handed the parser's own exception.
+  With `OKF_WRITE` off there is no stamp to fail: the write lands, and the
+  indexer records the file as a `parse_error` skip (#1408).
 - **Verification invalidation** (`OKF_WRITE`): a content-changing `write`/`edit` to a note
   carrying `verified` clears the `verified` list — verification attests to
   bytes that no longer exist. Frontmatter-only edits that do not touch the

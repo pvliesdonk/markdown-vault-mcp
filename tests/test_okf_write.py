@@ -451,6 +451,52 @@ class TestInvalidationMatrix:
         assert meta["generated"] == {"by": "process:enrich"}
 
 
+class TestUnparseableFrontmatterRefusal:
+    """#1454: the refusal is right; it has to say so in the caller's terms."""
+
+    MALFORMED_JSON = "{\n  not json,\n}\n# body\n"
+
+    def test_write_is_refused_with_the_path_and_the_reason(
+        self, enforced_vault: Vault
+    ) -> None:
+        # The stamp cannot be applied to a block that does not parse, so the
+        # write is refused — but it used to surface the parser's own exception,
+        # naming no path and reading like a server fault.
+        with pytest.raises(ValueError, match=r"bad\.md") as excinfo:
+            enforced_vault.writer.write("bad.md", self.MALFORMED_JSON)
+        assert "frontmatter" in str(excinfo.value)
+
+    def test_the_refused_write_leaves_no_file(self, enforced_vault: Vault) -> None:
+        with pytest.raises(ValueError):
+            enforced_vault.writer.write("bad.md", self.MALFORMED_JSON)
+        assert not (enforced_vault.source_dir / "bad.md").exists()
+
+    def test_malformed_yaml_is_refused_the_same_way(
+        self, enforced_vault: Vault
+    ) -> None:
+        # The dialect is not what the refusal is about (#1408).
+        with pytest.raises(ValueError, match=r"bad\.md"):
+            enforced_vault.writer.write("bad.md", "---\ntitle: [unclosed\n---\n# b\n")
+
+    def test_editing_an_already_malformed_note_names_the_operation(
+        self, enforced_vault: Vault
+    ) -> None:
+        # `edit` matches on raw text, so it reaches the stamp with a block that
+        # never parsed — the refusal has to read for that operation too.
+        (enforced_vault.source_dir / "bad.md").write_text(
+            self.MALFORMED_JSON, encoding="utf-8"
+        )
+        with pytest.raises(ValueError, match=r"Cannot edit bad\.md"):
+            enforced_vault.writer.edit("bad.md", old_text="# body", new_text="# other")
+
+    def test_a_parseable_note_still_stamps(self, enforced_vault: Vault) -> None:
+        enforced_vault.writer.write("ok.md", '{\n"title": "T"\n}\n# T\n')
+        wait_for_writer_drain(enforced_vault)
+        assert _meta(enforced_vault, "ok.md")["generated"]["by"].startswith(
+            "markdown-vault-mcp/"
+        )
+
+
 class TestOffModeIdentity:
     def test_write_is_byte_identical_when_okf_write_off(self, tmp_path: Path) -> None:
         root = tmp_path / "vault"
@@ -573,6 +619,31 @@ class TestWriteToolThreadsActor:
         ).metadata
         assert meta["verified"] == [{"by": "human:peter", "at": _dt.date(2026, 1, 1)}]
         assert "generated" not in meta
+
+
+@pytest.mark.usefixtures("enforced_env")
+class TestUnparseableFrontmatterRefusalTool:
+    """The refusal as an MCP client reads it (#1454)."""
+
+    async def test_unparseable_frontmatter_is_refused_in_the_client_s_terms(
+        self, enforced_env: Path
+    ) -> None:
+        """The client is told what it did wrong, not what the parser hit.
+
+        The enricher's own exception reached the client as
+        ``Expecting property name enclosed in double quotes`` — no path, no
+        cause, and logged server-side as an unexpected tool failure (#1454).
+        """
+        async with Client(make_server()) as client:
+            await wait_for_mcp_writer_drain(client)
+            with pytest.raises(ToolError) as excinfo:
+                await client.call_tool(
+                    "write", {"path": "bad.md", "content": "{\n  not json,\n}\n# b\n"}
+                )
+        message = str(excinfo.value)
+        assert "bad.md" in message
+        assert "frontmatter" in message
+        assert not (enforced_env / "bad.md").exists()
 
 
 @pytest.mark.usefixtures("enforced_env")
