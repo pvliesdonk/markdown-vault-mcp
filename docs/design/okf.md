@@ -524,9 +524,9 @@ Commit fan-out is no longer one of these costs. It was, while each secondary
 write committed separately; since #1264 the dispatcher buffers every write a
 tool call makes and commits them together, and the maintainer's writes are
 issued synchronously inside the note's own `write` / `edit`, so they share its
-commit. `[verified 2026-09-12: one `write` into a folder on a git-backed
-bundle produced one commit, `write: 3 files`, naming the note, `log.md` and
-`index.md` (#1423).]`
+commit. [verified 2026-09-12: one `write` into a folder on a git-backed bundle
+produced one commit, `write: 3 files`, naming the note, `log.md` and
+`index.md` (#1423).]
 
 ---
 

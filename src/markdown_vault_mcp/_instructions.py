@@ -220,14 +220,7 @@ def contribute_instructions(mcp: FastMCP, config: GuidanceConfig) -> None:
 
     Args:
         mcp: The server whose builder to contribute to.
-        read_only: Whether write tools are disabled.
-        conventions_file: The configured per-folder conventions filename, or
-            ``None`` when conventions are not configured.
-        summarize_note_limit: The configured summarize note limit, or ``None``
-            when the summarize tool is not configured.
-        okf_mode: The configured OKF mode (``"auto"`` / ``"off"`` / ``"on"``).
-        okf_write: Whether the enforced-write layer maintains the reserved
-            files, which decides whether the agent is asked to.
+        config: The configuration the guidance branches on.
     """
     builder = instructions_for(mcp)
     for snippet in _domain_snippets(config):
