@@ -22,6 +22,63 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 4.2.0-rc.3 (2026-09-12)
+
+### Features
+
+- add VaultSettings so Vault construction is settings-first (#1224)
+- record skip tombstones so FTS absence means deleted (#1227)
+- push-triggered reindex for GitLab-hosted vaults (#1262)
+- embed queries and documents asymmetrically (#1270)
+- commit once per tool call, not once per file (#1265)
+- read a note at a revision, and name the one an overwrite replaced (#1288)
+
+### Bug Fixes
+
+- resolve commit identity at the tool edge so OIDC claims survive the dispatcher thread (#1226)
+- report every moved file to the write callback in move_folder (#1244)
+- adopt template v7 semantic roles (#1255)
+- enforce client-facing budgets (#1258)
+- adopt template v7.0.1 and de-fork the OIDC pages (#1260)
+- exclude reserved files from the stats OKF histograms (#1267)
+- scope the auto-commit's no-diff check to the operation's own paths (#1274)
+- commit the operation's own paths, not the whole index (#1275)
+- keep the file watcher when a webhook cannot deliver on this transport (#1277)
+- keep ProjectConfig importable under the generator's dep floor (#1279)
+- normalize attachment-extension spellings on the way in (#1280)
+- accept the object IDs a SHA-256 repository mints (#1286)
+- stop handing back non-ASCII note paths git octal-escaped (#1291)
+- stop attributing a previous note's commits to one that reused its name (#1298)
+- tell a caller when its write cannot leave the host (#1300)
+- stop predicting a fast-forward for a pull that would diverge (#1301)
+- treat a note's name as a name, not a glob, wherever git takes a pathspec (#1305)
+- follow a note's renames at the same threshold in every reader (#1302)
+- give a note renamed while resolving a merge its history back (#1314)
+- refuse an rc whose stable base is already tagged or reserved
+- refuse an rc whose stable base is already tagged or reserved (#1327)
+- port a branch release's ancestry to the default branch
+- port a branch release's ancestry to the default branch (#1329)
+- stop advising an unrelated note when a revision read refuses a copy (#1344)
+- report a configured commit claim the token does not carry (#1346)
+- treat a destination with any URI scheme as external (#1347)
+- say why a push failed, at the level deployments run at (#1345)
+- resolve and rewrite percent-encoded link destinations (#1354)
+- attachment references are not note links (#1360)
+- say when update_links does not apply to an attachment (#1364)
+- match a link inside one paragraph, never across a boundary (#1366)
+- stale on the stale_after date, and a bare verified mapping is one entry (#1371)
+- stale_after as an instant with an offset, the bare date kept (#1375)
+- stamp generated.at and verified[].at as UTC instants (#1376)
+- read a markdown destination in every CommonMark spelling (#1379)
+- the wikilink tie-break is Obsidian's, observed on 1.13.7 (#1380)
+- rebase with the configured commit identity, not the checkout's (#1363)
+- the maintained log.md stacks a frontmatter block per write (#1406)
+- okf_validate reports index.md frontmatter the format forbids (#1451)
+- a BOM no longer hides frontmatter from the OKF and conventions readers (#1452)
+- a malformed JSON-looking block is a finding, not an aborted audit (#1453)
+- an enforced-write refusal says which note and why (#1455)
+- a migration transform is mechanical through every entry point (#1457)
+
 ## 4.2.0-rc.2 (2026-09-08)
 
 ### Features
