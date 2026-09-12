@@ -47,6 +47,16 @@ class TestOkfDetector:
         assert state.active is True
         assert state.declared_version == "0.2"
 
+    def test_declaration_behind_a_bom_is_detected(self, tmp_path: Path) -> None:
+        # A BOM before the opening delimiter used to hide the declaration, so
+        # a declared bundle stayed inactive (#1407).
+        (tmp_path / "index.md").write_bytes(
+            b'\xef\xbb\xbf---\nokf_version: "0.2"\n---\n# Bundle\n'
+        )
+        state = OkfDetector(tmp_path, mode="auto").state()
+        assert state.declared_version == "0.2"
+        assert state.active is True
+
     def test_mode_off_ignores_marker(self, tmp_path: Path) -> None:
         _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n')
         state = OkfDetector(tmp_path, mode="off").state()
@@ -691,6 +701,20 @@ class TestOkfAudit:
         assert report.conformant_notes == 1
         assert report.root_index_missing is True
 
+    def test_note_behind_a_bom_is_audited_on_its_frontmatter(
+        self, tmp_path: Path
+    ) -> None:
+        # The audit's own read used to keep the BOM, so a conformant note
+        # audited as missing_type and the ratio understated the bundle (#1407).
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "good.md").write_bytes(
+            b"\xef\xbb\xbf---\ntype: Playbook\n---\n# Good\n"
+        )
+        report = audit_bundle(tmp_path)
+        assert report.conformant_notes == 1
+        assert report.missing_type.count == 0
+
     def test_unreadable_file_skipped(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import audit_bundle
 
@@ -822,6 +846,16 @@ class TestIndexFrontmatterAudit:
         )
         report = audit_bundle(tmp_path, exclude_patterns=["junk/**"])
         assert report.index_frontmatter.count == 0
+
+    def test_root_index_finding_behind_a_bom(self, tmp_path: Path) -> None:
+        # The rule reads presence and keys from one string, so it starts
+        # seeing a BOM-prefixed index as soon as the reader does (#1407).
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "index.md").write_bytes(
+            b'\xef\xbb\xbf---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n'
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.examples == ("index.md",)
 
     def test_log_frontmatter_is_not_an_index_finding(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.okf import audit_bundle

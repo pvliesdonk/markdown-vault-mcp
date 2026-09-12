@@ -73,6 +73,15 @@ class TestForPath:
         entries = resolver.for_path("3-Resources")
         assert entries[1].content == "Resource rules."
 
+    def test_frontmatter_behind_a_bom_is_stripped(self, tmp_path: Path) -> None:
+        # A BOM hid the block from _strip_frontmatter, so the raw YAML was
+        # delivered to the agent as convention prose (#1407).
+        (tmp_path / "_conventions.md").write_bytes(
+            b"\xef\xbb\xbf---\ntitle: C\n---\nUse sentence case."
+        )
+        resolver = ConventionsResolver(tmp_path, "_conventions.md")
+        assert resolver.for_path("note.md")[0].content == "Use sentence case."
+
     def test_invalid_frontmatter_falls_back_to_raw(self, tmp_path: Path) -> None:
         raw = "---\n: bad: [yaml\n---\nBody text."
         (tmp_path / "_conventions.md").write_text(raw, encoding="utf-8")

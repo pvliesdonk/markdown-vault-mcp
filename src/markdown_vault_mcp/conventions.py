@@ -29,6 +29,7 @@ from markdown_vault_mcp.utils import (
     resolve_inside,
 )
 from markdown_vault_mcp.utils.fs import iter_markdown_files
+from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -197,8 +198,7 @@ class ConventionsResolver:
         rel = f"{folder}/{self._filename}" if folder else self._filename
         file_path = self._source_dir / rel
         try:
-            with file_path.open(encoding="utf-8") as fh:
-                raw = fh.read(_MAX_READ_CHARS)
+            raw = read_text_utf8(file_path, limit=_MAX_READ_CHARS)
         except FileNotFoundError:
             return None
         except (OSError, UnicodeDecodeError):

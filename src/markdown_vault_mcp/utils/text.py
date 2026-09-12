@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def read_text_utf8(path: Path) -> str:
+def read_text_utf8(path: Path, *, limit: int | None = None) -> str:
     """Read a text file as UTF-8, stripping a leading BOM if present (#673).
 
     Uses ``utf-8-sig``: a leading UTF-8 BOM (``\\ufeff``) is stripped, and a
@@ -25,13 +25,23 @@ def read_text_utf8(path: Path) -> str:
     non-UTF-8 file still raises ``UnicodeDecodeError``, exactly as ``utf-8``
     would.
 
+    *limit* bounds the read for a probe that needs only a file's head (the
+    OKF detector and audit, the conventions resolver). It belongs here rather
+    than in each probe because rolling a capped read by hand is how those
+    three came to pick plain ``utf-8`` and fall out of this contract (#1407).
+    The cap counts characters of text, so a stripped BOM does not spend one.
+
     Args:
         path: File to read.
+        limit: Maximum characters to read; ``None`` reads the whole file.
 
     Returns:
         The file's text with any leading UTF-8 BOM removed.
     """
-    return path.read_text(encoding="utf-8-sig")
+    if limit is None:
+        return path.read_text(encoding="utf-8-sig")
+    with path.open(encoding="utf-8-sig") as fh:
+        return fh.read(limit)
 
 
 def decode_utf8(data: bytes) -> str:

@@ -2922,7 +2922,14 @@ file does not abort the scan.
 
 **UTF-8 BOM normalization (#673).** All vault-markdown reads strip a leading
 UTF-8 BOM via `utils.text.read_text_utf8` (path → str) and `decode_utf8`
-(bytes → str), both using the `utf-8-sig` codec. The scanner hashes the raw
+(bytes → str), both using the `utf-8-sig` codec. A probe that needs only a
+file's head passes `read_text_utf8(path, limit=...)` rather than opening its
+own handle: the OKF detector, the OKF audit and the conventions resolver each
+rolled their own capped `utf-8` read and so sat outside this contract, which
+left a BOM-prefixed declaration undetected, a conformant note audited as
+`missing_type`, and a convention file's raw YAML delivered as prose (#1407).
+The cap counts characters of text, so a stripped BOM does not spend one. The
+scanner hashes the raw
 on-disk bytes (BOM included) but decodes the text without the BOM, so a
 BOM-prefixed file's frontmatter parses and is indexed correctly. Writes are
 plain `utf-8` (no BOM), so the vault normalizes to no-BOM: a BOM-prefixed file
