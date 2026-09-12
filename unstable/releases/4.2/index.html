@@ -1828,6 +1828,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#okf-stabilization-and-its-next-direction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OKF stabilization and its next direction
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#undo-an-overwrite-without-leaving-the-client" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1958,26 +1969,25 @@
 
 
 <h1 id="42">4.2<a class="headerlink" href="#42" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: 60111e3fb38efdf54b78bc6fc1f5ca9acc2ff883 -->
+<!-- notes-range-end: 010ff42cfada2683b1b85515f07f7893aa95d20c -->
 
 <!-- RELEASE-SUMMARY v4.2.0 START -->
-<p>This release is about trusting the git layer. On a git-backed vault, an
-agent can now undo an overwrite from the client: an overwriting <code>write</code>
-names the commit holding what it replaced, and <code>read</code> accepts a <code>revision</code>
-to get it back. Writes commit once per tool call instead of once per file,
-each commit is scoped so an operator's staged work is never swept in, and
-when the clone stops reaching its remote every write result says so instead
-of reporting quiet success. Six history bugs (wrong note, escaped path,
-rejected SHA, vanished history) are fixed. GitLab-hosted vaults gain the
-push-triggered reindex GitHub vaults already had, Voyage vaults get better
-search relevance with nothing to configure, and server instructions now
-arrive in full on Claude Code instead of losing their tail to a 2,048-unit
-cap. Seven link-extraction fixes reshape the link graph: broken-link counts
-drop, notes whose only links were embeds become orphans, and a duplicate-name
-<code>[[Note]]</code> resolves as Obsidian does. Nothing breaks: no env var, tool, or
-library import changes meaning. Two one-time costs on first start after
-upgrade: every vault rebuilds its text index once, and a Voyage vault
-re-embeds once.</p>
+<p>4.2 makes git-backed vaults safer to trust and draws a clearer boundary around
+OKF. An agent can undo an overwrite from the client: an overwriting <code>write</code>
+names the commit holding what it replaced, and <code>read</code> accepts a <code>revision</code> to
+get it back. Writes commit once per tool call instead of once per file, each
+commit is scoped so an operator's staged work is never swept in, and every
+write reports when the clone cannot reach its remote. The OKF stabilization
+makes audits and parsing resilient, keeps migration transforms mechanical,
+corrects navigation guidance, and documents the limits of current upkeep and
+export. A greenfield north star now separates portable author claims from
+server observations and operator authority; its seven-stage roadmap describes
+future work. GitLab-hosted vaults gain push-triggered reindexing,
+Voyage vaults get better search relevance, and server instructions arrive in
+full on Claude Code. Seven link-extraction fixes reshape the link graph.
+Nothing breaks: no env var, tool, or library import changes meaning. Two
+one-time costs on first start after upgrade: every vault rebuilds its text
+index once, and a Voyage vault re-embeds once.</p>
 <!-- RELEASE-SUMMARY v4.2.0 END -->
 
 <p>This is the first release since <a href="../4.1/">4.1</a>. Most of it happened in one
@@ -1986,6 +1996,30 @@ bulk call produced 2,596 commits, and a production deployment that wrote for
 hours into a clone that could no longer push. Around that sit a GitLab
 webhook and better search on Voyage vaults, plus a fix for server
 instructions that never fully arrived.</p>
+<h2 id="okf-stabilization-and-its-next-direction">OKF stabilization and its next direction<a class="headerlink" href="#okf-stabilization-and-its-next-direction" title="Permanent link">&para;</a></h2>
+<p>The work to stabilize OKF exposed a deeper design problem. The server had
+treated storage as authorship, a changed file as a verdict on verification, a
+reserved filename as permission to replace content, and search admission as a
+rule about what belongs in a bundle. Repeated review made individual mechanisms
+more consistent without making those responsibilities equivalent
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1433#issuecomment-5598935941">#1433 review record</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1441">#1441</a>).</p>
+<p>The project has adopted a greenfield north star for future OKF work: people and
+agents should be able to exchange ordinary files while keeping author claims,
+server observations, and operator-granted maintenance authority distinct. A
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/blob/010ff42cfada2683b1b85515f07f7893aa95d20c/docs/design/okf-roadmap.md">seven-stage roadmap</a>
+covers bundle inventory, preservation, evidence applicability, deliberate
+authoring and review, navigation and editorial history, provenance-aware
+retrieval, and faithful publication
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1425">#1425</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1450">#1450</a>).</p>
+<p>Those capabilities have not shipped. The stages are independently shippable,
+with no promised release or date. Version 4.2 keeps the current OKF model and
+sets a narrower stabilization boundary: restore existing contracts, make
+parser and audit paths resilient, keep mechanical transforms mechanical, and
+state current operating limits accurately. The OKF fixes under Search and
+indexing are that stabilization work; later roadmap slices will change the
+underlying model.</p>
 <h2 id="undo-an-overwrite-without-leaving-the-client">Undo an overwrite without leaving the client<a class="headerlink" href="#undo-an-overwrite-without-leaving-the-client" title="Permanent link">&para;</a></h2>
 <p>On a git write-through vault, an overwritten note's previous content was
 always safe in history, but not reachable over MCP. As the motivating issue
