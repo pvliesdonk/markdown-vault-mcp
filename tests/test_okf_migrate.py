@@ -46,6 +46,94 @@ def _outlink_targets(vault: Vault, path: str) -> set[str]:
     return {o.target_path for o in vault.graph.get_outlinks(path)}
 
 
+_ENFORCED_ROOT_INDEX = '---\nokf_version: "0.2"\n---\n# Bundle\n'
+
+
+@pytest.fixture
+def enforced_vault(source_dir: Path) -> Iterator[Vault]:
+    """A declared bundle with the enforced-write layer on (#1401)."""
+    (source_dir / "index.md").write_text(_ENFORCED_ROOT_INDEX, encoding="utf-8")
+    col = Vault(source_dir=source_dir, read_only=False, okf_mode="on", okf_write=True)
+    try:
+        col.index.build_index()
+        yield col
+    finally:
+        col.close()
+
+
+def _frontmatter_of(vault: Vault, path: str) -> dict[str, object]:
+    from markdown_vault_mcp.scanner import parse_frontmatter
+
+    raw = (vault.source_dir / path).read_text(encoding="utf-8")
+    return dict(parse_frontmatter(raw).metadata)
+
+
+class TestTransformsAreMechanicalThroughEveryEntryPoint:
+    """#1401: the suppression belongs to the transform, not to the tool layer.
+
+    The enforced-write layer stamps `generated` and clears `verified` on a
+    content write. A mechanical rewrite is exempt — `docs/design/okf.md` says
+    so without qualifying it by caller — but the suppression was entered in the
+    MCP tool handlers only, so a library caller got its bundle stamped.
+    """
+
+    def test_generated_index_is_not_stamped(self, enforced_vault: Vault) -> None:
+        _write(enforced_vault, "guides/note.md", "---\ntitle: N\n---\n# N\n")
+
+        enforced_vault.writer.okf_generate_index(folder="guides")
+        wait_for_writer_drain(enforced_vault)
+
+        assert "generated" not in _frontmatter_of(enforced_vault, "guides/index.md")
+
+    def test_seeded_log_is_not_stamped(self, enforced_vault: Vault) -> None:
+        enforced_vault.writer.okf_seed_log()
+        wait_for_writer_drain(enforced_vault)
+
+        assert "generated" not in _frontmatter_of(enforced_vault, "log.md")
+
+    def test_converted_links_keep_the_note_s_own_provenance(
+        self, enforced_vault: Vault
+    ) -> None:
+        # A link rewrite must not re-stamp the note or discard a human
+        # attestation: the bytes changed mechanically, not by an author.
+        _write(enforced_vault, "guides/target.md", "---\ntitle: T\n---\n# T\n")
+        (enforced_vault.source_dir / "guides" / "src.md").write_text(
+            "---\ntitle: S\ngenerated:\n  by: human:someone\n  at: '2020-01-01T00:00:00Z'\n"
+            "verified:\n  - by: human:someone\n    at: '2020-01-01T00:00:00Z'\n---\n"
+            "See [[target]].\n",
+            encoding="utf-8",
+        )
+        enforced_vault.index.reindex()
+
+        enforced_vault.writer.okf_convert_links(folder="guides")
+        wait_for_writer_drain(enforced_vault)
+
+        meta = _frontmatter_of(enforced_vault, "guides/src.md")
+        assert meta["generated"] == {
+            "by": "human:someone",
+            "at": "2020-01-01T00:00:00Z",
+        }
+        assert "verified" in meta
+
+    def test_a_transform_does_not_trigger_convention_maintenance(
+        self, enforced_vault: Vault
+    ) -> None:
+        # A mechanical rewrite must not make the folder log itself. This holds
+        # by routing rather than by suppression: `WriterFacet` calls the
+        # convention maintainer for ordinary writes only, and the transforms
+        # delegate straight to the migration manager. Pinned because the
+        # suppression this issue moves would otherwise be the only thing
+        # anyone could point at for it.
+        _write(enforced_vault, "guides/target.md", "---\ntitle: T\n---\n# T\n")
+        _write(enforced_vault, "guides/src.md", "---\ntitle: S\n---\nSee [[target]].\n")
+        (enforced_vault.source_dir / "guides" / "log.md").unlink(missing_ok=True)
+
+        enforced_vault.writer.okf_convert_links(folder="guides")
+        wait_for_writer_drain(enforced_vault)
+
+        assert not (enforced_vault.source_dir / "guides" / "log.md").exists()
+
+
 class TestConvertLinks:
     def test_graph_round_trips(self, vault: Vault) -> None:
         _write(vault, "guides/playbook.md", "# Playbook\nSteps.\n")
