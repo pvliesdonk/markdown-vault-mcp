@@ -326,9 +326,12 @@ def _guidance(**kwargs: object) -> str:
     domain half of the text the server actually emits — minus the identity,
     documentation and job-polling snippets other contributors add.
     """
-    from markdown_vault_mcp._instructions import _domain_snippets
+    from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
 
-    return "\n\n".join(s.text for s in _domain_snippets(**kwargs))  # type: ignore[arg-type]
+    return "\n\n".join(
+        s.text
+        for s in _domain_snippets(GuidanceConfig(**kwargs))  # type: ignore[arg-type]
+    )
 
 
 class TestOkfInstructions:
@@ -341,6 +344,23 @@ class TestOkfInstructions:
         assert "OKF" in text
         assert "okf_version" in text
         assert "trust tier" in text
+
+    def test_maintained_vault_does_not_ask_the_agent_to_update_navigation(
+        self,
+    ) -> None:
+        # With OKF_WRITE on the server regenerates each written folder's
+        # index.md wholesale, so an agent that followed "update index.md"
+        # lost its edit on the next write into that folder (#1431).
+        text = _guidance(read_only=False, okf_mode="on", okf_write=True)
+        assert "update 'log.md'/'index.md'" not in text
+        assert "Leave 'log.md'/'index.md' to the server" in text
+
+    def test_unmaintained_vault_still_asks_the_agent_to_update_navigation(
+        self,
+    ) -> None:
+        # Without the maintainer nobody else keeps the reserved files current.
+        text = _guidance(read_only=False, okf_mode="on", okf_write=False)
+        assert "update 'log.md'/'index.md'" in text
 
     def test_default_omits_okf_guidance(self) -> None:
         assert "OKF" not in _guidance(read_only=True)

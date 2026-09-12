@@ -158,7 +158,10 @@ def make_server(
     from markdown_vault_mcp._commit_scope import CommitScopeMiddleware
     from markdown_vault_mcp._http_logging import quiet_http_loggers
     from markdown_vault_mcp._icons import _SERVER_ICON
-    from markdown_vault_mcp._instructions import contribute_instructions
+    from markdown_vault_mcp._instructions import (
+        GuidanceConfig,
+        contribute_instructions,
+    )
     from markdown_vault_mcp._server_prompts import register_domain_prompts
     from markdown_vault_mcp.domain import set_pending_config, set_pending_transport
 
@@ -210,12 +213,15 @@ def make_server(
     # mcp.instructions here instead would be dead: finalize overwrites it.
     contribute_instructions(
         mcp,
-        read_only=is_read_only,
-        conventions_file=config.content.conventions_file,
-        summarize_note_limit=(
-            config.summarize.max_notes if config.summarize.has_provider() else None
+        GuidanceConfig(
+            read_only=is_read_only,
+            conventions_file=config.content.conventions_file,
+            summarize_note_limit=(
+                config.summarize.max_notes if config.summarize.has_provider() else None
+            ),
+            okf_mode=config.content.okf_mode,
+            okf_write=config.content.okf_write,
         ),
-        okf_mode=config.content.okf_mode,
     )
 
     # Honor the passed config's server name the same way as instructions/icons.

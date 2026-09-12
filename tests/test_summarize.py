@@ -957,13 +957,11 @@ def test_apply_summarize_limits_tolerates_missing_description() -> None:
 
 
 def test_instructions_carry_live_note_limit() -> None:
-    from markdown_vault_mcp._instructions import _domain_snippets
+    from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
 
     def guidance(**kwargs: object) -> str:
-        return "\n\n".join(
-            s.text
-            for s in _domain_snippets(read_only=True, **kwargs)  # type: ignore[arg-type]
-        )
+        config = GuidanceConfig(read_only=True, **kwargs)  # type: ignore[arg-type]
+        return "\n\n".join(s.text for s in _domain_snippets(config))
 
     with_limit = guidance(summarize_note_limit=7)
     assert "at most 7 notes per call" in with_limit
@@ -985,11 +983,13 @@ def test_summarize_snippet_declares_the_tools_it_directs_calls_to() -> None:
     which the snippet tells the model to size folders with) no longer gets
     guidance pointing at a tool that is not there.
     """
-    from markdown_vault_mcp._instructions import _domain_snippets
+    from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
 
     limit_snippets = [
         s
-        for s in _domain_snippets(read_only=True, summarize_note_limit=7)
+        for s in _domain_snippets(
+            GuidanceConfig(read_only=True, summarize_note_limit=7)
+        )
         if "notes per call" in s.text
     ]
     assert len(limit_snippets) == 1
