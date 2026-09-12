@@ -309,7 +309,9 @@ Audit the vault's [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPl
 
 No parameters.
 
-**Returns:** Report object with the detection state (`mode`, `declared_version`, `active`), the progress ratio (`total_notes`, `conformant_notes`), `root_index_missing` (bool), and per-rule findings that each carry `count` and up to 20 `examples` paths. Conformance findings: `missing_type`, `unparseable_frontmatter`, `misplaced_okf_version`. Advisory: `unknown_status`, `log_heading_shape`. Informational: `wikilink_files`, `missing_recommended`. Reserved files (`index.md`, `log.md`) are exempt from the `type` rule.
+**Returns:** Report object with the detection state (`mode`, `declared_version`, `active`), the progress ratio (`total_notes`, `conformant_notes`), `root_index_missing` (bool), and per-rule findings that each carry `count` and up to 20 `examples` paths. Conformance findings: `missing_type`, `unparseable_frontmatter`, `misplaced_okf_version`, `index_frontmatter`. Advisory: `unknown_status`, `log_heading_shape`. Informational: `wikilink_files`, `missing_recommended`. Reserved files (`index.md`, `log.md`) are exempt from the `type` rule.
+
+`index_frontmatter` lists `index.md` files that carry frontmatter the format does not allow: any block on a folder index, and anything besides `okf_version` on the root index. A folder index that declares `okf_version` appears under `misplaced_okf_version` as well. The rule covers index files the server generated. With `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server adds the required fields to each index it writes, through `okf_generate_index` or the per-write refresh under `MARKDOWN_VAULT_MCP_OKF_WRITE`. That keeps the file indexed. The audit reports those fields like any others. Leave them in place: an index without them drops out of `search` and `list_documents`.
 
 ## Index Management
 

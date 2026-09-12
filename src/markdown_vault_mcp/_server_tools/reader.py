@@ -1016,10 +1016,12 @@ def register(mcp: FastMCP) -> None:
 
         Findings come in three severities. Conformance (spec violations):
         notes missing a non-empty 'type', notes with unparseable
-        frontmatter, and 'okf_version' declared outside the root index.md.
-        Advisory (tolerated but worth fixing): 'status' values outside
-        draft/stable/deprecated, log.md files whose '##' headings are not
-        YYYY-MM-DD dates, and a missing root index.md. Informational (not
+        frontmatter, 'okf_version' declared outside the root index.md, and
+        index.md files carrying frontmatter (any on a folder index; anything
+        but 'okf_version' on the root), including indexes the server
+        generated. Advisory (tolerated but worth fixing): 'status' values
+        outside draft/stable/deprecated, log.md files whose '##' headings are
+        not YYYY-MM-DD dates, and a missing root index.md. Informational (not
         deviations): notes containing wikilinks (relevant only when
         exporting; internal links resolve fine either way) and notes
         lacking the recommended 'title'/'description'. Reserved files
@@ -1030,8 +1032,8 @@ def register(mcp: FastMCP) -> None:
             state); 'total_notes' and 'conformant_notes' (the progress
             ratio); per-rule findings each carrying 'count' and up to 20
             'examples' paths ('missing_type', 'unparseable_frontmatter',
-            'misplaced_okf_version', 'unknown_status', 'log_heading_shape',
-            'wikilink_files', 'missing_recommended'); and
+            'misplaced_okf_version', 'index_frontmatter', 'unknown_status',
+            'log_heading_shape', 'wikilink_files', 'missing_recommended'); and
             'root_index_missing' (bool).
         """
         report = await asyncio.to_thread(vault.reader.okf_validate)

@@ -277,9 +277,15 @@ during migration it is a progress meter:
 
 - Per-rule counts + capped example lists: notes missing parseable
   frontmatter; notes missing non-empty `type`; unknown `status` values;
-  `okf_version` outside bundle root; reserved-file convention violations
-  (structural only — `log.md` heading shape, root `index.md` presence:
-  advisory findings, since the spec tolerates their absence).
+  `okf_version` outside bundle root; `index.md` frontmatter §8 does not
+  allow (a conformance finding under §11 rule 3: any block on a folder index,
+  anything beyond `okf_version` on the root — #1396). That rule reads
+  presence from the block, so an empty block or YAML that does not parse
+  counts, and judges keys, not syntax: a JSON block, which the shared parser accepts, is
+  judged on its keys like a YAML one. `log.md` frontmatter is not a finding;
+  §9 says nothing about it. The other reserved-file convention violations
+  are structural only — `log.md` heading shape, root `index.md` presence —
+  and advisory, since the spec tolerates their absence.
 - Informational (non-conformance) counts: wikilink usage (matters at export
   only), notes lacking recommended fields.
 - Summary ratio ("N of M notes conformant") + the same exclude patterns as
@@ -563,6 +569,12 @@ carry. Both generators and the `OKF_WRITE` maintainer write through it:
 - **`okf_version` is never synthesized.** The audit flags it on any file but
   the bundle root as `misplaced`, so seeding it into a folder's index would
   trade one defect for another.
+
+The audit does not exempt these files. A key the policy seeds into an
+`index.md` is an `index_frontmatter` finding like any hand-written one
+(#1396): the finding describes the file against §8, not who wrote it, and
+changes neither what the policy seeds nor what the gate admits. Whether the
+gate should reach generated reserved files at all is open (#1438).
 
 The maintainer (`OKF_MAINTAIN`; today `OKF_WRITE`) needs this for a second
 reason: `_append_log` is a

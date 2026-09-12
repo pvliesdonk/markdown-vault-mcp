@@ -610,6 +610,9 @@ def _build_audit_vault(root: Path) -> None:
     (root / "guides" / "odd-status.md").write_text(
         "---\ntype: Note\nstatus: archived\n---\n# Odd\n", encoding="utf-8"
     )
+    (root / "guides" / "index.md").write_text(
+        "---\ntitle: Guides\n---\n# Guides\n", encoding="utf-8"
+    )
     (root / "guides" / "log.md").write_text(
         "# Log\n\n## 2026-08-07\n\n- **Update**: fine\n", encoding="utf-8"
     )
@@ -636,6 +639,7 @@ class TestOkfAudit:
         assert report.misplaced_okf_version.examples == ("guides/misplaced.md",)
         assert report.unknown_status.examples == ("guides/odd-status.md",)
         assert report.log_heading_shape.examples == ("junk/log.md",)
+        assert report.index_frontmatter.examples == ("guides/index.md",)
         assert report.root_index_missing is False
         assert report.wikilink_files.examples == ("guides/untyped.md",)
         assert report.missing_recommended.count >= 3
@@ -721,6 +725,112 @@ class TestOkfAudit:
             assert report.missing_type.count == 1
         finally:
             vault.close()
+
+    def test_report_still_constructs_without_the_newer_finding(self) -> None:
+        from markdown_vault_mcp.okf import OkfAuditReport, OkfFinding
+
+        none = OkfFinding(count=0, examples=())
+        # The v4.1.0 positional signature: every field up to missing_recommended.
+        report = OkfAuditReport(
+            "auto", "0.2", True, 0, 0, none, none, none, none, none, False, none, none
+        )
+        assert report.index_frontmatter == none
+
+
+class TestIndexFrontmatterAudit:
+    """#1396: an index file carries no frontmatter but the root's okf_version."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "# Bundle\n\n- [A](/a.md)\n",
+            '---\nokf_version: "0.2"\n---\n# Bundle\n',
+            "---\nokf_version:\n---\n# Bundle\n",
+            '{\n"okf_version": "0.2"\n}\n# Bundle\n',
+            "---\ntitle: Bundle\n# Bundle\n",
+        ],
+        ids=["body-only", "declaration", "null-version", "json", "unclosed"],
+    )
+    def test_root_index_without_a_finding(self, tmp_path: Path, text: str) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, text)
+        assert audit_bundle(tmp_path).index_frontmatter.count == 0
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            '---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n',
+            "---\ntitle: Bundle\n---\n# Bundle\n",
+            "---\n---\n# Bundle\n",
+            "---\n# only a comment\n---\n# Bundle\n",
+            "---\n- a\n- b\n---\n# Bundle\n",
+            "---\n: [broken\n---\n# Bundle\n",
+            '\n---\nokf_version: "0.2"\ntitle: Bundle\n---\n# Bundle\n',
+        ],
+        ids=[
+            "extra-key",
+            "title-only",
+            "empty",
+            "comment-only",
+            "sequence",
+            "malformed",
+            "leading-blank-line",
+        ],
+    )
+    def test_root_index_finding(self, tmp_path: Path, text: str) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        _write_root_index(tmp_path, text)
+        report = audit_bundle(tmp_path)
+        assert report.index_frontmatter.examples == ("index.md",)
+        # A reserved file is not a note: the concept counts do not move.
+        assert report.total_notes == 0
+        assert report.unparseable_frontmatter.count == 0
+
+    @pytest.mark.parametrize(
+        "text",
+        ["# Guides\n\n- [A](/guides/a.md)\n", "# Guides\n\n---\n\nMore.\n"],
+        ids=["body-only", "thematic-break"],
+    )
+    def test_folder_index_without_a_block(self, tmp_path: Path, text: str) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(text, encoding="utf-8")
+        assert audit_bundle(tmp_path).index_frontmatter.count == 0
+
+    def test_folder_index_declaring_okf_version_is_both_findings(
+        self, tmp_path: Path
+    ) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "guides").mkdir()
+        (tmp_path / "guides" / "index.md").write_text(
+            '---\nokf_version: "0.2"\n---\n# Guides\n', encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path)
+        assert report.index_frontmatter.examples == ("guides/index.md",)
+        assert report.misplaced_okf_version.examples == ("guides/index.md",)
+
+    def test_excluded_index_is_not_reported(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "junk").mkdir()
+        (tmp_path / "junk" / "index.md").write_text(
+            "---\ntitle: Junk\n---\n# Junk\n", encoding="utf-8"
+        )
+        report = audit_bundle(tmp_path, exclude_patterns=["junk/**"])
+        assert report.index_frontmatter.count == 0
+
+    def test_log_frontmatter_is_not_an_index_finding(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.okf import audit_bundle
+
+        (tmp_path / "log.md").write_text(
+            "---\ntitle: Log\n---\n# Log\n\n## 2026-08-07\n\n- fine\n",
+            encoding="utf-8",
+        )
+        assert audit_bundle(tmp_path).index_frontmatter.count == 0
 
 
 # --- Phase 4 (#963): migration transform pure helpers -----------------------

@@ -455,6 +455,11 @@ class TestReservedOnlyBundle:
         assert okf["reserved_count"] == stats["document_count"]
         assert report["total_notes"] == 0
         assert report["missing_type"]["count"] == 0
+        # Both indexes carry a title; the log's block is not an index finding.
+        assert report["index_frontmatter"]["examples"] == [
+            "guides/index.md",
+            "index.md",
+        ]
 
 
 @pytest.mark.usefixtures("_plain_env")

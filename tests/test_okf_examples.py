@@ -23,7 +23,11 @@ if TYPE_CHECKING:
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _EXAMPLES = _REPO_ROOT / "examples"
 
-_DECLARED_INDEX = '---\nokf_version: "0.2"\ntitle: Root\n---\n# Root\n'
+#: The bundle-root declaration the OKF pack ships and `examples/okf/README.md`
+#: step 1 tells the reader to copy to their vault root — read from disk, not
+#: reproduced here, so a template that drifts out of conformance fails this
+#: test instead of passing a synthetic stand-in (#1396).
+_DECLARED_INDEX_TEMPLATE = _EXAMPLES / "okf" / "templates" / "index.md"
 
 # The note templates each pack ships (index.md is the reserved declaration and
 # is excluded from the conformance count).
@@ -36,8 +40,12 @@ _PACKS = {
 
 def _build_vault_from_templates(dest: Path, pack: str, templates: list[str]) -> Vault:
     dest.mkdir(parents=True, exist_ok=True)
-    # Declare the bundle so OKF detection is active.
-    (dest / "index.md").write_text(_DECLARED_INDEX, encoding="utf-8")
+    # Declare the bundle so OKF detection is active. The OKF pack ships the
+    # only declaration template; the PARA and Zettelkasten packs send the
+    # reader to that pack to turn OKF on.
+    (dest / "index.md").write_text(
+        _DECLARED_INDEX_TEMPLATE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     tdir = _EXAMPLES / pack / "templates"
     for name in templates:
         (dest / name).write_text((tdir / name).read_text(encoding="utf-8"))
@@ -58,6 +66,7 @@ def test_example_templates_pass_okf_validate(tmp_path: Path, pack: str) -> None:
         assert report.conformant_notes == report.total_notes
         assert report.missing_type.count == 0
         assert report.unparseable_frontmatter.count == 0
+        assert report.index_frontmatter.count == 0
     finally:
         vault.close()
 
