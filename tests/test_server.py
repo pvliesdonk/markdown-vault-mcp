@@ -182,10 +182,10 @@ class TestServerIdentity:
         """
         from fastmcp_pvl_core import InstructionRole
 
-        from markdown_vault_mcp._instructions import _domain_snippets
+        from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
 
         for read_only, expected in ((True, "READ-ONLY"), (False, "READ-WRITE")):
-            snippets = _domain_snippets(read_only=read_only)
+            snippets = _domain_snippets(GuidanceConfig(read_only=read_only))
             mode = [s for s in snippets if expected in s.text]
             assert len(mode) == 1, f"expected exactly one {expected} snippet"
             assert mode[0].role is InstructionRole.INSTANCE
@@ -195,13 +195,15 @@ class TestServerIdentity:
         """Pin the role ownership required by pvl-core's #299 design."""
         from fastmcp_pvl_core import InstructionRole
 
-        from markdown_vault_mcp._instructions import _domain_snippets
+        from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
 
         snippets = _domain_snippets(
-            read_only=False,
-            conventions_file="_conventions.md",
-            summarize_note_limit=50,
-            okf_mode="on",
+            GuidanceConfig(
+                read_only=False,
+                conventions_file="_conventions.md",
+                summarize_note_limit=50,
+                okf_mode="on",
+            )
         )
         roles = {snippet.text: snippet.role for snippet in snippets}
 
@@ -288,7 +290,7 @@ class TestServerIdentity:
         through ``gated_tool``; this covers the rest by turning on the
         features that gate each fragment and asserting all of them land.
         """
-        from markdown_vault_mcp._instructions import _domain_snippets
+        from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
         from markdown_vault_mcp.config import ProjectConfig
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY", "sk-test")
@@ -298,10 +300,12 @@ class TestServerIdentity:
 
         text = make_server().instructions or ""
         for snippet in _domain_snippets(
-            read_only=False,
-            conventions_file=config.content.conventions_file,
-            summarize_note_limit=config.summarize.max_notes,
-            okf_mode="on",
+            GuidanceConfig(
+                read_only=False,
+                conventions_file=config.content.conventions_file,
+                summarize_note_limit=config.summarize.max_notes,
+                okf_mode="on",
+            )
         ):
             assert snippet.text in text, (
                 f"the {snippet.role.value} snippet never reached the composed "

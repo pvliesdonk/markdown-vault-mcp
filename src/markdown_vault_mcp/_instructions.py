@@ -59,13 +59,36 @@ class Snippet:
     requires_tools: tuple[str, ...] = field(default=())
 
 
-def _domain_snippets(
-    *,
-    read_only: bool,
-    conventions_file: str | None = None,
-    summarize_note_limit: int | None = None,
-    okf_mode: str = "off",
-) -> list[Snippet]:
+@dataclass(frozen=True)
+class GuidanceConfig:
+    """The configuration the domain guidance branches on.
+
+    One object rather than a keyword per switch: every fragment below is
+    selected by some combination of these, and the set grows each time the
+    server gains a switch an agent has to be told about (``okf_write`` was
+    the fifth, #1431). Passing them as a value keeps both entry points at one
+    argument and makes "what does the guidance depend on?" a type rather than
+    a signature to re-read.
+
+    Attributes:
+        read_only: Whether write tools are disabled.
+        conventions_file: The configured per-folder conventions filename, or
+            ``None`` when conventions are not configured.
+        summarize_note_limit: The configured summarize note limit, or ``None``
+            when the summarize tool is not configured.
+        okf_mode: The configured OKF mode (``"auto"`` / ``"off"`` / ``"on"``).
+        okf_write: Whether the enforced-write layer maintains the reserved
+            files, which decides whether the agent is asked to.
+    """
+
+    read_only: bool
+    conventions_file: str | None = None
+    summarize_note_limit: int | None = None
+    okf_mode: str = "off"
+    okf_write: bool = False
+
+
+def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     """Select the domain guidance fragments that apply, in composition order.
 
     Only fragments that apply to this configuration are returned; a fragment
@@ -86,34 +109,29 @@ def _domain_snippets(
     the library enforced it — a server could be told to announce read-only
     while every write tool stayed listable and callable. This server does
     enforce it: write-tagged components are never registered when
-    ``read_only`` is set, and ``DocumentManager`` raises ``ReadOnlyError``
+    ``config.read_only`` is set, and ``DocumentManager`` raises ``ReadOnlyError``
     underneath. The sentence is therefore true here, so it is kept and owned
     domain-side (#1114).
 
-    The folder-conventions sentence is emitted whenever *conventions_file*
+    The folder-conventions sentence is emitted whenever *config.conventions_file*
     is configured, not gated on convention files existing on disk: in
     managed-git mode the clone happens inside the server lifespan, after
     instructions are composed, so a file-presence check here would silently
     miss on first boot.
 
+    ``read_only`` selects both the write-guidance sentence and the
+    announcement above. ``summarize_note_limit`` is surfaced so calling models
+    can plan folder splits before their first call (#925); without it the
+    guidance points at the client-side ``summarize-subtree`` prompt instead
+    (#1035). Any ``okf_mode`` other than ``"off"`` emits the OKF sentence, on
+    the same permits-rather-than-detects reasoning as the conventions one, and
+    ``okf_write`` decides which upkeep it asks for: without the enforced-write
+    layer nobody else keeps ``log.md`` / ``index.md`` current, and with it the
+    server regenerates a written folder's ``index.md``, so telling the agent
+    to edit that file invites work the next write replaces (#1431).
+
     Args:
-        read_only: Whether write tools are disabled; selects the write-guidance
-            sentence and the read-only/read-write announcement, both of which
-            this function owns.
-        conventions_file: The configured per-folder conventions filename, or
-            ``None`` when conventions are not configured.
-        summarize_note_limit: The configured summarize note limit, surfaced so
-            calling models can plan folder splits before their first call
-            (#925), or ``None`` when the summarize tool is not configured —
-            in which case the guidance points clients at the client-side
-            ``summarize-subtree`` prompt instead (#1035).
-        okf_mode: The configured OKF mode (``"auto"`` / ``"off"`` / ``"on"``).
-            Any mode other than ``"off"`` emits the OKF guidance sentence.
-            Like the conventions sentence, it is emitted when the mode
-            *permits* detection rather than gated on the ``okf_version``
-            marker existing on disk — in managed-git mode the clone happens
-            after instructions are composed — so the sentence is phrased
-            conditionally.
+        config: The configuration the fragments below branch on.
 
     Returns:
         The applicable guidance fragments, in the order they are composed.
@@ -124,7 +142,7 @@ def _domain_snippets(
     snippets = [
         Snippet(
             "This instance is READ-ONLY; write tools are not available."
-            if read_only
+            if config.read_only
             else "This instance is READ-WRITE; write tools are available.",
             InstructionRole.INSTANCE,
         )
@@ -144,35 +162,43 @@ def _domain_snippets(
             "prompt for multi-note or folder summaries.",
             InstructionRole.INSTANCE,
         )
-        if summarize_note_limit is None
+        if config.summarize_note_limit is None
         else Snippet(
-            f"'summarize' handles at most {summarize_note_limit} notes per call; "
+            f"'summarize' handles at most {config.summarize_note_limit} notes per call; "
             "split larger folders with 'get_toc'.",
             InstructionRole.INSTANCE,
             ("summarize", "get_toc"),
         )
     )
-    if conventions_file is not None:
+    if config.conventions_file is not None:
         snippets.append(
             Snippet(
                 "Before changing or linking notes, call "
                 "'get_conventions(path)'; follow it and write-result "
-                f"'conventions' ('{conventions_file}' configured).",
+                f"'conventions' ('{config.conventions_file}' configured).",
                 InstructionRole.INSTANCE,
                 ("get_conventions",),
             )
         )
-    if okf_mode != "off":
+    if config.okf_mode != "off":
+        # Who keeps the reserved files current decides what to tell the agent.
+        # Under OKF_WRITE the server regenerates a written folder's 'index.md'
+        # from the listing, so asking the agent to edit it invites work the
+        # next write silently replaces (#1431).
+        upkeep = (
+            "Leave 'log.md'/'index.md' to the server."
+            if config.okf_write
+            else "For edits, update 'log.md'/'index.md'."
+        )
         snippets.append(
             Snippet(
                 "If 'stats.okf' reports an OKF bundle ('okf_version' in root "
                 "'index.md'), discount deprecated, stale, or unverified notes by "
-                "trust tier. For edits, update 'log.md'/'index.md' and use "
-                "root-relative Markdown links.",
+                f"trust tier. {upkeep} Use root-relative Markdown links.",
                 InstructionRole.INSTANCE,
             )
         )
-    if not read_only:
+    if not config.read_only:
         snippets.append(
             Snippet(
                 "Use 'write'/'edit'/'append' to change notes, "
@@ -185,14 +211,7 @@ def _domain_snippets(
     return snippets
 
 
-def contribute_instructions(
-    mcp: FastMCP,
-    *,
-    read_only: bool,
-    conventions_file: str | None = None,
-    summarize_note_limit: int | None = None,
-    okf_mode: str = "off",
-) -> None:
+def contribute_instructions(mcp: FastMCP, config: GuidanceConfig) -> None:
     """Add this server's guidance to *mcp*'s instructions builder.
 
     Call before :func:`fastmcp_pvl_core.finalize_instructions`, which renders
@@ -201,20 +220,10 @@ def contribute_instructions(
 
     Args:
         mcp: The server whose builder to contribute to.
-        read_only: Whether write tools are disabled.
-        conventions_file: The configured per-folder conventions filename, or
-            ``None`` when conventions are not configured.
-        summarize_note_limit: The configured summarize note limit, or ``None``
-            when the summarize tool is not configured.
-        okf_mode: The configured OKF mode (``"auto"`` / ``"off"`` / ``"on"``).
+        config: The configuration the guidance branches on.
     """
     builder = instructions_for(mcp)
-    for snippet in _domain_snippets(
-        read_only=read_only,
-        conventions_file=conventions_file,
-        summarize_note_limit=summarize_note_limit,
-        okf_mode=okf_mode,
-    ):
+    for snippet in _domain_snippets(config):
         builder.add(
             snippet.text,
             role=snippet.role,

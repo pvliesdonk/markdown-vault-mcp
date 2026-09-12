@@ -513,15 +513,20 @@ write lock so concurrent writes into one folder cannot lost-update the log;
 the `index.md` refresh is a full idempotent regeneration, safe without extra
 locking.
 
-Cost note (accepted trade-offs, not defects): the index refresh drains the
+Cost note (accepted trade-off, not a defect): the index refresh drains the
 single-writer (a *global* wait, embeddings included, bounded at 10s) before it
-regenerates so a just-created note is listed — this is the price of reusing
+regenerates so a just-created note is listed. That is the price of reusing
 the FTS-backed `generate_index` rather than a disk scan, and it adds latency to
-every enforced write on a busy vault. And because the secondary writes are
-ordinary `DocumentManager` writes, a git-backed vault commits each separately,
-so one logical note write can produce up to three commits. Both are documented
-in the guide; a scoped (FTS-only) drain and commit coalescing are possible
-future refinements.
+every enforced write on a busy vault. Documented in the guide; a scoped
+(FTS-only) drain is a possible future refinement.
+
+Commit fan-out is no longer one of these costs. It was, while each secondary
+write committed separately; since #1264 the dispatcher buffers every write a
+tool call makes and commits them together, and the maintainer's writes are
+issued synchronously inside the note's own `write` / `edit`, so they share its
+commit. [verified 2026-09-12: one `write` into a folder on a git-backed bundle
+produced one commit, `write: 3 files`, naming the note, `log.md` and
+`index.md` (#1423).]
 
 ---
 
