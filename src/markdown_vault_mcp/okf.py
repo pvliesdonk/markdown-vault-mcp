@@ -28,6 +28,10 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+# Both halves of the library are used here, deliberately: `fm` serialises the
+# write stamps (`fm.dumps` / `fm.Post`), while every *read* goes through
+# `parse_frontmatter`, the package's single parse entry point, so a block no
+# handler can read raises one error rather than the handler's own (#1408).
 import frontmatter as fm
 import yaml
 
