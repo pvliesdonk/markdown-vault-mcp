@@ -31,6 +31,8 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
+from markdown_vault_mcp.utils.text import read_text_utf8
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
@@ -183,8 +185,7 @@ class OkfDetector:
         """
         file_path = self._source_dir / _ROOT_INDEX
         try:
-            with file_path.open(encoding="utf-8") as fh:
-                raw = fh.read(_MAX_READ_CHARS)
+            raw = read_text_utf8(file_path, limit=_MAX_READ_CHARS)
         except FileNotFoundError:
             return None
         except (OSError, UnicodeDecodeError):
@@ -580,8 +581,7 @@ def _index_frontmatter_conforms(rel: str, raw: str, metadata: dict[str, Any]) ->
 def _read_capped(file_path: Path, rel: str) -> str | None:
     """Read up to :data:`_MAX_READ_CHARS` of *file_path*, ``None`` on error."""
     try:
-        with file_path.open(encoding="utf-8") as fh:
-            return fh.read(_MAX_READ_CHARS)
+        return read_text_utf8(file_path, limit=_MAX_READ_CHARS)
     except (OSError, UnicodeDecodeError):
         logger.debug("okf_audit_read_failed path=%s", rel, exc_info=True)
         return None

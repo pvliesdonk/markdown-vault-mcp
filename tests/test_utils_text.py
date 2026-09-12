@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+import pytest
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
 from markdown_vault_mcp.utils.text import (
     CHAR_SUBS,
     build_position_map,
     find_closest_match,
     normalize_text,
+    read_text_utf8,
 )
 
 # ---------------------------------------------------------------------------
@@ -241,3 +249,35 @@ class TestUtf8BomHelpers:
 
         with pytest.raises(UnicodeDecodeError):
             decode_utf8(b"\xff\xfe\x80")
+
+
+# ---------------------------------------------------------------------------
+# read_text_utf8 (#673, #1407)
+# ---------------------------------------------------------------------------
+
+
+class TestReadTextUtf8:
+    def test_strips_a_leading_bom(self, tmp_path: Path) -> None:
+        p = tmp_path / "note.md"
+        p.write_bytes(b"\xef\xbb\xbf---\ntitle: T\n---\n# Body\n")
+        assert read_text_utf8(p).startswith("---")
+
+    def test_limit_caps_the_read(self, tmp_path: Path) -> None:
+        p = tmp_path / "note.md"
+        p.write_text("abcdef", encoding="utf-8")
+        assert read_text_utf8(p, limit=3) == "abc"
+
+    def test_limit_counts_characters_past_a_stripped_bom(self, tmp_path: Path) -> None:
+        # The BOM is not one of the characters the cap spends: a capped read
+        # returns the same prefix whether or not the file carries one (#1407).
+        plain = tmp_path / "plain.md"
+        plain.write_bytes(b"abcdef")
+        bom = tmp_path / "bom.md"
+        bom.write_bytes(b"\xef\xbb\xbfabcdef")
+        assert read_text_utf8(bom, limit=3) == read_text_utf8(plain, limit=3) == "abc"
+
+    def test_non_utf8_still_raises(self, tmp_path: Path) -> None:
+        p = tmp_path / "bad.md"
+        p.write_bytes(b"\xff\xfe\x00broken")
+        with pytest.raises(UnicodeDecodeError):
+            read_text_utf8(p)
