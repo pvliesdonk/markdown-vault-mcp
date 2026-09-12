@@ -2334,6 +2334,20 @@ generated. With
 fields to each index it generates, which keeps the file in search. The
 audit reports those fields like any others. Leave them in place. Indexing
 is unchanged. The conformance ratio still counts notes only.</p>
+<p><strong>A byte-order mark no longer hides a file's frontmatter.</strong> Every read of
+vault markdown strips a leading UTF-8 BOM, a contract from
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/673">#673</a>. Three
+readers opened their own handle with plain <code>utf-8</code> and sat outside it
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1407">#1407</a>). A
+BOM in front of the opening <code>---</code> then hid the block from the parser
+underneath. The effects were spread out: a bundle whose root <code>index.md</code>
+declared <code>okf_version</code> behind a BOM stayed inactive, so no OKF annotations,
+no filters, and <code>okf_validate</code> reporting the vault as undeclared; a fully
+conformant note audited as <code>missing_type</code>, understating the conformance
+ratio; and a <code>_conventions.md</code> file handed the agent its raw YAML as though
+it were convention prose. All three now read through the same helper as the
+rest of the vault. A file without a BOM is unaffected, and a file that is
+not UTF-8 at all is still skipped.</p>
 <p><strong>A link with any URI scheme is external.</strong> The external-link filter was an
 allowlist of four prefixes, so a <code>file:</code>, <code>ftp:</code>, <code>obsidian:</code> or <code>zotero:</code>
 destination was resolved against the source note's folder and reported as a
@@ -2567,6 +2581,16 @@ on your part:</p>
   byte-identical when the same actor wrote it on the same day, now changes
   the stamp and, on a git-backed vault, produces a commit. Stamps already
   on disk stay bare dates until the note is next written.</li>
+<li><strong>A vault whose root <code>index.md</code> starts with a byte-order mark becomes an
+  OKF bundle on upgrade</strong>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1407">#1407</a>).
+  Its declaration was invisible before, so results gain OKF annotations, the
+  OKF filters start matching, and reserved files and deprecated or stale
+  notes take their ranking downweights. Because <code>type</code>, <code>status</code> and
+  <code>stale_after</code> join the structured-filter set on an active bundle, that
+  vault also rebuilds its index once, on the existing
+  <code>indexed_frontmatter_fields</code> provenance check rather than a semantics
+  bump. Nothing on disk changes.</li>
 <li><strong><code>okf_validate</code> can report index files it used to pass.</strong> A vault with
   <code>MARKDOWN_VAULT_MCP_REQUIRED_FIELDS</code> set sees each <code>index.md</code> the server
   wrote those fields into under the new <code>index_frontmatter</code> finding
