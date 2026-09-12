@@ -2321,6 +2321,19 @@ indexed throughout. Blocks a 4.1.0 or 4.2.0-rc.0 vault already wrote stay
 where they are, in the body: removing them means telling a stacked block
 apart from one a log quotes on purpose, and that is
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1403">#1403</a>.</p>
+<p><strong><code>okf_validate</code> reports frontmatter on index files.</strong> OKF allows an
+<code>index.md</code> no frontmatter except an <code>okf_version</code> declaration on the bundle
+root, and the audit never checked: a root index carrying the
+<code>conflict_with</code> keys a git conflict writes, or a folder index with a
+hand-written title, still audited clean
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1396">#1396</a>). A
+new conformance finding, <code>index_frontmatter</code>, lists them. An empty block
+counts, as does YAML that does not parse, and so do index files the server
+generated. With
+<code>MARKDOWN_VAULT_MCP_REQUIRED_FIELDS</code> set, the server adds the required
+fields to each index it generates, which keeps the file in search. The
+audit reports those fields like any others. Leave them in place. Indexing
+is unchanged. The conformance ratio still counts notes only.</p>
 <p><strong>A link with any URI scheme is external.</strong> The external-link filter was an
 allowlist of four prefixes, so a <code>file:</code>, <code>ftp:</code>, <code>obsidian:</code> or <code>zotero:</code>
 destination was resolved against the source note's folder and reported as a
@@ -2554,6 +2567,12 @@ on your part:</p>
   byte-identical when the same actor wrote it on the same day, now changes
   the stamp and, on a git-backed vault, produces a commit. Stamps already
   on disk stay bare dates until the note is next written.</li>
+<li><strong><code>okf_validate</code> can report index files it used to pass.</strong> A vault with
+  <code>MARKDOWN_VAULT_MCP_REQUIRED_FIELDS</code> set sees each <code>index.md</code> the server
+  wrote those fields into under the new <code>index_frontmatter</code> finding
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1396">#1396</a>).
+  Nothing is re-indexed or rewritten; do not remove the required fields,
+  or the index drops out of search.</li>
 <li><strong>Two <code>fix(release)</code> entries in the changelog</strong>
   (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1327">#1327</a>,
   <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1329">#1329</a>) are

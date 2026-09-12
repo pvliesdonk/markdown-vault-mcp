@@ -71,6 +71,8 @@ Adoption is incremental. A note is either conformant or not, and the server tole
 
 Run the `okf_validate` tool to see where the vault stands. It reports conformance as a degree rather than a pass or fail. The report gives the conformant count out of the total, alongside a per-rule breakdown with example paths (notes missing a `type`, unknown `status` values, and the like). The audit reads from disk, so it works before you declare anything. Use it to decide whether to start.
 
+The report also lists `index.md` files that carry frontmatter the format does not allow. That includes index files the server generated: with `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` set, the server writes the required fields into them so they stay indexed. Leave those fields in place, because an index without them drops out of search and document listings.
+
 ### 2. Declare
 
 Add `okf_version: "0.2"` to the root `index.md` frontmatter. From this point the server annotates results, the filters work, and the agent receives guidance to keep OKF conventions when it edits. Declaring early means every new note is authored conformantly while you work through the backlog.
