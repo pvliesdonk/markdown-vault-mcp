@@ -2346,6 +2346,17 @@ and reports the rest of the bundle; <code>read</code> returns nothing and logs a
 warning; the indexer records the file as a <code>parse_error</code> skip rather than an
 <code>internal_error</code> one, so <code>get_index_status.skipped_files</code> names the real
 cause. A well-formed JSON block still parses as it always did.</p>
+<p><strong>An enforced-write vault says why it refused a note.</strong> With
+<code>MARKDOWN_VAULT_MCP_OKF_WRITE</code> on, the server stamps provenance into each
+note it writes, so a note whose frontmatter block cannot be parsed has
+nowhere to carry the stamp and the write is refused. That much was already
+true; what reached the client was the raw complaint from the frontmatter
+library, naming no note and reading like a server fault
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1454">#1454</a>). It
+now reads as the refusal it is, naming the note, the reason, and the parse
+error behind it, in the same form as every other rejected write. Nothing is
+written either way. With the layer off, the write lands and the note simply
+stays out of the index until its frontmatter parses.</p>
 <p><strong>A byte-order mark no longer hides a file's frontmatter.</strong> Every read of
 vault markdown strips a leading UTF-8 BOM, a contract from
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/673">#673</a>. Three

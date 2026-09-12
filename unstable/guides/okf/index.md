@@ -106,6 +106,8 @@ With the layer on, and only while the vault is an active OKF bundle, every `writ
 
 The one-shot migration transforms above (`okf_convert_links`, `okf_generate_index`, `okf_seed_log`) are exempt: a mechanical rewrite does not re-stamp provenance or discard a human attestation.
 
+The stamp goes into the note's own frontmatter, so the layer refuses a write whose frontmatter cannot be parsed: there is nowhere to record the provenance it promises. The error names the note and the reason, and nothing is written. Fix the block and write again. With the layer off the write goes through, and the note is left out of the index until its frontmatter parses.
+
 ### Recording a human review
 
 Enabling the layer also exposes the [`okf_verify`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#okf_verify) tool. Call it on a note you have reviewed and it appends a `{by: human:<subject>, at}` entry (`at` a UTC instant) to that note's `verified` list, which promotes the note's trust tier to `human-reviewed`. The verification write is exempt from the invalidation above, so attesting a note does not immediately clear the attestation you just added.
