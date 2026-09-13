@@ -96,9 +96,11 @@ curl -X POST \
 After a successful upload the file is available in the vault, and the link is grace-settled in the same way as a download. The FTS index is updated and the git-commit callback fires (when git integration is configured).
 
 The write guard checks again when the bytes arrive. If another writer creates
-the destination after link creation, the upload fails and preserves that file.
-With protection enabled, retrying after a successful upload also fails because
-the destination now exists, even while the token remains valid.
+the destination after link creation, the upload returns HTTP 409 Conflict and
+preserves that file. With protection enabled, retrying after a successful upload
+also returns 409 because the destination now exists, even while the token remains
+valid. A conflict releases the token reservation without extending its expiry;
+repeating the request keeps returning 409 while the file exists.
 
 !!! note "Raw body, not multipart"
     Send the file bytes directly as the request body. Avoid `multipart/form-data`; the endpoint reads raw bytes. curl's `--data-binary` flag sends raw bytes and is correct; `--form` sends multipart and will be rejected.

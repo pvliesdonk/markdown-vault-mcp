@@ -1205,15 +1205,19 @@ curl -X POST --data-binary @local-diagram.pdf \
     By default, link creation rejects an existing destination. Upload links
     have no `if_match` option. Choose a new path, or have the operator set
     `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites.
-    The write guard also rejects an upload if another writer creates the file
-    after link creation. A retry after a successful upload encounters an
-    existing file and is refused while protection is enabled.
+    The write guard returns HTTP 409 Conflict if another writer creates the file
+    after link creation. A retry after a successful upload also returns 409
+    while protection is enabled. The existing file is preserved, and the token
+    reservation is released without extending its expiry.
 
 !!! note "Raw body, not multipart"
     The upload endpoint expects the raw file bytes as the request body. Do not use `multipart/form-data`; send the content directly (curl's `--data-binary` flag does this correctly).
 
 !!! note "One-time"
-    The token is consumed on the first successful upload. A transient failure (network error, size limit exceeded) does not consume the token; retry is permitted until the TTL expires.
+    A successful upload shortens the token's remaining lifetime to the configured
+    grace window (default 60 seconds). Upload retries still obey overwrite
+    protection. A failure releases the reservation; retry is permitted until
+    expiry, but an existing destination keeps returning 409 while protected.
 
 ---
 

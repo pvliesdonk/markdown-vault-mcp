@@ -1635,8 +1635,9 @@ upload, the fully-read (size-capped) body.
   index and fires the git-commit callback. Upload handles carry no `if_match`;
   with overwrite protection enabled, uploads require a new file. The normal
   write guard remains authoritative under the write lock, so a file created
-  after validation is preserved and the upload fails. A successful upload
-  creates an existing destination, so a grace-window retry is also refused.
+  after validation is preserved and the upload returns **409 Conflict**. A
+  successful upload creates an existing destination, so a grace-window retry
+  also returns 409 while protection is enabled.
 - **Validation** (`validate(ref, kind)`): runs at link creation. Download
   validates existence stat-only, so minting a link for a large attachment never
   reads it; upload validates the destination is a note or an allowed attachment
@@ -1645,13 +1646,19 @@ upload, the fully-read (size-capped) body.
   Setting `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly allows
   existing destinations at link creation and blind replacement during upload.
 
-The sink maps two error states to pvl-core's `TransferSinkError` subclasses so
+The sink maps expected error states to pvl-core's `TransferSinkError` contract so
 the route returns a semantically correct status instead of a generic 500
 (fastmcp-pvl-core#233): a vault that is torn down while the route is still
 mounted (the ref-counted session lifespan cleared the singleton) raises
 `TransferUnavailableError` (retryable **503**), and a note or attachment that was
 validated at mint time but has since been removed raises
-`TransferResourceGoneError` (**410 Gone**). Any other failure still maps to 500.
+`TransferResourceGoneError` (**410 Gone**). On upload, `DocumentExistsError` is
+translated to `TransferSinkError(409)` (**409 Conflict**), preserving the file.
+The route releases the token reservation on these errors without extending its
+expiry; another upload will still conflict while the destination exists. Any
+other failure still maps to 500. See the versioned
+[pvl-core transfer reference](reference/fastmcp-transfer.md) for the upstream
+error and retry contract.
 
 The upload body is raw bytes (not `multipart/form-data`). The destination
 path is decided at link-creation time and cannot be overridden by the uploader.
@@ -3621,6 +3628,11 @@ API is called.
 
 Write-tagged prompts are hidden in read-only mode by the same
 ``mcp.disable(tags={"write"})`` call that hides write tools.
+
+For full-body rewrites, `propose-links` reads the current note and forwards its
+etag as `write(if_match=...)`, preserving current content and frontmatter and
+honoring default-on overwrite protection. Conflicting edits are skipped and
+reported rather than retried with a blind overwrite.
 
 Prompt registration is split by config-dependency (#901), both entry points
 living in ``_server_prompts.py``. The template-owned ``make_server`` body calls

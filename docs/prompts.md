@@ -176,6 +176,9 @@ Scan a bounded set of notes for semantically close pairs that aren't already lin
 6. Show a batch preview of every proposed edit.
 7. Write approved edits; skip failures (such as `ConcurrentModificationError`) and report reasons.
 
+Full-body rewrites first read the current note to preserve its content and
+frontmatter, then pass the returned etag as `write`'s `if_match` argument.
+
 !!! note "Write prompt"
     This prompt modifies documents and is hidden when `READ_ONLY=true`.
 

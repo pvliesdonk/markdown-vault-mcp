@@ -13,12 +13,15 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import pytest
-from fastmcp_pvl_core import TransferResourceGoneError, TransferUnavailableError
+from fastmcp_pvl_core import (
+    TransferResourceGoneError,
+    TransferSinkError,
+    TransferUnavailableError,
+)
 
 from markdown_vault_mcp._transfer_sink import VaultTransferSink
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
-from markdown_vault_mcp.exceptions import DocumentExistsError
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_writer_drain
 
@@ -126,8 +129,9 @@ async def test_upload_preserves_file_created_after_validation(
 ) -> None:
     handle = await sink.validate(path, "upload")
     (source_dir / path).write_bytes(b"created by another writer")
-    with pytest.raises(DocumentExistsError):
+    with pytest.raises(TransferSinkError) as exc:
         await sink.write(handle, b"uploaded replacement")
+    assert exc.value.status_code == 409
     assert (source_dir / path).read_bytes() == b"created by another writer"
 
 

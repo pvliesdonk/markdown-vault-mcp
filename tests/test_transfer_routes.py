@@ -18,6 +18,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from fastmcp_pvl_core import ServerConfig
+from httpx import ASGITransport, AsyncClient
 
 from markdown_vault_mcp.config import ProjectConfig
 from tests.server_factory import make_server
@@ -127,3 +128,39 @@ async def test_create_upload_link_checks_existing_destination(
             result = await client.call_tool("create_upload_link", {"ref": path})
             assert result.data["url"].startswith("https://mcp.example.com/transfer/")
     assert (tmp_path / path).read_bytes() == b"original"
+
+
+@pytest.mark.parametrize("path", ["new.md", "new.png"])
+@pytest.mark.parametrize("replay", [False, True])
+async def test_upload_conflict_returns_409(
+    tmp_path: Path, path: str, replay: bool
+) -> None:
+    """Late creates and upload retries return a conflict without spending the link."""
+    server = make_server(
+        transport="http",
+        config=_config(tmp_path, base_url="https://mcp.example.com"),
+    )
+    async with (
+        Client(server) as client,
+        AsyncClient(transport=ASGITransport(app=server.http_app())) as http,
+    ):
+        result = await client.call_tool("create_upload_link", {"ref": path})
+        url = result.data["url"]
+        if replay:
+            response = await http.post(url, content=b"original")
+            assert response.status_code == 200
+        else:
+            (tmp_path / path).write_bytes(b"original")
+
+        response = await http.post(url, content=b"replacement")
+        assert response.status_code == 409
+        assert response.content == b""
+        assert (tmp_path / path).read_bytes() == b"original"
+
+        # The route releases the reservation on conflict. Once the destination
+        # is free again, the same live token can complete the upload.
+        (tmp_path / path).unlink()
+        response = await http.put(url, content=b"replacement")
+        assert response.status_code == 200
+        assert response.json() == {"path": path, "bytes": len(b"replacement")}
+        assert (tmp_path / path).read_bytes() == b"replacement"

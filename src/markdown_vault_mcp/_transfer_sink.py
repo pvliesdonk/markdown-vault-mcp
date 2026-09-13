@@ -15,6 +15,8 @@ The sink is byte-oriented (pvl-core materialises the whole body, bounded by the
 per-upload cap); it never interprets the ``/transfer`` route or the token store.
 Path validation runs at link-creation time in :meth:`VaultTransferSink.validate`
 (the ``TransferValidator``), so a bad ref is rejected before a token is minted.
+The upstream error and retry contract is recorded in
+``docs/design/reference/fastmcp-transfer.md``.
 """
 
 from __future__ import annotations
@@ -28,10 +30,12 @@ from typing import TYPE_CHECKING, Any
 from fastmcp_pvl_core import (
     TransferReadResult,
     TransferResourceGoneError,
+    TransferSinkError,
     TransferUnavailableError,
 )
 
 from markdown_vault_mcp.domain import get_vault_singleton
+from markdown_vault_mcp.exceptions import DocumentExistsError
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
 from markdown_vault_mcp.utils import (
     artifact_suffix,
@@ -345,14 +349,19 @@ class VaultTransferSink:
         Raises:
             TransferUnavailableError: The vault is being torn down (retryable 503).
             UnicodeDecodeError: A note upload whose body is not valid UTF-8.
-            DocumentExistsError: Overwrite protection is enabled and the
-                destination exists, including a file created after validation.
+            TransferSinkError: The protected destination exists, including a
+                file created after validation or by a prior upload (409 Conflict).
         """
         vault = self._resolve_vault()
-        if is_note(handle):
-            text = decode_utf8(body)  # strips a leading BOM (#681); raises on bad UTF-8
-            await asyncio.to_thread(vault.writer.write, handle, text)
-        else:
-            await asyncio.to_thread(vault.writer.write_attachment, handle, body)
+        try:
+            if is_note(handle):
+                text = decode_utf8(body)  # strips a leading BOM (#681)
+                await asyncio.to_thread(vault.writer.write, handle, text)
+            else:
+                await asyncio.to_thread(vault.writer.write_attachment, handle, body)
+        except DocumentExistsError as exc:
+            raise TransferSinkError(
+                409, f"upload destination exists: {handle}"
+            ) from exc
         logger.info("transfer_upload_committed path=%s bytes=%d", handle, len(body))
         return {"path": handle, "bytes": len(body)}
