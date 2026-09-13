@@ -268,6 +268,8 @@ Generated guidance targets 1,536 UTF-16 units, reserving 512 units for normal op
 
 `MARKDOWN_VAULT_MCP_TOOLS_ALLOW` and `MARKDOWN_VAULT_MCP_TOOLS_DENY` trim which tools an instance exposes. Hidden tools disappear from `tools/list` and are rejected on `tools/call`; resources and prompts are unaffected. Setting both variables, or setting one to a value with no names in it, is a startup error. A name matching no registered tool is ignored, but an allowlist that matches nothing logs a startup warning, since the instance then exposes zero tools. See `fastmcp-pvl-core`'s README for the full semantics.
 
+`MARKDOWN_VAULT_MCP_HEALTH_DETAIL` decides how much the unauthenticated `/health` and `/health/ready` bodies say, since anyone who can reach the port can read them: `status` alone, the default `standard` with the server name, version and a verdict per readiness check, or `full` with a redacted reason for each check that raised. See [Docker deployment](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/#health) for the routes themselves.
+
 | Variable                                  | Default     | Description                                                                                                                                                                                                                                                 |
 | ----------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MARKDOWN_VAULT_MCP_TRANSPORT`            | `stdio`     | Transport the server speaks: `stdio` for local Claude Desktop/Code, `http` or `sse` for a network server.                                                                                                                                                   |
@@ -280,7 +282,8 @@ Generated guidance targets 1,536 UTF-16 units, reserving 512 units for normal op
 | `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION` | (none)      | Concise routing context that distinguishes this deployment's material or responsibility.                                                                                                                                                                    |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`   | (none)      | Deployment-specific behavioral policy added to the generated MCP instructions.                                                                                                                                                                              |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS`         | (none)      | Legacy: replaces all generated MCP instructions (deprecated; use \_INSTANCE_DESCRIPTION for routing and \_INSTRUCTIONS_EXTRA for policy).                                                                                                                   |
-| `MARKDOWN_VAULT_MCP_HTTP_PATH`            | `/mcp`      | Mount path for the MCP endpoint.                                                                                                                                                                                                                            |
+| `MARKDOWN_VAULT_MCP_HTTP_PATH`            | `/mcp`      | Mount path for the MCP endpoint; the health routes derive their prefix from it.                                                                                                                                                                             |
+| `MARKDOWN_VAULT_MCP_HEALTH_DETAIL`        | `standard`  | How much the unauthenticated /health and /health/ready bodies say: status, standard (adds name, version and per-check verdicts), or full (adds redacted reasons; trusted networks only).                                                                    |
 
 ## Authentication
 
@@ -335,10 +338,14 @@ Worker tuning stays on the native `FASTMCP_DOCKET_*` variables below. Set the ba
 
 ## Logging
 
-| Variable                      | Default | Description                                                                                                                      |
-| ----------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `FASTMCP_LOG_LEVEL`           | `INFO`  | Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. |
-| `FASTMCP_ENABLE_RICH_LOGGING` | `true`  | Set false for plain or structured JSON log output.                                                                               |
+`FASTMCP_ENABLE_RICH_LOGGING` picks the shape of FastMCP's own log output, the request-logging middleware included. Left on, Rich renders each record with color, a time column and the source file that emitted it. Turned off, the middleware emits one JSON object per record and the rest of FastMCP's loggers emit `LEVEL: message`. This server's own `markdown_vault_mcp.*` lines are not affected either way: the CLI attaches its own one-line handler to the root logger.
+
+The container image and the packaged systemd unit both default it to `false`, because neither stream is a terminal. Rich falls back to 80 columns there, and a structured record does not fit in what its own columns leave, so each record wraps across three space-padded lines that neither `docker logs` nor a collector reads back. `docker logs -t` and `journalctl` both carry a timestamp per line, covering the column Rich stops printing. Both are ordinary environment defaults: `.env`, the compose `environment:` block and `/etc/markdown-vault-mcp/env` all override them. Turning Rich back on inside a container wraps the records again unless `COLUMNS` is set too, which is what Rich reads in preference to asking the terminal.
+
+| Variable                      | Default | Description                                                                                                                                                                                                                 |
+| ----------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FASTMCP_LOG_LEVEL`           | `INFO`  | Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG.                                                                                            |
+| `FASTMCP_ENABLE_RICH_LOGGING` | `true`  | Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback. |
 
 ## Container runtime
 
@@ -4274,7 +4281,7 @@ Enabling the layer also exposes the [`okf_verify`](https://pvliesdonk.github.io/
 
 One subtlety is worth understanding before you rely on the `human-reviewed` tier. The authenticated subject is *whose token* made the call, not proof that a person read the note. When an agent holds your token and attribution rests on the token alone, the model could promote a note to `human-reviewed` on its own, and the tier would mean nothing. `MARKDOWN_VAULT_MCP_OKF_VERIFY` controls how the tool guards against that. It applies only when `OKF_WRITE` is on. Setting it to a non-default value with the layer off is a configuration error, because the tool is hidden and the setting would have no effect.
 
-- **`elicit`** (the default) makes `okf_verify` ask you to confirm the review through an MCP [elicitation](https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation), a prompt your client shows you, and it writes the `verified` entry only when you answer yes. It fails closed. When your client cannot show the prompt or you decline it, the call returns a tool error and writes nothing. A model cannot answer the prompt on your behalf, so a headless agent with no human present can never produce a `human-reviewed` entry. The recorded subject is your authenticated identity when the server has auth, or `local` when it does not.
+- **`elicit`** (the default) makes `okf_verify` ask you to confirm the review through an MCP [elicitation](https://gofastmcp.com/servers/elicitation), a prompt your client shows you, and it writes the `verified` entry only when you answer yes. It fails closed. On modern MCP connections the tool returns an input request and your client repeats the call with your answer; on older handshake connections it uses server-initiated elicitation. When your client cannot show the prompt or you decline it, the call fails and writes nothing. Use a client whose elicitation handler actually presents the question to a person: an automatically affirmative handler would defeat the human-review gate. The recorded subject is your authenticated identity when the server has auth, or `local` when it does not.
 - **`off`** hides the tool entirely. Use this when reviews are recorded only by tooling outside the server (a CLI step, a git hook, or a CI job that writes `verified` directly) and you want no in-session path to the tier at all.
 - **`trust-auth`** is the original behaviour: attribute to the authenticated caller with no confirmation, and refuse when the server runs with no auth. Choose it only when the sole caller of `okf_verify` is a human-driven interface rather than an agent.
 
@@ -6370,22 +6377,134 @@ markdown-vault-mcp serve --transport http --host 0.0.0.0 --port 8000
 
 # Docker Deployment
 
-## Quick Start
+## Quick start
 
 ```
-# Pull the image
-docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
-
-# Copy an example env file
-cp examples/obsidian-readonly.env .env
-
-# Edit .env (set MARKDOWN_VAULT_MCP_SOURCE_DIR to the vault path on the host)
-# Then start the service
+cp .env.example .env
 docker compose up -d
-
-# Check it's running
-curl http://localhost:8000/health
 ```
+
+The server listens on port 8000 with HTTP transport, published on the host as `8000:8000`. No reverse proxy, TLS terminator, or external network is assumed.
+
+Copying `.env.example` first is the step to keep. Every variable in it arrives commented out, so the server starts on its defaults and the copy changes no behaviour by itself. It is the file you edit next, and `compose.yml` names it.
+
+Apply a later edit with `docker compose up -d`, which recreates the container with the new values. `docker compose restart` does not pick them up: an env file is read when a container is created, so a restarted container keeps the values it was created with and the edit is ignored without any message.
+
+## Docker Compose
+
+`compose.yml` is a working deployment, not an illustration. It is re-rendered on every `copier update`, so fixes and new defaults reach it; edit it inside the sentinel blocks described below and your changes survive.
+
+### Where configuration goes
+
+The split matters, because two files can set the same variable:
+
+- **`.env` holds the server's configuration.** `compose.yml` reads it with `env_file:`. `.env.example` is generated from the server's own config surface and lists every variable with its default and a one-line description, so it is both the checklist and the place to edit. [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md) carries the full reference.
+- **`compose.yml`'s `environment:` block holds only what the file itself determines.** Currently that is `FASTMCP_HOME`, which points at the state volume the file mounts. Values here override `.env`, so a knob set in both places takes the value from `compose.yml`, which is rarely what an operator editing `.env` expects.
+
+The `env_file:` entry is marked `required: false`, so a checkout with no `.env` still starts on defaults. That form needs Compose 2.24.0 or newer; on an older engine, either upgrade or replace the entry with plain `env_file: .env` and make sure the file exists.
+
+### Ports
+
+The image pins its own listener: `CMD` passes `--host 0.0.0.0 --port 8000`, so `MARKDOWN_VAULT_MCP_HOST` and `MARKDOWN_VAULT_MCP_PORT` in a `.env` do not move it. To serve on a different host port, change the left-hand side of the mapping (`"9000:8000"`) rather than the server's port.
+
+### Domain content and `copier update`
+
+Four sentinel blocks mark the parts of `compose.yml` a project owns. Content inside them survives a template update; content outside them does not, and will conflict.
+
+| Block                         | For                                                     |
+| ----------------------------- | ------------------------------------------------------- |
+| `DOMAIN-COMPOSE-VOLUMES`      | Extra mounts on the service                             |
+| `DOMAIN-COMPOSE-ENVIRONMENT`  | Extra environment this file determines                  |
+| `DOMAIN-COMPOSE-SERVICES`     | Sidecars, such as a task backend or a cache             |
+| `DOMAIN-COMPOSE-VOLUME-NAMES` | Top-level declarations for any named volume added above |
+
+A named volume needs an entry in two of those: the mount in `DOMAIN-COMPOSE-VOLUMES`, and its declaration in `DOMAIN-COMPOSE-VOLUME-NAMES`. A bind mount needs only the first.
+
+### Behind a reverse proxy
+
+Proxy configuration is deployment-specific, so `compose.yml` ships none. Add it in a second file rather than by editing `compose.yml`, which is template-owned and re-rendered: save this as `compose.override.yml`, which Compose loads automatically alongside `compose.yml`.
+
+```
+services:
+  markdown-vault-mcp:
+    # `!reset` drops the published port: the proxy reaches the container over
+    # the shared network, so nothing needs to be on the host. Plain merging
+    # appends to sequences, so without this the port stays published.
+    ports: !reset []
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)"
+      - "traefik.http.routers.markdown-vault-mcp.tls.certresolver=letsencrypt"
+      - "traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"
+
+networks:
+  traefik:
+    external: true
+```
+
+`!reset` needs Compose 2.24.4 or newer. On an older engine, drop that line and remove the port mapping from `compose.yml` directly, accepting that the edit conflicts on the next template update.
+
+Check the result before starting anything, since a merge that silently kept the port mapping looks identical until the port clashes:
+
+```
+docker compose config
+```
+
+Substitute your own hostname for `mcp.example.com`. Set `MARKDOWN_VAULT_MCP_BASE_URL` to the public URL as well: the server needs it to advertise its own address, and it is required once OIDC is enabled. Do not reach for `MARKDOWN_VAULT_MCP_HOST` here. That variable is the interface the server binds to, which is not the name the proxy routes.
+
+The network must already exist and be the one the proxy watches. For the same overlay with OIDC, see [OIDC](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/index.md).
+
+### Building the image yourself
+
+`compose.yml` pulls a published image rather than building one, so `docker compose up -d` never rebuilds from a stale checkout. To run your own build, build and tag it first:
+
+```
+docker build -t ghcr.io/pvliesdonk/markdown-vault-mcp:dev .
+```
+
+then point the `image:` line at that tag.
+
+### Health
+
+The server serves two unauthenticated routes for an orchestrator to probe. They sit outside the MCP mount and outside auth, so they answer normally while the MCP endpoint still answers `401`.
+
+| Route           | Question                | Answer                                                                                              |
+| --------------- | ----------------------- | --------------------------------------------------------------------------------------------------- |
+| `/health`       | Is the process serving? | Static `200` for as long as it does. A failure means restart it.                                    |
+| `/health/ready` | Can it do its job?      | Runs every readiness check and answers `503` if any fails. A failure means take it out of rotation. |
+
+`compose.yml` probes `/health`, so `docker compose ps` reports `healthy` once the server answers and `docker compose up --wait` returns. The image carries the same probe as its `HEALTHCHECK`, so a bare `docker run` reports health too. Compose only reports the verdict: it gates `depends_on: condition: service_healthy` on it but restarts nothing. An orchestrator that does act on liveness, such as Swarm or a Kubernetes `livenessProbe`, restarts the container, so the probe is deliberately not `/health/ready`. A restart does not fix an unreachable backing store, and a readiness verdict here would hold up every dependent service for one. Point a load balancer or a Kubernetes `readinessProbe` at `/health/ready` instead.
+
+Readiness ships with one check, `kv_store`, which writes a short-lived key so a state volume that has silently vanished is detected. A project adds its own checks, such as whether an upstream API key is still valid, in the `health_checks` dict beside the `DOMAIN-WIRING` block in `src/markdown_vault_mcp/server.py`.
+
+The paths follow the mount. The server strips a conventional trailing `mcp` segment from `MARKDOWN_VAULT_MCP_HTTP_PATH`, so the default `/mcp` publishes `/health` and a mount at `/markdown-vault-mcp/mcp` publishes `/markdown-vault-mcp/health`. The shipped probe assumes the default, so a `.env` that changes the mount path must move the probe with it.
+
+Check the readiness verdict through the published port; `curl` prints the body on a `503` as well, which is where the failing check is named:
+
+```
+curl -s http://localhost:8000/health/ready
+```
+
+`MARKDOWN_VAULT_MCP_HEALTH_DETAIL` decides how much the bodies say, because anyone who can reach the port can read them. `status` returns the status alone. The default, `standard`, adds the server name and version on `/health` and a verdict per check on `/health/ready`. `full` adds the exception type and a redacted reason for each check that raised, and belongs only where the port is reachable from a trusted network.
+
+### Logs
+
+The image sets `FASTMCP_ENABLE_RICH_LOGGING=false`, so `docker logs` gets one line per record: a JSON object for every MCP request the logging middleware sees, `LEVEL: message` from the rest of FastMCP. Both grep cleanly and both survive a log collector. The server's own loggers print one line either way.
+
+The reason is that a container has no terminal. Rich falls back to 80 columns, its time, level and source columns claim most of them, and a structured record then wraps across three space-padded lines that no reader and no parser puts back together. Rich's time column goes with the setting, and Docker timestamps every line it captures anyway, so `docker logs -t` prints them.
+
+This is an image default like any other, so `.env` or the compose `environment:` block overrides it. Turning Rich back on for a human reading `docker logs` needs `COLUMNS` set as well, since that is what Rich reads in place of asking a terminal it does not have. In `.env`:
+
+```
+FASTMCP_ENABLE_RICH_LOGGING=true
+COLUMNS=200
+```
+
+Records then render one line each, in color, padded out to the full width. The packaged Debian and RPM installs make the same trade for `journalctl`: the systemd unit sets `FASTMCP_ENABLE_RICH_LOGGING=false`, and `/etc/markdown-vault-mcp/env` overrides it.
+
+`FASTMCP_LOG_LEVEL` sets how much is logged; see [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/#logging).
 
 ## Image tags
 
@@ -6406,227 +6525,33 @@ docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revis
   ghcr.io/pvliesdonk/markdown-vault-mcp:edge
 ```
 
-## Docker Compose Configuration
+## Environment variables
 
-The `compose.yml` defines a single service:
+| Variable                                  | Default               | Description                                                                                                   |
+| ----------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_BEARER_TOKEN`         | n/a                   | Enable bearer token auth                                                                                      |
+| `FASTMCP_LOG_LEVEL`                       | `INFO`                | Log level (`DEBUG` / `INFO` / `WARNING` / `ERROR`)                                                            |
+| `FASTMCP_ENABLE_RICH_LOGGING`             | `false` in the image  | Rich output; off means one plain or JSON line per record (see [Logs](#logs))                                  |
+| `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION` | n/a                   | Routing context that distinguishes this deployment                                                            |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`   | n/a                   | Deployment-specific behavioral policy added to the generated MCP instructions                                 |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS`         | (computed at startup) | Legacy full replacement of the generated instructions (deprecated)                                            |
+| `MARKDOWN_VAULT_MCP_DEBUG_PORT`           | n/a                   | Remote-debugger TCP port (see [Remote debugging](#remote-debugging); requires `--build-arg DEBUG=true` image) |
+| `MARKDOWN_VAULT_MCP_DEBUG_WAIT`           | `false`               | Block startup until IDE attaches (see [Remote debugging](#remote-debugging))                                  |
 
-```
-services:
-  markdown-vault-mcp:
-    image: ghcr.io/pvliesdonk/markdown-vault-mcp:latest
-    build: .
-    env_file: .env
-    volumes:
-      - ${MARKDOWN_VAULT_MCP_SOURCE_DIR:?Set MARKDOWN_VAULT_MCP_SOURCE_DIR}:/data/vault
-      - state-data:/data/state
-    environment:
-      MARKDOWN_VAULT_MCP_SOURCE_DIR: /data/vault
-      MARKDOWN_VAULT_MCP_INDEX_PATH: /data/state/index.db
-      MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/state/embeddings/embeddings
-      MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: /data/state/fastembed
-      FASTMCP_HOME: /data/state/fastmcp
-    restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.markdown-vault-mcp.rule=Host(`${MARKDOWN_VAULT_MCP_HOST:-markdown-vault-mcp.local}`)"
-      - "traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"
-
-volumes:
-  state-data:
-```
-
-### Volume Mounts
-
-| Container Path | Type                       | Purpose                                                                                                                                    |
-| -------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/data/vault`  | Bind mount or named volume | Your Markdown vault; pre-created in the image for managed repo mode                                                                        |
-| `/data/state`  | Named volume               | All server-managed internal state (SQLite FTS index, embedding vectors, FastEmbed model cache, OIDC proxy state, HTTP session event store) |
-
-All `/data/*` directories are pre-created and owned by the runtime user in the image. For managed repo mode (where the server clones a git repo on first start), `/data/vault` must be writable (this works automatically with named volumes or when UID/GID match the bind-mount owner). The first startup triggers a full index build; subsequent starts only reindex changed files.
-
-Upgrading from v1.8.x
-
-Versions before v1.9.0 used three separate state volumes (`index-data`, `embeddings-data`, `fastembed-data`). These have been consolidated into a single `state-data` volume mounted at `/data/state`. Existing state is **not automatically migrated**: the index and embeddings will be rebuilt on first startup (the index rebuild is incremental; the embeddings rebuild may take several minutes for large vaults). The FastEmbed model cache will be re-downloaded (~100 MB). To avoid the rebuild, copy data from the old volumes into `state-data` before starting the new container.
-
-## Traefik Reverse Proxy
-
-The `compose.yml` includes Traefik labels out of the box. When Traefik is running and watching Docker, it picks up these labels and routes traffic automatically.
+For OIDC auth variables, see [Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/index.md).
 
 Running behind a reverse proxy on a path prefix (`https://mcp.example.com/myservice/mcp`) rather than its own hostname needs two routing rules, one of which sits outside the prefix: see [Subpath Deployments](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/#subpath-deployments).
 
-**What the labels do:**
+## Volumes
 
-- `traefik.enable=true`: opts this service in to Traefik discovery
-- `traefik.http.routers.markdown-vault-mcp.rule`: defines the `Host` rule; defaults to `markdown-vault-mcp.local`
-- `traefik.http.services.markdown-vault-mcp.loadbalancer.server.port`: tells Traefik the container listens on port 8000
+| Path            | Purpose                                        |
+| --------------- | ---------------------------------------------- |
+| `/data/service` | Your service data (bind-mount or named volume) |
+| `/data/state`   | State files (FastMCP OIDC state, etc.)         |
 
-### Prerequisites
+## UID/GID
 
-1. Traefik running in Docker with the Docker provider enabled
-
-1. Both Traefik and this service on the same Docker network:
-
-   ```
-   services:
-     markdown-vault-mcp:
-       networks:
-         - traefik
-
-   networks:
-     traefik:
-       external: true
-   ```
-
-1. A DNS entry (or `/etc/hosts` line) resolving the hostname to your host
-
-### Custom Hostname
-
-Set `MARKDOWN_VAULT_MCP_HOST` in your `.env`:
-
-```
-MARKDOWN_VAULT_MCP_HOST=vault.example.com
-```
-
-### Mounting Under a Subpath
-
-To serve MCP at `https://mcp.example.com/vault/mcp`, set:
-
-```
-MARKDOWN_VAULT_MCP_HTTP_PATH=/vault/mcp
-```
-
-And use a path-aware Traefik rule:
-
-```
-labels:
-  - "traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`) && PathPrefix(`/vault/mcp`)"
-  - "traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"
-```
-
-OIDC subpath deployments use a different pattern
-
-When OIDC is enabled, omit the subpath from `HTTP_PATH`. Put the subpath in `BASE_URL` instead and configure the reverse proxy to strip the prefix. See the [OIDC subpath deployment guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/#subpath-deployments) for details.
-
-### TLS with Let's Encrypt
-
-Add a `certificatesResolvers` block to your Traefik static config and these labels to the service:
-
-```
-- "traefik.http.routers.markdown-vault-mcp.tls.certresolver=letsencrypt"
-- "traefik.http.routers.markdown-vault-mcp.entrypoints=websecure"
-```
-
-See the [Traefik ACME documentation](https://doc.traefik.io/traefik/https/acme/) for the full setup.
-
-## Git-Backed Write Support
-
-Git integration supports three modes:
-
-- **Managed** (`GIT_REPO_URL` + `GIT_TOKEN`): clone/pull/commit/push
-- **Unmanaged / commit-only** (no `GIT_REPO_URL`, existing git repo): commit only
-- **No-git**: no git operations
-
-### Setup
-
-1. For managed mode, set a remote URL and credentials:
-
-   ```
-   MARKDOWN_VAULT_MCP_GIT_REPO_URL=https://github.com/your-org/your-vault.git
-   MARKDOWN_VAULT_MCP_GIT_USERNAME=x-access-token
-   MARKDOWN_VAULT_MCP_GIT_TOKEN=ghp_your_personal_access_token
-   ```
-
-1. For unmanaged/commit-only mode, omit `GIT_REPO_URL` and `GIT_TOKEN`. If the vault path is a git repo, writes are committed locally only.
-
-1. The vault mount must include `.git` when using managed or unmanaged mode:
-
-   ```
-   volumes:
-     - /path/to/your/vault:/data/vault
-   ```
-
-For managed mode, the token needs `repo` scope (or `contents: write` for fine-grained tokens).
-
-Without auto-push
-
-Use unmanaged/commit-only mode: omit `MARKDOWN_VAULT_MCP_GIT_REPO_URL`. Writes are committed locally; run `git pull`/`git push` externally.
-
-## UID/GID Configuration
-
-The container runs as a non-root `appuser` (UID 1000 / GID 1000 by default). On startup, the entrypoint automatically fixes ownership of all `/data/*` directories before dropping privileges, so **named volumes work out of the box** regardless of how Docker initialised them.
-
-This is the same entrypoint + `gosu` pattern used by the official PostgreSQL, Redis, and MySQL Docker images.
-
-### Runtime UID/GID override
-
-To match a specific host user (such as for bind-mounted vaults), set `PUID` and `PGID`:
-
-```
-services:
-  markdown-vault-mcp:
-    environment:
-      PUID: 1001
-      PGID: 1001
-```
-
-The entrypoint updates `appuser`'s UID/GID to the specified values and chowns `/data` to match.
-
-### Build-time UID/GID (alternative for bind mounts)
-
-If you prefer to bake the UID/GID into the image:
-
-```
-docker compose build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)
-```
-
-### Fix host permissions (bind mounts only)
-
-For bind-mounted vaults where the host user doesn't match, fix host-side:
-
-```
-chown -R 1000:1000 /path/to/vault
-```
-
-## Troubleshooting
-
-### Traefik network not found
-
-```
-network traefik declared as external, but could not be found
-```
-
-Create the network first: `docker network create traefik`
-
-### Git push failures
-
-Check logs: `docker compose logs markdown-vault-mcp`
-
-Common causes:
-
-- Token lacks `repo` scope: regenerate with the right permissions
-- Remote URL is SSH-based: the PAT strategy only works with HTTPS remotes. Convert: `git remote set-url origin https://github.com/user/repo.git`
-- In unmanaged/commit-only mode, the vault directory is not a git repo: run `git init` on the host first
-
-### Stale index after adding files outside the server
-
-The server reindexes on startup. Restart the container:
-
-```
-docker compose restart markdown-vault-mcp
-```
-
-For continuous sync, use the MCP `reindex` tool instead of restarting.
-
-### Ollama on Linux without Docker Desktop
-
-Add `extra_hosts` to `compose.yml` for `host.docker.internal` to resolve:
-
-```
-services:
-  markdown-vault-mcp:
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-```
+Set `PUID` and `PGID` in your `.env` file to match the owner of bind-mounted directories (default 1000/1000).
 
 ## Remote debugging
 
@@ -6656,7 +6581,7 @@ Production images ship without `debugpy` to keep the image lean. To attach a rem
    | `MARKDOWN_VAULT_MCP_DEBUG_PORT` | TCP port the debugger listens on (any value parsing to `0` disables; non-numeric or out-of-range values log a WARNING and the listener stays off) |
    | `MARKDOWN_VAULT_MCP_DEBUG_WAIT` | When truthy (`1`/`true`/`yes`/`on`), block startup until the IDE attaches. Default is non-blocking.                                               |
 
-1. **Attach from VS Code:** add a launch config:
+1. **Attach from VS Code**, adding a launch config:
 
    ```
    {
@@ -6673,7 +6598,7 @@ Never publish the debug port on a public network
 
 The debug listener binds `0.0.0.0` inside the container so the IDE can reach it from the host, but **debugpy's DAP protocol is unauthenticated**: any peer that can reach the port has arbitrary code execution as the server process. Always bind the port mapping to localhost (`-p 127.0.0.1:5678:5678`) or tunnel via `kubectl port-forward` / SSH. Production images should be built with default `DEBUG=false`.
 
-When the helper is invoked but `debugpy` isn't installed (such as when `DEBUG_PORT` is set on a non-debug image), it logs a WARNING and continues: safe failure mode.
+When the helper is invoked but `debugpy` isn't installed (say, someone sets `DEBUG_PORT` on a non-debug image), it logs a WARNING and continues; this is the safe failure mode.
 
 # systemd Deployment
 
@@ -7196,47 +7121,6 @@ Note
 
 Authelia does not support Dynamic Client Registration (RFC 7591). Clients must be registered manually in `configuration.yml`.
 
-Opaque vs JWT access tokens
-
-Authelia issues opaque (non-JWT) access tokens by default. **Remote mode requires JWT access tokens**: add `access_token_signed_response_alg: 'RS256'` to the Authelia client config. OIDCProxy mode works with opaque tokens (it verifies the `id_token` instead).
-
-### Remote mode (recommended)
-
-#### 1. Register the client in Authelia
-
-```
-identity_providers:
-  oidc:
-    clients:
-      - client_id: markdown-vault-mcp
-        client_secret: '$pbkdf2-sha512$...'   # authelia crypto hash generate
-        redirect_uris:
-          - https://mcp.example.com/callback
-        grant_types: [authorization_code]
-        response_types: [code]
-        pkce_challenge_method: S256
-        scopes: [openid, profile, email]
-        access_token_signed_response_alg: 'RS256'
-        token_endpoint_auth_method: 'client_secret_post'
-```
-
-#### 2. Set environment variables
-
-```
-MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
-MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
-```
-
-Note: `CLIENT_ID` and `CLIENT_SECRET` are configured in Authelia only. They are not needed as MCP server env vars in remote mode.
-
-#### 3. Start with HTTP transport
-
-```
-markdown-vault-mcp serve --transport http --port 8000
-```
-
-### OIDCProxy mode (fallback)
-
 Opaque access tokens
 
 Authelia issues opaque (non-JWT) access tokens. This is handled automatically: the server verifies the `id_token` (always a standard JWT) instead. No extra configuration is needed.
@@ -7247,7 +7131,7 @@ Authelia issues opaque (non-JWT) access tokens. This is handled automatically: t
 identity_providers:
   oidc:
     clients:
-      - client_id: markdown-vault-mcp
+      - client_id: my-mcp-server
         client_secret: '$pbkdf2-sha512$...'   # authelia crypto hash generate
         redirect_uris:
           - https://mcp.example.com/auth/callback
@@ -7262,14 +7146,10 @@ identity_providers:
 ```
 MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
 MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
-MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=markdown-vault-mcp
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=my-mcp-server
 MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET=your-client-secret
 MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=$(openssl rand -hex 32)
 ```
-
-For subpath deployments (such as public URL `https://mcp.example.com/vault/mcp`), see [Subpath Deployments](#subpath-deployments) below.
-
-See also `examples/obsidian-oidc.env`.
 
 ### 3. Start with HTTP transport
 
@@ -7309,21 +7189,31 @@ Client → markdown-vault-mcp (with OIDCProxy) → OIDC Provider (Authelia/Keycl
 
 ## Docker Compose with OIDC
 
+This is the shipped `compose.yml` with a reverse proxy added. The service joins an external `traefik` network and carries router labels. It publishes no host port, because the proxy reaches it over that network instead. See [Docker](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/index.md) for the base file and the same overlay without OIDC.
+
 ```
 services:
   markdown-vault-mcp:
     image: ghcr.io/pvliesdonk/markdown-vault-mcp:latest
-    env_file: .env
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     volumes:
-      - ${MARKDOWN_VAULT_MCP_SOURCE_DIR:?Set MARKDOWN_VAULT_MCP_SOURCE_DIR}:/data/vault
+      - service-data:/data/service
       - state-data:/data/state
     environment:
-      MARKDOWN_VAULT_MCP_SOURCE_DIR: /data/vault
-      MARKDOWN_VAULT_MCP_INDEX_PATH: /data/state/index.db
-      MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/state/embeddings/embeddings
-      MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: /data/state/fastembed
       FASTMCP_HOME: /data/state/fastmcp
-    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).close()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)"
@@ -7333,6 +7223,7 @@ services:
       - traefik
 
 volumes:
+  service-data:
   state-data:
 
 networks:
@@ -7345,41 +7236,41 @@ With the corresponding `.env`:
 ```
 MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
 MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
-MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=markdown-vault-mcp
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=my-mcp-server
 MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET=your-client-secret
 MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=your-stable-hex-key
 ```
 
-For a prefixed deployment (such as `https://mcp.example.com/vault/mcp`), see [Subpath Deployments](#subpath-deployments) below.
+For a prefixed deployment (such as `https://mcp.example.com/myservice/mcp`), see [Subpath Deployments](#subpath-deployments) below.
 
 ## Subpath Deployments
 
 When OIDC is enabled behind a reverse-proxy subpath, `BASE_URL` and `HTTP_PATH` serve different roles:
 
-| Variable    | Purpose                                                    | Example                         |
-| ----------- | ---------------------------------------------------------- | ------------------------------- |
-| `BASE_URL`  | Public URL of the server, **including the subpath prefix** | `https://mcp.example.com/vault` |
-| `HTTP_PATH` | Internal MCP endpoint mount point (**no subpath prefix**)  | `/mcp`                          |
+| Variable    | Purpose                                                    | Example                             |
+| ----------- | ---------------------------------------------------------- | ----------------------------------- |
+| `BASE_URL`  | Public URL of the server, **including the subpath prefix** | `https://mcp.example.com/myservice` |
+| `HTTP_PATH` | Internal MCP endpoint mount point (**no subpath prefix**)  | `/mcp`                              |
 
 The reverse proxy strips the subpath prefix before forwarding to the application. FastMCP concatenates `BASE_URL + HTTP_PATH` to build the public resource URL, so including the prefix in both produces broken URLs with duplicated path segments.
 
 Do not duplicate the subpath
 
-Setting `BASE_URL=https://mcp.example.com/vault` and `HTTP_PATH=/vault/mcp` produces a duplicated resource URL: `https://mcp.example.com/vault/vault/mcp`. The subpath belongs in `BASE_URL` only.
+Setting `BASE_URL=https://mcp.example.com/myservice` together with `HTTP_PATH=/myservice/mcp` produces a duplicated resource URL: `https://mcp.example.com/myservice/myservice/mcp`. The subpath belongs in `BASE_URL` only.
 
 ### Configuration
 
 Environment variables:
 
 ```
-MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com/vault
+MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com/myservice
 MARKDOWN_VAULT_MCP_HTTP_PATH=/mcp
 ```
 
 Register this callback URI in your OIDC provider:
 
 ```
-https://mcp.example.com/vault/auth/callback
+https://mcp.example.com/myservice/auth/callback
 ```
 
 ### What the server serves, and where
@@ -7427,13 +7318,13 @@ Two routers rather than one is deliberate. A single router carrying the strip ru
 
 The failure that follows from point 2 above is worth spelling out, because its symptom points somewhere else entirely.
 
-The discovery URL sits outside the prefix, so on a hostname shared with other services, prefix-based routing cannot claim it. Without a router that matches it explicitly, the request falls through to whatever else holds the host: an OAuth gateway, an SSO portal, or another MCP server at the root. That service answers with **its** metadata, the client builds an authorization URL from another service's endpoints, and the visible symptom is an authorization URL 404ing at a path nobody configured. It reads as a client bug or an auth bug; it is a routing rule one path too narrow.
+The discovery URL sits outside the prefix, so on a hostname shared with other services, prefix-based routing cannot claim it. Without a router that matches it explicitly, the request falls through to whatever else holds the host, such as an SSO portal or another MCP server mounted at the root. That service answers with **its** metadata, the client builds an authorization URL from another service's endpoints, and the visible symptom is an authorization URL 404ing at a path nobody configured. It reads as a client bug or an auth bug; it is a routing rule one path too narrow.
 
 The `mcp-wellknown` router above is the fix. In Traefik it also wins by default: routers sort by rule length, so a rule naming the full well-known path outranks a bare `Host(...)` catch-all. Where the competing service sets an explicit `priority`, set a higher one here, because Traefik ignores its rule-length default for any router that carries one.
 
 One document still collides: `oauth-authorization-server`
 
-In proxy mode the server serves authorization-server metadata at `/.well-known/oauth-authorization-server`, at the **host root**, whatever prefix `BASE_URL` carries. FastMCP does contain an RFC 8414 path-aware override, `OAuthProvider.get_well_known_routes()`, which would serve it at `/.well-known/oauth-authorization-server/myservice`. Nothing reaches it: the HTTP app mounts `get_routes()` instead, leaving the path-aware form unreachable. (Verified against FastMCP 3.4.7.)
+In proxy mode the server serves authorization-server metadata at `/.well-known/oauth-authorization-server`, at the **host root**, whatever prefix `BASE_URL` carries. FastMCP does contain an RFC 8414 path-aware override, `OAuthProvider.get_well_known_routes()`, which would serve it at `/.well-known/oauth-authorization-server/myservice`. Nothing reaches it: the HTTP app mounts `get_routes()` instead, leaving the path-aware form unreachable. (Verified again against FastMCP 4.0.3; see the internal FastMCP 4 reference.)
 
 Only this one document collides. Protected-resource metadata is path-namespaced, so several servers can share a hostname without contending for it.
 
@@ -7530,7 +7421,7 @@ Two rules keep the flow sound:
 
 ## Releasing from trunk
 
-The default release path is trunk. When trunk is quiescent (no epic that must ship whole is mid-flight), dispatch Release Prepare on `main` and merge the release pull request: no branch, no ceremony. The prepare workflow prints an advisory warning when a release-named milestone still has open issues, or when an open `ships-atomically` epic shows work in flight. It counts the epic's native sub-issues, which may live in another repository, so a cross-repo epic stays visible. Either way the warning never blocks, since the cut may still be intentional.
+The default release path is trunk. When trunk is quiescent (no epic that must ship whole is mid-flight), dispatch Release Prepare on `main` and merge the release pull request: no branch, no ceremony. The prepare workflow prints an advisory warning when a release-named milestone still has open issues, or when an open `ships-atomically` epic shows work in flight. It counts the epic's native sub-issues even when they live in another repository, which keeps a cross-repo epic visible. The warning never blocks: the cut may still be intentional.
 
 ## Stabilisation branches
 
@@ -7602,7 +7493,7 @@ If your release credential is a GitHub App installation token rather than a pers
 
 ## The files own the state
 
-`bootstrap.yml` upserts each ruleset by name: it updates the existing ruleset when one matches and creates it otherwise. Every apply replaces the whole ruleset with the checked-in state. Edits made by hand in the GitHub UI are reset on the next run, so change the JSON files instead. A push that touches `.github/rulesets/` or the bootstrap workflow re-applies automatically; `workflow_dispatch` re-applies on demand. Rulesets with other names are never touched, so you can add your own alongside.
+`bootstrap.yml` upserts each ruleset by name: a ruleset whose name matches is replaced wholesale with the checked-in state, and a missing one is created. Edits made by hand in the GitHub UI are reset on the next run, so change the JSON files instead. A push that touches `.github/rulesets/` or the bootstrap workflow re-applies automatically; `workflow_dispatch` re-applies on demand. Rulesets with other names are never touched, so you can add your own alongside.
 
 The apply step needs `administration: write`, a permission the default `GITHUB_TOKEN` cannot be granted, so it runs with `RELEASE_TOKEN`, matching the permission set the README already asks for.
 
@@ -7672,7 +7563,10 @@ This project is generated from [fastmcp-server-template](https://github.com/pvli
 ## The order of work
 
 1. **Read the upgrade notes first.** Every `UPGRADING.md` section in the body names something a person must do: rename a variable, add a secret, rewrite a seeded test, add a `.gitignore` line. Do those steps on the `copier/update` branch before touching anything else; a note that is skipped now is a failure later, on a run nobody connects to this update.
-1. **Resolve conflict markers.** `copier update` runs a three-way merge and leaves diff3-style markers where a template change and a local change collide: `<<<<<<< before updating` (the local side), `||||||| last update` (the common base), `=======`, and `>>>>>>> after updating` (the template side). Resolving a hunk means keeping one side and deleting all four marker lines and the base block between `|||||||` and `=======`. Outside the `DOMAIN-*`, `CONFIG-*` and `PROJECT-*` sentinel blocks the template side is correct by policy: a local edit to a template-owned region is drift, and the fix is to move that content into a sentinel block or upstream it. Inside a sentinel block the local side is yours and stays.
+1. **Resolve conflict markers.** `copier update` runs a three-way merge and leaves diff3-style markers where a template change and a local change collide: `<<<<<<< before updating` (the local side), `||||||| last update` (the common base), `=======`, and `>>>>>>> after updating` (the template side). Resolving a hunk means keeping one side and deleting all four marker lines and the base block between `|||||||` and `=======`. Which side wins turns on whether the hunk is inside a sentinel block, and on what kind of block it is:
+1. **Inside a sentinel block that invites your content, the local side is yours and stays.** These are the `DOMAIN-*`, `CONFIG-*`, `PROJECT-*` and `DOCKERFILE-*` families. Some of them wrap template-shipped content you extend rather than replace (`PROJECT-EXTRAS`, `DOCKERFILE-UV-EXTRAS`), so a template change inside one is possible: read both sides and keep your additions.
+1. **Inside a `GENERATED-*` region the template side wins**, and you do not resolve it by hand. Those regions are written by `scripts/gen_config_surface.py`, which re-runs at the end of the update and rewrites them from your own config.
+1. **Outside every sentinel block the template side is correct by policy**: a local edit to a template-owned region is drift, and the fix is to move that content into a sentinel block or upstream it.
 1. **Check the seeded-once files.** Copier's `_skip_if_exists` list names files that are written on the first `copier copy` and never touched again by `copier update`. They are absent from the diff even when the template changed them. The update writes `.copier-seeded-changes.md` at the repository root (the pull request body embeds it): a diff of every seeded path between the previous and target template versions, or an explicit statement that no seeded file changed. Work through that file and apply what applies by hand, keeping your local content. When the report says it could not be computed, fall back to the compare link and the "Before every upgrade" recipe in the template's `UPGRADING.md`. The seeded paths, for reference:
 
 `.claude-plugin/**`, `src/markdown_vault_mcp/tools.py`, `src/markdown_vault_mcp/resources.py`, `src/markdown_vault_mcp/prompts.py`, `src/markdown_vault_mcp/domain.py`, `tests/conftest.py`, `tests/test_smoke.py`, `tests/test_cli.py`, `tests/public_import_surface.txt`, `CHANGELOG.md`, `docs/releases/**`, `LICENSE`, `packaging/mcpb/manifest.json.in`, `packaging/mcpb/pyproject.toml.in`, `packaging/mcpb/src/server.py`, `packaging/mcpb/build.sh`, `.gitignore`, `.vale.ini`, `.vale/styles/config/vocabularies/Base/accept.txt`, `config-presentation.domain.yml`, `tests/test_config_wizard_domain.py`, `src/markdown_vault_mcp/static/app.src.html`.
@@ -9538,7 +9432,7 @@ The historical bridge `to_vault_kwargs(config)` returns a flat keyword dict for 
 
 ## API Reference
 
-## `ProjectConfig(server=ServerConfig(), source_dir=Path('/data/vault'), read_only=False, write_protect_existing=False, server_name='markdown-vault-mcp', disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
+## `ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=Path('/data/vault'), read_only=False, write_protect_existing=False, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
 
 Domain config for Markdown Vault MCP. Compose — don't inherit.
 

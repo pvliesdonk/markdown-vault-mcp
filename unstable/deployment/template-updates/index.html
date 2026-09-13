@@ -2023,17 +2023,31 @@ procedure in agent-invocable form).</p>
    on the <code>copier/update</code> branch before touching anything else; a note
    that is skipped now is a failure later, on a run nobody connects to
    this update.</li>
-<li><strong>Resolve conflict markers.</strong> <code>copier update</code> runs a three-way merge and
+<li>
+<p><strong>Resolve conflict markers.</strong> <code>copier update</code> runs a three-way merge and
    leaves diff3-style markers where a template change and a local change
    collide: <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; before updating</code> (the local side), <code>||||||| last
    update</code> (the common base), <code>=======</code>, and <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt; after updating</code> (the
    template side). Resolving a hunk means keeping one side and deleting
    all four marker lines and the base block between <code>|||||||</code> and
-   <code>=======</code>. Outside the <code>DOMAIN-*</code>, <code>CONFIG-*</code> and <code>PROJECT-*</code> sentinel
-   blocks the template side is correct by policy: a local edit to a
-   template-owned region is drift, and the fix is to move that content
-   into a sentinel block or upstream it. Inside a sentinel block the local
-   side is yours and stays.</li>
+   <code>=======</code>. Which side wins turns on whether the hunk is inside a sentinel
+   block, and on what kind of block it is:</p>
+</li>
+<li>
+<p><strong>Inside a sentinel block that invites your content, the local side is
+     yours and stays.</strong> These are the <code>DOMAIN-*</code>, <code>CONFIG-*</code>, <code>PROJECT-*</code> and
+     <code>DOCKERFILE-*</code> families. Some of them wrap template-shipped content you
+     extend rather than replace (<code>PROJECT-EXTRAS</code>, <code>DOCKERFILE-UV-EXTRAS</code>), so
+     a template change inside one is possible: read both sides and keep your
+     additions.</p>
+</li>
+<li><strong>Inside a <code>GENERATED-*</code> region the template side wins</strong>, and you do not
+     resolve it by hand. Those regions are written by
+     <code>scripts/gen_config_surface.py</code>, which re-runs at the end of the update
+     and rewrites them from your own config.</li>
+<li><strong>Outside every sentinel block the template side is correct by policy</strong>:
+     a local edit to a template-owned region is drift, and the fix is to move
+     that content into a sentinel block or upstream it.</li>
 <li><strong>Check the seeded-once files.</strong> Copier's <code>_skip_if_exists</code> list names
    files that are written on the first <code>copier copy</code> and never touched
    again by <code>copier update</code>. They are absent from the diff even when the

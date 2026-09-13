@@ -1541,18 +1541,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#remote-mode-recommended" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Remote mode (recommended)
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Remote mode (recommended)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
   <a href="#1-register-the-client-in-authelia" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1576,55 +1564,6 @@
         
           <li class="md-nav__item">
   <a href="#3-start-with-http-transport" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Start with HTTP transport
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#oidcproxy-mode-fallback" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        OIDCProxy mode (fallback)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#1-register-the-client-in-authelia_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Register the client in Authelia
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-set-environment-variables_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Set environment variables
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-start-with-http-transport_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         3. Start with HTTP transport
@@ -2250,18 +2189,6 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#remote-mode-recommended" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Remote mode (recommended)
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Remote mode (recommended)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
   <a href="#1-register-the-client-in-authelia" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2285,55 +2212,6 @@
         
           <li class="md-nav__item">
   <a href="#3-start-with-http-transport" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        3. Start with HTTP transport
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#oidcproxy-mode-fallback" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        OIDCProxy mode (fallback)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#1-register-the-client-in-authelia_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. Register the client in Authelia
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-set-environment-variables_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Set environment variables
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#3-start-with-http-transport_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         3. Start with HTTP transport
@@ -2633,44 +2511,15 @@ openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> 
 <p class="admonition-title">Note</p>
 <p>Authelia does not support Dynamic Client Registration (RFC 7591). Clients must be registered manually in <code>configuration.yml</code>.</p>
 </div>
-<div class="admonition warning">
-<p class="admonition-title">Opaque vs JWT access tokens</p>
-<p>Authelia issues opaque (non-JWT) access tokens by default. <strong>Remote mode requires JWT access tokens</strong>: add <code>access_token_signed_response_alg: 'RS256'</code> to the Authelia client config. OIDCProxy mode works with opaque tokens (it verifies the <code>id_token</code> instead).</p>
-</div>
-<h3 id="remote-mode-recommended">Remote mode (recommended)<a class="headerlink" href="#remote-mode-recommended" title="Permanent link">&para;</a></h3>
-<h4 id="1-register-the-client-in-authelia">1. Register the client in Authelia<a class="headerlink" href="#1-register-the-client-in-authelia" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><span class="nt">identity_providers</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">oidc</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">clients</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">client_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">markdown-vault-mcp</span>
-<span class="w">        </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="s">'$pbkdf2-sha512$...'</span><span class="w">   </span><span class="c1"># authelia crypto hash generate</span>
-<span class="w">        </span><span class="nt">redirect_uris</span><span class="p">:</span>
-<span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://mcp.example.com/callback</span>
-<span class="w">        </span><span class="nt">grant_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">authorization_code</span><span class="p p-Indicator">]</span>
-<span class="w">        </span><span class="nt">response_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">code</span><span class="p p-Indicator">]</span>
-<span class="w">        </span><span class="nt">pkce_challenge_method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">S256</span>
-<span class="w">        </span><span class="nt">scopes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">openid</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">profile</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">email</span><span class="p p-Indicator">]</span>
-<span class="w">        </span><span class="nt">access_token_signed_response_alg</span><span class="p">:</span><span class="w"> </span><span class="s">'RS256'</span>
-<span class="w">        </span><span class="nt">token_endpoint_auth_method</span><span class="p">:</span><span class="w"> </span><span class="s">'client_secret_post'</span>
-</code></pre></div>
-<h4 id="2-set-environment-variables">2. Set environment variables<a class="headerlink" href="#2-set-environment-variables" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_BASE_URL</span><span class="o">=</span>https://mcp.example.com
-<span class="nv">MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL</span><span class="o">=</span>https://auth.example.com/.well-known/openid-configuration
-</code></pre></div>
-<p>Note: <code>CLIENT_ID</code> and <code>CLIENT_SECRET</code> are configured in Authelia only. They are not needed as MCP server env vars in remote mode.</p>
-<h4 id="3-start-with-http-transport">3. Start with HTTP transport<a class="headerlink" href="#3-start-with-http-transport" title="Permanent link">&para;</a></h4>
-<div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span>--transport<span class="w"> </span>http<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
-</code></pre></div>
-<h3 id="oidcproxy-mode-fallback">OIDCProxy mode (fallback)<a class="headerlink" href="#oidcproxy-mode-fallback" title="Permanent link">&para;</a></h3>
 <div class="admonition note">
 <p class="admonition-title">Opaque access tokens</p>
 <p>Authelia issues opaque (non-JWT) access tokens. This is handled automatically: the server verifies the <code>id_token</code> (always a standard JWT) instead. No extra configuration is needed.</p>
 </div>
-<h3 id="1-register-the-client-in-authelia_1">1. Register the client in Authelia<a class="headerlink" href="#1-register-the-client-in-authelia_1" title="Permanent link">&para;</a></h3>
+<h3 id="1-register-the-client-in-authelia">1. Register the client in Authelia<a class="headerlink" href="#1-register-the-client-in-authelia" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="nt">identity_providers</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">oidc</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">clients</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">client_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">markdown-vault-mcp</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">client_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-mcp-server</span>
 <span class="w">        </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="s">'$pbkdf2-sha512$...'</span><span class="w">   </span><span class="c1"># authelia crypto hash generate</span>
 <span class="w">        </span><span class="nt">redirect_uris</span><span class="p">:</span>
 <span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://mcp.example.com/auth/callback</span>
@@ -2679,16 +2528,14 @@ openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> 
 <span class="w">        </span><span class="nt">pkce_challenge_method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">S256</span>
 <span class="w">        </span><span class="nt">scopes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">openid</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">profile</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">email</span><span class="p p-Indicator">]</span>
 </code></pre></div>
-<h3 id="2-set-environment-variables_1">2. Set environment variables<a class="headerlink" href="#2-set-environment-variables_1" title="Permanent link">&para;</a></h3>
+<h3 id="2-set-environment-variables">2. Set environment variables<a class="headerlink" href="#2-set-environment-variables" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_BASE_URL</span><span class="o">=</span>https://mcp.example.com
 <span class="nv">MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL</span><span class="o">=</span>https://auth.example.com/.well-known/openid-configuration
-<span class="nv">MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID</span><span class="o">=</span>markdown-vault-mcp
+<span class="nv">MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID</span><span class="o">=</span>my-mcp-server
 <span class="nv">MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET</span><span class="o">=</span>your-client-secret
 <span class="nv">MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY</span><span class="o">=</span><span class="k">$(</span>openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> </span><span class="m">32</span><span class="k">)</span>
 </code></pre></div>
-<p>For subpath deployments (such as public URL <code>https://mcp.example.com/vault/mcp</code>), see <a href="#subpath-deployments">Subpath Deployments</a> below.</p>
-<p>See also <code>examples/obsidian-oidc.env</code>.</p>
-<h3 id="3-start-with-http-transport_1">3. Start with HTTP transport<a class="headerlink" href="#3-start-with-http-transport_1" title="Permanent link">&para;</a></h3>
+<h3 id="3-start-with-http-transport">3. Start with HTTP transport<a class="headerlink" href="#3-start-with-http-transport" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code>markdown-vault-mcp<span class="w"> </span>serve<span class="w"> </span>--transport<span class="w"> </span>http<span class="w"> </span>--port<span class="w"> </span><span class="m">8000</span>
 </code></pre></div>
 <h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
@@ -2715,20 +2562,29 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <li>Subsequent requests include the JWT token</li>
 </ol>
 <h2 id="docker-compose-with-oidc">Docker Compose with OIDC<a class="headerlink" href="#docker-compose-with-oidc" title="Permanent link">&para;</a></h2>
+<p>This is the shipped <code>compose.yml</code> with a reverse proxy added. The service joins an external <code>traefik</code> network and carries router labels. It publishes no host port, because the proxy reaches it over that network instead. See <a href="../docker/">Docker</a> for the base file and the same overlay without OIDC.</p>
 <div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">markdown-vault-mcp</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/pvliesdonk/markdown-vault-mcp:latest</span>
-<span class="w">    </span><span class="nt">env_file</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.env</span>
+<span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unless-stopped</span>
+<span class="w">    </span><span class="nt">env_file</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.env</span>
+<span class="w">        </span><span class="nt">required</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 <span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${MARKDOWN_VAULT_MCP_SOURCE_DIR:?Set MARKDOWN_VAULT_MCP_SOURCE_DIR}:/data/vault</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">service-data:/data/service</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">state-data:/data/state</span>
 <span class="w">    </span><span class="nt">environment</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_SOURCE_DIR</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/vault</span>
-<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_INDEX_PATH</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/state/index.db</span>
-<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/state/embeddings/embeddings</span>
-<span class="w">      </span><span class="nt">MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/state/fastembed</span>
 <span class="w">      </span><span class="nt">FASTMCP_HOME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/state/fastmcp</span>
-<span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unless-stopped</span>
+<span class="w">    </span><span class="nt">healthcheck</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">test</span><span class="p">:</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">CMD</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-c</span>
+<span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"import</span><span class="nv"> </span><span class="s">urllib.request;</span><span class="nv"> </span><span class="s">urllib.request.urlopen('http://127.0.0.1:8000/health',</span><span class="nv"> </span><span class="s">timeout=2).close()"</span>
+<span class="w">      </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30s</span>
+<span class="w">      </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5s</span>
+<span class="w">      </span><span class="nt">retries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span>
+<span class="w">      </span><span class="nt">start_period</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10s</span>
 <span class="w">    </span><span class="nt">labels</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.enable=true"</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)"</span>
@@ -2738,6 +2594,7 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">traefik</span>
 
 <span class="nt">volumes</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">service-data</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">state-data</span><span class="p">:</span>
 
 <span class="nt">networks</span><span class="p">:</span>
@@ -2747,11 +2604,11 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <p>With the corresponding <code>.env</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_BASE_URL</span><span class="o">=</span>https://mcp.example.com
 <span class="nv">MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL</span><span class="o">=</span>https://auth.example.com/.well-known/openid-configuration
-<span class="nv">MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID</span><span class="o">=</span>markdown-vault-mcp
+<span class="nv">MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID</span><span class="o">=</span>my-mcp-server
 <span class="nv">MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET</span><span class="o">=</span>your-client-secret
 <span class="nv">MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY</span><span class="o">=</span>your-stable-hex-key
 </code></pre></div>
-<p>For a prefixed deployment (such as <code>https://mcp.example.com/vault/mcp</code>), see <a href="#subpath-deployments">Subpath Deployments</a> below.</p>
+<p>For a prefixed deployment (such as <code>https://mcp.example.com/myservice/mcp</code>), see <a href="#subpath-deployments">Subpath Deployments</a> below.</p>
 <h2 id="subpath-deployments">Subpath Deployments<a class="headerlink" href="#subpath-deployments" title="Permanent link">&para;</a></h2>
 <p>When OIDC is enabled behind a reverse-proxy subpath, <code>BASE_URL</code> and <code>HTTP_PATH</code> serve different roles:</p>
 <table>
@@ -2766,7 +2623,7 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <tr>
 <td><code>BASE_URL</code></td>
 <td>Public URL of the server, <strong>including the subpath prefix</strong></td>
-<td><code>https://mcp.example.com/vault</code></td>
+<td><code>https://mcp.example.com/myservice</code></td>
 </tr>
 <tr>
 <td><code>HTTP_PATH</code></td>
@@ -2778,15 +2635,15 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <p>The reverse proxy strips the subpath prefix before forwarding to the application. FastMCP concatenates <code>BASE_URL + HTTP_PATH</code> to build the public resource URL, so including the prefix in both produces broken URLs with duplicated path segments.</p>
 <div class="admonition danger">
 <p class="admonition-title">Do not duplicate the subpath</p>
-<p>Setting <code>BASE_URL=https://mcp.example.com/vault</code> and <code>HTTP_PATH=/vault/mcp</code> produces a duplicated resource URL: <code>https://mcp.example.com/vault/vault/mcp</code>. The subpath belongs in <code>BASE_URL</code> only.</p>
+<p>Setting <code>BASE_URL=https://mcp.example.com/myservice</code> together with <code>HTTP_PATH=/myservice/mcp</code> produces a duplicated resource URL: <code>https://mcp.example.com/myservice/myservice/mcp</code>. The subpath belongs in <code>BASE_URL</code> only.</p>
 </div>
 <h3 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h3>
 <p>Environment variables:</p>
-<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_BASE_URL</span><span class="o">=</span>https://mcp.example.com/vault
+<div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_BASE_URL</span><span class="o">=</span>https://mcp.example.com/myservice
 <span class="nv">MARKDOWN_VAULT_MCP_HTTP_PATH</span><span class="o">=</span>/mcp
 </code></pre></div>
 <p>Register this callback URI in your OIDC provider:</p>
-<div class="highlight"><pre><span></span><code>https://mcp.example.com/vault/auth/callback
+<div class="highlight"><pre><span></span><code>https://mcp.example.com/myservice/auth/callback
 </code></pre></div>
 <h3 id="what-the-server-serves-and-where">What the server serves, and where<a class="headerlink" href="#what-the-server-serves-and-where" title="Permanent link">&para;</a></h3>
 <p>The MCP endpoint and the OAuth discovery documents sit on opposite sides of the prefix, which is what makes subpath routing more than one strip rule. With <code>BASE_URL=https://mcp.example.com/myservice</code> and <code>HTTP_PATH=/mcp</code>:</p>
@@ -2847,11 +2704,11 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <p>Two routers rather than one is deliberate. A single router carrying the strip rule would apply it to the discovery request as well. Nothing here relies on how a given proxy treats a strip prefix that fails to match: separate routers state the untouched route outright, in any proxy that has the concept.</p>
 <h3 id="sharing-a-hostname">Sharing a hostname<a class="headerlink" href="#sharing-a-hostname" title="Permanent link">&para;</a></h3>
 <p>The failure that follows from point 2 above is worth spelling out, because its symptom points somewhere else entirely.</p>
-<p>The discovery URL sits outside the prefix, so on a hostname shared with other services, prefix-based routing cannot claim it. Without a router that matches it explicitly, the request falls through to whatever else holds the host: an OAuth gateway, an SSO portal, or another MCP server at the root. That service answers with <strong>its</strong> metadata, the client builds an authorization URL from another service's endpoints, and the visible symptom is an authorization URL 404ing at a path nobody configured. It reads as a client bug or an auth bug; it is a routing rule one path too narrow.</p>
+<p>The discovery URL sits outside the prefix, so on a hostname shared with other services, prefix-based routing cannot claim it. Without a router that matches it explicitly, the request falls through to whatever else holds the host, such as an SSO portal or another MCP server mounted at the root. That service answers with <strong>its</strong> metadata, the client builds an authorization URL from another service's endpoints, and the visible symptom is an authorization URL 404ing at a path nobody configured. It reads as a client bug or an auth bug; it is a routing rule one path too narrow.</p>
 <p>The <code>mcp-wellknown</code> router above is the fix. In Traefik it also wins by default: routers sort by rule length, so a rule naming the full well-known path outranks a bare <code>Host(...)</code> catch-all. Where the competing service sets an explicit <code>priority</code>, set a higher one here, because Traefik ignores its rule-length default for any router that carries one.</p>
 <div class="admonition warning">
 <p class="admonition-title">One document still collides: <code>oauth-authorization-server</code></p>
-<p>In proxy mode the server serves authorization-server metadata at <code>/.well-known/oauth-authorization-server</code>, at the <strong>host root</strong>, whatever prefix <code>BASE_URL</code> carries. FastMCP does contain an RFC 8414 path-aware override, <code>OAuthProvider.get_well_known_routes()</code>, which would serve it at <code>/.well-known/oauth-authorization-server/myservice</code>. Nothing reaches it: the HTTP app mounts <code>get_routes()</code> instead, leaving the path-aware form unreachable. (Verified against FastMCP 3.4.7.)</p>
+<p>In proxy mode the server serves authorization-server metadata at <code>/.well-known/oauth-authorization-server</code>, at the <strong>host root</strong>, whatever prefix <code>BASE_URL</code> carries. FastMCP does contain an RFC 8414 path-aware override, <code>OAuthProvider.get_well_known_routes()</code>, which would serve it at <code>/.well-known/oauth-authorization-server/myservice</code>. Nothing reaches it: the HTTP app mounts <code>get_routes()</code> instead, leaving the path-aware form unreachable. (Verified again against FastMCP 4.0.3; see the internal FastMCP 4 reference.)</p>
 <p>Only this one document collides. Protected-resource metadata is path-namespaced, so several servers can share a hostname without contending for it.</p>
 <p>Where another OAuth service already owns the root path, either give this server its own hostname, or run it without client ID and secret so it never serves the document. An authorization-server metadata request then belongs to the provider, where the <code>authorization_servers</code> entry in this server's protected-resource metadata sends the client anyway.</p>
 </div>

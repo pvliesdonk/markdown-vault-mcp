@@ -12,6 +12,8 @@ Generated guidance targets 1,536 UTF-16 units, reserving 512 units for normal op
 
 `MARKDOWN_VAULT_MCP_TOOLS_ALLOW` and `MARKDOWN_VAULT_MCP_TOOLS_DENY` trim which tools an instance exposes. Hidden tools disappear from `tools/list` and are rejected on `tools/call`; resources and prompts are unaffected. Setting both variables, or setting one to a value with no names in it, is a startup error. A name matching no registered tool is ignored, but an allowlist that matches nothing logs a startup warning, since the instance then exposes zero tools. See `fastmcp-pvl-core`'s README for the full semantics.
 
+`MARKDOWN_VAULT_MCP_HEALTH_DETAIL` decides how much the unauthenticated `/health` and `/health/ready` bodies say, since anyone who can reach the port can read them: `status` alone, the default `standard` with the server name, version and a verdict per readiness check, or `full` with a redacted reason for each check that raised. See [Docker deployment](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/#health) for the routes themselves.
+
 | Variable                                  | Default     | Description                                                                                                                                                                                                                                                 |
 | ----------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `MARKDOWN_VAULT_MCP_TRANSPORT`            | `stdio`     | Transport the server speaks: `stdio` for local Claude Desktop/Code, `http` or `sse` for a network server.                                                                                                                                                   |
@@ -24,7 +26,8 @@ Generated guidance targets 1,536 UTF-16 units, reserving 512 units for normal op
 | `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION` | (none)      | Concise routing context that distinguishes this deployment's material or responsibility.                                                                                                                                                                    |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`   | (none)      | Deployment-specific behavioral policy added to the generated MCP instructions.                                                                                                                                                                              |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS`         | (none)      | Legacy: replaces all generated MCP instructions (deprecated; use \_INSTANCE_DESCRIPTION for routing and \_INSTRUCTIONS_EXTRA for policy).                                                                                                                   |
-| `MARKDOWN_VAULT_MCP_HTTP_PATH`            | `/mcp`      | Mount path for the MCP endpoint.                                                                                                                                                                                                                            |
+| `MARKDOWN_VAULT_MCP_HTTP_PATH`            | `/mcp`      | Mount path for the MCP endpoint; the health routes derive their prefix from it.                                                                                                                                                                             |
+| `MARKDOWN_VAULT_MCP_HEALTH_DETAIL`        | `standard`  | How much the unauthenticated /health and /health/ready bodies say: status, standard (adds name, version and per-check verdicts), or full (adds redacted reasons; trusted networks only).                                                                    |
 
 ## Authentication
 
@@ -79,10 +82,14 @@ Worker tuning stays on the native `FASTMCP_DOCKET_*` variables below. Set the ba
 
 ## Logging
 
-| Variable                      | Default | Description                                                                                                                      |
-| ----------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `FASTMCP_LOG_LEVEL`           | `INFO`  | Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. |
-| `FASTMCP_ENABLE_RICH_LOGGING` | `true`  | Set false for plain or structured JSON log output.                                                                               |
+`FASTMCP_ENABLE_RICH_LOGGING` picks the shape of FastMCP's own log output, the request-logging middleware included. Left on, Rich renders each record with color, a time column and the source file that emitted it. Turned off, the middleware emits one JSON object per record and the rest of FastMCP's loggers emit `LEVEL: message`. This server's own `markdown_vault_mcp.*` lines are not affected either way: the CLI attaches its own one-line handler to the root logger.
+
+The container image and the packaged systemd unit both default it to `false`, because neither stream is a terminal. Rich falls back to 80 columns there, and a structured record does not fit in what its own columns leave, so each record wraps across three space-padded lines that neither `docker logs` nor a collector reads back. `docker logs -t` and `journalctl` both carry a timestamp per line, covering the column Rich stops printing. Both are ordinary environment defaults: `.env`, the compose `environment:` block and `/etc/markdown-vault-mcp/env` all override them. Turning Rich back on inside a container wraps the records again unless `COLUMNS` is set too, which is what Rich reads in preference to asking the terminal.
+
+| Variable                      | Default | Description                                                                                                                                                                                                                 |
+| ----------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FASTMCP_LOG_LEVEL`           | `INFO`  | Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG.                                                                                            |
+| `FASTMCP_ENABLE_RICH_LOGGING` | `true`  | Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback. |
 
 ## Container runtime
 
