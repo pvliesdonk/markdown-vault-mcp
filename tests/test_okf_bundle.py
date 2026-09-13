@@ -15,7 +15,7 @@ import pytest
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -53,7 +53,10 @@ def config(source_dir: Path) -> ProjectConfig:
 
 @pytest.fixture
 def vault(source_dir: Path) -> Iterator[Vault]:
-    col = Vault(source_dir=source_dir, read_only=False, attachment_extensions=["png"])
+    col = Vault(
+        source_dir=source_dir,
+        settings=VaultSettings(read_only=False, attachment_extensions=["png"]),
+    )
     try:
         col.index.build_index()
         yield col

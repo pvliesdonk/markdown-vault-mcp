@@ -72,11 +72,11 @@ markdown-vault-mcp (new package)
 +-- vector_index.py   -- numpy embeddings, cosine similarity
 +-- providers.py      -- Ollama / OpenAI / Voyage / SentenceTransformers
 +-- tracker.py        -- hash-based change detection
-+-- vault.py          -- thin composition root: settings-first dual-mode construction (#1158), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
++-- vault.py          -- thin composition root: settings-only construction (#1225), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
 +-- write_callback.py -- WriteCallbackDispatcher: deferred git-commit callback worker (#599)
 +-- config.py         -- template-owned skeleton: flat metadata-carrying ProjectConfig fields + section-view properties + from_env, in CONFIG-* sentinels (#900, #952)
 +-- config_sections/  -- domain-grouped sub-config VIEWS (git/indexing/embeddings/search/sync/content), assembled by ProjectConfig properties; no from_env of their own (#952)
-|   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (+ deprecated to_vault_kwargs bridge, #1158), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
+|   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (#1225), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
 |   +-- vault_settings.py -- VaultSettings: frozen config-derived Vault construction settings + pure effective_* derivations (#1158)
 +-- server.py         -- template-owned skeleton; domain wiring in DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
 +-- _instructions.py  -- contribute_instructions: domain snippets for pvl-core's instructions builder (#901)
@@ -168,7 +168,7 @@ A `required_frontmatter` configuration option enforces specific fields:
 ```python
 Vault(
     source_dir=Path("corpus/"),
-    required_frontmatter=["title", "cluster"],
+    settings=VaultSettings(required_frontmatter=["title", "cluster"]),
 )
 ```
 
@@ -2496,22 +2496,21 @@ directly. ``Vault`` itself now exposes only construction, the four facet
 accessors, and lifecycle; the per-facet method surface is the Facets table
 above.
 
-#### Settings-first construction (#1158)
+#### Settings-only construction (#1225)
 
-Construction is dual-mode. The preferred mode passes ``source_dir`` plus a
-frozen ``VaultSettings`` (``config_sections/vault_settings.py``) carrying the
-31 config-derived knobs; the five collaborators that are never config-derived
-— ``embedding_provider``, ``summarizer``, ``git_strategy``, ``on_write``,
-``chunk_strategy`` — stay explicit keywords. The legacy per-knob keywords
-keep working (they are folded into a ``VaultSettings`` via the module-level
-``_settings_from_legacy`` seam), are docstring-deprecated, and are scheduled
-for removal in the next major; mixing ``settings=`` with a non-default
-config-derived keyword raises ``ValueError``. Either way exactly ONE wiring
-path consumes ``settings`` + the collaborators. A signature drift-guard test
-(``tests/test_vault_settings.py``) pins field names and defaults against the
-legacy keywords, including the two deliberate default drifts
-(``chunk_overlap_words=0`` vs ``SearchConfig``'s 40; the ``read_only=True``
-library fail-safe vs the server env default).
+Construction passes keyword-only ``source_dir`` plus an optional frozen
+``VaultSettings`` (``config_sections/vault_settings.py``), carrying all 31
+configuration knobs. The five collaborators — ``embedding_provider``,
+``summarizer``, ``git_strategy``, ``on_write``, and ``chunk_strategy`` — remain
+explicit keywords. Omitting ``settings`` or passing ``None`` constructs
+``VaultSettings()``. The library defaults remain read-only with no chunk
+overlap, independently of the server defaults.
+
+The per-knob keywords deprecated in #1158 are removed, together with
+``_settings_from_legacy`` and ``_reject_legacy_conflicts``. Passing any removed
+keyword raises ``TypeError``, even with a default value or alongside settings.
+``tests/test_vault_settings.py`` pins the exact keyword-only constructor and
+rejects every removed keyword. Existing behavior tests use settings directly.
 
 ``VaultSettings`` also owns the construction-time pure derivations that the
 constructor used to inline: ``effective_indexed_fields(okf_active=...)`` (OKF
@@ -2526,9 +2525,11 @@ git-strategy construction, and the *resolved* pull interval), and
 ``to_vault_settings(config, instances=...)`` maps the config onto
 ``VaultSettings`` (threading the provider's token context into the
 ``max_chunk_chars`` derivation). ``domain.Service.start`` and the CLI's
-``_build_vault`` construct settings-first from those two; the historical
-``to_vault_kwargs(config)`` remains as a deprecated bridge that delegates to
-them and reproduces the legacy kwargs-dict shape byte-for-byte.
+``_build_vault`` construct from those two. The historical
+``to_vault_kwargs(config)`` bridge and its ``config.py`` re-export are removed.
+Library consumers use the same two functions, passing the resolved instances
+to ``to_vault_settings`` to avoid repeating provider initialization. Settings
+overrides use ``dataclasses.replace``; collaborators stay explicit.
 
 ```python
 class Vault:
@@ -2536,16 +2537,13 @@ class Vault:
         self,
         *,
         source_dir: Path,
-        settings: VaultSettings | None = None,  # None = built from legacy kwargs
-        # Collaborators (never config-derived):
+        settings: VaultSettings | None = None,  # None = VaultSettings()
+        # Collaborator instances:
         embedding_provider: EmbeddingProvider | None = None,
         summarizer: Summarizer | None = None,
-        git_strategy: GitWriteStrategy | None = None,
+        git_strategy: VersionedStore | None = None,
         on_write: WriteCallback | None = None,
         chunk_strategy: str | ChunkStrategy = "heading",
-        # ... plus the deprecated config-derived legacy kwargs
-        # (index_path, embeddings_path, read_only, exclude_patterns, ...),
-        # one per VaultSettings field, same names and defaults.
     ): ...
 
     # --- Facet accessors (the public operation surface) ---
@@ -3288,7 +3286,7 @@ summarization backend is configured — ``config.summarize.has_provider()`` is
 ``mcp.disable(tags={"summarize"})`` to hide it, the same key-based gating shape
 as ``git_sync`` (which gates on ``GIT_REPO_URL``). The check is provider-neutral
 (it never names a specific backend) and reads ``config.summarize`` directly, not
-``to_vault_kwargs()`` (which builds an embedding provider and can clone a git
+``to_vault_instances()`` (which builds an embedding provider and can clone a git
 repo as a side effect). The summarization backend sits behind a provider-neutral
 ``Summarizer`` abstraction (``summarizer.py``): ``OpenAISummarizer`` speaks the
 OpenAI-compatible chat-completions API (OpenAI, Ollama, Anthropic's compat

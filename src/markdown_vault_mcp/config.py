@@ -44,9 +44,6 @@ from markdown_vault_mcp.config_sections._assembly import (
     resolve_summarize_base_url,
     to_bool,
 )
-from markdown_vault_mcp.config_sections._assembly import (
-    to_vault_kwargs as to_vault_kwargs,  # re-export: cli / _server_deps consumers
-)
 from markdown_vault_mcp.config_sections._helpers import (
     WeightMap,
     env,

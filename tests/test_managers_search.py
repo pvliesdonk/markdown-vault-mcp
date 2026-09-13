@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.vault import VaultSettings
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -1369,8 +1371,10 @@ def test_semantic_search_does_not_have_flush_embeddings_attr(tmp_path):
 
     col = Vault(
         source_dir=tmp_path,
-        read_only=False,
-        embeddings_path=tmp_path / "vec",
+        settings=VaultSettings(
+            read_only=False,
+            embeddings_path=tmp_path / "vec",
+        ),
         embedding_provider=MockEmbeddingProvider(),
     )
     try:
@@ -1958,7 +1962,9 @@ class TestDefaultModeValidation:
         source = tmp_path / "vault"
         source.mkdir()
         with pytest.raises(ConfigurationError, match="default_mode"):
-            Vault(source_dir=source, default_search_mode="fuzzy")
+            Vault(
+                source_dir=source, settings=VaultSettings(default_search_mode="fuzzy")
+            )
 
     def test_both_boundaries_accept_the_same_set(self) -> None:
         """One constant, so the env route and the constructor cannot drift."""

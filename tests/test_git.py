@@ -9,12 +9,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.config_sections._assembly import to_vault_instances
+from markdown_vault_mcp.vault import VaultSettings
+
 if TYPE_CHECKING:
     from pathlib import Path
 
     from tests.fixtures.git import GitRepoPair
 
-from markdown_vault_mcp.config import to_vault_kwargs
 from markdown_vault_mcp.git import (
     GitWriteStrategy,
     _find_git_root,
@@ -846,10 +848,10 @@ class TestConfigIntegration:
             read_only=False,
             git_token="ghp_test",
         )
-        kwargs = to_vault_kwargs(config)
-        assert "on_write" in kwargs
-        assert isinstance(kwargs["on_write"], GitWriteStrategy)
-        assert kwargs["git_pull_interval_s"] == 600
+        instances = to_vault_instances(config)
+        assert instances.on_write is not None
+        assert isinstance(instances.on_write, GitWriteStrategy)
+        assert instances.git_pull_interval_s == 600
 
     def test_no_git_token_uses_local_only_mode(self, tmp_path: Path) -> None:
         """No token and no repo URL uses local-only mode with no pull loop."""
@@ -859,9 +861,9 @@ class TestConfigIntegration:
             source_dir=tmp_path,
             read_only=False,
         )
-        kwargs = to_vault_kwargs(config)
-        assert "on_write" in kwargs
-        assert kwargs["git_pull_interval_s"] == 0
+        instances = to_vault_instances(config)
+        assert instances.on_write is not None
+        assert instances.git_pull_interval_s == 0
 
     def test_git_repo_url_enables_managed_mode(self, tmp_path: Path) -> None:
         """Managed mode uses configured pull interval and write callback."""
@@ -882,12 +884,12 @@ class TestConfigIntegration:
             git_token="ghp_test",
             git_pull_interval_s=321,
         )
-        kwargs = to_vault_kwargs(config)
-        assert "on_write" in kwargs
-        assert kwargs["git_pull_interval_s"] == 321
+        instances = to_vault_instances(config)
+        assert instances.on_write is not None
+        assert instances.git_pull_interval_s == 321
 
     def test_push_delay_passed_to_strategy(self, tmp_path: Path) -> None:
-        """to_vault_kwargs() passes git_push_delay_s to strategy."""
+        """to_vault_instances() passes git_push_delay_s to strategy."""
         from markdown_vault_mcp.config import ProjectConfig
 
         config = ProjectConfig(
@@ -896,8 +898,8 @@ class TestConfigIntegration:
             git_token="ghp_test",
             git_push_delay_s=60.0,
         )
-        kwargs = to_vault_kwargs(config)
-        strategy = kwargs["on_write"]
+        instances = to_vault_instances(config)
+        strategy = instances.on_write
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._push_delay_s == 60.0
 
@@ -944,7 +946,9 @@ class TestVaultCloseWiresStrategy:
         (vault / "test.md").write_text("# Test\n")
         col = Vault(
             source_dir=vault,
-            read_only=False,
+            settings=VaultSettings(
+                read_only=False,
+            ),
             on_write=MockStrategy(),  # type: ignore[arg-type]
         )
         col.close()
@@ -5376,7 +5380,7 @@ class TestGitClaimConfig:
         assert config.git.commit_email_claim is None
 
     def test_claim_config_passed_to_strategy(self, tmp_path: Path) -> None:
-        """to_vault_kwargs() passes claim keys to GitWriteStrategy and registers
+        """to_vault_instances() passes claim keys to GitWriteStrategy and registers
         them with the identity layer (#1160), which now performs the actual
         claim extraction at the MCP tool edge."""
         from markdown_vault_mcp import _identity
@@ -5389,8 +5393,8 @@ class TestGitClaimConfig:
             git_commit_email_claim="email",
         )
         try:
-            kwargs = to_vault_kwargs(config)
-            strategy = kwargs["on_write"]
+            instances = to_vault_instances(config)
+            strategy = instances.on_write
             assert isinstance(strategy, GitWriteStrategy)
             assert strategy._commit_name_claim == "name"
             assert strategy._commit_email_claim == "email"
@@ -6296,7 +6300,9 @@ class TestRenameCommitEndToEnd:
             source_dir=vault,
             git_strategy=strategy,
             on_write=strategy,
-            read_only=False,
+            settings=VaultSettings(
+                read_only=False,
+            ),
         )
         try:
             col.index.build_index()
@@ -6581,7 +6587,9 @@ class TestMoveFolderCommitsEveryFile:
             source_dir=vault,
             git_strategy=strategy,
             on_write=strategy,
-            read_only=False,
+            settings=VaultSettings(
+                read_only=False,
+            ),
         )
         try:
             col.index.build_index()
@@ -6618,7 +6626,9 @@ class TestMoveFolderCommitsEveryFile:
             source_dir=vault,
             git_strategy=strategy,
             on_write=strategy,
-            read_only=False,
+            settings=VaultSettings(
+                read_only=False,
+            ),
         )
         try:
             col.index.build_index()

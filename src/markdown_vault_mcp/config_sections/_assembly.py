@@ -4,8 +4,8 @@
 (module docstring, ``ProjectConfig`` dataclass, ``from_env`` scaffold) with domain
 content confined to the ``CONFIG-FIELDS`` / ``CONFIG-FROM-ENV`` sentinels. All the
 domain assembly logic that used to live in its body — the settings-first vault
-assembly (``to_vault_settings`` / ``to_vault_instances``, #1158) with its
-deprecated ``Vault(**kwargs)`` bridge, the git-strategy construction, the
+assembly (``to_vault_settings`` / ``to_vault_instances``), the git-strategy
+construction, the
 chunk-cap heuristic, and the ``from_env`` field validators — lives here instead
 (#900, epic #898).
 
@@ -28,7 +28,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from fastmcp_pvl_core import parse_bool as _parse_bool
 
@@ -327,9 +327,8 @@ def _resolve_git(config: ProjectConfig) -> tuple[GitWriteStrategy, int]:
 def to_vault_instances(config: ProjectConfig) -> VaultInstances:
     """Resolve the constructed ``Vault`` collaborators from config.
 
-    Absorbs the three conditional builds that historically lived in
-    ``to_vault_kwargs``: embedding-provider resolution, summarizer
-    resolution, and the three-mode git-strategy construction.
+    Resolves the embedding provider, summarizer, and the three-mode
+    Git strategy.
 
     Args:
         config: The :class:`~markdown_vault_mcp.config.ProjectConfig` to
@@ -397,51 +396,6 @@ def to_vault_settings(
             provider.context_length if provider is not None else None
         ),
     )
-
-
-def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
-    """Return keyword arguments suitable for ``Vault(**kwargs)``.
-
-    Resolves the embedding provider (when ``indexing.embeddings_path``
-    is set) and creates a :class:`~markdown_vault_mcp.git.GitWriteStrategy`.
-
-    .. deprecated::
-        Kwargs-explosion construction is superseded by settings-first
-        construction (#1158): build a :class:`VaultSettings` via
-        :func:`to_vault_settings` and the collaborators via
-        :func:`to_vault_instances`, then pass both to ``Vault(...)``.  This
-        bridge delegates to those two and keeps the historical dict shape
-        for existing callers; removal is scheduled for the next major.
-
-    Args:
-        config: The :class:`~markdown_vault_mcp.config.ProjectConfig` to build from.
-
-    Returns:
-        Dict of keyword arguments accepted by
-        :class:`~markdown_vault_mcp.vault.Vault.__init__`.
-    """
-    instances = to_vault_instances(config)
-    settings = to_vault_settings(config, instances=instances)
-    kwargs: dict[str, Any] = {"source_dir": config.source_dir}
-    kwargs.update(
-        (field.name, getattr(settings, field.name))
-        for field in dataclasses.fields(VaultSettings)
-    )
-    if instances.embedding_provider is not None:
-        kwargs["embedding_provider"] = instances.embedding_provider
-    if instances.summarizer is not None:
-        kwargs["summarizer"] = instances.summarizer
-    else:
-        # Historical dict shape: the summarize caps ride along only when a
-        # backend actually resolved.
-        del kwargs["summarize_max_notes"]
-        del kwargs["summarize_max_input_chars"]
-    kwargs["git_strategy"] = instances.git_strategy
-    kwargs["on_write"] = instances.on_write
-    # The git assembly is authoritative for the resolved interval (settings
-    # carries the same value; the equivalence is test-pinned).
-    kwargs["git_pull_interval_s"] = instances.git_pull_interval_s
-    return kwargs
 
 
 def resolve_git_repo_url(raw: str | None, token: str | None, prefix: str) -> str | None:

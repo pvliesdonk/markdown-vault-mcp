@@ -20,6 +20,7 @@ from markdown_vault_mcp.utils import (
     canonical_attachment_extensions,
     effective_attachment_extensions,
 )
+from markdown_vault_mcp.vault import VaultSettings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -1097,7 +1098,7 @@ def test_legacy_five_column_db_migrates_and_warm_restarts_via_coordinator(
 
 
 @pytest.mark.parametrize(
-    "vault_kwargs",
+    "settings_kwargs",
     [
         {"indexed_frontmatter_fields": ["cluster"]},
         {"title_field": "name"},
@@ -1106,7 +1107,7 @@ def test_legacy_five_column_db_migrates_and_warm_restarts_via_coordinator(
     ids=["indexed_fields", "title_field", "searchable_fields"],
 )
 def test_vault_wiring_provenance_warm_restarts_on_same_config(
-    tmp_path: Path, vault_kwargs: dict
+    tmp_path: Path, settings_kwargs: dict
 ) -> None:
     """Provenance knobs wired through Vault warm-restart under identical config.
 
@@ -1119,19 +1120,18 @@ def test_vault_wiring_provenance_warm_restarts_on_same_config(
 
     (tmp_path / "vault").mkdir()
     (tmp_path / "vault" / "a.md").write_text("# A\n\nbody\n", encoding="utf-8")
-    common = {
-        "source_dir": tmp_path / "vault",
-        "index_path": tmp_path / "fts.db",
-        "state_path": tmp_path / "s.json",
-        **vault_kwargs,
-    }
-    pre = Vault(**common)
+    settings = VaultSettings(
+        index_path=tmp_path / "fts.db",
+        state_path=tmp_path / "s.json",
+        **settings_kwargs,
+    )
+    pre = Vault(source_dir=tmp_path / "vault", settings=settings)
     try:
         assert pre.index.build_index().chunks_indexed > 0
     finally:
         pre.close()
 
-    post = Vault(**common)
+    post = Vault(source_dir=tmp_path / "vault", settings=settings)
     try:
         # Identical config → warm O(1) hold, no silent rescan.
         assert post.index.build_index().chunks_indexed == 0
@@ -1141,8 +1141,10 @@ def test_vault_wiring_provenance_warm_restarts_on_same_config(
     # And dropping the knob (back to default) rejects the warm restart.
     changed = Vault(
         source_dir=tmp_path / "vault",
-        index_path=tmp_path / "fts.db",
-        state_path=tmp_path / "s.json",
+        settings=VaultSettings(
+            index_path=tmp_path / "fts.db",
+            state_path=tmp_path / "s.json",
+        ),
     )
     try:
         assert changed.index.build_index().chunks_indexed > 0

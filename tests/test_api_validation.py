@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -127,9 +127,11 @@ def corpus_vault(corpus_path: Path) -> Iterator[tuple[Vault, IndexStats]]:
     """
     vault = Vault(
         source_dir=corpus_path,
-        required_frontmatter=["title", "cluster"],
-        indexed_frontmatter_fields=["cluster", "topics"],
-        read_only=True,
+        settings=VaultSettings(
+            required_frontmatter=["title", "cluster"],
+            indexed_frontmatter_fields=["cluster", "topics"],
+            read_only=True,
+        ),
     )
     try:
         stats = vault.index.build_index()

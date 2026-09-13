@@ -15,6 +15,7 @@ from fastmcp import Client, FastMCP
 
 from markdown_vault_mcp.providers import EmbeddingProvider
 from markdown_vault_mcp.server import make_server
+from markdown_vault_mcp.vault import VaultSettings
 
 # Re-export reusable fixtures so they are auto-discovered by pytest in any
 # test module without requiring a per-file import (which would trip ruff's
@@ -198,7 +199,9 @@ def populated_vault(tmp_path: Path):
     col = Vault(
         source_dir=vault,
         embedding_provider=MockEmbeddingProvider(),
-        embeddings_path=tmp_path / "vectors",
+        settings=VaultSettings(
+            embeddings_path=tmp_path / "vectors",
+        ),
     )
     try:
         col.index.build_index()

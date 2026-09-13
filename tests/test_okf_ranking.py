@@ -25,6 +25,7 @@ from markdown_vault_mcp.okf import (
     OKF_STALE_WEIGHT,
     okf_downweight_factor,
 )
+from markdown_vault_mcp.vault import VaultSettings
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -202,8 +203,10 @@ def _vault_with_embeddings(root: Path) -> Vault:
 
     vault = Vault(
         source_dir=root,
-        okf_mode="auto",
-        embeddings_path=root / "embeddings",
+        settings=VaultSettings(
+            okf_mode="auto",
+            embeddings_path=root / "embeddings",
+        ),
         embedding_provider=MockEmbeddingProvider(),
     )
     vault.index.build_index()
@@ -284,7 +287,7 @@ class TestByteIdenticalWhenNotDetected:
         _build_ranking_vault(root, declared=True)
         from markdown_vault_mcp.vault import Vault
 
-        vault = Vault(source_dir=root, okf_mode="off")
+        vault = Vault(source_dir=root, settings=VaultSettings(okf_mode="off"))
         vault.index.build_index()
         try:
             s = _scores(vault, "keyword")

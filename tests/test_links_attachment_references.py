@@ -20,7 +20,7 @@ from markdown_vault_mcp.utils import (
     canonical_attachment_extensions,
     names_attachment,
 )
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -275,7 +275,10 @@ def _build(tmp_path: Path, attachment_extensions: list[str] | None) -> Vault:
         "[[other.md]]\n",
         encoding="utf-8",
     )
-    col = Vault(source_dir=src, attachment_extensions=attachment_extensions)
+    col = Vault(
+        source_dir=src,
+        settings=VaultSettings(attachment_extensions=attachment_extensions),
+    )
     col.index.build_index()
     return col
 
@@ -303,7 +306,9 @@ class TestBuiltVault:
         (src / "gallery.md").write_text(
             "# G\n\n![[Images/pic.png]]\n", encoding="utf-8"
         )
-        col = Vault(source_dir=src, attachment_extensions=["png"])
+        col = Vault(
+            source_dir=src, settings=VaultSettings(attachment_extensions=["png"])
+        )
         col.index.build_index()
         assert [n.path for n in col.graph.get_orphan_notes()] == ["gallery.md"]
         assert col.reader.stats().orphan_count == 1

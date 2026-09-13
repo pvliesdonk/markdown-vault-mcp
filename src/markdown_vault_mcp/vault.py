@@ -7,10 +7,9 @@ LangChain wrappers, and CLI commands all go through this class.
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import logging
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
 # state-path default historically lived in this module; domain.py still
@@ -99,49 +98,6 @@ def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
     return strategy
 
 
-def _settings_from_legacy(legacy: dict[str, Any]) -> VaultSettings:
-    """Build :class:`VaultSettings` from the legacy per-knob constructor kwargs.
-
-    The legacy keyword names match the settings field names one-to-one, so
-    this is a direct explosion; it exists as the named seam of the dual-mode
-    constructor (#1158) — a dict-taking module function rather than 31 more
-    parameters somewhere.
-
-    Args:
-        legacy: Mapping of config-derived legacy kwarg name to passed value.
-
-    Returns:
-        The equivalent :class:`VaultSettings`.
-    """
-    return VaultSettings(**legacy)
-
-
-def _reject_legacy_conflicts(legacy: dict[str, Any]) -> None:
-    """Raise when ``settings=`` is combined with non-default legacy kwargs.
-
-    A caller passing both construction modes is ambiguous — the explicit
-    conflict beats silently ignoring one side.
-
-    Args:
-        legacy: Mapping of config-derived legacy kwarg name to passed value.
-
-    Raises:
-        ValueError: If any config-derived legacy kwarg deviates from its
-            default while ``settings`` is also given.
-    """
-    conflicting = sorted(
-        field.name
-        for field in dataclasses.fields(VaultSettings)
-        if legacy[field.name] != field.default
-    )
-    if conflicting:
-        raise ValueError(
-            "Vault(settings=...) cannot be combined with the deprecated "
-            f"config-derived keyword(s): {', '.join(conflicting)}. "
-            "Pass these values on VaultSettings instead."
-        )
-
-
 class Vault:
     """Facade over FTS5 index, vector index, and change tracker.
 
@@ -203,221 +159,43 @@ class Vault:
     "Vault thread-safety contract" for the underlying per-thread
     SQLite-connection model.
 
-    **Construction (#1158).** The preferred mode is *settings-first*: pass
-    ``source_dir`` plus a
-    :class:`~markdown_vault_mcp.config_sections.vault_settings.VaultSettings`
-    (``settings=``), and — as needed — the five collaborator keywords that
-    are never config-derived (``embedding_provider``, ``summarizer``,
-    ``git_strategy``, ``on_write``, ``chunk_strategy``).  The per-knob
-    keywords documented below keep working unchanged as a compatibility
-    mode, but mixing the two — ``settings=`` together with a non-default
-    config-derived keyword — raises :exc:`ValueError`.
-
-    .. deprecated::
-        The config-derived per-knob keywords — ``index_path``,
-        ``embeddings_path``, ``read_only``, ``write_protect_existing``,
-        ``state_path``, ``indexed_frontmatter_fields``,
-        ``required_frontmatter``, ``git_pull_interval_s``,
-        ``exclude_patterns``, ``attachment_extensions``,
-        ``max_attachment_size_mb``, ``max_note_read_bytes``,
-        ``chunks_per_file``, ``snippet_words``, ``length_downweight_alpha``,
-        ``default_search_mode``, ``max_chunk_words``, ``max_chunk_chars``,
-        ``max_chunk_chars_override``, ``chunk_overlap_words``,
-        ``summarize_max_notes``, ``summarize_max_input_chars``,
-        ``title_field``, ``searchable_frontmatter_fields``,
-        ``embed_context``, ``embedding_batch_size``, ``folder_weights``,
-        ``fts_weights``, ``conventions_file``, ``okf_mode``, and
-        ``okf_write`` — are superseded by the same-named fields on
-        ``VaultSettings``; removal is scheduled for the next major.
-        ``source_dir`` and the five collaborator keywords are *not*
-        deprecated.
+    **Construction (#1225).** Pass ``source_dir`` and optional
+    :class:`~markdown_vault_mcp.config_sections.vault_settings.VaultSettings`.
+    All configuration knobs belong on ``settings``; the five collaborators
+    remain explicit keyword arguments. Omitting settings uses
+    ``VaultSettings()``: read-only, with no chunk overlap. These library
+    defaults remain independent of the server's operator defaults.
 
     Args:
         source_dir: Root directory of the markdown vault.
-        settings: Config-derived construction settings.  ``None`` (default)
-            builds them from the legacy per-knob keywords below.
-        index_path: Path to the SQLite index file.  ``None`` (default) uses
-            an in-memory database that is discarded when the object is
-            collected.
-        embeddings_path: Base path for the ``{path}.npy`` and
-            ``{path}.json`` sidecar files.  ``None`` (default) means
-            semantic search is disabled.
-        embedding_provider: Provider used to generate embeddings.  Required
-            when *embeddings_path* is set.
-        read_only: When ``True`` (default), write operations raise
-            :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
-
-            This library default deliberately stays ``True`` even though
-            the server's ``MARKDOWN_VAULT_MCP_READ_ONLY`` now defaults to
-            ``False`` (#1113). They are separate tiers: the operator default
-            is a product decision about what an installed server should do,
-            while this one is a fail-safe for a downstream Python consumer
-            who constructs a ``Vault`` without naming the argument. Keeping
-            it costs nothing — the server path always passes the value
-            explicitly through ``to_vault_settings`` — and moving it would be
-            an independent breaking change to the public library interface.
-        write_protect_existing: When ``True``, a write that would overwrite an
-            existing file without an *if_match* etag raises
-            :exc:`~markdown_vault_mcp.exceptions.DocumentExistsError`
-            (default ``False``, i.e. writes overwrite unconditionally).
-        state_path: Path to the hash-state JSON file used by
-            :class:`~markdown_vault_mcp.tracker.ChangeTracker`.  Defaults to
-            ``{source_dir}/.markdown_vault_mcp/state.json``.
-        indexed_frontmatter_fields: Frontmatter keys whose values are
-            promoted to the ``document_tags`` table for structured filtering.
-        required_frontmatter: If provided, documents missing any listed field
-            are excluded from the index entirely.
+        settings: Configuration settings. ``None`` uses ``VaultSettings()``.
+        embedding_provider: Provider used to generate embeddings; required
+            when ``settings.embeddings_path`` is set.
+        summarizer: Optional summarization backend. Without one the
+            :attr:`summarizer` accessor raises.
+        git_strategy: Optional strategy for background Git tasks, started
+            via :meth:`start`.
+        on_write: Callback invoked after successful writes; see
+            :obj:`~markdown_vault_mcp.types.WriteCallback`.
         chunk_strategy: ``"heading"`` (default), ``"whole"``, or a custom
             :class:`~markdown_vault_mcp.scanner.ChunkStrategy` instance.
-        on_write: Optional callback invoked after every successful write
-            operation.  Signature:
-            :obj:`~markdown_vault_mcp.types.WriteCallback`.
-        git_strategy: Optional git strategy used for background git tasks (e.g.
-            periodic fetch + ff-only updates). Started via :meth:`start`.
-        git_pull_interval_s: Interval in seconds for periodic pulls. ``0``
-            disables the pull loop.
-        exclude_patterns: Glob patterns (relative to *source_dir*) for files
-            and directories to exclude from indexing.
-        attachment_extensions: Allowlist of extensions for binary
-            attachments, in any case and with or without leading dots
-            (``"pdf"``, ``"PDF"`` and ``".pdf"`` are the same type).
-            ``["*"]`` accepts all extensions. Also decides which link
-            targets are attachment references rather than note links
-            (#1333), so it is recorded as index provenance and a change
-            rebuilds the index once.
-        max_attachment_size_mb: Attachment context-size cap in megabytes,
-            enforced by the ``read`` / ``write`` / ``fetch`` MCP tools (not by
-            the vault library). ``0`` disables the limit (default ``1.0``).
-        max_note_read_bytes: Maximum bytes returned by full-document reads.
-            ``0`` disables the limit (default ``262144``, i.e. 256 KB).
-        summarizer: Optional summarization backend. When provided, the
-            ``Vault.summarizer`` facet is available; when ``None`` (default)
-            the facet accessor raises and the ``summarize`` MCP tool is hidden.
-        summarize_max_notes: Cap on notes summarised per ``summarize`` call
-            (subtree expansion is truncated to this many notes; default 50).
-        summarize_max_input_chars: Aggregate cap on note characters sent to the
-            summarization backend per call (default 200000).
-        title_field: Frontmatter key consulted first when resolving document
-            titles (default ``"title"``; falls back to ``title`` → first H1
-            → filename stem).
-        searchable_frontmatter_fields: Frontmatter keys whose scalar values
-            are keyword-searchable via the FTS ``summary`` column and —
-            because configuring this activates format v2 — prefixed to
-            first-chunk embedding text (triggering a one-time re-embed).
-            ``None`` disables both.
-        embed_context: When ``True``, forces format v2 (document title +
-            chunk heading enrichment) even with no
-            ``searchable_frontmatter_fields``; any searchable field also
-            activates v2 (default ``False`` — raw chunk content).
-        embedding_batch_size: Maximum number of chunk texts sent to the
-            embedding provider per call in the cold-build, convergence, and
-            inline-reindex paths (default ``4``).
-        folder_weights: Folder-prefix score multipliers applied to search
-            results just before file grouping (``None`` disables).
-        fts_weights: Per-column BM25 weights persisted into the FTS5 rank
-            configuration (``None`` or all-``1.0`` keeps the default).
-        conventions_file: Well-known per-folder conventions filename resolved
-            by :attr:`conventions` (default ``"_conventions.md"``); ``None``
-            disables folder conventions. When set, the filename is
-            automatically appended to *exclude_patterns* (in both fnmatch
-            forms) so convention files stay out of the index while remaining
-            disk-readable. Must not contain fnmatch metacharacters.
-        okf_mode: OKF (Open Knowledge Format) read-semantics mode —
-            ``"auto"`` (default; follow the vault's ``okf_version``
-            declaration in the root ``index.md``), ``"off"``, or ``"on"``.
-            When read semantics are active at construction time, the OKF
-            scalar keys (``type`` / ``status`` / ``stale_after``) extend the
-            effective *indexed_frontmatter_fields* set. See :attr:`okf`.
     """
 
-    def __init__(
+    # The public boundary keeps the root, settings, and five collaborators explicit.
+    def __init__(  # noqa: PLR0913, RUF100
         self,
         *,
         source_dir: Path,
-        index_path: Path | None = None,
-        embeddings_path: Path | None = None,
-        embedding_provider: EmbeddingProvider | None = None,
-        read_only: bool = True,
-        write_protect_existing: bool = False,
-        state_path: Path | None = None,
-        indexed_frontmatter_fields: list[str] | None = None,
-        required_frontmatter: list[str] | None = None,
-        chunk_strategy: str | ChunkStrategy = "heading",
-        on_write: WriteCallback | None = None,
-        git_strategy: VersionedStore | None = None,
-        git_pull_interval_s: int = 0,
-        exclude_patterns: list[str] | None = None,
-        attachment_extensions: list[str] | None = None,
-        max_attachment_size_mb: float = 1.0,
-        max_note_read_bytes: int = 262144,
-        chunks_per_file: int = 2,
-        snippet_words: int = 200,
-        length_downweight_alpha: float = 0.25,
-        default_search_mode: str = "auto",
-        max_chunk_words: int = 400,
-        max_chunk_chars: int | None = None,
-        max_chunk_chars_override: int | None = None,
-        chunk_overlap_words: int = 0,
-        summarizer: Summarizer | None = None,
-        summarize_max_notes: int = 50,
-        summarize_max_input_chars: int = 200_000,
-        title_field: str = "title",
-        searchable_frontmatter_fields: list[str] | None = None,
-        embed_context: bool = False,
-        embedding_batch_size: int = 4,
-        folder_weights: dict[str, float] | None = None,
-        fts_weights: dict[str, float] | None = None,
-        conventions_file: str | None = "_conventions.md",
-        okf_mode: str = "auto",
-        okf_write: bool = False,
         settings: VaultSettings | None = None,
+        embedding_provider: EmbeddingProvider | None = None,
+        summarizer: Summarizer | None = None,
+        git_strategy: VersionedStore | None = None,
+        on_write: WriteCallback | None = None,
+        chunk_strategy: str | ChunkStrategy = "heading",
     ) -> None:
-        # Dual-mode construction (#1158): the config-derived legacy kwargs
-        # map one-to-one onto VaultSettings fields.  Without `settings` they
-        # are folded into one; with it, any non-default legacy value is an
-        # explicit conflict.  Either way, ONE wiring path below consumes
-        # (settings + source_dir + the five collaborator kwargs).
-        legacy: dict[str, Any] = {
-            "index_path": index_path,
-            "embeddings_path": embeddings_path,
-            "read_only": read_only,
-            "write_protect_existing": write_protect_existing,
-            "state_path": state_path,
-            "indexed_frontmatter_fields": indexed_frontmatter_fields,
-            "required_frontmatter": required_frontmatter,
-            "git_pull_interval_s": git_pull_interval_s,
-            "exclude_patterns": exclude_patterns,
-            "attachment_extensions": attachment_extensions,
-            "max_attachment_size_mb": max_attachment_size_mb,
-            "max_note_read_bytes": max_note_read_bytes,
-            "chunks_per_file": chunks_per_file,
-            "snippet_words": snippet_words,
-            "length_downweight_alpha": length_downweight_alpha,
-            "default_search_mode": default_search_mode,
-            "max_chunk_words": max_chunk_words,
-            "max_chunk_chars": max_chunk_chars,
-            "max_chunk_chars_override": max_chunk_chars_override,
-            "chunk_overlap_words": chunk_overlap_words,
-            "summarize_max_notes": summarize_max_notes,
-            "summarize_max_input_chars": summarize_max_input_chars,
-            "title_field": title_field,
-            "searchable_frontmatter_fields": searchable_frontmatter_fields,
-            "embed_context": embed_context,
-            "embedding_batch_size": embedding_batch_size,
-            "folder_weights": folder_weights,
-            "fts_weights": fts_weights,
-            "conventions_file": conventions_file,
-            "okf_mode": okf_mode,
-            "okf_write": okf_write,
-        }
         if settings is None:
-            settings = _settings_from_legacy(legacy)
-        else:
-            _reject_legacy_conflicts(legacy)
-
+            settings = VaultSettings()
         self._source_dir = source_dir
-        # The five collaborators that are never config-derived stay explicit
-        # constructor kwargs in both modes.
         self._embedding_provider = embedding_provider
         self._summarizer = summarizer
         self._on_write = on_write

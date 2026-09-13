@@ -25,7 +25,7 @@ from markdown_vault_mcp.utils.links import (
     compute_new_raw_target,
     decode_markdown_destination,
 )
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -381,7 +381,7 @@ class TestRenameKeepsTheSpelling:
     def test_end_to_end_rename_rewrites_a_pointy_link(self, tmp_path: Path) -> None:
         (tmp_path / "my note.md").write_text("# Target\n")
         (tmp_path / "src.md").write_text("See [it](<my note.md> 'T').\n")
-        vault = Vault(source_dir=tmp_path, read_only=False)
+        vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         vault.index.build_index()
         try:
             result = vault.writer.rename("my note.md", "new name.md", update_links=True)

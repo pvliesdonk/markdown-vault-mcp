@@ -18,7 +18,7 @@ from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
 )
 from markdown_vault_mcp.types import MoveFolderResult
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
@@ -43,8 +43,10 @@ def vault(source_dir: Path) -> Iterator[Vault]:
     """
     col = Vault(
         source_dir=source_dir,
-        read_only=False,
-        attachment_extensions=["png"],
+        settings=VaultSettings(
+            read_only=False,
+            attachment_extensions=["png"],
+        ),
     )
     try:
         col.index.build_index()
@@ -56,7 +58,7 @@ def vault(source_dir: Path) -> Iterator[Vault]:
 @pytest.fixture
 def read_only_vault(source_dir: Path) -> Iterator[Vault]:
     """Read-only Vault for the rejection test."""
-    col = Vault(source_dir=source_dir, read_only=True)
+    col = Vault(source_dir=source_dir, settings=VaultSettings(read_only=True))
     try:
         col.index.build_index()
         yield col
@@ -276,8 +278,10 @@ def test_move_folder_reports_every_moved_file_to_the_write_callback(
 
     col = Vault(
         source_dir=source_dir,
-        read_only=False,
-        attachment_extensions=["png"],
+        settings=VaultSettings(
+            read_only=False,
+            attachment_extensions=["png"],
+        ),
         on_write=lambda path, _content, operation: calls.append(
             (operation, Path(path).name)
         ),

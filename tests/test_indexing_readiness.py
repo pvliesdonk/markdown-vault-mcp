@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import MockEmbeddingProvider
 
 if TYPE_CHECKING:
@@ -67,7 +67,7 @@ class TestBucket1NeverBlock:
 
     def test_write_on_unbuilt_persists_to_disk(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
-        col = Vault(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, settings=VaultSettings(read_only=False))
 
         col.writer.write("new.md", "# New\n\ncreated\n")
 
@@ -76,7 +76,7 @@ class TestBucket1NeverBlock:
     def test_edit_on_unbuilt_modifies_disk(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault, "e.md", "# E\n\nfoo\n")
-        col = Vault(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, settings=VaultSettings(read_only=False))
 
         col.writer.edit("e.md", old_text="foo", new_text="bar")
 
@@ -85,7 +85,7 @@ class TestBucket1NeverBlock:
     def test_delete_on_unbuilt_removes_from_disk(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault, "d.md")
-        col = Vault(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, settings=VaultSettings(read_only=False))
 
         col.writer.delete("d.md")
 
@@ -94,7 +94,7 @@ class TestBucket1NeverBlock:
     def test_rename_on_unbuilt_moves_file(self, tmp_path: Path) -> None:
         vault = _vault(tmp_path)
         _seed(vault, "old.md")
-        col = Vault(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, settings=VaultSettings(read_only=False))
 
         col.writer.rename("old.md", "new.md")
 
@@ -105,8 +105,10 @@ class TestBucket1NeverBlock:
         vault = _vault(tmp_path)
         col = Vault(
             source_dir=vault,
-            read_only=False,
-            attachment_extensions=["bin"],
+            settings=VaultSettings(
+                read_only=False,
+                attachment_extensions=["bin"],
+            ),
         )
 
         col.writer.write_attachment("blob.bin", b"\x00\x01\x02")
@@ -179,7 +181,9 @@ class TestBucket3Block:
         col = Vault(
             source_dir=vault,
             embedding_provider=MockEmbeddingProvider(),
-            embeddings_path=tmp_path / "vectors",
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "vectors",
+            ),
         )
 
         with pytest.raises(IndexUnavailableError) as excinfo:
@@ -240,7 +244,9 @@ class TestBucket4Coordinate:
         col = Vault(
             source_dir=vault,
             embedding_provider=MockEmbeddingProvider(),
-            embeddings_path=tmp_path / "vectors",
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "vectors",
+            ),
         )
 
         with pytest.raises(IndexUnavailableError) as excinfo:
@@ -261,11 +267,11 @@ class TestBucket4Coordinate:
 
         index_path = tmp_path / "fts.db"
 
-        col1 = Vault(source_dir=vault, index_path=index_path)
+        col1 = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
         col1.index.build_index()
         col1.close()
 
-        col2 = Vault(source_dir=vault, index_path=index_path)
+        col2 = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
         stats = col2.index.build_index()
 
         # Short-circuit returns the existing count, indexes zero new chunks.
@@ -332,7 +338,7 @@ class TestWarmRestartCompletenessSentinel:
         fts.close()
 
         # Next process opens the same DB and calls build_index().
-        col = Vault(source_dir=vault, index_path=index_path)
+        col = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
         col.index.build_index()
 
         # Must have rebuilt fully — not short-circuited on the 1 stale row.
@@ -352,11 +358,11 @@ class TestWarmRestartCompletenessSentinel:
             _seed(vault, f"n_{i}.md", f"# N{i}\n\nbody {i}\n")
         index_path = tmp_path / "fts.db"
 
-        col1 = Vault(source_dir=vault, index_path=index_path)
+        col1 = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
         col1.index.build_index()
         col1.close()
 
-        col2 = Vault(source_dir=vault, index_path=index_path)
+        col2 = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
         stats = col2.index.build_index()
 
         # Short-circuit: zero chunks reindexed.
@@ -466,7 +472,7 @@ def test_get_index_status_includes_writer_keys(tmp_path):
     """get_index_status() returns writer state in addition to legacy keys (#559)."""
     from markdown_vault_mcp.vault import Vault
 
-    col = Vault(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         col.index.build_index()
         status = col.index.get_index_status()

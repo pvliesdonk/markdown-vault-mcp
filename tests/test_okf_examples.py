@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -49,7 +49,7 @@ def _build_vault_from_templates(dest: Path, pack: str, templates: list[str]) -> 
     tdir = _EXAMPLES / pack / "templates"
     for name in templates:
         (dest / name).write_text((tdir / name).read_text(encoding="utf-8"))
-    vault = Vault(source_dir=dest, okf_mode="auto")
+    vault = Vault(source_dir=dest, settings=VaultSettings(okf_mode="auto"))
     vault.index.build_index()
     return vault
 

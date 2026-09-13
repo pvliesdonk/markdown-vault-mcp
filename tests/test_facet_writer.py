@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.facets.writer import WriterFacet
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -21,7 +21,10 @@ if TYPE_CHECKING:
 @pytest.fixture
 def writable(vault_path: Path) -> Iterator[Vault]:
     """Writable, indexed vault accepting any attachment extension."""
-    col = Vault(source_dir=vault_path, read_only=False, attachment_extensions=["*"])
+    col = Vault(
+        source_dir=vault_path,
+        settings=VaultSettings(read_only=False, attachment_extensions=["*"]),
+    )
     col.index.build_index()
     try:
         yield col

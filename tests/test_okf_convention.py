@@ -22,7 +22,7 @@ import pytest
 from markdown_vault_mcp._okf_convention import ConventionMaintainer
 from markdown_vault_mcp._okf_write import okf_write_suppressed
 from markdown_vault_mcp.okf import ReservedFrontmatterPolicy
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
@@ -228,10 +228,12 @@ def _build_vault(
 ) -> Vault:
     col = Vault(
         source_dir=source,
-        read_only=False,
-        okf_mode=okf_mode,
-        okf_write=okf_write,
-        required_frontmatter=required_frontmatter,
+        settings=VaultSettings(
+            read_only=False,
+            okf_mode=okf_mode,
+            okf_write=okf_write,
+            required_frontmatter=required_frontmatter,
+        ),
     )
     col.index.build_index()
     return col
@@ -276,10 +278,12 @@ class TestConventionMaintenanceIntegration:
         (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
         col = Vault(
             source_dir=root,
-            read_only=False,
-            write_protect_existing=True,
-            okf_mode="on",
-            okf_write=True,
+            settings=VaultSettings(
+                read_only=False,
+                write_protect_existing=True,
+                okf_mode="on",
+                okf_write=True,
+            ),
         )
         col.index.build_index()
         try:

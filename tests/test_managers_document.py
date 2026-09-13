@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.vault import VaultSettings
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -1125,7 +1127,7 @@ def test_write_marks_path_dirty_via_vault(tmp_path: Path) -> None:
     """Through Vault: write() routes FTS update via writer mark_dirty."""
     from markdown_vault_mcp.vault import Vault
 
-    col = Vault(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         col.index.build_index()
         # Freeze the writer so we can observe the dirty-mark pre-drain.

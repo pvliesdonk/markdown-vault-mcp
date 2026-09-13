@@ -40,7 +40,7 @@ from markdown_vault_mcp.okf import (
     append_okf_verification,
     apply_okf_write_stamp,
 )
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import (
     _CLEAR_VARS,
     _parse_tool_data,
@@ -384,7 +384,10 @@ def enforced_vault(tmp_path: Path) -> Iterator[Vault]:
     root = tmp_path / "vault"
     root.mkdir()
     (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
-    col = Vault(source_dir=root, read_only=False, okf_mode="on", okf_write=True)
+    col = Vault(
+        source_dir=root,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+    )
     try:
         col.index.build_index()
         yield col
@@ -503,7 +506,10 @@ class TestOffModeIdentity:
         root = tmp_path / "vault"
         root.mkdir()
         (root / "index.md").write_text(_ROOT_INDEX, encoding="utf-8")
-        col = Vault(source_dir=root, read_only=False, okf_mode="on", okf_write=False)
+        col = Vault(
+            source_dir=root,
+            settings=VaultSettings(read_only=False, okf_mode="on", okf_write=False),
+        )
         try:
             col.index.build_index()
             col.writer.write("note.md", _VERIFIED_NOTE)

@@ -317,13 +317,13 @@ def make_server(
     # is hidden if either condition fires (set-union on disabled tags).
     #
     # Check the config directly rather than constructing a strategy via
-    # ``to_vault_kwargs(config)`` — that call builds an embedding
+    # ``to_vault_instances(config)`` — that call builds an embedding
     # provider (slow, GBs of memory) and may run ``git clone`` as a side
     # effect.  The runtime check inside the ``git_sync`` tool body
     # (``isinstance(strategy, Syncer) and strategy.is_managed``)
     # stays aligned with this gate via the same ``config.git.repo_url``
     # value: managed mode requires an explicit remote URL.  See #220 for
-    # the broader cleanup of duplicate ``to_vault_kwargs`` calls.
+    # the broader cleanup of duplicate assembly calls.
     if config.git.repo_url is None:
         mcp.disable(tags={"git-managed"})
 
@@ -359,7 +359,7 @@ def make_server(
     # configured (an OpenAI-compatible API key or base URL). Provider-neutral:
     # the check lives on config.summarize, never referencing a specific
     # provider. Checked directly
-    # (not via to_vault_kwargs(), which builds an embedding provider and may
+    # (not via to_vault_instances(), which builds an embedding provider and may
     # clone a git repo as a side effect — see the git-managed gate above).
     # The generic jobs poller stays visible either way: reindex and
     # build_embeddings produce job handles regardless of the summarize

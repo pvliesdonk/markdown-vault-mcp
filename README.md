@@ -130,7 +130,7 @@ markdown-vault-mcp serve                                # stdio transport
 markdown-vault-mcp serve --transport http --port 8000   # streamable HTTP
 ```
 
-For library usage (embedding the domain logic without the MCP transport), import from the `markdown_vault_mcp` package directly. See the project's domain modules under `src/markdown_vault_mcp/` for entry points.
+For library usage (embedding the domain logic without the MCP transport), import from the `markdown_vault_mcp` package directly. See the [Vault API](docs/api/vault.md) for entry points and the migration from the removed 4.x constructor keywords to `VaultSettings`. Configuration-based integrations should use the [typed assembly functions](docs/api/config.md).
 
 ### Server info
 

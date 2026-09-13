@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from markdown_vault_mcp.managers.search import _group_by_path
 from markdown_vault_mcp.types import GroupedResult, SectionHit
+from markdown_vault_mcp.vault import VaultSettings
 
 
 def test_section_hit_fields():
@@ -201,8 +202,10 @@ def test_sabsa_repro_one_reference_doc_dedups_target_chunks(tmp_path):
     col = Vault(
         source_dir=vault,
         embedding_provider=MockEmbeddingProvider(),
-        embeddings_path=tmp_path / "vectors",
-        max_chunk_words=20,  # force adaptive chunking to split long.md
+        settings=VaultSettings(
+            embeddings_path=tmp_path / "vectors",
+            max_chunk_words=20,  # force adaptive chunking to split long.md
+        ),
     )
     col.index.build_index()
     col.index.build_embeddings()

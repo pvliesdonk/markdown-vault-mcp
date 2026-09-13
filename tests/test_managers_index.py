@@ -8,6 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from markdown_vault_mcp.vault import VaultSettings
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -1996,7 +1998,9 @@ def test_start_line_propagated_to_vector_metadata(tmp_path):
     col = Vault(
         source_dir=vault,
         embedding_provider=MockEmbeddingProvider(),
-        embeddings_path=tmp_path / "vectors",
+        settings=VaultSettings(
+            embeddings_path=tmp_path / "vectors",
+        ),
     )
     col.index.build_index()
     col.index.build_embeddings()
@@ -2060,7 +2064,9 @@ class TestBuildIndexSkipReasons:
 
         (tmp_path / "good.md").write_text("---\ntitle: ok\n---\nbody", encoding="utf-8")
         (tmp_path / "nomatter.md").write_text("no frontmatter", encoding="utf-8")
-        vault = Vault(source_dir=tmp_path, required_frontmatter=["title"])
+        vault = Vault(
+            source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+        )
         try:
             vault.index.build_index()
             by_path = {sf.path: sf for sf in vault.index.skipped_files()}
@@ -2175,7 +2181,9 @@ class TestReindexSkipReasons:
         from markdown_vault_mcp.vault import Vault
 
         (tmp_path / "seed.md").write_text("---\ntitle: ok\n---\nx", encoding="utf-8")
-        vault = Vault(source_dir=tmp_path, required_frontmatter=["title"])
+        vault = Vault(
+            source_dir=tmp_path, settings=VaultSettings(required_frontmatter=["title"])
+        )
         try:
             vault.index.build_index()
             (tmp_path / "nomatter.md").write_text("no fm", encoding="utf-8")
@@ -2202,7 +2210,10 @@ class TestReindexSkipReasons:
 
         (tmp_path / "seed.md").write_text("---\na: 1\n---\nx", encoding="utf-8")
         (tmp_path / "excluded").mkdir()
-        vault = Vault(source_dir=tmp_path, exclude_patterns=["excluded/**"])
+        vault = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(exclude_patterns=["excluded/**"]),
+        )
         try:
             vault.index.build_index()
             (tmp_path / "excluded" / "bad.md").write_text(

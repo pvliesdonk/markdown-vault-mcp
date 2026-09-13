@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.vault import VaultSettings
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -102,8 +104,10 @@ def _make_vault(tmp_path: Path) -> Vault:
     vault.mkdir(exist_ok=True)
     return Vault(
         source_dir=vault,
-        index_path=tmp_path / "fts.sqlite",
-        read_only=False,
+        settings=VaultSettings(
+            index_path=tmp_path / "fts.sqlite",
+            read_only=False,
+        ),
     )
 
 
@@ -392,8 +396,10 @@ def test_concurrent_build_and_reads_pr518_pattern(tmp_path: Path) -> None:
 
     coll = Vault(
         source_dir=vault,
-        index_path=tmp_path / "fts.sqlite",
-        read_only=False,
+        settings=VaultSettings(
+            index_path=tmp_path / "fts.sqlite",
+            read_only=False,
+        ),
     )
     coll.index.build_index()
 

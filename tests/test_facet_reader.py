@@ -9,7 +9,7 @@ import pytest
 from markdown_vault_mcp.exceptions import IndexUnavailableError
 from markdown_vault_mcp.facets.reader import ReaderFacet
 from markdown_vault_mcp.types import NoteContext, SubtreeToc, VaultStats
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -101,7 +101,10 @@ class TestReaderFacetAttachments:
     """Writable-vault attachment round-trip; owns its own lifecycle."""
 
     def test_read_attachment_round_trips(self, vault_path: Path) -> None:
-        col = Vault(source_dir=vault_path, read_only=False, attachment_extensions=["*"])
+        col = Vault(
+            source_dir=vault_path,
+            settings=VaultSettings(read_only=False, attachment_extensions=["*"]),
+        )
         col.index.build_index()
         try:
             col.writer.write_attachment("facet_read.bin", b"\x01\x02\x03")
