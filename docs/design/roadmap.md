@@ -101,10 +101,20 @@ to build.
 
 ### Reliable Git integration, with an optional backend
 
+`stated` — The owner clarified that libgit2 addresses the fragile CLI integration,
+with eventual retirement of that integration as the longer-term ambition. Testing
+an abstraction is not its product purpose. Git remains a likely fit for Obsidian
+synchronization; database-backed MCP-only/library-only operation is a distinct
+use case and an original reason for the abstraction (13 September 2026).
+
 `evidenced` — [Epic #1313][1313] defines an opt-in alternative that preserves
 the default CLI backend and the repository shapes it serves. Its **Done when**
 retains that outcome and requires both backends to satisfy the same real-repository
 scenarios. The epic spans cuts; the former `git` milestone was a theme.
+
+`derived` — Preserve that bounded opt-in outcome. The longer-term ambition does
+not retire the CLI now or silently change the epic's default/compatibility promise;
+field experience and repository support must inform a later transition decision.
 
 `derived` — The scenario coverage in [#1307][1307] comes before backend delivery
 in [#1309][1309]: it reveals compatibility obligations while improvements still
@@ -120,6 +130,39 @@ write refusal in [#1299][1299], because evidence of failure modes determines
 whether refusal can be useful without rejecting recoverable writes. General
 Git diagnostics, operational traceability and CLI hardening can ship independently
 of the optional-backend epic.
+
+### Versioned vaults without Git
+
+`stated` — The owner wants both database modes considered: ordinary Markdown
+files with database-backed history, extending the existing non-Git-managed use
+case; and everything in the database, including current content and history,
+without a required Markdown working tree. SQLite could serve MCP-only or
+library-only consumers; MongoDB is another suggested candidate. These are use
+cases and candidates, not completed feasibility findings or a selected engine.
+
+`derived` — [Epic #1474][1474] holds the Git-free versioned-vault outcome.
+It is separate from [#1313][1313]: one improves the Git implementation, the other
+supports consumers that do not need Git. Both candidate database modes receive
+an explicit scope decision; consideration of both does not promise simultaneous
+delivery or permit silently dropping one. Existing file/Git workflows remain
+supported. Database-owned content is a new optional direction, not a replacement
+for the file-based product or the OKF ordinary-file exchange outcome.
+
+`derived` — [Research #1476][1476] assesses the source-of-truth and versioning
+contract for each mode before [refinement #1475][1475] selects delivery issues.
+It distinguishes durable content/history from rebuildable search data, local
+history from synchronization, and file-backed history from database-owned
+content. Backup/recovery, external edits, portability and the supported consumer
+experience determine feasibility; neither a physical database layout nor Git-like
+branching and replication is assumed. The research allowance is provisional and
+needs confirmation before execution; this pass records work, not a verdict.
+
+`derived` — Feed the database use cases into the library contract work
+([#1436][1436], [#1473][1473]) and shared substitution work ([#1308][1308]) so
+those decisions consider intended consumers beyond Git. That is context, not a
+claim that database delivery blocks `020`, or that libgit2 must ship first.
+No database package or order relative to the selected Git/OKF follow-ups is
+committed yet; research must expose useful boundaries before making that choice.
 
 ### Usable vault views
 
@@ -239,16 +282,17 @@ verified implementation findings.
 | What is the smallest useful bundle-inventory boundary, and which later services can use it? | [#1442][1442] and [refinement #1467][1467] | Answer before committing the foundation package; the adopted outcome remains fixed. |
 | Which preservation and capability changes need an operator migration, and how are retained reviews presented honestly? | [#1412][1412], coordinated with [#1443][1443] and [#1444][1444] | Classify the transition before promising a minor cut. Full historical observation need not precede basic uncertainty presentation. |
 | Which backend compatibility cases remain unpinned? | [#1307][1307] and [refinement #1468][1468] | Learn from the shared scenarios before delivering the optional backend. |
+| What makes both file-authoritative/database-history and database-authoritative vault modes viable, and which database fits each? | [Research #1476][1476], then [refinement #1475][1475] | Resolve scope before committing database delivery; feed relevant consequences into the library and shared-interface work without an automatic blocker on `020` or libgit2. |
 | Which replication failures justify refusing writes? | [#1293][1293], then the decision in [#1299][1299] | Observe before committing refusal semantics. |
 | Does the Paper experience meet its original outcome, including the implications of the mobile report? | [Refinement #1469][1469], considering [#859][859] | Check acceptance before closing the epic; no dependency on the first cut. |
 | Which creation mechanism meets the agreed boundary? | [#1245][1245] | Decide before committing the scaffold and walkthrough. |
 | Do attachment graph nodes require non-Markdown search admission? | Scope decision in [#1359][1359], with [#1234][1234] | Not knowing does not change the first cut or OKF foundation refinement; no speculative dependency is created. |
 | Is a deployed vault constrained enough to justify a new vector-storage strategy? | [#1377][1377], informed by [#1368][1368] | Not knowing does not change the first cut. Establish the need before committing a storage technology. |
 
-`derived` — The distribution decision changes the next delivery's scope, so it
-has a research issue with an explicit appetite. Other recorded unknowns retain
-their existing resolution pointers; create further spikes only when the answer
-changes the next action and no planned work resolves it.
+`derived` — The distribution and database-mode decisions change their respective
+delivery scopes, so each has a research issue with an explicit appetite. Other
+recorded unknowns retain their existing resolution pointers; create further
+spikes only when the answer changes the next action and no planned work resolves it.
 
 ## Revisions
 
@@ -304,6 +348,20 @@ the original epic outcomes. [#1468][1468] and [#1467][1467] own refinement into
 bounded delivery issues and concrete package membership; no entire epic or
 distant unrefined slice acquires a release promise here.
 
+### 13 September 2026 — distinguish Git reliability from database-backed use
+
+`stated` — The owner corrected the abstraction-test framing: libgit2 is for
+reducing dependence on the fragile CLI integration, while database-backed
+operation is an original purpose of the abstraction. Both file-authoritative
+history and database-owned vaults are to be considered, with different needs
+from Git-based Obsidian synchronization.
+
+`derived` — Record [#1474][1474] with research and refinement, keeping both
+modes open and the engine undecided. Preserve #1313's frozen opt-in outcome
+alongside its longer-term motivation. This extends the product's optional storage
+directions without changing current runtime design, the OKF exchange outcome,
+or the selected `010` / `020` order.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1225]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1225
@@ -338,5 +396,8 @@ distant unrefined slice acquires a release promise here.
 [1471]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1471
 [1472]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1472
 [1473]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1473
+[1474]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1474
+[1475]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1475
+[1476]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1476
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
