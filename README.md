@@ -31,6 +31,11 @@ New files need no etag. Transfer upload links require a
 new destination because they have no `if_match` option. Set
 `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites;
 see the [transfer guide](docs/guides/transfer-links.md#upload-walkthrough).
+
+Python integrations use `VaultSettings` for configuration. See the
+[Vault API](docs/api/vault.md#migrating-from-4x) for the migration from the
+removed 4.x constructor keywords and the
+[configuration API](docs/api/config.md#migrating-from-4x) for typed assembly.
 <!-- DOMAIN-END -->
 
 ## What you can do with it
@@ -130,7 +135,7 @@ markdown-vault-mcp serve                                # stdio transport
 markdown-vault-mcp serve --transport http --port 8000   # streamable HTTP
 ```
 
-For library usage (embedding the domain logic without the MCP transport), import from the `markdown_vault_mcp` package directly. See the [Vault API](docs/api/vault.md) for entry points and the migration from the removed 4.x constructor keywords to `VaultSettings`. Configuration-based integrations should use the [typed assembly functions](docs/api/config.md).
+For library usage (embedding the domain logic without the MCP transport), import from the `markdown_vault_mcp` package directly. See the project's domain modules under `src/markdown_vault_mcp/` for entry points.
 
 ### Server info
 
