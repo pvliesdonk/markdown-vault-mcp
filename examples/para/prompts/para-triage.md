@@ -54,12 +54,14 @@ Wait for confirmation.
 **For a classification**, on user confirmation:
 
 1. `rename(old_path, new_path, update_links=True)` — preserves backlinks from other notes.
-2. `read(path=new_path)` to get the current body content.
-3. `write(path=new_path, content=<existing body>, frontmatter=<typed frontmatter dict>)` — overwrites the file with the typed frontmatter while preserving the body. Include `type`, `status=active`, `tags`, `created` (from the original note, or today's ISO date if missing), and any type-specific fields you inferred (`outcome`, `deadline`, `area` for projects; `standard`, `review_cadence` for areas).
+2. `read(path=new_path)` to get the current body content, frontmatter, and etag.
+3. `write(path=new_path, content=<existing body>, frontmatter=<typed frontmatter dict>, if_match=<etag from that read>)` — overwrites the file with the typed frontmatter while preserving the body. Include `type`, `status=active`, `tags`, `created` (from the original note, or today's ISO date if missing), and any type-specific fields you inferred (`outcome`, `deadline`, `area` for projects; `standard`, `review_cadence` for areas).
 
-**For a split:** `read` the inbox note once, then for each resulting note call `write(path=<target>, content=<portion of body>, frontmatter=<typed frontmatter>)`. Delete the original inbox note with `delete(path=old_path)` after the splits are written.
+**For a split:** `read` the inbox note once, then for each resulting note choose an unused target path and call `write(path=<target>, content=<portion of body>, frontmatter=<typed frontmatter>)`. Delete the original inbox note with `delete(path=old_path, if_match=<etag from the source read>)` only after every split is written successfully.
 
-**For a merge:** `read(path=<target>)` to get the current body, append the new content (preserving the target's structure), then `write(path=<target>, content=<merged body>, frontmatter=<target's existing frontmatter>)`. Delete the original inbox note with `delete(path=old_path)` after the merge is written and confirmed.
+**For a merge:** `read(path=<target>)` to get the current body, frontmatter, and etag, append the new content (preserving the target's structure), then `write(path=<target>, content=<merged body>, frontmatter=<target's existing frontmatter>, if_match=<etag from the target read>)`. Delete the original inbox note with `delete(path=old_path, if_match=<etag from the source read>)` only after the merge is written successfully and confirmed.
+
+If a write or delete conflicts, stop processing that note and report its current location and any completed steps. Preserve the source after a failed split or merge; do not retry with a blind overwrite or delete and recreate a destination.
 
 ## Constraints
 

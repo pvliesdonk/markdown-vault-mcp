@@ -26,7 +26,10 @@ into the indexes it generates, and an index without them drops out of search.
 
 If the root `index.md` has no `okf_version`, propose adding
 `okf_version: "0.2"` to its frontmatter (create the file if absent). From this
-point the server annotates results and the filters work. Confirm, then write.
+point the server annotates results and the filters work. Confirm, then read the
+current `index.md` and pass its etag as `write(if_match=...)` while preserving
+its body and other frontmatter. If the file is absent, create it without
+`if_match`.
 
 ## Step 3: Enrich
 
@@ -36,7 +39,11 @@ For each note `okf_validate` flagged as missing a `type`:
 - `read` it, propose a `type` from the content, and fill in `title` /
   `description` (and `sources` when the note cites anything).
 - Batch the proposals; on confirmation, `write` each with the typed frontmatter,
-  preserving the body.
+  preserving the body and passing the etag from that note's read as `if_match`.
+
+If a write conflicts, skip that note and report it; do not retry without
+`if_match` or delete and recreate the note. If declaring the root index fails,
+stop the migration and report the failure before proceeding to enrichment.
 
 Re-run `okf_validate` and report the climbing conformance ratio.
 

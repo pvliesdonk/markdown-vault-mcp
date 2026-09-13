@@ -39,6 +39,9 @@ For each, `read(path=<note>)` and decide a disposition:
 Show one row per note: path, why it surfaced (stale / deprecated), proposed
 disposition, and the concrete change. Wait for confirmation before any write.
 
-On confirmation, apply each with `edit` / `write` (or `delete`). Do not verify a
-refreshed note in the same pass — a content change clears prior verification;
+On confirmation, apply each with `edit` / `write` (or `delete`). For a full-note
+`write`, preserve unchanged content and frontmatter and pass that note's read
+etag as `if_match`. If it conflicts, skip the note and report the conflict;
+do not retry a blind overwrite or delete it to bypass protection. Do not verify
+a refreshed note in the same pass — a content change clears prior verification;
 re-review it separately (see `okf-verify-note.md`).

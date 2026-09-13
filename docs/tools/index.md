@@ -405,6 +405,7 @@ Create or overwrite a document or attachment.
 | `content` | string | Full markdown body for `.md` files (excluding frontmatter). Ignored for attachments |
 | `frontmatter` | object | Optional YAML frontmatter dict for `.md` files. Ignored for attachments |
 | `content_base64` | string | Base64-encoded binary content for attachment files. Required when path is not `.md` |
+| `if_match` | string | Etag from a current `read` of the destination. Required by default to replace an existing file; omit for new files |
 
 **Context cost:** the `content` parameter (text) is bounded only by the
 LLM's own output budget. The `content_base64` parameter (binary) inflates
@@ -612,7 +613,7 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 | `url` | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and blocked unless every address is publicly routable (private, loopback, link-local, CGNAT/shared, and reserved ranges are all refused); the validated IP is pinned for the connection; ambient `HTTP(S)_PROXY`/`.netrc` settings are ignored. Redirects are followed, and each hop repeats every check above (SSRF protection) |
 | `path` | string | required | Destination path in vault. Extension determines handling: `.md` for notes, anything else for attachments |
 | `frontmatter` | object | `null` | Optional YAML frontmatter dict for `.md` files. Ignored for attachments |
-| `if_match` | string | `null` | Optional etag from a previous `read` call for optimistic concurrency |
+| `if_match` | string | `null` | Etag from a current `read` of the destination. Required by default to replace an existing file; omit for new files |
 | `timeout_s` | float | `30.0` | Download timeout in seconds |
 
 **Context cost:** zero. The file is downloaded server-side. Reference

@@ -43,7 +43,13 @@ Write the claim plainly. Link related notes with root-absolute markdown links
 
 ## Step 4: Confirm, then write
 
-Show the proposed path and the full note. On confirmation, call
+Show the proposed path and the full note. On confirmation, use an unused path
+for a new note and call
 `write(path=<folder>/<slug>.md, content=<body>, frontmatter=<dict>)`.
+For an approved extension of an existing note, read that note's current body,
+frontmatter, and etag, preserve its existing material while assembling the
+extension, then call `write(path=<existing note>, content=<extended body>, frontmatter=<updated dict>, if_match=<etag from that read>)`.
+If the write conflicts, report it and stop; do not retry without `if_match` or
+delete the existing note.
 
 Then call `okf_validate` and report whether the new note is counted conformant.

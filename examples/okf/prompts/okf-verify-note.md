@@ -32,7 +32,10 @@ Check the claims against the note's own `sources` and against the vault:
 
 If the note needs changes, make them first with `edit` / `write` and stop —
 a content change invalidates any prior verification, so verify only once the
-bytes are right.
+bytes are right. For a full-note `write`, preserve unchanged content and
+frontmatter and pass the etag from Step 1's read as `if_match`. If it conflicts,
+report the failure and stop; do not retry without `if_match` or proceed to
+attestation.
 
 ## Step 3: Attest
 

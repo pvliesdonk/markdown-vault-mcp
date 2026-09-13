@@ -182,6 +182,11 @@ these conventions and skips or reverses link proposals they forbid.
 
 ## Workflow
 
+Whole-note replacements in these workflows read the current destination and
+pass its etag as `write`'s `if_match`. New notes omit `if_match`. A source or
+template read does not supply the destination's etag. If a write fails, report
+it and stop any dependent delete or rename.
+
 The canonical PARA loop: **Capture → Triage → Project Work → Weekly Review → Archive**. Each stage has a corresponding prompt or manual action.
 
 ### 1. Capture (Inbox)
@@ -238,8 +243,8 @@ The prompt walks through five steps:
 4. **Propose the move.** Present the proposed target path (`1-Projects/<slug>.md`, `2-Areas/<slug>.md`, `3-Resources/<slug>.md`) and the typed frontmatter block filled in from the note body.
 5. **Execute on confirmation.**
     1. `rename(old, new, update_links=True)` preserves backlinks from other notes.
-    2. `read(new)` loads the body at the new path.
-    3. `write(new, content=<body from read>, frontmatter=<typed frontmatter dict>)` rewrites the file with the typed frontmatter, preserving the body.
+    2. `read(new)` loads the body and etag at the new path.
+    3. `write(new, content=<body from read>, frontmatter=<typed frontmatter dict>, if_match=<etag from read>)` rewrites the file with the typed frontmatter, preserving the body.
 
 See the full prompt body in `examples/para/prompts/para-triage.md`.
 
@@ -262,7 +267,7 @@ The prompt walks through six steps:
    - `2-Areas/` → linkable Area
    Folder-prefix classification is one step; reading each note's frontmatter is N steps. Prefer the fast path, fall back to a targeted `search(filters={"type": "resource"})` per bucket when the layout is non-canonical.
 5. **Propose links.** Present a `## Related` section grouped by bucket, with a one-sentence "why this is relevant" per link. Prefer `[[wikilinks]]`.
-6. **Apply on confirmation.** On confirmation, `write` the note back with the `## Related` section added (tolerant of trailing whitespace), or use `edit` if you prefer to avoid rewriting the full file and can match the section heading precisely.
+6. **Apply on confirmation.** Read the current project note, then `write` it back with the `## Related` section added and that read's etag as `if_match`. You can also use `edit` if you can match the section heading precisely.
 
 See the full prompt body in `examples/para/prompts/para-project-kickoff.md`.
 
@@ -289,7 +294,11 @@ Here is Claude's internal process across seven steps:
 4. **Area audit.** `list_documents(folder='2-Areas')`, filter for `status=active`. For each Area, count active projects whose `area` frontmatter field matches the Area's title. Any Area with **zero** active projects is flagged as a candidate for archive or reassessment. The `area` frontmatter field is the authoritative signal; wikilinks between projects and areas are supplementary.
 5. **Archive candidates.** Projects with `status=completed` still sitting in `1-Projects/` (should be moved to `4-Archive/`), plus projects stale for 30+ days (user may want to archive or revive).
 6. **Write the review note** to the path from Step 1 via a direct `write()` call. The frontmatter matches the `weekly-review` template (Resource type, tagged `review`) and the body contains the seeded sections: `## Active projects`, `## Stale projects`, `## Area audit`, `## Archive candidates`, `## New projects / ideas`. The review note's section structure matches the `weekly-review.md` template (for consistency and for users who want to create reviews manually via `create_from_template`), but the prompt writes the note directly.
-7. **Offer next actions.** Ask the user which archive candidates to act on. For each confirmed one: `read` the project to get the current body and frontmatter, `write` it back with `status=archived` and `archived_at=<today>` added, then `rename` it into `4-Archive/`.
+7. **Offer next actions.** Ask the user which archive candidates to act on. For each confirmed one: `read` the project to get the current body, frontmatter, and etag; `write` it back with `status=archived`, `archived_at=<today>`, and that etag as `if_match`; then `rename` it into `4-Archive/` only after the write succeeds.
+
+Before writing a review note, read its destination. If it already exists, ask
+whether to replace it or choose a new path. An approved replacement passes the
+destination read's etag as `if_match`; a new note omits `if_match`.
 
 See the full prompt body in `examples/para/prompts/para-weekly-review.md`.
 

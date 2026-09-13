@@ -3629,10 +3629,15 @@ API is called.
 Write-tagged prompts are hidden in read-only mode by the same
 ``mcp.disable(tags={"write"})`` call that hides write tools.
 
-For full-body rewrites, `propose-links` reads the current note and forwards its
-etag as `write(if_match=...)`, preserving current content and frontmatter and
-honoring default-on overwrite protection. Conflicting edits are skipped and
-reported rather than retried with a blind overwrite.
+Built-in and bundled example prompts follow the same overwrite contract as
+direct tool calls: an existing destination is read in its current state and
+its etag is passed as `write(if_match=...)`. This covers `propose-links`,
+template replacements, research-note reruns, PARA classification/merge/kickoff/
+archive/review/capture workflows, and OKF migration of existing notes. A
+template or merge source's etag cannot substitute for the destination's etag.
+New-file writes omit `if_match`. The prompt's existing confirmation rules
+still apply; confirmation does not bypass the etag check. A failed replacement
+is reported without a blind retry or a dependent delete/rename.
 
 Prompt registration is split by config-dependency (#901), both entry points
 living in ``_server_prompts.py``. The template-owned ``make_server`` body calls
