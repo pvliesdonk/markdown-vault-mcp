@@ -76,17 +76,21 @@ runtime behavior or claim those scenarios already pass.
 ## Tracking and release scope
 
 [#1425](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1425) owns live
-child relationships, issue dispositions and completion state. The `okf-roadmap`
-theme milestone promises neither a release date nor atomic shipment. This
-page owns the sequence, dependencies and transition rationale; it does not
-mirror issue status. The broader product roadmap remains #1388 / PR #1390.
+child relationships, issue dispositions and completion state. The
+[product roadmap](roadmap.md) owns the cross-product argument and ordinal release
+package sequence. This page owns the OKF stage sequence, dependencies and
+transition rationale; it does not mirror issue status. The epic spans cuts and
+carries no milestone; individual issues join a package only when their delivery
+is committed to that cut.
 
-The v4.2 stabilization boundary is restoration of existing contracts and honest
-operator guidance. Parser resilience, consistent mechanical transforms and
-read-only conformance diagnostics fit that boundary. New inventory, authority,
-review semantics, conflict policy and automatic legacy-data repair belong to
-later implementation slices. Release-specific inclusion and acceptance boundaries
-live on milestone 6 and its issues; the north star is not a v4.2 completion gate.
+The former `okf-roadmap` theme milestone and the stabilization boundary on
+[milestone 6](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/6)
+remain historical records. The 13 September reconciliation in
+[#1462](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1462) removes old
+milestone membership as a constraint. Restoration of existing contracts and
+honest operator guidance can still ship independently of new inventory,
+authority, review semantics or deliberate legacy-data repair. The north star
+does not require one atomic release.
 
 ## Design authority
 
