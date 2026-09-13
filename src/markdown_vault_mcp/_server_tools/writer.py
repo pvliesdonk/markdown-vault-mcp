@@ -280,11 +280,8 @@ def register(mcp: FastMCP) -> None:
 
                 **Context cost:** base64 encoding inflates by ~33%; even a 1 MB
                 attachment becomes ~1.3 MB of tokens.
-            if_match: Optional etag obtained from a previous 'read' call.
-                When provided, the write only proceeds if the file has not
-                been modified since that read (optimistic concurrency).
-                Required to replace an existing file under the default
-                overwrite protection. Omit when creating a new file.
+            if_match: Etag from 'read'; required by default to replace an
+                existing file. A stale etag refuses the write. Omit for new files.
 
         Returns:
             Dict with path (str) and created (bool — true if new file,
@@ -771,10 +768,8 @@ def register(mcp: FastMCP) -> None:
             frontmatter: Optional YAML frontmatter dict for .md files,
                 e.g. {"title": "Report", "source": "http://..."}. Ignored
                 for attachments.
-            if_match: Optional etag from a previous 'read' call for
-                optimistic concurrency. Required to replace an existing
-                file under the default overwrite protection. Omit when
-                creating a new file.
+            if_match: Etag from 'read'; required by default to replace an
+                existing file. A stale etag refuses the write. Omit for new files.
             timeout_s: Download timeout in seconds (default 30). Increase
                 for large files on slow connections.
 
