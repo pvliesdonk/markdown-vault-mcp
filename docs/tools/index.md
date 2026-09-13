@@ -423,10 +423,11 @@ if it does not.
     `write` replaces the entire file. Use `edit` for targeted changes to existing documents.
 
 !!! note "Overwrite protection"
-    With `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`, a `write` to a path
+    By default, a `write` to a path
     that already exists fails unless the call carries a matching `if_match`
-    etag. The flag defaults to `false` in 4.x and to `true` from 5.0. See
-    [Write protection](../configuration.md#write-protection).
+    etag. Read the document first and pass its `etag` as `if_match` to replace
+    it. Operators can set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false`
+    to allow blind overwrites. See [Write safety](../configuration.md#write-safety).
 
 ### `edit`
 
@@ -622,10 +623,9 @@ back into context.
 For `.md` destinations, the response may also include a `conventions` list; see [`write`](#write).
 
 !!! note "Overwrite protection"
-    `fetch` saves through the same guarded path as `write`, so with
-    `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` a fetch to a path that
+    `fetch` saves through the same guarded path as `write`, so by default a fetch to a path that
     already exists fails unless the call carries a matching `if_match` etag.
-    See [Write protection](../configuration.md#write-protection).
+    See [Write safety](../configuration.md#write-safety).
 
 The download itself runs through `fastmcp-pvl-core`'s hardened `fetch_url`
 primitive, so the SSRF protections above are shared, audited code rather

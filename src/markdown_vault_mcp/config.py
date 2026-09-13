@@ -126,14 +126,14 @@ class ProjectConfig:
         },
     )
     write_protect_existing: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": (
-                "Set to true to refuse a write that would overwrite an "
+                "Refuse a write that would overwrite an "
                 "existing file when no if_match etag is supplied. "
                 "Deliberate replacement still works: read the file first, "
                 "then pass if_match. Unaffected: edit, append, delete, "
-                "rename."
+                "rename. Set to false to allow blind overwrites."
             ),
             "tags": ("vault", "readme"),
         },
@@ -1105,7 +1105,7 @@ class ProjectConfig:
             source_dir=require_source_dir(env(_ENV_PREFIX, "SOURCE_DIR")),
             read_only=to_bool(env(_ENV_PREFIX, "READ_ONLY"), default=False),
             write_protect_existing=to_bool(
-                env(_ENV_PREFIX, "WRITE_PROTECT_EXISTING"), default=False
+                env(_ENV_PREFIX, "WRITE_PROTECT_EXISTING"), default=True
             ),
             disable_apps_ui=to_bool(env(_ENV_PREFIX, "DISABLE_APPS_UI"), default=False),
             index_path=opt_path(env(_ENV_PREFIX, "INDEX_PATH")),

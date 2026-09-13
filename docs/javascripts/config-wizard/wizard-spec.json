@@ -505,7 +505,7 @@
       "label": "Write Protect Existing",
       "type": "bool",
       "var": "MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING",
-      "help": "Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename."
+      "help": "Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites."
     },
     {
       "id": "disable_apps_ui",

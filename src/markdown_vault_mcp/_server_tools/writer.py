@@ -313,7 +313,7 @@ def register(mcp: FastMCP) -> None:
             MCPError: If if_match is provided and the file has been
                 modified, or if_match is supplied for a file that does not
                 yet exist (ConcurrentModificationError). Also when the server
-                runs with ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true``
+                runs with ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`` (default)
                 and path already exists while no if_match is supplied
                 (DocumentExistsError) — use 'edit' or 'append' instead, or
                 read the file first and pass its etag as if_match.
@@ -796,7 +796,7 @@ def register(mcp: FastMCP) -> None:
 
         Raises:
             DocumentExistsError: If the server runs with
-                ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`` and *path*
+                ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`` (default) and *path*
                 already exists while no *if_match* is supplied. The save
                 routes through the same guarded ``write`` /
                 ``write_attachment`` path as the write tools, so read the
