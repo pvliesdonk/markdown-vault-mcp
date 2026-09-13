@@ -181,10 +181,11 @@ partial markdown reads (see the tip above).
 On a git-backed vault, `revision` turns `read` into the way back from an overwrite. A `write` that replaces an existing note returns `previous_revision`; that SHA, passed to `read`, returns exactly what the write replaced:
 
 ```text
-write(path, content=...)              → previous_revision: 9f2c1ab
-read(path, revision="9f2c1ab")        → the replaced content
-read(path)                            → the current etag
-write(path, content=<what you read>, if_match=<that etag>)
+read(path)                                         → the pre-write etag
+write(path, content=..., if_match=<pre-write etag>)  → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")                       → the replaced content
+read(path)                                         → the current etag
+write(path, content=<replaced content>, if_match=<current etag>)
 ```
 
 The content comes back as the whole raw file, frontmatter included, and `write` stores it verbatim when no `frontmatter` argument is given, so the last step restores the note byte for byte.
