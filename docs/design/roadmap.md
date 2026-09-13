@@ -23,13 +23,54 @@ and downstream Python consumers; MCP is one consumer of the library
 [OKF north star](okf-north-star.md) adds faithful knowledge exchange and explicit
 curation to that foundation. It does not replace the generic vault use cases.
 
-`stated` — The owner confirmed correctness first, then OKF foundations, with
-Git reliability supporting both (13 September 2026, work on [#1462][1462]).
+`stated` — The owner selected first-class library support and proper documentation
+as the package immediately after correctness work in `010`, centered on
+[#1436][1436]. Research must determine whether that requires separate vault and
+MCP PyPI distributions (13 September 2026). This inserts library support ahead of
+the earlier OKF-foundations preference; Git reliability supports the wider direction.
 
 `derived` — Correctness work establishes whether the storage and link behavior
 that later curation relies on can be trusted. Git reliability supports both;
 an alternate backend is one possible improvement, not a prerequisite for OKF.
 These are preferences for selecting work, not a total order over all issues.
+
+### First-class library
+
+`stated` — The library should be a supported product in its own right, with
+proper documentation, rather than something that happens to be importable.
+
+`derived` — [Epic #1471][1471] freezes the outcome: a downstream Python developer
+can discover, install, configure, use and close the vault for supported workflows
+from published documentation, with an explicit and checked API contract. The MCP
+integration consumes that contract, and both paths have an installation and
+upgrade story. The outcome does not require a particular distribution layout.
+
+`evidenced` — [#1436][1436] records the missing declared and guarded library
+surface. The existing [API documentation](../api/vault.md) describes library
+construction; that does not establish complete support for a consumer outside
+the MCP server's lifecycle. The reported downstream indexing/search use case
+provides a concrete consumer for the research.
+
+`derived` — [Research #1473][1473] compares the combined distribution, optional
+MCP dependencies and separate distributions before [refinement #1472][1472]
+selects the delivery work. Installation cost, runtime independence, compatibility
+and release maintenance determine the choice. Separate distributions need not
+mean separate repositories or separate running services. The existing architectural
+studies remain background hypotheses, not an adopted packaging design.
+
+`derived` — Deliver the declared contract in [#1436][1436] after the announced
+library compatibility removals in [#1225][1225] and [#1236][1236], so documentation
+and guarantees describe the supported interface after the major cut. Native
+dependencies record those edges and the research prerequisite. Research can start
+earlier; if it identifies compatibility groundwork that matters before `010`,
+surface that consequence explicitly rather than assuming another major is required.
+
+`derived` — Refinement must cover consumer-oriented installation, a getting-started
+path, configuration and lifecycle guidance, practical examples, API reference,
+compatibility policy and consumer validation. A public-name inventory alone does
+not complete this outcome. Establishing that contract before broader capability
+work exposes which assumptions belong to the vault and which belong to its MCP
+integration, reducing uncertainty for later OKF and other consumers.
 
 ### Faithful OKF bundles and explicit curation
 
@@ -90,12 +131,6 @@ committing the scaffold or its walkthrough. The recorded
 from possible refreshes of shared method packs. It supplies a useful boundary,
 not a reason to commit every proposed creation mechanism to one release.
 
-`derived` — A declared library contract ([#1436][1436]) helps assess future
-compatibility changes. Announced removals and default changes can be bundled
-when their migration story is ready; an old major-version milestone is not
-sufficient reason to implement them now. Assess each against the stable release
-in use at implementation time.
-
 `derived` — Multi-vault hosting, per-user permissions, non-Markdown content,
 attachment graphs and storage scaling remain independent ambitions, represented
 by [#1232][1232], [#1233][1233], [#1234][1234], [#1359][1359] and [#1377][1377].
@@ -108,19 +143,34 @@ a mandatory parent or a release promise.
 
 `derived` — **[010 reliable-vault](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/12)
 (major)** is the first cut: carry the adopted
-platform transition together with bounded correctness repairs, so subsequent
+platform transition, announced compatibility removals and overwrite-protection
+default change together with bounded correctness repairs, so subsequent
 capability work starts from a dependable baseline. Its GitHub milestone owns
 membership. The exact version is computed from what lands.
 
 `evidenced` — Major intent accounts for the template/FastMCP adoption already
-recorded in [commit 2c7d46e5][template-adoption], rather than reviving the old
-`v5` wish list. This is an input to the cut, not a deadline for unrelated
-deprecations or default changes.
+recorded in [commit 2c7d46e5][template-adoption]. The already-announced library
+removals ([#1225][1225], [#1236][1236]) and
+[operator default change](../configuration.md#write-safety) were checked against
+stable behavior during
+this reconciliation; their original next-major deferral is the reason to group
+them here. Other former `v5` wishes do not acquire a release commitment.
 
-`derived` — Create the next package after OKF foundation refinement identifies
-a defensible cut and its compatibility impact. Git operability may contribute
-an independent slice. Keeping that choice outside a milestone until refinement
-avoids converting an architectural ambition into a shipping commitment.
+`stated` — **[020 first-class-library](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/13)**
+delivers the owner's selected next outcome: supported library use with proper
+documentation, centered on [#1436][1436]. Research and refinement belong to this
+package; implementation membership is completed from their findings.
+
+`derived` — **Minor intent, provisional.** First-class support does not inherently
+require a breaking distribution change. [Research #1473][1473] must establish
+whether a split is warranted and whether existing installations and imports can
+remain compatible. Reclassify the package as major if the chosen transition breaks
+the preceding stable operator or library contract. Do not promise either a split
+or a minor version before that assessment.
+
+`derived` — Subsequent cuts return to OKF foundations, subject to refinement and
+what the library work teaches. Git operability can contribute independent slices.
+No additional package is committed by that direction alone.
 
 `evidenced` — [The package convention](../../.agents/skills/roadmapping/SKILL.md#packages)
 selects the lowest open ordinal as current. Membership commits an issue to one
@@ -137,6 +187,8 @@ verified implementation findings.
 | --- | --- | --- |
 | Where does service-token identity acquire human authorship, and does review authorization share the problem? | [#1463][1463], including its upstream-routing check | Resolve in the correctness cut; do not assume credentials prove authorship or prescribe a replacement actor here. |
 | Which index consumers can see stale state after a successful write? | [#1464][1464] | Establish the affected contract before building more curation on immediate reads. |
+| Does first-class library support require separate vault and MCP PyPI distributions, and would that require a breaking migration? | [Research #1473][1473] | Resolve before library delivery refinement and the final compatibility classification of `020`; flag any necessary groundwork before `010`. |
+| What documentation and consumer validation make the library independently adoptable? | [Refinement #1472][1472], using [#1436][1436] and the research verdict | The package must deliver a supported consumer experience, not only a list of public names. |
 | How should Obsidian lookup coexist with source-relative links? | The compatibility decision in [#1383][1383] | Leave this defect outside the cut until its desired semantics are settled; the choice is not supplied by its old priority proposal. |
 | What is the smallest useful bundle-inventory boundary, and which later services can use it? | [#1442][1442] and [refinement #1467][1467] | Answer before committing the foundation package; the adopted outcome remains fixed. |
 | Which preservation and capability changes need an operator migration, and how are retained reviews presented honestly? | [#1412][1412], coordinated with [#1443][1443] and [#1444][1444] | Classify the transition before promising a minor cut. Full historical observation need not precede basic uncertainty presentation. |
@@ -147,10 +199,10 @@ verified implementation findings.
 | Do attachment graph nodes require non-Markdown search admission? | Scope decision in [#1359][1359], with [#1234][1234] | Not knowing does not change the first cut or OKF foundation refinement; no speculative dependency is created. |
 | Is a deployed vault constrained enough to justify a new vector-storage strategy? | [#1377][1377], informed by [#1368][1368] | Not knowing does not change the first cut. Establish the need before committing a storage technology. |
 
-`derived` — No new research spike is needed for this reconciliation: the
-consequential questions already have work that can resolve them. If refinement
-finds a question outside those issues whose answer changes the next action, give
-that investigation its own research issue and an explicit appetite.
+`derived` — The distribution decision changes the next delivery's scope, so it
+has a research issue with an explicit appetite. Other recorded unknowns retain
+their existing resolution pointers; create further spikes only when the answer
+changes the next action and no planned work resolves it.
 
 ## Revisions
 
@@ -179,11 +231,28 @@ synthesis as newly stated user intent. The studies linked there remain working
 material on their branches. The adopted [OKF roadmap](okf-roadmap.md) retains its
 stage argument; this index replaces its old theme-milestone and release references.
 
+### 13 September 2026 — support the library as the next product outcome
+
+`stated` — After accepting correctness first, the owner directed that the package
+after `010` promote the vault to a first-class library with proper documentation.
+The owner explicitly asked research to determine whether that also means splitting
+the vault library and supporting MCP surface into separate PyPI distributions.
+This revises the earlier preference for OKF foundations immediately after `010`.
+
+`derived` — Commit the announced next-major changes to `010`, then establish
+`020 first-class-library`. Preserve [#1436][1436] as the existing API-contract
+issue under [epic #1471][1471], with [research #1473][1473] informing
+[refinement #1472][1472]. The research is planned, not a completed finding.
+Package separation and release kind remain open decisions; neither the package
+title nor the broad architectural studies settle them.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
+[1225]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1225
 [1232]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232
 [1233]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1233
 [1234]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1234
+[1236]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1236
 [1245]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245
 [1293]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1293
 [1299]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1299
@@ -208,5 +277,8 @@ stage argument; this index replaces its old theme-milestone and release referenc
 [1467]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1467
 [1468]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1468
 [1469]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1469
+[1471]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1471
+[1472]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1472
+[1473]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1473
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
