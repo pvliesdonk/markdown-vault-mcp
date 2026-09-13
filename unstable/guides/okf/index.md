@@ -81,6 +81,8 @@ Add `okf_version: "0.2"` to the root `index.md` frontmatter. From this point the
 
 Backfill the missing metadata. This is where most of the work is, and an agent can do it note by note. For each note it proposes a `type` from the content and fills in the `title` and `description`. Approve the changes in batches, then re-run `okf_validate` to watch the conformant count climb.
 
+When using `write` to update an existing note or root index, read its current content first and pass that read's etag as `if_match`. New files omit `if_match`. A failed replacement leaves the existing file intact; report the conflict before continuing with any dependent migration steps.
+
 ### 4. Mechanical transforms
 
 Three tools handle the changes you should not make by hand. They are write tools, so they are hidden in read-only mode and when `OKF_MODE` is `off`, and on a git-backed vault each change is committed.

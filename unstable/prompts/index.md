@@ -113,7 +113,8 @@ Create a new note by adapting a template from your configured templates folder.
 1. Calls `read` on the selected template path
 1. Presents template structure and asks the user for values
 1. Proposes/collects target path for the new note
-1. Calls `write` with the filled content
+1. Reads the destination and asks for confirmation if a file already exists
+1. Calls `write` with the filled content; an approved replacement passes the current destination read's etag as `if_match`, while a new file omits it
 
 Template convention
 
@@ -179,6 +180,8 @@ Scan a bounded set of notes for semantically close pairs that aren't already lin
 1. Show a batch preview of every proposed edit.
 1. Write approved edits; skip failures (such as `ConcurrentModificationError`) and report reasons.
 
+Full-body rewrites first read the current note to preserve its content and frontmatter, then pass the returned etag as `write`'s `if_match` argument.
+
 Write prompt
 
 This prompt modifies documents and is hidden when `READ_ONLY=true`.
@@ -188,6 +191,8 @@ Embeddings recommended
 `propose-links` falls back to keyword search without embeddings, but the quality of candidates is noticeably better when `get_similar` is available. See [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/embeddings/index.md) for setup.
 
 ## Ambient patterns without prompts
+
+In every workflow below, replacing an existing destination with `write` or `fetch` requires a current `read` of that destination and its etag as `if_match`. New-file writes omit `if_match`. If a write fails, report the failure and stop any dependent delete or rename.
 
 Not every LLM-native workflow needs a codified MCP prompt. With a capable model and the server's tools, several high-value flows work from prose intent alone. The examples below document these composable patterns: which tools the model orchestrates and why each pattern doesn't need its own prompt.
 

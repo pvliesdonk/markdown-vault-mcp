@@ -3606,10 +3606,11 @@ partial markdown reads (see the tip above).</p>
 </div>
 <h4 id="reading-an-earlier-revision">Reading an earlier revision<a class="headerlink" href="#reading-an-earlier-revision" title="Permanent link">&para;</a></h4>
 <p>On a git-backed vault, <code>revision</code> turns <code>read</code> into the way back from an overwrite. A <code>write</code> that replaces an existing note returns <code>previous_revision</code>; that SHA, passed to <code>read</code>, returns exactly what the write replaced:</p>
-<div class="highlight"><pre><span></span><code>write(path, content=...)              → previous_revision: 9f2c1ab
-read(path, revision="9f2c1ab")        → the replaced content
-read(path)                            → the current etag
-write(path, content=&lt;what you read&gt;, if_match=&lt;that etag&gt;)
+<div class="highlight"><pre><span></span><code>read(path)                                         → the pre-write etag
+write(path, content=..., if_match=&lt;pre-write etag&gt;)  → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")                       → the replaced content
+read(path)                                         → the current etag
+write(path, content=&lt;replaced content&gt;, if_match=&lt;current etag&gt;)
 </code></pre></div>
 <p>The content comes back as the whole raw file, frontmatter included, and <code>write</code> stores it verbatim when no <code>frontmatter</code> argument is given, so the last step restores the note byte for byte.</p>
 <p><strong>It resolves the note, not the path.</strong> Pass the name the note has today; a rename since that revision is followed, and <code>historical_path</code> reports the name it carried. Where git's records do not connect the two, <code>read</code> <strong>fails rather than returning content</strong>, because the next thing a caller does with it is write it back. It fails when:</p>
@@ -3870,6 +3871,11 @@ reports the sync outcome directly.</p>
 <td>string</td>
 <td>Base64-encoded binary content for attachment files. Required when path is not <code>.md</code></td>
 </tr>
+<tr>
+<td><code>if_match</code></td>
+<td>string</td>
+<td>Etag from a current <code>read</code> of the destination. Required by default to replace an existing file; omit for new files</td>
+</tr>
 </tbody>
 </table>
 <p><strong>Context cost:</strong> the <code>content</code> parameter (text) is bounded only by the
@@ -3888,10 +3894,11 @@ if it does not.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Overwrite protection</p>
-<p>With <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code>, a <code>write</code> to a path
+<p>By default, a <code>write</code> to a path
 that already exists fails unless the call carries a matching <code>if_match</code>
-etag. The flag defaults to <code>false</code> in 4.x and to <code>true</code> from 5.0. See
-<a href="../configuration/#write-protection">Write protection</a>.</p>
+etag. Read the document first and pass its <code>etag</code> as <code>if_match</code> to replace
+it. Operators can set <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false</code>
+to allow blind overwrites. See <a href="../configuration/#write-safety">Write safety</a>.</p>
 </div>
 <h3 id="edit"><code>edit</code><a class="headerlink" href="#edit" title="Permanent link">&para;</a></h3>
 <p>Make a targeted text replacement in an existing document. Supports three modes:</p>
@@ -4286,7 +4293,7 @@ etag. The flag defaults to <code>false</code> in 4.x and to <code>true</code> fr
 <td><code>if_match</code></td>
 <td>string</td>
 <td><code>null</code></td>
-<td>Optional etag from a previous <code>read</code> call for optimistic concurrency</td>
+<td>Etag from a current <code>read</code> of the destination. Required by default to replace an existing file; omit for new files</td>
 </tr>
 <tr>
 <td><code>timeout_s</code></td>
@@ -4303,10 +4310,9 @@ back into context.</p>
 <p>For <code>.md</code> destinations, the response may also include a <code>conventions</code> list; see <a href="#write"><code>write</code></a>.</p>
 <div class="admonition note">
 <p class="admonition-title">Overwrite protection</p>
-<p><code>fetch</code> saves through the same guarded path as <code>write</code>, so with
-<code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code> a fetch to a path that
+<p><code>fetch</code> saves through the same guarded path as <code>write</code>, so by default a fetch to a path that
 already exists fails unless the call carries a matching <code>if_match</code> etag.
-See <a href="../configuration/#write-protection">Write protection</a>.</p>
+See <a href="../configuration/#write-safety">Write safety</a>.</p>
 </div>
 <p>The download itself runs through <code>fastmcp-pvl-core</code>'s hardened <code>fetch_url</code>
 primitive, so the SSRF protections above are shared, audited code rather
@@ -5250,7 +5256,7 @@ front.</p>
 <td><code>ref</code></td>
 <td>string</td>
 <td>required</td>
-<td>Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. May name a new or existing path; an existing file is overwritten on upload</td>
+<td>Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. Must name a new file under the default overwrite protection</td>
 </tr>
 <tr>
 <td><code>ttl_s</code></td>
@@ -5274,12 +5280,25 @@ front.</p>
 <span class="w">     </span><span class="s2">"https://mcp.example.com/transfer/&lt;token&gt;"</span>
 </code></pre></div>
 <div class="admonition note">
+<p class="admonition-title">Overwrite protection</p>
+<p>By default, link creation rejects an existing destination. Upload links
+have no <code>if_match</code> option. Choose a new path, or have the operator set
+<code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false</code> to allow blind overwrites.
+The write guard returns HTTP 409 Conflict if another writer creates the file
+after link creation. A retry after a successful upload also returns 409
+while protection is enabled. The existing file is preserved, and the token
+reservation is released without extending its expiry.</p>
+</div>
+<div class="admonition note">
 <p class="admonition-title">Raw body, not multipart</p>
 <p>The upload endpoint expects the raw file bytes as the request body. Do not use <code>multipart/form-data</code>; send the content directly (curl's <code>--data-binary</code> flag does this correctly).</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">One-time</p>
-<p>The token is consumed on the first successful upload. A transient failure (network error, size limit exceeded) does not consume the token; retry is permitted until the TTL expires.</p>
+<p>A successful upload shortens the token's remaining lifetime to the configured
+grace window (default 60 seconds). Upload retries still obey overwrite
+protection. A failure releases the reservation; retry is permitted until
+expiry, but an existing destination keeps returning 409 while protected.</p>
 </div>
 <hr />
 <h2 id="mcp-apps">MCP Apps<a class="headerlink" href="#mcp-apps" title="Permanent link">&para;</a></h2>

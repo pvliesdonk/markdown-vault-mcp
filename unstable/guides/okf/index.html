@@ -2311,6 +2311,10 @@
 <p>Add <code>okf_version: "0.2"</code> to the root <code>index.md</code> frontmatter. From this point the server annotates results, the filters work, and the agent receives guidance to keep OKF conventions when it edits. Declaring early means every new note is authored conformantly while you work through the backlog.</p>
 <h3 id="3-enrich">3. Enrich<a class="headerlink" href="#3-enrich" title="Permanent link">&para;</a></h3>
 <p>Backfill the missing metadata. This is where most of the work is, and an agent can do it note by note. For each note it proposes a <code>type</code> from the content and fills in the <code>title</code> and <code>description</code>. Approve the changes in batches, then re-run <code>okf_validate</code> to watch the conformant count climb.</p>
+<p>When using <code>write</code> to update an existing note or root index, read its current
+content first and pass that read's etag as <code>if_match</code>. New files omit
+<code>if_match</code>. A failed replacement leaves the existing file intact; report the
+conflict before continuing with any dependent migration steps.</p>
 <h3 id="4-mechanical-transforms">4. Mechanical transforms<a class="headerlink" href="#4-mechanical-transforms" title="Permanent link">&para;</a></h3>
 <p>Three tools handle the changes you should not make by hand. They are write tools, so they are hidden in read-only mode and when <code>OKF_MODE</code> is <code>off</code>, and on a git-backed vault each change is committed.</p>
 <ul>

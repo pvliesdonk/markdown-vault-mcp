@@ -373,15 +373,19 @@ Invalid numeric ranges and incompatible settings fail startup with a `Configurat
 
 ### Write safety
 
-`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool. Writable servers can set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` to reject a whole-file `write` over an existing path unless the caller supplies the matching `if_match` etag. Targeted `edit`, `append`, `delete`, and `rename` operations are unaffected, as are the server's generated OKF maintenance files.
+`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool. Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`. Whole-file `write` operations (notes and attachments) and `fetch` operations over an existing path require the matching `if_match` etag. Targeted `edit`, `append`, `delete`, and `rename` operations are unaffected, as are the server's generated OKF maintenance files.
+
+Upload links have no `if_match` option. With protection enabled, `create_upload_link` rejects existing destinations; the upload also fails if the file appears before the bytes arrive. Use a new path, or set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites. See [transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/transfer-links/#upload-walkthrough).
 
 Write tools default to enabled
 
 Since 4.0, `MARKDOWN_VAULT_MCP_READ_ONLY` defaults to `false`. An upgrade from 3.x widens access unless the deployment explicitly sets `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
 
-Write protection defaults to enabled from 5.0
+Upgrading from 4.x: overwrite protection is enabled
 
-Set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly if a deployment must retain blind whole-file replacement after that upgrade.
+Set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly if a deployment must retain blind whole-file replacement. Otherwise, read the file and pass its `etag` as `if_match` when replacing it, or use `edit` for targeted changes. An empty setting uses the enabled default.
+
+Direct Python construction with `VaultSettings` retains its library default, `write_protect_existing=False`. Settings assembled from `ProjectConfig` use the server default above.
 
 ### Indexing and search
 
@@ -427,7 +431,7 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 | `OPENAI_EMBEDDING_MODEL`                    | (none)        | No       | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL.                                                                                                                                                                                                    |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR`             | `/data/vault` | No       | Path to the markdown vault directory. Required; the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+.                                                                                                           |
 | `MARKDOWN_VAULT_MCP_READ_ONLY`              | `false`       | No       | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf\_\* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport. |
-| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `false`       | No       | Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename.                                   |
+| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `true`        | No       | Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites.          |
 
 ### Embeddings
 
@@ -699,9 +703,14 @@ In both git modes, the commit boundary is the MCP tool call, not the file. A cal
 On a git-backed vault, a `write` that replaces an existing note returns `previous_revision`: the commit holding the content it replaced. Pass that SHA to `read` as `revision=` and the replaced content comes back, ready to write again:
 
 ```
-write(path, content=...)              → previous_revision: 9f2c1ab
-read(path, revision="9f2c1ab")        → the replaced content
+read(path)                                         → the pre-write etag
+write(path, content=..., if_match=<pre-write etag>)  → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")                       → the replaced content
+read(path)                                         → the current etag
+write(path, content=<replaced content>, if_match=<current etag>)
 ```
+
+Overwrite protection is enabled by default. Each replacement uses the etag from a current read of its target; a historical read supplies the old content, not an etag for replacing the current file.
 
 A SHA from `get_history` works the same way, which is also how a note deleted since is recovered: read it at a revision that still has it. Pass the name the note has today; a rename since that revision is followed.
 
@@ -3845,6 +3854,8 @@ A root-level `_conventions.md` holds vault-wide rules (heading style, tag hygien
 
 ## Workflow
 
+Whole-note replacements in these workflows read the current destination and pass its etag as `write`'s `if_match`. New notes omit `if_match`. A source or template read does not supply the destination's etag. If a write fails, report it and stop any dependent delete or rename.
+
 The canonical PARA loop: **Capture → Triage → Project Work → Weekly Review → Archive**. Each stage has a corresponding prompt or manual action.
 
 ### 1. Capture (Inbox)
@@ -3901,8 +3912,8 @@ The prompt walks through five steps:
 1. **Propose the move.** Present the proposed target path (`1-Projects/<slug>.md`, `2-Areas/<slug>.md`, `3-Resources/<slug>.md`) and the typed frontmatter block filled in from the note body.
 1. **Execute on confirmation.**
    1. `rename(old, new, update_links=True)` preserves backlinks from other notes.
-   1. `read(new)` loads the body at the new path.
-   1. `write(new, content=<body from read>, frontmatter=<typed frontmatter dict>)` rewrites the file with the typed frontmatter, preserving the body.
+   1. `read(new)` loads the body and etag at the new path.
+   1. `write(new, content=<body from read>, frontmatter=<typed frontmatter dict>, if_match=<etag from read>)` rewrites the file with the typed frontmatter, preserving the body.
 
 See the full prompt body in `examples/para/prompts/para-triage.md`.
 
@@ -3924,7 +3935,7 @@ The prompt walks through six steps:
 1. `4-Archive/` → archived project (similar past work)
 1. `2-Areas/` → linkable Area Folder-prefix classification is one step; reading each note's frontmatter is N steps. Prefer the fast path, fall back to a targeted `search(filters={"type": "resource"})` per bucket when the layout is non-canonical.
 1. **Propose links.** Present a `## Related` section grouped by bucket, with a one-sentence "why this is relevant" per link. Prefer `[[wikilinks]]`.
-1. **Apply on confirmation.** On confirmation, `write` the note back with the `## Related` section added (tolerant of trailing whitespace), or use `edit` if you prefer to avoid rewriting the full file and can match the section heading precisely.
+1. **Apply on confirmation.** Read the current project note, then `write` it back with the `## Related` section added and that read's etag as `if_match`. You can also use `edit` if you can match the section heading precisely.
 
 See the full prompt body in `examples/para/prompts/para-project-kickoff.md`.
 
@@ -3952,7 +3963,9 @@ Here is Claude's internal process across seven steps:
 1. **Area audit.** `list_documents(folder='2-Areas')`, filter for `status=active`. For each Area, count active projects whose `area` frontmatter field matches the Area's title. Any Area with **zero** active projects is flagged as a candidate for archive or reassessment. The `area` frontmatter field is the authoritative signal; wikilinks between projects and areas are supplementary.
 1. **Archive candidates.** Projects with `status=completed` still sitting in `1-Projects/` (should be moved to `4-Archive/`), plus projects stale for 30+ days (user may want to archive or revive).
 1. **Write the review note** to the path from Step 1 via a direct `write()` call. The frontmatter matches the `weekly-review` template (Resource type, tagged `review`) and the body contains the seeded sections: `## Active projects`, `## Stale projects`, `## Area audit`, `## Archive candidates`, `## New projects / ideas`. The review note's section structure matches the `weekly-review.md` template (for consistency and for users who want to create reviews manually via `create_from_template`), but the prompt writes the note directly.
-1. **Offer next actions.** Ask the user which archive candidates to act on. For each confirmed one: `read` the project to get the current body and frontmatter, `write` it back with `status=archived` and `archived_at=<today>` added, then `rename` it into `4-Archive/`.
+1. **Offer next actions.** Ask the user which archive candidates to act on. For each confirmed one: `read` the project to get the current body, frontmatter, and etag; `write` it back with `status=archived`, `archived_at=<today>`, and that etag as `if_match`; then `rename` it into `4-Archive/` only after the write succeeds.
+
+Before writing a review note, read its destination. If it already exists, ask whether to replace it or choose a new path. An approved replacement passes the destination read's etag as `if_match`; a new note omits `if_match`.
 
 See the full prompt body in `examples/para/prompts/para-weekly-review.md`.
 
@@ -4246,6 +4259,8 @@ Add `okf_version: "0.2"` to the root `index.md` frontmatter. From this point the
 
 Backfill the missing metadata. This is where most of the work is, and an agent can do it note by note. For each note it proposes a `type` from the content and fills in the `title` and `description`. Approve the changes in batches, then re-run `okf_validate` to watch the conformant count climb.
 
+When using `write` to update an existing note or root index, read its current content first and pass that read's etag as `if_match`. New files omit `if_match`. A failed replacement leaves the existing file intact; report the conflict before continuing with any dependent migration steps.
+
 ### 4. Mechanical transforms
 
 Three tools handle the changes you should not make by hand. They are write tools, so they are hidden in read-only mode and when `OKF_MODE` is `off`, and on a git-backed vault each change is committed.
@@ -4536,6 +4551,8 @@ The tool returns:
 
 The destination path in the vault is fixed at link-creation time; the uploader cannot change it.
 
+By default, the destination must be a new file. Link creation rejects existing notes and attachments because upload links have no `if_match` option. Choose a new path, or have the operator set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites. With that opt-out, uploading replaces an existing file.
+
 ### Step 2: upload the file
 
 Send the raw file bytes as the request body using `POST`:
@@ -4550,6 +4567,8 @@ curl -X POST \
 
 After a successful upload the file is available in the vault, and the link is grace-settled in the same way as a download. The FTS index is updated and the git-commit callback fires (when git integration is configured).
 
+The write guard checks again when the bytes arrive. If another writer creates the destination after link creation, the upload returns HTTP 409 Conflict and preserves that file. With protection enabled, retrying after a successful upload also returns 409 because the destination now exists, even while the token remains valid. A conflict releases the token reservation without extending its expiry; repeating the request keeps returning 409 while the file exists.
+
 Raw body, not multipart
 
 Send the file bytes directly as the request body. Avoid `multipart/form-data`; the endpoint reads raw bytes. curl's `--data-binary` flag sends raw bytes and is correct; `--form` sends multipart and will be rejected.
@@ -4562,7 +4581,7 @@ The `/transfer/{token}` route is mounted outside the server's auth middleware. T
 
 ### One-time use (grace-settled)
 
-A valid token grants exactly one operation on one vault path. On success the link is **grace-settled** rather than burned outright: its remaining lifetime shrinks to `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S` (default 60 seconds). A transfer that was served but stalled part-way can still reclaim the link instead of being stranded by a spent one.
+A valid token grants exactly one operation on one vault path. On success the link is **grace-settled** rather than burned outright: its remaining lifetime shrinks to `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S` (default 60 seconds). A transfer that was served but stalled part-way can still reclaim the link. Uploads remain subject to overwrite protection, which refuses a retry if the first upload already created the file.
 
 A transient failure (network drop, size limit exceeded, server error) releases the reservation with the full remaining TTL, so the transfer can be retried until expiry. If a handler crashes mid-transfer, its in-flight reservation frees itself after `MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S` (default 60 seconds) and the token becomes claimable again.
 
@@ -4883,10 +4902,11 @@ On an OKF bundle, whole-document reads also carry an `okf` dict (`type`, `status
 On a git-backed vault, `revision` turns `read` into the way back from an overwrite. A `write` that replaces an existing note returns `previous_revision`; that SHA, passed to `read`, returns exactly what the write replaced:
 
 ```
-write(path, content=...)              → previous_revision: 9f2c1ab
-read(path, revision="9f2c1ab")        → the replaced content
-read(path)                            → the current etag
-write(path, content=<what you read>, if_match=<that etag>)
+read(path)                                         → the pre-write etag
+write(path, content=..., if_match=<pre-write etag>)  → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")                       → the replaced content
+read(path)                                         → the current etag
+write(path, content=<replaced content>, if_match=<current etag>)
 ```
 
 The content comes back as the whole raw file, frontmatter included, and `write` stores it verbatim when no `frontmatter` argument is given, so the last step restores the note byte for byte.
@@ -5072,12 +5092,13 @@ Create or overwrite a document or attachment.
 
 **Parameters:**
 
-| Parameter        | Type   | Description                                                                         |
-| ---------------- | ------ | ----------------------------------------------------------------------------------- |
-| `path`           | string | Relative path. Extension determines handling (`.md` = note, else attachment)        |
-| `content`        | string | Full markdown body for `.md` files (excluding frontmatter). Ignored for attachments |
-| `frontmatter`    | object | Optional YAML frontmatter dict for `.md` files. Ignored for attachments             |
-| `content_base64` | string | Base64-encoded binary content for attachment files. Required when path is not `.md` |
+| Parameter        | Type   | Description                                                                                                        |
+| ---------------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| `path`           | string | Relative path. Extension determines handling (`.md` = note, else attachment)                                       |
+| `content`        | string | Full markdown body for `.md` files (excluding frontmatter). Ignored for attachments                                |
+| `frontmatter`    | object | Optional YAML frontmatter dict for `.md` files. Ignored for attachments                                            |
+| `content_base64` | string | Base64-encoded binary content for attachment files. Required when path is not `.md`                                |
+| `if_match`       | string | Etag from a current `read` of the destination. Required by default to replace an existing file; omit for new files |
 
 **Context cost:** the `content` parameter (text) is bounded only by the LLM's own output budget. The `content_base64` parameter (binary) inflates by ~33%.
 
@@ -5093,7 +5114,7 @@ Warning
 
 Overwrite protection
 
-With `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`, a `write` to a path that already exists fails unless the call carries a matching `if_match` etag. The flag defaults to `false` in 4.x and to `true` from 5.0. See [Write protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/#write-protection).
+By default, a `write` to a path that already exists fails unless the call carries a matching `if_match` etag. Read the document first and pass its `etag` as `if_match` to replace it. Operators can set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites. See [Write safety](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/#write-safety).
 
 ### `edit`
 
@@ -5283,7 +5304,7 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 | `url`         | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and blocked unless every address is publicly routable (private, loopback, link-local, CGNAT/shared, and reserved ranges are all refused); the validated IP is pinned for the connection; ambient `HTTP(S)_PROXY`/`.netrc` settings are ignored. Redirects are followed, and each hop repeats every check above (SSRF protection) |
 | `path`        | string | required | Destination path in vault. Extension determines handling: `.md` for notes, anything else for attachments                                                                                                                                                                                                                                                                                                           |
 | `frontmatter` | object | `null`   | Optional YAML frontmatter dict for `.md` files. Ignored for attachments                                                                                                                                                                                                                                                                                                                                            |
-| `if_match`    | string | `null`   | Optional etag from a previous `read` call for optimistic concurrency                                                                                                                                                                                                                                                                                                                                               |
+| `if_match`    | string | `null`   | Etag from a current `read` of the destination. Required by default to replace an existing file; omit for new files                                                                                                                                                                                                                                                                                                 |
 | `timeout_s`   | float  | `30.0`   | Download timeout in seconds                                                                                                                                                                                                                                                                                                                                                                                        |
 
 **Context cost:** zero. The file is downloaded server-side. Reference the saved file by `path` for downstream tools rather than `read()`-ing it back into context.
@@ -5294,7 +5315,7 @@ For `.md` destinations, the response may also include a `conventions` list; see 
 
 Overwrite protection
 
-`fetch` saves through the same guarded path as `write`, so with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` a fetch to a path that already exists fails unless the call carries a matching `if_match` etag. See [Write protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/#write-protection).
+`fetch` saves through the same guarded path as `write`, so by default a fetch to a path that already exists fails unless the call carries a matching `if_match` etag. See [Write safety](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/#write-safety).
 
 The download itself runs through `fastmcp-pvl-core`'s hardened `fetch_url` primitive, so the SSRF protections above are shared, audited code rather than a local copy.
 
@@ -5795,10 +5816,10 @@ Mint a one-time capability URL to upload bytes to a fixed, pre-validated destina
 
 **Parameters:**
 
-| Parameter | Type   | Default                                                      | Description                                                                                                                                                                         |
-| --------- | ------ | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ref`     | string | required                                                     | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. May name a new or existing path; an existing file is overwritten on upload |
-| `ttl_s`   | number | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default                                                                       |
+| Parameter | Type   | Default                                                      | Description                                                                                                                                                          |
+| --------- | ------ | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ref`     | string | required                                                     | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. Must name a new file under the default overwrite protection |
+| `ttl_s`   | number | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default                                                        |
 
 **Returns:**
 
@@ -5822,13 +5843,17 @@ curl -X POST --data-binary @local-diagram.pdf \
      "https://mcp.example.com/transfer/<token>"
 ```
 
+Overwrite protection
+
+By default, link creation rejects an existing destination. Upload links have no `if_match` option. Choose a new path, or have the operator set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites. The write guard returns HTTP 409 Conflict if another writer creates the file after link creation. A retry after a successful upload also returns 409 while protection is enabled. The existing file is preserved, and the token reservation is released without extending its expiry.
+
 Raw body, not multipart
 
 The upload endpoint expects the raw file bytes as the request body. Do not use `multipart/form-data`; send the content directly (curl's `--data-binary` flag does this correctly).
 
 One-time
 
-The token is consumed on the first successful upload. A transient failure (network error, size limit exceeded) does not consume the token; retry is permitted until the TTL expires.
+A successful upload shortens the token's remaining lifetime to the configured grace window (default 60 seconds). Upload retries still obey overwrite protection. A failure releases the reservation; retry is permitted until expiry, but an existing destination keeps returning 409 while protected.
 
 ______________________________________________________________________
 
@@ -6187,7 +6212,8 @@ Create a new note by adapting a template from your configured templates folder.
 1. Calls `read` on the selected template path
 1. Presents template structure and asks the user for values
 1. Proposes/collects target path for the new note
-1. Calls `write` with the filled content
+1. Reads the destination and asks for confirmation if a file already exists
+1. Calls `write` with the filled content; an approved replacement passes the current destination read's etag as `if_match`, while a new file omits it
 
 Template convention
 
@@ -6253,6 +6279,8 @@ Scan a bounded set of notes for semantically close pairs that aren't already lin
 1. Show a batch preview of every proposed edit.
 1. Write approved edits; skip failures (such as `ConcurrentModificationError`) and report reasons.
 
+Full-body rewrites first read the current note to preserve its content and frontmatter, then pass the returned etag as `write`'s `if_match` argument.
+
 Write prompt
 
 This prompt modifies documents and is hidden when `READ_ONLY=true`.
@@ -6262,6 +6290,8 @@ Embeddings recommended
 `propose-links` falls back to keyword search without embeddings, but the quality of candidates is noticeably better when `get_similar` is available. See [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/embeddings/index.md) for setup.
 
 ## Ambient patterns without prompts
+
+In every workflow below, replacing an existing destination with `write` or `fetch` requires a current `read` of that destination and its etag as `if_match`. New-file writes omit `if_match`. If a write fails, report the failure and stop any dependent delete or rename.
 
 Not every LLM-native workflow needs a codified MCP prompt. With a capable model and the server's tools, several high-value flows work from prose intent alone. The examples below document these composable patterns: which tools the model orchestrates and why each pattern doesn't need its own prompt.
 
@@ -9432,7 +9462,7 @@ The historical bridge `to_vault_kwargs(config)` returns a flat keyword dict for 
 
 ## API Reference
 
-## `ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=Path('/data/vault'), read_only=False, write_protect_existing=False, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
+## `ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=Path('/data/vault'), read_only=False, write_protect_existing=True, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
 
 Domain config for Markdown Vault MCP. Compose — don't inherit.
 

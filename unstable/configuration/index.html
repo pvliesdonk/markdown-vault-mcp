@@ -2892,10 +2892,16 @@ replace invalid values with defaults.</p>
 </div>
 <h3 id="write-safety">Write safety<a class="headerlink" href="#write-safety" title="Permanent link">&para;</a></h3>
 <p><code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> hides every write-tagged tool. Writable
-servers can set <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code>
-to reject a whole-file <code>write</code> over an existing path unless the caller supplies
-the matching <code>if_match</code> etag. Targeted <code>edit</code>, <code>append</code>, <code>delete</code>, and <code>rename</code>
+servers default to <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true</code>.
+Whole-file <code>write</code> operations (notes and attachments) and <code>fetch</code> operations
+over an existing path require the matching <code>if_match</code> etag.
+Targeted <code>edit</code>, <code>append</code>, <code>delete</code>, and <code>rename</code>
 operations are unaffected, as are the server's generated OKF maintenance files.</p>
+<p>Upload links have no <code>if_match</code> option. With protection enabled,
+<code>create_upload_link</code> rejects existing destinations; the upload also fails if
+the file appears before the bytes arrive. Use a new path, or set
+<code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false</code> to allow blind overwrites.
+See <a href="../guides/transfer-links/#upload-walkthrough">transfer links</a>.</p>
 <div class="admonition danger">
 <p class="admonition-title">Write tools default to enabled</p>
 <p>Since 4.0, <code>MARKDOWN_VAULT_MCP_READ_ONLY</code> defaults to <code>false</code>. An upgrade
@@ -2903,10 +2909,15 @@ from 3.x widens access unless the deployment explicitly sets
 <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code>.</p>
 </div>
 <div class="admonition warning">
-<p class="admonition-title">Write protection defaults to enabled from 5.0</p>
+<p class="admonition-title">Upgrading from 4.x: overwrite protection is enabled</p>
 <p>Set <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false</code> explicitly if a
-deployment must retain blind whole-file replacement after that upgrade.</p>
+deployment must retain blind whole-file replacement. Otherwise, read the
+file and pass its <code>etag</code> as <code>if_match</code> when replacing it, or use <code>edit</code> for
+targeted changes. An empty setting uses the enabled default.</p>
 </div>
+<p>Direct Python construction with <code>VaultSettings</code> retains its library default,
+<code>write_protect_existing=False</code>. Settings assembled from <code>ProjectConfig</code> use
+the server default above.</p>
 <h3 id="indexing-and-search">Indexing and search<a class="headerlink" href="#indexing-and-search" title="Permanent link">&para;</a></h3>
 <p>Persistent deployments normally put <code>INDEX_PATH</code>, <code>EMBEDDINGS_PATH</code>, and
 <code>STATE_PATH</code> outside content folders. The file watcher excludes the directories
@@ -3015,9 +3026,9 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING</code></td>
-<td><code>false</code></td>
+<td><code>true</code></td>
 <td>No</td>
-<td>Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename.</td>
+<td>Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites.</td>
 </tr>
 </tbody>
 </table>

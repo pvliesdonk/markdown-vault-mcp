@@ -2552,7 +2552,8 @@
 <li>Calls <code>read</code> on the selected template path</li>
 <li>Presents template structure and asks the user for values</li>
 <li>Proposes/collects target path for the new note</li>
-<li>Calls <code>write</code> with the filled content</li>
+<li>Reads the destination and asks for confirmation if a file already exists</li>
+<li>Calls <code>write</code> with the filled content; an approved replacement passes the current destination read's etag as <code>if_match</code>, while a new file omits it</li>
 </ol>
 <div class="admonition note">
 <p class="admonition-title">Template convention</p>
@@ -2652,6 +2653,8 @@
 <li>Show a batch preview of every proposed edit.</li>
 <li>Write approved edits; skip failures (such as <code>ConcurrentModificationError</code>) and report reasons.</li>
 </ol>
+<p>Full-body rewrites first read the current note to preserve its content and
+frontmatter, then pass the returned etag as <code>write</code>'s <code>if_match</code> argument.</p>
 <div class="admonition note">
 <p class="admonition-title">Write prompt</p>
 <p>This prompt modifies documents and is hidden when <code>READ_ONLY=true</code>.</p>
@@ -2661,6 +2664,10 @@
 <p><code>propose-links</code> falls back to keyword search without embeddings, but the quality of candidates is noticeably better when <code>get_similar</code> is available. See <a href="../guides/embeddings/">Embeddings</a> for setup.</p>
 </div>
 <h2 id="ambient-patterns-without-prompts">Ambient patterns without prompts<a class="headerlink" href="#ambient-patterns-without-prompts" title="Permanent link">&para;</a></h2>
+<p>In every workflow below, replacing an existing destination with <code>write</code> or
+<code>fetch</code> requires a current <code>read</code> of that destination and its etag as <code>if_match</code>.
+New-file writes omit <code>if_match</code>. If a write fails, report the failure and stop
+any dependent delete or rename.</p>
 <p>Not every LLM-native workflow needs a codified MCP prompt. With a capable model and the server's tools, several high-value flows work from prose intent alone. The examples below document these composable patterns: which tools the model orchestrates and why each pattern doesn't need its own prompt.</p>
 <h3 id="capture-a-url-as-a-note">Capture a URL as a note<a class="headerlink" href="#capture-a-url-as-a-note" title="Permanent link">&para;</a></h3>
 <blockquote>

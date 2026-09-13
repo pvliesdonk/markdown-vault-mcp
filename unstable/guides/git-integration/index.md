@@ -17,9 +17,14 @@ In both git modes, the commit boundary is the MCP tool call, not the file. A cal
 On a git-backed vault, a `write` that replaces an existing note returns `previous_revision`: the commit holding the content it replaced. Pass that SHA to `read` as `revision=` and the replaced content comes back, ready to write again:
 
 ```
-write(path, content=...)              → previous_revision: 9f2c1ab
-read(path, revision="9f2c1ab")        → the replaced content
+read(path)                                         → the pre-write etag
+write(path, content=..., if_match=<pre-write etag>)  → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")                       → the replaced content
+read(path)                                         → the current etag
+write(path, content=<replaced content>, if_match=<current etag>)
 ```
+
+Overwrite protection is enabled by default. Each replacement uses the etag from a current read of its target; a historical read supplies the old content, not an etag for replacing the current file.
 
 A SHA from `get_history` works the same way, which is also how a note deleted since is recovered: read it at a revision that still has it. Pass the name the note has today; a rename since that revision is followed.
 

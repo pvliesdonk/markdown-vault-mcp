@@ -2728,6 +2728,10 @@ side, so the resource never needs to mention the projects that cite it.</p>
 hygiene); nested files add to it. The built-in <code>propose-links</code> prompt reads
 these conventions and skips or reverses link proposals they forbid.</p>
 <h2 id="workflow">Workflow<a class="headerlink" href="#workflow" title="Permanent link">&para;</a></h2>
+<p>Whole-note replacements in these workflows read the current destination and
+pass its etag as <code>write</code>'s <code>if_match</code>. New notes omit <code>if_match</code>. A source or
+template read does not supply the destination's etag. If a write fails, report
+it and stop any dependent delete or rename.</p>
 <p>The canonical PARA loop: <strong>Capture → Triage → Project Work → Weekly Review → Archive</strong>. Each stage has a corresponding prompt or manual action.</p>
 <h3 id="1-capture-inbox">1. Capture (Inbox)<a class="headerlink" href="#1-capture-inbox" title="Permanent link">&para;</a></h3>
 <p>Capture whatever's in your head into <code>0-Inbox/</code> without worrying about classification. The <code>inbox.md</code> template exists for this: Claude can create notes from it on request ("create an inbox note titled X with content Y"), or you can drop files directly into the folder via Obsidian or the CLI. Review the inbox daily or every few days by invoking the triage prompt; Claude reads each note and proposes a target path.</p>
@@ -2771,8 +2775,8 @@ these conventions and skips or reverses link proposals they forbid.</p>
 <li><strong>Propose the move.</strong> Present the proposed target path (<code>1-Projects/&lt;slug&gt;.md</code>, <code>2-Areas/&lt;slug&gt;.md</code>, <code>3-Resources/&lt;slug&gt;.md</code>) and the typed frontmatter block filled in from the note body.</li>
 <li><strong>Execute on confirmation.</strong><ol>
 <li><code>rename(old, new, update_links=True)</code> preserves backlinks from other notes.</li>
-<li><code>read(new)</code> loads the body at the new path.</li>
-<li><code>write(new, content=&lt;body from read&gt;, frontmatter=&lt;typed frontmatter dict&gt;)</code> rewrites the file with the typed frontmatter, preserving the body.</li>
+<li><code>read(new)</code> loads the body and etag at the new path.</li>
+<li><code>write(new, content=&lt;body from read&gt;, frontmatter=&lt;typed frontmatter dict&gt;, if_match=&lt;etag from read&gt;)</code> rewrites the file with the typed frontmatter, preserving the body.</li>
 </ol>
 </li>
 </ol>
@@ -2793,7 +2797,7 @@ these conventions and skips or reverses link proposals they forbid.</p>
 <li><code>2-Areas/</code> → linkable Area
    Folder-prefix classification is one step; reading each note's frontmatter is N steps. Prefer the fast path, fall back to a targeted <code>search(filters={"type": "resource"})</code> per bucket when the layout is non-canonical.</li>
 <li><strong>Propose links.</strong> Present a <code>## Related</code> section grouped by bucket, with a one-sentence "why this is relevant" per link. Prefer <code>[[wikilinks]]</code>.</li>
-<li><strong>Apply on confirmation.</strong> On confirmation, <code>write</code> the note back with the <code>## Related</code> section added (tolerant of trailing whitespace), or use <code>edit</code> if you prefer to avoid rewriting the full file and can match the section heading precisely.</li>
+<li><strong>Apply on confirmation.</strong> Read the current project note, then <code>write</code> it back with the <code>## Related</code> section added and that read's etag as <code>if_match</code>. You can also use <code>edit</code> if you can match the section heading precisely.</li>
 </ol>
 <p>See the full prompt body in <code>examples/para/prompts/para-project-kickoff.md</code>.</p>
 <p>The kickoff prompt isn't just for project start. Re-invoke it mid-project when you're stuck: Claude will resurface whatever's changed in the vault since kickoff and propose additional links as context evolves.</p>
@@ -2814,8 +2818,11 @@ these conventions and skips or reverses link proposals they forbid.</p>
 <li><strong>Area audit.</strong> <code>list_documents(folder='2-Areas')</code>, filter for <code>status=active</code>. For each Area, count active projects whose <code>area</code> frontmatter field matches the Area's title. Any Area with <strong>zero</strong> active projects is flagged as a candidate for archive or reassessment. The <code>area</code> frontmatter field is the authoritative signal; wikilinks between projects and areas are supplementary.</li>
 <li><strong>Archive candidates.</strong> Projects with <code>status=completed</code> still sitting in <code>1-Projects/</code> (should be moved to <code>4-Archive/</code>), plus projects stale for 30+ days (user may want to archive or revive).</li>
 <li><strong>Write the review note</strong> to the path from Step 1 via a direct <code>write()</code> call. The frontmatter matches the <code>weekly-review</code> template (Resource type, tagged <code>review</code>) and the body contains the seeded sections: <code>## Active projects</code>, <code>## Stale projects</code>, <code>## Area audit</code>, <code>## Archive candidates</code>, <code>## New projects / ideas</code>. The review note's section structure matches the <code>weekly-review.md</code> template (for consistency and for users who want to create reviews manually via <code>create_from_template</code>), but the prompt writes the note directly.</li>
-<li><strong>Offer next actions.</strong> Ask the user which archive candidates to act on. For each confirmed one: <code>read</code> the project to get the current body and frontmatter, <code>write</code> it back with <code>status=archived</code> and <code>archived_at=&lt;today&gt;</code> added, then <code>rename</code> it into <code>4-Archive/</code>.</li>
+<li><strong>Offer next actions.</strong> Ask the user which archive candidates to act on. For each confirmed one: <code>read</code> the project to get the current body, frontmatter, and etag; <code>write</code> it back with <code>status=archived</code>, <code>archived_at=&lt;today&gt;</code>, and that etag as <code>if_match</code>; then <code>rename</code> it into <code>4-Archive/</code> only after the write succeeds.</li>
 </ol>
+<p>Before writing a review note, read its destination. If it already exists, ask
+whether to replace it or choose a new path. An approved replacement passes the
+destination read's etag as <code>if_match</code>; a new note omits <code>if_match</code>.</p>
 <p>See the full prompt body in <code>examples/para/prompts/para-weekly-review.md</code>.</p>
 <p>The prompt presents all findings before asking for any action. It never archives, renames, or edits notes without explicit confirmation, and when the user confirms a batch ("archive all 5"), it still performs each operation individually so failures are isolated.</p>
 <h3 id="5-archive-lifecycle-transition">5. Archive (lifecycle transition)<a class="headerlink" href="#5-archive-lifecycle-transition" title="Permanent link">&para;</a></h3>

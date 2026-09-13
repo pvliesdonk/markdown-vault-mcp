@@ -117,15 +117,19 @@ Invalid numeric ranges and incompatible settings fail startup with a `Configurat
 
 ### Write safety
 
-`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool. Writable servers can set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` to reject a whole-file `write` over an existing path unless the caller supplies the matching `if_match` etag. Targeted `edit`, `append`, `delete`, and `rename` operations are unaffected, as are the server's generated OKF maintenance files.
+`MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write-tagged tool. Writable servers default to `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`. Whole-file `write` operations (notes and attachments) and `fetch` operations over an existing path require the matching `if_match` etag. Targeted `edit`, `append`, `delete`, and `rename` operations are unaffected, as are the server's generated OKF maintenance files.
+
+Upload links have no `if_match` option. With protection enabled, `create_upload_link` rejects existing destinations; the upload also fails if the file appears before the bytes arrive. Use a new path, or set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites. See [transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/transfer-links/#upload-walkthrough).
 
 Write tools default to enabled
 
 Since 4.0, `MARKDOWN_VAULT_MCP_READ_ONLY` defaults to `false`. An upgrade from 3.x widens access unless the deployment explicitly sets `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
 
-Write protection defaults to enabled from 5.0
+Upgrading from 4.x: overwrite protection is enabled
 
-Set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly if a deployment must retain blind whole-file replacement after that upgrade.
+Set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly if a deployment must retain blind whole-file replacement. Otherwise, read the file and pass its `etag` as `if_match` when replacing it, or use `edit` for targeted changes. An empty setting uses the enabled default.
+
+Direct Python construction with `VaultSettings` retains its library default, `write_protect_existing=False`. Settings assembled from `ProjectConfig` use the server default above.
 
 ### Indexing and search
 
@@ -171,7 +175,7 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 | `OPENAI_EMBEDDING_MODEL`                    | (none)        | No       | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL.                                                                                                                                                                                                    |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR`             | `/data/vault` | No       | Path to the markdown vault directory. Required; the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+.                                                                                                           |
 | `MARKDOWN_VAULT_MCP_READ_ONLY`              | `false`       | No       | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf\_\* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport. |
-| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `false`       | No       | Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename.                                   |
+| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `true`        | No       | Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites.          |
 
 ### Embeddings
 
