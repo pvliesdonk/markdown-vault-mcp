@@ -1234,7 +1234,10 @@ class TestWriteTool:
         assert data["created"] is True
 
     @pytest.mark.usefixtures("_mcp_env_writable")
-    async def test_write_overwrites_existing(self) -> None:
+    async def test_write_overwrites_existing_with_opt_out(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING", "false")
         server = make_server()
         async with Client(server) as client:
             result = await client.call_tool(
@@ -1242,6 +1245,33 @@ class TestWriteTool:
             )
         data = result.data
         assert data["created"] is False
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_default_refuses_blind_overwrite(self, vault_path: Path) -> None:
+        original = (vault_path / "simple.md").read_bytes()
+        server = make_server()
+        async with Client(server) as client:
+            with pytest.raises(ToolError, match="if_match"):
+                await client.call_tool(
+                    "write", {"path": "simple.md", "content": "# Replaced\n"}
+                )
+        assert (vault_path / "simple.md").read_bytes() == original
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_default_allows_read_then_replace(self, vault_path: Path) -> None:
+        server = make_server()
+        async with Client(server) as client:
+            read_result = await client.call_tool("read", {"path": "simple.md"})
+            result = await client.call_tool(
+                "write",
+                {
+                    "path": "simple.md",
+                    "content": "# Replaced\n",
+                    "if_match": read_result.data["etag"],
+                },
+            )
+        assert result.data["created"] is False
+        assert (vault_path / "simple.md").read_text() == "# Replaced\n"
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_write_with_frontmatter(self) -> None:
@@ -1662,6 +1692,33 @@ class TestMCPReadAttachment:
 
 class TestMCPWriteAttachment:
     """MCP write() tool dispatches to attachment path for non-.md files."""
+
+    async def test_default_protects_existing_attachment(
+        self, _mcp_env_writable_with_attachments: Path
+    ) -> None:
+        import base64
+
+        path = _mcp_env_writable_with_attachments / "assets/report.pdf"
+        original = path.read_bytes()
+        replacement = b"replacement pdf content"
+        args = {
+            "path": "assets/report.pdf",
+            "content_base64": base64.b64encode(replacement).decode("ascii"),
+        }
+        server = make_server()
+        async with Client(server) as client:
+            with pytest.raises(ToolError, match="if_match"):
+                await client.call_tool("write", args)
+            assert path.read_bytes() == original
+            read_result = await client.call_tool("read", {"path": "assets/report.pdf"})
+            with pytest.raises(ToolError, match="Concurrent modification"):
+                await client.call_tool("write", {**args, "if_match": "stale"})
+            assert path.read_bytes() == original
+            result = await client.call_tool(
+                "write", {**args, "if_match": read_result.data["etag"]}
+            )
+        assert result.data["created"] is False
+        assert path.read_bytes() == replacement
 
     async def test_write_attachment_creates_file(
         self, _mcp_env_writable_with_attachments: Path
@@ -4153,9 +4210,17 @@ class TestReadAtRevisionTool:
         """The write result carries the route back to what it replaced."""
         server = make_server()
         async with Client(server) as client:
+            current = _parse_tool_data(
+                await client.call_tool("read", {"path": "alpha.md"})
+            )
             written = _parse_tool_data(
                 await client.call_tool(
-                    "write", {"path": "alpha.md", "content": "# Alpha\n\nClobbered.\n"}
+                    "write",
+                    {
+                        "path": "alpha.md",
+                        "content": "# Alpha\n\nClobbered.\n",
+                        "if_match": current["etag"],
+                    },
                 )
             )
             assert written["created"] is False

@@ -52,7 +52,7 @@ Before writing, present the proposed notes to the user:
 
 ## Step 5: Write on confirmation
 
-On user confirmation, call `write(path=..., content=..., frontmatter=...)` for each note. If a target path already exists (re-running for the same window), ask whether to overwrite, merge, or pick a different slug.
+On user confirmation, call `write(path=..., content=..., frontmatter=...)` for each new note. If a target path already exists (re-running for the same window), ask whether to overwrite, merge, or pick a different slug. For an approved overwrite or merge, `read(path=<target>)` first, preserve any content and frontmatter the user wants retained, and pass that read's `etag` as `if_match` to `write`. If the write conflicts, skip that note and report the conflict; do not delete it or retry without `if_match`.
 
 ## Step 6: Suggest next action
 

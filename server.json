@@ -115,9 +115,9 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING",
-          "description": "Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename.",
+          "description": "Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites.",
           "format": "boolean",
-          "default": "false"
+          "default": "true"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_DISABLE_APPS_UI",
@@ -699,9 +699,9 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING",
-          "description": "Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename.",
+          "description": "Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites.",
           "format": "boolean",
-          "default": "false"
+          "default": "true"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_DISABLE_APPS_UI",

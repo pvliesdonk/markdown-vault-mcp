@@ -302,9 +302,9 @@ def make_server(
                 "note (a .md file) or attachment."
             ),
             upload_note=(
-                "For this server, ref is the vault-relative destination path: a "
-                "note (.md) or an attachment whose extension is in the "
-                "configured allowlist."
+                "ref is a vault-relative note (.md) or allowed attachment path. "
+                "Requires a new file unless WRITE_PROTECT_EXISTING=false; "
+                "upload links have no if_match."
             ),
         )
 

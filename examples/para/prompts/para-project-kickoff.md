@@ -51,7 +51,7 @@ Prefer `[[wikilinks]]` for internal references.
 
 ## Step 6: Apply on confirmation
 
-On user confirmation, add the `## Related` section. Call `read(path='$path')` to get the current body and frontmatter, assemble the new body (existing body + new `## Related` section, or existing body with the `## Related` section extended if one exists), then call `write(path='$path', content=<new body>, frontmatter=<current frontmatter>)`. Using `write` is more robust than `edit` for appending — a trailing blank line or whitespace on the note would break an `edit(old_text=<last line>, ...)` match. If you do prefer `edit` to avoid rewriting the full file, match the existing `## Related` section heading precisely.
+On user confirmation, add the `## Related` section. Call `read(path='$path')` to get the current body, frontmatter, and etag, assemble the new body (existing body + new `## Related` section, or existing body with the `## Related` section extended if one exists), then call `write(path='$path', content=<new body>, frontmatter=<current frontmatter>, if_match=<etag from that read>)`. Using `write` is more robust than `edit` for appending — a trailing blank line or whitespace on the note would break an `edit(old_text=<last line>, ...)` match. If you do prefer `edit` to avoid rewriting the full file, match the existing `## Related` section heading precisely. If the write conflicts, report it and stop without retrying a blind overwrite.
 
 ## Constraints
 

@@ -280,10 +280,8 @@ def register(mcp: FastMCP) -> None:
 
                 **Context cost:** base64 encoding inflates by ~33%; even a 1 MB
                 attachment becomes ~1.3 MB of tokens.
-            if_match: Optional etag obtained from a previous 'read' call.
-                When provided, the write only proceeds if the file has not
-                been modified since that read (optimistic concurrency).
-                Omit to write unconditionally.
+            if_match: Etag from 'read'; required by default to replace an
+                existing file. A stale etag refuses the write. Omit for new files.
 
         Returns:
             Dict with path (str) and created (bool — true if new file,
@@ -313,7 +311,7 @@ def register(mcp: FastMCP) -> None:
             MCPError: If if_match is provided and the file has been
                 modified, or if_match is supplied for a file that does not
                 yet exist (ConcurrentModificationError). Also when the server
-                runs with ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true``
+                runs with ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`` (default)
                 and path already exists while no if_match is supplied
                 (DocumentExistsError) — use 'edit' or 'append' instead, or
                 read the file first and pass its etag as if_match.
@@ -770,8 +768,8 @@ def register(mcp: FastMCP) -> None:
             frontmatter: Optional YAML frontmatter dict for .md files,
                 e.g. {"title": "Report", "source": "http://..."}. Ignored
                 for attachments.
-            if_match: Optional etag from a previous 'read' call for
-                optimistic concurrency. Omit to write unconditionally.
+            if_match: Etag from 'read'; required by default to replace an
+                existing file. A stale etag refuses the write. Omit for new files.
             timeout_s: Download timeout in seconds (default 30). Increase
                 for large files on slow connections.
 
@@ -796,7 +794,7 @@ def register(mcp: FastMCP) -> None:
 
         Raises:
             DocumentExistsError: If the server runs with
-                ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`` and *path*
+                ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`` (default) and *path*
                 already exists while no *if_match* is supplied. The save
                 routes through the same guarded ``write`` /
                 ``write_attachment`` path as the write tools, so read the

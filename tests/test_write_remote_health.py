@@ -185,6 +185,10 @@ class TestUnsyncedCloneIsReported:
         server = make_server()
         async with Client(server) as client:
             await _strand_the_clone(client)
+            current = _parse_tool_data(
+                await client.call_tool("read", {"path": "folder/subject.md"})
+            )
+            arguments["write"]["if_match"] = current["etag"]
             result = await client.call_tool(tool_name, arguments[tool_name])
 
         payload = _parse_tool_data(result)

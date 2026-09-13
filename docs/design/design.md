@@ -1632,19 +1632,33 @@ upload, the fully-read (size-capped) body.
 - **Upload** (`write(handle, body)`): a `.md` body is decoded as UTF-8 (BOM
   stripped) and written via `vault.writer.write()`; other extensions are
   written via `vault.writer.write_attachment()`. The write updates the FTS
-  index and fires the git-commit callback.
+  index and fires the git-commit callback. Upload handles carry no `if_match`;
+  with overwrite protection enabled, uploads require a new file. The normal
+  write guard remains authoritative under the write lock, so a file created
+  after validation is preserved and the upload returns **409 Conflict**. A
+  successful upload creates an existing destination, so a grace-window retry
+  also returns 409 while protection is enabled.
 - **Validation** (`validate(ref, kind)`): runs at link creation. Download
   validates existence stat-only, so minting a link for a large attachment never
   reads it; upload validates the destination is a note or an allowed attachment
-  extension. Both reject path traversal.
+  extension and rejects an existing file when
+  `ProjectConfig.write_protect_existing` is true. Both reject path traversal.
+  Setting `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly allows
+  existing destinations at link creation and blind replacement during upload.
 
-The sink maps two error states to pvl-core's `TransferSinkError` subclasses so
+The sink maps expected error states to pvl-core's `TransferSinkError` contract so
 the route returns a semantically correct status instead of a generic 500
 (fastmcp-pvl-core#233): a vault that is torn down while the route is still
 mounted (the ref-counted session lifespan cleared the singleton) raises
 `TransferUnavailableError` (retryable **503**), and a note or attachment that was
 validated at mint time but has since been removed raises
-`TransferResourceGoneError` (**410 Gone**). Any other failure still maps to 500.
+`TransferResourceGoneError` (**410 Gone**). On upload, `DocumentExistsError` is
+translated to `TransferSinkError(409)` (**409 Conflict**), preserving the file.
+The route releases the token reservation on these errors without extending its
+expiry; another upload will still conflict while the destination exists. Any
+other failure still maps to 500. See the versioned
+[pvl-core transfer reference](reference/fastmcp-transfer.md) for the upstream
+error and retry contract.
 
 The upload body is raw bytes (not `multipart/form-data`). The destination
 path is decided at link-creation time and cannot be overridden by the uploader.
@@ -1658,7 +1672,8 @@ Two MCP tools create tokens and return the capability URL:
   Returns `{url, path, expires_at, expires_in_seconds}`.
 - **`create_upload_link(path, ttl_seconds=None)`**: write tool (hidden in
   read-only mode). Validates the destination path (traversal + extension check)
-  at link-creation time. Returns the same shape.
+  at link-creation time, rejecting existing files under the default overwrite
+  protection before minting a capability. Returns the same shape.
 
 Both tools require `MARKDOWN_VAULT_MCP_BASE_URL` and raise `ValueError` when it
 is unset. Both tools are hidden when the transport is stdio (no HTTP server to
@@ -2581,10 +2596,14 @@ supplied. An `if_match` write proves the caller read the file first, so it
 stays allowed and keeps its regular concurrency semantics; `edit()`,
 `append()`, `delete()`, and `rename()` are untouched. The guard runs before the
 `if_match` check, so a stale etag on an existing file still reports
-`ConcurrentModificationError` rather than the protection error. Default
-`False`, which preserves unconditional overwrite; the operator default flips
-to `true` in 5.0 (#1136), which is an operator-surface breaking change and so
-waits for the major.
+`ConcurrentModificationError` rather than the protection error. The server
+default is `True` (#1136); an operator must explicitly set
+`MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to retain blind overwrites
+when upgrading from 4.x. Both direct `ProjectConfig` construction and
+`ProjectConfig.from_env()` use this default, including when the environment
+variable is empty. Direct `Vault` / `VaultSettings` construction retains its
+library default of `False`; assembly from `ProjectConfig` supplies the
+operator setting explicitly.
 
 The server's own read-modify-write maintenance of generated OKF files
 (`_okf_convention`'s `log.md` bullet, `OkfMigrationManager`'s `index.md`
@@ -3610,6 +3629,16 @@ API is called.
 Write-tagged prompts are hidden in read-only mode by the same
 ``mcp.disable(tags={"write"})`` call that hides write tools.
 
+Built-in and bundled example prompts follow the same overwrite contract as
+direct tool calls: an existing destination is read in its current state and
+its etag is passed as `write(if_match=...)`. This covers `propose-links`,
+template replacements, research-note reruns, PARA classification/merge/kickoff/
+archive/review/capture workflows, and OKF migration of existing notes. A
+template or merge source's etag cannot substitute for the destination's etag.
+New-file writes omit `if_match`. The prompt's existing confirmation rules
+still apply; confirmation does not bypass the etag check. A failed replacement
+is reported without a blind retry or a dependent delete/rename.
+
 Prompt registration is split by config-dependency (#901), both entry points
 living in ``_server_prompts.py``. The template-owned ``make_server`` body calls
 ``register_prompts(mcp)``, which registers the six config-independent built-ins
@@ -3721,7 +3750,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files | required |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Hide the write tools | `false` |
-| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied (defaults to `true` from 5.0) | `false` |
+| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied; set `false` to allow blind overwrites | `true` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | Embeddings directory | disabled |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | Comma-separated frontmatter fields to index into `document_tags` | none |

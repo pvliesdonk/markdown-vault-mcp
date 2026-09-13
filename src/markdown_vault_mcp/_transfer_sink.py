@@ -15,6 +15,8 @@ The sink is byte-oriented (pvl-core materialises the whole body, bounded by the
 per-upload cap); it never interprets the ``/transfer`` route or the token store.
 Path validation runs at link-creation time in :meth:`VaultTransferSink.validate`
 (the ``TransferValidator``), so a bad ref is rejected before a token is minted.
+The upstream error and retry contract is recorded in
+``docs/design/reference/fastmcp-transfer.md``.
 """
 
 from __future__ import annotations
@@ -28,10 +30,12 @@ from typing import TYPE_CHECKING, Any
 from fastmcp_pvl_core import (
     TransferReadResult,
     TransferResourceGoneError,
+    TransferSinkError,
     TransferUnavailableError,
 )
 
 from markdown_vault_mcp.domain import get_vault_singleton
+from markdown_vault_mcp.exceptions import DocumentExistsError
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
 from markdown_vault_mcp.utils import (
     artifact_suffix,
@@ -82,7 +86,7 @@ def _validate_destination(
     path: str,
     source_dir: Path,
     attachment_extensions: Sequence[str] | None,
-) -> None:
+) -> Path:
     """Validate an upload destination path (a note or an allowed attachment).
 
     Args:
@@ -90,17 +94,20 @@ def _validate_destination(
         source_dir: Vault root.
         attachment_extensions: Configured allowlist (``None`` = defaults).
 
+    Returns:
+        The validated absolute destination path.
+
     Raises:
         ValueError: On path traversal or a disallowed attachment extension.
     """
     if is_note(path):
-        validate_path(path, source_dir)
-        return
+        return validate_path(path, source_dir)
     resolved = resolve_inside(path, source_dir)
     exts = effective_attachment_extensions(attachment_extensions)
     ext = artifact_suffix(resolved)
     if not is_allowed_artifact_suffix(ext, exts):
         raise ValueError(f"Attachment extension not allowed: .{ext}")
+    return resolved
 
 
 def _validate_source(
@@ -172,7 +179,8 @@ class VaultTransferSink:
 
         The handle is the vault-relative path itself. Download validation is
         stat-only (existence without a read); upload validation checks the
-        destination is a note or an allowed attachment. ``kind`` selects which.
+        destination is a note or an allowed attachment, and rejects existing
+        files when overwrite protection is enabled. ``kind`` selects which.
 
         Args:
             ref: Vault-relative path of a note or attachment.
@@ -185,7 +193,8 @@ class VaultTransferSink:
         Raises:
             ValueError: On path traversal, a missing download source, a
                 disallowed attachment extension, a bundle ref with OKF disabled,
-                or a bundle scope naming a folder that does not exist.
+                a bundle scope naming a folder that does not exist, or an
+                existing upload destination when overwrite protection is enabled.
         """
         source_dir = self._config.source_dir
         exts = self._config.content.attachment_extensions
@@ -196,7 +205,14 @@ class VaultTransferSink:
                 return ref
             _validate_source(ref, source_dir, exts)
         else:
-            _validate_destination(ref, source_dir, exts)
+            destination = _validate_destination(ref, source_dir, exts)
+            if self._config.write_protect_existing and destination.is_file():
+                raise ValueError(
+                    f"{ref} exists; upload links require a new path while write "
+                    "protection is enabled. Choose a new path, or ask the operator "
+                    "to set MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false "
+                    "to allow blind overwrites."
+                )
         return ref
 
     def _validate_bundle_scope(self, scope: str) -> None:
@@ -333,12 +349,19 @@ class VaultTransferSink:
         Raises:
             TransferUnavailableError: The vault is being torn down (retryable 503).
             UnicodeDecodeError: A note upload whose body is not valid UTF-8.
+            TransferSinkError: The protected destination exists, including a
+                file created after validation or by a prior upload (409 Conflict).
         """
         vault = self._resolve_vault()
-        if is_note(handle):
-            text = decode_utf8(body)  # strips a leading BOM (#681); raises on bad UTF-8
-            await asyncio.to_thread(vault.writer.write, handle, text)
-        else:
-            await asyncio.to_thread(vault.writer.write_attachment, handle, body)
+        try:
+            if is_note(handle):
+                text = decode_utf8(body)  # strips a leading BOM (#681)
+                await asyncio.to_thread(vault.writer.write, handle, text)
+            else:
+                await asyncio.to_thread(vault.writer.write_attachment, handle, body)
+        except DocumentExistsError as exc:
+            raise TransferSinkError(
+                409, f"upload destination exists: {handle}"
+            ) from exc
         logger.info("transfer_upload_committed path=%s bytes=%d", handle, len(body))
         return {"path": handle, "bytes": len(body)}

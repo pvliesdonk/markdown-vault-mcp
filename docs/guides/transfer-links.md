@@ -75,6 +75,12 @@ The tool returns:
 
 The destination path in the vault is fixed at link-creation time; the uploader cannot change it.
 
+By default, the destination must be a new file. Link creation rejects existing
+notes and attachments because upload links have no `if_match` option. Choose
+a new path, or have the operator set
+`MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites.
+With that opt-out, uploading replaces an existing file.
+
 ### Step 2: upload the file
 
 Send the raw file bytes as the request body using `POST`:
@@ -89,6 +95,13 @@ curl -X POST \
 
 After a successful upload the file is available in the vault, and the link is grace-settled in the same way as a download. The FTS index is updated and the git-commit callback fires (when git integration is configured).
 
+The write guard checks again when the bytes arrive. If another writer creates
+the destination after link creation, the upload returns HTTP 409 Conflict and
+preserves that file. With protection enabled, retrying after a successful upload
+also returns 409 because the destination now exists, even while the token remains
+valid. A conflict releases the token reservation without extending its expiry;
+repeating the request keeps returning 409 while the file exists.
+
 !!! note "Raw body, not multipart"
     Send the file bytes directly as the request body. Avoid `multipart/form-data`; the endpoint reads raw bytes. curl's `--data-binary` flag sends raw bytes and is correct; `--form` sends multipart and will be rejected.
 
@@ -100,7 +113,7 @@ The `/transfer/{token}` route is mounted outside the server's auth middleware. T
 
 ### One-time use (grace-settled)
 
-A valid token grants exactly one operation on one vault path. On success the link is **grace-settled** rather than burned outright: its remaining lifetime shrinks to `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S` (default 60 seconds). A transfer that was served but stalled part-way can still reclaim the link instead of being stranded by a spent one.
+A valid token grants exactly one operation on one vault path. On success the link is **grace-settled** rather than burned outright: its remaining lifetime shrinks to `MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S` (default 60 seconds). A transfer that was served but stalled part-way can still reclaim the link. Uploads remain subject to overwrite protection, which refuses a retry if the first upload already created the file.
 
 A transient failure (network drop, size limit exceeded, server error) releases the reservation with the full remaining TTL, so the transfer can be retried until expiry. If a handler crashes mid-transfer, its in-flight reservation frees itself after `MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S` (default 60 seconds) and the token becomes claimable again.
 

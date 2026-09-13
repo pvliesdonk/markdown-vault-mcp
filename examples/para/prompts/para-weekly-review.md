@@ -49,7 +49,7 @@ Collect:
 
 ## Step 6: Write the review note
 
-Call `write(path=<review-path>, content=<assembled markdown body>, frontmatter={"title": "Weekly Review <today's ISO date, e.g. 2026-04-19>", "type": "resource", "tags": ["review"], "created": "<today's ISO date, e.g. 2026-04-19>"})`.
+For a new review path, call `write(path=<review-path>, content=<assembled markdown body>, frontmatter={"title": "Weekly Review <today's ISO date, e.g. 2026-04-19>", "type": "resource", "tags": ["review"], "created": "<today's ISO date, e.g. 2026-04-19>"})`.
 
 The body should have these sections, populated from Steps 2-5:
 
@@ -61,15 +61,15 @@ The body should have these sections, populated from Steps 2-5:
 
 Parent directories are created automatically by `write`.
 
-If the target path already exists (running the review twice in the same week), ask the user whether to overwrite or pick a different path before calling `write`.
+If the target path already exists (running the review twice in the same week), ask the user whether to overwrite or pick a different path before calling `write`. For an approved overwrite, read the current review first and pass its `etag` as `if_match` to `write`. If the write conflicts, report it and leave the existing review intact; do not retry without `if_match`.
 
 ## Step 7: Offer next actions
 
 Ask the user which archive candidates they want to move. For each confirmed candidate, perform:
 
-1. `read(path=<project>)` to get the current body and frontmatter.
-2. `write(path=<project>, content=<body>, frontmatter=<frontmatter with status='archived' and archived_at=<today>>)` — this is cleaner than a targeted `edit` for multi-field frontmatter updates.
-3. `rename(old_path, '4-Archive/<basename>', update_links=True)` to move it to the archive folder.
+1. `read(path=<project>)` to get the current body, frontmatter, and etag.
+2. `write(path=<project>, content=<body>, frontmatter=<frontmatter with status='archived' and archived_at=<today>>, if_match=<etag from that read>)` — this is cleaner than a targeted `edit` for multi-field frontmatter updates.
+3. Only after the write succeeds, `rename(old_path, '4-Archive/<basename>', update_links=True)` to move it to the archive folder. If the write conflicts, skip the rename and report the conflict; do not retry with a blind overwrite.
 
 ## Constraints
 

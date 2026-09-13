@@ -24,6 +24,13 @@ Generic markdown vault MCP with hybrid search
 - **Git integration**: optional auto-commit (one commit per write tool call) with deferred push, plus a pull loop or a GitHub or GitLab push webhook for external changes; history and diff tools read the log back. An overwriting `write` returns the revision holding the content it replaced, and `read(path, revision=sha)` reads a note back at that revision, so an overwrite is recoverable from the client that made it. When the clone stops reaching its remote, every write result carries a `remote` warning saying the content is committed locally only, and the log marks the transition rather than repeating each cycle. See the [Git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/git-integration/).
 - **OKF-aware**: recognizes [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundles and annotates results with each note's type, lifecycle status, staleness, and trust tier, plus conformance audit and migration tooling. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/okf/).
 - **MCP surface**: 34 LLM-visible tools, 9 resources, and 8 prompt templates, plus browser-based MCP Apps views and one-time transfer links. Full references: [Tools](https://pvliesdonk.github.io/markdown-vault-mcp/latest/tools/), [Resources](https://pvliesdonk.github.io/markdown-vault-mcp/latest/resources/), [Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/latest/prompts/), [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/mcp-apps/), [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/transfer-links/), [CLI](https://pvliesdonk.github.io/markdown-vault-mcp/latest/cli/).
+
+Overwrite protection is enabled by default. Before replacing an existing file
+with `write` or `fetch`, read that destination and pass its etag as `if_match`.
+New files need no etag. Transfer upload links require a
+new destination because they have no `if_match` option. Set
+`MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites;
+see the [transfer guide](docs/guides/transfer-links.md#upload-walkthrough).
 <!-- DOMAIN-END -->
 
 ## What you can do with it
@@ -259,7 +266,7 @@ The variables this project features as its entry points (domain variables use th
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | `/data/vault` | No | Path to the markdown vault directory. Required; the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+. |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | `false` | No | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport. |
-| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `false` | No | Set to true to refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. |
+| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `true` | No | Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites. |
 | `MARKDOWN_VAULT_MCP_DEFAULT_SEARCH_MODE` | `auto` | No | Mode used when a search call omits 'mode': auto, keyword, semantic, or hybrid. The default 'auto' picks hybrid when embeddings are configured and keyword when they are not. Pin 'keyword' to keep unqualified searches off the embedding provider (each hybrid or semantic search embeds the query, which costs an API call on a metered provider). A configured semantic/hybrid default also degrades to keyword without embeddings, so no setting can make a vault unsearchable; an explicit mode= argument is never downgraded. |
 | `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | (none) | No | Embedding provider: openai, voyage, ollama, or fastembed. Unset auto-detects from the environment (never voyage). Any OpenAI-compatible endpoint works with openai plus OPENAI_BASE_URL; see the embeddings guide. |
 | `MARKDOWN_VAULT_MCP_GIT_REPO_URL` | (none) | No | HTTPS remote URL for managed git mode: the server clones into an empty SOURCE_DIR on startup (or validates an existing origin) and enables the pull loop, auto-commit, and deferred push. |

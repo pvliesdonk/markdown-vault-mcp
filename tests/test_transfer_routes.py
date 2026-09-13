@@ -11,9 +11,14 @@ adopted as-is with no downstream mutation. The sink logic itself is covered by
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
+import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from fastmcp_pvl_core import ServerConfig
+from httpx import ASGITransport, AsyncClient
 
 from markdown_vault_mcp.config import ProjectConfig
 from tests.server_factory import make_server
@@ -101,3 +106,61 @@ async def test_create_upload_link_hidden_in_read_only(tmp_path: Path) -> None:
     )
     assert not await _has_tool(server, "create_upload_link")
     assert await _has_tool(server, "create_download_link")
+
+
+@pytest.mark.parametrize("path", ["note.md", "pic.png"])
+@pytest.mark.parametrize("protected", [True, False])
+async def test_create_upload_link_checks_existing_destination(
+    tmp_path: Path, path: str, protected: bool
+) -> None:
+    """The live tool refuses existing targets before minting a capability."""
+    (tmp_path / path).write_bytes(b"original")
+    config = replace(
+        _config(tmp_path, base_url="https://mcp.example.com"),
+        write_protect_existing=protected,
+    )
+    server = make_server(transport="http", config=config)
+    async with Client(server) as client:
+        if protected:
+            with pytest.raises(ToolError, match="upload links require a new path"):
+                await client.call_tool("create_upload_link", {"ref": path})
+        else:
+            result = await client.call_tool("create_upload_link", {"ref": path})
+            assert result.data["url"].startswith("https://mcp.example.com/transfer/")
+    assert (tmp_path / path).read_bytes() == b"original"
+
+
+@pytest.mark.parametrize("path", ["new.md", "new.png"])
+@pytest.mark.parametrize("replay", [False, True])
+async def test_upload_conflict_returns_409(
+    tmp_path: Path, path: str, replay: bool
+) -> None:
+    """Late creates and upload retries return a conflict without spending the link."""
+    server = make_server(
+        transport="http",
+        config=_config(tmp_path, base_url="https://mcp.example.com"),
+    )
+    async with (
+        Client(server) as client,
+        AsyncClient(transport=ASGITransport(app=server.http_app())) as http,
+    ):
+        result = await client.call_tool("create_upload_link", {"ref": path})
+        url = result.data["url"]
+        if replay:
+            response = await http.post(url, content=b"original")
+            assert response.status_code == 200
+        else:
+            (tmp_path / path).write_bytes(b"original")
+
+        response = await http.post(url, content=b"replacement")
+        assert response.status_code == 409
+        assert response.content == b""
+        assert (tmp_path / path).read_bytes() == b"original"
+
+        # The route releases the reservation on conflict. Once the destination
+        # is free again, the same live token can complete the upload.
+        (tmp_path / path).unlink()
+        response = await http.put(url, content=b"replacement")
+        assert response.status_code == 200
+        assert response.json() == {"path": path, "bytes": len(b"replacement")}
+        assert (tmp_path / path).read_bytes() == b"replacement"

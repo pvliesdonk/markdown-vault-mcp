@@ -181,10 +181,11 @@ partial markdown reads (see the tip above).
 On a git-backed vault, `revision` turns `read` into the way back from an overwrite. A `write` that replaces an existing note returns `previous_revision`; that SHA, passed to `read`, returns exactly what the write replaced:
 
 ```text
-write(path, content=...)              → previous_revision: 9f2c1ab
-read(path, revision="9f2c1ab")        → the replaced content
-read(path)                            → the current etag
-write(path, content=<what you read>, if_match=<that etag>)
+read(path)                                         → the pre-write etag
+write(path, content=..., if_match=<pre-write etag>)  → previous_revision: 9f2c1ab
+read(path, revision="9f2c1ab")                       → the replaced content
+read(path)                                         → the current etag
+write(path, content=<replaced content>, if_match=<current etag>)
 ```
 
 The content comes back as the whole raw file, frontmatter included, and `write` stores it verbatim when no `frontmatter` argument is given, so the last step restores the note byte for byte.
@@ -404,6 +405,7 @@ Create or overwrite a document or attachment.
 | `content` | string | Full markdown body for `.md` files (excluding frontmatter). Ignored for attachments |
 | `frontmatter` | object | Optional YAML frontmatter dict for `.md` files. Ignored for attachments |
 | `content_base64` | string | Base64-encoded binary content for attachment files. Required when path is not `.md` |
+| `if_match` | string | Etag from a current `read` of the destination. Required by default to replace an existing file; omit for new files |
 
 **Context cost:** the `content` parameter (text) is bounded only by the
 LLM's own output budget. The `content_base64` parameter (binary) inflates
@@ -423,10 +425,11 @@ if it does not.
     `write` replaces the entire file. Use `edit` for targeted changes to existing documents.
 
 !!! note "Overwrite protection"
-    With `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`, a `write` to a path
+    By default, a `write` to a path
     that already exists fails unless the call carries a matching `if_match`
-    etag. The flag defaults to `false` in 4.x and to `true` from 5.0. See
-    [Write protection](../configuration.md#write-protection).
+    etag. Read the document first and pass its `etag` as `if_match` to replace
+    it. Operators can set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false`
+    to allow blind overwrites. See [Write safety](../configuration.md#write-safety).
 
 ### `edit`
 
@@ -610,7 +613,7 @@ Download a file from a URL and save it to the vault as a note or attachment. Des
 | `url` | string | required | Source URL to download. Only `http`/`https` schemes allowed; the host is resolved and blocked unless every address is publicly routable (private, loopback, link-local, CGNAT/shared, and reserved ranges are all refused); the validated IP is pinned for the connection; ambient `HTTP(S)_PROXY`/`.netrc` settings are ignored. Redirects are followed, and each hop repeats every check above (SSRF protection) |
 | `path` | string | required | Destination path in vault. Extension determines handling: `.md` for notes, anything else for attachments |
 | `frontmatter` | object | `null` | Optional YAML frontmatter dict for `.md` files. Ignored for attachments |
-| `if_match` | string | `null` | Optional etag from a previous `read` call for optimistic concurrency |
+| `if_match` | string | `null` | Etag from a current `read` of the destination. Required by default to replace an existing file; omit for new files |
 | `timeout_s` | float | `30.0` | Download timeout in seconds |
 
 **Context cost:** zero. The file is downloaded server-side. Reference
@@ -622,10 +625,9 @@ back into context.
 For `.md` destinations, the response may also include a `conventions` list; see [`write`](#write).
 
 !!! note "Overwrite protection"
-    `fetch` saves through the same guarded path as `write`, so with
-    `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` a fetch to a path that
+    `fetch` saves through the same guarded path as `write`, so by default a fetch to a path that
     already exists fails unless the call carries a matching `if_match` etag.
-    See [Write protection](../configuration.md#write-protection).
+    See [Write safety](../configuration.md#write-safety).
 
 The download itself runs through `fastmcp-pvl-core`'s hardened `fetch_url`
 primitive, so the SSRF protections above are shared, audited code rather
@@ -1176,7 +1178,7 @@ Mint a one-time capability URL to upload bytes to a fixed, pre-validated destina
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `ref` | string | required | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. May name a new or existing path; an existing file is overwritten on upload |
+| `ref` | string | required | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. Must name a new file under the default overwrite protection |
 | `ttl_s` | number | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default |
 
 **Returns:**
@@ -1201,11 +1203,23 @@ curl -X POST --data-binary @local-diagram.pdf \
      "https://mcp.example.com/transfer/<token>"
 ```
 
+!!! note "Overwrite protection"
+    By default, link creation rejects an existing destination. Upload links
+    have no `if_match` option. Choose a new path, or have the operator set
+    `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites.
+    The write guard returns HTTP 409 Conflict if another writer creates the file
+    after link creation. A retry after a successful upload also returns 409
+    while protection is enabled. The existing file is preserved, and the token
+    reservation is released without extending its expiry.
+
 !!! note "Raw body, not multipart"
     The upload endpoint expects the raw file bytes as the request body. Do not use `multipart/form-data`; send the content directly (curl's `--data-binary` flag does this correctly).
 
 !!! note "One-time"
-    The token is consumed on the first successful upload. A transient failure (network error, size limit exceeded) does not consume the token; retry is permitted until the TTL expires.
+    A successful upload shortens the token's remaining lifetime to the configured
+    grace window (default 60 seconds). Upload retries still obey overwrite
+    protection. A failure releases the reservation; retry is permitted until
+    expiry, but an existing destination keeps returning 409 while protected.
 
 ---
 

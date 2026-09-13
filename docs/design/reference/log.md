@@ -2,6 +2,7 @@
 
 ## 2026-09-13
 
+- Added [fastmcp-pvl-core transfer errors and retries](fastmcp-transfer.md) for PR #1477, checked against installed 7.1.0 and matching pinned upstream source. Records sink-selected status codes, empty error responses, release-on-failure limits, and the grace-window replay that invokes the sink again. Refute pass checked handler branches and token transitions, including backend release failures and expiry. Next review: 2027-03-13.
 - Added [FastMCP 4 protocol and server behaviour](fastmcp-4.md) for #1271, checked against FastMCP 4.0.3 and fastmcp-pvl-core 7.1.0 at pinned commits. Covered SDK snake_case names, the modern guard and legacy elicitation paths, default templated-resource screening, per-server task registration, public app-tool hash metadata, and the still-root-mounted OAuth authorization-server metadata route. Refute pass re-read each claim against the implementation and added project test pins. Next review: 2027-03-13.
 
 ## 2026-09-12

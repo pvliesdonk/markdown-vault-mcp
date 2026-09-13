@@ -268,11 +268,14 @@ class TestDisableAppsUi:
 class TestWriteProtectExisting:
     """Cover the MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING env-var path."""
 
-    def test_default_is_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_default_is_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING", raising=False)
         config = ProjectConfig.from_env()
-        assert config.write_protect_existing is False
+        assert config.write_protect_existing is True
+
+    def test_direct_config_default_is_true(self) -> None:
+        assert ProjectConfig(source_dir=Path("/tmp/vault")).write_protect_existing
 
     def test_true_variants(self, monkeypatch: pytest.MonkeyPatch) -> None:
         for val in ("true", "1", "yes", "on", "TRUE"):
@@ -282,11 +285,15 @@ class TestWriteProtectExisting:
             assert config.write_protect_existing is True, f"Expected True for {val!r}"
 
     def test_false_variants(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for val in ("false", "0", "no", ""):
+        for val in ("false", "0", "no", "off"):
             monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
             monkeypatch.setenv("MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING", val)
             config = ProjectConfig.from_env()
             assert config.write_protect_existing is False, f"Expected False for {val!r}"
+
+    def test_empty_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING", "")
+        assert ProjectConfig.from_env().write_protect_existing is True
 
     def test_reaches_vault_kwargs(self) -> None:
         kwargs = to_vault_kwargs(

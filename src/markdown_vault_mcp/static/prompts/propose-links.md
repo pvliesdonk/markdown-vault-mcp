@@ -80,7 +80,7 @@ Ask the user: "Apply all N? Apply specific ones? Skip all?"
 For each approved edit:
 
 - Prefer `edit(path=<A>, old_text=<current>, new_text=<current with link added>)` for small in-place insertions (inline citations, bullet-list appends).
-- Use `write(path=<A>, content=<full body>, frontmatter=<current frontmatter>)` when the change restructures the note (new `## Related` section at the end of a long note, or any change easier to express as a full-body rewrite). Always `read` the current state first to preserve unmodified content.
+- Use `write(path=<A>, content=<full body>, frontmatter=<current frontmatter>, if_match=<etag from the read>)` when the change restructures the note (new `## Related` section at the end of a long note, or any change easier to express as a full-body rewrite). Always `read` the current state first to preserve unmodified content and pass that read's etag to `write`.
 - If a write fails (for example, `ConcurrentModificationError`), skip that edit, record the reason, and continue with the rest.
 
 ## Step 8: Summary
