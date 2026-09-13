@@ -23,8 +23,10 @@ and downstream Python consumers; MCP is one consumer of the library
 [OKF north star](okf-north-star.md) adds faithful knowledge exchange and explicit
 curation to that foundation. It does not replace the generic vault use cases.
 
-`derived` — Prefer correctness in everyday reading and writing, then bundle
-foundations. Correctness work establishes whether the storage and link behavior
+`stated` — The owner confirmed correctness first, then OKF foundations, with
+Git reliability supporting both (13 September 2026, work on [#1462][1462]).
+
+`derived` — Correctness work establishes whether the storage and link behavior
 that later curation relies on can be trusted. Git reliability supports both;
 an alternate backend is one possible improvement, not a prerequisite for OKF.
 These are preferences for selecting work, not a total order over all issues.
@@ -155,7 +157,8 @@ that investigation its own research issue and an explicit appetite.
 ### 13 September 2026 — replace inherited buckets with deliberate cuts
 
 `stated` — The owner's instruction on [#1462][1462] removes the old milestones
-as constraints and preserves issues as things still wanted.
+as constraints and preserves issues as things still wanted. The owner confirmed
+the proposed correctness-first ordering during the reconciliation.
 
 `derived` — Reassessed release membership from that premise. Archived the legacy
 `v5`, `git`, `v4.3`, `v4.4` and `okf-roadmap` milestones, recording their former
