@@ -283,7 +283,8 @@ def register(mcp: FastMCP) -> None:
             if_match: Optional etag obtained from a previous 'read' call.
                 When provided, the write only proceeds if the file has not
                 been modified since that read (optimistic concurrency).
-                Omit to write unconditionally.
+                Required to replace an existing file under the default
+                overwrite protection. Omit when creating a new file.
 
         Returns:
             Dict with path (str) and created (bool — true if new file,
@@ -771,7 +772,9 @@ def register(mcp: FastMCP) -> None:
                 e.g. {"title": "Report", "source": "http://..."}. Ignored
                 for attachments.
             if_match: Optional etag from a previous 'read' call for
-                optimistic concurrency. Omit to write unconditionally.
+                optimistic concurrency. Required to replace an existing
+                file under the default overwrite protection. Omit when
+                creating a new file.
             timeout_s: Download timeout in seconds (default 30). Increase
                 for large files on slow connections.
 
