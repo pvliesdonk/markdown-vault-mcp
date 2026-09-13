@@ -6,7 +6,9 @@ name: Bootstrap repo
 #      `bug`/`feature`/`decay`/`question`/`epic` labels the issue forms
 #      reference (GitHub silently drops labels that don't exist) and the
 #      `ships-atomically` label the epic workflow uses as the fallback
-#      release-cut signal when no milestone names the target release.
+#      release-cut signal when no package milestone exists yet, and the
+#      `research`/`refinement`/`breaking` labels the roadmapping skill and
+#      the research form apply.
 #   2. Repository settings that make Renovate auto-merge SAFE — "Allow
 #      auto-merge" plus the checked-in rulesets (`.github/rulesets/*.json`)
 #      requiring PRs and the `CI Success` check on `main` and `release/*`.
@@ -73,7 +75,19 @@ jobs:
             --force
           gh label create ships-atomically \
             --color b60205 \
-            --description "No release may be cut while this epic is mid-flight (fallback for a release milestone)" \
+            --description "No release may be cut while this epic is mid-flight (fallback for a package milestone)" \
+            --force
+          gh label create research \
+            --color 0e8a16 \
+            --description "Research spike: answers a question, carries an appetite" \
+            --force
+          gh label create refinement \
+            --color c5def5 \
+            --description "Refine an epic into feature issues" \
+            --force
+          gh label create breaking \
+            --color e11d21 \
+            --description "Breaks an operator or library surface; lands in a major" \
             --force
 
   settings:

@@ -38,11 +38,22 @@ procedure in agent-invocable form).
    update` (the common base), `=======`, and `>>>>>>> after updating` (the
    template side). Resolving a hunk means keeping one side and deleting
    all four marker lines and the base block between `|||||||` and
-   `=======`. Outside the `DOMAIN-*`, `CONFIG-*` and `PROJECT-*` sentinel
-   blocks the template side is correct by policy: a local edit to a
-   template-owned region is drift, and the fix is to move that content
-   into a sentinel block or upstream it. Inside a sentinel block the local
-   side is yours and stays.
+   `=======`. Which side wins turns on whether the hunk is inside a sentinel
+   block, and on what kind of block it is:
+
+   - **Inside a sentinel block that invites your content, the local side is
+     yours and stays.** These are the `DOMAIN-*`, `CONFIG-*`, `PROJECT-*` and
+     `DOCKERFILE-*` families. Some of them wrap template-shipped content you
+     extend rather than replace (`PROJECT-EXTRAS`, `DOCKERFILE-UV-EXTRAS`), so
+     a template change inside one is possible: read both sides and keep your
+     additions.
+   - **Inside a `GENERATED-*` region the template side wins**, and you do not
+     resolve it by hand. Those regions are written by
+     `scripts/gen_config_surface.py`, which re-runs at the end of the update
+     and rewrites them from your own config.
+   - **Outside every sentinel block the template side is correct by policy**:
+     a local edit to a template-owned region is drift, and the fix is to move
+     that content into a sentinel block or upstream it.
 3. **Check the seeded-once files.** Copier's `_skip_if_exists` list names
    files that are written on the first `copier copy` and never touched
    again by `copier update`. They are absent from the diff even when the

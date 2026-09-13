@@ -175,6 +175,20 @@ jobs:
             echo "is_prerelease=${is_prerelease}"
           } >> "$GITHUB_OUTPUT"
 
+      # Advisory bookkeeping for the cut, independent of artifact publication.
+      # Stable trunk only: branch releases and rcs cannot consume trunk packages.
+      # The versioned title makes retries resume this cut, never the next one.
+      - name: Close the current package milestone
+        if: >-
+          steps.release.outputs.is_prerelease != 'true' &&
+          github.event.pull_request.base.ref == github.event.repository.default_branch
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: python3 scripts/package_milestones.py close --repo "$REPO" --version "$VERSION"
+
       # First-pass ordering gates: a release from an old series must not
       # repoint rolling channels at older content — Docker `latest`/`vX`/
       # `vX.Y`, the GitHub "latest release" pointer, the marketplace entry,

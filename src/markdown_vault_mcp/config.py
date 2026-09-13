@@ -34,7 +34,6 @@ from markdown_vault_mcp.config_sections._assembly import (
 )
 from markdown_vault_mcp.config_sections._assembly import (
     normalize_templates_folder,
-    read_server_name,
     require_source_dir,
     resolve_attachment_extensions,
     resolve_conventions_file,
@@ -62,11 +61,40 @@ from markdown_vault_mcp.config_sections._helpers import (
 _ENV_PREFIX = "MARKDOWN_VAULT_MCP"
 
 
+def _default_server_name() -> str:
+    """``MARKDOWN_VAULT_MCP_SERVER_NAME``, falling back to the project name.
+
+    A module-level factory rather than a read inside `from_env`, for two
+    reasons that both bite if it moves:
+
+    - The generator AST-scans `ProjectConfig.from_env` for literal
+      ``env(prefix, "SUFFIX")`` calls and turns each into a *domain* var.
+      ``MARKDOWN_VAULT_MCP_SERVER_NAME`` is already declared with template
+      provenance in the template's `config-presentation.yml`, so a read in
+      `from_env` would be discovered twice and fail generation with the
+      duplicate-name error. `docs/design/config-migration.md` documents this
+      case and prescribes exactly this workaround; the scan only walks
+      `from_env`, so a module-level helper stays invisible to it.
+    - As a ``default_factory`` the env read happens per construction, so
+      ``ProjectConfig()`` still honours the environment while
+      ``ProjectConfig(server_name=...)`` wins outright — which is the whole
+      point of the field.
+    """
+    return env(_ENV_PREFIX, "SERVER_NAME", "markdown-vault-mcp")
+
+
 @dataclass(frozen=True)
 class ProjectConfig:
     """Domain config for Markdown Vault MCP.  Compose — don't inherit."""
 
     server: ServerConfig = field(default_factory=ServerConfig)
+
+    # Template-owned, deliberately OUTSIDE the CONFIG-FIELDS sentinels: the
+    # server's own name is part of the scaffold's contract with
+    # `server.py`, which uses it for both `FastMCP(name=...)` and the shaped
+    # instruction identity so the two cannot disagree.  Do not redeclare it
+    # inside the block below.
+    server_name: str = field(default_factory=_default_server_name)
 
     # CONFIG-FIELDS-START — domain fields; kept across copier update
     #
@@ -110,13 +138,6 @@ class ProjectConfig:
             "tags": ("vault", "readme"),
         },
     )
-    # server_name is declared by the template-owned
-    # config-presentation.yml (template provenance), so it carries no
-    # metadata here and is read outside from_env (read_server_identity)
-    # to keep the AST scan from double-declaring it. INSTRUCTIONS and
-    # INSTRUCTIONS_EXTRA are read by pvl-core's finalize_instructions()
-    # directly and never reach this config.
-    server_name: str = "markdown-vault-mcp"
     disable_apps_ui: bool = field(
         default=False,
         metadata={
@@ -1086,7 +1107,6 @@ class ProjectConfig:
             write_protect_existing=to_bool(
                 env(_ENV_PREFIX, "WRITE_PROTECT_EXISTING"), default=False
             ),
-            server_name=read_server_name(_ENV_PREFIX),
             disable_apps_ui=to_bool(env(_ENV_PREFIX, "DISABLE_APPS_UI"), default=False),
             index_path=opt_path(env(_ENV_PREFIX, "INDEX_PATH")),
             state_path=opt_path(env(_ENV_PREFIX, "STATE_PATH")),

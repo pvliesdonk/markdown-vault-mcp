@@ -108,7 +108,9 @@ class TestSummarizeDualMode:
         server = summarize_server(
             _FakeSummarizer(text="LATE", delay=0.5), soft_deadline=0.15
         )
-        async with Client(server) as client:
+        # Legacy mode cannot negotiate FastMCP 4 native tasks, so the server's
+        # soft-deadline promotion path is the execution contract under test.
+        async with Client(server, mode="legacy") as client:
             res = await client.call_tool("summarize", {"paths": ["simple.md"]})
             assert res.data["status"] == "working"
             assert res.data["poll_with"] == "get_job_result"
@@ -126,7 +128,7 @@ class TestSummarizeDualMode:
             _FakeSummarizer(delay=0.4, error="backend exploded"),
             soft_deadline=0.15,
         )
-        async with Client(server) as client:
+        async with Client(server, mode="legacy") as client:
             res = await client.call_tool("summarize", {"paths": ["simple.md"]})
             assert res.data["status"] == "working"
             final = await _poll_job(client, res.data["job_id"])
@@ -157,8 +159,8 @@ class TestSummarizeDualMode:
         ann = tools["get_job_result"].annotations
         assert ann is not None
         assert ann.title == "Get Job Result"
-        assert ann.readOnlyHint is True
-        assert ann.destructiveHint is False
+        assert ann.read_only_hint is True
+        assert ann.destructive_hint is False
 
     async def test_summarize_hidden_but_job_tools_stay_without_backend(
         self, vault_path: Path, monkeypatch: pytest.MonkeyPatch

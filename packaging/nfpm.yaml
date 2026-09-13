@@ -14,10 +14,22 @@ version_schema: semver
 section: utils
 priority: optional
 maintainer: "Peter van Liesdonk <pvliesdonk@users.noreply.github.com>"
+# DOMAIN-NFPM-DESCRIPTION-START — replace the prose below; kept across copier
+# update.  `apt show` and `dnf info` impose no length limit, so a paragraph
+# belongs here: it starts as `domain_description`, which is capped at 100
+# characters only because the MCP registry rejects longer in server.json
+# (#581).  Keep the two-space indent — the block scalar ends at the first
+# unindented line, which is also why these markers sit outside it rather than
+# in it (a `#` inside a block scalar is literal text, not a comment).
 description: |
   Generic markdown vault MCP with hybrid search.
+# DOMAIN-NFPM-DESCRIPTION-END
 homepage: "https://pvliesdonk.github.io/markdown-vault-mcp/"
-license: "MIT"  # project-owned — keep across copier updates
+# PROJECT-LICENSE-START — the license you picked; replace the value below and
+# it is kept across copier update.  nfpm wants a short free-form name, which is
+# not necessarily the SPDX id used in pyproject.toml.  See LICENSE.
+license: "MIT"
+# PROJECT-LICENSE-END
 
 # --- Package contents ---
 

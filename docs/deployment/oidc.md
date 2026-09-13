@@ -66,46 +66,6 @@ This section configures oidc-proxy mode. Remote mode needs no client registratio
 !!! note
     Authelia does not support Dynamic Client Registration (RFC 7591). Clients must be registered manually in `configuration.yml`.
 
-!!! warning "Opaque vs JWT access tokens"
-    Authelia issues opaque (non-JWT) access tokens by default. **Remote mode requires JWT access tokens**: add `access_token_signed_response_alg: 'RS256'` to the Authelia client config. OIDCProxy mode works with opaque tokens (it verifies the `id_token` instead).
-
-### Remote mode (recommended)
-
-#### 1. Register the client in Authelia
-
-```yaml
-identity_providers:
-  oidc:
-    clients:
-      - client_id: markdown-vault-mcp
-        client_secret: '$pbkdf2-sha512$...'   # authelia crypto hash generate
-        redirect_uris:
-          - https://mcp.example.com/callback
-        grant_types: [authorization_code]
-        response_types: [code]
-        pkce_challenge_method: S256
-        scopes: [openid, profile, email]
-        access_token_signed_response_alg: 'RS256'
-        token_endpoint_auth_method: 'client_secret_post'
-```
-
-#### 2. Set environment variables
-
-```bash
-MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
-MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
-```
-
-Note: `CLIENT_ID` and `CLIENT_SECRET` are configured in Authelia only. They are not needed as MCP server env vars in remote mode.
-
-#### 3. Start with HTTP transport
-
-```bash
-markdown-vault-mcp serve --transport http --port 8000
-```
-
-### OIDCProxy mode (fallback)
-
 !!! note "Opaque access tokens"
     Authelia issues opaque (non-JWT) access tokens. This is handled automatically: the server verifies the `id_token` (always a standard JWT) instead. No extra configuration is needed.
 
@@ -115,7 +75,7 @@ markdown-vault-mcp serve --transport http --port 8000
 identity_providers:
   oidc:
     clients:
-      - client_id: markdown-vault-mcp
+      - client_id: my-mcp-server
         client_secret: '$pbkdf2-sha512$...'   # authelia crypto hash generate
         redirect_uris:
           - https://mcp.example.com/auth/callback
@@ -130,14 +90,10 @@ identity_providers:
 ```bash
 MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
 MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
-MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=markdown-vault-mcp
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=my-mcp-server
 MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET=your-client-secret
 MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=$(openssl rand -hex 32)
 ```
-
-For subpath deployments (such as public URL `https://mcp.example.com/vault/mcp`), see [Subpath Deployments](#subpath-deployments) below.
-
-See also `examples/obsidian-oidc.env`.
 
 ### 3. Start with HTTP transport
 
@@ -177,21 +133,31 @@ Client → markdown-vault-mcp (with OIDCProxy) → OIDC Provider (Authelia/Keycl
 
 ## Docker Compose with OIDC
 
+This is the shipped `compose.yml` with a reverse proxy added. The service joins an external `traefik` network and carries router labels. It publishes no host port, because the proxy reaches it over that network instead. See [Docker](docker.md) for the base file and the same overlay without OIDC.
+
 ```yaml
 services:
   markdown-vault-mcp:
     image: ghcr.io/pvliesdonk/markdown-vault-mcp:latest
-    env_file: .env
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     volumes:
-      - ${MARKDOWN_VAULT_MCP_SOURCE_DIR:?Set MARKDOWN_VAULT_MCP_SOURCE_DIR}:/data/vault
+      - service-data:/data/service
       - state-data:/data/state
     environment:
-      MARKDOWN_VAULT_MCP_SOURCE_DIR: /data/vault
-      MARKDOWN_VAULT_MCP_INDEX_PATH: /data/state/index.db
-      MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/state/embeddings/embeddings
-      MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: /data/state/fastembed
       FASTMCP_HOME: /data/state/fastmcp
-    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).close()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)"
@@ -201,6 +167,7 @@ services:
       - traefik
 
 volumes:
+  service-data:
   state-data:
 
 networks:
@@ -213,12 +180,12 @@ With the corresponding `.env`:
 ```bash
 MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
 MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
-MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=markdown-vault-mcp
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=my-mcp-server
 MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET=your-client-secret
 MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=your-stable-hex-key
 ```
 
-For a prefixed deployment (such as `https://mcp.example.com/vault/mcp`), see [Subpath Deployments](#subpath-deployments) below.
+For a prefixed deployment (such as `https://mcp.example.com/myservice/mcp`), see [Subpath Deployments](#subpath-deployments) below.
 
 ## Subpath Deployments
 
@@ -226,27 +193,27 @@ When OIDC is enabled behind a reverse-proxy subpath, `BASE_URL` and `HTTP_PATH` 
 
 | Variable | Purpose | Example |
 |----------|---------|---------|
-| `BASE_URL` | Public URL of the server, **including the subpath prefix** | `https://mcp.example.com/vault` |
+| `BASE_URL` | Public URL of the server, **including the subpath prefix** | `https://mcp.example.com/myservice` |
 | `HTTP_PATH` | Internal MCP endpoint mount point (**no subpath prefix**) | `/mcp` |
 
 The reverse proxy strips the subpath prefix before forwarding to the application. FastMCP concatenates `BASE_URL + HTTP_PATH` to build the public resource URL, so including the prefix in both produces broken URLs with duplicated path segments.
 
 !!! danger "Do not duplicate the subpath"
-    Setting `BASE_URL=https://mcp.example.com/vault` and `HTTP_PATH=/vault/mcp` produces a duplicated resource URL: `https://mcp.example.com/vault/vault/mcp`. The subpath belongs in `BASE_URL` only.
+    Setting `BASE_URL=https://mcp.example.com/myservice` together with `HTTP_PATH=/myservice/mcp` produces a duplicated resource URL: `https://mcp.example.com/myservice/myservice/mcp`. The subpath belongs in `BASE_URL` only.
 
 ### Configuration
 
 Environment variables:
 
 ```bash
-MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com/vault
+MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com/myservice
 MARKDOWN_VAULT_MCP_HTTP_PATH=/mcp
 ```
 
 Register this callback URI in your OIDC provider:
 
 ```text
-https://mcp.example.com/vault/auth/callback
+https://mcp.example.com/myservice/auth/callback
 ```
 
 ### What the server serves, and where
@@ -294,12 +261,12 @@ Two routers rather than one is deliberate. A single router carrying the strip ru
 
 The failure that follows from point 2 above is worth spelling out, because its symptom points somewhere else entirely.
 
-The discovery URL sits outside the prefix, so on a hostname shared with other services, prefix-based routing cannot claim it. Without a router that matches it explicitly, the request falls through to whatever else holds the host: an OAuth gateway, an SSO portal, or another MCP server at the root. That service answers with **its** metadata, the client builds an authorization URL from another service's endpoints, and the visible symptom is an authorization URL 404ing at a path nobody configured. It reads as a client bug or an auth bug; it is a routing rule one path too narrow.
+The discovery URL sits outside the prefix, so on a hostname shared with other services, prefix-based routing cannot claim it. Without a router that matches it explicitly, the request falls through to whatever else holds the host, such as an SSO portal or another MCP server mounted at the root. That service answers with **its** metadata, the client builds an authorization URL from another service's endpoints, and the visible symptom is an authorization URL 404ing at a path nobody configured. It reads as a client bug or an auth bug; it is a routing rule one path too narrow.
 
 The `mcp-wellknown` router above is the fix. In Traefik it also wins by default: routers sort by rule length, so a rule naming the full well-known path outranks a bare `Host(...)` catch-all. Where the competing service sets an explicit `priority`, set a higher one here, because Traefik ignores its rule-length default for any router that carries one.
 
 !!! warning "One document still collides: `oauth-authorization-server`"
-    In proxy mode the server serves authorization-server metadata at `/.well-known/oauth-authorization-server`, at the **host root**, whatever prefix `BASE_URL` carries. FastMCP does contain an RFC 8414 path-aware override, `OAuthProvider.get_well_known_routes()`, which would serve it at `/.well-known/oauth-authorization-server/myservice`. Nothing reaches it: the HTTP app mounts `get_routes()` instead, leaving the path-aware form unreachable. (Verified against FastMCP 3.4.7.)
+    In proxy mode the server serves authorization-server metadata at `/.well-known/oauth-authorization-server`, at the **host root**, whatever prefix `BASE_URL` carries. FastMCP does contain an RFC 8414 path-aware override, `OAuthProvider.get_well_known_routes()`, which would serve it at `/.well-known/oauth-authorization-server/myservice`. Nothing reaches it: the HTTP app mounts `get_routes()` instead, leaving the path-aware form unreachable. (Verified again against FastMCP 4.0.3; see the internal FastMCP 4 reference.)
 
     Only this one document collides. Protected-resource metadata is path-namespaced, so several servers can share a hostname without contending for it.
 

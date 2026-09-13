@@ -88,7 +88,7 @@ async def test_transfer_tools_carry_title_hints_and_icons(tmp_path: Path) -> Non
         assert tool is not None
         assert tool.annotations is not None
         assert tool.annotations.title  # non-empty human-readable title
-        assert tool.annotations.readOnlyHint is read_only
+        assert tool.annotations.read_only_hint is read_only
         assert tool.icons
 
 

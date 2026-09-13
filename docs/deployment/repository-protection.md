@@ -83,10 +83,10 @@ ruleset file.
 
 ## The files own the state
 
-`bootstrap.yml` upserts each ruleset by name: it updates the existing
-ruleset when one matches and creates it otherwise. Every apply replaces
-the whole ruleset with the checked-in state. Edits made by hand in the
-GitHub UI are reset on the next run, so change the JSON files instead. A
+`bootstrap.yml` upserts each ruleset by name: a ruleset whose name
+matches is replaced wholesale with the checked-in state, and a missing one
+is created. Edits made by hand in the GitHub UI are reset on the next run,
+so change the JSON files instead. A
 push that touches `.github/rulesets/` or the bootstrap workflow re-applies
 automatically; `workflow_dispatch` re-applies on demand. Rulesets with
 other names are never touched, so you can add your own alongside.

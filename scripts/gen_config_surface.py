@@ -2613,15 +2613,24 @@ def splice_region(text: str, region_id: str, body: str, *, source: str) -> str:
     e.g. ``"docs/deployment/oidc.md"``) — used only to name the offending
     file in an error message, never to read or write anything here.
 
+    Both markers may sit behind a comment prefix — `  # <!-- ... -->` in a
+    YAML or TOML file, where a bare HTML comment would not parse. Each
+    marker line is preserved whole, prefix and indentation included; only
+    the lines between them are replaced. *body* is inserted verbatim, so a
+    caller splicing into a non-Markdown file owns its syntax and
+    indentation — every artifact this template ships today renders a
+    Markdown table (`_render_region_body`) into Markdown or JSON.
+
     Raises `SystemExit` naming both *source* and *region_id* when: the
     START marker is missing, the END marker is missing, either marker
-    appears more than once, or the END marker appears before the START
-    marker — each of those would otherwise either silently no-op the splice
-    or corrupt the file rather than fail loudly. Naming *source* matters
-    concretely: the same region ids (``OIDC-REQUIRED`` / ``OIDC-OPTIONAL``)
-    are declared in more than one file, so a region-id-only message can't
-    tell an operator which of those files to fix — a marker broken in
-    either one used to raise byte-identical text.
+    appears more than once, the END marker appears before the START
+    marker, or both markers share a line — each of those would otherwise
+    either silently no-op the splice or corrupt the file rather than fail
+    loudly. Naming *source* matters concretely: the same region ids
+    (``OIDC-REQUIRED`` / ``OIDC-OPTIONAL``) are declared in more than one
+    file, so a region-id-only message can't tell an operator which of those
+    files to fix — a marker broken in either one used to raise
+    byte-identical text.
     """
     start_marker, end_marker = _generated_region_markers(region_id)
     start_matches = [m.start() for m in re.finditer(re.escape(start_marker), text)]
@@ -2653,8 +2662,23 @@ def splice_region(text: str, region_id: str, body: str, *, source: str) -> str:
 
     newline_pos = text.find("\n", start_pos)
     start_line_end = newline_pos + 1 if newline_pos != -1 else len(text)
+    if end_pos < start_line_end:
+        raise SystemExit(
+            f"ERROR: {source}: region {region_id!r} has both markers on one "
+            "line — the START and END markers must sit on separate lines, "
+            "with the generated body between them."
+        )
     before = text[:start_line_end]
-    after = text[end_pos:]
+    # Take the tail from the START of the END marker's line, not from the
+    # marker itself.  Slicing at the marker drops whatever precedes it on
+    # that line, which is fine for the HTML-comment markers this template
+    # ships (all at column 0, where the two are the same index) but silently
+    # corrupts a marker written behind a comment prefix — `  # <!-- ... -->`
+    # in YAML or TOML, where a bare HTML comment does not parse.  The START
+    # side already survives such a prefix, since `before` keeps its whole
+    # line; this makes the END side symmetric.
+    end_line_start = text.rfind("\n", 0, end_pos) + 1
+    after = text[end_line_start:]
     return f"{before}{body}\n{after}" if body else f"{before}{after}"
 
 

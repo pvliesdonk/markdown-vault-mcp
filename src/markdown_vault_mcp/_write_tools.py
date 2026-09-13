@@ -18,7 +18,7 @@ source they all derive from:
   registry either.
 
 The ``write`` tag is deliberately a strict subset of
-``readOnlyHint=False``: ``reindex`` and ``build_embeddings`` mutate index
+``read_only_hint=False``: ``reindex`` and ``build_embeddings`` mutate index
 state, not the vault, and stay available on a read-only server.
 """
 

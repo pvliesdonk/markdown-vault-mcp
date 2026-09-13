@@ -62,7 +62,7 @@
         },
         {
           "name": "FASTMCP_ENABLE_RICH_LOGGING",
-          "description": "Set false for plain or structured JSON log output.",
+          "description": "Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback.",
           "format": "boolean",
           "default": "true"
         },
@@ -607,8 +607,18 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_HTTP_PATH",
-          "description": "Mount path for the MCP endpoint.",
+          "description": "Mount path for the MCP endpoint; the health routes derive their prefix from it.",
           "default": "/mcp"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_HEALTH_DETAIL",
+          "description": "How much the unauthenticated /health and /health/ready bodies say: status, standard (adds name, version and per-check verdicts), or full (adds redacted reasons; trusted networks only).",
+          "default": "standard",
+          "choices": [
+            "status",
+            "standard",
+            "full"
+          ]
         },
         {
           "name": "PUID",
@@ -636,7 +646,7 @@
         },
         {
           "name": "FASTMCP_ENABLE_RICH_LOGGING",
-          "description": "Set false for plain or structured JSON log output.",
+          "description": "Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback.",
           "format": "boolean",
           "default": "true"
         },

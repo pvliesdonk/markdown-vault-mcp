@@ -89,14 +89,16 @@ def serve(
     maybe_start_debugpy(_ENV_PREFIX)
 
     config = ProjectConfig.from_env()
-    server = make_server(transport=transport, config=config)
+    # Resolved once, ahead of ``make_server``: the health routes it registers
+    # derive their prefix from the mount path, so the value handed to
+    # ``http_app(path=...)`` below and the one the server saw must be the
+    # same object, not two reads that could drift.
+    path = normalise_http_path(http_path or os.environ.get(f"{_ENV_PREFIX}_HTTP_PATH"))
+    server = make_server(transport=transport, config=config, http_path=path)
 
     if transport == "http":
         import uvicorn
 
-        path = normalise_http_path(
-            http_path or os.environ.get(f"{_ENV_PREFIX}_HTTP_PATH")
-        )
         event_store = build_event_store(_ENV_PREFIX, config.server)
         # lifespan="on" is essential: FastMCP's server_lifespan (startup/shutdown
         # hooks, including service init) runs through the ASGI lifespan protocol.

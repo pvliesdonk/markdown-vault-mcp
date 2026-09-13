@@ -84,7 +84,7 @@ To run the newest merged code instead of the newest release, use the rolling `ed
 docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:edge
 ```
 
-A `compose.yml` ships at the repo root as a starting point. Copy `.env.example` to `.env`, edit, and `docker compose up -d`.
+A `compose.yml` ships at the repo root and runs as-is: copy `.env.example` to `.env`, then `docker compose up -d`. It publishes port 8000 on the host and assumes no reverse proxy; [Docker Compose](docs/deployment/docker.md#docker-compose) covers the configuration split, the domain sentinel blocks, and a Traefik overlay.
 
 To attach a remote Python debugger (development only; the protocol is unauthenticated), see [Remote debugging](docs/deployment/docker.md#remote-debugging).
 
@@ -129,6 +129,10 @@ For library usage (embedding the domain logic without the MCP transport), import
 
 The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.register_server_info_tool`) so operators can confirm the deployed version with a single MCP call. The default response carries `server_name`, `server_version`, and `core_version`. Servers that talk to a remote upstream wire upstream version reporting inside the `DOMAIN-UPSTREAM-START` / `DOMAIN-UPSTREAM-END` sentinel in `src/markdown_vault_mcp/server.py`; see [`tool-registration`](.agents/skills/tool-registration/SKILL.md#server-info-tool-get_server_info) for the wiring pattern.
 
+### Health
+
+The server serves `/health` (liveness, a static `200`) and `/health/ready` (readiness, `503` when a backing store or a domain check fails) outside the MCP mount and outside auth, via `fastmcp_pvl_core.register_health_routes`. `compose.yml` probes the first. Domain readiness checks go in the `health_checks` dict in `src/markdown_vault_mcp/server.py`; see [Docker deployment](docs/deployment/docker.md#health) for the routes, the mount-path rule, and `MARKDOWN_VAULT_MCP_HEALTH_DETAIL`.
+
 ## Configuration
 
 The most common environment variables, shared across all
@@ -139,7 +143,7 @@ The most common environment variables, shared across all
 |---|---|---|
 | `MARKDOWN_VAULT_MCP_KV_STORE_URL` | `file:///data/state` | Persistent-state backend URL shared by every pvl-core subsystem that needs state. `memory://` is in-process and lost on restart; `file:///path` persists on one server; `redis://`, `dynamodb://` and `mongodb://` each need their matching extra. When unset, defaults to `file:///data/state` (the volume family Docker images mount), or to `memory://` (with a warning) on a host where that directory is not usable. |
 | `FASTMCP_LOG_LEVEL` | `INFO` | Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. |
-| `FASTMCP_ENABLE_RICH_LOGGING` | `true` | Set false for plain or structured JSON log output. |
+| `FASTMCP_ENABLE_RICH_LOGGING` | `true` | Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback. |
 <!-- GENERATED-ENV-TABLE-CORE-END -->
 
 This table and the one under [Domain configuration](#domain-configuration)

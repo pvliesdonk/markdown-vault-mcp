@@ -686,11 +686,9 @@ def _scan_headings(lines: list[str]) -> list[tuple[int, int, str]]:
     return out
 
 
-# PyYAML ships no stubs and no `py.typed`, so `yaml.YAMLError` types as `Any`
-# and strict mypy rejects subclassing it. The base is the point of the class
-# (see below), so the alternative is adding `types-PyYAML` and re-typing every
-# yaml call site in the package — a wider change than this fix.
-class MalformedFrontmatterError(yaml.YAMLError):  # type: ignore[misc]
+# ``types-PyYAML`` is a dev dependency, so this base remains visible to strict
+# mypy as well as to every package call site that catches ``yaml.YAMLError``.
+class MalformedFrontmatterError(yaml.YAMLError):
     """A leading frontmatter block no parser could read (#1408).
 
     ``python-frontmatter`` picks a handler by the block's opening delimiter

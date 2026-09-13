@@ -37,6 +37,7 @@ from fastmcp_pvl_core import (
     ServerConfig,
     TransferConfig,
     finalize_instructions,
+    register_health_routes,
 )
 
 import markdown_vault_mcp
@@ -126,6 +127,17 @@ def _jobs_config_source_file() -> Path:
     """
     src = inspect.getsourcefile(JobsConfig)
     assert src is not None, "JobsConfig source file not found"
+    return Path(src)
+
+
+def _health_source_file() -> Path:
+    """Resolve pvl-core's health-route module (server tier).
+
+    ``HEALTH_DETAIL`` is read while the routes are registered rather than by
+    ``ServerConfig``, so its owning module must participate in the inventory.
+    """
+    src = inspect.getsourcefile(register_health_routes)
+    assert src is not None, "register_health_routes source file not found"
     return Path(src)
 
 
@@ -263,6 +275,11 @@ def jobs_inventory() -> set[str]:
     return _filter_config_vars(extract_env_vars_from_source(src))
 
 
+def health_inventory() -> set[str]:
+    src = _health_source_file().read_text(encoding="utf-8")
+    return _filter_config_vars(extract_env_vars_from_source(src))
+
+
 def full_inventory() -> set[str]:
     return (
         domain_inventory()
@@ -270,6 +287,7 @@ def full_inventory() -> set[str]:
         | instructions_inventory()
         | transfer_inventory()
         | jobs_inventory()
+        | health_inventory()
         | FRAMEWORK_VARS
         | EXTRA_KNOWN_VARS
     )
@@ -349,6 +367,10 @@ def test_domain_inventory_includes_fstring_environ_var() -> None:
 
 def test_server_inventory_includes_oidc_var() -> None:
     assert f"{PREFIX}_OIDC_CLIENT_ID" in server_inventory()
+
+
+def test_health_inventory_includes_detail_var() -> None:
+    assert f"{PREFIX}_HEALTH_DETAIL" in health_inventory()
 
 
 # --------------------------------------------------------------------------- #

@@ -1,7 +1,7 @@
 """The LLM-backed ``summarize`` tool, registered as a dual-mode job (#1033).
 
 Registration goes through pvl-core's ``register_long_running_tool`` rather
-than a bare ``@mcp.tool``: a client that speaks MCP tasks (SEP-1686) gets
+than a bare ``@mcp.tool``: a client that speaks MCP tasks (SEP-2663) gets
 native background-task execution, and any other client runs in the
 foreground up to the jobs subsystem's soft deadline, after which the
 still-running work is promoted to a background job and the caller receives
@@ -55,10 +55,10 @@ def register(mcp: FastMCP, jobs: Jobs) -> None:
         tags={"summarize"},
         annotations={
             "title": "Summarize Notes",
-            "readOnlyHint": True,
-            "destructiveHint": False,
+            "read_only_hint": True,
+            "destructive_hint": False,
             # LLM output varies run to run — not idempotent.
-            "idempotentHint": False,
+            "idempotent_hint": False,
         },
     )
     @needs_queryable()

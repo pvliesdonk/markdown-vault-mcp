@@ -74,6 +74,7 @@ Detailed guidance lives in skills under `.agents/skills/` (portable; Claude Code
 - `code-review` — before opening a PR, marking one ready, or pushing further commits to a branch with an open PR: self-review the cumulative diff.
 - `applying-template-updates` — when working through the weekly template update PR (`copier/update` branch) or after running `copier update`.
 - `writing-release-notes` — when drafting a `docs/releases/` page.
+- `roadmapping` — when charting, refining or revisiting epics and release packages; before planning work that spans PRs.
 - `researching-references` — when a change depends on how something outside the repo behaves (a markdown dialect, git, a file format, a vendor API) and `docs/design/reference/` has no current page for it.
 
 Project-owned skills follow the same shape: a directory under `.agents/skills/` plus a relative symlink in `.claude/skills/`.
@@ -199,9 +200,9 @@ Everything under `docs/`, plus **`README.md`**, is operator-facing prose and is
 **Internal / developer docs are not user-facing and are not linted.** They live
 under a fixed set of subtrees, excluded from both the published site and Vale:
 
-- `docs/design/` — design specs and architecture notes
+- `docs/design/` — design specs and architecture notes; `docs/design/reference/` holds the external-behaviour references
 - `docs/decisions/` — architecture decision records (ADRs)
-- `docs/superpowers/` — agent working specs and plans (also gitignored)
+- `docs/superpowers/` — agent scratch, gitignored; a feature's approved spec ships in its PR body
 
 This boundary is declared in three places that **must stay in lockstep** (the
 `template-ci` "vale exclusion-scope lockstep" job asserts the CI glob and the
@@ -212,6 +213,12 @@ the `- id: vale` pre-commit hook's `exclude:` regex
 (`^docs/(superpowers|design|decisions)/`). The set is fixed by convention — do
 not add per-project exclusions; put internal docs in one of the subtrees above.
 
+## Roadmap
+
+Read `docs/design/roadmap.md` before planning; update its argument when direction changes.
+Epics are parent issues with native sub-issues; packages are ordinal-named milestones for one release cut.
+The `roadmapping` skill defines refinement, evidence and package membership. GitHub owns status; the index owns the argument.
+
 <!-- TEMPLATE-TRACKING-START -->
 ## Shared Infrastructure
 
@@ -220,7 +227,7 @@ Shared infrastructure (auth providers, middleware stack, logging bootstrap, even
 - [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core) — the Python library that provides `ServerConfig`, auth builders, middleware helpers, and the `make_serve_parser` / `configure_logging_from_env` / `normalise_http_path` CLI helpers.
 - [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template) — the copier template this project was generated from. Ships the CI/release workflows, `knope.toml`, `Dockerfile`, `packaging/nfpm.yaml`, `packaging/mcpb/*`, `scripts/stamp_manifests.py`, server.py skeleton, and this very section of AGENTS.md.
 
-Fixes and improvements to shared code land in those repos and propagate here via `copier update` against the template's latest tag — run manually or via the weekly `.github/workflows/copier-update.yml` cron. Starter files listed in `_skip_if_exists` (e.g. `packaging/mcpb/*`, the `tools.py` / `resources.py` / `prompts.py` / `domain.py` scaffolds, `CHANGELOG.md`, `LICENSE`) are written once and require manual reconciliation on template updates; `AGENTS.md`, `README.md`, `.pre-commit-config.yaml` and `scripts/stamp_manifests.py` are deliberately *not* among them — all four are re-rendered on update, and only content inside their domain sentinels survives (`DOMAIN-START` / `DOMAIN-END` in the two Markdown files, `DOMAIN-HOOKS` in the pre-commit config, `DOMAIN-MANIFESTS-HELPERS` / `DOMAIN-MANIFESTS` in the stamp script) — review `_skip_if_exists` in the template's `copier.yml` if you need to force-sync a file. Domain-specific code (tools, resources, prompts, and the fields and logic inside the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END`, `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END`, and `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels) stays in this repo.
+Fixes and improvements to shared code land in those repos and propagate here via `copier update` against the template's latest tag — run manually or via the weekly `.github/workflows/copier-update.yml` cron. Starter files listed in `_skip_if_exists` (e.g. `packaging/mcpb/*`, the `tools.py` / `resources.py` / `prompts.py` / `domain.py` scaffolds, `CHANGELOG.md`, `LICENSE`) are written once and require manual reconciliation on template updates; `AGENTS.md`, `README.md`, `.pre-commit-config.yaml`, `scripts/stamp_manifests.py`, `compose.yml`, `Dockerfile` and `pyproject.toml` are deliberately *not* among them — all seven are re-rendered on update, and only content inside their sentinel blocks survives (`DOMAIN-START` / `DOMAIN-END` in the two Markdown files, `DOMAIN-HOOKS` in the pre-commit config, `DOMAIN-MANIFESTS-HELPERS` / `DOMAIN-MANIFESTS` in the stamp script, the four `DOMAIN-COMPOSE-*` blocks in the compose file, the four `DOCKERFILE-*` blocks in the Dockerfile, and `PROJECT-DEPS` / `PROJECT-EXTRAS` / `PROJECT-LICENSE` / `PROJECT-LICENSE-CLASSIFIER` / `PROJECT-UV` / `PROJECT-RUFF-IGNORES` in `pyproject.toml`) — review `_skip_if_exists` in the template's `copier.yml` if you need to force-sync a file. Domain-specific code (tools, resources, prompts, and the fields and logic inside the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END`, `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END`, and `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels) stays in this repo.
 
 ## Contributing fixes upstream
 

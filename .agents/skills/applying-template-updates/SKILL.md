@@ -48,11 +48,19 @@ marker lines: `<<<<<<< before updating` (local side), `||||||| last update`
 Resolving means keeping one side and deleting all four markers and the base
 block. For each hunk:
 
-- outside a `DOMAIN-*` / `CONFIG-*` / `PROJECT-*` sentinel block, keep the
-  template side and move any local content it displaces into the nearest
-  sentinel block, or note it as a change to propose to the template;
-- inside a sentinel block, stop and ask: the local side is the project's,
-  and a template change in the same place means the sentinel moved.
+- outside every sentinel block, keep the template side and move any local
+  content it displaces into the nearest sentinel block, or note it as a change
+  to propose to the template;
+- inside a `DOMAIN-*` / `CONFIG-*` / `PROJECT-*` / `DOCKERFILE-*` sentinel
+  block, stop and ask: the local side is the project's. Several of these wrap
+  template-shipped content that a project extends rather than replaces
+  (`PROJECT-EXTRAS`, `DOCKERFILE-APT-DEPS`, `DOCKERFILE-UV-EXTRAS`), so a
+  template change inside one is legitimate — keep the project's additions and
+  take the template's changes around them;
+- inside a `GENERATED-*` region, resolve nothing: take either side and let
+  `scripts/gen_config_surface.py` rewrite the region at the end of the update
+  (it runs as an after-stage migration), then confirm with
+  `python scripts/gen_config_surface.py --check`.
 
 Finish with `git grep -nE '^(<<<<<<<|\|\|\|\|\|\|\||=======|>>>>>>>)'` to prove
 none remain.

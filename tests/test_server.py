@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.exceptions import ToolError
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
 
 from markdown_vault_mcp.exceptions import ConfigurationError
 from tests.conftest import _meta_stale, _parse_tool_data, wait_for_mcp_writer_drain
@@ -500,13 +500,11 @@ class TestConfigDrivenPrompts:
 
         server = make_server(config=config)
         assert server.name == "custom-vault"
-        # get_server_info is intentionally left on its single skeleton
-        # registration (keeping the DOMAIN-UPSTREAM block the one source of truth
-        # for upstream wiring), so it reports the SERVER_NAME env identity — here
-        # the default, since the env var is unset — not the programmatic override.
+        # The template-owned config field is the single identity source for
+        # FastMCP, composed instructions, and get_server_info.
         async with Client(server) as client:
             result = await client.call_tool("get_server_info", {})
-        assert result.data["server_name"] == "markdown-vault-mcp"
+        assert result.data["server_name"] == "custom-vault"
 
 
 def _route_paths(server: FastMCP) -> set[str]:
@@ -796,21 +794,21 @@ class TestToolAnnotations:
         ):
             ann = by_name[name].annotations
             assert ann is not None, f"{name} missing annotations"
-            assert ann.readOnlyHint is True, f"{name} readOnlyHint"
-            assert ann.destructiveHint is False, f"{name} destructiveHint"
+            assert ann.read_only_hint is True, f"{name} read_only_hint"
+            assert ann.destructive_hint is False, f"{name} destructive_hint"
 
         # Index management tools — not readOnly
         for name in ("reindex", "build_embeddings"):
             ann = by_name[name].annotations
             assert ann is not None
-            assert ann.readOnlyHint is False, f"{name} readOnlyHint"
+            assert ann.read_only_hint is False, f"{name} read_only_hint"
 
         # Write tools — not readOnly
         for name in ("write", "edit", "append", "rename", "okf_seed_log"):
             ann = by_name[name].annotations
             assert ann is not None
-            assert ann.readOnlyHint is False, f"{name} readOnlyHint"
-            assert ann.destructiveHint is False, f"{name} destructiveHint"
+            assert ann.read_only_hint is False, f"{name} read_only_hint"
+            assert ann.destructive_hint is False, f"{name} destructive_hint"
 
         # Delete and move_folder are destructive (move_folder removes the
         # source directory tree and can leave a partial state on OS failure)
@@ -822,15 +820,15 @@ class TestToolAnnotations:
         ):
             ann = by_name[name].annotations
             assert ann is not None
-            assert ann.readOnlyHint is False, f"{name} readOnlyHint"
-            assert ann.destructiveHint is True, f"{name} destructiveHint"
+            assert ann.read_only_hint is False, f"{name} read_only_hint"
+            assert ann.destructive_hint is True, f"{name} destructive_hint"
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_every_registered_tool_has_title(self) -> None:
         """Every registered tool exposes a non-empty annotations.title (#751).
 
         Title-aware clients (notably VS Code's MCP client, which honours only
-        ``title`` and ``readOnlyHint`` among annotations) render the title as
+        ``title`` and ``read_only_hint`` among annotations) render the title as
         the tool's label; without it they fall back to the raw machine name.
 
         Enumerates the *full* tool registry via ``_list_tools()``, not the
@@ -973,7 +971,7 @@ class TestReadTool:
         server = make_server()
         async with Client(server) as client:
             result = await client.call_tool_mcp("read", {"path": "nonexistent.md"})
-        assert result.isError is True
+        assert result.is_error is True
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_read_with_frontmatter(self) -> None:
@@ -1140,7 +1138,9 @@ class TestReindexTool:
 
         monkeypatch.setattr(IndexFacet, "reindex_async", slow_reindex_async)
         server = make_server()
-        async with Client(server) as client:
+        # Legacy mode cannot negotiate FastMCP 4's native task extension, so
+        # this call exercises the jobs fallback.
+        async with Client(server, mode="legacy") as client:
             res = await client.call_tool("reindex", {})
             assert res.data["status"] == "working"
             assert res.data["poll_with"] == "get_job_result"
@@ -1210,7 +1210,7 @@ class TestErrorHandling:
             result = await client.call_tool_mcp(
                 "search", {"query": "test", "mode": "semantic"}
             )
-        assert result.isError is True
+        assert result.is_error is True
 
 
 # ---------------------------------------------------------------------------
@@ -1283,7 +1283,7 @@ class TestAppendTool:
             result = await client.call_tool_mcp(
                 "append", {"path": "nonexistent.md", "content": "x\n"}
             )
-        assert result.isError is True
+        assert result.is_error is True
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_append_create_if_missing(self) -> None:
@@ -1328,7 +1328,7 @@ class TestEditTool:
                 "edit",
                 {"path": "nonexistent.md", "old_text": "a", "new_text": "b"},
             )
-        assert result.isError is True
+        assert result.is_error is True
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_edit_conflict_returns_error(self) -> None:
@@ -1338,7 +1338,7 @@ class TestEditTool:
                 "edit",
                 {"path": "simple.md", "old_text": "missing text", "new_text": "b"},
             )
-        assert result.isError is True
+        assert result.is_error is True
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_edit_line_range(self) -> None:
@@ -1399,7 +1399,7 @@ class TestEditTool:
                     "new_text": "x",
                 },
             )
-        assert result.isError is True
+        assert result.is_error is True
         error_text = cast("mcp_types.TextContent", result.content[0]).text
         assert "closest_match_line" in error_text
 
@@ -1420,7 +1420,7 @@ class TestDeleteTool:
         server = make_server()
         async with Client(server) as client:
             result = await client.call_tool_mcp("delete", {"path": "nonexistent.md"})
-        assert result.isError is True
+        assert result.is_error is True
 
 
 class TestRenameTool:
@@ -1445,7 +1445,7 @@ class TestRenameTool:
                 "rename",
                 {"old_path": "nonexistent.md", "new_path": "target.md"},
             )
-        assert result.isError is True
+        assert result.is_error is True
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_rename_target_exists_returns_error(self) -> None:
@@ -1455,7 +1455,7 @@ class TestRenameTool:
                 "rename",
                 {"old_path": "simple.md", "new_path": "no_frontmatter.md"},
             )
-        assert result.isError is True
+        assert result.is_error is True
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_rename_to_same_path_returns_error(self) -> None:
@@ -1466,7 +1466,7 @@ class TestRenameTool:
                 "rename",
                 {"old_path": "simple.md", "new_path": "simple.md"},
             )
-        assert result.isError is True
+        assert result.is_error is True
 
 
 # ---------------------------------------------------------------------------
@@ -1520,7 +1520,7 @@ class TestMoveFolderTool:
             result = await client.call_tool_mcp(
                 "move_folder", {"old_dir": "nonexistent", "new_dir": "archive"}
             )
-        assert result.isError is True
+        assert result.is_error is True
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_move_folder_tool_nested_target_returns_error(
@@ -1536,7 +1536,7 @@ class TestMoveFolderTool:
                 "move_folder",
                 {"old_dir": "drafts", "new_dir": "drafts/sub"},
             )
-        assert result.isError is True
+        assert result.is_error is True
 
 
 # ---------------------------------------------------------------------------
@@ -2361,7 +2361,7 @@ class TestLinkTools:
     async def test_get_backlinks_nonexistent_raises(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises((ToolError, McpError)):
+            with pytest.raises((ToolError, MCPError)):
                 await client.call_tool("get_backlinks", {"path": "nope.md"})
 
     @pytest.mark.usefixtures("_mcp_env_linked")
@@ -2397,7 +2397,7 @@ class TestLinkTools:
     async def test_get_outlinks_nonexistent_path(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises((ToolError, McpError)):
+            with pytest.raises((ToolError, MCPError)):
                 await client.call_tool("get_outlinks", {"path": "nope.md"})
 
     @pytest.mark.usefixtures("_mcp_env_linked")
@@ -2467,7 +2467,7 @@ class TestSimilarTool:
     async def test_get_similar_nonexistent_raises(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises((ToolError, McpError)):
+            with pytest.raises((ToolError, MCPError)):
                 await client.call_tool("get_similar", {"path": "nonexistent.md"})
 
     @pytest.mark.usefixtures("_mcp_env")
@@ -2710,7 +2710,7 @@ class TestContextTool:
         """get_context raises for a path not in the index."""
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises((ToolError, McpError)):
+            with pytest.raises((ToolError, MCPError)):
                 await client.call_tool("get_context", {"path": "nope.md"})
 
     @pytest.mark.usefixtures("_mcp_env_context")
@@ -2822,14 +2822,23 @@ class TestResources:
     async def test_toc_resource_missing_path(self) -> None:
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises(McpError, match="Document not found"):
+            with pytest.raises(MCPError, match="Document not found"):
                 await client.read_resource("toc://vault/does_not_exist.md")
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_toc_resource_folder_traversal_raises(self) -> None:
         async with Client(make_server()) as client:
-            with pytest.raises(McpError):
+            with pytest.raises(MCPError):
                 await client.read_resource("toc://vault/..%2Fetc")
+
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_toc_resource_encoded_nested_note(self) -> None:
+        """FastMCP screening permits a percent-encoded relative path."""
+        async with Client(make_server()) as client:
+            result = await client.read_resource("toc://vault/subfolder%2Fdeep%2Fdoc.md")
+        data = json.loads(result[0].text)
+        assert isinstance(data, list)
+        assert data[0]["heading"] == "Deeply Nested"
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_toc_resource_folder_returns_nested(self) -> None:
@@ -3057,7 +3066,7 @@ class TestPromptAndResourceIcons:
         for prompt in prompts:
             assert prompt.icons is not None
             assert len(prompt.icons) > 0
-            assert prompt.icons[0].mimeType == "image/svg+xml"
+            assert prompt.icons[0].mime_type == "image/svg+xml"
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_resources_have_icons(self) -> None:
@@ -3077,7 +3086,7 @@ class TestPromptAndResourceIcons:
                 continue
             assert resource.icons is not None
             assert len(resource.icons) > 0
-            assert resource.icons[0].mimeType == "image/svg+xml"
+            assert resource.icons[0].mime_type == "image/svg+xml"
 
 
 # ---------------------------------------------------------------------------
@@ -3121,7 +3130,7 @@ class TestIfMatchParameter:
                     "if_match": "stale-etag-value",
                 },
             )
-        assert result.isError is True
+        assert result.is_error is True
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_edit_accepts_if_match_when_correct(self, vault_path: Path) -> None:
@@ -3157,7 +3166,7 @@ class TestIfMatchParameter:
                     "if_match": "stale-etag-value",
                 },
             )
-        assert result.isError is True
+        assert result.is_error is True
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_delete_accepts_if_match_when_correct(self, vault_path: Path) -> None:
@@ -3183,7 +3192,7 @@ class TestIfMatchParameter:
                 "delete",
                 {"path": "simple.md", "if_match": "stale-etag-value"},
             )
-        assert result.isError is True
+        assert result.is_error is True
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_rename_accepts_if_match_when_correct(self, vault_path: Path) -> None:
@@ -3218,7 +3227,7 @@ class TestIfMatchParameter:
                     "if_match": "stale-etag-value",
                 },
             )
-        assert result.isError is True
+        assert result.is_error is True
 
 
 # ---------------------------------------------------------------------------
@@ -3828,14 +3837,14 @@ class TestGetHistoryTool:
         assert "result" not in result.structured_content
 
     async def test_get_history_output_schema_not_auto_wrapped(self) -> None:
-        """outputSchema must not carry FastMCP's `x-fastmcp-wrap-result`
+        """output_schema must not carry FastMCP's `x-fastmcp-wrap-result`
         marker — it appears only when FastMCP auto-wraps a list/primitive
         return under a synthetic `result` key; the dict envelope skips it."""
         server = make_server()
         async with Client(server) as client:
             tools = await client.list_tools()
         gh = next(t for t in tools if t.name == "get_history")
-        schema = gh.outputSchema
+        schema = gh.output_schema
         assert schema is not None
         assert schema.get("type") == "object"
         assert "x-fastmcp-wrap-result" not in schema
@@ -3983,14 +3992,14 @@ class TestGetDiffTool:
         assert "result" not in result.structured_content
 
     async def test_get_diff_output_schema_not_auto_wrapped(self) -> None:
-        """outputSchema must not carry FastMCP's `x-fastmcp-wrap-result`
+        """output_schema must not carry FastMCP's `x-fastmcp-wrap-result`
         marker — it appears only when FastMCP auto-wraps a list/primitive
         return under a synthetic `result` key; the dict envelope skips it."""
         server = make_server()
         async with Client(server) as client:
             tools = await client.list_tools()
         gd = next(t for t in tools if t.name == "get_diff")
-        schema = gd.outputSchema
+        schema = gd.output_schema
         assert schema is not None
         assert schema.get("type") == "object"
         assert "x-fastmcp-wrap-result" not in schema
@@ -4473,7 +4482,7 @@ class TestResourceStaleSignal:
         assert result.meta.get("index_stale") is False
         # Contents stay a bare JSON document — no envelope — and the declared
         # application/json MIME type survives the ResourceResult wrapping.
-        assert result.contents[0].mimeType == "application/json"
+        assert result.contents[0].mime_type == "application/json"
         json.loads(result.contents[0].text)
 
     @pytest.mark.usefixtures("_mcp_env")

@@ -66,7 +66,8 @@ secret; only its `copier-update` justification is gone.
 still redeploys canonical `docs/releases/` pages on merge.) The remaining
 template-owned skills under `.agents/skills/` (`authoring-issues-prs`,
 `code-review`, `config-contract`, `logging-standard`, `releasing`,
-`repository-protection`, `tool-registration`, `writing-release-notes`) and
+`repository-protection`, `researching-references`, `tool-registration`,
+`writing-release-notes`) and
 their `.claude/skills/<name>`
 symlinks are independent of Claude review wiring; retain or remove each
 according to the detached fork's process — a fork that keeps using Claude

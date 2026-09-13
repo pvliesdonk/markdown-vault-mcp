@@ -933,7 +933,7 @@ async def test_summarize_description_carries_live_note_limit(
     assert "{max_notes}" not in description
     # The Args: docstring entry lands in the parameter schema, a separate
     # field from the tool description — it must be substituted too.
-    param_desc = tools["summarize"].inputSchema["properties"]["max_notes"][
+    param_desc = tools["summarize"].input_schema["properties"]["max_notes"][
         "description"
     ]
     assert "cap of 7" in param_desc
@@ -1035,8 +1035,8 @@ async def test_summarize_visible_and_callable_with_key(
         assert "summarize" in tools
         ann = tools["summarize"].annotations
         assert ann is not None
-        assert ann.readOnlyHint is True
-        assert ann.destructiveHint is False
+        assert ann.read_only_hint is True
+        assert ann.destructive_hint is False
 
         await wait_for_mcp_writer_drain(client)
         result = await client.call_tool(

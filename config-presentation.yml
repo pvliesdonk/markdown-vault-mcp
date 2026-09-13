@@ -44,7 +44,15 @@ vars:
     provenance: template
     type_name: "str"
     default: "/mcp"
-    help: "Mount path for the MCP endpoint."
+    help: "Mount path for the MCP endpoint; the health routes derive their prefix from it."
+    tags: [server]
+    wizard: {group: Server, when: server}
+
+  - name: "{PREFIX}_HEALTH_DETAIL"
+    provenance: template
+    type_name: "str"
+    default: "standard"
+    help: "How much the unauthenticated /health and /health/ready bodies say: status, standard (adds name, version and per-check verdicts), or full (adds redacted reasons; trusted networks only)."
     tags: [server]
     wizard: {group: Server, when: server}
 
@@ -100,7 +108,7 @@ vars:
     provenance: external
     type_name: "bool"
     default: true
-    help: "Set false for plain or structured JSON log output."
+    help: "Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback."
     tags: [observability, readme]
     wizard: {group: Logging}
 
@@ -223,8 +231,12 @@ required_vars:
 # A var listed nowhere here appears in no package — the arrays are a curated
 # per-packaging selection, not a dump of the whole surface. Deliberately
 # absent: TRANSPORT (fixed by the packaging itself), PORT (an `oci`
-# packageArguments entry, not an env var), HOST (the entrypoint owns the
-# in-container bind address), DEBUG_PORT/DEBUG_WAIT (they do nothing unless
+# packageArguments entry, not an env var — server.json templates its
+# `transport.url` from that argument), HOST (the image's CMD pins the bind
+# address: `--host 0.0.0.0` in Dockerfile.jinja, which also pins `--port
+# 8000`, so neither is read from the environment in a container — the
+# entrypoint itself does no bind handling),
+# DEBUG_PORT/DEBUG_WAIT (they do nothing unless
 # the image was built with --build-arg DEBUG=true), and EVENT_STORE_URL (a
 # legacy fallback honoured only when KV_STORE_URL is unset; offering a
 # deprecated knob in an install prompt is noise, and it stays fully
@@ -241,6 +253,7 @@ packaging:
   "{PREFIX}_INSTRUCTIONS_EXTRA": [pypi, oci]
   "{PREFIX}_INSTRUCTIONS": [pypi, oci]
   "{PREFIX}_HTTP_PATH": [oci]
+  "{PREFIX}_HEALTH_DETAIL": [oci]
   # Not HTTP-specific: apply_tool_visibility runs in make_server regardless
   # of transport, so a stdio (pypi/uvx) install can trim its tool set too.
   "{PREFIX}_TOOLS_ALLOW": [pypi, oci]
@@ -325,6 +338,9 @@ documented_defaults:
 # omitted CRITICAL.
 choices:
   FASTMCP_LOG_LEVEL: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+  # pvl-core's `_health._DETAIL_LEVELS`; an unrecognised value warns and
+  # falls back to `standard` at runtime, but the wizard should not offer one.
+  "{PREFIX}_HEALTH_DETAIL": [status, standard, full]
 
 # Placeholder example values, shown as the `=` value only for a var whose
 # real `default` is null — so a reader sees the expected *shape* of the
@@ -362,6 +378,7 @@ examples:
 wizard_labels:
   "{PREFIX}_BASE_URL": "Public base URL"
   "{PREFIX}_HTTP_PATH": "HTTP endpoint path"
+  "{PREFIX}_HEALTH_DETAIL": "Health body detail"
   "{PREFIX}_HOST": "Bind host"
   "{PREFIX}_BEARER_TOKEN": "Bearer token"
   "{PREFIX}_BEARER_TOKENS_FILE": "Bearer tokens file (TOML)"

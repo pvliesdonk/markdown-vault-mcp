@@ -164,9 +164,9 @@ must ship whole is mid-flight), dispatch Release Prepare on `main` and
 merge the release pull request: no branch, no ceremony. The prepare
 workflow prints an advisory warning when a release-named milestone still
 has open issues, or when an open `ships-atomically` epic shows work in
-flight. It counts the epic's native sub-issues, which may live in another
-repository, so a cross-repo epic stays visible. Either way the warning
-never blocks, since the cut may still be intentional.
+flight. It counts the epic's native sub-issues even when they live in
+another repository, which keeps a cross-repo epic visible. The warning
+never blocks: the cut may still be intentional.
 
 ## Stabilisation branches
 

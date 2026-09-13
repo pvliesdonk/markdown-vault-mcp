@@ -409,7 +409,20 @@
       "label": "HTTP endpoint path",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_HTTP_PATH",
-      "help": "Mount path for the MCP endpoint.",
+      "help": "Mount path for the MCP endpoint; the health routes derive their prefix from it.",
+      "advancedGroup": "Server",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
+    },
+    {
+      "id": "health_detail",
+      "label": "Health body detail",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_HEALTH_DETAIL",
+      "help": "How much the unauthenticated /health and /health/ready bodies say: status, standard (adds name, version and per-check verdicts), or full (adds redacted reasons; trusted networks only).",
       "advancedGroup": "Server",
       "showIf": {
         "deployment": [
@@ -430,7 +443,7 @@
       "label": "Rich logging",
       "type": "bool",
       "var": "FASTMCP_ENABLE_RICH_LOGGING",
-      "help": "Set false for plain or structured JSON log output.",
+      "help": "Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback.",
       "advancedGroup": "Logging"
     },
     {

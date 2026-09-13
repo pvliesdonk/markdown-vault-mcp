@@ -135,3 +135,73 @@ def test_config_is_frozen_so_validation_must_not_assign() -> None:
         pass
     else:  # pragma: no cover - frozen dataclasses always raise here
         raise AssertionError("ProjectConfig is no longer frozen")
+
+
+def test_server_name_is_declared_exactly_once() -> None:
+    """No second `server_name` annotation anywhere in the class body.
+
+    Position alone is not enough: a redeclaration *after* `CONFIG-FIELDS-END`
+    is still inside the class body and still wins, because Python does not
+    error on a repeated annotation — the later one silently replaces the
+    earlier.  Counting catches that, and catches a redeclaration inside the
+    sentinels too, so it is the assertion that actually holds the contract.
+    """
+    annotations = [
+        line
+        for line in _config_text().splitlines()
+        if line.strip().startswith("server_name:")
+    ]
+    assert len(annotations) == 1, (
+        "server_name must be declared exactly once — a second annotation "
+        f"silently shadows the template's, found: {annotations}"
+    )
+
+
+def test_server_name_is_template_owned_and_outside_the_field_sentinels() -> None:
+    """`server_name` belongs to the scaffold, not to a domain block.
+
+    `server.py` uses it for both `FastMCP(name=...)` and the shaped
+    instruction identity, so the two cannot disagree.  A project that
+    redeclares it inside `CONFIG-FIELDS` silently shadows the template's
+    definition — Python does not error on a repeated annotation, the later
+    one just wins — so the contract is that this field stays out here.
+    """
+    text = _config_text()
+    declaration = text.index("server_name: str = field(")
+    fields_start = text.index("# CONFIG-FIELDS-START")
+    assert declaration < fields_start, (
+        "server_name must be declared before CONFIG-FIELDS-START; inside the "
+        "block a copier update would treat it as domain content"
+    )
+
+
+def test_server_name_prefers_an_explicit_value_over_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A programmatically supplied name wins; an absent one reads the env.
+
+    The default is a `default_factory`, not a bare literal, so both halves
+    hold on the same construction path (#555).
+    """
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SERVER_NAME", "from-env")
+    assert ProjectConfig().server_name == "from-env"
+    assert ProjectConfig(server_name="explicit").server_name == "explicit"
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_SERVER_NAME")
+    assert ProjectConfig().server_name == "markdown-vault-mcp"
+
+
+def test_server_name_is_not_read_inside_from_env() -> None:
+    """The env read must stay in the module-level factory.
+
+    Moved into `from_env`, the config-surface generator's AST scan would
+    discover `MARKDOWN_VAULT_MCP_SERVER_NAME` as a *domain* var while
+    `config-presentation.yml` already declares it with template provenance,
+    and generation would fail with the duplicate-name error.
+    `docs/design/config-migration.md` documents this case.
+    """
+    text = _config_text()
+    from_env = text[text.index("def from_env") :]
+    assert '"SERVER_NAME"' not in from_env, (
+        "SERVER_NAME is read inside from_env — the generator's AST scan will "
+        "double-declare it; keep the read in _default_server_name()"
+    )

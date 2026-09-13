@@ -11,7 +11,9 @@ Use the issue templates in `.github/ISSUE_TEMPLATE/`:
 - **Bug report** — something isn't working as expected.
 - **Feature request** — a new capability or enhancement.
 - **Epic** — a multi-feature effort that ships as one user-facing story.
-  See [Epics](#epics) below.
+  See [Epics, packages and the roadmap](#epics-packages-and-the-roadmap) below.
+- **Research** — a question whose answer changes what happens next, with
+  an appetite agreed before starting.
 - **Decay / structural debt** — refactor-later observations.
 - **Question / support** — questions and support requests.
 
@@ -66,34 +68,57 @@ a separate issue for it.
 | An "Additional context" section that introduces new problems | Open a separate issue |
 | Implementation steps (a numbered list of code changes) | Remove entirely |
 
-### Epics
+### Epics, packages and the roadmap
 
-An epic is not just a bigger issue. It is the unit that answers two
-questions nothing else answers: **what story does this tell a user**, and
-**does it ship as a whole**. File one with the Epic form and:
+An **epic** is a story, represented by a parent issue labelled `epic`.
+A **package** is the payload of one release cut, represented by a milestone.
+An issue may have both: its story and its cut are independent.
 
-- **Write "What changes for the user" at epic creation**, before any code
-  exists. It becomes the release-notes highlight for the whole epic, so the
-  release editor verifies it against what landed instead of reconstructing
-  intent from merged PRs.
-- **Link children as native GitHub sub-issues, not markdown task lists.**
-  Sub-issues make the grouping queryable (parent, children, and progress
-  are API fields); a checklist is prose. Issue forms cannot create the link
-  at filing time — use the issue sidebar ("Create sub-issue" / "Add
-  existing issue") or the sub-issues API after filing. The
-  `authoring-issues-prs` skill performs this mechanically.
-- **If the epic ships atomically** (no release may be cut mid-epic), make
-  that queryable too. Preferred: assign the epic and its children to the
-  **milestone** named for the target release — "safe to cut" then reduces
-  to "no open issues in that milestone". Milestones are per-repo and
-  one-per-issue; for a cross-repo epic the milestone lives in the repo
-  where the release is cut. Fallback: apply the **`ships-atomically`
-  label** when no target release is named yet, or in the repos of a
-  cross-repo epic that do not cut the release. The form's yes/no field
-  records intent; only the milestone or label is what release tooling can
-  query.
+File epics with the Epic form. Write "Done when" as an outcome before
+decomposing it, and freeze it through refinement. If the outcome needs to
+change, record the reason in the roadmap before revising it. "What changes
+for the user" is a separate, editable release-notes highlight.
 
-Existing epics tracked as hand-written checklists need no migration.
+Link children as native GitHub sub-issues. Every epic starts with a
+`refinement` sub-issue pointing at its roadmap entry and "Done when";
+close it when feature issues plausibly cover that outcome. An epic whose
+only open child is its refinement task is an idea, not executable work.
+Research issues answer consequential unknowns within an agreed appetite;
+closing one updates the roadmap argument with its evidence.
+
+Name packages `NNN content-name`, using gaps such as `010`, `020`,
+`030`. The current package is the lowest open ordinal; sort the
+Milestones page alphabetically to see title order. Kind (major, minor,
+patch) is intent in the index; versions come from the release tool.
+Membership commits an issue to shipping in that cut. No milestone means
+backlog: do not create `Backlog` or `Future` milestones.
+
+Epics normally have no milestone because linked children can inherit it.
+For an epic that ships atomically in one package, assign the epic and its
+children to that package. For cross-repo epics, package membership is local
+to the repository cutting the release; use `ships-atomically` in other
+repositories or when no package is committed yet. Release Prepare warns
+about open items (issues and PRs) in the current package and open atomic
+epics. It does not block a deliberate cut. Keep the release PR itself out
+of the package.
+
+After a stable default-branch release, the workflow records the computed
+version in the package title, removes open items to backlog with a job
+summary, then closes the milestone. Failures warn and leave it open for
+retry. Re-commit leftovers deliberately. Branch releases and prereleases
+leave trunk packages alone.
+
+`docs/design/roadmap.md` holds direction, intended package order and
+known unknowns, with `stated`, `derived` or `evidenced` provenance.
+GitHub holds status and native issue dependencies. Read the
+`roadmapping` skill before charting, refining or revisiting these objects.
+It describes the evidence rule and the ready-feature handoff.
+
+A `breaking` label identifies a known break to an existing operator or
+library contract, assessed against the last stable release. Merely
+touching that surface does not earn the label. There is no breaking-PR
+merge gate: hold implementation or merge when batching is useful, or ship
+the compatible half first and file the breaking half separately.
 
 ## Pull requests
 
@@ -121,6 +146,20 @@ procedure, and it works with any coding agent. Code without matching docs is
 incomplete; check `README.md`, the `docs/` site, `docs/design/`, and inline
 docstrings.
 
+The issue is the request; the PR is the resolution. Review a feature's
+spec in session or offline, then include the approved spec under the PR's
+Design section, folded when long. If it exceeds the body limit, a human
+can attach the Markdown file in GitHub's UI; keep a decision summary in
+the body and never silently truncate the spec. Use only documented APIs.
+Small bugs and enhancements need no invented spec.
+
+`docs/superpowers/` is local, gitignored scratch for specs and plans.
+Do not commit new files there; historical tracked files stay as history.
+At merge, ask: what did the spec say that the code and `docs/design/`
+do not now show? Port enduring decisions to `docs/design/` or an ADR.
+The merged PR preserves the feature-level intent, reachable from the
+squash commit.
+
 ## Releases
 
 Merging is not releasing. When a release is cut, and from where, is
@@ -129,7 +168,7 @@ governed by the release model in the `releasing` skill
 straight from a quiescent trunk, and a short-lived `release/X.Y` branch
 is the exception tool for excluding unfinished work or patching a
 shipped release. The ships-atomically signal recorded on epics
-(milestone preferred, label fallback; see [Epics](#epics)) is the input
+(package preferred, label fallback; see [Epics](#epics-packages-and-the-roadmap)) is the input
 that judgement consumes: an open atomic epic with unclosed children
 means the release comes from before it started, or waits.
 

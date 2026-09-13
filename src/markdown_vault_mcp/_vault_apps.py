@@ -9,6 +9,9 @@ template skeleton (only its sentinel blocks and imports diverge):
   in the ``DOMAIN-APP-RESOURCE`` block.
 - :func:`_graph_view_payload` serializes a :class:`GraphView` into the SPA
   graph-tool wire shape for the ``DOMAIN-APP-TOOLS`` graph app-tools.
+- :func:`_fastmcp4_app_tool_meta` supplies FastMCP 4's public hash identity to
+  the app-only registrations; the external contract is pinned in
+  ``docs/design/reference/fastmcp-4.md``.
 """
 
 from __future__ import annotations
@@ -16,6 +19,8 @@ from __future__ import annotations
 import hashlib
 import os
 from typing import TYPE_CHECKING, Any
+
+from fastmcp.server.providers.addressing import hash_tool
 
 from markdown_vault_mcp.config import _ENV_PREFIX
 
@@ -34,6 +39,24 @@ _CDN_RESOURCE_DOMAINS: list[str] = [
     "https://fonts.googleapis.com",
     "https://fonts.gstatic.com",
 ]
+
+
+def _fastmcp4_app_tool_meta(app_name: str, tool_name: str) -> dict[str, Any]:
+    """Build public FastMCP 4 identity metadata for an app backend tool.
+
+    Args:
+        app_name: Stable application identity shared by its backend tools.
+        tool_name: The backend tool's registered local name.
+
+    Returns:
+        Metadata carrying the app name and deterministic public tool hash.
+    """
+    return {
+        "fastmcp": {
+            "app": app_name,
+            "tool_hash": hash_tool(app_name, tool_name),
+        }
+    }
 
 
 def _compute_claude_app_domain() -> str | None:

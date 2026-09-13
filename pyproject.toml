@@ -3,21 +3,34 @@ name = "markdown-vault-mcp"
 version = "4.2.0"
 description = "Generic markdown vault MCP with hybrid search"
 readme = "README.md"
-license = "MIT"  # project-owned — keep across copier updates
+# PROJECT-LICENSE-START — the license you picked; replace the value below and
+# it is kept across copier update.  The template ships a proprietary starter
+# because it cannot know your choice, and it does not re-render over yours.
+# See LICENSE for the other places the same choice has to be stated.
+license = "MIT"
+# PROJECT-LICENSE-END
 requires-python = ">=3.11"
-authors = [{ name = "Peter van Liesdonk" }]
+authors = [{ name = "Peter van Liesdonk", email = "pvliesdonk@users.noreply.github.com" }]
+# The template knows the terms that are true of every server it generates and
+# the project's own names; it cannot know the domain terms, which go in the
+# seam.  An empty list was not a decision, just nobody's job (#583).
 keywords = [
-    "markdown",
     "mcp",
+    "model-context-protocol",
+    "fastmcp",
+    "markdown-vault-mcp",
+    # PROJECT-KEYWORDS-START — add this project's domain terms below (what it
+    # is *about*: "vault", "ocr", "patents"); kept across copier update.
+    "markdown",
     "search",
     "fts5",
     "embeddings",
     "obsidian",
     "vault",
     "mcp-server",
-    "model-context-protocol",
     "knowledge-base",
     "semantic-search",
+    # PROJECT-KEYWORDS-END
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -26,18 +39,33 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "License :: OSI Approved :: MIT License",  # project-owned — keep across copier updates
+    # PROJECT-LICENSE-CLASSIFIER-START — kept across copier update; the trove
+    # name is not the SPDX id (Apache-2.0 is "Apache Software License"), which
+    # is one reason this is a separate edit rather than a derived one.
+    "License :: OSI Approved :: MIT License",
     "Topic :: Text Processing :: Markup :: Markdown",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    # PROJECT-LICENSE-CLASSIFIER-END
 ]
 dependencies = [
-    # >=6.0.0 for semantic InstructionRole values, shaped deployment identity,
-    # effective FastMCP tool visibility during instruction finalization, and
-    # the split operator contract: {PREFIX}_INSTANCE_DESCRIPTION supplies
-    # routing context while {PREFIX}_INSTRUCTIONS_EXTRA supplies policy (#553).
-    # The identity call and every domain contribution must move with this floor.
+    # >=7.1.0 for register_health_routes: the unauthenticated /health and
+    # /health/ready routes make_server wires under HTTP, which compose.yml
+    # now probes instead of opening a socket.
     #
-    # 5.0.0 was the previous floor, for the InstructionsBuilder
+    # 7.0.0 was the previous floor, for the FastMCP 4 adoption:
+    # configure_task_backend takes the
+    # server as its first argument and registers the SEP-2663 tasks extension
+    # on it (the fastmcp.settings.docket global it previously mutated is gone),
+    # and pvl-core itself moves to fastmcp[tasks]>=4,<5 (pvl-core#307).
+    # server.py's call site moves after FastMCP construction with this floor.
+    #
+    # 6.0.0 was the floor before that, for semantic InstructionRole values, shaped
+    # deployment identity, effective FastMCP tool visibility during instruction
+    # finalization, and the split operator contract:
+    # {PREFIX}_INSTANCE_DESCRIPTION supplies routing context while
+    # {PREFIX}_INSTRUCTIONS_EXTRA supplies policy (#553).
+    #
+    # 5.0.0 came earlier, for the InstructionsBuilder
     # (instructions_for / finalize_instructions). It removed
     # build_instructions, retained {PREFIX}_INSTRUCTIONS as a deprecated full
     # replacement, and added {PREFIX}_INSTRUCTIONS_EXTRA as the additive path;
@@ -71,9 +99,13 @@ dependencies = [
     # this whole constraint rather than the floor alone (#335), but a floor
     # naming a release nobody can install is still a trap for anyone pinning
     # to it.
-    "fastmcp-pvl-core>=6.0.0,<7",
+    "fastmcp-pvl-core>=7.1.0,<8",
     "typer>=0.12",
 
+    # fastmcp.apps and fastmcp.server.providers.addressing are imported
+    # directly by _server_apps.py, so the floor is declared here even though
+    # fastmcp-pvl-core>=7 already guarantees fastmcp>=4 transitively.
+    "fastmcp>=4",
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
     "python-frontmatter>=1.0",
     "requests>=2.33.0",
@@ -82,7 +114,7 @@ dependencies = [
 
 [project.optional-dependencies]
 # PROJECT-EXTRAS-START — add domain-specific optional-dependency groups below; kept across copier update
-mcp = ["fastmcp>=3.0,<4"]
+mcp = ["fastmcp>=4,<5"]
 # numpy carries no bound here on purpose: the <2.5 ceiling lives in
 # [tool.uv] constraint-dependencies below (single bound per package, per
 # scripts/check_pins.py), where Renovate's range rewriting cannot reach it
@@ -94,7 +126,7 @@ file-watcher = ["watchdog>=4.0"]
 # LLM-backed summarize tool (OpenAI-compatible chat-completions backend:
 # OpenAI, Ollama, Anthropic's compat endpoint, vLLM, ...).
 summarize = ["openai>=1.45"]
-all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0", "openai>=1.45"]
+all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0", "openai>=1.45"]
 # Pulls debugpy transitively via fastmcp-pvl-core's [debug] extra.  The
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.
@@ -122,6 +154,9 @@ dev = [
     # hostile, and liable to resolve a different fastmcp-pvl-core than this
     # project pins (#262). Declared here so the requirement is stated.
     "pyyaml>=6",
+    # PyYAML ships no inline types, so `import yaml` in tests/test_compose.py
+    # is an untyped import that fails `mypy src/ tests/` without these stubs.
+    "types-PyYAML>=6",
 ]
 docs = [
     "mike>=2",
@@ -160,6 +195,17 @@ requires = ["hatchling>=1.32,<1.33"]
 build-backend = "hatchling.build"
 
 [tool.uv]
+# PROJECT-UV-START — project-owned uv settings; kept across copier update.  The
+# template ships none, but it does ship the rules for what goes here.
+#
+# This is where a temporary dependency bound belongs.  `constraint-dependencies`
+# and `override-dependencies` are invisible to Renovate, so its update-lockfile
+# fallback cannot rewrite a deliberate cap the way it can one expressed in
+# `[project]` (#508) — and `scripts/check_pins.py` fails CI unless every entry
+# carries `# until: <issue URL>`, and again once that issue closes, so a pin
+# here cannot quietly outlive its reason.  Keep one bound per package: the same
+# script rejects a package bounded both here and in `[project]`.
+#
 # The single numpy bound (extras above are deliberately bare).  numpy 2.5+
 # is 3.12-only and its PEP 695 stubs abort mypy at this project's
 # python_version=3.11 (#727, #1214); without a ceiling, uv's forked
@@ -173,9 +219,14 @@ build-backend = "hatchling.build"
 constraint-dependencies = [
   "numpy<2.5", # until: https://github.com/pvliesdonk/fastmcp-server-template/issues/547
 ]
+# PROJECT-UV-END
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/markdown_vault_mcp"]
+# app.src.html is the input scripts/vendor_spa.py builds app.html from, so the
+# distribution carries the build and not the source (#580).  It is
+# `_skip_if_exists` precisely because it is yours to edit; that is not a reason
+# to ship it to installers.
 exclude = ["src/markdown_vault_mcp/static/app.src.html"]
 
 [tool.ruff]
@@ -249,6 +300,8 @@ ignore = ["E501"]
 # from an explicit repository root. Its `git add -A --` uses fixed argv with no
 # shell interpolation, so the same subprocess and partial-path exceptions apply.
 "scripts/promote_release_notes.py" = ["S603", "S607"]
+# Package bookkeeping invokes gh with fixed argv and JSON on stdin, never a shell.
+"scripts/package_milestones.py" = ["S603", "S607"]
 "scripts/check_pins.py" = ["S310"]  # urlopen on a validated api.github.com URL
 "scripts/report_seeded_changes.py" = ["S603", "S606", "S607"]
 

@@ -121,8 +121,8 @@ jobs:
       # prepare time, where the release decision is actually being drafted.
       # Surfaces both queryable quiescence signals the epic conventions
       # record:
-      #   * the preferred milestone — a release-named milestone (X.Y) with
-      #     open issues means that version is not yet safe to cut; and
+      #   * the current package — lowest open ordinal milestone, including
+      #     open PRs; legacy version-named milestones stay visible too; and
       #   * the ships-atomically label — for each open epic it also counts
       #     open native sub-issues, which may live in another repo, so a
       #     cross-repo epic whose children are elsewhere stays visible.
@@ -134,6 +134,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
+          # Package selection and pagination contract:
+          # docs/design/reference/github-planning-objects.md.
+          python3 scripts/package_milestones.py warn --repo "$REPO"
           # (1) Open ships-atomically epics, each with a count of still-open
           #     children (native sub-issues — cross-repo aware).
           epics=$(gh issue list --repo "$REPO" --label ships-atomically \
@@ -151,7 +154,7 @@ jobs:
               echo "::warning::Open ships-atomically epic #$num ($title) — $kids open child issue(s). Releasing $REPO@main ships HEAD mid-story; consider a release/X.Y branch cut from before the epic started."
             done || true
           fi
-          # (2) The preferred signal: a release-named milestone that still has
+          # (2) Legacy signal for unmigrated projects: a release-named milestone that still has
           #     open issues — that version is not yet quiescent. Accepts X.Y,
           #     optionally v-prefixed and/or with a patch component
           #     (v3.2 / 3.2.0 / v3.2.0), not bare X.Y alone.

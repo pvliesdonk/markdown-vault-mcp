@@ -1,5 +1,13 @@
 # Log
 
+## 2026-09-13
+
+- Added [FastMCP 4 protocol and server behaviour](fastmcp-4.md) for #1271, checked against FastMCP 4.0.3 and fastmcp-pvl-core 7.1.0 at pinned commits. Covered SDK snake_case names, the modern guard and legacy elicitation paths, default templated-resource screening, per-server task registration, public app-tool hash metadata, and the still-root-mounted OAuth authorization-server metadata route. Refute pass re-read each claim against the implementation and added project test pins. Next review: 2027-03-13.
+
+## 2026-09-12
+
+- Added [GitHub planning objects](github-planning-objects.md), checked against GitHub.com documentation and GitHub CLI 2.97.0. Covered milestone identity, pagination, PR membership, nullable updates, issue hierarchy and dependencies, and documented attachment support. Refute pass retained the cross-owner REST documentation conflict and marked unreproduced UI/search observations explicitly. Next review: 2027-03-12.
+
 ## 2026-09-11
 
 - `okf-v0.2.md`: §8 and §9 re-read at the page's pinned commit 62432a09 for #1396 (identical at `open-knowledge-format` 0b87c52c). The reserved-frontmatter departure said §8 allows "none in `log.md`" and the `type`-exemption departure that reserved files "carry none by §8"; §8 names index files only and §9 says nothing about frontmatter, so both are corrected and the silence is recorded on the §9 claim. The `type` exemption is now stated as a reading of conformance rule 2 against §3.1 rather than the text's own consequence. The reserved-frontmatter departure gains the `index_frontmatter` audit finding and its pointer to #1438; the §8 and §9 claims gain pins.

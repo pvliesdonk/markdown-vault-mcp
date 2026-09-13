@@ -25,7 +25,27 @@ The `Pre-release check` workflow (Actions tab, `workflow_dispatch`) builds and v
 
 **The default release path is trunk.** When a release is wanted and trunk is quiescent (no atomic epic mid-flight — the cut criterion below), dispatch Release Prepare on `main` and merge the release PR it opens. That cuts a stable: no branch, no ceremony. Most releases should look like this.
 
-**The cut criterion.** An epic that ships atomically makes trunk unreleasable while it is open: releasing `main` ships HEAD, mid-story. Judge quiescence from the queryable signal the epic conventions record (see CONTRIBUTING.md's Epics section): preferably the **release milestone** — safe to cut means no open issues in the target release's milestone — with the **`ships-atomically` label** as the fallback when no milestone names a release yet. An open atomic epic with unclosed children means either release from a commit before the epic started (a `release/X.Y` branch cut from that commit) or wait. The Release Prepare workflow's advisory step surfaces both signals on every default-branch dispatch — a release-named milestone (`X.Y`) that still has open issues, and open `ships-atomically` epics (each with a count of its native sub-issues, so a cross-repo epic whose children live elsewhere stays visible); it warns and never blocks, because the cut may still be intentional.
+**The cut criterion.** Judge quiescence from the **current package**: the lowest open `NNN content-name` milestone (see CONTRIBUTING.md's "Epics, packages and the roadmap"). Safe to cut means no open items in that package, including PRs; keep the release PR itself out of it. The **`ships-atomically` label** is the fallback when no package is committed or an atomic epic spans repositories. An open atomic epic with unclosed children means either release from before it started (a `release/X.Y` branch) or wait. Release Prepare surfaces both signals and retains the version-named milestone warning for projects still migrating. All are advisory, because a cut may be deliberate.
+
+After a stable default-branch cut, Release records the computed version in the current package's title, returns open leftovers to backlog and lists them in the job summary, then closes the milestone. Failure leaves it open for recovery. Reassign leftovers deliberately. Branch cuts and prereleases leave trunk packages untouched. The `roadmapping` skill defines package membership and order. Intended major/minor/patch kind is an index claim, never a merge gate; a breaking change that lands determines the next computed release kind.
+
+**Recover package bookkeeping directly.** From a checkout containing the
+released helper, authenticate `gh` with issue/milestone write access and run:
+
+```bash
+python3 scripts/package_milestones.py close --repo OWNER/REPO --version X.Y.Z --resume
+```
+
+First verify that `X.Y.Z` was a stable default-branch cut. This resumes
+only a milestone already reserved as `vX.Y.Z name`, and no-ops when
+closed. With no reservation it warns and changes nothing, including when
+the original cut had no package. If the first attempt failed before
+reserving anything, verify the intended package against that cut before
+starting an initial finalization without `--resume`; never select today's
+package for an older cut by guess. Actions reruns automatically apply
+this resume-only restriction through `GITHUB_RUN_ATTEMPT`. Do not rely
+on rerunning the entire Release workflow for delayed recovery: its earlier
+tag/release step can fail once a newer release exists.
 
 **The `release/X.Y` branch is the exception tool**, for exactly two cases:
 
