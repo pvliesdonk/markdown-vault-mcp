@@ -83,6 +83,15 @@ transition rationale; it does not mirror issue status. The epic spans cuts and
 carries no milestone; individual issues join a package only when their delivery
 is committed to that cut.
 
+The owner's 13 September follow-up places this epic and the optional Git-backend
+epic after `020 first-class-library`, each split into smaller release packages.
+The product index records [candidate cuts](roadmap.md#follow-up-slices-after-020);
+[#1467](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1467) refines their
+delivery scope. A stage is not automatically a package: basic applicability
+travels with preservation, navigation and editorial history have separate
+boundaries, and publication need not wait for all curation or retrieval work.
+The optional Git backend is not an OKF prerequisite.
+
 The former `okf-roadmap` theme milestone and the stabilization boundary on
 [milestone 6](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/6)
 remain historical records. The 13 September reconciliation in

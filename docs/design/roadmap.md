@@ -27,7 +27,11 @@ curation to that foundation. It does not replace the generic vault use cases.
 as the package immediately after correctness work in `010`, centered on
 [#1436][1436]. Research must determine whether that requires separate vault and
 MCP PyPI distributions (13 September 2026). This inserts library support ahead of
-the earlier OKF-foundations preference; Git reliability supports the wider direction.
+the earlier OKF-foundations preference.
+
+`stated` — The follow-ups after `020` are the optional Git-backend epic
+[#1313][1313] and OKF epic [#1425][1425], broken into smaller packages
+(13 September 2026). Neither epic is intended as a single release cut.
 
 `derived` — Correctness work establishes whether the storage and link behavior
 that later curation relies on can be trusted. Git reliability supports both;
@@ -89,8 +93,11 @@ publication can advance alongside curation. Git trailers and generated editorial
 summaries supply no authority and do not gate publication.
 
 `derived` — [Refinement #1467][1467] checks coverage of the frozen outcome and
-identifies a coherent first delivery slice. The existing reports provide useful
-observations; their presence alone does not make the whole stage ready to build.
+divides the outcome into independently useful release slices, starting with
+inventory. It checks the candidate boundaries below against actual feature
+coverage and the coordinated preservation transition. The existing reports
+provide useful observations; their presence alone does not make a stage ready
+to build.
 
 ### Reliable Git integration, with an optional backend
 
@@ -103,7 +110,10 @@ scenarios. The epic spans cuts; the former `git` milestone was a theme.
 in [#1309][1309]: it reveals compatibility obligations while improvements still
 benefit the default backend. The interface work in [#1308][1308] is the other
 recorded prerequisite. Native dependencies carry these delivery edges;
-[refinement #1468][1468] checks their coverage of the epic outcome.
+[refinement #1468][1468] checks their coverage of the epic outcome and separates
+the contract/test foundation from optional-backend delivery. If backend delivery
+is still too large, refinement must find a supported end-to-end opt-in slice,
+not release a selector whose advertised operations do not work.
 
 `derived` — Independently, observable replication in [#1293][1293] comes before
 write refusal in [#1299][1299], because evidence of failure modes determines
@@ -168,9 +178,45 @@ remain compatible. Reclassify the package as major if the chosen transition brea
 the preceding stable operator or library contract. Do not promise either a split
 or a minor version before that assessment.
 
-`derived` — Subsequent cuts return to OKF foundations, subject to refinement and
-what the library work teaches. Git operability can contribute independent slices.
-No additional package is committed by that direction alone.
+### Follow-up slices after `020`
+
+`derived` — The following are candidate release boundaries for the owner's two
+selected follow-up epics, not milestone membership or implementation plans.
+Refinement assigns ordinals and commits the nearest coherent cuts once their
+scope is understood. Start with the Git contract/test foundation and OKF bundle
+inventory; their relative release order is not yet selected. Neither track waits
+for the other epic to finish, and the optional backend does not gate OKF.
+
+All rows below are `derived`. Names describe an outcome; prerequisites express
+needed contracts, not a requirement to finish every issue in an earlier stage.
+
+| Track | Candidate cut | Independently useful completion boundary | Ordering argument |
+| --- | --- | --- | --- |
+| Git | Real Git contracts | Existing CLI behavior is exercised against real repositories, and backend substitution seams preserve that behavior and the supported library contract. | Reveals compatibility obligations before adding a second implementation. |
+| Git | Optional backend | An operator can opt into a supported alternative, with shared scenario coverage, actionable capability refusals and installation/operation documentation; CLI remains the default. | Requires the contract/test foundation. Reassess backend capabilities during delivery, not from the historical spike alone. |
+| OKF | Bundle inventory | Inspect scoped, role-aware bundle membership independently of search admission, without forcing concept metadata into navigation/history. | Exposes the material every later service must preserve or assess. |
+| OKF | Faithful storage and explicit policy | Preserve supplied provenance and extensions; expose semantic-write authority and effective capabilities, with an explained upgrade path and honest uncertainty about retained reviews. | Requires role/scope inventory. Basic review-applicability presentation ships here; it cannot be deferred behind misleading certification. |
+| OKF | Evidence and applicability | Distinguish claims, local observations and policy assessments across relevant change routes; show which revision evidence supports and where history is unavailable. | Extends the basic honest presentation with fuller observation coverage, without delaying preservation for complete history. |
+| OKF | Deliberate authoring and review | Explicit authoring, repair and snapshot/check-specific review are usable workflows, with imported claims distinct from local checks. | Requires preservation/policy and evidence contracts. Refine authoring and review separately if this is still more than one useful cut. |
+| OKF | Generated navigation | Explicitly authorized generated listings converge across writers while authored navigation survives; recovery respects role and authority. | Requires inventory, policy and observations, not generated editorial explanations. |
+| OKF | Editorial history | Deliberate knowledge events preserve curated history and can span concepts; any assisted explanation is an attributable proposal. | Uses the curation contracts; navigation convergence is a separate completion boundary, not a reason to bundle both. |
+| OKF | Evidence-aware retrieval | Citation sources and affected concepts are discoverable; retrieval purpose and evidence limitations remain visible. | Inventory and evidence unlock this alongside curation; assess citation traversal and policy-aware ranking as separate cuts if needed. |
+| OKF | Faithful publication | Publish an explicit scoped snapshot with preserved membership/link meaning and an honest report about the actual artifact. | Inventory, preservation and evidence unlock this alongside curation/retrieval. New-review publication alone needs deliberate review. |
+
+`derived` — These boundaries refine, rather than replace, the
+[OKF stages](okf-roadmap.md#sequence-and-completion-boundaries). Publication is
+listed last for readability, not as a dependency on every preceding row.
+Each candidate needs documentation and validation of its own supported outcome.
+Do not make one broad existing issue span multiple milestones: refinement splits
+delivery issues where a candidate boundary cuts across their current scope,
+preserving the epic's frozen acceptance outcome.
+
+`derived` — Capability cuts have provisional minor intent, except the
+preservation/policy transition whose compatibility kind remains unresolved in
+[#1412][1412]. The Git foundation may need an explicit release-version override
+if its changes are only refactoring/tests; a package label does not itself cut a
+release. Every cut is classified against the stable operator/library contract
+it will follow, especially the contract established in `020`.
 
 `evidenced` — [The package convention](../../.agents/skills/roadmapping/SKILL.md#packages)
 selects the lowest open ordinal as current. Membership commits an issue to one
@@ -245,6 +291,18 @@ issue under [epic #1471][1471], with [research #1473][1473] informing
 [refinement #1472][1472]. The research is planned, not a completed finding.
 Package separation and release kind remain open decisions; neither the package
 title nor the broad architectural studies settle them.
+
+### 13 September 2026 — slice both follow-up epics
+
+`stated` — The owner selected [#1313][1313] and [#1425][1425] as follow-ups
+and asked to break them into smaller packages.
+
+`derived` — Record candidate cuts for both tracks after `020`, replacing the
+earlier asymmetry of OKF next and Git merely available. Keep their independent
+dependency paths, the OKF preservation/applicability delivery constraint and
+the original epic outcomes. [#1468][1468] and [#1467][1467] own refinement into
+bounded delivery issues and concrete package membership; no entire epic or
+distant unrefined slice acquires a release promise here.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
