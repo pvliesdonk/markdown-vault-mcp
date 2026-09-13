@@ -187,10 +187,11 @@ class TestShowContextTool:
         server = make_server()
         async with Client(server) as client:
             tools = await client.list_tools()
-            names = [t.name for t in tools]
-            assert "show_context" in names
-            # vault_context has visibility=["app"] — hidden from LLM tool list
-            assert "vault_context" not in names
+            by_name = {tool.name: tool for tool in tools}
+            assert "show_context" in by_name
+            # FastMCP 4 advertises app backends so gateways can route them;
+            # the host filters them out of the model view by this declaration.
+            assert by_name["vault_context"].meta["ui"]["visibility"] == ["app"]
 
     async def test_missing_note_returns_error_summary(self) -> None:
         server = make_server()

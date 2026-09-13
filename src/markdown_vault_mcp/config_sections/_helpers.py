@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import overload
 
 from fastmcp_pvl_core import (
     env as _core_env,
@@ -22,6 +23,14 @@ from fastmcp_pvl_core import (
 # Type accepted for ProjectConfig's weight-map fields: a mapping (e.g. from
 # parse_weight_map) or an already-frozen tuple of (key, weight) pairs.
 WeightMap = Mapping[str, float] | Sequence[tuple[str, float]]
+
+
+@overload
+def env(prefix: str, name: str, default: str) -> str: ...
+
+
+@overload
+def env(prefix: str, name: str, default: None = None) -> str | None: ...
 
 
 def env(prefix: str, name: str, default: str | None = None) -> str | None:

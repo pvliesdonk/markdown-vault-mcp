@@ -349,6 +349,53 @@ def test_systemd_uses_raw_host_path_not_container(page: Page) -> None:
     # systemd is a host-path context: no container-path rewrite.
     assert "DEMO_DATA_DIR=/host/data" in result
     assert "/data/app" not in result
+    # The wizard's unit frame mirrors the packaged one, whose journald output
+    # is not a terminal either; tests/test_container_logging.py pins the same
+    # default on that file.
+    assert "Environment=FASTMCP_ENABLE_RICH_LOGGING=false" in result, result
+
+
+def test_docker_targets_omit_the_pinned_listener_vars(page: Page) -> None:
+    """The image's CMD pins `--host 0.0.0.0 --port 8000`, and both Docker
+    targets hardcode the 8000 mapping. Emitting HOST/PORT there would promise
+    a knob the container ignores -- and before the CMD pinned the port, a
+    `PORT=9000` answer beside `-p 8000:8000` published a port nothing served.
+    The dotenv target still carries them: outside a container they are real.
+    Also pins the liveness probe URL the compose frame shares with the shipped
+    `compose.yml`.
+    """
+    result = _eval_generators(
+        page,
+        """(g) => {
+          const spec = { version: 1,
+            meta: { projectName: 'demo', dockerImage: 'img:latest', envPrefix: 'DEMO' },
+            secretKeys: [],
+            questions: [
+              { id: 'host', label: 'H', type: 'text', var: 'DEMO_HOST' },
+              { id: 'port', label: 'P', type: 'number', var: 'DEMO_PORT' },
+              { id: 'other', label: 'O', type: 'text', var: 'DEMO_OTHER' },
+            ],
+            guards: [] };
+          const answers = { deployment: 'server', host: '0.0.0.0', port: '9000', other: 'kept' };
+          const map = g.buildEnvMap(spec, answers);
+          return { docker: g.generateDockerRun(spec, answers, map),
+                   compose: g.generateCompose(spec, answers, map),
+                   dotenv: g.generateDotenv(map) };
+        }""",
+    )
+    for target in ("docker", "compose"):
+        assert "DEMO_HOST" not in result[target], result[target]
+        assert "DEMO_PORT" not in result[target], result[target]
+        # Everything else still flows through.
+        assert "DEMO_OTHER" in result[target]
+    assert "8000:8000" in result["docker"]
+    assert "8000:8000" in result["compose"]
+    # The wizard's compose frame mirrors the shipped compose.yml, liveness
+    # probe included; tests/test_compose.py pins the same URL on that file.
+    assert "127.0.0.1:8000/health" in result["compose"], result["compose"]
+    # The dotenv target is for the non-container paths, where both are real.
+    assert "DEMO_HOST=0.0.0.0" in result["dotenv"]
+    assert "DEMO_PORT=9000" in result["dotenv"]
 
 
 def test_compose_quotes_yaml_typed_env_values(page: Page) -> None:
@@ -360,19 +407,21 @@ def test_compose_quotes_yaml_typed_env_values(page: Page) -> None:
             secretKeys: [],
             questions: [
               { id: 'flag', label: 'F', type: 'text', var: 'DEMO_FLAG' },
-              { id: 'port', label: 'P', type: 'text', var: 'DEMO_PORT' },
+              { id: 'count', label: 'C', type: 'text', var: 'DEMO_COUNT' },
             ],
             guards: [] };
-          const answers = { deployment: 'server', flag: 'true', port: '8080' };
+          const answers = { deployment: 'server', flag: 'true', count: '8080' };
           const map = g.buildEnvMap(spec, answers);
           return g.generateCompose(spec, answers, map);
         }""",
     )
     # YAML 1.1 parsers coerce bare true/8080 to bool/int; env values are
-    # strings, so compose must emit them quoted.
+    # strings, so compose must emit them quoted.  The numeric case uses a var
+    # the Docker targets keep: `DEMO_PORT` is dropped there on purpose (the
+    # image pins its listener), which would make this assert vacuous.
     assert 'DEMO_FLAG: "true"' in result
     assert "DEMO_FLAG: true\n" not in result
-    assert 'DEMO_PORT: "8080"' in result
+    assert 'DEMO_COUNT: "8080"' in result
 
 
 # A two-level showIf chain (child gates on `auth`, `auth` gates on `deployment`)

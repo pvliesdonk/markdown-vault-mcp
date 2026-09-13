@@ -205,9 +205,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_history"],
         annotations={
             "title": "Note History",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def get_history(
@@ -280,9 +280,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_diff"],
         annotations={
             "title": "Note Diff",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def get_diff(
@@ -370,9 +370,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["git_sync"],
         annotations={
             "title": "Sync with Git",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": False,
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": False,
         },
     )
     async def git_sync(

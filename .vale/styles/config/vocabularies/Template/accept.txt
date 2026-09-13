@@ -18,6 +18,7 @@ Traefik
 
 # --- HTTP / URL terminology ---
 hostname
+liveness
 resumability
 sandboxing
 subpath
@@ -30,6 +31,7 @@ id_token
 debugpy
 fastmcp's
 lockfile
+middleware
 namespace
 scaffolded
 stdio

@@ -5,6 +5,10 @@
 const FASTMCP_HOME = "/data/state/fastmcp";
 // The named state volume, mounted in every Docker/Compose artifact.
 const STATE_VOLUME = "state-data:/data/state";
+// The image declares VOLUME for both paths (Dockerfile), and the shipped
+// compose.yml mounts both. Emitting only the state volume would leave
+// /data/service on an anonymous volume that a `down -v` silently discards.
+const SERVICE_VOLUME = "service-data:/data/service";
 
 const secretPlaceholder = (key, envPrefix) => {
   const prefix = `${envPrefix}_`;
@@ -145,6 +149,17 @@ function dockerEnvMap(spec, answers, map) {
     }
   }
   out.FASTMCP_HOME = FASTMCP_HOME;
+  // The image pins its own listener -- Dockerfile's CMD passes
+  // `--host 0.0.0.0 --port 8000` -- so neither var reaches uvicorn in a
+  // container, while the `-p` / `ports:` mapping and the compose healthcheck
+  // both name 8000. Emitting them would promise a knob the container ignores:
+  // before the CMD pinned the port, `-e <PREFIX>_PORT=9000` beside
+  // `-p 8000:8000` actively broke the run. Publish a different HOST port
+  // instead. Mirrors the same exclusion in config-presentation.yml's
+  // `packaging:` map.
+  const prefix = spec.meta.envPrefix;
+  delete out[`${prefix}_HOST`];
+  delete out[`${prefix}_PORT`];
   return out;
 }
 
@@ -174,6 +189,7 @@ export function generateDockerRun(spec, answers, map) {
   const lines = [
     `docker run -d --name ${spec.meta.projectName}`,
     "  -p 8000:8000",
+    `  -v ${SERVICE_VOLUME}`,
     `  -v ${STATE_VOLUME}`,
   ];
   for (const [host, container] of dockerVolumes(spec, answers)) {
@@ -184,9 +200,13 @@ export function generateDockerRun(spec, answers, map) {
   return lines.join(" \\\n");
 }
 
+// Frame kept in step with the shipped compose.yml.jinja: same volumes, same
+// restart policy, same liveness probe. Configuration differs deliberately —
+// the wizard emits a standalone file built from the answers, with no `.env`
+// behind it, so its values are inline rather than read via `env_file:`.
 export function generateCompose(spec, answers, map) {
   const env = dockerEnvMap(spec, answers, map);
-  const volLines = [`      - ${STATE_VOLUME}`];
+  const volLines = [`      - ${SERVICE_VOLUME}`, `      - ${STATE_VOLUME}`];
   for (const [host, container] of dockerVolumes(spec, answers)) {
     volLines.push(`      - ${yamlScalar(`${host}:${container}`)}`);
   }
@@ -195,13 +215,25 @@ export function generateCompose(spec, answers, map) {
     "services:",
     `  ${spec.meta.projectName}:`,
     `    image: ${spec.meta.dockerImage}`,
+    "    restart: unless-stopped",
     "    ports:",
     '      - "8000:8000"',
     "    volumes:",
     ...volLines,
     "    environment:",
     envLines,
+    "    healthcheck:",
+    "      test:",
+    "        - CMD",
+    "        - python",
+    "        - -c",
+    `        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).close()"`,
+    "      interval: 30s",
+    "      timeout: 5s",
+    "      retries: 3",
+    "      start_period: 10s",
     "volumes:",
+    "  service-data:",
     "  state-data:",
   ].join("\n");
 }
@@ -219,6 +251,11 @@ export function generateSystemd(meta, map) {
     `# Create this user first: sudo useradd --system --no-create-home ${name}`,
     `User=${name}`,
     `ExecStart=/opt/${name}/venv/bin/${name} serve --transport http`,
+    // Same trade the packaged unit makes: journald is not a terminal, so Rich
+    // wraps every structured log record across three lines. Emitted before
+    // `envLines` because systemd lets a later Environment= win, so an operator
+    // who answered this question still gets their answer.
+    "Environment=FASTMCP_ENABLE_RICH_LOGGING=false",
     envLines,
     "Restart=on-failure",
     "",

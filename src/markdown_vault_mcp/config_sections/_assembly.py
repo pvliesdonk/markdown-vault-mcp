@@ -444,26 +444,6 @@ def to_vault_kwargs(config: ProjectConfig) -> dict[str, Any]:
     return kwargs
 
 
-def read_server_name(prefix: str) -> str:
-    """Read ``{prefix}_SERVER_NAME``, falling back to the project name.
-
-    Lives outside ``ProjectConfig.from_env`` deliberately: the var is
-    declared by the template-owned ``config-presentation.yml`` (``template``
-    provenance), so a literal ``env(...)`` read inside ``from_env`` would be
-    AST-discovered as a ``domain`` var too and trip the generator's
-    duplicate-name guard.
-
-    Args:
-        prefix: Env var prefix, e.g. ``"MARKDOWN_VAULT_MCP"``.
-
-    Returns:
-        The configured server name, or ``markdown-vault-mcp``.
-    """
-    from fastmcp_pvl_core import env as _env
-
-    return (_env(prefix, "SERVER_NAME") or "").strip() or "markdown-vault-mcp"
-
-
 def resolve_git_repo_url(raw: str | None, token: str | None, prefix: str) -> str | None:
     """Resolve ``GIT_REPO_URL``, warning when a token is set without it.
 

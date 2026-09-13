@@ -32,7 +32,9 @@ _SURFACE_LIMITS = {
     "resource_descriptions": 700,
     "resource_template_descriptions": 800,
 }
-_TOTAL_SURFACE_LIMIT = 58_000
+# FastMCP 4's SDK v2 schemas put the #1271 model-visible baseline at 58,057;
+# keep less than one percent of aggregate headroom.
+_TOTAL_SURFACE_LIMIT = 58_500
 
 
 @pytest.fixture
@@ -86,17 +88,29 @@ async def test_maximal_client_surface_stays_within_reviewed_budgets(
         resources = await client.list_resources()
         resource_templates = await client.list_resource_templates()
 
+    # FastMCP 4 advertises app-only backends in tools/list so a host or gateway
+    # can route them, then declares visibility=["app"] for host-side filtering.
+    # This budget measures what the model sees, so exclude precisely that set.
+    tools = [
+        tool
+        for tool in tools
+        if not (
+            isinstance(ui := (tool.meta or {}).get("ui"), dict)
+            and ui.get("visibility") == ["app"]
+        )
+    ]
+
     actual = {
         "instructions": utf16_code_units(maximal_surface_server.instructions or ""),
         "tool_descriptions": _units([tool.description for tool in tools]),
         "tool_input_schemas": _units(
-            [_compact_schema(tool.inputSchema) for tool in tools]
+            [_compact_schema(tool.input_schema) for tool in tools]
         ),
         "tool_output_schemas": _units(
             [
-                _compact_schema(tool.outputSchema)
+                _compact_schema(tool.output_schema)
                 for tool in tools
-                if tool.outputSchema is not None
+                if tool.output_schema is not None
             ]
         ),
         "prompt_descriptions": _units([prompt.description for prompt in prompts]),
@@ -123,9 +137,9 @@ async def test_maximal_client_surface_stays_within_reviewed_budgets(
     assert sum(actual.values()) <= _TOTAL_SURFACE_LIMIT, actual
 
     wait_descriptions = [
-        tool.inputSchema["properties"]["wait_for_pending_writes"]["description"]
+        tool.input_schema["properties"]["wait_for_pending_writes"]["description"]
         for tool in tools
-        if "wait_for_pending_writes" in tool.inputSchema.get("properties", {})
+        if "wait_for_pending_writes" in tool.input_schema.get("properties", {})
     ]
     assert wait_descriptions
     assert set(wait_descriptions) == {_WAIT_DESCRIPTION}

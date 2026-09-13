@@ -24,6 +24,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.exceptions import ToolError
+from mcp.shared.exceptions import MCPError
 
 from markdown_vault_mcp import _okf_write
 from markdown_vault_mcp._okf_write import (
@@ -771,6 +772,17 @@ class TestOkfVerifyTrustAuth:
 class TestOkfVerifyElicit:
     """okf_verify under the default ``OKF_VERIFY=elicit`` — human elicitation gate."""
 
+    async def test_legacy_connection_uses_server_initiated_elicitation(self) -> None:
+        """Handshake-era clients retain server-initiated confirmation."""
+        async with Client(
+            make_server(), mode="legacy", elicitation_handler=_accept_review
+        ) as client:
+            result = await client.call_tool(
+                "okf_verify", {"path": "guides/playbook.md"}
+            )
+            await wait_for_mcp_writer_drain(client)
+        assert _parse_tool_data(result)["verifier"] == "human:local"
+
     async def test_writes_on_affirmative_elicitation(
         self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -829,11 +841,12 @@ class TestOkfVerifyElicit:
     async def test_unsupported_client_fails_closed(
         self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # No elicitation_handler → the client cannot elicit → fail closed.
+        # On the modern protocol the client drives the returned input request;
+        # with no handler it refuses before issuing a continuation call.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            with pytest.raises(ToolError, match="does not support elicitation"):
+            with pytest.raises(MCPError, match="Elicitation not supported"):
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
             await wait_for_mcp_writer_drain(client)
         assert _verified_meta(enforced_env / "guides" / "playbook.md") is None

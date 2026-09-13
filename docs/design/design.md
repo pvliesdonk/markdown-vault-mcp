@@ -3167,7 +3167,25 @@ as indexed.
 
 ### `server.py`: Generic MCP Server
 
-Uses **FastMCP 3.0+** with lifespan hooks for Vault init/teardown.
+Uses **FastMCP 4.0+** with lifespan hooks for Vault init/teardown. The external
+behaviour this integration relies on is pinned in
+[`reference/fastmcp-4.md`](reference/fastmcp-4.md).
+
+FastMCP 4 clients negotiate the modern MCP 2026-07-28 protocol by default.
+For `okf_verify`, the modern path is a stateless guard: the first call returns
+an `InputRequiredResult`, and the repeated call validates the keyed boolean
+answer before writing. A handshake-era client instead uses
+`ctx.elicit(response_type=bool)`. Both paths fail closed on unsupported,
+declined, cancelled, or negative input. Templated vault resources keep
+FastMCP's default screening for `..` components, absolute paths, and null
+bytes; they declare no exemptions because every accepted note or folder path
+is vault-relative. The Vault reader remains responsible for root containment.
+
+The task backend is server-owned rather than process-global:
+`configure_task_backend(mcp, _ENV_PREFIX, config.server)` registers the tasks
+extension on the exact root server before task-enabled tools are registered.
+Python reads of MCP model fields use SDK v2 snake_case names; camelCase remains
+the wire representation only.
 
 **Tool surface** mirrors LLM file tool semantics (Claude Code Read/Write/Edit
 pattern). Each tool is annotated with MCP `ToolAnnotations`:
@@ -3355,7 +3373,7 @@ contain this, both operator-tunable:
   is registered through ``fastmcp_pvl_core.register_long_running_tool``
   rather than a bare ``@mcp.tool``, replacing the earlier hand-rolled
   ``SummaryJobStore`` + ``get_summary`` pair (#937). An MCP client that
-  speaks background tasks (SEP-1686) runs the call as a protocol-native
+  speaks background tasks (SEP-2663) runs the call as a protocol-native
   task; any other client runs it in the foreground up to the jobs
   subsystem's soft deadline (``JOBS_SOFT_DEADLINE_S``, default 25 s). A
   summary that finishes in time returns inline with
@@ -3385,6 +3403,11 @@ contain this, both operator-tunable:
   ``get_index_status`` / ``embeddings_status`` stay as independent
   observability tools — they also report boot-time builds and
   file-watcher reindexes that no client call initiated.
+
+  Under FastMCP 4, a default modern `Client.call_tool()` negotiates the native
+  tasks extension and transparently polls it to its terminal result. The
+  foreground soft-deadline/pollable-job path remains the fallback for clients
+  that do not negotiate tasks, including a handshake-era client.
 
 **Composed instructions**: from fastmcp-pvl-core 6 the server's MCP
 `instructions` string is not a single templated value but a collection of
@@ -4017,10 +4040,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-mcp = ["fastmcp>=3.0,<4"]
+mcp = ["fastmcp>=4,<5"]
 embeddings-api = ["httpx>=0.25", "numpy"]
 embeddings = ["fastembed>=0.3", "numpy"]
-all = ["fastmcp>=3.0,<4", "httpx>=0.25", "fastembed>=0.3", "numpy"]
+all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1", "mypy>=1.0"]
 
 [tool.uv]

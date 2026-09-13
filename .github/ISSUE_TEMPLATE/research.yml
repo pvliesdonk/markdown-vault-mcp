@@ -1,0 +1,61 @@
+name: Research
+description: >
+  A question that must be answered before work can be shaped, with a time
+  budget. Produces evidence, not software. See CONTRIBUTING.md.
+title: "[Research]: "
+labels: ["research"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: >
+        The single question this spike answers. If it is two questions,
+        file two issues.
+    validations:
+      required: true
+  - type: textarea
+    id: decision
+    attributes:
+      label: What changes depending on the answer
+      description: >
+        The decision or piece of work that cannot be shaped until this is
+        known. If nothing changes either way, record the unknown in
+        docs/design/roadmap.md instead of filing a spike.
+    validations:
+      required: true
+  - type: dropdown
+    id: appetite
+    attributes:
+      label: Appetite
+      description: >
+        How much time this is worth, decided now. Exceeding it is a finding
+        about the direction (the area is harder than assumed) and goes into
+        the roadmap index, not a request for more time.
+      options:
+        - Up to half a day
+        - Up to two days
+        - Up to a week
+    validations:
+      required: true
+  - type: input
+    id: resolves
+    attributes:
+      label: Resolves
+      description: >
+        The issue or epic this answer unblocks ("#N"). Set the dependency
+        after filing: `gh issue edit N --add-blocked-by <this issue>`.
+    validations:
+      required: false
+  - type: markdown
+    attributes:
+      value: |
+        ### Where the output goes
+
+        - **The working** (notes, benchmarks, dead ends) stays here as
+          comments.
+        - **The verdict** goes in the closing comment, a few lines, so the
+          issue answers itself later.
+        - **The consequence** goes in `docs/design/roadmap.md`: an item that
+          was `derived` may now be `evidenced` or wrong. A spike whose answer
+          never reaches the argument produced nothing.

@@ -19,6 +19,21 @@ body:
       placeholder: "After this epic, you can ..."
     validations:
       required: true
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: >
+        The outcome that must be true for this epic to be complete, written
+        as a result for someone, not as a list of features. It is frozen
+        through refinement: the feature issues are checked against it, never
+        the other way round. If it turns out wrong, that is a change of
+        direction recorded in docs/design/roadmap.md, not an edit here.
+        Unlike the release highlight above, release tooling never rewrites
+        this field.
+      placeholder: "Done when an operator can ... without ..."
+    validations:
+      required: true
   - type: dropdown
     id: surface-impact
     attributes:
@@ -78,15 +93,24 @@ body:
         (`.agents/skills/authoring-issues-prs/SKILL.md`) performs these
         steps mechanically.
 
-        1. **Link the children as native sub-issues** — issue sidebar
+        1. **Create the refinement sub-issue** — one issue labelled
+           `refinement`, parented to this epic, whose body points at the
+           epic's entry in `docs/design/roadmap.md` and the "Done when"
+           above. It is the only executable thing an unrefined epic
+           offers; it closes when feature issues exist that plausibly
+           satisfy "Done when".
+        2. **Link the children as native sub-issues** — issue sidebar
            ("Create sub-issue" / "Add existing issue") or the sub-issues
-           API. This makes the grouping queryable (`has_parent`,
+           API. This makes the grouping queryable (`parent-issue:`,
            `sub_issues_summary`) instead of prose to pattern-match.
-        2. **If the epic ships atomically, make that queryable:**
-           - **Milestone (preferred):** assign the epic and its children to
-             the milestone of the target release, creating it if needed.
-             Milestones are per-repo and one-per-issue; for a cross-repo
-             epic the milestone lives in the repo where the release is cut.
-           - **Label (fallback):** apply `ships-atomically` when no target
-             release is named yet, or in the repos of a cross-repo epic
-             that do not cut the release.
+        3. **If the epic ships atomically, make that queryable:**
+           - **Package milestone (preferred):** assign the epic and its
+             children to the package it ships in, creating it if needed
+             (`NNN name`, see CONTRIBUTING.md). Sub-issues inherit the
+             parent's milestone, so set it on the epic only when the whole
+             epic ships in that one cut. Milestones are per-repo and
+             one-per-issue; for a cross-repo epic the package lives in the
+             repo where the release is cut.
+           - **Label (fallback):** apply `ships-atomically` when no package
+             exists yet, or in the repos of a cross-repo epic that do not
+             cut the release.

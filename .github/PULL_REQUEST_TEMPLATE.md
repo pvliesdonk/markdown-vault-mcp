@@ -17,6 +17,17 @@ found nothing.
 
 - (deferral): #N
 
+## Design
+
+<!-- For a feature, include the spec agreed in session or offline here.
+     Fold longer text in <details><summary>Approved design</summary> ...
+     </details>, with blank lines around the Markdown body.
+     Small bugs and enhancements may leave this section empty.
+     If the complete PR body would exceed 65,536 characters, attach the
+     spec .md in GitHub's UI and link it here, keeping a decision summary.
+     Attachment is a human step; do not use undocumented upload APIs.
+     Specs and plans under docs/superpowers/ stay local and gitignored. -->
+
 ## Local review
 
 - [ ] Ran a local code-review pass on the cumulative diff before `gh pr create`.
@@ -30,5 +41,7 @@ found nothing.
 - [ ] `docs/` site pages
 - [ ] `docs/design/`
 - [ ] Inline docstrings
+- [ ] Ported enduring decisions the spec explains but the code and
+      `docs/design/` do not now show, or explained why none needed porting.
 
 **Rule: code without matching docs is incomplete.**

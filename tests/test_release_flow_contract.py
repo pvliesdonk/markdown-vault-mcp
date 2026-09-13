@@ -91,6 +91,44 @@ PLUGIN_JSON = Path(".claude-plugin/plugin/.claude-plugin/plugin.json")
 MCP_JSON = Path(".claude-plugin/plugin/.mcp.json")
 
 
+def test_release_prepare_warns_on_current_package() -> None:
+    workflow = yaml.safe_load(PREPARE_WORKFLOW.read_text())
+    steps = workflow["jobs"]["prepare"]["steps"]
+    advisory = next(
+        step
+        for step in steps
+        if "Warn about open ships-atomically" in step.get("name", "")
+    )
+    assert (
+        'python3 scripts/package_milestones.py warn --repo "$REPO"' in advisory["run"]
+    )
+    assert "github.event.repository.default_branch" in advisory["if"]
+    assert "Release milestone" in advisory["run"]  # legacy migration signal
+
+
+def test_release_closes_current_package() -> None:
+    workflow = yaml.safe_load(RELEASE_WORKFLOW.read_text())
+    steps = workflow["jobs"]["release"]["steps"]
+    close = next(
+        step
+        for step in steps
+        if step.get("name") == "Close the current package milestone"
+    )
+    assert "steps.release.outputs.is_prerelease != 'true'" in close["if"]
+    assert (
+        "github.event.pull_request.base.ref == github.event.repository.default_branch"
+        in close["if"]
+    )
+    assert close["continue-on-error"] is True
+    assert "secrets.RELEASE_TOKEN" in close["env"]["GH_TOKEN"]
+    assert (
+        'python3 scripts/package_milestones.py close --repo "$REPO" --version "$VERSION"'
+        in close["run"]
+    )
+    resolve = next(i for i, step in enumerate(steps) if step.get("id") == "release")
+    assert steps.index(close) > resolve
+
+
 def _knope_config() -> dict[str, Any]:
     return tomllib.loads(KNOPE_TOML.read_text(encoding="utf-8"))
 

@@ -34,7 +34,7 @@ try to make them conform:
 - Standard library `logging` throughout. Every module: `logger = logging.getLogger(__name__)`.
 - No `print()` for operational output. No third-party logging libraries.
 - FastMCP middleware handles tool invocation, timing, and error logging automatically.
-- All first-party logging goes through FastMCP's `configure_logging_from_env()` for uniform output. `FASTMCP_LOG_LEVEL` is the single log level control; the `-v` CLI flag sets it to `DEBUG`. `FASTMCP_ENABLE_RICH_LOGGING=false` switches to plain/JSON output.
+- All first-party logging goes through FastMCP's `configure_logging_from_env()` for uniform output. `FASTMCP_LOG_LEVEL` is the single log level control; the `-v` CLI flag sets it to `DEBUG`. `FASTMCP_ENABLE_RICH_LOGGING=false` switches to plain/JSON output — one line per record, and the default in the container image and the systemd unit, since neither stream is a terminal and Rich wraps a structured record at its 80-column fallback.
 
 ### Log Levels
 | Level | Use for |

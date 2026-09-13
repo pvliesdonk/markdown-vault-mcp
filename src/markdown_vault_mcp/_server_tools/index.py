@@ -35,9 +35,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["embeddings_status"],
         annotations={
             "title": "Embeddings Status",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def embeddings_status(
@@ -67,8 +67,8 @@ def register(mcp: FastMCP) -> None:
         description="Report FTS index readiness, progress, and last build error.",
         annotations={
             "title": "Index Status",
-            "readOnlyHint": True,
-            "openWorldHint": False,
+            "read_only_hint": True,
+            "open_world_hint": False,
         },
         icons=_TOOL_ICONS["get_index_status"],
     )
@@ -139,9 +139,9 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
         icons=_TOOL_ICONS["reindex"],
         annotations={
             "title": "Reindex Vault",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     @needs_queryable()
@@ -237,9 +237,9 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
         icons=_TOOL_ICONS["build_embeddings"],
         annotations={
             "title": "Build Embeddings",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     @needs_queryable()

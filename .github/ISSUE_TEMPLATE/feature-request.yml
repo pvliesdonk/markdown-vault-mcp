@@ -21,6 +21,25 @@ body:
       description: Describe the outcome, not how to implement it.
     validations:
       required: true
+  - type: dropdown
+    id: surface-impact
+    attributes:
+      label: Surface impact
+      description: >
+        Which compatibility surfaces the outcome would touch, as far as you
+        can tell. Touching a surface does not by itself break compatibility.
+        Apply `breaking` after filing only if an existing operator or
+        library contract must break under the breaking-change policy.
+        Pick "Not sure" rather than guess.
+      multiple: true
+      options:
+        - Operator surface (config, env vars, CLI, deployment)
+        - Public library API
+        - MCP tool surface (tools, resources, prompts)
+        - None (internal only)
+        - Not sure
+    validations:
+      required: true
   - type: textarea
     id: implementation-ideas
     attributes:

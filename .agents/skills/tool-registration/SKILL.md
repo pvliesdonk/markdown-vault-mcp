@@ -12,8 +12,8 @@ description: >-
 
 Every MCP tool you register must carry the full set of metadata below — not just the behaviour. A tool that works but lacks a title, hints, or docs is incomplete. When adding or changing a tool, verify each item:
 
-- **Title** — a human-readable `annotations.title` (e.g. `"Search Vault"`). Title-aware clients (notably VS Code, which honours only `title` and `readOnlyHint` among annotations) render this as the tool's label; without it they fall back to the raw machine name. Set it inline in the tool's `annotations={...}` dict.
-- **Behavioural hints** — `readOnlyHint`, and where they apply `destructiveHint` / `idempotentHint`, in the same `annotations` dict. These describe side effects accurately (a destructive tool must set `destructiveHint=True`).
+- **Title** — a human-readable `annotations.title` (e.g. `"Search Vault"`). Title-aware clients (notably VS Code, which honours only `title` and the read-only hint among annotations) render this as the tool's label; without it they fall back to the raw machine name. Set it inline in the tool's `annotations={...}` dict.
+- **Behavioural hints** — `read_only_hint`, and where they apply `destructive_hint` / `idempotent_hint`, in the same `annotations` dict (MCP SDK v2 snake_case; serialized camelCase on the wire). These describe side effects accurately (a destructive tool must set `destructive_hint=True`).
 - **Icon** — an entry wired via `register_tool_icons(...)` or `@mcp.tool(icons=[...])` (see [Tool icons](#tool-icons)).
 - **Docstring** — a Google-style docstring; FastMCP surfaces it as the tool description and per-parameter docs.
 - **Docs entry** — a row in your published tools reference (e.g. `docs/tools/index.md`) so the tool is documented for users (per the Documentation Discipline section in `AGENTS.md`).

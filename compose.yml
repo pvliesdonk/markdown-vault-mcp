@@ -1,26 +1,80 @@
+# Minimal working deployment for Markdown Vault MCP.  Runs as-is:
+#
+#     cp .env.example .env
+#     docker compose up -d
+#
+# Configuration lives in `.env`, not here.  `.env.example` is generated from
+# the server's own config surface and lists every variable with its default
+# and a one-line description, so it is the file to edit; `docs/configuration.md`
+# carries the full reference.  The `environment:` block below is only for
+# values this compose file itself determines — paths on the volumes it mounts.
+#
+# Reverse proxies, TLS and published hostnames are deployment-specific and are
+# NOT assumed here; `docs/deployment/docker.md` has a Traefik overlay to copy.
+#
+# The image is pulled, not built.  To run your own build:
+# `docker build -t ghcr.io/pvliesdonk/markdown-vault-mcp:dev . && docker compose up -d`
+# with the tag overridden.
 services:
   markdown-vault-mcp:
     image: ghcr.io/pvliesdonk/markdown-vault-mcp:latest
-    build: .
+    restart: unless-stopped
+    # `required: false` (Compose >= 2.24.0) so a checkout with no `.env` still
+    # starts on defaults; a named env_file that does not exist is otherwise a
+    # hard error, not a skipped entry.
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8000:8000"
     # Named volume permissions are fixed automatically by the entrypoint.
     # For bind-mount UID/GID mismatch, set PUID/PGID in your .env file:
     #   PUID=1001
     #   PGID=1001
-    env_file: .env
     volumes:
-      - ${MARKDOWN_VAULT_MCP_SOURCE_DIR:?Set MARKDOWN_VAULT_MCP_SOURCE_DIR}:/data/vault
+      - service-data:/data/service
       - state-data:/data/state
+      # DOMAIN-COMPOSE-VOLUMES-START — project mounts; kept across copier update
+      - ${MARKDOWN_VAULT_MCP_SOURCE_DIR:?Set MARKDOWN_VAULT_MCP_SOURCE_DIR}:/data/vault
+      # DOMAIN-COMPOSE-VOLUMES-END
     environment:
+      # Determined by this file, not an operator knob: points the server at
+      # the state volume mounted above.  Everything else belongs in `.env`.
+      FASTMCP_HOME: /data/state/fastmcp
+      # DOMAIN-COMPOSE-ENVIRONMENT-START — project env; kept across copier update
       MARKDOWN_VAULT_MCP_SOURCE_DIR: /data/vault
       MARKDOWN_VAULT_MCP_INDEX_PATH: /data/state/index.db
       MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH: /data/state/embeddings/embeddings
       MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR: /data/state/fastembed
-      FASTMCP_HOME: /data/state/fastmcp
-    restart: unless-stopped
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.markdown-vault-mcp.rule=Host(`${MARKDOWN_VAULT_MCP_HOST:-markdown-vault-mcp.local}`)"
-      - "traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"
+      # DOMAIN-COMPOSE-ENVIRONMENT-END
+    # Liveness: `GET /health` answers 200 for as long as the process serves.
+    # Compose itself only reports the verdict (`docker compose ps`, `up
+    # --wait`, `depends_on: condition: service_healthy`); an orchestrator that
+    # acts on it (Swarm, a Kubernetes livenessProbe, an autoheal sidecar)
+    # restarts the container.  Deliberately not `/health/ready` (503 when a
+    # backing store is gone): a restart does not fix an unreachable backend,
+    # and a readiness verdict here would hold up every `service_healthy`
+    # dependent for one.  Probe `/health/ready` from the load balancer instead.
+    # The path assumes the conventional `/mcp` mount — the server derives its
+    # health prefix from `MARKDOWN_VAULT_MCP_HTTP_PATH`, so a `.env` that mounts
+    # under `/x/mcp` moves the route to `/x/health` and this probe must
+    # follow.  `python` is the image's venv interpreter, already on PATH;
+    # `urlopen` raises on any non-2xx, so a 503 or a refused socket exits 1.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).close()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  # DOMAIN-COMPOSE-SERVICES-START — sidecars (a task backend, a cache); kept across copier update
+  # DOMAIN-COMPOSE-SERVICES-END
 
 volumes:
+  service-data:
   state-data:
+  # DOMAIN-COMPOSE-VOLUME-NAMES-START — named volumes for the mounts above; kept across copier update
+  # DOMAIN-COMPOSE-VOLUME-NAMES-END

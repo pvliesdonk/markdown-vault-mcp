@@ -1,3 +1,9 @@
+"""Write-tool registrations.
+
+FastMCP 4 protocol-era behavior used by ``okf_verify`` is recorded in
+``docs/design/reference/fastmcp-4.md``.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -18,7 +24,14 @@ from fastmcp.dependencies import CurrentContext, Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import AcceptedElicitation
 from fastmcp_pvl_core import fetch_url
-from mcp.shared.exceptions import McpError
+from mcp.shared.exceptions import MCPError
+from mcp.types import (
+    ElicitRequest,
+    ElicitRequestFormParams,
+    ElicitResult,
+    InputRequiredResult,
+)
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.exceptions import (
@@ -83,6 +96,61 @@ def write_identity_scope(*, okf_intent: bool = True) -> Iterator[None]:
 # bound no real download can reach.
 _FETCH_UNCAPPED_BYTES = 2**63 - 1
 
+_REVIEW_RESPONSE_KEY = "review_confirmed"
+
+
+def _review_message(path: str) -> str:
+    """Build the human-review confirmation prompt for *path*."""
+    return (
+        f"Confirm you have personally reviewed {path!r} and want to attest it "
+        "as human-reviewed. This records a verification in the note's OKF "
+        "frontmatter and promotes its trust tier."
+    )
+
+
+def _review_input_required(path: str) -> InputRequiredResult:
+    """Build the modern-protocol review request for *path*."""
+    request = ElicitRequest(
+        method="elicitation/create",
+        params=ElicitRequestFormParams(
+            message=_review_message(path),
+            requested_schema={
+                "type": "object",
+                "properties": {
+                    "value": {
+                        "type": "boolean",
+                        "title": "Confirm human review",
+                    }
+                },
+                "required": ["value"],
+            },
+        ),
+    )
+    return InputRequiredResult(
+        result_type="input_required",
+        input_requests={_REVIEW_RESPONSE_KEY: request},
+    )
+
+
+def _require_modern_review(ctx: Context, path: str) -> InputRequiredResult | None:
+    """Return a review request or validate its modern-protocol response.
+
+    Raises:
+        ToolError: If the human declines, cancels, or answers negatively.
+    """
+    responses = ctx.input_responses
+    if responses is None:
+        return _review_input_required(path)
+    answer = responses.get(_REVIEW_RESPONSE_KEY)
+    if (
+        isinstance(answer, ElicitResult)
+        and answer.action == "accept"
+        and isinstance(answer.content, dict)
+        and answer.content.get("value") is True
+    ):
+        return None
+    raise ToolError("Human review was not confirmed, so no verification was written.")
+
 
 async def _require_review_elicitation(ctx: Context, path: str) -> None:
     """Gate okf_verify's ``elicit`` mode on an affirmative human elicitation.
@@ -99,20 +167,11 @@ async def _require_review_elicitation(ctx: Context, path: str) -> None:
     Raises:
         ToolError: If elicitation is unsupported or the review is not confirmed.
     """
-    message = (
-        f"Confirm you have personally reviewed {path!r} and want to attest it "
-        "as human-reviewed. This records a verification in the note's OKF "
-        "frontmatter and promotes its trust tier."
-    )
     try:
         # A scalar bool wraps into a single-field object schema; an affirmative
-        # reply deconstructs back to True. mypy resolves only elicit's first
-        # (``response_type: None``) overload — its PEP 695/696 ``T = Any``-default
-        # typed overloads are opaque to it — so it mistypes the arg and
-        # ``result.data`` (a bool at runtime). Narrow ignore for that upstream
-        # typing gap; the truthiness gate below is correct at runtime.
-        result = await ctx.elicit(message, response_type=bool)  # type: ignore[arg-type]
-    except McpError as exc:
+        # reply deconstructs back to True.
+        result = await ctx.elicit(_review_message(path), response_type=bool)
+    except MCPError as exc:
         raise ToolError(
             "okf_verify is in 'elicit' mode but this client does not support "
             "elicitation, so a human review cannot be confirmed and nothing was "
@@ -125,7 +184,9 @@ async def _require_review_elicitation(ctx: Context, path: str) -> None:
     raise ToolError("Human review was not confirmed, so no verification was written.")
 
 
-async def _resolve_verify_mode_subject(*, mode: str, ctx: Context, path: str) -> str:
+async def _resolve_verify_mode_subject(
+    *, mode: str, ctx: Context, path: str
+) -> str | InputRequiredResult:
     """Resolve the ``human:`` subject to stamp, enforcing *mode*'s gate.
 
     ``trust-auth`` requires an authenticated subject (refuses under auth mode
@@ -145,7 +206,16 @@ async def _resolve_verify_mode_subject(*, mode: str, ctx: Context, path: str) ->
                 "verification cannot be attributed."
             )
         return subject
-    await _require_review_elicitation(ctx, path)
+    request_context = ctx.request_context
+    if (
+        request_context is not None
+        and request_context.protocol_version in MODERN_PROTOCOL_VERSIONS
+    ):
+        request = _require_modern_review(ctx, path)
+        if request is not None:
+            return request
+    else:
+        await _require_review_elicitation(ctx, path)
     return resolve_verify_subject()
 
 
@@ -173,9 +243,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["write"],
         annotations={
             "title": "Write Note",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def write(
@@ -240,7 +310,7 @@ def register(mcp: FastMCP) -> None:
             ValueError: If content_base64 is missing/invalid for
                 attachments, or the content exceeds
                 ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB``.
-            McpError: If if_match is provided and the file has been
+            MCPError: If if_match is provided and the file has been
                 modified, or if_match is supplied for a file that does not
                 yet exist (ConcurrentModificationError). Also when the server
                 runs with ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true``
@@ -295,9 +365,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["edit"],
         annotations={
             "title": "Edit Note",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": False,
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": False,
         },
     )
     async def edit(
@@ -358,7 +428,7 @@ def register(mcp: FastMCP) -> None:
             EditConflictError: If old_text is not found or appears more
                 than once.
             DocumentNotFoundError: If no file exists at the given path.
-            McpError: If if_match is provided and the file has been modified
+            MCPError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
         try:
@@ -392,9 +462,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["append"],
         annotations={
             "title": "Append to Note",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": False,
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": False,
         },
     )
     async def append(
@@ -445,7 +515,7 @@ def register(mcp: FastMCP) -> None:
             ValueError: If content is empty.
             DocumentNotFoundError: If no file exists at the given path and
                 create_if_missing is false.
-            McpError: If if_match is provided and the file has been modified
+            MCPError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
         with write_identity_scope():
@@ -465,9 +535,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["delete"],
         annotations={
             "title": "Delete Note",
-            "readOnlyHint": False,
-            "destructiveHint": True,
-            "idempotentHint": True,
+            "read_only_hint": False,
+            "destructive_hint": True,
+            "idempotent_hint": True,
         },
     )
     async def delete(
@@ -498,7 +568,7 @@ def register(mcp: FastMCP) -> None:
 
         Raises:
             DocumentNotFoundError: If no file exists at the given path.
-            McpError: If if_match is provided and the file has been modified
+            MCPError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
         # Bind the caller's Principal so the delete commit is attributed
@@ -514,9 +584,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["rename"],
         annotations={
             "title": "Rename Note",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": False,
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": False,
         },
     )
     async def rename(
@@ -561,7 +631,7 @@ def register(mcp: FastMCP) -> None:
             DocumentNotFoundError: If old_path does not exist.
             DocumentExistsError: If new_path already exists.
             ValueError: If the path fails traversal validation.
-            McpError: If if_match is provided and the file has been modified
+            MCPError: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
         # Bind the caller's Principal so the rename commit (and any link-
@@ -586,12 +656,12 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["rename"],
         annotations={
             "title": "Move Folder",
-            "readOnlyHint": False,
+            "read_only_hint": False,
             # Removes the source directory tree (shutil.rmtree) and can leave a
             # partial state on a mid-move OS error — materially larger blast
             # radius than single-file rename, so flag it destructive.
-            "destructiveHint": True,
-            "idempotentHint": False,
+            "destructive_hint": True,
+            "idempotent_hint": False,
         },
     )
     async def move_folder(
@@ -645,12 +715,12 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["fetch"],
         annotations={
             "title": "Fetch to Vault",
-            "readOnlyHint": False,
-            "destructiveHint": False,
+            "read_only_hint": False,
+            "destructive_hint": False,
             # Treat like write — calling twice with the same inputs is safe
             # (overwrites with same content). Remote content may change between
             # calls, but repeated invocations do not cause harm.
-            "idempotentHint": True,
+            "idempotent_hint": True,
         },
     )
     async def fetch(
@@ -850,9 +920,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["okf_convert_links"],
         annotations={
             "title": "OKF: Convert Wikilinks",
-            "readOnlyHint": False,
-            "destructiveHint": True,
-            "idempotentHint": True,
+            "read_only_hint": False,
+            "destructive_hint": True,
+            "idempotent_hint": True,
         },
     )
     async def okf_convert_links(
@@ -890,9 +960,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["okf_generate_index"],
         annotations={
             "title": "OKF: Generate index.md",
-            "readOnlyHint": False,
-            "destructiveHint": True,
-            "idempotentHint": True,
+            "read_only_hint": False,
+            "destructive_hint": True,
+            "idempotent_hint": True,
         },
     )
     async def okf_generate_index(
@@ -923,9 +993,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["okf_seed_log"],
         annotations={
             "title": "OKF: Seed log.md",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": False,
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": False,
         },
     )
     async def okf_seed_log(
@@ -963,9 +1033,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["okf_verify"],
         annotations={
             "title": "OKF: Verify Note",
-            "readOnlyHint": False,
-            "destructiveHint": False,
-            "idempotentHint": False,
+            "read_only_hint": False,
+            "destructive_hint": False,
+            "idempotent_hint": False,
         },
     )
     async def okf_verify(
@@ -973,7 +1043,7 @@ def register(mcp: FastMCP) -> None:
         ctx: Context = CurrentContext(),
         config: ProjectConfig = Depends(get_config),
         vault: Vault = Depends(get_vault),
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | InputRequiredResult:
         """Attest a note as human-reviewed by appending an OKF verification.
 
         Part of the OKF (Open Knowledge Format) enforced-write layer, available
@@ -986,8 +1056,8 @@ def register(mcp: FastMCP) -> None:
         - **elicit** (default): issues an MCP elicitation asking you to confirm
           you personally reviewed the note; the entry is written only on an
           affirmative reply. Fails closed — if the client cannot elicit or the
-          review is declined, nothing is written. A model cannot answer an
-          elicitation, so it cannot self-attest.
+          review is declined, nothing is written. The client's handler must
+          present the request to a person rather than answer automatically.
         - **trust-auth**: attributes to the authenticated caller with no
           confirmation; refuses (a tool error) when the server runs with no
           auth. Only safe when the sole caller is a human-driven UI.
@@ -999,7 +1069,8 @@ def register(mcp: FastMCP) -> None:
             path: Vault-relative path of the note to verify.
 
         Returns:
-            A dict with:
+            On the modern protocol's first round, an input request asking the
+            client for human confirmation. After confirmation, a dict with:
             - `path`: the verified note.
             - `verifier`: the `human:<subject>` actor recorded.
             - `verified_count`: the number of verification entries after the
@@ -1012,9 +1083,12 @@ def register(mcp: FastMCP) -> None:
                 exist, or the note changed since it was read (a concurrent
                 write — retry the verification).
         """
-        subject = await _resolve_verify_mode_subject(
+        subject_or_request = await _resolve_verify_mode_subject(
             mode=config.okf_verify, ctx=ctx, path=path
         )
+        if isinstance(subject_or_request, InputRequiredResult):
+            return subject_or_request
+        subject = subject_or_request
         note = await asyncio.to_thread(vault.reader.read, path)
         if note is None:
             raise ToolError(f"Note not found: {path}")

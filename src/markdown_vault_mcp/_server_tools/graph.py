@@ -26,9 +26,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_backlinks"],
         annotations={
             "title": "Backlinks",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     @needs_queryable()
@@ -108,9 +108,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_outlinks"],
         annotations={
             "title": "Outlinks",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     @needs_queryable()
@@ -188,9 +188,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_broken_links"],
         annotations={
             "title": "Broken Links",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def get_broken_links(
@@ -257,9 +257,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_orphan_notes"],
         annotations={
             "title": "Orphan Notes",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def get_orphan_notes(
@@ -321,9 +321,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_most_linked"],
         annotations={
             "title": "Most-Linked Notes",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def get_most_linked(
@@ -378,9 +378,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_connection_path"],
         annotations={
             "title": "Connection Path",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     @needs_queryable()

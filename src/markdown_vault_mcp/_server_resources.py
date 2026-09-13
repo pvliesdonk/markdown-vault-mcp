@@ -3,6 +3,9 @@
 Call :func:`register_resources` after constructing the
 :class:`~fastmcp.FastMCP` instance in
 :func:`~markdown_vault_mcp.server.make_server`.
+
+FastMCP 4's templated-resource screening is recorded in
+``docs/design/reference/fastmcp-4.md``.
 """
 
 from __future__ import annotations

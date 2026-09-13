@@ -31,9 +31,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["search"],
         annotations={
             "title": "Search Vault",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def search(
@@ -168,9 +168,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["read"],
         annotations={
             "title": "Read Note",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def read(
@@ -290,9 +290,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["list_documents"],
         annotations={
             "title": "List Documents",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def list_documents(
@@ -375,9 +375,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["list_folders"],
         annotations={
             "title": "List Folders",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def list_folders(
@@ -427,9 +427,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["list_tags"],
         annotations={
             "title": "List Tags",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def list_tags(
@@ -484,9 +484,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["stats"],
         annotations={
             "title": "Vault Stats",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def stats(
@@ -559,9 +559,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_similar"],
         annotations={
             "title": "Similar Notes",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     @needs_queryable()
@@ -670,9 +670,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_toc"],
         annotations={
             "title": "Table of Contents",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     @needs_queryable()
@@ -737,9 +737,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_recent"],
         annotations={
             "title": "Recent Notes",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def get_recent(
@@ -800,9 +800,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_context"],
         annotations={
             "title": "Note Context",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     @needs_queryable()
@@ -937,9 +937,9 @@ def register(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_conventions"],
         annotations={
             "title": "Folder Conventions",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def get_conventions(
@@ -1001,9 +1001,9 @@ def register(mcp: FastMCP) -> None:
         tags={"okf"},
         annotations={
             "title": "Validate OKF Bundle",
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
+            "read_only_hint": True,
+            "destructive_hint": False,
+            "idempotent_hint": True,
         },
     )
     async def okf_validate(vault: Vault = Depends(get_vault)) -> dict[str, Any]:
