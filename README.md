@@ -24,6 +24,11 @@ Generic markdown vault MCP with hybrid search
 - **Git integration**: optional auto-commit (one commit per write tool call) with deferred push, plus a pull loop or a GitHub or GitLab push webhook for external changes; history and diff tools read the log back. An overwriting `write` returns the revision holding the content it replaced, and `read(path, revision=sha)` reads a note back at that revision, so an overwrite is recoverable from the client that made it. When the clone stops reaching its remote, every write result carries a `remote` warning saying the content is committed locally only, and the log marks the transition rather than repeating each cycle. See the [Git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/git-integration/).
 - **OKF-aware**: recognizes [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundles and annotates results with each note's type, lifecycle status, staleness, and trust tier, plus conformance audit and migration tooling. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/okf/).
 - **MCP surface**: 34 LLM-visible tools, 9 resources, and 8 prompt templates, plus browser-based MCP Apps views and one-time transfer links. Full references: [Tools](https://pvliesdonk.github.io/markdown-vault-mcp/latest/tools/), [Resources](https://pvliesdonk.github.io/markdown-vault-mcp/latest/resources/), [Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/latest/prompts/), [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/mcp-apps/), [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/transfer-links/), [CLI](https://pvliesdonk.github.io/markdown-vault-mcp/latest/cli/).
+
+Overwrite protection is enabled by default. Transfer upload links require a
+new destination because they have no `if_match` option. Set
+`MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites;
+see the [transfer guide](docs/guides/transfer-links.md#upload-walkthrough).
 <!-- DOMAIN-END -->
 
 ## What you can do with it

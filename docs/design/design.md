@@ -1632,11 +1632,18 @@ upload, the fully-read (size-capped) body.
 - **Upload** (`write(handle, body)`): a `.md` body is decoded as UTF-8 (BOM
   stripped) and written via `vault.writer.write()`; other extensions are
   written via `vault.writer.write_attachment()`. The write updates the FTS
-  index and fires the git-commit callback.
+  index and fires the git-commit callback. Upload handles carry no `if_match`;
+  with overwrite protection enabled, uploads require a new file. The normal
+  write guard remains authoritative under the write lock, so a file created
+  after validation is preserved and the upload fails. A successful upload
+  creates an existing destination, so a grace-window retry is also refused.
 - **Validation** (`validate(ref, kind)`): runs at link creation. Download
   validates existence stat-only, so minting a link for a large attachment never
   reads it; upload validates the destination is a note or an allowed attachment
-  extension. Both reject path traversal.
+  extension and rejects an existing file when
+  `ProjectConfig.write_protect_existing` is true. Both reject path traversal.
+  Setting `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly allows
+  existing destinations at link creation and blind replacement during upload.
 
 The sink maps two error states to pvl-core's `TransferSinkError` subclasses so
 the route returns a semantically correct status instead of a generic 500
@@ -1658,7 +1665,8 @@ Two MCP tools create tokens and return the capability URL:
   Returns `{url, path, expires_at, expires_in_seconds}`.
 - **`create_upload_link(path, ttl_seconds=None)`**: write tool (hidden in
   read-only mode). Validates the destination path (traversal + extension check)
-  at link-creation time. Returns the same shape.
+  at link-creation time, rejecting existing files under the default overwrite
+  protection before minting a capability. Returns the same shape.
 
 Both tools require `MARKDOWN_VAULT_MCP_BASE_URL` and raise `ValueError` when it
 is unset. Both tools are hidden when the transport is stdio (no HTTP server to

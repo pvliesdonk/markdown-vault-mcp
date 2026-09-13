@@ -82,7 +82,7 @@ def _validate_destination(
     path: str,
     source_dir: Path,
     attachment_extensions: Sequence[str] | None,
-) -> None:
+) -> Path:
     """Validate an upload destination path (a note or an allowed attachment).
 
     Args:
@@ -90,17 +90,20 @@ def _validate_destination(
         source_dir: Vault root.
         attachment_extensions: Configured allowlist (``None`` = defaults).
 
+    Returns:
+        The validated absolute destination path.
+
     Raises:
         ValueError: On path traversal or a disallowed attachment extension.
     """
     if is_note(path):
-        validate_path(path, source_dir)
-        return
+        return validate_path(path, source_dir)
     resolved = resolve_inside(path, source_dir)
     exts = effective_attachment_extensions(attachment_extensions)
     ext = artifact_suffix(resolved)
     if not is_allowed_artifact_suffix(ext, exts):
         raise ValueError(f"Attachment extension not allowed: .{ext}")
+    return resolved
 
 
 def _validate_source(
@@ -172,7 +175,8 @@ class VaultTransferSink:
 
         The handle is the vault-relative path itself. Download validation is
         stat-only (existence without a read); upload validation checks the
-        destination is a note or an allowed attachment. ``kind`` selects which.
+        destination is a note or an allowed attachment, and rejects existing
+        files when overwrite protection is enabled. ``kind`` selects which.
 
         Args:
             ref: Vault-relative path of a note or attachment.
@@ -185,7 +189,8 @@ class VaultTransferSink:
         Raises:
             ValueError: On path traversal, a missing download source, a
                 disallowed attachment extension, a bundle ref with OKF disabled,
-                or a bundle scope naming a folder that does not exist.
+                a bundle scope naming a folder that does not exist, or an
+                existing upload destination when overwrite protection is enabled.
         """
         source_dir = self._config.source_dir
         exts = self._config.content.attachment_extensions
@@ -196,7 +201,14 @@ class VaultTransferSink:
                 return ref
             _validate_source(ref, source_dir, exts)
         else:
-            _validate_destination(ref, source_dir, exts)
+            destination = _validate_destination(ref, source_dir, exts)
+            if self._config.write_protect_existing and destination.is_file():
+                raise ValueError(
+                    f"{ref} exists; upload links require a new path while write "
+                    "protection is enabled. Choose a new path, or ask the operator "
+                    "to set MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false "
+                    "to allow blind overwrites."
+                )
         return ref
 
     def _validate_bundle_scope(self, scope: str) -> None:
@@ -333,6 +345,8 @@ class VaultTransferSink:
         Raises:
             TransferUnavailableError: The vault is being torn down (retryable 503).
             UnicodeDecodeError: A note upload whose body is not valid UTF-8.
+            DocumentExistsError: Overwrite protection is enabled and the
+                destination exists, including a file created after validation.
         """
         vault = self._resolve_vault()
         if is_note(handle):

@@ -9,6 +9,7 @@ old in-memory subsystem's tests covered.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -16,6 +17,8 @@ from fastmcp_pvl_core import TransferResourceGoneError, TransferUnavailableError
 
 from markdown_vault_mcp._transfer_sink import VaultTransferSink
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
+from markdown_vault_mcp.exceptions import DocumentExistsError
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import wait_for_writer_drain
 
@@ -43,8 +46,11 @@ def config(source_dir: Path) -> ProjectConfig:
 
 
 @pytest.fixture
-def vault(source_dir: Path) -> Iterator[Vault]:
-    col = Vault(source_dir=source_dir, read_only=False, attachment_extensions=["png"])
+def vault(config: ProjectConfig) -> Iterator[Vault]:
+    col = Vault(
+        source_dir=config.source_dir,
+        settings=VaultSettings.from_project_config(config),
+    )
     try:
         col.index.build_index()
         yield col
@@ -102,6 +108,45 @@ async def test_validate_upload_note(sink: VaultTransferSink) -> None:
 
 async def test_validate_upload_attachment(sink: VaultTransferSink) -> None:
     assert await sink.validate("img/new.png", "upload") == "img/new.png"
+
+
+@pytest.mark.parametrize("path", ["note.md", "pic.png"])
+async def test_validate_upload_existing_rejected(
+    sink: VaultTransferSink, source_dir: Path, path: str
+) -> None:
+    original = (source_dir / path).read_bytes()
+    with pytest.raises(ValueError, match="upload links require a new path"):
+        await sink.validate(path, "upload")
+    assert (source_dir / path).read_bytes() == original
+
+
+@pytest.mark.parametrize("path", ["new.md", "new.png"])
+async def test_upload_preserves_file_created_after_validation(
+    sink: VaultTransferSink, source_dir: Path, path: str
+) -> None:
+    handle = await sink.validate(path, "upload")
+    (source_dir / path).write_bytes(b"created by another writer")
+    with pytest.raises(DocumentExistsError):
+        await sink.write(handle, b"uploaded replacement")
+    assert (source_dir / path).read_bytes() == b"created by another writer"
+
+
+@pytest.mark.parametrize("path", ["note.md", "pic.png"])
+async def test_upload_overwrites_with_operator_opt_out(
+    config: ProjectConfig, path: str
+) -> None:
+    config = replace(config, write_protect_existing=False)
+    vault = Vault(
+        source_dir=config.source_dir,
+        settings=VaultSettings.from_project_config(config),
+    )
+    try:
+        sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        handle = await sink.validate(path, "upload")
+        await sink.write(handle, b"uploaded replacement")
+        assert (config.source_dir / path).read_bytes() == b"uploaded replacement"
+    finally:
+        vault.close()
 
 
 async def test_validate_upload_traversal_raises(sink: VaultTransferSink) -> None:

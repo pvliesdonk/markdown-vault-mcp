@@ -1176,7 +1176,7 @@ Mint a one-time capability URL to upload bytes to a fixed, pre-validated destina
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `ref` | string | required | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. May name a new or existing path; an existing file is overwritten on upload |
+| `ref` | string | required | Destination path in the vault. Validated for path traversal and allowed extension at link-creation time. Must name a new file under the default overwrite protection |
 | `ttl_s` | number | server default (`MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S`) | Token lifetime in seconds. Clamped to `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S`. Omit to use the server default |
 
 **Returns:**
@@ -1200,6 +1200,14 @@ Then in a terminal:
 curl -X POST --data-binary @local-diagram.pdf \
      "https://mcp.example.com/transfer/<token>"
 ```
+
+!!! note "Overwrite protection"
+    By default, link creation rejects an existing destination. Upload links
+    have no `if_match` option. Choose a new path, or have the operator set
+    `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites.
+    The write guard also rejects an upload if another writer creates the file
+    after link creation. A retry after a successful upload encounters an
+    existing file and is refused while protection is enabled.
 
 !!! note "Raw body, not multipart"
     The upload endpoint expects the raw file bytes as the request body. Do not use `multipart/form-data`; send the content directly (curl's `--data-binary` flag does this correctly).

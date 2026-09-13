@@ -214,6 +214,12 @@ over an existing path require the matching `if_match` etag.
 Targeted `edit`, `append`, `delete`, and `rename`
 operations are unaffected, as are the server's generated OKF maintenance files.
 
+Upload links have no `if_match` option. With protection enabled,
+`create_upload_link` rejects existing destinations; the upload also fails if
+the file appears before the bytes arrive. Use a new path, or set
+`MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites.
+See [transfer links](guides/transfer-links.md#upload-walkthrough).
+
 !!! danger "Write tools default to enabled"
     Since 4.0, `MARKDOWN_VAULT_MCP_READ_ONLY` defaults to `false`. An upgrade
     from 3.x widens access unless the deployment explicitly sets
