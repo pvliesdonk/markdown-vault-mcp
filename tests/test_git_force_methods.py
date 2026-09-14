@@ -1063,7 +1063,7 @@ class TestForceMethodsErrorBranches:
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """resolve_rebase_conflicts cap exhaustion logs ERROR + returns partial saved (#468)."""
+        """Cap exhaustion logs its distinct DEBUG event and returns saved paths."""
         import logging
         import subprocess as _real_subprocess
 
@@ -1114,9 +1114,11 @@ class TestForceMethodsErrorBranches:
         # README.md was "saved" on every iteration; dict dedup leaves one entry.
         assert saved == [("README.md", "# local\n")]
         log_messages = [r.getMessage() for r in caplog.records]
-        assert any("exceeded 50 iterations" in msg for msg in log_messages), (
-            f"expected the max_iterations log line; got: {log_messages}"
+        assert (
+            "git_pull_conflict_resolution_exhausted "
+            "max_iterations=50 saved_paths=1" in log_messages
         )
+        assert not any("git_pull_rebase_no_unmerged_paths" in m for m in log_messages)
 
     def test_force_pull_non_fast_forward_with_conflicts_when_abort_fails(
         self, git_repo_pair: GitRepoPair, monkeypatch: pytest.MonkeyPatch

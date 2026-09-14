@@ -4351,7 +4351,9 @@ path reports it.
   (#1362): `conflict_resolution_failed` names a state, and the rebase behind
   it can stop for a missing committer identity, a hook or a lock as readily
   as for a conflict — with no unmerged paths, so the resolver has nothing to
-  act on and the loop-cap line named a conflict that never happened.
+  act on. That exit logs `git_pull_rebase_no_unmerged_paths` and returns;
+  only actual safety-cap exhaustion logs
+  `git_pull_conflict_resolution_exhausted` (#1382).
   `_force_pull_rebase_fallback` keeps the rebase's redacted stderr on
   `PullResult.detail`, `_record_pull` forwards it to
   `SyncHealthTracker.pull_failed`, and it is not part of the `git_sync`
