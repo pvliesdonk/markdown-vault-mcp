@@ -16,11 +16,17 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from fastmcp import Client
 
+from markdown_vault_mcp.vault import VaultSettings
+
 if TYPE_CHECKING:
     from pathlib import Path
 
-from markdown_vault_mcp.config import ProjectConfig, to_vault_kwargs
+from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections import SummarizeConfig
+from markdown_vault_mcp.config_sections._assembly import (
+    to_vault_instances,
+    to_vault_settings,
+)
 from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.summarizer import (
     OpenAISummarizer,
@@ -72,7 +78,7 @@ def make_vault(tmp_path: Path) -> Iterator[VaultFactory]:
         *,
         summarizer: Summarizer | None = None,
         notes: dict[str, str] | None = None,
-        **kwargs: Any,
+        settings: VaultSettings | None = None,
     ) -> Vault:
         root = tmp_path / f"vault{len(built)}"
         root.mkdir()
@@ -86,7 +92,7 @@ def make_vault(tmp_path: Path) -> Iterator[VaultFactory]:
             path = root / rel
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
-        vault = Vault(source_dir=root, summarizer=summarizer, **kwargs)
+        vault = Vault(source_dir=root, summarizer=summarizer, settings=settings)
         vault.index.build_index()
         built.append(vault)
         return vault
@@ -577,7 +583,9 @@ class TestSummarizeFacet:
         assert "Focus specifically on: action items" in system
 
     def test_max_notes_truncation(self, make_vault: VaultFactory) -> None:
-        vault = make_vault(summarizer=FakeSummarizer(), summarize_max_notes=1)
+        vault = make_vault(
+            summarizer=FakeSummarizer(), settings=VaultSettings(summarize_max_notes=1)
+        )
         result = vault.summarizer.summarize(["sub"])
         assert len(result.sources) == 1
         assert result.truncated is True
@@ -605,7 +613,9 @@ class TestSummarizeFacet:
     ) -> None:
         # The server cap is the operator's per-call ceiling; a caller cannot
         # exceed it (#925).
-        vault = make_vault(summarizer=FakeSummarizer(), summarize_max_notes=1)
+        vault = make_vault(
+            summarizer=FakeSummarizer(), settings=VaultSettings(summarize_max_notes=1)
+        )
         result = vault.summarizer.summarize(["sub"], max_notes=99)
         assert result.notes_limit == 1
         assert result.notes_included == 1
@@ -627,7 +637,9 @@ class TestSummarizeFacet:
     def test_max_input_chars_truncation(self, make_vault: VaultFactory) -> None:
         vault = make_vault(
             summarizer=FakeSummarizer(),
-            summarize_max_input_chars=10,
+            settings=VaultSettings(
+                summarize_max_input_chars=10,
+            ),
         )
         result = vault.summarizer.summarize(["alpha.md", "beta.md"])
         assert result.truncated is True
@@ -640,7 +652,9 @@ class TestSummarizeFacet:
         vault = make_vault(
             summarizer=FakeSummarizer(),
             notes={"a.md": "hello", "b.md": "world"},
-            summarize_max_input_chars=40,
+            settings=VaultSettings(
+                summarize_max_input_chars=40,
+            ),
         )
         result = vault.summarizer.summarize(["a.md", "b.md"])
         assert [s.path for s in result.sources] == ["a.md", "b.md"]
@@ -657,7 +671,9 @@ class TestSummarizeFacet:
         vault = make_vault(
             summarizer=FakeSummarizer(),
             notes=notes,
-            summarize_max_notes=250,
+            settings=VaultSettings(
+                summarize_max_notes=250,
+            ),
         )
         result = vault.summarizer.summarize(["big"])
         assert len(result.sources) == 205
@@ -681,7 +697,9 @@ class TestSummarizeFacet:
                 "sub/small.md": "# Small\n\ntiny",
                 "sub/big.md": "# Big\n\n" + ("x " * 500),
             },
-            max_note_read_bytes=64,
+            settings=VaultSettings(
+                max_note_read_bytes=64,
+            ),
         )
         result = vault.summarizer.summarize(["sub"])
         assert [s.path for s in result.sources] == ["sub/small.md"]
@@ -737,7 +755,9 @@ class TestMapReduce:
         vault = make_vault(
             summarizer=fake,
             notes=_THREE_NOTES,
-            summarize_max_input_chars=_SMALL_BUDGET,
+            settings=VaultSettings(
+                summarize_max_input_chars=_SMALL_BUDGET,
+            ),
         )
         result = vault.summarizer.summarize(["one.md", "two.md", "three.md"])
 
@@ -763,7 +783,9 @@ class TestMapReduce:
         vault = make_vault(
             summarizer=fake,
             notes=_THREE_NOTES,
-            summarize_max_input_chars=_SMALL_BUDGET,
+            settings=VaultSettings(
+                summarize_max_input_chars=_SMALL_BUDGET,
+            ),
         )
         result = vault.summarizer.summarize(
             ["one.md", "two.md", "three.md"], mode="per_note"
@@ -779,7 +801,9 @@ class TestMapReduce:
         vault = make_vault(
             summarizer=fake,
             notes=_THREE_NOTES,
-            summarize_max_input_chars=_SMALL_BUDGET,
+            settings=VaultSettings(
+                summarize_max_input_chars=_SMALL_BUDGET,
+            ),
         )
         vault.summarizer.summarize(
             ["one.md", "two.md", "three.md"], focus="action items"
@@ -808,7 +832,9 @@ class TestMapReduce:
         vault = make_vault(
             summarizer=fake,
             notes=_THREE_NOTES,
-            summarize_max_input_chars=_SMALL_BUDGET,
+            settings=VaultSettings(
+                summarize_max_input_chars=_SMALL_BUDGET,
+            ),
         )
         result = vault.summarizer.summarize(["one.md", "two.md", "three.md"])
 
@@ -830,7 +856,7 @@ class TestMapReduce:
         vault = make_vault(
             summarizer=fake,
             notes={"big.md": "# Big\n\n" + ("x" * 500)},
-            summarize_max_input_chars=120,
+            settings=VaultSettings(summarize_max_input_chars=120),
         )
         result = vault.summarizer.summarize(["big.md"])
         assert len(fake.calls) == 1
@@ -842,11 +868,11 @@ class TestMapReduce:
 
 
 # ---------------------------------------------------------------------------
-# config.to_vault_kwargs summarizer gating
+# config.to_vault_instances summarizer gating
 # ---------------------------------------------------------------------------
 
 
-class TestToVaultKwargsSummarizer:
+class TestVaultInstancesSummarizer:
     def test_backend_loaded_passes_summarizer_and_caps(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -855,10 +881,11 @@ class TestToVaultKwargsSummarizer:
             SummarizeConfig(openai_api_key="k", max_notes=9, max_input_chars=1234),
             tmp_path,
         )
-        kwargs = to_vault_kwargs(cfg)
-        assert isinstance(kwargs["summarizer"], OpenAISummarizer)
-        assert kwargs["summarize_max_notes"] == 9
-        assert kwargs["summarize_max_input_chars"] == 1234
+        instances = to_vault_instances(cfg)
+        settings = to_vault_settings(cfg, instances=instances)
+        assert isinstance(instances.summarizer, OpenAISummarizer)
+        assert settings.summarize_max_notes == 9
+        assert settings.summarize_max_input_chars == 1234
 
     def test_explicit_provider_load_failure_raises(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -868,7 +895,7 @@ class TestToVaultKwargsSummarizer:
             SummarizeConfig(provider="openai", openai_api_key="k"), tmp_path
         )
         with pytest.raises(ConfigurationError, match="explicitly configured"):
-            to_vault_kwargs(cfg)
+            to_vault_instances(cfg)
 
     def test_removed_anthropic_provider_raises_migration_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -878,20 +905,20 @@ class TestToVaultKwargsSummarizer:
             SummarizeConfig(provider="anthropic", openai_api_key="k"), tmp_path
         )
         with pytest.raises(ConfigurationError, match="was removed"):
-            to_vault_kwargs(cfg)
+            to_vault_instances(cfg)
 
     def test_autodetect_load_failure_disables_silently(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setitem(sys.modules, "openai", None)  # force ImportError
         cfg = _config_with(SummarizeConfig(openai_api_key="k"), tmp_path)
-        kwargs = to_vault_kwargs(cfg)
-        assert "summarizer" not in kwargs
+        instances = to_vault_instances(cfg)
+        assert instances.summarizer is None
 
     def test_no_provider_no_summarizer(self, tmp_path: Path) -> None:
         cfg = _config_with(SummarizeConfig(), tmp_path)
-        kwargs = to_vault_kwargs(cfg)
-        assert "summarizer" not in kwargs
+        instances = to_vault_instances(cfg)
+        assert instances.summarizer is None
 
 
 # ---------------------------------------------------------------------------

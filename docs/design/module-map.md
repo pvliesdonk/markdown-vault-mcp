@@ -81,14 +81,14 @@ src/markdown_vault_mcp/
   _okf_write.py        -- OKF enforced-write runtime: contextvar actor + provenance stamp / verified clear (#964)
   _identity.py         -- Principal write identity: tool-edge resolution, contextvar carry, claim-key registration (#1160); sole owner of the subject rules (#1231)
   summarizer.py        -- Summarizer ABC + OpenAI-compatible chat-completions backend (#915)
-  vault.py             -- thin composition root: settings-first dual-mode construction (#1158), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
+  vault.py             -- thin composition root: settings-only construction (#1225), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
   _commit_scope.py     -- CommitScope + CommitScopeMiddleware: per-tool-call commit boundary (#1264)
   write_callback.py    -- WriteCallbackDispatcher: deferred git-commit callback worker (#599), scope-buffering (#1264)
   _write_tools.py      -- WRITE_TOOL_NAMES + write_tools_phrase: single source for the user-facing write-tool enumeration (#1009)
   config.py            -- template-owned skeleton: flat metadata-carrying ProjectConfig fields + section-view properties + from_env, all inside CONFIG-* sentinels (#900, #952)
   config_sections/
     __init__.py          -- package aggregator: re-exports the seven section configs (Content/Embeddings/Git/Indexing/Search/Summarize/Sync) + VaultSettings
-    _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (+ deprecated to_vault_kwargs bridge, #1158), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
+    _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (#1225), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
     vault_settings.py    -- VaultSettings: frozen config-derived Vault construction settings + pure effective_* derivations (#1158)
     _helpers.py          -- shared env-reading helpers for the sections' from_env classmethods (no config.py import)
     content.py           -- ContentConfig: attachment/read limits, template/prompt folders, conventions file

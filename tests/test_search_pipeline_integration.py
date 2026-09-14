@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 from .conftest import MockEmbeddingProvider
 
@@ -68,16 +68,13 @@ def _make_vault(vault: Path, *, with_embeddings: bool = False) -> Vault:
     Returns:
         A configured Vault instance.
     """
-    kwargs: dict = {
-        "source_dir": vault,
-        "index_path": None,  # in-memory SQLite
-        "read_only": True,
-    }
-    if with_embeddings:
-        provider = MockEmbeddingProvider()
-        kwargs["embedding_provider"] = provider
-        kwargs["embeddings_path"] = vault / ".embeddings"
-    return Vault(**kwargs)
+    return Vault(
+        source_dir=vault,
+        settings=VaultSettings(
+            embeddings_path=vault / ".embeddings" if with_embeddings else None,
+        ),
+        embedding_provider=MockEmbeddingProvider() if with_embeddings else None,
+    )
 
 
 def test_essay_capped_in_top_ten_keyword(diagnostic_vault: Path) -> None:

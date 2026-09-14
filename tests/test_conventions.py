@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.vault import VaultSettings
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -193,7 +195,9 @@ class TestVaultDerivedExclusion:
 
         (tmp_path / "_conventions.md").write_text("Rules.", encoding="utf-8")
         (tmp_path / "note.md").write_text("# Note\nBody.", encoding="utf-8")
-        col = Vault(source_dir=tmp_path, exclude_patterns=[".trash/**"])
+        col = Vault(
+            source_dir=tmp_path, settings=VaultSettings(exclude_patterns=[".trash/**"])
+        )
         try:
             assert col.exclude_patterns == [
                 ".trash/**",
@@ -213,12 +217,15 @@ class TestVaultDerivedExclusion:
         from markdown_vault_mcp.vault import Vault
 
         with pytest.raises(ValueError, match="metacharacters"):
-            Vault(source_dir=tmp_path, conventions_file="notes*.md")
+            Vault(
+                source_dir=tmp_path,
+                settings=VaultSettings(conventions_file="notes*.md"),
+            )
 
     def test_vault_disabled_conventions_adds_nothing(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.vault import Vault
 
-        col = Vault(source_dir=tmp_path, conventions_file=None)
+        col = Vault(source_dir=tmp_path, settings=VaultSettings(conventions_file=None))
         try:
             assert col.exclude_patterns is None
             assert col.conventions.enabled is False

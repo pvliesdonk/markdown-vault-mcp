@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.scanner import extract_links
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -153,7 +153,7 @@ class TestRenameRewritesEncodedLinks:
             "[encoded](/probe/b%5B1%5D.md)\n\n[literal](/probe/b[1].md)\n",
             encoding="utf-8",
         )
-        col = Vault(source_dir=src, read_only=False)
+        col = Vault(source_dir=src, settings=VaultSettings(read_only=False))
         col.index.build_index()
         return col
 
@@ -196,7 +196,7 @@ class TestRenameRewritesEncodedLinks:
         (src / "dir").mkdir(parents=True)
         (src / "dir" / "note.md").write_text("# real\n", encoding="utf-8")
         (src / "hub.md").write_text("[x](dir%2Fnote.md)\n", encoding="utf-8")
-        col = Vault(source_dir=src, read_only=False)
+        col = Vault(source_dir=src, settings=VaultSettings(read_only=False))
         col.index.build_index()
         broken = col.graph.get_broken_links()
         assert [b.target_path for b in broken] == ["dir%2Fnote.md"]

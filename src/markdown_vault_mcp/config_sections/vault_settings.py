@@ -2,18 +2,15 @@
 
 :class:`VaultSettings` groups every *config-derived* ``Vault.__init__``
 parameter into one frozen dataclass so the constructor no longer needs one
-keyword per knob (#1158).  The never-config-derived collaborators —
+keyword per knob (#1158).  The collaborator objects —
 ``embedding_provider``, ``summarizer``, ``git_strategy``, ``on_write``, and
-``chunk_strategy`` — stay explicit ``Vault`` keywords; the server path carries
-them in :class:`~markdown_vault_mcp.config_sections._assembly.VaultInstances`.
+``chunk_strategy`` — stay explicit ``Vault`` keywords; the server path resolves
+providers and the Git strategy in :class:`~markdown_vault_mcp.config_sections._assembly.VaultInstances`.
 
-Field defaults deliberately mirror the *library* defaults of the legacy
-``Vault.__init__`` keywords (pinned by a signature drift-guard test), which is
-why ``chunk_overlap_words`` defaults to ``0`` here while
+Field defaults preserve the established *library* defaults, which is why ``chunk_overlap_words`` defaults to ``0`` here while
 :class:`~markdown_vault_mcp.config_sections.search.SearchConfig` defaults to
 ``40``, and ``read_only`` defaults to ``True`` while the server env default is
-``False`` — the two tiers are distinct on purpose (see the ``read_only``
-rationale in the ``Vault`` docstring).
+``False`` — the two tiers are distinct on purpose (see ``read_only`` below).
 """
 
 from __future__ import annotations
@@ -37,31 +34,58 @@ _DEFAULT_STATE_FILENAME = "state.json"
 class VaultSettings:
     """Config-derived construction settings for a :class:`~markdown_vault_mcp.vault.Vault`.
 
-    One field per config-derived ``Vault`` parameter, carrying the same name,
-    type, and default as the corresponding (docstring-deprecated) legacy
-    keyword — see the ``Vault`` docstring for per-knob semantics.  Construct
+    One field per configuration knob, preserving the names, types, and
+    defaults of the constructor keywords removed in #1225. Construct
     directly for library use, or from a served config via
     :meth:`from_project_config` /
     :func:`~markdown_vault_mcp.config_sections._assembly.to_vault_settings`.
 
     Attributes:
-        index_path: Path to the SQLite index file (``None`` = in-memory).
-        embeddings_path: Base path for the vector sidecar files (``None``
-            disables semantic search).
-        read_only: When ``True`` (library default), write operations raise.
-        write_protect_existing: Require an ``if_match`` etag to overwrite.
-        state_path: Hash-state JSON path (``None`` = derived default, see
-            :meth:`effective_state_path`).
-        indexed_frontmatter_fields: Frontmatter keys promoted to
-            ``document_tags`` for structured filtering.
-        required_frontmatter: Fields a document must carry to be indexed.
-        git_pull_interval_s: Periodic-pull interval; ``0`` disables the loop.
-        exclude_patterns: Configured glob patterns excluded from indexing
-            (before the conventions-file derivation, see
-            :meth:`effective_exclude_patterns`).
-        attachment_extensions: Attachment extension allowlist.
-        max_attachment_size_mb: Attachment context-size cap (``0`` = off).
-        max_note_read_bytes: Full-document read cap in bytes (``0`` = off).
+        index_path: Path to the SQLite index file.  ``None`` (default) uses
+            an in-memory database that is discarded when the object is
+            collected.
+        embeddings_path: Base path for the ``{path}.npy`` and
+            ``{path}.json`` sidecar files.  ``None`` (default) means
+            semantic search is disabled.
+        read_only: When ``True`` (default), write operations raise
+            :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
+
+            This library default deliberately stays ``True`` even though
+            the server's ``MARKDOWN_VAULT_MCP_READ_ONLY`` now defaults to
+            ``False`` (#1113). They are separate tiers: the operator default
+            is a product decision about what an installed server should do,
+            while this one is a fail-safe for a downstream Python consumer
+            who constructs a ``Vault`` without naming the argument. Keeping
+            it costs nothing — the server path always passes the value
+            explicitly through ``to_vault_settings`` — and moving it would be
+            an independent breaking change to the public library interface.
+        write_protect_existing: When ``True``, a write that would overwrite an
+            existing file without an *if_match* etag raises
+            :exc:`~markdown_vault_mcp.exceptions.DocumentExistsError`
+            (default ``False``, i.e. writes overwrite unconditionally).
+        state_path: Path to the hash-state JSON file used by
+            :class:`~markdown_vault_mcp.tracker.ChangeTracker`.  Defaults to
+            ``{source_dir}/.markdown_vault_mcp/state.json``.
+        indexed_frontmatter_fields: Frontmatter keys whose values are
+            promoted to the ``document_tags`` table for structured filtering.
+        required_frontmatter: If provided, documents missing any listed field
+            are excluded from the index entirely.
+        git_pull_interval_s: Interval in seconds for periodic pulls. ``0``
+            disables the pull loop.
+        exclude_patterns: Glob patterns (relative to *source_dir*) for files
+            and directories to exclude from indexing.
+        attachment_extensions: Allowlist of extensions for binary
+            attachments, in any case and with or without leading dots
+            (``"pdf"``, ``"PDF"`` and ``".pdf"`` are the same type).
+            ``["*"]`` accepts all extensions. Also decides which link
+            targets are attachment references rather than note links
+            (#1333), so it is recorded as index provenance and a change
+            rebuilds the index once.
+        max_attachment_size_mb: Attachment context-size cap in megabytes,
+            enforced by the ``read`` / ``write`` / ``fetch`` MCP tools (not by
+            the vault library). ``0`` disables the limit (default ``1.0``).
+        max_note_read_bytes: Maximum bytes returned by full-document reads.
+            ``0`` disables the limit (default ``262144``, i.e. 256 KB).
         chunks_per_file: Search results kept per file before grouping.
         snippet_words: Snippet truncation length in words.
         length_downweight_alpha: Length-downweight exponent for ranking.
@@ -71,17 +95,43 @@ class VaultSettings:
         max_chunk_chars_override: Explicit operator char-cap override — the
             stable warm-restart key (#649).
         chunk_overlap_words: Overlap carried between split chunks.
-        summarize_max_notes: Cap on notes per ``summarize`` call.
-        summarize_max_input_chars: Char budget per summarization request.
-        title_field: Frontmatter key consulted first for document titles.
-        searchable_frontmatter_fields: Frontmatter keys made keyword-searchable
-            (activates embed-text format v2).
-        embed_context: Force context-enriched (v2) embedding text.
-        embedding_batch_size: Chunk texts per embedding-provider call.
-        folder_weights: Folder-prefix score multipliers for search results.
-        fts_weights: Per-column BM25 weights for the FTS5 rank config.
-        conventions_file: Per-folder conventions filename (``None`` disables).
-        okf_mode: OKF read-semantics mode (``auto`` / ``off`` / ``on``).
+        summarize_max_notes: Cap on notes summarised per ``summarize`` call
+            (subtree expansion is truncated to this many notes; default 50).
+        summarize_max_input_chars: Aggregate cap on note characters sent to the
+            summarization backend per call (default 200000).
+        title_field: Frontmatter key consulted first when resolving document
+            titles (default ``"title"``; falls back to ``title`` → first H1
+            → filename stem).
+        searchable_frontmatter_fields: Frontmatter keys whose scalar values
+            are keyword-searchable via the FTS ``summary`` column and —
+            because configuring this activates format v2 — prefixed to
+            first-chunk embedding text (triggering a one-time re-embed).
+            ``None`` disables both.
+        embed_context: When ``True``, forces format v2 (document title +
+            chunk heading enrichment) even with no
+            ``searchable_frontmatter_fields``; any searchable field also
+            activates v2 (default ``False`` — raw chunk content).
+        embedding_batch_size: Maximum number of chunk texts sent to the
+            embedding provider per call in the cold-build, convergence, and
+            inline-reindex paths (default ``4``).
+        folder_weights: Folder-prefix score multipliers applied to search
+            results just before file grouping (``None`` disables).
+        fts_weights: Per-column BM25 weights persisted into the FTS5 rank
+            configuration (``None`` or all-``1.0`` keeps the default).
+        conventions_file: Well-known per-folder conventions filename resolved
+            by :attr:`~markdown_vault_mcp.vault.Vault.conventions`
+            (default ``"_conventions.md"``); ``None``
+            disables folder conventions. When set, the filename is
+            automatically appended to *exclude_patterns* (in both fnmatch
+            forms) so convention files stay out of the index while remaining
+            disk-readable. Must not contain fnmatch metacharacters.
+        okf_mode: OKF (Open Knowledge Format) read-semantics mode —
+            ``"auto"`` (default; follow the vault's ``okf_version``
+            declaration in the root ``index.md``), ``"off"``, or ``"on"``.
+            When read semantics are active at construction time, the OKF
+            scalar keys (``type`` / ``status`` / ``stale_after``) extend the
+            effective *indexed_frontmatter_fields* set. See
+            :attr:`~markdown_vault_mcp.vault.Vault.okf`.
         okf_write: Enable the OKF enforced-write layer.
     """
 
@@ -126,7 +176,7 @@ class VaultSettings:
     ) -> VaultSettings:
         """Map a served :class:`ProjectConfig` onto vault settings.
 
-        Absorbs the historical ``to_vault_kwargs`` renames
+        Maps server configuration names onto library setting names
         (``searchable_frontmatter`` → ``searchable_frontmatter_fields``,
         ``default_mode`` → ``default_search_mode``) and the weight-map
         tuple → dict conversions (#639).  The git pull interval resolves the

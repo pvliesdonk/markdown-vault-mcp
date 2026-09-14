@@ -1,25 +1,11 @@
-"""Settings-first Vault construction (#1158).
-
-Pins the dual-mode contract mechanically:
-
-- a signature drift-guard asserts every :class:`VaultSettings` field mirrors a
-  same-named ``Vault.__init__`` keyword with an identical default (including
-  the two deliberate drifts — ``chunk_overlap_words=0`` vs SearchConfig's 40,
-  and the ``read_only=True`` library default vs the server env default);
-- an equivalence test constructs one vault per mode from the same values and
-  compares the resolved wiring;
-- mixing ``settings=`` with a non-default config-derived legacy kwarg is an
-  explicit ``ValueError``;
-- ``VaultSettings.from_project_config`` absorbs the historical
-  ``to_vault_kwargs`` renames and weight-map conversions.
-"""
+"""Settings-only Vault construction and typed server assembly (#1225)."""
 
 from __future__ import annotations
 
 import dataclasses
 import inspect
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 import pytest
 
@@ -27,7 +13,6 @@ from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.config_sections._assembly import (
     to_vault_instances,
-    to_vault_kwargs,
     to_vault_settings,
 )
 from markdown_vault_mcp.vault import Vault
@@ -46,163 +31,71 @@ _NON_SETTINGS_PARAMS = {
 }
 
 
-class TestSignatureDriftGuard:
-    """VaultSettings fields and Vault legacy kwargs must not drift apart."""
+class TestConstructorContract:
+    """The public constructor accepts settings and explicit collaborators only."""
 
-    def test_fields_mirror_init_defaults(self) -> None:
-        """Every field has a same-named Vault kwarg with the same default."""
+    def test_only_root_settings_and_collaborators(self) -> None:
         params = inspect.signature(Vault.__init__).parameters
-        for field in dataclasses.fields(VaultSettings):
-            assert field.name in params, (
-                f"VaultSettings.{field.name} has no matching Vault.__init__ kwarg"
-            )
-            assert params[field.name].default == field.default, (
-                f"default drift on {field.name}: Vault.__init__ has "
-                f"{params[field.name].default!r}, VaultSettings has "
-                f"{field.default!r}"
-            )
-
-    def test_every_config_derived_kwarg_has_a_field(self) -> None:
-        """The 31 config-derived Vault kwargs are exactly the settings fields."""
-        params = set(inspect.signature(Vault.__init__).parameters)
-        config_derived = params - _NON_SETTINGS_PARAMS
-        field_names = {field.name for field in dataclasses.fields(VaultSettings)}
-        assert config_derived == field_names
-        assert len(field_names) == 31
-
-    def test_deliberate_default_drifts_are_preserved(self) -> None:
-        """The two known library-vs-server default drifts stay pinned."""
-        settings = VaultSettings()
-        # Library chunker default: no overlap (SearchConfig defaults to 40).
-        assert settings.chunk_overlap_words == 0
-        # Library fail-safe default: read-only (the server env default is
-        # False, #1113); see the Vault docstring rationale.
-        assert settings.read_only is True
-
-
-class TestDualModeEquivalence:
-    """Legacy kwargs and settings-first construction wire identically."""
-
-    _VALUES: ClassVar[dict[str, Any]] = {
-        "read_only": False,
-        "write_protect_existing": True,
-        "indexed_frontmatter_fields": ["cluster"],
-        "required_frontmatter": ["title"],
-        "exclude_patterns": [".trash/**"],
-        "attachment_extensions": ["pdf"],
-        "max_attachment_size_mb": 2.5,
-        "max_note_read_bytes": 1024,
-        "chunks_per_file": 3,
-        "snippet_words": 50,
-        "length_downweight_alpha": 0.5,
-        "default_search_mode": "keyword",
-        "max_chunk_words": 100,
-        "max_chunk_chars_override": 900,
-        "chunk_overlap_words": 10,
-        "summarize_max_notes": 7,
-        "summarize_max_input_chars": 5000,
-        "title_field": "name",
-        "searchable_frontmatter_fields": ["cluster"],
-        "embed_context": True,
-        "embedding_batch_size": 8,
-        "folder_weights": {"notes": 2.0},
-        "fts_weights": {"title": 3.0},
-        "conventions_file": "_house_rules.md",
-    }
-
-    _COMPARED_ATTRS = (
-        "_index_path",
-        "_embeddings_path",
-        "_read_only",
-        "_write_protect_existing",
-        "_state_path",
-        "_indexed_frontmatter_fields",
-        "_required_frontmatter",
-        "_git_pull_interval_s",
-        "_exclude_patterns",
-        "_attachment_extensions",
-        "_max_attachment_size_mb",
-        "_max_note_read_bytes",
-        "_max_chunk_chars_override",
-        "_summarize_max_notes",
-        "_summarize_max_input_chars",
-        "_title_field",
-        "_searchable_frontmatter_fields",
-        "_embedding_batch_size",
-    )
-
-    def test_same_values_resolve_to_same_wiring(self, tmp_path: Path) -> None:
-        values = dict(self._VALUES)
-        values["index_path"] = tmp_path / "idx.db"
-        values["state_path"] = tmp_path / "state.json"
-        legacy = Vault(source_dir=tmp_path, **values)
-        settings_first = Vault(source_dir=tmp_path, settings=VaultSettings(**values))
-        try:
-            for attr in self._COMPARED_ATTRS:
-                assert getattr(legacy, attr) == getattr(settings_first, attr), attr
-            # Chunker construction consumes the same settings values.
-            assert type(legacy._chunk_strategy) is type(settings_first._chunk_strategy)
-            assert vars(legacy._chunk_strategy) == vars(settings_first._chunk_strategy)
-            # Derived exclude patterns include the conventions-file forms.
-            assert legacy.exclude_patterns == [
-                ".trash/**",
-                "_house_rules.md",
-                "**/_house_rules.md",
-            ]
-        finally:
-            legacy.close()
-            settings_first.close()
-
-    def test_default_state_path_matches(self, tmp_path: Path) -> None:
-        """Both modes derive the same default state path under the root."""
-        legacy = Vault(source_dir=tmp_path)
-        settings_first = Vault(source_dir=tmp_path, settings=VaultSettings())
-        try:
-            expected = tmp_path / ".markdown_vault_mcp" / "state.json"
-            assert legacy._state_path == expected
-            assert settings_first._state_path == expected
-        finally:
-            legacy.close()
-            settings_first.close()
-
-
-class TestConflictRejection:
-    """settings= combined with non-default legacy kwargs is an error."""
-
-    def test_non_default_legacy_kwarg_raises(self, tmp_path: Path) -> None:
-        with pytest.raises(ValueError, match="read_only"):
-            Vault(source_dir=tmp_path, settings=VaultSettings(), read_only=False)
-
-    def test_error_names_every_conflicting_kwarg(self, tmp_path: Path) -> None:
-        with pytest.raises(ValueError, match=r"max_note_read_bytes.*title_field"):
-            Vault(
-                source_dir=tmp_path,
-                settings=VaultSettings(),
-                title_field="name",
-                max_note_read_bytes=1,
-            )
-
-    def test_default_legacy_values_do_not_conflict(self, tmp_path: Path) -> None:
-        """Explicitly passing a default value alongside settings is accepted."""
-        vault = Vault(
-            source_dir=tmp_path, settings=VaultSettings(read_only=False), read_only=True
+        assert set(params) == _NON_SETTINGS_PARAMS
+        assert all(
+            param.kind is inspect.Parameter.KEYWORD_ONLY
+            for name, param in params.items()
+            if name != "self"
         )
+        assert params["source_dir"].default is inspect.Parameter.empty
+        assert params["settings"].default is None
+
+    @pytest.mark.parametrize("explicit_settings", [False, True])
+    @pytest.mark.parametrize(
+        "field", dataclasses.fields(VaultSettings), ids=lambda f: f.name
+    )
+    def test_removed_keywords_rejected_even_at_defaults(
+        self, tmp_path: Path, explicit_settings: bool, field: dataclasses.Field[Any]
+    ) -> None:
+        kwargs: dict[str, Any] = {field.name: field.default}
+        if explicit_settings:
+            kwargs["settings"] = VaultSettings()
+        with pytest.raises(
+            TypeError, match=f"unexpected keyword argument '{field.name}'"
+        ):
+            Vault(source_dir=tmp_path, **kwargs)
+
+    @pytest.mark.parametrize("settings", [None, VaultSettings()])
+    def test_library_defaults_preserved(
+        self, tmp_path: Path, settings: VaultSettings | None
+    ) -> None:
+        from markdown_vault_mcp.exceptions import ReadOnlyError
+
+        vault = Vault(source_dir=tmp_path, settings=settings)
         try:
-            assert vault._read_only is False  # settings wins; default is inert
+            with pytest.raises(ReadOnlyError):
+                vault.writer.write("note.md", "body")
+            assert vault._chunk_strategy.chunk_overlap_words == 0
+            assert vault._state_path == tmp_path / ".markdown_vault_mcp" / "state.json"
         finally:
             vault.close()
 
-    def test_collaborator_kwargs_are_not_conflicts(self, tmp_path: Path) -> None:
-        """The five non-config-derived kwargs combine freely with settings."""
+    def test_collaborator_combines_with_settings(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.scanner import WholeDocumentChunker
+
         vault = Vault(
-            source_dir=tmp_path, settings=VaultSettings(), chunk_strategy="whole"
+            source_dir=tmp_path,
+            settings=VaultSettings(read_only=False),
+            chunk_strategy="whole",
         )
         try:
-            from markdown_vault_mcp.scanner import WholeDocumentChunker
-
+            vault.writer.write("note.md", "body")
+            assert vault.reader.read("note.md").content == "body"
             assert isinstance(vault._chunk_strategy, WholeDocumentChunker)
         finally:
             vault.close()
+
+    def test_removed_bridge_is_not_importable(self) -> None:
+        import markdown_vault_mcp.config as config
+        import markdown_vault_mcp.config_sections._assembly as assembly
+
+        assert not hasattr(config, "to_vault_kwargs")
+        assert not hasattr(assembly, "to_vault_kwargs")
 
 
 class TestSettingsDerivations:
@@ -283,7 +176,7 @@ class TestFromProjectConfig:
 
 
 class TestAssemblyBridges:
-    """to_vault_settings / to_vault_instances and the legacy kwargs bridge."""
+    """Typed settings and collaborator assembly."""
 
     def test_settings_and_instances_agree_on_pull_interval(
         self, tmp_path: Path
@@ -298,26 +191,6 @@ class TestAssemblyBridges:
             instances = to_vault_instances(config)
             settings = to_vault_settings(config, instances=instances)
             assert settings.git_pull_interval_s == instances.git_pull_interval_s
-
-    def test_to_vault_kwargs_is_the_settings_explosion(self, tmp_path: Path) -> None:
-        """The deprecated bridge reproduces settings + instances exactly."""
-        config = ProjectConfig(
-            source_dir=tmp_path,
-            read_only=False,
-            exclude=[".obsidian/**"],
-        )
-        instances = to_vault_instances(config)
-        settings = to_vault_settings(config, instances=instances)
-        kwargs = to_vault_kwargs(config)
-        for field in dataclasses.fields(VaultSettings):
-            if field.name in ("summarize_max_notes", "summarize_max_input_chars"):
-                # Historical dict shape: only present with a summarizer.
-                assert field.name not in kwargs
-                continue
-            assert kwargs[field.name] == getattr(settings, field.name), field.name
-        assert kwargs["source_dir"] == config.source_dir
-        assert "embedding_provider" not in kwargs
-        assert kwargs["on_write"] is kwargs["git_strategy"]
 
     def test_replace_override_pattern(self, tmp_path: Path) -> None:
         """The CLI-style dataclasses.replace override lands in the vault."""

@@ -17,7 +17,7 @@ import pytest
 from markdown_vault_mcp.exceptions import ReadOnlyError
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.types import RevisionQuery
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -553,8 +553,10 @@ class TestReviewFindings:
             source_dir=repo,
             git_strategy=strategy,
             on_write=strategy,
-            read_only=False,
-            max_note_read_bytes=100,
+            settings=VaultSettings(
+                read_only=False,
+                max_note_read_bytes=100,
+            ),
         )
         vault.index.build_index()
         try:
@@ -702,7 +704,10 @@ def git_vault(tmp_path: Path) -> Iterator[Vault]:
     _commit(repo, "seed")
     strategy = GitWriteStrategy(push_delay_s=0)
     vault = Vault(
-        source_dir=repo, git_strategy=strategy, on_write=strategy, read_only=False
+        source_dir=repo,
+        git_strategy=strategy,
+        on_write=strategy,
+        settings=VaultSettings(read_only=False),
     )
     vault.index.build_index()
     try:
@@ -817,7 +822,7 @@ class TestWithoutGit:
 
     def test_read_revision_raises(self, tmp_path: Path) -> None:
         _write(tmp_path, "note.md", "# Plain\n")
-        vault = Vault(source_dir=tmp_path, read_only=False)
+        vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         vault.index.build_index()
         try:
             with pytest.raises(ValueError, match="requires a git-backed vault"):
@@ -827,7 +832,7 @@ class TestWithoutGit:
 
     def test_write_reports_no_previous_revision(self, tmp_path: Path) -> None:
         _write(tmp_path, "note.md", "# Plain\n")
-        vault = Vault(source_dir=tmp_path, read_only=False)
+        vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         vault.index.build_index()
         try:
             assert vault.writer.write("note.md", "# New\n").previous_revision is None
@@ -938,7 +943,10 @@ class TestHistoricalSections:
 
         strategy = GitWriteStrategy(push_delay_s=0)
         vault = Vault(
-            source_dir=repo, git_strategy=strategy, on_write=strategy, read_only=False
+            source_dir=repo,
+            git_strategy=strategy,
+            on_write=strategy,
+            settings=VaultSettings(read_only=False),
         )
         vault.index.build_index()
         try:

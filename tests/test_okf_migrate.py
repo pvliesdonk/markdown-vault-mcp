@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.exceptions import ReadOnlyError
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ def source_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def vault(source_dir: Path) -> Iterator[Vault]:
-    col = Vault(source_dir=source_dir, read_only=False)
+    col = Vault(source_dir=source_dir, settings=VaultSettings(read_only=False))
     try:
         col.index.build_index()
         yield col
@@ -53,7 +53,10 @@ _ENFORCED_ROOT_INDEX = '---\nokf_version: "0.2"\n---\n# Bundle\n'
 def enforced_vault(source_dir: Path) -> Iterator[Vault]:
     """A declared bundle with the enforced-write layer on (#1401)."""
     (source_dir / "index.md").write_text(_ENFORCED_ROOT_INDEX, encoding="utf-8")
-    col = Vault(source_dir=source_dir, read_only=False, okf_mode="on", okf_write=True)
+    col = Vault(
+        source_dir=source_dir,
+        settings=VaultSettings(read_only=False, okf_mode="on", okf_write=True),
+    )
     try:
         col.index.build_index()
         yield col
@@ -198,7 +201,7 @@ class TestConvertLinks:
         assert "[[x]]" in vault.reader.read("b/z.md").content
 
     def test_read_only_rejected(self, source_dir: Path) -> None:
-        col = Vault(source_dir=source_dir, read_only=True)
+        col = Vault(source_dir=source_dir, settings=VaultSettings(read_only=True))
         col.index.build_index()
         try:
             with pytest.raises(ReadOnlyError):
@@ -208,7 +211,10 @@ class TestConvertLinks:
 
     def test_runs_under_write_protection(self, source_dir: Path) -> None:
         """The transform rewrites notes it has read, so the guard exempts it."""
-        col = Vault(source_dir=source_dir, read_only=False, write_protect_existing=True)
+        col = Vault(
+            source_dir=source_dir,
+            settings=VaultSettings(read_only=False, write_protect_existing=True),
+        )
         col.index.build_index()
         try:
             _write(col, "x.md", "# X\n")
@@ -253,7 +259,10 @@ class TestGenerateIndex:
 
     def test_regenerates_under_write_protection(self, source_dir: Path) -> None:
         """Regeneration reads the existing index.md, so the guard exempts it."""
-        col = Vault(source_dir=source_dir, read_only=False, write_protect_existing=True)
+        col = Vault(
+            source_dir=source_dir,
+            settings=VaultSettings(read_only=False, write_protect_existing=True),
+        )
         col.index.build_index()
         try:
             _write(col, "index.md", '---\nokf_version: "0.2"\n---\n# Old body\n')
@@ -373,7 +382,13 @@ class TestSeedLog:
         _git("add", ".")
         _git("commit", "-m", "notes work")
 
-        col = Vault(source_dir=repo, read_only=False, git_strategy=GitWriteStrategy())
+        col = Vault(
+            source_dir=repo,
+            settings=VaultSettings(
+                read_only=False,
+            ),
+            git_strategy=GitWriteStrategy(),
+        )
         try:
             col.index.build_index()
             result = col.writer.okf_seed_log(folder="guides")
@@ -409,7 +424,10 @@ def test_facet_without_migration_manager_raises(vault: Vault) -> None:
 @pytest.fixture
 def gated_vault(source_dir: Path) -> Iterator[Vault]:
     """A vault whose index gate excludes notes without a ``title`` (#1174)."""
-    col = Vault(source_dir=source_dir, read_only=False, required_frontmatter=["title"])
+    col = Vault(
+        source_dir=source_dir,
+        settings=VaultSettings(read_only=False, required_frontmatter=["title"]),
+    )
     try:
         col.index.build_index()
         yield col

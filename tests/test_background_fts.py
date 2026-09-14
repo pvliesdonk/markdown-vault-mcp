@@ -16,7 +16,7 @@ from markdown_vault_mcp._server_queryable import needs_queryable
 from markdown_vault_mcp.exceptions import (
     IndexUnavailableError,
 )
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -226,7 +226,9 @@ def test_should_use_background_build_in_memory_false(tmp_path: Path) -> None:
 def test_should_use_background_build_cold_on_disk_true(tmp_path: Path) -> None:
     vault = _vault(tmp_path)
     _seed(vault)
-    col = Vault(source_dir=vault, index_path=tmp_path / "fts.db")
+    col = Vault(
+        source_dir=vault, settings=VaultSettings(index_path=tmp_path / "fts.db")
+    )
     # No prior build → sentinel absent → background build required.
     assert col.index.should_use_background_build() is True
     col.close()
@@ -237,11 +239,11 @@ def test_should_use_background_build_warm_on_disk_false(tmp_path: Path) -> None:
     _seed(vault)
     index_path = tmp_path / "fts.db"
     # Phase 1: pre-build sets the sentinel.
-    pre = Vault(source_dir=vault, index_path=index_path)
+    pre = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
     pre.index.build_index()
     pre.close()
     # Phase 2: fresh Vault sees the warm sentinel.
-    col = Vault(source_dir=vault, index_path=index_path)
+    col = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
     assert col.index.should_use_background_build() is False
     col.close()
 
@@ -353,7 +355,9 @@ def test_close_joins_background_thread(tmp_path: Path) -> None:
     vault = _vault(tmp_path)
     for i in range(3):
         _seed(vault, f"n_{i}.md", f"# N{i}\n\nbody {i}\n")
-    col = Vault(source_dir=vault, index_path=tmp_path / "fts.db")
+    col = Vault(
+        source_dir=vault, settings=VaultSettings(index_path=tmp_path / "fts.db")
+    )
     col.index.start_background_build_index()
     col.close()
     thread = col._coordinator._background_build_thread
@@ -480,7 +484,7 @@ def test_lifespan_warm_start_skips_background(
     (vault / "n.md").write_text("# N\n\nbody\n", encoding="utf-8")
     index_path = tmp_path / "fts.db"
 
-    pre = Vault(source_dir=vault, index_path=index_path)
+    pre = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
     pre.index.build_index()
     pre.close()
 
@@ -824,7 +828,9 @@ def test_require_built_raises_immediately_not_blocks(tmp_path: Path) -> None:
     vault = _vault(tmp_path)
     for i in range(3):
         _seed(vault, f"n_{i}.md", f"# N{i}\n\nbody\n")
-    col = Vault(source_dir=vault, index_path=tmp_path / "fts.db")
+    col = Vault(
+        source_dir=vault, settings=VaultSettings(index_path=tmp_path / "fts.db")
+    )
 
     original = index_mod.IndexManager.build_index
 
@@ -863,7 +869,10 @@ def test_git_pull_during_background_does_not_starve_writes(tmp_path: Path) -> No
     vault = _vault(tmp_path)
     for i in range(5):
         _seed(vault, f"n_{i}.md", f"# N{i}\n\nbody\n")
-    col = Vault(source_dir=vault, index_path=tmp_path / "fts.db", read_only=False)
+    col = Vault(
+        source_dir=vault,
+        settings=VaultSettings(index_path=tmp_path / "fts.db", read_only=False),
+    )
 
     original = index_mod.IndexManager.build_index
 
@@ -917,7 +926,10 @@ def test_foreground_write_during_background_scan_on_disk(tmp_path: Path) -> None
         (vault / f"seed_{i}.md").write_text(
             f"# Seed {i}\n\n" + ("body " * 300) + "\n", encoding="utf-8"
         )
-    col = Vault(source_dir=vault, index_path=tmp_path / "fts.db", read_only=False)
+    col = Vault(
+        source_dir=vault,
+        settings=VaultSettings(index_path=tmp_path / "fts.db", read_only=False),
+    )
     col.index.start_background_build_index()
     col.writer.write("racy.md", "# Racy\n\nFOREGROUND CONTENT\n")
     col.index.wait_until_queryable(timeout=10.0)
@@ -940,7 +952,10 @@ def test_reindex_after_pull_handler_handles_not_ready(tmp_path: Path) -> None:
 
     vault = _vault(tmp_path)
     _seed(vault)
-    col = Vault(source_dir=vault, index_path=tmp_path / "fts.db", read_only=False)
+    col = Vault(
+        source_dir=vault,
+        settings=VaultSettings(index_path=tmp_path / "fts.db", read_only=False),
+    )
 
     original = index_mod.IndexManager.build_index
 
@@ -972,7 +987,9 @@ def test_synchronous_build_index_clears_prior_background_error(
     attempt."""
     vault = _vault(tmp_path)
     _seed(vault)
-    col = Vault(source_dir=vault, index_path=tmp_path / "fts.db")
+    col = Vault(
+        source_dir=vault, settings=VaultSettings(index_path=tmp_path / "fts.db")
+    )
 
     # Simulate a prior failed background: error captured, event set,
     # built still False.
@@ -1006,13 +1023,13 @@ def test_build_index_async_warm_restart_short_circuit(tmp_path: Path) -> None:
     index_path = tmp_path / "fts.db"
 
     # Phase 1: pre-build to set the sentinel and FTS rows.
-    pre = Vault(source_dir=vault, index_path=index_path)
+    pre = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
     pre.index.build_index()
     pre.close()
 
     # Phase 2: fresh Vault sees the warm sentinel; async submission
     # must short-circuit.
-    col = Vault(source_dir=vault, index_path=index_path)
+    col = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
     future = col.index.build_index_async()
     assert future.done(), "warm-restart short-circuit must return resolved Future"
     stats = future.result(timeout=0.1)
@@ -1069,13 +1086,13 @@ def test_synchronous_build_index_warm_path_clears_prior_background_error(
     index_path = tmp_path / "fts.db"
 
     # Phase 1: pre-build to set the sentinel and FTS rows.
-    pre = Vault(source_dir=vault, index_path=index_path)
+    pre = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
     pre.index.build_index()
     pre.close()
 
     # Phase 2: fresh Vault sees the warm sentinel; simulate a prior
     # background failure.
-    col = Vault(source_dir=vault, index_path=index_path)
+    col = Vault(source_dir=vault, settings=VaultSettings(index_path=index_path))
     col._coordinator._readiness.fail_build(
         RuntimeError("simulated prior background failure")
     )

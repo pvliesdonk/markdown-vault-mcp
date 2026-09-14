@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 from markdown_vault_mcp.vector_index import VectorIndex
 from tests.conftest import (
     MockEmbeddingProvider,
@@ -55,9 +55,11 @@ def _boot(vault_dir: Path, tmp_path: Path, provider: MockEmbeddingProvider) -> V
     """
     vault = Vault(
         source_dir=vault_dir,
-        index_path=tmp_path / "fts.db",
-        state_path=tmp_path / "s.json",
-        embeddings_path=tmp_path / "vectors",
+        settings=VaultSettings(
+            index_path=tmp_path / "fts.db",
+            state_path=tmp_path / "s.json",
+            embeddings_path=tmp_path / "vectors",
+        ),
         embedding_provider=provider,
     )
     vault.index.build_index()
@@ -358,9 +360,11 @@ class TestBootEmbeddingConvergence:
         calls = _track_embeds(provider)
         v2 = Vault(
             source_dir=vault_dir,
-            index_path=tmp_path / "fts.db",
-            state_path=tmp_path / "s.json",
-            embeddings_path=tmp_path / "vectors",
+            settings=VaultSettings(
+                index_path=tmp_path / "fts.db",
+                state_path=tmp_path / "s.json",
+                embeddings_path=tmp_path / "vectors",
+            ),
             embedding_provider=provider,
         )
         v2.index.build_index()
@@ -506,11 +510,13 @@ def _boot_enriched(
     """Boot like :func:`_boot` with searchable frontmatter enrichment on."""
     vault = Vault(
         source_dir=vault_dir,
-        index_path=tmp_path / "fts.db",
-        state_path=tmp_path / "s.json",
-        embeddings_path=tmp_path / "vectors",
+        settings=VaultSettings(
+            index_path=tmp_path / "fts.db",
+            state_path=tmp_path / "s.json",
+            embeddings_path=tmp_path / "vectors",
+            searchable_frontmatter_fields=["summary"],
+        ),
         embedding_provider=provider,
-        searchable_frontmatter_fields=["summary"],
     )
     vault.index.build_index()
     vault.index.reindex()
@@ -605,11 +611,13 @@ class TestPreambleConvergence:
         # sole trigger for SearchManager's independent, lazy sidecar load.
         v2 = Vault(
             source_dir=vault_dir,
-            index_path=tmp_path / "fts.db",
-            state_path=tmp_path / "s.json",
-            embeddings_path=tmp_path / "vectors",
+            settings=VaultSettings(
+                index_path=tmp_path / "fts.db",
+                state_path=tmp_path / "s.json",
+                embeddings_path=tmp_path / "vectors",
+                searchable_frontmatter_fields=["summary"],
+            ),
             embedding_provider=provider,
-            searchable_frontmatter_fields=["summary"],
         )
         v2.index.build_index()
         try:

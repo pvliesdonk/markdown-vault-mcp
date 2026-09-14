@@ -18,7 +18,7 @@ from markdown_vault_mcp.types import (
     OutlinkInfo,
     ParsedNote,
 )
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
@@ -1361,7 +1361,7 @@ class TestRenameUpdateLinks:
         self, rename_vault: Path
     ) -> None:
         """update_links=False (default): source files are not modified."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         result = col.writer.rename("target.md", "renamed.md")
@@ -1373,7 +1373,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_markdown_link(self, rename_vault: Path) -> None:
         """Markdown link [text](target.md) is updated to new_path."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         result = col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1386,7 +1386,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_wikilink(self, rename_vault: Path) -> None:
         """Wikilink [[target]] is updated to [[renamed]]."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1397,7 +1397,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_wikilink_preserves_alias(self, rename_vault: Path) -> None:
         """Wikilink [[target|alias]] becomes [[renamed|alias]]."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1408,7 +1408,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_reference_link(self, rename_vault: Path) -> None:
         """Reference definition [ref]: target.md is updated."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1419,7 +1419,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_fragment_preserved(self, rename_vault: Path) -> None:
         """Fragment in markdown link is preserved after rename."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1430,7 +1430,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_unrelated_file_not_modified(self, rename_vault: Path) -> None:
         """Files with no links to the renamed note are not modified."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
         original_mtime = (rename_vault / "no_links.md").stat().st_mtime
 
@@ -1440,7 +1440,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_updated_links_count(self, rename_vault: Path) -> None:
         """updated_links counts source documents successfully updated."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         result = col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1456,7 +1456,7 @@ class TestRenameUpdateLinks:
         import contextlib
         from pathlib import Path as _Path
 
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         linker_abs = str(rename_vault / "linker_md.md")
@@ -1481,7 +1481,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_wikilink_fragment_preserved(self, rename_vault: Path) -> None:
         """Wikilink with fragment [[target#heading]] becomes [[renamed#heading]]."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1496,7 +1496,7 @@ class TestRenameUpdateLinks:
         A file at subdir/linker_rel.md with [Target](../target.md) should
         become [Target](../renamed.md) — not the vault-absolute renamed.md.
         """
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1512,7 +1512,7 @@ class TestRenameUpdateLinks:
         not the source-directory-relative renamed.md — the spelling OKF
         recommends must survive an unrelated rename.
         """
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1523,7 +1523,7 @@ class TestRenameUpdateLinks:
 
     def test_update_links_fts_reindexed_after_update(self, rename_vault: Path) -> None:
         """Updated source documents are re-indexed in FTS."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1540,7 +1540,7 @@ class TestRenameUpdateLinks:
         (rename_vault / "self_link.md").write_text(
             "# Self\n\nSee [Self](self_link.md) for more.\n"
         )
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.rename("self_link.md", "self_renamed.md", update_links=True)
@@ -1562,7 +1562,8 @@ class TestRenameUpdateLinks:
         (rename_vault / "Images" / "pic.png").write_bytes(b"\x89PNG\r\n")
         (rename_vault / "embedder.md").write_text("# N\n\n![[Images/pic.png]]\n")
         col = Vault(
-            source_dir=rename_vault, read_only=False, attachment_extensions=["png"]
+            source_dir=rename_vault,
+            settings=VaultSettings(read_only=False, attachment_extensions=["png"]),
         )
         col.index.build_index()
 
@@ -1582,7 +1583,8 @@ class TestRenameUpdateLinks:
         """The hint answers a request that was made; no request, no hint."""
         (rename_vault / "image.png").write_bytes(b"\x89PNG\r\n")
         col = Vault(
-            source_dir=rename_vault, read_only=False, attachment_extensions=["png"]
+            source_dir=rename_vault,
+            settings=VaultSettings(read_only=False, attachment_extensions=["png"]),
         )
         col.index.build_index()
 
@@ -1593,7 +1595,7 @@ class TestRenameUpdateLinks:
 
     def test_note_rename_has_no_hint(self, rename_vault: Path) -> None:
         """The note branch honours update_links, so it never carries the hint."""
-        col = Vault(source_dir=rename_vault, read_only=False)
+        col = Vault(source_dir=rename_vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         result = col.writer.rename("target.md", "renamed.md", update_links=True)
@@ -1896,7 +1898,7 @@ class TestResolveVaultWikilinks:
         (vault / "notes").mkdir()
         (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
 
-        col = Vault(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.write("source.md", "# Source\n\nSee [[Target]].\n")
@@ -1918,7 +1920,7 @@ class TestResolveVaultWikilinks:
         (vault / "notes").mkdir()
         (vault / "notes" / "Target.md").write_text("# Target\n", encoding="utf-8")
 
-        col = Vault(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         col.writer.edit(
@@ -1949,7 +1951,7 @@ class TestResolveVaultWikilinks:
             "# Target deep\n", encoding="utf-8"
         )
 
-        col = Vault(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         outlinks = col.graph.get_outlinks("source.md")
@@ -1973,7 +1975,7 @@ class TestResolveVaultWikilinks:
         )
         (vault / "Target.md").write_text("# Target\n", encoding="utf-8")
 
-        col = Vault(source_dir=vault, read_only=False)
+        col = Vault(source_dir=vault, settings=VaultSettings(read_only=False))
         col.index.build_index()
 
         # Initial: bare [[Target]] resolves to root-level Target.md.

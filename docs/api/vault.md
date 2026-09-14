@@ -4,7 +4,7 @@ The `Vault` class is the primary public API for the library. MCP tools, CLI comm
 
 ## Quick Start
 
-Construction is *settings-first*: pass `source_dir` plus a `VaultSettings` carrying the configuration knobs. Collaborator objects that are never derived from configuration (`embedding_provider`, `summarizer`, `git_strategy`, `on_write`, and `chunk_strategy`) stay explicit keywords.
+Construction uses `VaultSettings`: pass `source_dir` plus a `VaultSettings` carrying the configuration knobs. Collaborator objects (`embedding_provider`, `summarizer`, `git_strategy`, `on_write`, and `chunk_strategy`) stay explicit keywords.
 
 ```python
 from pathlib import Path
@@ -14,6 +14,7 @@ from markdown_vault_mcp.vault import Vault, VaultSettings
 vault = Vault(source_dir=Path("/path/to/vault"))
 stats = vault.index.build_index()
 print(f"Indexed {stats.documents_indexed} documents")
+vault.close()
 
 # Configured vault: knobs travel on VaultSettings
 vault = Vault(
@@ -33,11 +34,23 @@ for r in results:
 # Read a document (reader facet)
 note = vault.reader.read("Journal/note.md")
 print(note.content)
+vault.close()
 ```
 
-## Deprecated: per-knob keyword arguments
+## Migrating from 4.x
 
-Before `VaultSettings`, every configuration knob was its own `Vault(...)` keyword (`Vault(source_dir=..., read_only=False, index_path=...)`). Those keywords still work unchanged, but they are deprecated in favor of the same-named `VaultSettings` fields and scheduled for removal in the next major release. Passing `settings=` together with a non-default legacy keyword raises `ValueError`: pick one mode per construction. `source_dir` and the five collaborator keywords are not deprecated.
+The 31 configuration keywords on `Vault` have been removed. Move each value to the same-named field on `VaultSettings`. Replace `Vault(source_dir=root, read_only=False, index_path=index)` with:
+
+```python
+vault = Vault(
+    source_dir=root,
+    settings=VaultSettings(read_only=False, index_path=index),
+)
+```
+
+Old keywords now raise `TypeError`, including when their values match the defaults or when `settings` is also supplied. `source_dir` and the five collaborator keywords remain on `Vault`.
+
+Omitting `settings` (or passing `None`) uses `VaultSettings()`. Library defaults are unchanged: read-only, no chunk overlap, and no overwrite protection once writes are enabled. Server configuration continues to use its own defaults through [configuration assembly](config.md).
 
 ## API Reference
 

@@ -11,7 +11,6 @@ from fastmcp_pvl_core import TransferConfig
 from markdown_vault_mcp.config import (
     ProjectConfig,
     derive_max_chunk_chars,
-    to_vault_kwargs,
 )
 from markdown_vault_mcp.config_sections import (
     ContentConfig,
@@ -19,6 +18,10 @@ from markdown_vault_mcp.config_sections import (
     GitConfig,
     IndexingConfig,
     SearchConfig,
+)
+from markdown_vault_mcp.config_sections._assembly import (
+    to_vault_instances,
+    to_vault_settings,
 )
 from markdown_vault_mcp.exceptions import ConfigurationError
 
@@ -295,15 +298,15 @@ class TestWriteProtectExisting:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING", "")
         assert ProjectConfig.from_env().write_protect_existing is True
 
-    def test_reaches_vault_kwargs(self) -> None:
-        kwargs = to_vault_kwargs(
+    def test_reaches_vault_settings(self) -> None:
+        settings = to_vault_settings(
             ProjectConfig(
                 source_dir=Path("/tmp/vault"),
                 read_only=False,
                 write_protect_existing=True,
             )
         )
-        assert kwargs["write_protect_existing"] is True
+        assert settings.write_protect_existing is True
 
 
 class TestLoadConfig:
@@ -453,26 +456,26 @@ class TestLoadConfig:
         assert config.indexing.indexed_frontmatter_fields is None
 
 
-class TestToVaultKwargs:
+class TestVaultAssembly:
     def test_includes_exclude_patterns(self) -> None:
         config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             exclude=[".obsidian/**"],
         )
-        kwargs = to_vault_kwargs(config)
+        settings = to_vault_settings(config)
         # Configured patterns pass through verbatim; the conventions-file
         # exclusion is derived inside Vault.__init__, not here.
-        assert kwargs["exclude_patterns"] == (".obsidian/**",)
-        assert kwargs["source_dir"] == Path("/tmp/vault")
-        assert kwargs["conventions_file"] == "_conventions.md"
+        assert settings.exclude_patterns == (".obsidian/**",)
+        assert config.source_dir == Path("/tmp/vault")
+        assert settings.conventions_file == "_conventions.md"
 
     def test_conventions_file_disabled_passes_none(self, tmp_path: Path) -> None:
         config = ProjectConfig(
             source_dir=tmp_path / "vault",
             conventions_file=None,
         )
-        kwargs = to_vault_kwargs(config)
-        assert kwargs["conventions_file"] is None
+        settings = to_vault_settings(config)
+        assert settings.conventions_file is None
 
     def test_excludes_git_token(self, tmp_path: Path) -> None:
         fake_token = "".join(["ghp_", "secret"])
@@ -480,8 +483,8 @@ class TestToVaultKwargs:
             source_dir=tmp_path / "vault",
             git_token=fake_token,
         )
-        kwargs = to_vault_kwargs(config)
-        assert "git_token" not in kwargs
+        settings = to_vault_settings(config)
+        assert "git_token" not in {field.name for field in dataclasses.fields(settings)}
 
     def test_includes_all_vault_params(self, monkeypatch) -> None:
         # Monkeypatch the resolver so the test is deterministic (the old form
@@ -505,23 +508,24 @@ class TestToVaultKwargs:
             required_fields=["title"],
             exclude=[".obsidian/**"],
         )
-        kwargs = to_vault_kwargs(config)
-        assert kwargs["source_dir"] == Path("/tmp/vault")
-        assert kwargs["read_only"] is False
-        assert kwargs["index_path"] == Path("/tmp/index.db")
-        assert kwargs["embeddings_path"] == Path("/tmp/emb")
-        assert kwargs["state_path"] == Path("/tmp/state.json")
-        assert kwargs["indexed_frontmatter_fields"] == ("cluster",)
-        assert kwargs["required_frontmatter"] == ("title",)
-        assert kwargs["exclude_patterns"] == (".obsidian/**",)
-        assert kwargs["attachment_extensions"] is None
-        assert kwargs["max_attachment_size_mb"] == 1.0
-        assert kwargs["git_pull_interval_s"] == 0
-        assert kwargs["embedding_provider"] is fake
+        instances = to_vault_instances(config)
+        settings = to_vault_settings(config, instances=instances)
+        assert config.source_dir == Path("/tmp/vault")
+        assert settings.read_only is False
+        assert settings.index_path == Path("/tmp/index.db")
+        assert settings.embeddings_path == Path("/tmp/emb")
+        assert settings.state_path == Path("/tmp/state.json")
+        assert settings.indexed_frontmatter_fields == ("cluster",)
+        assert settings.required_frontmatter == ("title",)
+        assert settings.exclude_patterns == (".obsidian/**",)
+        assert settings.attachment_extensions is None
+        assert settings.max_attachment_size_mb == 1.0
+        assert settings.git_pull_interval_s == 0
+        assert instances.embedding_provider is fake
         # The resolved provider's context length drives the chunk char cap (#649).
-        assert kwargs["max_chunk_chars"] == round(512 * 2.8)
-        assert "git_strategy" in kwargs
-        assert "on_write" in kwargs
+        assert settings.max_chunk_chars == round(512 * 2.8)
+        assert instances.git_strategy is not None
+        assert instances.on_write is not None
 
     def test_managed_mode_wires_pull_and_on_write(self, tmp_path: Path) -> None:
         import subprocess
@@ -541,14 +545,15 @@ class TestToVaultKwargs:
             git_token="ghp_secret",
             git_pull_interval_s=123,
         )
-        kwargs = to_vault_kwargs(config)
-        assert kwargs["git_pull_interval_s"] == 123
-        assert "git_strategy" in kwargs
-        assert "on_write" in kwargs
+        instances = to_vault_instances(config)
+        settings = to_vault_settings(config, instances=instances)
+        assert settings.git_pull_interval_s == 123
+        assert instances.git_strategy is not None
+        assert instances.on_write is not None
 
 
-class TestToVaultKwargsProvider:
-    """Embedding-provider resolution in to_vault_kwargs (#638 PR2).
+class TestVaultInstancesProvider:
+    """Embedding-provider resolution in to_vault_instances (#638 PR2).
 
     An *explicitly* configured provider that fails to load is a hard
     ConfigurationError; auto-detection failures degrade to keyword-only.
@@ -574,13 +579,13 @@ class TestToVaultKwargsProvider:
         monkeypatch.setattr(providers_mod, "get_embedding_provider", _boom)
         config = self._config(provider="openai", tmp_path=tmp_path)
         with pytest.raises(ConfigurationError, match="openai"):
-            to_vault_kwargs(config)
+            to_vault_instances(config)
 
     def test_unrecognized_provider_name_raises(self, tmp_path) -> None:
         """A bogus EMBEDDING_PROVIDER value surfaces as ConfigurationError."""
         config = self._config(provider="bogus", tmp_path=tmp_path)
         with pytest.raises(ConfigurationError, match="Unrecognised"):
-            to_vault_kwargs(config)
+            to_vault_instances(config)
 
     @pytest.mark.parametrize("exc", [ImportError("missing dep"), RuntimeError("none")])
     def test_autodetect_failure_degrades(self, monkeypatch, tmp_path, exc) -> None:
@@ -592,10 +597,11 @@ class TestToVaultKwargsProvider:
 
         monkeypatch.setattr(providers_mod, "get_embedding_provider", _boom)
         config = self._config(provider=None, tmp_path=tmp_path)
-        kwargs = to_vault_kwargs(config)
-        assert "embedding_provider" not in kwargs
+        instances = to_vault_instances(config)
+        settings = to_vault_settings(config, instances=instances)
+        assert instances.embedding_provider is None
         # No provider → the chunk char cap falls back to the ceiling (#790).
-        assert kwargs["max_chunk_chars"] == 1500
+        assert settings.max_chunk_chars == 1500
 
     def test_no_embeddings_path_skips_provider(self, monkeypatch, tmp_path) -> None:
         """With no embeddings_path the provider is never resolved, even if broken."""
@@ -610,11 +616,11 @@ class TestToVaultKwargsProvider:
             embedding_provider="openai",
             embeddings_path=None,
         )
-        kwargs = to_vault_kwargs(config)
-        assert "embedding_provider" not in kwargs
+        instances = to_vault_instances(config)
+        assert instances.embedding_provider is None
 
-    def test_provider_loads_sets_kwarg(self, monkeypatch, tmp_path) -> None:
-        """A successfully resolved provider is threaded into the kwargs."""
+    def test_provider_loads_sets_instance(self, monkeypatch, tmp_path) -> None:
+        """A successfully resolved provider is threaded into the instances."""
         import markdown_vault_mcp.providers as providers_mod
 
         class _FakeProvider:
@@ -625,10 +631,11 @@ class TestToVaultKwargsProvider:
             providers_mod, "get_embedding_provider", lambda _config: fake
         )
         config = self._config(provider="openai", tmp_path=tmp_path)
-        kwargs = to_vault_kwargs(config)
-        assert kwargs["embedding_provider"] is fake
+        instances = to_vault_instances(config)
+        settings = to_vault_settings(config, instances=instances)
+        assert instances.embedding_provider is fake
         # The resolved provider's context length drives the chunk char cap (#649).
-        assert kwargs["max_chunk_chars"] == round(512 * 2.8)
+        assert settings.max_chunk_chars == round(512 * 2.8)
 
 
 class TestGitCommitterConfig:
@@ -707,8 +714,8 @@ class TestGitCommitterConfig:
         assert config.git.commit_name == "CI"
         assert config.git.commit_email == "ci@example.com"
 
-    def test_to_vault_kwargs_includes_commit_identity(self) -> None:
-        """to_vault_kwargs() passes commit identity to GitWriteStrategy."""
+    def test_to_vault_instances_includes_commit_identity(self) -> None:
+        """to_vault_instances() passes commit identity to GitWriteStrategy."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
         config = ProjectConfig(
@@ -717,26 +724,26 @@ class TestGitCommitterConfig:
             git_commit_name="TestBot",
             git_commit_email="test@example.com",
         )
-        kwargs = to_vault_kwargs(config)
+        instances = to_vault_instances(config)
 
-        assert "on_write" in kwargs
-        strategy = kwargs["on_write"]
+        assert instances.on_write is not None
+        strategy = instances.on_write
         assert isinstance(strategy, GitWriteStrategy)
-        assert kwargs["git_strategy"] is strategy
+        assert instances.git_strategy is strategy
         assert strategy._commit_name == "TestBot"
         assert strategy._commit_email == "test@example.com"
 
-    def test_to_vault_kwargs_with_default_identity(self) -> None:
-        """to_vault_kwargs() uses defaults when no custom identity is set."""
+    def test_to_vault_instances_with_default_identity(self) -> None:
+        """to_vault_instances() uses defaults when no custom identity is set."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
         config = ProjectConfig(
             source_dir=Path("/tmp/vault"),
             git_token="ghp_test",
         )
-        kwargs = to_vault_kwargs(config)
+        instances = to_vault_instances(config)
 
-        strategy = kwargs["on_write"]
+        strategy = instances.on_write
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._commit_name == "markdown-vault-mcp"
         assert strategy._commit_email == "noreply@markdown-vault-mcp"
@@ -826,17 +833,17 @@ class TestAttachmentConfig:
         with pytest.raises(ConfigurationError, match="max_attachment_size_mb"):
             ProjectConfig.from_env()
 
-    def test_attachment_config_passed_through_to_vault_kwargs(
+    def test_attachment_config_passed_through_to_vault_settings(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """to_vault_kwargs() includes attachment_extensions and max_attachment_size_mb."""
+        """to_vault_settings() includes attachment_extensions and max_attachment_size_mb."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS", "pdf,png")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "5.0")
         config = ProjectConfig.from_env()
-        kwargs = to_vault_kwargs(config)
-        assert kwargs["attachment_extensions"] == ("pdf", "png")
-        assert kwargs["max_attachment_size_mb"] == 5.0
+        settings = to_vault_settings(config)
+        assert settings.attachment_extensions == ("pdf", "png")
+        assert settings.max_attachment_size_mb == 5.0
 
 
 class TestGitLfsConfig:
@@ -864,7 +871,7 @@ class TestGitLfsConfig:
         assert config.git.lfs is True
 
     def test_git_lfs_passed_to_strategy(self, tmp_path: Path) -> None:
-        """to_vault_kwargs() passes git_lfs to GitWriteStrategy."""
+        """to_vault_instances() passes git_lfs to GitWriteStrategy."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
         config = ProjectConfig(
@@ -872,21 +879,21 @@ class TestGitLfsConfig:
             git_token="ghp_test",
             git_lfs=False,
         )
-        kwargs = to_vault_kwargs(config)
-        strategy = kwargs["on_write"]
+        instances = to_vault_instances(config)
+        strategy = instances.on_write
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._git_lfs is False
 
     def test_git_lfs_default_true_in_strategy(self, tmp_path: Path) -> None:
-        """to_vault_kwargs() passes git_lfs=True to strategy by default."""
+        """to_vault_instances() passes git_lfs=True to strategy by default."""
         from markdown_vault_mcp.git import GitWriteStrategy
 
         config = ProjectConfig(
             source_dir=tmp_path,
             git_token="ghp_test",
         )
-        kwargs = to_vault_kwargs(config)
-        strategy = kwargs["on_write"]
+        instances = to_vault_instances(config)
+        strategy = instances.on_write
         assert isinstance(strategy, GitWriteStrategy)
         assert strategy._git_lfs is True
 
@@ -1777,12 +1784,12 @@ class TestDefaultSearchMode:
             "auto"
         )
 
-    def test_reaches_the_vault_kwargs(self, monkeypatch):
+    def test_reaches_the_vault_settings(self, monkeypatch):
         """The value is threaded through to Vault, not just parsed."""
-        from markdown_vault_mcp.config_sections._assembly import to_vault_kwargs
+        from markdown_vault_mcp.config_sections._assembly import to_vault_settings
 
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_DEFAULT_SEARCH_MODE", "keyword")
-        assert to_vault_kwargs(ProjectConfig.from_env())["default_search_mode"] == (
+        assert to_vault_settings(ProjectConfig.from_env()).default_search_mode == (
             "keyword"
         )
 
@@ -2235,14 +2242,14 @@ def test_chunk_overlap_words_rejects_negative(
         ProjectConfig.from_env()
 
 
-def test_chunk_overlap_words_threaded_into_vault_kwargs(
+def test_chunk_overlap_words_threaded_into_vault_settings(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """to_vault_kwargs carries chunk_overlap_words from SearchConfig."""
+    """to_vault_settings carries chunk_overlap_words from SearchConfig."""
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_CHUNK_OVERLAP_WORDS", "25")
-    kwargs = to_vault_kwargs(ProjectConfig.from_env())
-    assert kwargs["chunk_overlap_words"] == 25
+    settings = to_vault_settings(ProjectConfig.from_env())
+    assert settings.chunk_overlap_words == 25
 
 
 # ---------------------------------------------------------------------------
@@ -2294,14 +2301,14 @@ class TestCuratedRankingEnvParsing:
         assert cfg.search.folder_weights is None
         assert cfg.search.fts_weights is None
 
-        kwargs = to_vault_kwargs(cfg)
-        assert kwargs["title_field"] == "title"
-        assert kwargs["searchable_frontmatter_fields"] is None
-        assert kwargs["embed_context"] is False
-        assert kwargs["folder_weights"] is None
-        assert kwargs["fts_weights"] is None
+        settings = to_vault_settings(cfg)
+        assert settings.title_field == "title"
+        assert settings.searchable_frontmatter_fields is None
+        assert settings.embed_context is False
+        assert settings.folder_weights is None
+        assert settings.fts_weights is None
 
-    def test_to_vault_kwargs_threads_the_five_knobs(
+    def test_to_vault_settings_threads_the_five_knobs(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
@@ -2311,13 +2318,13 @@ class TestCuratedRankingEnvParsing:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS", "sessions:0.5")
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_FTS_WEIGHTS", "summary:3")
 
-        kwargs = to_vault_kwargs(ProjectConfig.from_env())
-        assert kwargs["title_field"] == "name"
-        assert kwargs["searchable_frontmatter_fields"] == ("summary",)
-        assert kwargs["embed_context"] is True
+        settings = to_vault_settings(ProjectConfig.from_env())
+        assert settings.title_field == "name"
+        assert settings.searchable_frontmatter_fields == ("summary",)
+        assert settings.embed_context is True
         # Vault takes plain dicts.
-        assert kwargs["folder_weights"] == {"sessions": 0.5}
-        assert kwargs["fts_weights"] == {"summary": 3.0}
+        assert settings.folder_weights == {"sessions": 0.5}
+        assert settings.fts_weights == {"summary": 3.0}
 
     def test_malformed_weight_entry_raises_naming_the_var(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

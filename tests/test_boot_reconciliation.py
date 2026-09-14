@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import _parse_tool_data, wait_for_mcp_writer_drain
 
 if TYPE_CHECKING:
@@ -46,8 +46,10 @@ def _prebuild(vault: Path, tmp_path: Path) -> int:
     """Simulate a previous server run: full build into the persistent index."""
     pre = Vault(
         source_dir=vault,
-        index_path=tmp_path / "fts.db",
-        state_path=tmp_path / "s.json",
+        settings=VaultSettings(
+            index_path=tmp_path / "fts.db",
+            state_path=tmp_path / "s.json",
+        ),
     )
     pre.index.build_index()
     count = len(pre._fts.list_notes())
@@ -124,9 +126,11 @@ class TestWarmBootReconciliation:
 
         pre = Vault(
             source_dir=vault,
-            index_path=tmp_path / "fts.db",
-            state_path=tmp_path / "s.json",
-            required_frontmatter=["title"],
+            settings=VaultSettings(
+                index_path=tmp_path / "fts.db",
+                state_path=tmp_path / "s.json",
+                required_frontmatter=["title"],
+            ),
         )
         pre.index.build_index()
         pre.close()

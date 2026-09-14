@@ -556,7 +556,7 @@ class TestGitSyncVisibility:
             monkeypatch.delenv(var, raising=False)
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
-        # No GIT_REPO_URL → to_vault_kwargs() falls into the unmanaged
+        # No GIT_REPO_URL → to_vault_instances() falls into the unmanaged
         # commit-only branch, which builds a strategy with managed=False.
 
         server = make_server()

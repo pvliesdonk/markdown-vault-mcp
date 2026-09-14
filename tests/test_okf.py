@@ -8,9 +8,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.vault import VaultSettings
+
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.vault import Vault
 
 from markdown_vault_mcp.okf import (
@@ -143,8 +146,10 @@ class TestVaultIntegration:
         _write_root_index(tmp_path, '---\nokf_version: "0.2"\n---\n')
         vault = Vault(
             source_dir=tmp_path,
-            okf_mode="auto",
-            indexed_frontmatter_fields=list(OKF_INDEXED_FIELDS),
+            settings=VaultSettings(
+                okf_mode="auto",
+                indexed_frontmatter_fields=list(OKF_INDEXED_FIELDS),
+            ),
         )
         try:
             fields = vault.reader.stats().indexed_frontmatter_fields
@@ -459,10 +464,18 @@ def _build_filter_vault(root: Path, *, declared: bool) -> None:
 
 
 class TestOkfFilters:
-    def _vault(self, root: Path, **kwargs: object) -> Vault:
+    def _vault(
+        self,
+        root: Path,
+        *,
+        settings: VaultSettings | None = None,
+        embedding_provider: EmbeddingProvider | None = None,
+    ) -> Vault:
         from markdown_vault_mcp.vault import Vault
 
-        vault = Vault(source_dir=root, **kwargs)  # type: ignore[arg-type]
+        vault = Vault(
+            source_dir=root, settings=settings, embedding_provider=embedding_provider
+        )
         vault.index.build_index()
         return vault
 
@@ -529,13 +542,13 @@ class TestOkfFilters:
             vault.close()
 
     def test_semantic_and_hybrid_filters(
-        self, tmp_path: Path, mock_provider: object
+        self, tmp_path: Path, mock_provider: EmbeddingProvider
     ) -> None:
         root = tmp_path / "vault"
         _build_filter_vault(root, declared=True)
         vault = self._vault(
             root,
-            embeddings_path=tmp_path / "embeddings",
+            settings=VaultSettings(embeddings_path=tmp_path / "embeddings"),
             embedding_provider=mock_provider,
         )
         try:
@@ -796,7 +809,9 @@ class TestOkfAudit:
         from markdown_vault_mcp.vault import Vault
 
         _build_audit_vault(tmp_path)
-        vault = Vault(source_dir=tmp_path, exclude_patterns=["junk/**"])
+        vault = Vault(
+            source_dir=tmp_path, settings=VaultSettings(exclude_patterns=["junk/**"])
+        )
         try:
             report = vault.reader.okf_validate()
             assert report.active is True

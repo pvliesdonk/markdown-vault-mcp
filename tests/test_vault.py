@@ -12,7 +12,10 @@ from unittest.mock import patch
 
 import pytest
 
-from markdown_vault_mcp.config import to_vault_kwargs
+from markdown_vault_mcp.config_sections._assembly import (
+    to_vault_instances,
+    to_vault_settings,
+)
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentExistsError,
@@ -41,7 +44,7 @@ from markdown_vault_mcp.utils.text import (
 from markdown_vault_mcp.utils.text import (
     normalize_text as _normalize_text,
 )
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
 
 if TYPE_CHECKING:
@@ -89,15 +92,17 @@ def _make_vault(
     """
     return Vault(
         source_dir=source_dir,
-        index_path=index_path,
-        embeddings_path=embeddings_path,
+        settings=VaultSettings(
+            index_path=index_path,
+            embeddings_path=embeddings_path,
+            indexed_frontmatter_fields=indexed_frontmatter_fields,
+            state_path=state_path,
+            read_only=read_only,
+            exclude_patterns=exclude_patterns,
+            chunk_overlap_words=chunk_overlap_words,
+        ),
         embedding_provider=embedding_provider,
-        indexed_frontmatter_fields=indexed_frontmatter_fields,
-        state_path=state_path,
-        read_only=read_only,
         on_write=on_write,
-        exclude_patterns=exclude_patterns,
-        chunk_overlap_words=chunk_overlap_words,
     )
 
 
@@ -487,7 +492,9 @@ class TestSearch:
         embeddings_path = tmp_path / "embeddings"
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -513,7 +520,9 @@ class TestSearch:
         embeddings_path = tmp_path / "embeddings"
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -710,7 +719,9 @@ class TestStats:
         """stats() reports semantic_search_available=True when provider is set."""
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=tmp_path / "embeddings",
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "embeddings",
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -731,7 +742,9 @@ class TestStats:
         """list_tags() returns distinct values for indexed frontmatter fields."""
         col = Vault(
             source_dir=vault_path,
-            indexed_frontmatter_fields=["cluster", "topics"],
+            settings=VaultSettings(
+                indexed_frontmatter_fields=["cluster", "topics"],
+            ),
         )
         col.index.build_index()
 
@@ -802,9 +815,11 @@ def writable_with_embeddings(
     """Writable Vault with mock embeddings enabled."""
     col = Vault(
         source_dir=vault_path,
-        embeddings_path=tmp_path / "embeddings",
+        settings=VaultSettings(
+            embeddings_path=tmp_path / "embeddings",
+            read_only=False,
+        ),
         embedding_provider=mock_provider,
-        read_only=False,
     )
     try:
         col.index.build_index()
@@ -819,7 +834,10 @@ class TestWriteProtectExisting:
 
     @pytest.fixture
     def protected(self, vault_path: Path) -> Iterator[Vault]:
-        col = Vault(source_dir=vault_path, read_only=False, write_protect_existing=True)
+        col = Vault(
+            source_dir=vault_path,
+            settings=VaultSettings(read_only=False, write_protect_existing=True),
+        )
         try:
             col.index.build_index()
             yield col
@@ -1787,7 +1805,7 @@ class TestConcurrentWrites:
         import threading
         import time
 
-        col = Vault(source_dir=vault_path, read_only=False)
+        col = Vault(source_dir=vault_path, settings=VaultSettings(read_only=False))
 
         finished = threading.Event()
 
@@ -1847,9 +1865,11 @@ class TestConcurrentWrites:
         git_strategy = DummyGitStrategy()
         col = Vault(
             source_dir=vault_path,
-            read_only=False,
+            settings=VaultSettings(
+                read_only=False,
+                git_pull_interval_s=60,
+            ),
             git_strategy=git_strategy,  # type: ignore[arg-type]
-            git_pull_interval_s=60,
         )
 
         col.start()
@@ -1890,7 +1910,9 @@ class TestConcurrentWrites:
         col = Vault(
             source_dir=vault_path,
             git_strategy=git_strategy,  # type: ignore[arg-type]
-            git_pull_interval_s=60,
+            settings=VaultSettings(
+                git_pull_interval_s=60,
+            ),
         )
 
         col.sync_from_remote_before_index()
@@ -2172,7 +2194,10 @@ class TestReadAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """read_attachment() succeeds regardless of max_attachment_size_mb (cap is in MCP tools)."""
-        col = Vault(source_dir=vault_with_attachment, max_attachment_size_mb=0.000001)
+        col = Vault(
+            source_dir=vault_with_attachment,
+            settings=VaultSettings(max_attachment_size_mb=0.000001),
+        )
         result = col.reader.read_attachment("assets/report.pdf")
         assert result.size_bytes > 0
 
@@ -2180,7 +2205,10 @@ class TestReadAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """read_attachment() with max_attachment_size_mb=0 succeeds (unlimited)."""
-        col = Vault(source_dir=vault_with_attachment, max_attachment_size_mb=0)
+        col = Vault(
+            source_dir=vault_with_attachment,
+            settings=VaultSettings(max_attachment_size_mb=0),
+        )
         result = col.reader.read_attachment("assets/report.pdf")
         assert result.size_bytes > 0
 
@@ -2222,7 +2250,9 @@ class TestReadAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """read_attachment() etag changes when file content changes."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         result_before = col.reader.read_attachment("assets/report.pdf")
         etag_before = result_before.etag
 
@@ -2235,7 +2265,9 @@ class TestReadAttachment:
 class TestWriteAttachment:
     def test_write_attachment_creates_file(self, vault_with_attachment: Path) -> None:
         """write_attachment() creates a new binary file on disk."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         raw = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
         result = col.writer.write_attachment("assets/new.png", raw)
 
@@ -2248,7 +2280,9 @@ class TestWriteAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() overwrites an existing file, returns created=False."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         new_content = b"new pdf content"
         result = col.writer.write_attachment("assets/report.pdf", new_content)
 
@@ -2261,7 +2295,9 @@ class TestWriteAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() creates parent directories as needed."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         col.writer.write_attachment("deep/nested/file.pdf", b"content")
 
         assert (vault_with_attachment / "deep" / "nested" / "file.pdf").is_file()
@@ -2270,7 +2306,9 @@ class TestWriteAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() raises ReadOnlyError on a read-only vault."""
-        col = Vault(source_dir=vault_with_attachment, read_only=True)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=True)
+        )
         with pytest.raises(ReadOnlyError):
             col.writer.write_attachment("assets/new.pdf", b"content")
 
@@ -2280,8 +2318,10 @@ class TestWriteAttachment:
         """write_attachment() succeeds regardless of max_attachment_size_mb (cap is in MCP tools)."""
         col = Vault(
             source_dir=vault_with_attachment,
-            read_only=False,
-            max_attachment_size_mb=0.000001,
+            settings=VaultSettings(
+                read_only=False,
+                max_attachment_size_mb=0.000001,
+            ),
         )
         result = col.writer.write_attachment("assets/big.pdf", b"a" * 100)
         assert result.path == "assets/big.pdf"
@@ -2290,7 +2330,9 @@ class TestWriteAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() raises ValueError for disallowed extensions."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         with pytest.raises(ValueError, match="allowlist"):
             col.writer.write_attachment("file.xyz", b"content")
 
@@ -2301,7 +2343,9 @@ class TestWriteAttachment:
         calls: list = []
         col = Vault(
             source_dir=vault_with_attachment,
-            read_only=False,
+            settings=VaultSettings(
+                read_only=False,
+            ),
             on_write=lambda *args: calls.append(args),
         )
         col.writer.write_attachment("assets/cb.pdf", b"callback test")
@@ -2375,7 +2419,10 @@ class TestListWithAttachments:
     ) -> None:
         """attachment_extensions=['*'] returns all non-.md files."""
         (vault_with_attachment / "assets" / "data.xyz").write_bytes(b"unknown")
-        col = Vault(source_dir=vault_with_attachment, attachment_extensions=["*"])
+        col = Vault(
+            source_dir=vault_with_attachment,
+            settings=VaultSettings(attachment_extensions=["*"]),
+        )
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
 
@@ -2400,7 +2447,9 @@ class TestListWithAttachments:
 class TestDeleteAttachment:
     def test_delete_attachment_removes_file(self, vault_with_attachment: Path) -> None:
         """delete() removes an attachment file from disk."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         col.index.build_index()
         result = col.writer.delete("assets/report.pdf")
 
@@ -2412,7 +2461,9 @@ class TestDeleteAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """delete() raises DocumentNotFoundError for missing attachment."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         col.index.build_index()
         with pytest.raises(DocumentNotFoundError):
             col.writer.delete("assets/missing.pdf")
@@ -2422,7 +2473,9 @@ class TestDeleteAttachment:
     ) -> None:
         """delete() on a disallowed extension raises ValueError."""
         (vault_with_attachment / "file.xyz").write_bytes(b"data")
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         col.index.build_index()
         with pytest.raises(ValueError, match="allowlist"):
             col.writer.delete("file.xyz")
@@ -2434,7 +2487,9 @@ class TestDeleteAttachment:
         calls: list = []
         col = Vault(
             source_dir=vault_with_attachment,
-            read_only=False,
+            settings=VaultSettings(
+                read_only=False,
+            ),
             on_write=lambda *args: calls.append(args),
         )
         col.index.build_index()
@@ -2449,7 +2504,9 @@ class TestDeleteAttachment:
 class TestRenameAttachment:
     def test_rename_attachment_moves_file(self, vault_with_attachment: Path) -> None:
         """rename() moves an attachment file on disk."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         col.index.build_index()
         result = col.writer.rename("assets/report.pdf", "docs/report.pdf")
 
@@ -2461,7 +2518,9 @@ class TestRenameAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """rename() raises DocumentNotFoundError for missing attachment."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         col.index.build_index()
         with pytest.raises(DocumentNotFoundError):
             col.writer.rename("assets/missing.pdf", "docs/report.pdf")
@@ -2470,7 +2529,9 @@ class TestRenameAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """rename() raises DocumentExistsError when the target already exists."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         col.index.build_index()
         with pytest.raises(DocumentExistsError):
             col.writer.rename("assets/report.pdf", "assets/image.png")
@@ -2479,7 +2540,9 @@ class TestRenameAttachment:
         self, vault_with_attachment: Path
     ) -> None:
         """rename() creates parent directories for the attachment target."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         col.index.build_index()
         col.writer.rename("assets/report.pdf", "new_folder/sub/report.pdf")
 
@@ -2490,7 +2553,9 @@ class TestRenameAttachment:
     ) -> None:
         """rename() produces a file byte-identical to the original."""
         original = (vault_with_attachment / "assets" / "report.pdf").read_bytes()
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         col.index.build_index()
         col.writer.rename("assets/report.pdf", "docs/report.pdf")
 
@@ -2514,7 +2579,10 @@ class TestStatsAttachmentExtensions:
         self, vault_path: Path
     ) -> None:
         """stats() reflects a custom attachment_extensions list."""
-        col = Vault(source_dir=vault_path, attachment_extensions=["pdf", "docx"])
+        col = Vault(
+            source_dir=vault_path,
+            settings=VaultSettings(attachment_extensions=["pdf", "docx"]),
+        )
         col.index.build_index()
         s = col.reader.stats()
         assert sorted(s.attachment_extensions) == ["docx", "pdf"]
@@ -2523,7 +2591,9 @@ class TestStatsAttachmentExtensions:
         self, vault_path: Path
     ) -> None:
         """stats() shows ['*'] when attachment_extensions is the wildcard."""
-        col = Vault(source_dir=vault_path, attachment_extensions=["*"])
+        col = Vault(
+            source_dir=vault_path, settings=VaultSettings(attachment_extensions=["*"])
+        )
         col.index.build_index()
         s = col.reader.stats()
         assert s.attachment_extensions == ["*"]
@@ -2543,7 +2613,9 @@ def semantic_vault(
     """Vault with FTS index and vector embeddings fully built."""
     col = Vault(
         source_dir=vault_path,
-        embeddings_path=tmp_path / "embeddings",
+        settings=VaultSettings(
+            embeddings_path=tmp_path / "embeddings",
+        ),
         embedding_provider=mock_provider,
     )
     try:
@@ -2588,7 +2660,9 @@ class TestSemanticSearch:
         """search(mode='semantic', folder='subfolder') returns only subfolder docs."""
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=tmp_path / "embeddings",
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "embeddings",
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -2612,9 +2686,11 @@ class TestSemanticSearch:
         """search(mode='semantic', filters={...}) filters by frontmatter value."""
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=tmp_path / "embeddings",
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "embeddings",
+                indexed_frontmatter_fields=["cluster"],
+            ),
             embedding_provider=mock_provider,
-            indexed_frontmatter_fields=["cluster"],
         )
         col.index.build_index()
         col.index.build_embeddings()
@@ -2646,7 +2722,9 @@ class TestSemanticSearch:
         embeddings_path = tmp_path / "embeddings"
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -2671,7 +2749,9 @@ class TestSemanticSearch:
         # Build and persist the vector index.
         col1 = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col1.index.build_index()
@@ -2681,7 +2761,9 @@ class TestSemanticSearch:
         # Create a fresh vault pointing at the same paths — vectors not yet loaded.
         col2 = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col2.index.build_index()
@@ -2702,7 +2784,9 @@ class TestSemanticSearch:
 
         col1 = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col1.index.build_index()
@@ -2720,7 +2804,9 @@ class TestSemanticSearch:
 
         col2 = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=AlternateProvider(),
         )
         col2.index.build_index()
@@ -2773,7 +2859,9 @@ class TestHybridSearch:
         """search(mode='hybrid', folder='subfolder') confines results to that folder."""
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=tmp_path / "embeddings",
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "embeddings",
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -2796,9 +2884,11 @@ class TestHybridSearch:
         """search(mode='hybrid', filters={...}) filters semantic candidates by tag."""
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=tmp_path / "embeddings",
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "embeddings",
+                indexed_frontmatter_fields=["cluster"],
+            ),
             embedding_provider=mock_provider,
-            indexed_frontmatter_fields=["cluster"],
         )
         col.index.build_index()
         col.index.build_embeddings()
@@ -2838,7 +2928,9 @@ class TestHybridSearch:
         embeddings_path = tmp_path / "rrf_emb"
         col = Vault(
             source_dir=vault,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -2890,7 +2982,9 @@ class TestEmbeddingsStatus:
         """embeddings_status() returns available=True with chunk_count=0 before build."""
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=tmp_path / "embeddings",
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "embeddings",
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -2927,7 +3021,9 @@ class TestEmbeddingsStatus:
 
         col1 = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col1.index.build_index()
@@ -2936,7 +3032,9 @@ class TestEmbeddingsStatus:
 
         col2 = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col2.index.build_index()
@@ -2972,7 +3070,9 @@ class TestBuildEmbeddings:
         embeddings_path = tmp_path / "embeddings"
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -3006,7 +3106,9 @@ class TestBuildEmbeddings:
         embeddings_path = tmp_path / "embeddings"
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -3040,7 +3142,9 @@ class TestBuildEmbeddings:
         embeddings_path = tmp_path / "embeddings"
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -3082,7 +3186,9 @@ class TestBuildEmbeddings:
         embeddings_path = tmp_path / "embeddings"
         col = Vault(
             source_dir=vault,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+            ),
             embedding_provider=mock_provider,
         )
         col.index.build_index()
@@ -3160,10 +3266,12 @@ class TestReindexWithVectors:
         """Writable vault with vectors loaded in memory."""
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=tmp_path / "embeddings",
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "embeddings",
+                state_path=tmp_path / "state.json",
+                read_only=False,
+            ),
             embedding_provider=mock_provider,
-            state_path=tmp_path / "state.json",
-            read_only=False,
         )
         try:
             col.index.build_index()
@@ -3447,8 +3555,10 @@ class TestWriteAttachmentSizeLimit:
         """write_attachment() succeeds regardless of max_attachment_size_mb (cap is in MCP tools)."""
         col = Vault(
             source_dir=vault_path,
-            read_only=False,
-            max_attachment_size_mb=0.000001,  # ~1 byte limit — no longer enforced here
+            settings=VaultSettings(
+                read_only=False,
+                max_attachment_size_mb=0.000001,  # ~1 byte limit — no longer enforced here
+            ),
         )
         result = col.writer.write_attachment("assets/big.pdf", b"a" * 100)
         assert result.path == "assets/big.pdf"
@@ -3457,8 +3567,10 @@ class TestWriteAttachmentSizeLimit:
         """write_attachment() with max_attachment_size_mb=0 accepts any size."""
         col = Vault(
             source_dir=vault_path,
-            read_only=False,
-            max_attachment_size_mb=0,
+            settings=VaultSettings(
+                read_only=False,
+                max_attachment_size_mb=0,
+            ),
         )
         large_content = b"x" * (20 * 1024 * 1024)  # 20 MB
         result = col.writer.write_attachment("large_file.pdf", large_content)
@@ -3491,7 +3603,10 @@ class TestListAttachmentHiddenDirFiltering:
             "{}", encoding="utf-8"
         )
 
-        col = Vault(source_dir=vault, attachment_extensions=["pdf", "json"])
+        col = Vault(
+            source_dir=vault,
+            settings=VaultSettings(attachment_extensions=["pdf", "json"]),
+        )
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
 
@@ -3512,7 +3627,9 @@ class TestListAttachmentHiddenDirFiltering:
         # A dotfile directly in the vault root.
         (vault / ".hidden_config.json").write_bytes(b"{}")
 
-        col = Vault(source_dir=vault, attachment_extensions=["json"])
+        col = Vault(
+            source_dir=vault, settings=VaultSettings(attachment_extensions=["json"])
+        )
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
 
@@ -3536,8 +3653,10 @@ class TestListAttachmentHiddenDirFiltering:
 
         col = Vault(
             source_dir=vault,
-            attachment_extensions=["pdf", "json"],
-            exclude_patterns=["archived/**", "trash/**"],
+            settings=VaultSettings(
+                attachment_extensions=["pdf", "json"],
+                exclude_patterns=["archived/**", "trash/**"],
+            ),
         )
         col.index.build_index()
         results = col.reader.list_documents(include_attachments=True)
@@ -3823,7 +3942,9 @@ class TestOptimisticConcurrency:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() with a matching if_match etag overwrites the file."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
         att_path = vault_with_attachment / "assets" / "report.pdf"
         current_etag = compute_file_hash(att_path)
         new_content = b"updated PDF bytes"
@@ -3839,7 +3960,9 @@ class TestOptimisticConcurrency:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() with a stale etag raises ConcurrentModificationError."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
 
         with pytest.raises(ConcurrentModificationError) as exc_info:
             col.writer.write_attachment(
@@ -3853,7 +3976,9 @@ class TestOptimisticConcurrency:
         self, vault_with_attachment: Path
     ) -> None:
         """write_attachment() with if_match for a missing file raises CME."""
-        col = Vault(source_dir=vault_with_attachment, read_only=False)
+        col = Vault(
+            source_dir=vault_with_attachment, settings=VaultSettings(read_only=False)
+        )
 
         with pytest.raises(ConcurrentModificationError) as exc_info:
             col.writer.write_attachment(
@@ -3931,9 +4056,11 @@ class TestDeferredEmbeddings:
         """
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=tmp_path / "embeddings",
+            settings=VaultSettings(
+                embeddings_path=tmp_path / "embeddings",
+                read_only=False,
+            ),
             embedding_provider=mock_provider,
-            read_only=False,
         )
         col.index.build_index()
         col.index.build_embeddings()
@@ -3968,9 +4095,11 @@ class TestDeferredEmbeddings:
         embeddings_path = tmp_path / "embeddings"
         col = Vault(
             source_dir=vault_path,
-            embeddings_path=embeddings_path,
+            settings=VaultSettings(
+                embeddings_path=embeddings_path,
+                read_only=False,
+            ),
             embedding_provider=mock_provider,
-            read_only=False,
         )
         col.index.build_index()
         col.index.build_embeddings()
@@ -4029,7 +4158,9 @@ class TestLoggingAuditSilentPaths:
         att = vault / "data.csv"
         att.write_text("a,b\n1,2\n", encoding="utf-8")
 
-        col = Vault(source_dir=vault, attachment_extensions=["csv"])
+        col = Vault(
+            source_dir=vault, settings=VaultSettings(attachment_extensions=["csv"])
+        )
         col.index.build_index()
 
         # Patch Path.stat to raise OSError for data.csv.
@@ -4099,7 +4230,7 @@ def test_vault_constructs_chunker_with_max_chunk_words(tmp_path):
     from markdown_vault_mcp.scanner import HeadingChunker
     from markdown_vault_mcp.vault import Vault
 
-    coll = Vault(source_dir=tmp_path, max_chunk_words=250)
+    coll = Vault(source_dir=tmp_path, settings=VaultSettings(max_chunk_words=250))
     assert isinstance(coll._chunk_strategy, HeadingChunker)
     assert coll._chunk_strategy.max_chunk_words == 250
 
@@ -4129,7 +4260,7 @@ def test_vault_build_index_uses_writer(tmp_path):
     """IndexFacet.build_index() routes through the IndexWriter."""
     from markdown_vault_mcp.vault import Vault
 
-    col = Vault(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         stats = col.index.build_index()
         # IndexWriter is non-None; build_index returned via writer.
@@ -4143,7 +4274,7 @@ def test_vault_writer_is_started_after_construction(tmp_path):
     """The IndexWriter is started by Vault construction."""
     from markdown_vault_mcp.vault import Vault
 
-    col = Vault(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         assert col._coordinator.writer is not None
         assert col._coordinator.writer._thread is not None  # thread started
@@ -4157,7 +4288,7 @@ def test_vault_build_index_async_returns_future(tmp_path):
 
     from markdown_vault_mcp.vault import Vault
 
-    col = Vault(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         future = col.index.build_index_async()
         assert isinstance(future, Future)
@@ -4171,7 +4302,7 @@ def test_vault_reindex_async_returns_future(tmp_path):
 
     from markdown_vault_mcp.vault import Vault
 
-    col = Vault(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         col.index.build_index()  # required precondition
         future = col.index.reindex_async()
@@ -4189,8 +4320,10 @@ def test_vault_build_embeddings_async_returns_future(tmp_path):
 
     col = Vault(
         source_dir=tmp_path,
-        read_only=False,
-        embeddings_path=tmp_path / "vec",
+        settings=VaultSettings(
+            read_only=False,
+            embeddings_path=tmp_path / "vec",
+        ),
         embedding_provider=MockEmbeddingProvider(),
     )
     try:
@@ -4210,7 +4343,7 @@ def test_reindex_async_failure_recorded_in_status(tmp_path, monkeypatch):
     from markdown_vault_mcp.managers import index as index_module
     from markdown_vault_mcp.vault import Vault
 
-    col = Vault(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         col.index.build_index()
 
@@ -4249,7 +4382,7 @@ def test_reindex_async_success_clears_prior_error(tmp_path):
 
     from markdown_vault_mcp.vault import Vault
 
-    col = Vault(source_dir=tmp_path, read_only=False)
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
     try:
         col.index.build_index()
         # Seed a prior error.
@@ -4279,8 +4412,10 @@ def test_build_embeddings_async_failure_recorded_in_status(tmp_path, monkeypatch
 
     col = Vault(
         source_dir=tmp_path,
-        read_only=False,
-        embeddings_path=tmp_path / "vec",
+        settings=VaultSettings(
+            read_only=False,
+            embeddings_path=tmp_path / "vec",
+        ),
         embedding_provider=MockEmbeddingProvider(),
     )
     try:
@@ -4314,7 +4449,7 @@ class TestIsDrained:
     def test_returns_true_on_idle_writer(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.vault import Vault
 
-        col = Vault(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         try:
             col.index.build_index()
             assert col.index.is_drained() is True
@@ -4324,7 +4459,7 @@ class TestIsDrained:
     def test_returns_false_when_dirty_paths_present(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.vault import Vault
 
-        col = Vault(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         try:
             col.index.build_index()
             col._coordinator.writer.mark_dirty(["fake.md"])
@@ -4335,7 +4470,7 @@ class TestIsDrained:
     def test_returns_false_when_dirty_embeddings_present(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.vault import Vault
 
-        col = Vault(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         try:
             col.index.build_index()
             col._coordinator.writer.mark_embedding_dirty(["fake.md"])
@@ -4349,7 +4484,7 @@ class TestIsDrained:
         from markdown_vault_mcp.indexing import BuildIndex
         from markdown_vault_mcp.vault import Vault
 
-        col = Vault(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         try:
             col.index.build_index()
             release = threading.Event()
@@ -4379,7 +4514,7 @@ class TestWriteGeneration:
     def test_increments_on_job_completion(self, tmp_path: Path) -> None:
         from markdown_vault_mcp.vault import Vault
 
-        col = Vault(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         try:
             col.index.build_index()
             gen_before = col.index.write_generation()
@@ -4400,7 +4535,7 @@ class TestWriteGeneration:
         from markdown_vault_mcp.indexing import BuildIndex
         from markdown_vault_mcp.vault import Vault
 
-        col = Vault(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         try:
             col.index.build_index()
             samples = [col.index.write_generation()]
@@ -4423,7 +4558,7 @@ class TestWaitForDrain:
 
         from markdown_vault_mcp.vault import Vault
 
-        col = Vault(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         try:
             col.index.build_index()
             start = time.monotonic()
@@ -4440,7 +4575,7 @@ class TestWaitForDrain:
         from markdown_vault_mcp.indexing import BuildIndex
         from markdown_vault_mcp.vault import Vault
 
-        col = Vault(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         try:
             col.index.build_index()
             release = threading.Event()
@@ -4467,7 +4602,7 @@ class TestWaitForDrain:
         from markdown_vault_mcp.indexing import BuildIndex
         from markdown_vault_mcp.vault import Vault
 
-        col = Vault(source_dir=tmp_path, read_only=False)
+        col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         try:
             col.index.build_index()
             release = threading.Event()
@@ -4528,8 +4663,10 @@ class TestMaxChunkCharsWiring:
         """An explicit Vault max_chunk_chars reaches the chunker."""
         col = Vault(
             source_dir=tmp_path,
-            max_chunk_words=400,
-            max_chunk_chars=1234,
+            settings=VaultSettings(
+                max_chunk_words=400,
+                max_chunk_chars=1234,
+            ),
         )
         try:
             assert col._chunk_strategy.max_chunk_chars == 1234
@@ -4539,7 +4676,7 @@ class TestMaxChunkCharsWiring:
     def test_config_derives_chunk_chars_from_provider_context(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """to_vault_kwargs derives the cap from the provider's context_length.
+        """to_vault_instances derives the cap from the provider's context_length.
 
         A provider reporting a 512-token context yields a char cap of
         round(512 * 2.8) in the kwargs that build the Vault's chunker.
@@ -4563,10 +4700,18 @@ class TestMaxChunkCharsWiring:
         )
 
         config = ProjectConfig.from_env()
-        kwargs = to_vault_kwargs(config)
-        assert kwargs["max_chunk_chars"] == round(512 * 2.8)
+        instances = to_vault_instances(config)
+        settings = to_vault_settings(config, instances=instances)
+        assert settings.max_chunk_chars == round(512 * 2.8)
 
-        col = Vault(**kwargs)
+        col = Vault(
+            source_dir=config.source_dir,
+            settings=settings,
+            embedding_provider=instances.embedding_provider,
+            summarizer=instances.summarizer,
+            git_strategy=instances.git_strategy,
+            on_write=instances.on_write,
+        )
         try:
             assert col._chunk_strategy.max_chunk_chars == round(512 * 2.8)
         finally:
