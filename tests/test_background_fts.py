@@ -786,11 +786,13 @@ def test_decorator_respects_env_timeout_override(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S", "0.1")
 
-    # Mock build_index to never finish so the timeout fires.
+    # Hold the build until the timeout is observed, then release it before
+    # client teardown so no sleeping writer survives the test.
+    release = threading.Event()
     original = index_mod.IndexManager.build_index
 
     def hang(self, *, force: bool = False):  # type: ignore[no-untyped-def]
-        time_mod.sleep(60)
+        assert release.wait(10)
         return original(self, force=force)
 
     monkeypatch.setattr(index_mod.IndexManager, "build_index", hang)
@@ -804,8 +806,12 @@ def test_decorator_respects_env_timeout_override(
                 await client.call_tool("get_backlinks", {"path": "a.md"})
             except Exception as exc:
                 elapsed = time_mod.perf_counter() - start
-                assert elapsed < 1.0, f"timeout not honored: elapsed {elapsed:.2f}s"
+                # Transport and traceback rendering add time outside the wait.
+                assert "timed out after 0.1s" in str(exc)
+                assert elapsed < 5.0, f"timeout not honored: elapsed {elapsed:.2f}s"
                 return exc
+            finally:
+                release.set()
             raise AssertionError("expected the tool call to raise")
 
     exc = asyncio.run(_call())

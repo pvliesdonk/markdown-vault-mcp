@@ -68,3 +68,45 @@ def test_crash_cancellation_callbacks_can_submit_without_deadlock() -> None:
     finally:
         release.set()
         writer.close(timeout=5)
+
+
+def test_close_from_worker_callback_is_joined_by_external_close() -> None:
+    entered, release, callback_done = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+
+    def held(_job: object, _ctx: object) -> None:
+        entered.set()
+        assert release.wait(5)
+
+    writer = IndexWriter(runners={"build_index": held}, ctx=None)
+    writer.start()
+    callback_threads: list[threading.Thread] = []
+
+    def close_in_callback(_future: Future[object]) -> None:
+        callback_threads.append(threading.current_thread())
+        writer.close(timeout=5)
+        callback_done.set()
+
+    try:
+        future = writer.submit(BuildIndex())
+        assert entered.wait(5)
+        future.add_done_callback(close_in_callback)
+        release.set()
+        assert callback_done.wait(5)
+        writer.close(timeout=5)
+        assert callback_threads == [writer._thread]
+        assert writer._thread is not None and not writer._thread.is_alive()
+    finally:
+        release.set()
+        writer.close(timeout=5)
+
+
+def test_close_before_writer_start_is_terminal() -> None:
+    writer = IndexWriter(runners={}, ctx=None)
+    writer.close(timeout=0)
+    assert writer.is_closed()
+    with pytest.raises(RuntimeError, match="closed"):
+        writer.submit(BuildIndex())
