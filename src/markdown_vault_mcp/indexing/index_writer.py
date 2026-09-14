@@ -10,7 +10,6 @@ import logging
 import queue
 import threading
 from collections.abc import Callable, Iterable
-from concurrent.futures import CancelledError as _CancelledError
 from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any, ClassVar, cast
@@ -348,8 +347,9 @@ class IndexWriter:
         # Future callbacks may take their owner's scheduling lock or submit
         # another job. Calling them under _submit_lock reverses that lock order.
         for future in pending:
-            if not future.cancel() and not future.done():
-                future.set_exception(_CancelledError())
+            # Only this worker can claim execution, and it removed these jobs
+            # from its queue. None can be running; already-done Futures stay done.
+            future.cancel()
 
 
 @dataclass
