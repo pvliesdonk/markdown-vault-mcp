@@ -34,16 +34,19 @@ class _CountingProvider(MockEmbeddingProvider):
 
 
 @pytest.fixture
-def seeded(tmp_path: Path) -> Iterator[tuple[Vault, _CountingProvider]]:
+def seeded(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> Iterator[tuple[Vault, _CountingProvider]]:
     provider = _CountingProvider()
+    enriched = getattr(request, "param", True)
     (tmp_path / "note.md").write_text(_CONTENT)
     col = Vault(
         source_dir=tmp_path,
         settings=VaultSettings(
             read_only=False,
             embeddings_path=tmp_path / ".vectors",
-            embed_context=True,
-            searchable_frontmatter_fields=["summary"],
+            embed_context=enriched,
+            searchable_frontmatter_fields=["summary"] if enriched else [],
         ),
         embedding_provider=provider,
     )
@@ -190,3 +193,41 @@ def test_all_parse_failures_do_not_load_vectors(
     monkeypatch.setattr(col._index_mgr._embeddings, "_load_vectors", forbidden_load)
     _flush(col)
     assert provider.calls == 0
+
+
+@pytest.mark.parametrize(
+    "error", [OSError("provider failed"), ValueError("provider rejected input")]
+)
+def test_recoverable_provider_failure_preserves_rows(
+    seeded: tuple[Vault, _CountingProvider],
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+) -> None:
+    col, provider = seeded
+    assert col._vectors is not None
+    before = col._vectors.chunks_by_path()
+    (col.source_dir / "note.md").write_text(_CONTENT.replace("Body", "Changed"))
+
+    def fail_embed(_texts: list[str]) -> list[list[float]]:
+        raise error
+
+    with monkeypatch.context() as patch:
+        patch.setattr(provider, "embed", fail_embed)
+        _flush(col)
+        assert col._vectors.chunks_by_path() == before
+    _flush(col)
+    assert provider.calls == 1
+    _flush(col)
+    assert provider.calls == 1
+
+
+@pytest.mark.parametrize("seeded", [False], indirect=True, ids=["raw-content"])
+def test_empty_note_removes_vectors_without_provider_call(
+    seeded: tuple[Vault, _CountingProvider],
+) -> None:
+    col, provider = seeded
+    (col.source_dir / "note.md").write_text("")
+    _flush(col)
+    assert provider.calls == 0
+    assert col._vectors is not None
+    assert "note.md" not in col._vectors.chunks_by_path()
