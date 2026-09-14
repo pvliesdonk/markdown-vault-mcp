@@ -261,8 +261,7 @@ def register(mcp: FastMCP) -> None:
 
         For .md documents: uses 'content' (markdown body) and optional
         'frontmatter'. WARNING: replaces the entire file — use 'edit'
-        for targeted changes. The search index is updated immediately;
-        do not call 'reindex' afterward.
+        for targeted changes. The index refresh is queued; no reindex is needed.
 
         For attachments (pdf, png, etc.): uses 'content_base64' (base64-
         encoded binary). 'content' and 'frontmatter' are ignored.
@@ -396,7 +395,7 @@ def register(mcp: FastMCP) -> None:
         match_type='normalized' is returned.
 
         Always call 'read' first to get the current text and line numbers.
-        The search index is updated immediately; do not call 'reindex'.
+        The index refresh is queued; no reindex is needed.
 
         Args:
             path: Relative path to the document.
@@ -485,8 +484,7 @@ def register(mcp: FastMCP) -> None:
         text when the file does not already end with one, so the appended
         text starts on its own line. Include leading blank lines or heading
         markers in 'content' yourself if you want a separating paragraph or
-        section. The search index is updated immediately; do not call
-        'reindex' afterward.
+        section. The index refresh is queued; no reindex is needed.
 
         Args:
             path: Relative path to the document (e.g. "Journal/2026.md").
@@ -546,8 +544,7 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Permanently delete a document or attachment.
 
-        For .md documents: removes the file and immediately updates all search
-        indices — do not call 'reindex' afterward.
+        For .md documents: removes the file and queues an index refresh.
         For attachments: only the file is deleted (no index to update).
         IRREVERSIBLE unless git history exists. Confirm the path with
         the user before calling.
@@ -599,8 +596,8 @@ def register(mcp: FastMCP) -> None:
         always pass update_links=True to rewrite links in other documents
         that point to the old path.
 
-        For .md documents: the file and its search index entries are updated
-        immediately — do not call 'reindex' afterward.
+        For .md documents: link rewrites wait for prior index writes. The move
+        queues another index refresh; no reindex is needed.
         For attachments: only the file is moved; update_links does not apply
         (attachment references are not tracked as links).
         Parent directories are created automatically.
@@ -675,8 +672,8 @@ def register(mcp: FastMCP) -> None:
         Moves all files under old_dir (.md notes, attachments, and any other
         files) to the matching path under new_dir, preserving structure. Links
         between documents inside the subtree and backlinks from outside are all
-        rewritten. The search index is updated immediately — do not call
-        'reindex' afterward.
+        rewritten. Link rewrites wait for prior index writes. The move queues an
+        index refresh; no reindex is needed.
 
         The move is atomic at the gate: if any destination file already exists,
         the call fails before moving anything. Link rewrites are best-effort —
@@ -742,8 +739,7 @@ def register(mcp: FastMCP) -> None:
         for small results, otherwise pass the path to other tools).
 
         For .md paths: the response is decoded as UTF-8 text and saved as
-        a markdown note with optional frontmatter. The search index is
-        updated immediately.
+        a markdown note with optional frontmatter. The index refresh is queued.
 
         For other paths: the response is saved as a binary attachment.
         The existing attachment size limit applies.
@@ -939,7 +935,8 @@ def register(mcp: FastMCP) -> None:
         counted as skipped; attachment embeds are not links. Each changed
         note is written through the write path (git commit if configured).
         Re-running is safe: converted links are plain markdown and are not
-        touched again.
+        touched again. Waits up to 60s for prior index writes; refresh
+        errors abort before conversion.
 
         Args:
             folder: Restrict to this folder subtree (e.g. "guides"). Omit to
@@ -975,7 +972,8 @@ def register(mcp: FastMCP) -> None:
         `- [title](/path.md) - description` per note, description drawn from
         frontmatter. Existing frontmatter is preserved, so regenerating the
         bundle-root index.md keeps its `okf_version` declaration. Reserved
-        files (index.md, log.md) are omitted from the listing.
+        files (index.md, log.md) are omitted from the listing. Waits up to
+        60s for prior index writes; refresh errors abort before generation.
 
         Args:
             folder: Vault-relative folder to index (e.g. "guides"). Omit for

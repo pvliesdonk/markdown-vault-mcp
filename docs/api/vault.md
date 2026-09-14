@@ -52,6 +52,12 @@ Old keywords now raise `TypeError`, including when their values match the defaul
 
 Omitting `settings` (or passing `None`) uses `VaultSettings()`. Library defaults are unchanged: read-only, no chunk overlap, and no overwrite protection once writes are enabled. Server configuration continues to use its own defaults through [configuration assembly](config.md).
 
+## Index freshness after writes
+
+File writes complete before returning; index updates run on the background writer. For a following library search or graph read, use `vault.index.wait_for_drain(timeout=60)` and check whether it returns `True`. A disk `read` does not need this wait.
+
+Link conversion, index generation, rename with `update_links=True`, and folder move perform their own queued refresh before reading index data. They fail before mutation if that refresh fails or exceeds 60 seconds. The wait covers prior writes; it does not isolate concurrent edits. Direct `DocumentManager` integrations can supply the `sync_index` callback to provide the same boundary.
+
 ## API Reference
 
 <!-- vale off -->

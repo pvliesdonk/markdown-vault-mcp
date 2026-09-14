@@ -516,12 +516,14 @@ write lock so concurrent writes into one folder cannot lost-update the log;
 the `index.md` refresh is a full idempotent regeneration, safe without extra
 locking.
 
-Cost note (accepted trade-off, not a defect): the index refresh drains the
-single-writer (a *global* wait, embeddings included, bounded at 10s) before it
-regenerates so a just-created note is listed. That is the price of reusing
-the FTS-backed `generate_index` rather than a disk scan, and it adds latency to
-every enforced write on a busy vault. Documented in the guide; a scoped
-(FTS-only) drain is a possible future refinement.
+Cost note: `generate_index` now waits for a successful queued FTS refresh
+before deriving its listing (#1464), just like explicit link conversion.
+The wait is bounded at 60 seconds; failures leave the existing listing in
+place and convention maintenance logs a warning. The primary note write
+is not rolled back. Follow-up embedding work need not finish, although
+jobs already ahead of the refresh can delay it. The old separate 10-second
+best-effort drain is no longer wired by Vault; the optional maintainer
+preflight hook remains available to existing integrations.
 
 Commit fan-out is no longer one of these costs. It was, while each secondary
 write committed separately; since #1264 the dispatcher buffers every write a

@@ -59,7 +59,7 @@ class ConventionMaintainer:
         doc_mgr: DocumentManager,
         okf_migrate: OkfMigrationManager,
         detector: OkfDetector,
-        sync_index: Callable[[], object],
+        sync_index: Callable[[], object] | None = None,
         write_lock: AbstractContextManager[object] | None = None,
         today: Callable[[], date] = date.today,
         reserved_frontmatter: ReservedFrontmatterPolicy | None = None,
@@ -73,9 +73,9 @@ class ConventionMaintainer:
             okf_migrate: Supplies :meth:`OkfMigrationManager.generate_index`
                 for the ``index.md`` refresh.
             detector: OKF detector; ``active`` is re-probed per write.
-            sync_index: Called before the index refresh to drain the
-                single-writer so the just-written note is reflected in the
-                FTS-backed listing. Its return value is ignored (best effort).
+            sync_index: Optional preflight hook for existing integrations.
+                Its return value is ignored. Vault leaves it unset because
+                ``generate_index`` owns the required index refresh (#1464).
             write_lock: The vault's shared (re-entrant) write lock. The
                 ``log.md`` read-modify-write is held under it so concurrent
                 writes into the same folder cannot lost-update the log;
@@ -179,7 +179,8 @@ class ConventionMaintainer:
         """Regenerate the folder's ``index.md`` from the (drained) listing."""
         index_path = f"{folder}/index.md" if folder else "index.md"
         try:
-            self._sync_index()
+            if self._sync_index is not None:
+                self._sync_index()
             self._okf_migrate.generate_index(folder=folder)
         except Exception:
             logger.warning(

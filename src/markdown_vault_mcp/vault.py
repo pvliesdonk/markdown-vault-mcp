@@ -67,11 +67,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-#: Bound on how long OKF convention maintenance (#964) waits for the
-#: single-writer index to drain before refreshing a folder's ``index.md`` so a
-#: just-written note is listed. On timeout the refresh proceeds best-effort.
-_CONVENTION_DRAIN_TIMEOUT = 10.0
-
 
 def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
     """Return a concrete ChunkStrategy from a string name or pass-through.
@@ -427,7 +422,7 @@ class Vault:
         )
         # Deferred write callback (issue #175): the git-commit on_write
         # callback runs on a background worker so write methods return after
-        # the FTS update.  Constructed before DocumentManager, whose
+        # the disk write and index submission.  Constructed before DocumentManager, whose
         # ``on_write_callback`` is wired to ``fire`` (#599).
         self._write_callback = WriteCallbackDispatcher(self._on_write)
         # #571: let the puller pause new writes and drain pending commits
@@ -466,6 +461,7 @@ class Vault:
             max_note_read_bytes=self._max_note_read_bytes,
             on_write_callback=self._write_callback.fire,
             mark_paths_dirty=self._coordinator.mark_paths_dirty,
+            sync_index=self._coordinator.prepare_index_read,
             title_field=self._title_field,
             okf_write_enrich=self._okf_write_enrich,
         )
@@ -514,9 +510,6 @@ class Vault:
                 doc_mgr=self._doc_mgr,
                 okf_migrate=self._okf_migrate,
                 detector=self._okf,
-                sync_index=lambda: self._coordinator.wait_for_drain(
-                    timeout=_CONVENTION_DRAIN_TIMEOUT
-                ),
                 write_lock=self._file_write_lock,
                 reserved_frontmatter=reserved_frontmatter,
             )

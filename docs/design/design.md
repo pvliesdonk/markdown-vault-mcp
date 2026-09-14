@@ -1122,6 +1122,24 @@ writer. The `on_write` callback (git commit) is submitted to a separate
 background worker queue as before; that queue is unrelated to the
 IndexWriter and is drained in `close()` step 2.
 
+**Index-dependent mutations (#1464).** Link conversion, reserved-index
+generation, note rename with `update_links=True`, and folder move refresh
+prior queued writes before reading index data. `DocumentManager` receives
+`IndexWriteCoordinator.prepare_index_read` as an optional callback; the OKF
+migration manager uses the same hook, covering both library and MCP calls.
+The coordinator checks readiness and submits `ProcessDirtyPaths` to the FIFO,
+then waits on its Future for at most 60 seconds. This retries retained dirty
+paths and propagates job errors; a timeout refuses the dependent mutation
+before it changes files. Merely observing an empty queue would not prove
+a successful refresh. Link-resolution failures now fail the dirty-path job
+and retain its paths, while a primary parse error survives a second failure
+during graph recovery. Follow-up embeddings need not finish, but earlier
+queued jobs can delay the refresh. The wait happens outside the file-write
+lock and guarantees visibility of prior writes, not isolation from concurrent
+edits. Graph read tools keep their existing optional wait and stale metadata.
+No link-extraction or stored-row semantics changed, so no index semantics
+version bump is needed.
+
 **Embedding flush.** The legacy 30-second `threading.Timer` is gone.
 The writer's `FlushDirtyEmbeddings` job is the sole flush mechanism; it
 fires either as a `ProcessDirtyPaths` follow-up (covering all path-level

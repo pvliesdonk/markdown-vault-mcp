@@ -919,9 +919,9 @@ class IndexManager:
         at the caller boundary), ``sqlite3.DatabaseError``, ``MemoryError``,
         and programming bugs — propagate to the writer's Future so the
         caller learns instead of seeing a silent skip. The
-        ``resolve_vault_wikilinks()`` call runs in a ``finally`` so the
-        link graph is always restored to a consistent state, even on
-        per-path failures.
+        ``resolve_vault_wikilinks()`` call also runs on failure to repair the
+        graph where possible. A graph error fails the job, preserving dirty
+        paths for retry; if parsing already failed, that primary error wins.
         """
         if not paths:
             return
@@ -1016,12 +1016,17 @@ class IndexManager:
                 # job so the writer's Future surfaces them (PR #555's
                 # reason discriminator handles OperationalError
                 # classification at the caller boundary).
-        finally:
-            # Always restore link-graph consistency, even on per-path failures.
+        except BaseException:
+            # Preserve the primary failure if graph recovery fails as well.
             try:
                 self._fts.resolve_vault_wikilinks()
             except Exception:
                 logger.exception("process_dirty_paths: resolve_vault_wikilinks failed")
+            raise
+        else:
+            # A graph failure must fail the job and retain its dirty paths;
+            # otherwise a later mutation could trust an incomplete refresh.
+            self._fts.resolve_vault_wikilinks()
 
     def flush_dirty_embeddings(self, paths: set[str]) -> None:
         """Re-embed each path in the snapshot and save the vector index once.

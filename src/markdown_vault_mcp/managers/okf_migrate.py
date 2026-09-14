@@ -20,7 +20,8 @@ files they produce carry the frontmatter the vault's own index gate requires
 
 These are write tools gated on read-only mode only, not on a future
 ``OKF_WRITE`` flag (design §7): they are deliberate migrations, not ongoing
-enforcement.
+enforcement. The index-dependent transforms refresh prior queued writes
+before reading their inputs (#1464); a refresh error refuses the transform.
 
 Every write they issue is entered under
 :func:`~markdown_vault_mcp._okf_write.okf_write_suppressed`, so on a vault
@@ -112,9 +113,11 @@ class OkfMigrationManager:
         Raises:
             ReadOnlyError: If the vault is read-only.
             IndexUnavailableError: If the index is not built.
+            TimeoutError: If the queued index refresh exceeds its wait budget.
         """
         self._doc_mgr.ensure_writable()
         self._require_built()
+        self._doc_mgr.ensure_index_current()
         folder = normalize_folder(folder)
         files_changed = 0
         converted = 0
@@ -172,9 +175,11 @@ class OkfMigrationManager:
         Raises:
             ReadOnlyError: If the vault is read-only.
             IndexUnavailableError: If the index is not built.
+            TimeoutError: If the queued index refresh exceeds its wait budget.
         """
         self._doc_mgr.ensure_writable()
         self._require_built()
+        self._doc_mgr.ensure_index_current()
         from markdown_vault_mcp.types import NoteInfo
 
         folder = normalize_folder(folder) or ""

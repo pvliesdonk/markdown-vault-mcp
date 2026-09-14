@@ -205,6 +205,35 @@ class IndexWriteCoordinator:
         """Return the writer's monotonic completion counter."""
         return int(self._writer.get_status()["write_generation"])
 
+    def prepare_index_read(self, timeout: float = 60.0) -> None:
+        """Refresh prior writes before an index-dependent file mutation (#1464).
+
+        Submit through the single-owner FIFO, including a retry of dirty paths
+        retained after an earlier failed refresh. Waiting on this job's Future
+        propagates failures; an idle queue alone cannot establish success.
+        Follow-up embedding jobs need not finish. Call before taking a file
+        write lock; this is a boundary for prior writes, not a snapshot against
+        concurrent edits.
+
+        Args:
+            timeout: Maximum seconds to wait for the queued refresh.
+
+        Raises:
+            IndexUnavailableError: If the index has not been built.
+            TimeoutError: If the refresh does not finish within the budget.
+            Exception: If the index writer rejects or fails the refresh.
+        """
+        self.require_built()
+        future = self._writer.submit(ProcessDirtyPaths())
+        try:
+            future.result(timeout=timeout)
+        except TimeoutError as exc:
+            future.cancel()
+            raise TimeoutError(
+                "Index refresh timed out; the dependent mutation was not started. "
+                "Wait for the index writer and retry."
+            ) from exc
+
     def wait_for_drain(self, timeout: float | None = None) -> bool:
         """Block until :meth:`is_drained`; ``True`` if drained, ``False`` on timeout."""
         deadline = None if timeout is None else time.monotonic() + timeout
