@@ -383,3 +383,30 @@ def test_failed_refresh_does_not_starve_healthy_embeddings(
             assert len(embedded) == before_edit + 1
     finally:
         col.close()
+
+
+def test_file_disappearing_during_parse_is_successful_deletion(
+    vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typing import Any
+
+    import markdown_vault_mcp.managers.index as index_module
+
+    vault.writer.write("source.md", "See [[target]].\n")
+    assert vault.index.wait_for_drain(timeout=5)
+    source = vault.source_dir / "source.md"
+    original = index_module.parse_note
+
+    def disappear(path: Path, *args: Any, **kwargs: Any) -> Any:
+        if path == source:
+            path.unlink()
+            raise FileNotFoundError("source disappeared after the existence check")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(index_module, "parse_note", disappear)
+    vault._coordinator.writer.mark_dirty(["source.md"])
+    vault._coordinator.prepare_index_read()
+    assert vault._fts.get_note("source.md") is None
+    assert not source.exists()
+    assert vault.index.wait_for_drain(timeout=5)
+    assert vault.index.get_index_status()["dirty_paths"] == 0

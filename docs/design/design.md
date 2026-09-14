@@ -96,7 +96,8 @@ markdown-vault-mcp (new package)
 |   +-- git_query.py  -- GitQueryManager: git history/diff/revision reads (#610, #1137)
 +-- indexing/
 |   +-- index_writer.py -- IndexWriter: single-owner FIFO writer thread + jobs/runners
-|   +-- readiness.py  -- ReadinessState: build-readiness state machine (#576)
+|   +-- readiness.py  -- ReadinessState: query-readiness projection (#576, #1483)
+|   +-- build_lifecycle.py -- BuildLifecycle: complete per-attempt outcomes (#1483)
 |   +-- coordinator.py -- IndexWriteCoordinator: writer + build/async orchestration (#576)
 +-- facets/
 |   +-- reader.py     -- ReaderFacet: search/read/list/toc/similar/context/stats/history (#604)

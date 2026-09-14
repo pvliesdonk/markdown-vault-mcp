@@ -96,9 +96,9 @@ class ReadinessState:
     def record_error(self, exc: BaseException) -> None:
         """Record an error WITHOUT touching the done-event.
 
-        For the deprecated background worker, whose ``except`` records the
-        error and whose ``finally`` sets the done-event regardless. Leaves the
-        ``built`` flag untouched.
+        Compatibility transition from the former background worker, which
+        recorded errors separately from its final done-event update. Leaves the
+        ``built`` flag untouched; BuildLifecycle publishes production outcomes.
         """
         self._verdict = _Verdict(built=self._verdict.built, error=exc)
 

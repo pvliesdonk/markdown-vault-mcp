@@ -57,7 +57,7 @@ class IndexFacet:
         return self._coordinator.is_queryable()
 
     def start_background_build_index(self) -> None:
-        """Spawn a daemon thread that runs :meth:`IndexFacet.build_index` to completion.
+        """Schedule a build once on the shared writer, without an extra thread.
 
         .. deprecated:: 1.28
            Superseded by :meth:`IndexFacet.build_index_async`. Retained for legacy tests.

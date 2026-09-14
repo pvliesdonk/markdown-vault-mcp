@@ -1,10 +1,10 @@
 """Index-write orchestration: owns the IndexWriter and the readiness state.
 
-`IndexWriteCoordinator` is the single owner of index-write orchestration:
-the synchronous/asynchronous build entry points, the background-build
-readiness state machine (delegated to :class:`ReadinessState`), the
-per-variant async error capture, status/drain observation, and dirty-path
-routing. `Vault` constructs one coordinator and delegates to it; the
+`IndexWriteCoordinator` exposes the build entry points and composes
+:class:`BuildLifecycle`, which owns build attempts and publishes their outcomes
+to :class:`ReadinessState`. The coordinator owns non-build async error capture,
+status/drain observation and dirty-path routing. `Vault` constructs one coordinator
+and delegates to it; the
 coordinator constructs, starts, and closes the single-owner
 :class:`~markdown_vault_mcp.indexing.index_writer.IndexWriter` thread.
 """
@@ -448,7 +448,7 @@ class IndexWriteCoordinator:
             )
 
     # ------------------------------------------------------------------
-    # Deprecated legacy background build (retained for legacy tests)
+    # Deprecated legacy background build (shared lifecycle, one-shot entry)
     # ------------------------------------------------------------------
 
     def start_background_build_index(self) -> None:
