@@ -147,3 +147,46 @@ def test_persisted_vectors_are_reused_after_reload(
     assert provider.calls == 0
     assert col._vectors is not None
     assert "note.md" in col._vectors.chunks_by_path()
+
+
+@pytest.mark.parametrize(
+    "error", [PermissionError("sidecar denied"), ValueError("rebuild failed")]
+)
+def test_vector_load_failure_retains_pending_updates(
+    seeded: tuple[Vault, _CountingProvider],
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+) -> None:
+    col, provider = seeded
+    manager = col._index_mgr._embeddings
+
+    def fail_load() -> None:
+        raise error
+
+    with monkeypatch.context() as patch:
+        patch.setattr(manager, "_load_vectors", fail_load)
+        with pytest.raises(type(error), match=str(error)):
+            _flush(col)
+        assert col.index.get_index_status()["dirty_embeddings"] == 1
+    _flush(col)
+    assert provider.calls == 0
+    assert col.index.get_index_status()["dirty_embeddings"] == 0
+
+
+def test_all_parse_failures_do_not_load_vectors(
+    seeded: tuple[Vault, _CountingProvider], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import markdown_vault_mcp.managers.embeddings as module
+
+    col, provider = seeded
+
+    def fail_parse(*_args: object, **_kwargs: object) -> None:
+        raise OSError("unreadable note")
+
+    def forbidden_load() -> None:
+        pytest.fail("failed parsing must not load or rebuild the vector index")
+
+    monkeypatch.setattr(module, "parse_note", fail_parse)
+    monkeypatch.setattr(col._index_mgr._embeddings, "_load_vectors", forbidden_load)
+    _flush(col)
+    assert provider.calls == 0

@@ -1149,7 +1149,10 @@ so repeated FTS/graph retries reuse completed embeddings. Changed content,
 chunk boundaries/positions, titles, headings, or configured frontmatter preambles
 refresh them; failed embedding attempts have no matching rows and remain eligible.
 Unchanged rows still participate in saving so a failed sidecar save retries
-without paying the provider again. The boundary
+without paying the provider again. Vector loading stays lazy until a note
+parses successfully, but its failures propagate outside the per-note error
+handler so a sidecar permission/rebuild failure retains pending embeddings.
+The boundary
 guarantees visibility of prior writes, not isolation from concurrent
 edits. Graph read tools keep their existing optional wait and stale metadata.
 No link-extraction or stored-row semantics changed, so no index semantics
