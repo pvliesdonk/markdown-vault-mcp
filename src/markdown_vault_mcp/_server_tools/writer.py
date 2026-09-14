@@ -1045,8 +1045,7 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any] | InputRequiredResult:
         """Attest a note as human-reviewed by appending an OKF verification.
 
-        Part of the OKF (Open Knowledge Format) enforced-write layer, available
-        only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. Appends a
+        Available when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. Appends a
         `{by: human:<subject>, at: <UTC instant>}` entry to the note's `verified`
         frontmatter list, promoting the note's trust tier to `human-reviewed`.
 
@@ -1057,12 +1056,12 @@ def register(mcp: FastMCP) -> None:
           affirmative reply. Fails closed — if the client cannot elicit or the
           review is declined, nothing is written. The client's handler must
           present the request to a person rather than answer automatically.
+          Service credentials record confirmed reviews as `human:local`.
         - **trust-auth**: attributes to the token's `sub` with no confirmation;
           refuses static bearer credentials, other client-ID-only identities,
           and callers without auth. Only safe when the sole caller is a
           human-driven UI. OAuth service tokens carrying `sub` remain a known
-          attribution limitation. Confirmed elicit-mode reviews using service
-          credentials are recorded as `human:local`.
+          attribution limitation.
 
         Note: `human-reviewed` means a human deliberately confirmed the review,
         not that the content is provably correct.
