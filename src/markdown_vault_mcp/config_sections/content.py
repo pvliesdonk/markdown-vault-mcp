@@ -26,8 +26,9 @@ class ContentConfig:
     ``okf_verify`` governs how the ``okf_verify`` tool attests a human review
     (only meaningful when ``okf_write`` is on, which gates the tool):
     ``"elicit"`` (default) requires an affirmative MCP elicitation and fails
-    closed otherwise, ``"trust-auth"`` attributes to the authenticated caller
-    with no confirmation, ``"off"`` hides the tool.
+    closed otherwise, ``"trust-auth"`` attributes to a token's ``sub`` with no
+    confirmation and refuses client-ID-only identities (including static bearer
+    credentials), ``"off"`` hides the tool.
     """
 
     attachment_extensions: Sequence[str] | None = None

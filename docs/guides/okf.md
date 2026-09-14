@@ -123,6 +123,8 @@ One subtlety is worth understanding before you rely on the `human-reviewed` tier
 - **`off`** hides the tool entirely. Use this when reviews are recorded only by tooling outside the server (a CLI step, a git hook, or a CI job that writes `verified` directly) and you want no in-session path to the tier at all.
 - **`trust-auth`** attributes to a token's `sub` with no confirmation. It refuses static bearer credentials, other client-ID-only identities, and callers without auth. Choose it only when the sole caller of `okf_verify` is a human-driven interface rather than an agent.
 
+**Upgrading bearer-based review clients:** deployments that used `trust-auth` with a static or mapped bearer token must switch `MARKDOWN_VAULT_MCP_OKF_VERIFY` to `elicit` and use a client that presents the confirmation to a person. Existing provenance and verification entries are not rewritten.
+
 Whichever mode you pick, `human-reviewed` means a person deliberately confirmed the review, not that the note is provably correct. Someone can still rubber-stamp a note. The tier promises a deliberate human act rather than diligence, so treat it as one signal instead of a guarantee.
 
 A `verified` entry is also a claim about the note as it stood when the entry was written. This server clears it when its own write path changes the note, but a change that arrives another way (a teammate's editor, a git pull, a script) leaves the entry in place. On a shared vault, read the tier as a record that someone confirmed a review at that time, and read `generated.at` beside it.
