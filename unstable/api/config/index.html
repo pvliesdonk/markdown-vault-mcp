@@ -1742,10 +1742,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#deprecated-to_vault_kwargs" class="md-nav__link">
+  <a href="#migrating-from-4x" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Deprecated: to_vault_kwargs
+        Migrating from 4.x
       
     </span>
   </a>
@@ -2044,10 +2044,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#deprecated-to_vault_kwargs" class="md-nav__link">
+  <a href="#migrating-from-4x" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Deprecated: to_vault_kwargs
+        Migrating from 4.x
       
     </span>
   </a>
@@ -2204,7 +2204,7 @@
 <h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
 <p>The <code>config</code> module loads configuration from environment variables and provides a typed dataclass for all settings.</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
-<p><code>to_vault_settings</code> maps a loaded configuration onto a <code>VaultSettings</code>, and <code>to_vault_instances</code> resolves the constructed collaborators (embedding provider, summarizer, git strategy). Together they feed settings-first <code>Vault</code> construction:</p>
+<p><code>to_vault_settings</code> maps a loaded configuration onto a <code>VaultSettings</code>, and <code>to_vault_instances</code> resolves the constructed collaborators (embedding provider, summarizer, git strategy). Together they feed <code>Vault</code> construction:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProjectConfig</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.config_sections._assembly</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
@@ -2226,8 +2226,15 @@
     <span class="n">on_write</span><span class="o">=</span><span class="n">instances</span><span class="o">.</span><span class="n">on_write</span><span class="p">,</span>
 <span class="p">)</span>
 </code></pre></div>
-<h2 id="deprecated-to_vault_kwargs">Deprecated: <code>to_vault_kwargs</code><a class="headerlink" href="#deprecated-to_vault_kwargs" title="Permanent link">&para;</a></h2>
-<p>The historical bridge <code>to_vault_kwargs(config)</code> returns a flat keyword dict for <code>Vault(**kwargs)</code>. It now delegates to <code>to_vault_settings</code> and <code>to_vault_instances</code> while keeping its historical dict shape for existing callers. It is scheduled for removal in the next major release, so prefer the settings-first construction above.</p>
+<h2 id="migrating-from-4x">Migrating from 4.x<a class="headerlink" href="#migrating-from-4x" title="Permanent link">&para;</a></h2>
+<p><code>to_vault_kwargs</code> has been removed from both <code>markdown_vault_mcp.config</code> and <code>markdown_vault_mcp.config_sections._assembly</code>. Replace <code>Vault(**to_vault_kwargs(config))</code> with the construction shown above. Resolve <code>instances</code> once and pass it to <code>to_vault_settings</code> so the provider is loaded once and its context limit determines the chunk size.</p>
+<p>For overrides formerly applied to the keyword dictionary, use <code>dataclasses.replace</code> on the settings before constructing the vault:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">replace</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+
+<span class="n">settings</span> <span class="o">=</span> <span class="n">replace</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="n">index_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/path/to/other-index.db"</span><span class="p">))</span>
+</code></pre></div>
+<p>Keep collaborator overrides on the corresponding <code>Vault</code> keyword arguments.</p>
 <h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <!-- vale off -->
 

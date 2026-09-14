@@ -4,7 +4,7 @@ The `config` module loads configuration from environment variables and provides 
 
 ## Quick Start
 
-`to_vault_settings` maps a loaded configuration onto a `VaultSettings`, and `to_vault_instances` resolves the constructed collaborators (embedding provider, summarizer, git strategy). Together they feed settings-first `Vault` construction:
+`to_vault_settings` maps a loaded configuration onto a `VaultSettings`, and `to_vault_instances` resolves the constructed collaborators (embedding provider, summarizer, git strategy). Together they feed `Vault` construction:
 
 ```
 import os
@@ -29,9 +29,20 @@ vault = Vault(
 )
 ```
 
-## Deprecated: `to_vault_kwargs`
+## Migrating from 4.x
 
-The historical bridge `to_vault_kwargs(config)` returns a flat keyword dict for `Vault(**kwargs)`. It now delegates to `to_vault_settings` and `to_vault_instances` while keeping its historical dict shape for existing callers. It is scheduled for removal in the next major release, so prefer the settings-first construction above.
+`to_vault_kwargs` has been removed from both `markdown_vault_mcp.config` and `markdown_vault_mcp.config_sections._assembly`. Replace `Vault(**to_vault_kwargs(config))` with the construction shown above. Resolve `instances` once and pass it to `to_vault_settings` so the provider is loaded once and its context limit determines the chunk size.
+
+For overrides formerly applied to the keyword dictionary, use `dataclasses.replace` on the settings before constructing the vault:
+
+```
+from dataclasses import replace
+from pathlib import Path
+
+settings = replace(settings, index_path=Path("/path/to/other-index.db"))
+```
+
+Keep collaborator overrides on the corresponding `Vault` keyword arguments.
 
 ## API Reference
 
