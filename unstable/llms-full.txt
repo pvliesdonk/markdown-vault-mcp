@@ -4314,7 +4314,7 @@ A few boundaries keep this predictable, and they are also its limits. Maintenanc
 
 **Do not hand-edit a maintained `index.md`.** The write itself is left alone, because the maintainer skips a write whose target is a reserved file. But the next content write into that folder regenerates the listing from the note list, and an edit you made is gone with nothing reporting it. The same applies to anyone else editing the vault. A teammate's change to a maintained `index.md` in Obsidian, or one arriving through a git pull, survives only until the next write into that folder. Put anything you want to keep in a note, not in the generated navigation. `log.md` is appended to rather than regenerated, so hand-written entries there are not overwritten, but a conflicting edit from another editor can still collide with the server's append.
 
-One cost comes with this upkeep. Each `write` or `edit` waits for the search index to catch up before it regenerates `index.md`, so that a just-created note is listed; on a busy vault or with a slow embedding backend this adds latency to the write, bounded at ten seconds before it proceeds with a best-effort listing. On a git-backed vault the reserved-file updates are not extra commits: every write a tool call makes is committed together, so saving a note produces one commit naming the note, its `log.md` and its `index.md`.
+One cost comes with this upkeep. Each `write` or `edit` waits for the search index to catch up before it regenerates `index.md`, so that a just-created note is listed; on a busy vault or with a slow embedding backend this adds latency to the write, bounded at 60 seconds. A refresh failure keeps the existing listing and logs a warning; the note write is not rolled back. Embedding jobs already in the queue can delay the refresh, but it does not wait for embeddings queued after it. On a git-backed vault the reserved-file updates are not extra commits: every write a tool call makes is committed together, so saving a note produces one commit naming the note, its `log.md` and its `index.md`.
 
 To stop the upkeep, set `MARKDOWN_VAULT_MCP_OKF_WRITE=false` and maintain the reserved files yourself. Two things to know before you do. If you had set `MARKDOWN_VAULT_MCP_OKF_VERIFY` to anything but its default `elicit`, reset it as well. Startup fails otherwise, because that setting only applies while the layer is on. And disabling the layer stops further upkeep without repairing anything already written. Stamps the layer added stay in their notes, and a `log.md` that collected repeated frontmatter blocks from a version before 4.2 keeps them. Removing those blocks is a manual edit: the server cannot tell a block it stacked from one the log quotes on purpose, so it leaves all of them alone.
 
@@ -5237,11 +5237,17 @@ Move an entire folder subtree to a new prefix and rewrite all vault links that p
 
 **Link rewrites:** after the move, all vault links pointing into the subtree (markdown links and wikilinks, including links between documents inside the moved subtree and backlinks from outside) are rewritten in a single pass. Rewriting is best-effort; a document that cannot be rewritten is listed in `failed_links` and does not abort the move.
 
-**Index:** updated immediately after the call; no `reindex` needed.
+**Index:** refresh is queued after the move; no `reindex` needed.
 
 Warning
 
 Link rewrites are not rolled back if the process is interrupted after the move phase begins. The move phase itself is not OS-failure-atomic: an OS error during file moves (permission error, full disk, concurrent removal) can leave the subtree partially moved with the index unchanged; run `reindex` to recover. Use `rename` for single-file moves where full atomicity is required.
+
+### Index freshness after writes
+
+Writes save files and queue index updates. A following disk `read` sees the saved file; search and graph reads may still see earlier index state. Use `wait_for_pending_writes=true` on supported read tools and inspect `_meta.index_stale` when freshness matters. No extra `reindex` is needed.
+
+`okf_convert_links`, `okf_generate_index`, `rename` with `update_links=true`, and `move_folder` wait for a queued index refresh before deriving changes from links or listings. They wait up to 60 seconds and fail before mutation if the refresh fails or times out. This covers prior writes, including targets outside the requested folder; concurrent edits are not isolated into a snapshot.
 
 ### OKF migration transforms
 
@@ -7686,6 +7692,16 @@ Old keywords now raise `TypeError`, including when their values match the defaul
 
 Omitting `settings` (or passing `None`) uses `VaultSettings()`. Library defaults are unchanged: read-only, no chunk overlap, and no overwrite protection once writes are enabled. Server configuration continues to use its own defaults through [configuration assembly](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/config/index.md).
 
+## Build completion
+
+Synchronous, asynchronous, and legacy background builds use one build lifecycle. The Future from `vault.index.build_index_async()` completes after the scan, completion-marker write, and readiness update. Marker-write failures raise through this Future. Pending builds can be cancelled; running builds finish normally. The legacy `start_background_build_index()` method schedules work once on the same writer.
+
+## Index freshness after writes
+
+File writes complete before returning; index updates run on the background writer. For a following library search or graph read, use `vault.index.wait_for_drain(timeout=60)` and check whether it returns `True`. A disk `read` does not need this wait.
+
+Link conversion, index generation, rename with `update_links=True`, and folder move perform their own queued refresh before reading index data. They fail before mutation if that refresh fails or exceeds 60 seconds. A timeout raised by the refresh job propagates as that job error; the generic refresh-timeout message is reserved for expiration of the wait budget. The wait covers prior writes; it does not isolate concurrent edits. The same 60-second budget covers the preceding build and its readiness update, including synchronous and background builds. A failed or cancelled build blocks these mutations; an index with no scheduled build still supports rename and folder move. OKF generators still reject an index that was never built. Healthy notes continue to receive vector updates when another note in their refresh batch fails. Retrying that batch reuses matching stored vectors, avoiding repeated provider requests for unchanged notes. Direct `DocumentManager` integrations can supply the `sync_index` callback to provide the same boundary.
+
 ## API Reference
 
 ## `VaultSettings(index_path=None, embeddings_path=None, read_only=True, write_protect_existing=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)`
@@ -8854,7 +8870,7 @@ A captured build error does NOT demote queryability: it is diagnostic state surf
 
 ### `start_background_build_index()`
 
-Spawn a daemon thread that runs :meth:`IndexFacet.build_index` to completion.
+Schedule a build once on the shared writer, without an extra thread.
 
 .. deprecated:: 1.28 Superseded by :meth:`IndexFacet.build_index_async`. Retained for legacy tests.
 
@@ -8953,7 +8969,7 @@ Raises:
 
 Submit a full FTS index build and return the Future.
 
-Caller may `.result()` to wait or fire-and-forget. Warm-restart short-circuit returns an already-resolved Future without queuing a job, mirroring :meth:`IndexFacet.build_index`.
+Caller may `.result()` to wait or fire-and-forget. Warm-restart short-circuit returns an already-resolved Future without queuing a job, mirroring :meth:`IndexFacet.build_index`. The Future includes the completion-marker write and readiness publication; failure in either fails the build. Pending work can be cancelled before execution begins.
 
 Parameters:
 

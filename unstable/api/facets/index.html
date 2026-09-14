@@ -8528,7 +8528,7 @@ diagnostic state surfaced via :meth:<code>IndexFacet.get_index_status</code>, no
 
     <div class="doc doc-contents ">
 
-        <p>Spawn a daemon thread that runs :meth:<code>IndexFacet.build_index</code> to completion.</p>
+        <p>Schedule a build once on the shared writer, without an extra thread.</p>
 <p>.. deprecated:: 1.28
    Superseded by :meth:<code>IndexFacet.build_index_async</code>. Retained for legacy tests.</p>
 
@@ -8929,7 +8929,9 @@ already exists on disk.</p>
         <p>Submit a full FTS index build and return the Future.</p>
 <p>Caller may <code>.result()</code> to wait or fire-and-forget. Warm-restart
 short-circuit returns an already-resolved Future without queuing a
-job, mirroring :meth:<code>IndexFacet.build_index</code>.</p>
+job, mirroring :meth:<code>IndexFacet.build_index</code>. The Future includes the
+completion-marker write and readiness publication; failure in either
+fails the build. Pending work can be cancelled before execution begins.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>

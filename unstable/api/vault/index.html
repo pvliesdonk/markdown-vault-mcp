@@ -1669,6 +1669,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#build-completion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build completion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#index-freshness-after-writes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Index freshness after writes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2204,6 +2226,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#build-completion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build completion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#index-freshness-after-writes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Index freshness after writes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2541,6 +2585,11 @@
 </code></pre></div>
 <p>Old keywords now raise <code>TypeError</code>, including when their values match the defaults or when <code>settings</code> is also supplied. <code>source_dir</code> and the five collaborator keywords remain on <code>Vault</code>.</p>
 <p>Omitting <code>settings</code> (or passing <code>None</code>) uses <code>VaultSettings()</code>. Library defaults are unchanged: read-only, no chunk overlap, and no overwrite protection once writes are enabled. Server configuration continues to use its own defaults through <a href="../config/">configuration assembly</a>.</p>
+<h2 id="build-completion">Build completion<a class="headerlink" href="#build-completion" title="Permanent link">&para;</a></h2>
+<p>Synchronous, asynchronous, and legacy background builds use one build lifecycle. The Future from <code>vault.index.build_index_async()</code> completes after the scan, completion-marker write, and readiness update. Marker-write failures raise through this Future. Pending builds can be cancelled; running builds finish normally. The legacy <code>start_background_build_index()</code> method schedules work once on the same writer.</p>
+<h2 id="index-freshness-after-writes">Index freshness after writes<a class="headerlink" href="#index-freshness-after-writes" title="Permanent link">&para;</a></h2>
+<p>File writes complete before returning; index updates run on the background writer. For a following library search or graph read, use <code>vault.index.wait_for_drain(timeout=60)</code> and check whether it returns <code>True</code>. A disk <code>read</code> does not need this wait.</p>
+<p>Link conversion, index generation, rename with <code>update_links=True</code>, and folder move perform their own queued refresh before reading index data. They fail before mutation if that refresh fails or exceeds 60 seconds. A timeout raised by the refresh job propagates as that job error; the generic refresh-timeout message is reserved for expiration of the wait budget. The wait covers prior writes; it does not isolate concurrent edits. The same 60-second budget covers the preceding build and its readiness update, including synchronous and background builds. A failed or cancelled build blocks these mutations; an index with no scheduled build still supports rename and folder move. OKF generators still reject an index that was never built. Healthy notes continue to receive vector updates when another note in their refresh batch fails. Retrying that batch reuses matching stored vectors, avoiding repeated provider requests for unchanged notes. Direct <code>DocumentManager</code> integrations can supply the <code>sync_index</code> callback to provide the same boundary.</p>
 <h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <!-- vale off -->
 

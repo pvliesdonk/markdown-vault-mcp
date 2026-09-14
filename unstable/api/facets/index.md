@@ -916,7 +916,7 @@ A captured build error does NOT demote queryability: it is diagnostic state surf
 
 ### `start_background_build_index()`
 
-Spawn a daemon thread that runs :meth:`IndexFacet.build_index` to completion.
+Schedule a build once on the shared writer, without an extra thread.
 
 .. deprecated:: 1.28 Superseded by :meth:`IndexFacet.build_index_async`. Retained for legacy tests.
 
@@ -1015,7 +1015,7 @@ Raises:
 
 Submit a full FTS index build and return the Future.
 
-Caller may `.result()` to wait or fire-and-forget. Warm-restart short-circuit returns an already-resolved Future without queuing a job, mirroring :meth:`IndexFacet.build_index`.
+Caller may `.result()` to wait or fire-and-forget. Warm-restart short-circuit returns an already-resolved Future without queuing a job, mirroring :meth:`IndexFacet.build_index`. The Future includes the completion-marker write and readiness publication; failure in either fails the build. Pending work can be cancelled before execution begins.
 
 Parameters:
 
