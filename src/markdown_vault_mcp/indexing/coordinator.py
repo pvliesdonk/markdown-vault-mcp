@@ -213,17 +213,16 @@ class IndexWriteCoordinator:
         propagates failures; an idle queue alone cannot establish success.
         Follow-up embedding jobs need not finish. Call before taking a file
         write lock; this is a boundary for prior writes, not a snapshot against
-        concurrent edits.
+        concurrent edits. A queued initial build runs first; this refresh does
+        not require or initiate a build for disk-only library operations.
 
         Args:
             timeout: Maximum seconds to wait for the queued refresh.
 
         Raises:
-            IndexUnavailableError: If the index has not been built.
             TimeoutError: If the refresh does not finish within the budget.
             Exception: If the index writer rejects or fails the refresh.
         """
-        self.require_built()
         future = self._writer.submit(ProcessDirtyPaths())
         try:
             future.result(timeout=timeout)

@@ -1127,7 +1127,7 @@ generation, note rename with `update_links=True`, and folder move refresh
 prior queued writes before reading index data. `DocumentManager` receives
 `IndexWriteCoordinator.prepare_index_read` as an optional callback; the OKF
 migration manager uses the same hook, covering both library and MCP calls.
-The coordinator checks readiness and submits `ProcessDirtyPaths` to the FIFO,
+The coordinator submits `ProcessDirtyPaths` to the FIFO,
 then waits on its Future for at most 60 seconds. This retries retained dirty
 paths and propagates job errors; a timeout refuses the dependent mutation
 before it changes files. Merely observing an empty queue would not prove
@@ -1135,7 +1135,11 @@ a successful refresh. Link-resolution failures now fail the dirty-path job
 and retain its paths, while a primary parse error survives a second failure
 during graph recovery. Follow-up embeddings need not finish, but earlier
 queued jobs can delay the refresh. The wait happens outside the file-write
-lock and guarantees visibility of prior writes, not isolation from concurrent
+lock. It waits behind an already queued initial build without adding a build
+prerequisite to disk-only rename/move calls. Per-path read/validation failures
+refresh the other notes, then fail the job and retain the snapshot; tombstone
+read and stale-row deletion failures also remain retryable. The boundary
+guarantees visibility of prior writes, not isolation from concurrent
 edits. Graph read tools keep their existing optional wait and stale metadata.
 No link-extraction or stored-row semantics changed, so no index semantics
 version bump is needed.

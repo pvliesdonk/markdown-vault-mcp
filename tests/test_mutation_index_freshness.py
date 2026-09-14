@@ -162,3 +162,92 @@ def test_refresh_does_not_wait_for_followup_embeddings(
             assert vault.reader.list_documents()[0].path == "target.md"
         finally:
             release.set()
+
+
+@pytest.mark.parametrize("operation", ["rename", "move"])
+def test_disk_mutation_preserves_unbuilt_support(
+    tmp_path: Path, operation: str
+) -> None:
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        col.writer.write("notes/target.md", "# Target\n")
+        col.writer.write("links/source.md", "See [[target]].\n")
+        _mutate(col, operation)
+        assert not col.index.is_queryable()
+    finally:
+        col.close()
+
+
+@pytest.mark.parametrize("failure", ["read", "validation", "tombstone"])
+def test_failed_file_refresh_retries_without_mutating(
+    vault: Vault, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from typing import Any
+
+    import markdown_vault_mcp.managers.index as index_module
+
+    vault.writer.write("notes/target.md", "# Target\n")
+    vault.writer.write("links/source.md", "Old content.\n")
+    assert vault.index.wait_for_drain(timeout=5)
+    source = vault.source_dir / "links/source.md"
+    source.write_text("See [[target]].\n", encoding="utf-8")
+    if failure == "tombstone":
+        source.write_text("---\ninvalid: [\n---\n", encoding="utf-8")
+    good = vault.source_dir / "healthy.md"
+    good.write_text("# Healthy\n", encoding="utf-8")
+    original = index_module.parse_note
+
+    def fail_read(path: Path, *args: Any, **kwargs: Any) -> Any:
+        if path == source:
+            if failure == "validation":
+                raise ValueError("temporary validation failure")
+            raise OSError("temporary read failure")
+        return original(path, *args, **kwargs)
+
+    def fail_hash(_path: Path) -> str:
+        raise OSError("temporary tombstone read failure")
+
+    with monkeypatch.context() as patch:
+        if failure == "tombstone":
+            patch.setattr(index_module, "compute_file_hash", fail_hash)
+        else:
+            patch.setattr(index_module, "parse_note", fail_read)
+        vault._coordinator.writer.mark_dirty(["links/source.md", "healthy.md"])
+        with pytest.raises((OSError, ValueError), match="temporary"):
+            vault._coordinator.prepare_index_read()
+        # A successful sibling still refreshes, while the job retains work.
+        assert vault._fts.get_note("healthy.md") is not None
+        assert vault.index.get_index_status()["dirty_paths"] == 2
+        with pytest.raises((OSError, ValueError), match="temporary"):
+            vault.writer.rename("notes/target.md", "notes/new.md", update_links=True)
+        assert (vault.source_dir / "notes/target.md").exists()
+        assert not (vault.source_dir / "notes/new.md").exists()
+    source.write_text("See [[target]].\n", encoding="utf-8")
+    _mutate(vault, "rename")
+
+
+def test_failed_deletion_retains_dirty_path(
+    vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import markdown_vault_mcp.managers.index as index_module
+
+    vault.writer.write("target.md", "# Target\n")
+    assert vault.index.wait_for_drain(timeout=5)
+    target = vault.source_dir / "target.md"
+
+    def disappear(*_args: object, **_kwargs: object) -> None:
+        target.unlink()
+        raise OSError("disappeared")
+
+    def fail_delete(_path: str) -> None:
+        raise OSError("delete failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(index_module, "parse_note", disappear)
+        patch.setattr(vault._fts, "delete_by_path", fail_delete)
+        vault._coordinator.writer.mark_dirty(["target.md"])
+        with pytest.raises(OSError, match="delete failed"):
+            vault._coordinator.prepare_index_read()
+        assert vault.index.get_index_status()["dirty_paths"] == 1
+    vault._coordinator.prepare_index_read()
+    assert vault._fts.get_note("target.md") is None

@@ -294,6 +294,7 @@ class IndexManager:
         abs_path: Path,
         *,
         content_hash: str | None = None,
+        retry_on_error: bool = False,
     ) -> None:
         """Record a surfaced skip as an FTS tombstone row (#1129).
 
@@ -311,6 +312,8 @@ class IndexManager:
                 *content_hash* needs computing.
             content_hash: Hash of the exact bytes that were evaluated, when
                 the caller already has it (avoids a second, raceable read).
+            retry_on_error: Propagate read failures so dirty-path jobs retain
+                their snapshot for retry instead of reporting stale rows as fresh.
         """
         try:
             if content_hash is None:
@@ -318,6 +321,8 @@ class IndexManager:
             modified_at = abs_path.stat().st_mtime
         except OSError as exc:
             logger.debug("tombstone_skip_read_failed path=%s err=%s", skip.path, exc)
+            if retry_on_error:
+                raise
             return
         self._fts.upsert_tombstone(
             skip, content_hash=content_hash, modified_at=modified_at
@@ -904,8 +909,9 @@ class IndexManager:
         Per-path file-read failures (``OSError``, ``UnicodeDecodeError``),
         malformed-frontmatter errors (``yaml.YAMLError``), and chunker
         validation failures (``ValueError``) are caught, logged at
-        WARNING, and skipped so a single bad note does not starve the
-        rest — matching the coverage in :meth:`flush_dirty_embeddings`.
+        WARNING, and collected so a single bad note does not starve the
+        remaining FTS updates. After processing the other paths, the first
+        read/validation error fails the job and retains its snapshot for retry.
         A ``yaml.YAMLError`` additionally replaces the note's stale row with
         a ``parse_error`` tombstone, and a note missing required frontmatter
         is tombstoned rather than deleted, so FTS absence keeps meaning
@@ -926,96 +932,17 @@ class IndexManager:
         if not paths:
             return
         try:
+            first_error: Exception | None = None
             for path in paths:
-                abs_path = self._source_dir / path
                 try:
-                    if self._is_path_excluded(path):
-                        # Excluded paths (e.g. convention files) never enter
-                        # the index, whichever producer marked them dirty —
-                        # this is the choke point every dirty path flows
-                        # through. Deleting is a no-op when the path was
-                        # never indexed and purges stale rows left from
-                        # before the exclusion existed.
-                        self._fts.delete_by_path(path)
-                        continue
-                    if abs_path.is_file() and is_note(path):
-                        note = parse_note(
-                            abs_path,
-                            self._source_dir,
-                            self._chunk_strategy,
-                            title_field=self._title_field,
-                            attachment_extensions=self._attachment_extensions,
-                        )
-                        missing = [
-                            k
-                            for k in (self._required_frontmatter or [])
-                            if k not in (note.frontmatter or {})
-                        ]
-                        if missing:
-                            # Tombstone rather than delete (#1129): the file
-                            # is still a candidate, so its row must stay
-                            # present (invisibly) instead of becoming
-                            # indistinguishable from a deletion. The parsed
-                            # note's own hash/mtime cover the exact bytes
-                            # that were evaluated (#888 pattern).
-                            self._fts.upsert_tombstone(
-                                SkippedFile(
-                                    path=path,
-                                    category="missing_frontmatter",
-                                    detail=f"missing: {missing}",
-                                ),
-                                content_hash=note.content_hash,
-                                modified_at=note.modified_at,
-                            )
-                            continue
-                        self._fts.upsert_note(note)
-                    else:
-                        self._fts.delete_by_path(path)
+                    self._process_dirty_path(path)
                 except (OSError, UnicodeDecodeError, ValueError) as exc:
-                    logger.warning(
-                        "process_dirty_paths: skipping %s: %s",
-                        path,
-                        exc,
-                    )
-                    # File-disappeared race: parse_note() opened the
-                    # file after is_file() succeeded but the file was
-                    # then removed (or replaced with something that
-                    # raises one of the caught exceptions on read).
-                    # Drop the stale FTS row so search results match
-                    # what flush_dirty_embeddings will do to the
-                    # vector index — otherwise the deleted document
-                    # lingers in keyword/hybrid search until a full
-                    # reindex.
-                    if not abs_path.is_file():
-                        try:
-                            self._fts.delete_by_path(path)
-                        except Exception:
-                            logger.exception(
-                                "process_dirty_paths: failed to delete "
-                                "stale FTS row for %s",
-                                path,
-                            )
-                    continue
-                except yaml.YAMLError as exc:
-                    logger.warning(
-                        "process_dirty_paths: skipping %s (malformed frontmatter): %s",
-                        path,
-                        exc,
-                    )
-                    # Tombstone instead of keeping the stale row (#1129): a
-                    # note edited into unparseable frontmatter must stop
-                    # serving its last-good content. A transient read failure
-                    # inside the helper records nothing (row kept; the next
-                    # scan retries).
-                    self._tombstone_skip(
-                        SkippedFile(path=path, category="parse_error", detail=str(exc)),
-                        abs_path,
-                    )
-                    continue
-                # sqlite3 / programming-bug exceptions propagate: fail the
-                # job so the writer's Future surfaces them (PR #555's
-                # reason discriminator handles OperationalError
-                # classification at the caller boundary).
+                    # Refresh the other notes before failing the job. The
+                    # writer restores the snapshot, including failed paths.
+                    if first_error is None:
+                        first_error = exc
+            if first_error is not None:
+                raise first_error
         except BaseException:
             # Preserve the primary failure if graph recovery fails as well.
             try:
@@ -1027,6 +954,81 @@ class IndexManager:
             # A graph failure must fail the job and retain its dirty paths;
             # otherwise a later mutation could trust an incomplete refresh.
             self._fts.resolve_vault_wikilinks()
+
+    def _process_dirty_path(self, path: str) -> None:
+        """Refresh one row, propagating any failure that leaves it stale."""
+        abs_path = self._source_dir / path
+        try:
+            if self._is_path_excluded(path):
+                # Excluded paths (e.g. convention files) never enter
+                # the index, whichever producer marked them dirty —
+                # this is the choke point every dirty path flows
+                # through. Deleting is a no-op when the path was
+                # never indexed and purges stale rows left from
+                # before the exclusion existed.
+                self._fts.delete_by_path(path)
+                return
+            if abs_path.is_file() and is_note(path):
+                note = parse_note(
+                    abs_path,
+                    self._source_dir,
+                    self._chunk_strategy,
+                    title_field=self._title_field,
+                    attachment_extensions=self._attachment_extensions,
+                )
+                missing = [
+                    k
+                    for k in (self._required_frontmatter or [])
+                    if k not in (note.frontmatter or {})
+                ]
+                if missing:
+                    # Tombstone rather than delete (#1129): the file
+                    # is still a candidate, so its row must stay
+                    # present (invisibly) instead of becoming
+                    # indistinguishable from a deletion. The parsed
+                    # note's own hash/mtime cover the exact bytes
+                    # that were evaluated (#888 pattern).
+                    self._fts.upsert_tombstone(
+                        SkippedFile(
+                            path=path,
+                            category="missing_frontmatter",
+                            detail=f"missing: {missing}",
+                        ),
+                        content_hash=note.content_hash,
+                        modified_at=note.modified_at,
+                    )
+                    return
+                self._fts.upsert_note(note)
+            else:
+                self._fts.delete_by_path(path)
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            logger.warning(
+                "dirty_path_read_failed path=%s err=%s",
+                path,
+                exc,
+            )
+            # A vanished file is a successful deletion. A still-existing
+            # unreadable file retains its old row, so fail and retry the job.
+            if not abs_path.is_file():
+                self._fts.delete_by_path(path)
+                return
+            raise
+        except yaml.YAMLError as exc:
+            logger.warning(
+                "dirty_path_parse_failed path=%s err=%s",
+                path,
+                exc,
+            )
+            # Tombstone instead of keeping the stale row (#1129): a
+            # note edited into unparseable frontmatter must stop
+            # serving its last-good content. A transient read failure
+            # must propagate so the writer retains its dirty snapshot.
+            self._tombstone_skip(
+                SkippedFile(path=path, category="parse_error", detail=str(exc)),
+                abs_path,
+                retry_on_error=True,
+            )
+            return
 
     def flush_dirty_embeddings(self, paths: set[str]) -> None:
         """Re-embed each path in the snapshot and save the vector index once.

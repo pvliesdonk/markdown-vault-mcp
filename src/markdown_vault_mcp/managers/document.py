@@ -1130,7 +1130,6 @@ class DocumentManager:
 
         Raises:
             ReadOnlyError: If the vault is read-only.
-            IndexUnavailableError: If link rewriting needs an unbuilt index.
             TimeoutError: If the configured index refresh times out.
             DocumentNotFoundError: If *old_path* does not exist.
             DocumentExistsError: If *new_path* already exists.
@@ -1482,7 +1481,6 @@ class DocumentManager:
 
         Raises:
             ReadOnlyError: If the vault is read-only.
-            IndexUnavailableError: If the configured index is not built.
             TimeoutError: If the configured index refresh times out.
             DocumentNotFoundError: If *old_dir* is missing, not a directory,
                 or empty.
