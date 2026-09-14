@@ -1128,7 +1128,11 @@ prior queued writes before reading index data. `DocumentManager` receives
 `IndexWriteCoordinator.prepare_index_read` as an optional callback; the OKF
 migration manager uses the same hook, covering both library and MCP calls.
 The coordinator submits `ProcessDirtyPaths` to the FIFO,
-then waits on its Future for at most 60 seconds. This retries retained dirty
+then waits on its Future and build-readiness finalization within one 60-second
+deadline. The writer job can finish before the synchronous build caller publishes
+its completion marker and readiness state; async callbacks and the legacy
+background wrapper must also finish that publication before the readiness check.
+This retries retained dirty
 paths and propagates job errors; a timeout refuses the dependent mutation
 before it changes files. Merely observing an empty queue would not prove
 a successful refresh. Link-resolution failures now fail the dirty-path job

@@ -215,17 +215,23 @@ class IndexWriteCoordinator:
         write lock; this is a boundary for prior writes, not a snapshot against
         concurrent edits. A queued initial build runs first; this refresh does
         not require or initiate a build for disk-only library operations.
+        Also wait for readiness finalization, which a synchronous build performs
+        on its calling thread after the writer job completes. Both waits share
+        the same deadline.
 
         Args:
-            timeout: Maximum seconds to wait for the queued refresh.
+            timeout: Maximum total seconds for refresh and build finalization.
 
         Raises:
             TimeoutError: If the refresh does not finish within the budget.
             Exception: If the index writer rejects or fails the refresh.
         """
+        deadline = time.monotonic() + timeout
         future = self._writer.submit(ProcessDirtyPaths())
         try:
-            future.result(timeout=timeout)
+            future.result(timeout=max(0.0, deadline - time.monotonic()))
+            if not self._readiness.wait(max(0.0, deadline - time.monotonic())):
+                raise TimeoutError("Index build finalization is still in progress")
         except TimeoutError as exc:
             future.cancel()
             raise TimeoutError(
