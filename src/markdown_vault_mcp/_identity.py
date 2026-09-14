@@ -156,8 +156,8 @@ def _resolve_claim(
     An operator who configures ``GIT_COMMIT_NAME_CLAIM`` has asked for
     attribution deliberately. When the claim is not in the access token the
     commit silently falls back to the static identity, which looks exactly
-    like a deployment that never configured it — and the one nearby startup
-    warning is suppressed precisely when a claim *is* configured (#1331).
+    like a deployment that never configured it. Report the unusable claim
+    here, where the request token is available (#1331).
 
     Only fires for an authenticated caller: with no token there are no claims
     to be missing, and the fallback is the intended behaviour.

@@ -2893,9 +2893,9 @@ the claim was `absent`, `empty`, or `not_a_string` — and only for an
 authenticated caller, since with no token there is nothing to be missing.
 Per field rather than per key, because both fields may be configured to the
 same claim and each deserves its own line; the memory is cleared by
-`configure_identity_claims()`, so a reconfiguration gets a fresh answer. The
-startup warning in `git/strategy.py` is suppressed exactly when a claim *is*
-configured, which is why the signal lives at the resolution site.
+`configure_identity_claims()`, so a reconfiguration gets a fresh answer.
+Only the resolution site can distinguish an unusable configured claim from
+an intentionally static author identity.
 
 `resolve_mcp_principal()` is the **only** place the subject rules live
 (#1231) — `human:<subject>`, and the `"local"` sentinel counting as no human
@@ -2912,10 +2912,23 @@ static identity / tool actor, as before.
 
 **Deprecation note**: `git_write_strategy()` factory function is preserved for
 backward compatibility. Prefer constructing `GitWriteStrategy` directly for
-access to `flush()` and `close()` methods. The `commit_name_claim` /
-`commit_email_claim` constructor kwargs no longer drive claim extraction
-(see above); they remain accepted and still inform the startup identity
-warning.
+access to `flush()` and `close()` methods.
+
+**Claim-key removal (#1236)**: `GitWriteStrategy` no longer accepts
+`commit_name_claim` / `commit_email_claim`; author identity arrives in the
+resolved per-write `Principal`. Claim registration remains in
+`to_vault_instances`, independently of strategy construction. Server config
+fields and environment variables retain their meaning. The trailing `git_lfs`
+and `repo_path` constructor arguments are keyword-only so removed positional
+claim values fail rather than silently binding to different settings.
+
+The strategy's `_check_identity` probe and warning are deliberately removed.
+The write path supplies the configured committer (or its static defaults)
+with `-c user.name` / `-c user.email`, and the rebase path carries that identity
+in its environment. A missing checkout `user.email` is therefore an expected,
+supported configuration. The request-side unusable-claim warning remains the
+signal for a configured author claim that cannot be used; Git does not need
+to depend on identity-layer configuration to suppress a startup message.
 
 ### `scanner.py`: File Discovery and Parsing
 
