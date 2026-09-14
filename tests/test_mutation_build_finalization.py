@@ -165,3 +165,25 @@ def test_refresh_and_finalization_share_one_timeout_budget(
             result.assert_called_once_with(timeout=pytest.approx(0.3))
     finally:
         col.close()
+
+
+def test_refresh_job_timeout_error_is_not_relabelled_as_wait_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from concurrent.futures import Future
+
+    col = _vault(tmp_path)
+    failed: Future[None] = Future()
+    failure = TimeoutError("filesystem refresh timed out")
+    failed.set_exception(failure)
+    try:
+        monkeypatch.setattr(
+            col._coordinator._builds,
+            "enqueue_refresh",
+            lambda _writer: (None, failed),
+        )
+        with pytest.raises(TimeoutError, match="filesystem refresh timed out") as error:
+            col._coordinator.prepare_index_read()
+        assert error.value is failure
+    finally:
+        col.close()

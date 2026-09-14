@@ -232,6 +232,8 @@ class IndexWriteCoordinator:
                 build.require_success(max(0.0, deadline - time.monotonic()))
             future.result(timeout=max(0.0, deadline - time.monotonic()))
         except TimeoutError as exc:
+            if future.done() and not future.cancelled() and future.exception() is exc:
+                raise
             future.cancel()
             raise TimeoutError(
                 "Index refresh timed out; the dependent mutation was not started. "

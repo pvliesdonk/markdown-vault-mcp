@@ -113,7 +113,6 @@ class BuildLifecycle:
             active = any(not pending.future.done() for pending in self._pending)
             attempt = BuildAttempt()
             self._latest = attempt
-            self._readiness.begin_sync_build()
             attempt.future.add_done_callback(lambda _: self._on_cancelled(attempt))
             try:
                 if not active and not force and self._is_warm():
@@ -125,6 +124,7 @@ class BuildLifecycle:
                     attempt.future.set_running_or_notify_cancel()
                     self._finish(attempt, _Succeeded(stats))
                 else:
+                    self._readiness.begin_sync_build()
                     self._pending.add(attempt)
                     queued = writer.submit(_BuildCommand(force=force, attempt=attempt))
                     queued.add_done_callback(
@@ -132,6 +132,7 @@ class BuildLifecycle:
                     )
             except BaseException as exc:
                 self._pending.discard(attempt)
+                self._readiness.begin_sync_build()
                 attempt.future.set_running_or_notify_cancel()
                 self._finish(attempt, _Unsuccessful("failed", exc))
                 raise

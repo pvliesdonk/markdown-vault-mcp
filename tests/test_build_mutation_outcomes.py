@@ -223,6 +223,36 @@ def test_build_timeout_error_is_failure_not_wait_timeout(
         vault.close()
 
 
+def test_warm_check_preserves_queryability_until_reuse_is_confirmed(
+    vault: Vault, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    vault.index.build_index()
+    entered, release = threading.Event(), threading.Event()
+    original = vault._coordinator._builds._is_warm
+
+    def held_warm_check() -> bool:
+        entered.set()
+        assert release.wait(5)
+        return original()
+
+    monkeypatch.setattr(vault._coordinator._builds, "_is_warm", held_warm_check)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            build = pool.submit(vault.index.build_index_async)
+            assert entered.wait(5)
+            assert vault.index.is_queryable()
+            release.set()
+            future = build.result(5)
+        assert future.done()
+        assert future.result().chunks_indexed == 0
+        assert vault.index.is_queryable()
+    finally:
+        release.set()
+        vault.close()
+
+
 @pytest.mark.parametrize("kind", ["sync", "async", "legacy"])
 def test_failed_build_keeps_primary_okf_write_and_existing_listing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str

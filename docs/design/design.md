@@ -1155,6 +1155,8 @@ readiness. Earlier attempts still publish their own outcomes, so an old completi
 cannot make a newer rebuild appear ready and a later recovery cannot erase an
 older waiter's failure. Warm reuse requires no unfinished build attempt, a valid
 completion marker, matching provenance, and stored documents (including tombstones).
+Checking those conditions does not clear an existing queryable verdict. The
+lifecycle clears readiness only after it determines that a cold build is needed.
 Concurrent file edits or builds started after the barrier are not isolated from
 the subsequent file mutation; this remains a prior-work boundary, not a snapshot.
 
@@ -1178,8 +1180,9 @@ successful outcome, then waits for the refresh within one 60-second deadline.
 No scheduled attempt is permitted for disk-only compatibility; failed, cancelled
 and interrupted attempts reject every dependent mutation before file changes.
 This retries retained dirty
-paths and propagates job errors; a timeout refuses the dependent mutation
-before it changes files. Merely observing an empty queue would not prove
+paths and propagates job errors, including a `TimeoutError` raised by refresh
+work. Only expiration of the shared wait budget is reported as a refresh timeout;
+either case refuses the dependent mutation before it changes files. Merely observing an empty queue would not prove
 a successful refresh. Link-resolution failures now fail the dirty-path job
 and retain its paths, while a primary parse error survives a second failure
 during graph recovery. Follow-up embeddings need not finish, but earlier
