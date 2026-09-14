@@ -74,7 +74,7 @@ The bearer-token mode above shares one subject across every authenticated caller
 "sk_ci_yyyyyyyy"     = "service:ci-bot"
 ```
 
-Each token resolves to a distinct subject string for downstream attribution. Subject strings are opaque: the `<kind>:<id>` convention (`user:`, `service:`, `token:`) is documentation only. When `BEARER_TOKENS_FILE` is set it overrides `BEARER_TOKEN` (a `WARNING` is logged if both are present). A missing or malformed file aborts startup with `ConfigurationError` rather than silently denying every request.
+Each token resolves to a distinct subject string for downstream attribution. For OKF provenance these remain service credentials: writes use the server's tool actor, and confirmed reviews in `elicit` mode use `human:local`. `trust-auth` verification refuses them. Subject strings are opaque: the `<kind>:<id>` convention (`user:`, `service:`, `token:`) is documentation only. When `BEARER_TOKENS_FILE` is set it overrides `BEARER_TOKEN` (a `WARNING` is logged if both are present). A missing or malformed file aborts startup with `ConfigurationError` rather than silently denying every request.
 
 ______________________________________________________________________
 
