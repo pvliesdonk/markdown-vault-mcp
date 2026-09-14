@@ -893,7 +893,7 @@ class TestPullFailureIsDiagnosable:
             enable_pull=True, enable_push=False, repo_path=git_repo_pair.local_path
         )
 
-        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.git"):
+        with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
             result = strategy.force_pull()
 
         assert result.reason == PULL_REASON_CONFLICT_RESOLUTION_FAILED
@@ -906,6 +906,12 @@ class TestPullFailureIsDiagnosable:
         assert "kind=pull" in message
         assert "cause=" in message
         assert "the operator said no" in message
+        detail = [r.getMessage() for r in caplog.records]
+        assert (
+            "git_pull_rebase_no_unmerged_paths "
+            "action=stop_conflict_resolution" in detail
+        )
+        assert not any("git_pull_conflict_resolution_exhausted" in m for m in detail)
 
     def test_a_caused_pull_warns_and_a_timer_tick_does_not(
         self, git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture

@@ -78,10 +78,9 @@ def resolve_rebase_conflicts(
             # cycle while the divergence stands; the rebase's own stderr
             # reaches the one-time transition line as its ``cause=``.
             logger.debug(
-                "Git pull: rebase stopped with no unmerged paths; not a "
-                "content conflict"
+                "git_pull_rebase_no_unmerged_paths action=stop_conflict_resolution"
             )
-            break
+            return list(saved.items())
 
         for rel_path in conflicting:
             # Save the MCP version (the commit being rebased).
@@ -140,14 +139,17 @@ def resolve_rebase_conflicts(
         # returncode != 0 means the next commit also has conflicts —
         # loop around and resolve again.
 
-    # Exhausted iterations or no conflicting files after non-zero continue.
+    # Natural loop exit means every iteration found conflicts and every
+    # rebase --continue failed: the safety cap is the only remaining exit.
     # DEBUG, not ERROR (#1287): a clone stuck on the same divergence hits this
     # cap on every pull cycle, and that repetition is what let the reported
     # incident scroll past unnoticed.  The transition into the unsynced state
     # is logged once, loudly, by SyncHealthTracker; this line keeps the detail
     # for whoever is diagnosing it.
     logger.debug(
-        "Git pull: conflict resolution loop exceeded %d iterations", max_iterations
+        "git_pull_conflict_resolution_exhausted max_iterations=%s saved_paths=%s",
+        max_iterations,
+        len(saved),
     )
     return list(saved.items())
 
