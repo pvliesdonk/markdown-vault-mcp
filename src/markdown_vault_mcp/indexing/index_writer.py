@@ -1,6 +1,6 @@
 """Single-owner writer for FTS and vector indexes.
 
-See `docs/superpowers/specs/2026-05-31-issue-559-single-writer-for-indexes-design.md`.
+See docs/design/design.md and docs/design/reference/python-futures.md.
 """
 
 from __future__ import annotations
@@ -109,6 +109,7 @@ class IndexWriter:
         self._thread: threading.Thread | None = None
         self._submit_lock = threading.Lock()
         self._closed = threading.Event()
+        self._crashed = False
         self._dirty_lock = threading.Lock()
         self._dirty_paths: set[str] = set()
         self._dirty_embeddings: set[str] = set()
@@ -155,14 +156,17 @@ class IndexWriter:
         itself (e.g. ``ProcessDirtyPaths`` submitting
         ``FlushDirtyEmbeddings``) are accepted during shutdown drain so
         the dirty sets can flush before the sentinel pops.  External
-        submissions after :meth:`close` raise.
+        submissions after :meth:`close` raise. A crashed writer rejects all
+        submissions, including those from cancellation callbacks on its worker.
 
         Raises:
-            RuntimeError: If :meth:`close` has been called from a thread
-                other than the writer's own worker thread.
+            RuntimeError: If the writer crashed, or it is closed and the
+                submission comes from outside its worker thread.
         """
         with self._submit_lock:
-            if self._closed.is_set() and threading.current_thread() is not self._thread:
+            if self._closed.is_set() and (
+                self._crashed or threading.current_thread() is not self._thread
+            ):
                 msg = "IndexWriter is closed; cannot submit new jobs"
                 raise RuntimeError(msg)
             future: Future[Any] = Future()
@@ -183,11 +187,11 @@ class IndexWriter:
         process exit kills the remainder.
         """
         with self._submit_lock:
-            if self._closed.is_set():
-                return
+            newly_closed = not self._closed.is_set()
             self._closed.set()
-        self._queue.put(_SHUTDOWN_SENTINEL)
-        if self._thread is not None:
+        if newly_closed:
+            self._queue.put(_SHUTDOWN_SENTINEL)
+        if self._thread is not None and threading.current_thread() is not self._thread:
             self._thread.join(timeout=timeout)
 
     def is_closed(self) -> bool:
@@ -320,23 +324,32 @@ class IndexWriter:
                 # leak).  Subsequent external submits fail fast with
                 # RuntimeError; drained Futures unblock waiters with
                 # CancelledError instead of hanging.
-                with self._submit_lock:
-                    self._closed.set()
-                    while True:
-                        try:
-                            queued = self._queue.get_nowait()
-                        except queue.Empty:
-                            break
-                        if queued is _SHUTDOWN_SENTINEL:
-                            continue
-                        _, pending_future = cast("tuple[Any, Future[Any]]", queued)
-                        if not pending_future.cancel() and not pending_future.done():
-                            pending_future.set_exception(_CancelledError())
+                self._abort_pending()
                 raise
             finally:
                 with self._in_flight_lock:
                     self._in_flight_kind = None
                     self._write_generation += 1
+
+    def _abort_pending(self) -> None:
+        """Close and drain atomically; notify cancelled callers outside the lock."""
+        pending: list[Future[Any]] = []
+        with self._submit_lock:
+            self._closed.set()
+            self._crashed = True
+            while True:
+                try:
+                    queued = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                if queued is not _SHUTDOWN_SENTINEL:
+                    _, future = cast("tuple[Any, Future[Any]]", queued)
+                    pending.append(future)
+        # Future callbacks may take their owner's scheduling lock or submit
+        # another job. Calling them under _submit_lock reverses that lock order.
+        for future in pending:
+            if not future.cancel() and not future.done():
+                future.set_exception(_CancelledError())
 
 
 @dataclass

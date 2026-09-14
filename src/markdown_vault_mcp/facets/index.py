@@ -172,7 +172,9 @@ class IndexFacet:
 
         Caller may ``.result()`` to wait or fire-and-forget. Warm-restart
         short-circuit returns an already-resolved Future without queuing a
-        job, mirroring :meth:`IndexFacet.build_index`.
+        job, mirroring :meth:`IndexFacet.build_index`. The Future includes the
+        completion-marker write and readiness publication; failure in either
+        fails the build. Pending work can be cancelled before execution begins.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.

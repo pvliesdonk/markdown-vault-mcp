@@ -28,6 +28,16 @@ def _mutate(col: Vault, operation: str) -> None:
         assert col.writer.okf_convert_links(folder="links").links_converted == 1
     elif operation == "generate":
         assert col.writer.okf_generate_index(folder="notes").entries == 1
+    elif operation == "rename":
+        assert (
+            col.writer.rename(
+                "notes/target.md", "notes/new.md", update_links=True
+            ).updated_links
+            == 1
+        )
+    elif operation == "move":
+        col.writer.move_folder("notes", "moved")
+        assert "[[moved/target]]" in (col.source_dir / "links/source.md").read_text()
     else:
         col.writer.write("notes/new.md", "# New\n")
 
@@ -45,7 +55,9 @@ def _vault(root: Path, *, maintain: bool = False) -> Vault:
 
 
 @pytest.mark.parametrize("kind", ["sync", "async", "legacy"])
-@pytest.mark.parametrize("operation", ["convert", "generate", "maintain"])
+@pytest.mark.parametrize(
+    "operation", ["convert", "generate", "rename", "move", "maintain"]
+)
 def test_mutation_waits_for_build_finalization(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str, operation: str
 ) -> None:
@@ -104,7 +116,7 @@ def test_failed_finalization_rejects_mutation_with_build_failure(
                 with pytest.raises(TimeoutError):
                     mutation.result(0.1)
                 release.set()
-                if kind == "sync":
+                if kind != "legacy":
                     with pytest.raises(OSError, match="completion marker failed"):
                         build.result(5)
                 else:
@@ -132,21 +144,24 @@ def test_refresh_and_finalization_share_one_timeout_budget(
     col = _vault(tmp_path)
     pending: Future[None] = Future()
     pending.set_result(None)
-    result = Mock(wraps=pending.result)
-    wait = Mock(return_value=False)
+    result = Mock(side_effect=TimeoutError)
+    build = Mock()
     try:
         with monkeypatch.context() as patch:
-            patch.setattr(col._coordinator.writer, "submit", lambda _job: pending)
+            patch.setattr(
+                col._coordinator._builds,
+                "enqueue_refresh",
+                lambda _writer: (build, pending),
+            )
             patch.setattr(pending, "result", result)
             patch.setattr(
                 module.time, "monotonic", Mock(side_effect=[100.0, 100.2, 100.7])
             )
-            patch.setattr(col._coordinator._readiness, "wait", wait)
             with pytest.raises(
                 TimeoutError, match="dependent mutation was not started"
             ):
                 col._coordinator.prepare_index_read(timeout=1)
-            result.assert_called_once_with(timeout=pytest.approx(0.8))
-            wait.assert_called_once_with(pytest.approx(0.3))
+            build.require_success.assert_called_once_with(pytest.approx(0.8))
+            result.assert_called_once_with(timeout=pytest.approx(0.3))
     finally:
         col.close()

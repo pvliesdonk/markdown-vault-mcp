@@ -1,7 +1,8 @@
 """Build-readiness state machine for the index coordinator.
 
 Encapsulates the (built, done-event, error) triple that was
-formerly scattered across Vault. Sole owner: IndexWriteCoordinator.
+formerly scattered across Vault. BuildLifecycle owns production transitions;
+IndexWriteCoordinator delegates query observation to this projection (#1483).
 
 Invariant: a captured build error never gates queryability —
 ``is_queryable`` ignores it, ``wait`` does not raise on it,

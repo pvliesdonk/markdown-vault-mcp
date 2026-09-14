@@ -799,8 +799,9 @@ with a captured error; `wait_until_queryable` reports that as
 **Cold-start background FTS (issue #513 PR1, tool-layer wait
 boundary)**: when the persisted FTS DB is cold (sentinel absent),
 the MCP server lifespan calls
-`IndexFacet.start_background_build_index()` to spawn a daemon
-thread that runs `build_index()` to completion. Bucket-3/4 calls
+`IndexFacet.build_index_async()` to schedule the build on the single writer.
+The legacy `start_background_build_index()` method uses the same lifecycle once
+per coordinator lifetime (#1483). Bucket-3/4 calls
 arriving at the MCP layer go through the
 `needs_queryable` decorator (in
 `src/markdown_vault_mcp/_server_queryable.py`), which blocks via
@@ -1122,16 +1123,59 @@ writer. The `on_write` callback (git commit) is submitted to a separate
 background worker queue as before; that queue is unrelated to the
 IndexWriter and is drained in `close()` step 2.
 
+### Build lifecycle ownership (#1483)
+
+`BuildLifecycle` owns build scheduling, execution, persistent markers and readiness
+publication. `IndexWriteCoordinator` remains the facade for build APIs, writer
+observation and dirty-path routing. `ReadinessState` is the latest-attempt
+projection consumed by existing query APIs; it does not decide mutation safety.
+
+Each request has a `BuildAttempt` with a stable outcome and public Future. The
+writer runs the scan and both marker writes in one command. The lifecycle records
+its outcome and updates readiness before completing that Future. Synchronous
+builds wait on the same Future returned by asynchronous builds. The legacy
+one-shot method schedules that same command without spawning another thread.
+Async marker failures therefore propagate through the Future instead of reporting
+success while readiness reports failure. Existing cancellation and process-signal
+classification remain intact.
+
+| Captured build state | Index-dependent mutation policy |
+| --- | --- |
+| No build requested | Refresh known dirty paths; retain disk-only rename/move support. OKF generators still require a built index. |
+| Pending or running | Wait within the shared build/refresh deadline. |
+| Succeeded, including marker publication | Wait for the queued refresh, then proceed. |
+| Failed during submission, scan, or marker I/O | Raise `IndexUnavailableError(reason="build_failed")` before mutation. |
+| Cancelled before execution or interrupted during finalization | Reject mutation with `reason="never_built"`; do not classify cancellation as a failed scan. |
+| Caller deadline expired | Raise `TimeoutError`; leave the build running, cancel the dependent refresh if still pending. |
+
+The scheduling lock orders build submission and mutation-barrier capture; it is
+never held during waits. Only the latest scheduled attempt updates global
+readiness. Earlier attempts still publish their own outcomes, so an old completion
+cannot make a newer rebuild appear ready and a later recovery cannot erase an
+older waiter's failure. Warm reuse requires no unfinished build attempt, a valid
+completion marker, matching provenance, and stored documents (including tombstones).
+Concurrent file edits or builds started after the barrier are not isolated from
+the subsequent file mutation; this remains a prior-work boundary, not a snapshot.
+
+The public build Future is distinct from the writer's dispatch Future: dispatch
+cancellation must settle the public attempt even when its command never runs.
+The writer closes and drains its pending queue atomically but delivers cancellation
+callbacks after releasing its submission lock. Once crashed it rejects even
+worker-originated submissions; normal shutdown still permits internal follow-ups.
+`close()` joins an already-closing or crashed writer before downstream teardown.
+[Python Future completion and cancellation](reference/python-futures.md) records
+the external ordering this design depends on.
+
 **Index-dependent mutations (#1464).** Link conversion, reserved-index
 generation, note rename with `update_links=True`, and folder move refresh
 prior queued writes before reading index data. `DocumentManager` receives
 `IndexWriteCoordinator.prepare_index_read` as an optional callback; the OKF
 migration manager uses the same hook, covering both library and MCP calls.
-The coordinator submits `ProcessDirtyPaths` to the FIFO,
-then waits on its Future and build-readiness finalization within one 60-second
-deadline. The writer job can finish before the synchronous build caller publishes
-its completion marker and readiness state; async callbacks and the legacy
-background wrapper must also finish that publication before the readiness check.
+The build lifecycle captures the preceding attempt and submits `ProcessDirtyPaths`
+to the FIFO under one scheduling lock. The coordinator requires that attempt's
+successful outcome, then waits for the refresh within one 60-second deadline.
+No scheduled attempt is permitted for disk-only compatibility; failed, cancelled
+and interrupted attempts reject every dependent mutation before file changes.
 This retries retained dirty
 paths and propagates job errors; a timeout refuses the dependent mutation
 before it changes files. Merely observing an empty queue would not prove
@@ -1203,7 +1247,7 @@ The contract is:
   itself call write methods on the same Vault instance (deadlock).
 - Callbacks must not raise; exceptions are logged and swallowed.
 - `close()` shuts the writer down first (with a 30 s drain timeout), then
-  joins the background-build thread, drains the write-callback queue,
+  drains the index writer (including builds), drains the write-callback queue,
   closes the git strategy, and closes SQLite.
 
 See `docs/superpowers/specs/2026-05-31-issue-559-single-writer-for-indexes-design.md`
@@ -1586,12 +1630,10 @@ resolved path escapes `source_dir`, it returns `None` instead of raising.
    drain timeout). The writer drains any pending jobs, including the
    final `ProcessDirtyPaths`/`FlushDirtyEmbeddings` chain, so deferred FTS
    upserts and embedding flushes complete before downstream resources tear
-   down (#559).
-2. Joins the background-build thread (if `start_background_build_index()`
-   spawned one and it has not yet returned).
-3. Drains the background write-callback queue (waits for pending git commits).
-4. Closes the `GitWriteStrategy` (flushes and pushes pending commits).
-5. Closes the SQLite database connection.
+   down (#559). Legacy background builds use this same queue (#1483).
+2. Drains the background write-callback queue (waits for pending git commits).
+3. Closes the `GitWriteStrategy` (flushes and pushes pending commits).
+4. Closes the SQLite database connection.
 
 The full lifecycle contract is:
 

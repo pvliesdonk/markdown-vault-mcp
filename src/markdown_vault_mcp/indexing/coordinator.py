@@ -13,35 +13,34 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-import threading
 import time
 from concurrent.futures import CancelledError, Future
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
 from markdown_vault_mcp.fts_index import INDEX_SEMANTICS_VERSION
+from markdown_vault_mcp.indexing.build_lifecycle import BuildLifecycle
 from markdown_vault_mcp.indexing.index_writer import (
     BuildEmbeddings,
-    BuildIndex,
     IndexWriter,
     ProcessDirtyPaths,
     ReindexAll,
     WriterContext,
     run_build_embeddings,
-    run_build_index,
     run_flush_dirty_embeddings,
     run_process_dirty_paths,
     run_reindex_all,
 )
 from markdown_vault_mcp.indexing.readiness import ReadinessState
-from markdown_vault_mcp.types import IndexStats, ReindexResult
 
 if TYPE_CHECKING:
+    import threading
     from collections.abc import Iterable
     from pathlib import Path
 
     from markdown_vault_mcp.interfaces import KeywordIndex
     from markdown_vault_mcp.managers.index import IndexManager
+    from markdown_vault_mcp.types import IndexStats, ReindexResult
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +54,7 @@ class IndexWriteCoordinator:
         fts: KeywordIndex,
         index_mgr: IndexManager,
         index_path: Path | str | None,
-        file_write_lock: threading.RLock,
+        file_write_lock: threading.RLock,  # noqa: ARG002 — retained constructor API
         embed_model_name: str | None = None,
         max_chunk_chars_override: int | None = None,
         title_field: str = "title",
@@ -65,7 +64,8 @@ class IndexWriteCoordinator:
     ) -> None:
         self._fts = fts
         self._index_path = index_path
-        self._file_write_lock = file_write_lock
+        # file_write_lock remains a constructor compatibility parameter; build
+        # scheduling no longer borrows the file-mutation lock.
         # Current embedding model + explicit char-cap override, compared
         # against the values recorded in FTS meta to decide whether a warm
         # restart is valid (#649). These are the STABLE inputs to the derived
@@ -94,17 +94,14 @@ class IndexWriteCoordinator:
         # Canonical form ("" for the default set, else a sorted JSON list).
         self._attachment_extensions = attachment_extensions
         self._readiness = ReadinessState()
-        # Deprecated background-build thread bookkeeping (guarded by the
-        # injected file-write lock, matching the former Vault locking).
-        self._background_build_thread: threading.Thread | None = None
-        self._background_started: bool = False
+        self._builds = BuildLifecycle(fts, self._readiness, self._can_warm_start)
         # Per-async-variant error capture (#561), surfaced via get_index_status.
         self._last_reindex_error: BaseException | None = None
         self._last_build_embeddings_error: BaseException | None = None
         self._writer_ctx = WriterContext(index_manager=index_mgr)
         self._writer = IndexWriter(
             runners={
-                "build_index": run_build_index,
+                "build_index": self._builds.run,
                 "reindex_all": run_reindex_all,
                 "build_embeddings": run_build_embeddings,
                 "process_dirty_paths": run_process_dirty_paths,
@@ -215,23 +212,25 @@ class IndexWriteCoordinator:
         write lock; this is a boundary for prior writes, not a snapshot against
         concurrent edits. A queued initial build runs first; this refresh does
         not require or initiate a build for disk-only library operations.
-        Also wait for readiness finalization, which a synchronous build performs
-        on its calling thread after the writer job completes. Both waits share
-        the same deadline.
+        The captured build attempt must succeed, including marker publication,
+        before index data is used. Failed, cancelled and interrupted attempts
+        reject every dependent mutation. An unscheduled build remains optional
+        for disk-only operations. Build and refresh share one deadline.
 
         Args:
             timeout: Maximum total seconds for refresh and build finalization.
 
         Raises:
             TimeoutError: If the refresh does not finish within the budget.
+            IndexUnavailableError: If the preceding build did not succeed.
             Exception: If the index writer rejects or fails the refresh.
         """
         deadline = time.monotonic() + timeout
-        future = self._writer.submit(ProcessDirtyPaths())
+        build, future = self._builds.enqueue_refresh(self._writer)
         try:
+            if build is not None:
+                build.require_success(max(0.0, deadline - time.monotonic()))
             future.result(timeout=max(0.0, deadline - time.monotonic()))
-            if not self._readiness.wait(max(0.0, deadline - time.monotonic())):
-                raise TimeoutError("Index build finalization is still in progress")
         except TimeoutError as exc:
             future.cancel()
             raise TimeoutError(
@@ -319,54 +318,17 @@ class IndexWriteCoordinator:
                 return False
         return True
 
-    def build_index(self, *, force: bool = False) -> IndexStats:
-        """Scan source_dir and build the FTS index (warm restart is O(1))."""
-        # The gate counts ANY documents row — tombstones included (#1129): an
-        # all-tombstone vault (every candidate skipped) is a completed build
-        # and must warm-restart; a truly empty index still rebuilds. Reported
-        # stats stay on the live count.
-        if (
-            not force
-            and self._fts.is_build_completed()
+    def _can_warm_start(self) -> bool:
+        """Reuse a complete index with matching provenance, including tombstones."""
+        return (
+            self._fts.is_build_completed()
             and self._chunking_meta_matches()
             and self._fts.has_documents()
-        ):
-            live = self._fts.count_documents()
-            logger.debug(
-                "build_index: index already populated (%d docs), skipping",
-                live,
-            )
-            self._readiness.mark_built()
-            return IndexStats(
-                documents_indexed=live,
-                chunks_indexed=0,
-                skipped=0,
-            )
-        self._readiness.begin_sync_build()
-        self._fts.clear_build_completed()
-        try:
-            try:
-                result: IndexStats = self._writer.submit(
-                    BuildIndex(force=force)
-                ).result()
-            except CancelledError:
-                # Drain cancellation (writer shutdown) is not a build failure — skip fail_build (#590).
-                logger.debug("sync_build_index_cancelled")
-                raise
-            except BaseException as exc:
-                # Record a build-job failure (incl. BaseException) as "failed", re-raise (#591).
-                self._readiness.fail_build(exc)
-                raise
-            try:
-                self._fts.set_build_completed()
-            except Exception as exc:
-                self._readiness.fail_build(exc)
-                raise
-            self._readiness.mark_built()
-            return result
-        finally:
-            # Always re-set the done-event begin_sync_build cleared, so waiters never hang (#587).
-            self._readiness.mark_done()
+        )
+
+    def build_index(self, *, force: bool = False) -> IndexStats:
+        """Build synchronously, waiting for the same outcome as async callers."""
+        return self.build_index_async(force=force).result()
 
     def reindex(self) -> ReindexResult:
         """Incrementally update the index based on file changes.
@@ -407,73 +369,13 @@ class IndexWriteCoordinator:
     # ------------------------------------------------------------------
 
     def build_index_async(self, *, force: bool = False) -> Future[IndexStats]:
-        """Submit a full FTS index build and return the Future.
+        """Schedule a build whose Future includes marker and readiness publication.
 
-        Warm-restart short-circuit returns an already-resolved Future
-        without touching the writer queue, mirroring :meth:`build_index`.
+        An idle warm restart returns an already-resolved Future. A failed marker
+        write fails this Future just like a failed scan. Cancellation is possible
+        until execution begins; cancelling a pending build does not mark it failed.
         """
-        # Same tombstone-inclusive gate as build_index (#1129).
-        if (
-            not force
-            and self._fts.is_build_completed()
-            and self._chunking_meta_matches()
-            and self._fts.has_documents()
-        ):
-            live = self._fts.count_documents()
-            logger.debug(
-                "build_index_async: index already populated (%d docs), skipping",
-                live,
-            )
-            self._readiness.mark_built()
-            fut: Future[IndexStats] = Future()
-            fut.set_result(
-                IndexStats(
-                    documents_indexed=live,
-                    chunks_indexed=0,
-                    skipped=0,
-                )
-            )
-            return fut
-
-        self._readiness.begin_async_build()
-        self._fts.clear_build_completed()
-
-        try:
-            future = self._writer.submit(BuildIndex(force=force))
-        except BaseException as exc:
-            self._readiness.fail_build(exc)
-            raise
-
-        future.add_done_callback(self._on_build_index_done)
-        return future
-
-    def _on_build_index_done(self, fut: Future[IndexStats]) -> None:
-        """Finalize the readiness state machine from the async build Future (#585)."""
-        try:
-            try:
-                fut.result()
-            except CancelledError:
-                # Drain cancellation is not a build failure — skip fail_build (#590).
-                logger.debug("async_build_index_cancelled")
-                return
-            except BaseException as exc:
-                logger.exception("Async index build failed")
-                self._readiness.fail_build(exc)
-                return
-            try:
-                self._fts.set_build_completed()
-            except Exception as exc:
-                logger.exception(
-                    "Async index build: set_build_completed failed after build"
-                )
-                self._readiness.fail_build(exc)
-                return
-            self._readiness.mark_built()
-        finally:
-            # Guarantee waiters unblock even if an unexpected BaseException
-            # escapes set_build_completed: it propagates (so the worker can
-            # respond to the signal), but the done-event must still be set.
-            self._readiness.mark_done()
+        return self._builds.submit(self._writer, force=force)
 
     def _on_reindex_done(self, fut: Future[ReindexResult]) -> None:
         """Capture async reindex outcome for visibility via get_index_status (#561)."""
@@ -550,42 +452,13 @@ class IndexWriteCoordinator:
     # ------------------------------------------------------------------
 
     def start_background_build_index(self) -> None:
-        """Spawn a daemon thread that runs :meth:`build_index` to completion.
+        """Schedule a background build once through the shared build lifecycle.
 
         .. deprecated:: 1.28
-           Superseded by :meth:`build_index_async`. Retained only for legacy
-           tests. One-shot per coordinator lifetime; idempotent.
+           Superseded by :meth:`build_index_async`. One-shot per coordinator
+           lifetime, including submission failure. No extra thread is created.
         """
-
-        def _worker() -> None:
-            try:
-                self.build_index()
-            except Exception as exc:
-                self._readiness.record_error(exc)
-                logger.exception("Background index build failed")
-            except BaseException as exc:
-                self._readiness.record_error(exc)
-                logger.exception("Background index build interrupted")
-                raise
-            finally:
-                self._readiness.mark_done()
-
-        with self._file_write_lock:
-            if self._background_started:
-                return
-            self._background_started = True
-            self._readiness.begin_background_build()
-            thread = threading.Thread(
-                target=_worker,
-                name="markdown-vault-mcp.background-build",
-                daemon=True,
-            )
-            self._background_build_thread = thread
-            try:
-                thread.start()
-            except Exception as exc:
-                self._readiness.fail_build(exc)
-                raise
+        self._builds.start_once(self._writer)
 
     def should_use_background_build(self) -> bool:
         """Return True iff the lifespan should route to the background build.
@@ -604,20 +477,8 @@ class IndexWriteCoordinator:
     # ------------------------------------------------------------------
 
     def close(self, timeout: float = 30.0) -> None:
-        """Join the legacy background-build thread, then close the writer.
+        """Drain and close the writer, including all scheduled build attempts.
 
-        Closes the writer AFTER joining the background build (whose worker
-        submits jobs to the writer). Does NOT close the FTS index — the
-        owner (Vault) closes FTS last, after the writer is drained.
+        Does not close the FTS index; Vault closes it after the writer drains.
         """
-        with self._file_write_lock:
-            thread = self._background_build_thread
-        if thread is not None and thread.is_alive():
-            thread.join(timeout=timeout)
-            if thread.is_alive():
-                logger.warning(
-                    "close: background build thread did not exit within %ss; "
-                    "abandoning (daemon thread does not block process)",
-                    timeout,
-                )
         self._writer.close(timeout=timeout)

@@ -475,9 +475,7 @@ def test_sync_build_failure_records_failed_status(tmp_path: Path) -> None:
 def test_async_build_set_completed_failure_records_failed_status(
     tmp_path: Path,
 ) -> None:
-    # #585: if set_build_completed() raises inside the async done-callback,
-    # the failure must be recorded — not silently swallowed by the Future
-    # machinery, which would leave the vault stuck reporting "building".
+    # Marker failure is part of the logical build outcome for every entry point.
     coord = make_coordinator(tmp_path)
     try:
 
@@ -486,11 +484,8 @@ def test_async_build_set_completed_failure_records_failed_status(
 
         coord._fts.set_build_completed = _boom  # type: ignore[method-assign]
         fut = coord.build_index_async()
-        fut.result(timeout=5)  # the build job itself succeeds
-        # The done-callback runs on the writer thread and fires AFTER the
-        # Future wakes its waiters; wait for the writer to go idle so
-        # _on_build_index_done's fail_build() has completed before we read status.
-        coord.wait_for_drain(timeout=5)
+        with pytest.raises(RuntimeError, match="sentinel boom"):
+            fut.result(timeout=5)
         status = coord.get_index_status()
         assert status["status"] == "failed"
         assert status["error"] is not None and "sentinel boom" in status["error"]
@@ -524,7 +519,7 @@ def test_sync_build_set_completed_failure_records_failed_status(
 
 def test_async_build_job_failure_records_failed_status(tmp_path: Path) -> None:
     # #585: a cold async build-job failure (the runner raises) must be recorded
-    # via _on_build_index_done's fut.result() guard -> status "failed", not "building".
+    # by the lifecycle -> status "failed", not "building".
     coord = make_coordinator(tmp_path)
     try:
         coord.writer._runners["build_index"] = _raising_runner
@@ -552,9 +547,8 @@ def test_async_set_completed_base_exception_does_not_strand(
     tmp_path: Path,
 ) -> None:
     # #585: a BaseException from set_build_completed is NOT recorded as a build
-    # failure (that conflation is #584's scope) and propagates so the worker can
-    # respond to a real signal — but _on_build_index_done's `finally` sets done so
-    # waiters never hang.
+    # failure and propagates so the worker can respond to a real signal.
+    # The lifecycle publishes the interruption before completing the Future.
     coord = make_coordinator(tmp_path)
     try:
 
@@ -563,7 +557,8 @@ def test_async_set_completed_base_exception_does_not_strand(
 
         coord._fts.set_build_completed = _boom  # type: ignore[method-assign]
         fut = coord.build_index_async()
-        fut.result(timeout=5)  # the build job itself succeeds
+        with pytest.raises(_BaseBoom, match="base sentinel boom"):
+            fut.result(timeout=5)
         coord.wait_for_drain(timeout=5)
         # done-event set by the finally -> wait_until_queryable returns promptly
         # (never_built) instead of hanging to its timeout.
@@ -689,72 +684,45 @@ def test_on_build_embeddings_done_records_genuine_failure(tmp_path: Path) -> Non
         coord.close(timeout=5)
 
 
-def test_on_build_index_done_ignores_cancellation(tmp_path: Path) -> None:
-    # #590: a cancelled BuildIndex future (writer-shutdown drain) must NOT flip the
-    # readiness status to "failed" — unlike the diagnostic-only reindex/embeddings
-    # errors (separate last_*_error fields), fail_build() drives the top-level status.
+@pytest.mark.parametrize("cancelled", [True, False])
+def test_cancelled_build_dispatch_unblocks_without_failed_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancelled: bool
+) -> None:
+    """Both cancellation representations from the writer settle the public build."""
     coord = make_coordinator(tmp_path)
     try:
-        fut: Future[object] = Future()
-        assert fut.cancel()
-        coord._on_build_index_done(fut)  # must NOT raise
-        status = coord.get_index_status()
-        assert status["status"] != "failed"
-        assert status["error"] is None
+        queued: Future[object] = Future()
+        if cancelled:
+            queued.cancel()
+        else:
+            queued.set_exception(CancelledError())
+        monkeypatch.setattr(coord.writer, "submit", lambda _job: queued)
+        build = coord.build_index_async()
+        with pytest.raises(CancelledError):
+            build.result(timeout=0)
+        with pytest.raises(IndexUnavailableError) as error:
+            coord.wait_until_queryable(timeout=0)
+        assert error.value.reason == "never_built"
+        assert coord.get_index_status()["error"] is None
     finally:
         coord.close(timeout=5)
 
 
-def test_on_build_index_done_records_genuine_failure(tmp_path: Path) -> None:
-    # #590: a genuine (non-cancellation) build failure must still drive
-    # fail_build -> status "failed" (guards the carve-out from over-swallowing).
+@pytest.mark.parametrize(
+    "error", [RuntimeError("build boom"), _CallbackBaseBoom("boom")]
+)
+def test_failed_build_dispatch_publishes_failure_before_future(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> None:
     coord = make_coordinator(tmp_path)
     try:
-        fut: Future[object] = Future()
-        fut.set_exception(RuntimeError("real build boom"))
-        coord._on_build_index_done(fut)
-        status = coord.get_index_status()
-        assert status["status"] == "failed"
-        assert status["error"] is not None and "real build boom" in status["error"]
-        assert coord.is_queryable() is False
-    finally:
-        coord.close(timeout=5)
-
-
-def test_on_build_index_done_records_baseexception(tmp_path: Path) -> None:
-    # #590/#585: a genuine non-cancellation BaseException from the build job must
-    # still drive fail_build -> status "failed". Pins the `except BaseException`
-    # breadth on the build callback (narrowing it to `except Exception` would let
-    # a BaseException escape fail_build and strand the index at "building").
-    coord = make_coordinator(tmp_path)
-    try:
-        fut: Future[object] = Future()
-        fut.set_exception(_CallbackBaseBoom("base build boom"))
-        coord._on_build_index_done(fut)  # must NOT raise
-        status = coord.get_index_status()
-        assert status["status"] == "failed"
-        assert status["error"] is not None and "base build boom" in status["error"]
-        assert coord.is_queryable() is False
-    finally:
-        coord.close(timeout=5)
-
-
-def test_on_build_index_done_cancellation_unblocks_waiters(tmp_path: Path) -> None:
-    # #590: when a BuildIndex is cancelled mid-drain (done-event cleared by
-    # begin_async_build, the realistic pre-drain state), the carve-out's
-    # `finally: mark_done()` must still fire so a waiter unblocks to never_built
-    # instead of hanging to its timeout. Pins the liveness invariant the
-    # ignores_cancellation test misses (it starts from the pre-set done-event).
-    coord = make_coordinator(tmp_path)
-    try:
-        coord._readiness.begin_async_build()  # clears _done
-        fut: Future[object] = Future()
-        assert fut.cancel()
-        coord._on_build_index_done(fut)
-        with pytest.raises(IndexUnavailableError) as ei:
-            coord.wait_until_queryable(timeout=2)
-        assert ei.value.reason == "never_built"
-        assert coord.get_index_status()["status"] != "failed"
+        queued: Future[object] = Future()
+        queued.set_exception(error)
+        monkeypatch.setattr(coord.writer, "submit", lambda _job: queued)
+        with pytest.raises(type(error)):
+            coord.build_index_async().result(timeout=0)
+        assert coord.get_index_status()["status"] == "failed"
+        assert coord._readiness.error is error
     finally:
         coord.close(timeout=5)
 
@@ -894,6 +862,7 @@ def test_build_index_records_job_baseexception_as_failed(tmp_path: Path) -> None
         coord.close(timeout=5)
 
 
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
 def test_build_index_set_completed_baseexception_does_not_strand(
     tmp_path: Path,
 ) -> None:
@@ -923,7 +892,7 @@ def test_build_index_set_completed_baseexception_does_not_strand(
 def test_build_index_drain_cancellation_not_recorded_as_failed(tmp_path: Path) -> None:
     # #590/#591: a drain CancelledError on the sync BuildIndex future (the writer
     # cancelled a queued build during shutdown) is NOT a build failure — skip
-    # fail_build and re-raise, mirroring the async _on_build_index_done carve-out.
+    # fail_build and re-raise, matching the shared async cancellation policy.
     coord = make_coordinator(tmp_path)
     try:
         cancelled: Future[object] = Future()
