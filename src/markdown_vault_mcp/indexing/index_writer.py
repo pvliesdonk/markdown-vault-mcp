@@ -376,25 +376,21 @@ def run_process_dirty_paths(
         msg = "WriterContext.writer must be set before running jobs"
         raise RuntimeError(msg)
     snapshot = ctx.writer.drain_dirty_paths()
+    refreshed: set[str] = set()
     try:
-        ctx.index_manager.process_dirty_paths(snapshot)
+        ctx.index_manager.process_dirty_paths(snapshot, on_refreshed=refreshed.add)
     except Exception:
-        # Restore the snapshot so a future ProcessDirtyPaths job can
-        # retry these paths.  Without this, a non-per-path failure
-        # (sqlite3.OperationalError on disk-full, WAL lock, etc.)
-        # silently drops the entire snapshot — the dirty set was
-        # cleared by drain_dirty_paths().  The exception still
-        # propagates to the Future for caller observability.
+        # Retain the whole snapshot: a graph failure may need all of it retried.
+        # The Future still surfaces the original error to dependent mutations.
         ctx.writer.mark_dirty(snapshot)
         raise
-    # After FTS is up-to-date, queue the same paths for vector re-embedding.
-    # The writer is now the sole owner of embedding flushes (no inline
-    # callback inside semantic search).  Follow-up submissions from
-    # inside the writer thread succeed even during shutdown drain so the
-    # vector-dirty set flushes before the worker exits.
-    if snapshot:
-        ctx.writer.mark_embedding_dirty(snapshot)
-        ctx.writer.submit(FlushDirtyEmbeddings())
+    finally:
+        # Healthy siblings must reach the vector index even when another path
+        # or graph resolution fails. Follow-ups from the writer thread remain
+        # accepted during shutdown, so they also participate in its drain.
+        if refreshed:
+            ctx.writer.mark_embedding_dirty(refreshed)
+            ctx.writer.submit(FlushDirtyEmbeddings())
 
 
 def run_flush_dirty_embeddings(

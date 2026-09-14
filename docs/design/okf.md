@@ -518,6 +518,8 @@ locking.
 
 Cost note: `generate_index` now waits for a successful queued FTS refresh
 before deriving its listing (#1464), just like explicit link conversion.
+The refresh queues behind an in-flight initial build before the generator checks
+readiness, covering convention maintenance during cold startup as well.
 The wait is bounded at 60 seconds; failures leave the existing listing in
 place and convention maintenance logs a warning. The primary note write
 is not rolled back. Follow-up embedding work need not finish, although

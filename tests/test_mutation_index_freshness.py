@@ -11,7 +11,7 @@ import pytest
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
 
@@ -52,10 +52,12 @@ def test_mutation_waits_for_prior_writes(
     release = threading.Event()
     original = vault._index_mgr.process_dirty_paths
 
-    def held_refresh(paths: set[str]) -> None:
+    def held_refresh(
+        paths: set[str], *, on_refreshed: Callable[[str], None] | None = None
+    ) -> None:
         started.set()
         assert release.wait(5), "test did not release the index writer"
-        original(paths)
+        original(paths, on_refreshed=on_refreshed)
 
     monkeypatch.setattr(vault._index_mgr, "process_dirty_paths", held_refresh)
     with ThreadPoolExecutor(max_workers=1) as pool:
@@ -251,3 +253,116 @@ def test_failed_deletion_retains_dirty_path(
         assert vault.index.get_index_status()["dirty_paths"] == 1
     vault._coordinator.prepare_index_read()
     assert vault._fts.get_note("target.md") is None
+
+
+@pytest.mark.parametrize("operation", ["convert", "generate", "maintain"])
+def test_okf_refresh_waits_behind_initial_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    from typing import Any
+
+    started, release = threading.Event(), threading.Event()
+    (tmp_path / "index.md").write_text('---\nokf_version: "0.2"\n---\n# Root\n')
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "notes/target.md").write_text("# Target\n")
+    (tmp_path / "links").mkdir()
+    (tmp_path / "links/source.md").write_text("See [[target]].\n")
+    col = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, okf_write=operation == "maintain"),
+    )
+    original = col._index_mgr.build_index
+
+    def held_build(*, force: bool = False) -> Any:
+        started.set()
+        assert release.wait(5)
+        return original(force=force)
+
+    monkeypatch.setattr(col._index_mgr, "build_index", held_build)
+    try:
+        build = col.index.build_index_async()
+        assert started.wait(5)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            try:
+                if operation == "maintain":
+                    mutation = pool.submit(col.writer.write, "notes/new.md", "# New\n")
+                else:
+                    mutation = pool.submit(_mutate, col, operation)
+                with pytest.raises(TimeoutError):
+                    mutation.result(timeout=0.1)
+                release.set()
+                build.result(timeout=5)
+                mutation.result(timeout=5)
+            finally:
+                release.set()
+        if operation == "maintain":
+            assert "/notes/new.md" in (tmp_path / "notes/index.md").read_text()
+            assert "new.md" in (tmp_path / "notes/log.md").read_text()
+    finally:
+        release.set()
+        col.close()
+
+
+@pytest.mark.parametrize("operation", ["convert", "generate"])
+def test_okf_refresh_still_rejects_never_built_index(
+    tmp_path: Path, operation: str
+) -> None:
+    from markdown_vault_mcp.exceptions import IndexUnavailableError
+
+    col = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
+    try:
+        with pytest.raises(IndexUnavailableError, match="Index not built"):
+            _mutate(col, operation)
+        assert not list(tmp_path.rglob("*.md"))
+    finally:
+        col.close()
+
+
+@pytest.mark.parametrize("failure", ["read", "graph"])
+def test_failed_refresh_does_not_starve_healthy_embeddings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from typing import Any
+
+    import markdown_vault_mcp.managers.index as index_module
+    from markdown_vault_mcp.indexing import FlushDirtyEmbeddings, ProcessDirtyPaths
+    from tests.conftest import MockEmbeddingProvider
+
+    col = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(read_only=False, embeddings_path=tmp_path / ".vectors"),
+        embedding_provider=MockEmbeddingProvider(),
+    )
+    original = index_module.parse_note
+
+    def fail_bad(path: Path, *args: Any, **kwargs: Any) -> Any:
+        if path.name.startswith("bad"):
+            raise OSError("persistent read failure")
+        return original(path, *args, **kwargs)
+
+    def fail_graph() -> int:
+        raise OSError("persistent graph failure")
+
+    try:
+        col.index.build_index()
+        col.index.build_embeddings()
+        with monkeypatch.context() as patch:
+            if failure == "read":
+                patch.setattr(index_module, "parse_note", fail_bad)
+            else:
+                patch.setattr(col._fts, "resolve_vault_wikilinks", fail_graph)
+            for name in ("bad1.md", "bad2.md"):
+                (tmp_path / name).write_text("# Bad\n")
+                col._coordinator.writer.mark_dirty([name])
+            for name in ("healthy1.md", "healthy2.md"):
+                (tmp_path / name).write_text(f"# {name}\n")
+                col._coordinator.writer.mark_dirty([name])
+                with pytest.raises(OSError, match="persistent"):
+                    col._coordinator.writer.submit(ProcessDirtyPaths()).result(5)
+                # Wait for the follow-up embedding job despite retained FTS work.
+                col._coordinator.writer.submit(FlushDirtyEmbeddings()).result(5)
+                assert col._vectors is not None
+                assert name in {m["path"] for m in col._vectors._metadata}
+                assert col.index.get_index_status()["dirty_paths"] >= 2
+    finally:
+        col.close()

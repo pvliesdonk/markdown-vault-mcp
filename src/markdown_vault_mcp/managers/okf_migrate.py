@@ -116,8 +116,8 @@ class OkfMigrationManager:
             TimeoutError: If the queued index refresh exceeds its wait budget.
         """
         self._doc_mgr.ensure_writable()
-        self._require_built()
         self._doc_mgr.ensure_index_current()
+        self._require_built()
         folder = normalize_folder(folder)
         files_changed = 0
         converted = 0
@@ -178,8 +178,8 @@ class OkfMigrationManager:
             TimeoutError: If the queued index refresh exceeds its wait budget.
         """
         self._doc_mgr.ensure_writable()
-        self._require_built()
         self._doc_mgr.ensure_index_current()
+        self._require_built()
         from markdown_vault_mcp.types import NoteInfo
 
         folder = normalize_folder(folder) or ""

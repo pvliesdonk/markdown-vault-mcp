@@ -896,7 +896,9 @@ class IndexManager:
     # Deferred embedding flush
     # ------------------------------------------------------------------
 
-    def process_dirty_paths(self, paths: set[str]) -> None:
+    def process_dirty_paths(
+        self, paths: set[str], *, on_refreshed: Callable[[str], None] | None = None
+    ) -> None:
         """Re-parse each path and update FTS, skipping per-path failures (#559).
 
         After all paths are processed, ``resolve_vault_wikilinks()`` runs
@@ -928,6 +930,12 @@ class IndexManager:
         ``resolve_vault_wikilinks()`` call also runs on failure to repair the
         graph where possible. A graph error fails the job, preserving dirty
         paths for retry; if parsing already failed, that primary error wins.
+
+        Args:
+            paths: Vault-relative paths to refresh.
+            on_refreshed: Optional callback for each successfully refreshed row,
+                allowing the writer to advance its embeddings even if a sibling
+                or the final graph refresh fails.
         """
         if not paths:
             return
@@ -936,6 +944,8 @@ class IndexManager:
             for path in paths:
                 try:
                     self._process_dirty_path(path)
+                    if on_refreshed is not None:
+                        on_refreshed(path)
                 except (OSError, UnicodeDecodeError, ValueError) as exc:
                     # Refresh the other notes before failing the job. The
                     # writer restores the snapshot, including failed paths.

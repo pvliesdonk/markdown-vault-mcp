@@ -5,8 +5,12 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from markdown_vault_mcp.indexing import (
     BuildEmbeddings,
@@ -336,8 +340,12 @@ class _FakeIndexManager:
         self.build_embeddings_calls.append(force)
         return 42
 
-    def process_dirty_paths(self, paths: set[str]) -> None:
+    def process_dirty_paths(
+        self, paths: set[str], *, on_refreshed: Callable[[str], None]
+    ) -> None:
         self.process_paths_calls.append(paths)
+        for path in paths:
+            on_refreshed(path)
 
     def flush_dirty_embeddings(self, paths: set[str]) -> None:
         self.flush_paths_calls.append(paths)
@@ -446,7 +454,7 @@ def test_process_dirty_paths_empty_set_is_noop():
             time.sleep(0.01)
         # process_dirty_paths is called with an empty set;
         # FlushDirtyEmbeddings is NOT submitted because
-        # run_process_dirty_paths guards with `if snapshot:`.
+        # run_process_dirty_paths queues only successfully refreshed paths.
         assert im.process_paths_calls == [set()]
         assert im.flush_paths_calls == []
     finally:
@@ -472,7 +480,12 @@ class _FailingProcessIM:
     process_paths_calls: list[set[str]] = field(default_factory=list)
     flush_paths_calls: list[set[str]] = field(default_factory=list)
 
-    def process_dirty_paths(self, paths: set[str]) -> None:
+    def process_dirty_paths(
+        self,
+        paths: set[str],
+        *,
+        on_refreshed: Callable[[str], None],  # noqa: ARG002 - fails before progress
+    ) -> None:
         self.process_paths_calls.append(paths)
         raise RuntimeError("boom_process")
 

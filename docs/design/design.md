@@ -1136,9 +1136,14 @@ and retain its paths, while a primary parse error survives a second failure
 during graph recovery. Follow-up embeddings need not finish, but earlier
 queued jobs can delay the refresh. The wait happens outside the file-write
 lock. It waits behind an already queued initial build without adding a build
-prerequisite to disk-only rename/move calls. Per-path read/validation failures
+prerequisite to disk-only rename/move calls. OKF generators check readiness
+after the refresh, so convention maintenance also waits behind a queued build;
+a never-built index still fails their existing readiness check. Per-path read/validation failures
 refresh the other notes, then fail the job and retain the snapshot; tombstone
-read and stale-row deletion failures also remain retryable. The boundary
+read and stale-row deletion failures also remain retryable. A per-row success
+callback lets the writer enqueue embeddings for completed rows even if a sibling
+or final graph resolution fails. Failed snapshots remain retryable without
+starving healthy notes of vector updates. The boundary
 guarantees visibility of prior writes, not isolation from concurrent
 edits. Graph read tools keep their existing optional wait and stale metadata.
 No link-extraction or stored-row semantics changed, so no index semantics
