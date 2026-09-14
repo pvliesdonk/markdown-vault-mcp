@@ -243,8 +243,8 @@ class TestAbsentCommitClaimIsReported:
 
     The fallback itself is correct; what was missing is any signal that the
     operator's configured attribution is inert. It looks identical to a
-    deployment that never configured it, and the one nearby startup warning
-    in ``git/strategy.py`` is suppressed exactly when a claim *is* configured.
+    deployment that never configured it. The request-side resolver reports
+    unusable configured claims so the two cases are distinguishable.
     """
 
     def test_absent_claim_warns_once_and_falls_back(

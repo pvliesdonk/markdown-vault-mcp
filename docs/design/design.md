@@ -2893,9 +2893,9 @@ the claim was `absent`, `empty`, or `not_a_string` — and only for an
 authenticated caller, since with no token there is nothing to be missing.
 Per field rather than per key, because both fields may be configured to the
 same claim and each deserves its own line; the memory is cleared by
-`configure_identity_claims()`, so a reconfiguration gets a fresh answer. The
-startup warning in `git/strategy.py` is suppressed exactly when a claim *is*
-configured, which is why the signal lives at the resolution site.
+`configure_identity_claims()`, so a reconfiguration gets a fresh answer.
+Only the resolution site can distinguish an unusable configured claim from
+an intentionally static author identity.
 
 `resolve_mcp_principal()` is the **only** place the subject rules live
 (#1231) — `human:<subject>`, and the `"local"` sentinel counting as no human
