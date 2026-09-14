@@ -1,0 +1,21 @@
+#cfg-wizard { display: flex; flex-direction: column; gap: 1rem; }
+.cfg-core { display: grid; gap: 0.75rem; }
+.cfg-field { display: flex; flex-direction: column; gap: 0.25rem; }
+.cfg-label { font-weight: 600; }
+.cfg-help { color: var(--md-default-fg-color--light); }
+.cfg-field input, .cfg-field select {
+  padding: 0.4rem 0.5rem; border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 4px; background: var(--md-default-bg-color); color: var(--md-default-fg-color);
+}
+.cfg-secret input { border-color: var(--md-accent-fg-color); }
+.cfg-advanced { border: 1px solid var(--md-default-fg-color--lightest); border-radius: 6px; padding: 0.5rem 1rem; }
+.cfg-advanced h4 { margin: 0.75rem 0 0.25rem; }
+.cfg-output { display: grid; gap: 1rem; }
+.cfg-tab-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; }
+.cfg-copy { cursor: pointer; padding: 0.2rem 0.6rem; border-radius: 4px; border: 1px solid var(--md-default-fg-color--lighter); background: var(--md-default-bg-color); }
+.cfg-pre { background: var(--md-code-bg-color); padding: 0.75rem; border-radius: 6px; overflow-x: auto; white-space: pre; }
+.cfg-warning { color: #b26a00; }
+[data-md-color-scheme="slate"] .cfg-warning { color: #e0a83a; }
+.cfg-error { color: #c0392b; }
+[data-md-color-scheme="slate"] .cfg-error { color: #e74c3c; }
+.cfg-info { color: var(--md-default-fg-color--light); }
