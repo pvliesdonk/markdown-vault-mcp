@@ -136,18 +136,6 @@ class GitWriteStrategy:
             :attr:`DEFAULT_COMMIT_NAME`.
         commit_email: Git committer email; defaults to
             :attr:`DEFAULT_COMMIT_EMAIL`.
-        commit_name_claim: OIDC claim key configured for the author name.
-        commit_email_claim: OIDC claim key configured for the author email.
-
-            .. deprecated::
-                The two claim kwargs no longer drive claim extraction — the
-                strategy runs on the write-callback dispatcher thread, where
-                no request token exists (#1218). Claims are now resolved at
-                the MCP tool edge into the ``principal`` passed per
-                invocation (register the keys via
-                :func:`markdown_vault_mcp._identity.configure_identity_claims`).
-                They remain accepted, and still inform the startup
-                identity warning (:meth:`_check_identity`).
         git_lfs: When ``True`` (default), run ``git lfs pull`` during
             lazy initialisation so LFS pointers are resolved before the
             first write is committed.  Requires ``git-lfs`` to be on
@@ -157,6 +145,12 @@ class GitWriteStrategy:
             :class:`~markdown_vault_mcp.exceptions.ConfigurationError`
             if ``origin`` uses SSH transport instead of HTTPS.
 
+    Author identity arrives per write as a resolved ``principal``. OIDC
+    claim-key registration belongs to
+    :func:`markdown_vault_mcp._identity.configure_identity_claims`, not this
+    constructor. The removed claim keywords raise :exc:`TypeError`;
+    ``git_lfs`` and ``repo_path`` must be passed by keyword (#1236).
+
     Example::
 
         strategy = GitWriteStrategy(token="ghp_...", push_delay_s=30)
@@ -165,9 +159,9 @@ class GitWriteStrategy:
         strategy.close()  # final flush
     """
 
-    #: Default committer name used when none is set in git config or env.
+    #: Fallback committer name when commit_name is empty or omitted.
     DEFAULT_COMMIT_NAME = "markdown-vault-mcp"
-    #: Default committer email used when none is set in git config or env.
+    #: Fallback committer email when commit_email is empty or omitted.
     DEFAULT_COMMIT_EMAIL = "noreply@markdown-vault-mcp"
 
     def __init__(
@@ -181,8 +175,7 @@ class GitWriteStrategy:
         push_delay_s: float = 30.0,
         commit_name: str | None = None,
         commit_email: str | None = None,
-        commit_name_claim: str | None = None,
-        commit_email_claim: str | None = None,
+        *,
         git_lfs: bool = True,
         repo_path: Path | None = None,
     ) -> None:
@@ -197,8 +190,6 @@ class GitWriteStrategy:
         self._push_delay_s = push_delay_s
         self._commit_name = commit_name or self.DEFAULT_COMMIT_NAME
         self._commit_email = commit_email or self.DEFAULT_COMMIT_EMAIL
-        self._commit_name_claim = commit_name_claim
-        self._commit_email_claim = commit_email_claim
         self._git_lfs = git_lfs
         # Retain the configured repo_path so methods invoked after construction
         # (e.g. force_pull / force_push) can reach the working tree without
@@ -308,14 +299,13 @@ class GitWriteStrategy:
         self._bootstrap.validate_startup(repo_path)
 
     def _ensure_write_init(self) -> None:
-        """One-time initialisation for the write path (identity/push/LFS)."""
+        """One-time initialisation for the write path (remote/push/LFS)."""
         if self._write_init_done or self._git_root is None:
             return
         with self._lock:
             if self._write_init_done or self._git_root is None:
                 return
             self._bootstrap.check_remote_protocol(self._git_root)
-            self._check_identity()
             if self._enable_push:
                 self._push_scheduler.push_if_unpushed()
             # LFS pull runs under the git lock to avoid overlapping git ops.
@@ -497,37 +487,6 @@ class GitWriteStrategy:
                 path,
                 operation,
                 exc_info=True,
-            )
-
-    def _check_identity(self) -> None:
-        """Warn once at startup if no git committer identity is configured.
-
-        Runs ``git config user.email`` against the repo.  If it returns
-        nothing the repo (and global) git config have no identity set, so
-        commits will use the identity supplied to this strategy instance.
-        """
-        if self._git_root is None:
-            return
-        try:
-            result = subprocess.run(
-                ["git", "-C", str(self._git_root), "config", "user.email"],
-                capture_output=True,
-                text=True,
-            )
-        except FileNotFoundError:
-            return
-        if not result.stdout.strip() and (
-            self._commit_name == self.DEFAULT_COMMIT_NAME
-            and self._commit_email == self.DEFAULT_COMMIT_EMAIL
-            and not self._commit_name_claim
-            and not self._commit_email_claim
-        ):
-            logger.warning(
-                "Git: no user.email in git config — commits will use "
-                "committer identity '%s <%s>'. Set MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME "
-                "and MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL to override.",
-                self._commit_name,
-                self._commit_email,
             )
 
     def _lfs_pull(self, env: dict[str, str] | None = None) -> None:

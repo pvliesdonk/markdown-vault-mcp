@@ -956,110 +956,6 @@ class TestVaultCloseWiresStrategy:
         assert closed == [True]
 
 
-class TestCheckIdentity:
-    """Tests for the _check_identity() warning path."""
-
-    def test_check_identity_warns_when_no_user_email(
-        self, git_repo: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """_check_identity warns when git config has no user.email."""
-
-        from unittest.mock import patch
-
-        # Remove user.email from the repo config so git config returns empty.
-        subprocess.run(
-            ["git", "-C", str(git_repo), "config", "--unset", "user.email"],
-            capture_output=True,
-        )
-
-        strategy = GitWriteStrategy()
-        strategy._git_root = git_repo
-
-        # Mock subprocess.run to return empty stdout (no user.email).
-        with patch("markdown_vault_mcp.git.subprocess.run") as mock_run:
-            mock_run.return_value.stdout = ""
-            strategy._check_identity()
-
-        # Verify warning was logged with the expected message.
-        assert any(
-            "no user.email in git config" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
-        # Verify the default identity is mentioned in the warning.
-        assert any(
-            "markdown-vault-mcp" in record.message
-            and "noreply@markdown-vault-mcp" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
-
-    def test_check_identity_no_warning_when_user_email_set(
-        self, git_repo: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """_check_identity does not warn when git config has user.email."""
-        from unittest.mock import patch
-
-        strategy = GitWriteStrategy()
-        strategy._git_root = git_repo
-
-        # Mock subprocess.run to return non-empty stdout (user.email is set).
-        with patch("markdown_vault_mcp.git.subprocess.run") as mock_run:
-            mock_run.return_value.stdout = "existing@example.com\n"
-            strategy._check_identity()
-
-        # Verify no warning was logged.
-        assert not any(
-            "no user.email in git config" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
-
-    def test_check_identity_no_warning_when_custom_identity_set(
-        self, git_repo: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """_check_identity does not warn when a custom identity is set."""
-        from unittest.mock import patch
-
-        strategy = GitWriteStrategy(
-            commit_name="CustomBot", commit_email="bot@custom.local"
-        )
-        strategy._git_root = git_repo
-
-        with patch("markdown_vault_mcp.git.subprocess.run") as mock_run:
-            mock_run.return_value.stdout = ""
-            strategy._check_identity()
-
-        # Verify no warning was logged.
-        assert not any(
-            "no user.email in git config" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
-
-    def test_check_identity_no_warning_when_oidc_claims_set(
-        self, git_repo: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """_check_identity does not warn when OIDC claims are set."""
-        from unittest.mock import patch
-
-        strategy = GitWriteStrategy(
-            commit_name_claim="name", commit_email_claim="email"
-        )
-        strategy._git_root = git_repo
-
-        with patch("markdown_vault_mcp.git.subprocess.run") as mock_run:
-            mock_run.return_value.stdout = ""
-            strategy._check_identity()
-
-        # Verify no warning was logged.
-        assert not any(
-            "no user.email in git config" in record.message
-            for record in caplog.records
-            if record.levelname == "WARNING"
-        )
-
-
 class TestTokenRedactionInLogs:
     """Token must never appear in log output — even when it leaks via stderr."""
 
@@ -5379,10 +5275,11 @@ class TestGitClaimConfig:
         assert config.git.commit_name_claim is None
         assert config.git.commit_email_claim is None
 
-    def test_claim_config_passed_to_strategy(self, tmp_path: Path) -> None:
-        """to_vault_instances() passes claim keys to GitWriteStrategy and registers
-        them with the identity layer (#1160), which now performs the actual
-        claim extraction at the MCP tool edge."""
+    def test_claim_config_registered_beside_strategy(self, tmp_path: Path) -> None:
+        """Assembly builds the strategy and registers keys with the identity layer.
+
+        Claim extraction happens at the MCP tool edge (#1160).
+        """
         from markdown_vault_mcp import _identity
         from markdown_vault_mcp.config import ProjectConfig
 
@@ -5396,8 +5293,6 @@ class TestGitClaimConfig:
             instances = to_vault_instances(config)
             strategy = instances.on_write
             assert isinstance(strategy, GitWriteStrategy)
-            assert strategy._commit_name_claim == "name"
-            assert strategy._commit_email_claim == "email"
             assert _identity._name_claim == "name"
             assert _identity._email_claim == "email"
         finally:
@@ -5751,8 +5646,6 @@ class TestPrincipalThroughDispatcher:
         strategy = GitWriteStrategy(
             commit_name="bot",
             commit_email="bot@srv.com",
-            commit_name_claim="name",
-            commit_email_claim="email",
         )
         dispatcher = WriteCallbackDispatcher(strategy)
         f = git_repo / "note.md"

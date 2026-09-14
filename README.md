@@ -36,6 +36,8 @@ Python integrations use `VaultSettings` for configuration. See the
 [Vault API](docs/api/vault.md#migrating-from-4x) for the migration from the
 removed 4.x constructor keywords and the
 [configuration API](docs/api/config.md#migrating-from-4x) for typed assembly.
+The [Git API](docs/api/git.md#migrating-from-4x) covers removal of the deprecated
+strategy claim keywords and the keyword-only LFS and repository options.
 <!-- DOMAIN-END -->
 
 ## What you can do with it

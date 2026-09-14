@@ -144,10 +144,6 @@ def _build_git_strategy(
     from markdown_vault_mcp.git import GitWriteStrategy
 
     git = config.git
-    # The claim kwargs below no longer drive claim extraction — they inform
-    # only the startup identity warning. Registration with the identity layer
-    # happens in ``to_vault_instances`` (#1231), not here: configuring
-    # identity is not the git builder's job.
     return GitWriteStrategy(
         token=token,
         repo_url=repo_url,
@@ -158,8 +154,6 @@ def _build_git_strategy(
         push_delay_s=git.push_delay_s,
         commit_name=git.commit_name,
         commit_email=git.commit_email,
-        commit_name_claim=git.commit_name_claim,
-        commit_email_claim=git.commit_email_claim,
         git_lfs=git.lfs,
         repo_path=config.source_dir,
     )
