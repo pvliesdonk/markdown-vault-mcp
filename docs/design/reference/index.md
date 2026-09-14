@@ -20,3 +20,4 @@ follow OKF v0.2 (`generated`, `verified`, `stale_after`).
 - [GitHub planning objects](/github-planning-objects.md): milestones, issue relationships, and PR design material used by roadmapping and releases.
 - [FastMCP 4 protocol and server behaviour](/fastmcp-4.md): SDK field names, protocol-era elicitation, resource path screening, per-server tasks, and OAuth route mounting used by the v8 template migration (#1271).
 - [fastmcp-pvl-core transfer errors and retries](/fastmcp-transfer.md): sink-selected HTTP errors, release on failure, and successful-upload replay. Read before changing `_transfer_sink.py` error handling or transfer retry guidance.
+- [Authenticated subjects and human attribution](/authenticated-subjects.md): bearer client identifiers, token claims, and the limits of OAuth identity for OKF provenance. Read before changing `_identity.py`.

@@ -22,6 +22,8 @@ This module replaces both reads with a single resolution at the tool edge:
   :class:`~markdown_vault_mcp.write_callback.WriteCallbackDispatcher` snapshots
   it into the queue item at ``fire()`` time so it survives the hop onto the
   dispatcher thread.
+
+External identity semantics: ``docs/design/reference/authenticated-subjects.md``.
 """
 
 from __future__ import annotations
@@ -37,9 +39,6 @@ if TYPE_CHECKING:
     from typing import Any
 
 logger = logging.getLogger(__name__)
-
-#: ``get_subject()`` sentinel for startup auth mode ``none`` — not a human.
-_LOCAL_SUBJECT = "local"
 
 # The OIDC claim keys used for display_name/email resolution. Registered once
 # at startup (config assembly) via ``configure_identity_claims``; module-level
@@ -85,15 +84,16 @@ class Principal:
         display_name: Human-readable name from the configured name claim, or
             ``None`` when the claim is unconfigured or absent.
         email: Email address from the configured email claim, or ``None``.
-        kind: ``"human"`` when an authenticated subject is present;
-            ``"local"`` otherwise (no auth, or a token with no usable
-            subject).
+        kind: ``"human"`` for a usable token ``sub``; ``"service"`` for
+            a caller identified only by client ID; ``"local"`` without an
+            attributable token. OAuth service subjects remain a known
+            limitation (#1480).
     """
 
     subject: str | None
     display_name: str | None
     email: str | None
-    kind: Literal["human", "local"]
+    kind: Literal["human", "service", "local"]
 
     def okf_actor(self, version: str) -> str:
         """Return the OKF provenance actor this principal stamps.
@@ -197,9 +197,12 @@ def resolve_mcp_principal() -> Principal:
     """Resolve the caller's :class:`Principal` from the MCP request context.
 
     Call inside a tool handler (it reads the request context). Subject rules
-    match ``fastmcp_pvl_core.get_subject``: a subject other than the
-    ``"local"`` sentinel makes a ``"human"`` principal; the sentinel or no
-    subject makes a ``"local"`` one with ``subject=None``. Display name and
+    retain the authenticated identifier from ``fastmcp_pvl_core.get_subject``.
+    A usable token ``sub`` retains human attribution; a client-ID fallback
+    is a service identity, including static and mapped bearer credentials.
+    Without an attributable token the principal is local. OAuth service
+    tokens carrying ``sub`` remain a known limitation (#1480), since OAuth
+    does not universally distinguish people from applications. Display name and
     email are read from the token claims using the keys registered via
     :func:`configure_identity_claims` (non-empty strings only); a configured
     claim an authenticated caller's token does not carry is reported once
@@ -219,8 +222,11 @@ def resolve_mcp_principal() -> Principal:
     claims = get_claims()
     display_name = _resolve_claim(claims, _name_claim, "display_name")
     email = _resolve_claim(claims, _email_claim, "email")
-    if subject and subject != _LOCAL_SUBJECT:
+    if subject and claims is not None:
         return Principal(
-            subject=subject, display_name=display_name, email=email, kind="human"
+            subject=subject,
+            display_name=display_name,
+            email=email,
+            kind="human" if _claim_value(claims, "sub") else "service",
         )
     return Principal(subject=None, display_name=display_name, email=email, kind="local")

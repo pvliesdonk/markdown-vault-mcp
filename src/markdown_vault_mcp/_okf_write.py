@@ -16,15 +16,15 @@ the stamps' departure from it is #1372.
 
 Actor resolution rules (design §6):
 
-- ``human:<subject>`` when an authenticated subject is present.
-- a tool actor ``markdown-vault-mcp/<version>`` otherwise (unauthenticated, or a
-  non-tool write with no request identity).
+- ``human:<subject>`` for a principal classified as human by the identity layer.
+- a tool actor ``markdown-vault-mcp/<version>`` otherwise (service credentials,
+  unauthenticated callers, or a non-tool write with no request identity).
 
 Those rules are applied once, in :mod:`markdown_vault_mcp._identity` —
-including that ``get_subject()`` returns the sentinel ``"local"`` under auth
-mode ``none``, which counts as *no human identity* for both actor resolution
-and ``okf_verify``. This module reads a ``Principal`` and never the request
-context directly (#1231); a second copy of the rules is a second thing to keep
+including that a caller without a token has no human identity even when
+``get_subject()`` returns the no-auth sentinel ``"local"``. An actual token
+subject with that spelling is distinct. This module reads a ``Principal``
+and never the request context directly (#1231); a second copy of the rules is a second thing to keep
 in agreement.
 """
 
@@ -128,10 +128,11 @@ def resolve_human_subject() -> str | None:
     """Return the authenticated human subject, or ``None`` if unattributable.
 
     Used by ``okf_verify`` to decide whether a verification is attributable
-    (``None`` under auth mode ``none`` or when no subject is present).
+    (``None`` for service credentials or when no human subject is present).
 
-    Prefers the principal bound at the tool edge (#1160), whose ``subject`` is
-    already ``None`` for a non-human caller.  With none bound — a driver that
+    Prefers the principal bound at the tool edge (#1160), whose ``kind``
+    distinguishes human attribution from a service identifier. With none bound —
+    a driver that
     is not the MCP server, or a call outside ``write_identity_scope`` — it
     resolves one from the request context rather than re-deriving the rules
     here, so the rule that decides what counts as a human subject — including
@@ -140,16 +141,16 @@ def resolve_human_subject() -> str | None:
     principal = current_principal()
     if principal is None:
         principal = resolve_mcp_principal()
-    return principal.subject
+    return principal.subject if principal.kind == "human" else None
 
 
 def resolve_verify_subject() -> str:
     """Return the subject to stamp once an elicit-mode review is confirmed.
 
-    The authenticated subject when present, else the ``local`` sentinel. Under
+    The human principal's subject when present, else the ``local`` sentinel. Under
     ``OKF_VERIFY=elicit`` the elicitation — not the token — is the
-    human-presence proof, so a no-auth local human still records an attributable
-    ``human:local`` entry after confirming through the client UI.
+    human-presence proof, so a human using no auth or a service credential
+    records an attributable ``human:local`` entry after confirming through the client UI.
     """
     return resolve_human_subject() or _LOCAL_SUBJECT
 
