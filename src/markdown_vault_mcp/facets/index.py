@@ -57,7 +57,7 @@ class IndexFacet:
         return self._coordinator.is_queryable()
 
     def start_background_build_index(self) -> None:
-        """Spawn a daemon thread that runs :meth:`IndexFacet.build_index` to completion.
+        """Schedule a build once on the shared writer, without an extra thread.
 
         .. deprecated:: 1.28
            Superseded by :meth:`IndexFacet.build_index_async`. Retained for legacy tests.
@@ -172,7 +172,9 @@ class IndexFacet:
 
         Caller may ``.result()`` to wait or fire-and-forget. Warm-restart
         short-circuit returns an already-resolved Future without queuing a
-        job, mirroring :meth:`IndexFacet.build_index`.
+        job, mirroring :meth:`IndexFacet.build_index`. The Future includes the
+        completion-marker write and readiness publication; failure in either
+        fails the build. Pending work can be cancelled before execution begins.
 
         Args:
             force: When ``True``, drop and rebuild the index unconditionally.

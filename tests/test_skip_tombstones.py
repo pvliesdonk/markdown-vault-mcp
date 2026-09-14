@@ -20,7 +20,6 @@ distinguishable from a deletion. These tests pin:
 
 from __future__ import annotations
 
-import logging
 import sqlite3
 from typing import TYPE_CHECKING
 
@@ -572,7 +571,7 @@ class TestPipelines:
 
 
 def test_all_tombstone_vault_warm_restarts(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A vault whose only candidates are skipped short-circuits on restart."""
     from tests.test_index_coordinator import make_coordinator
@@ -590,13 +589,16 @@ def test_all_tombstone_vault_warm_restarts(
         coord.close(timeout=5)
 
     coord2 = make_coordinator(tmp_path, db=db)
+
+    def unexpected_scan(*, force: bool = False) -> None:  # noqa: ARG001
+        raise AssertionError("warm restart must not scan tombstoned notes again")
+
+    monkeypatch.setattr(
+        coord2._writer_ctx.index_manager, "build_index", unexpected_scan
+    )
     try:
-        with caplog.at_level(
-            logging.DEBUG, logger="markdown_vault_mcp.indexing.coordinator"
-        ):
-            stats = coord2.build_index()
+        stats = coord2.build_index()
         assert stats.documents_indexed == 0
-        assert any("index already populated" in r.getMessage() for r in caplog.records)
     finally:
         coord2.close(timeout=5)
 

@@ -2,6 +2,8 @@
 
 ## 2026-09-14
 
+- Added [Python Future completion and cancellation](python-futures.md) for #1483. Checked Python 3.14 documentation and pinned CPython v3.14.0 source; refuted callback-thread and result-completion assumptions against the implementation. Pinned the project guarantees to held-build and cancellation-callback regressions. Next review: 2027-03-14.
+
 - Added [Authenticated subjects and human attribution](authenticated-subjects.md) for #1463, checked against pinned sources matching installed FastMCP 4.0.3 and pvl-core 7.1.0, plus RFC 9068 and RFC 9700. Reproduced static bearer attribution through the real verifier and SDK auth context. OAuth service subjects remain a separate limitation (#1480). Next review: 2027-03-14.
 
 ## 2026-09-13

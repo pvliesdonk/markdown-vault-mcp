@@ -154,8 +154,7 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
         Only needed when files are modified outside this server — for example,
         by a text editor, a sync tool, or another process writing directly to
         the vault directory. Do NOT call this after using 'write', 'edit',
-        'delete', or 'rename' — those tools update the index immediately as
-        part of the operation.
+        'delete', or 'rename' — those tools queue index updates automatically.
 
         Change detection is hash-based, so an unchanged file is never
         re-parsed. Use force=True to drop the index and re-parse every file

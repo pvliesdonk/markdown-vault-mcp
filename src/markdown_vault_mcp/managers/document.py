@@ -129,6 +129,9 @@ class DocumentManager:
             ``ProcessDirtyPaths`` job.  ``None`` (default) leaves the
             DocumentManager FTS-side-effect-free, which is the contract
             used by the isolation tests.
+        sync_index: Refresh prior writes before an index-dependent mutation.
+            Called outside the file-write lock; errors abort before mutation.
+            ``None`` leaves synchronization to the direct manager caller.
         title_field: Frontmatter key consulted first when resolving document
             titles.  Must match the value the index managers use, or
             ``read()`` titles would diverge from search titles.
@@ -150,6 +153,7 @@ class DocumentManager:
         mark_paths_dirty: Callable[[Iterable[str]], None] | None = None,
         title_field: str = "title",
         okf_write_enrich: Callable[[str, WriteOperation], str] | None = None,
+        sync_index: Callable[[], None] | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
@@ -171,6 +175,7 @@ class DocumentManager:
             ),
         )
         self._mark_paths_dirty = mark_paths_dirty
+        self._sync_index = sync_index
         self._title_field = title_field
         # OKF enforced-write hook (#964): transforms the final note text
         # (stamp `generated`, clear `verified`) before it lands. None when
@@ -180,6 +185,15 @@ class DocumentManager:
     # ------------------------------------------------------------------
     # Validation helpers
     # ------------------------------------------------------------------
+
+    def ensure_index_current(self) -> None:
+        """Refresh queued index writes before deriving a file mutation from them.
+
+        The optional callback is wired by Vault. Call outside the file-write
+        lock so waiting cannot hold up another writer's completion.
+        """
+        if self._sync_index is not None:
+            self._sync_index()
 
     def _check_writable(self) -> None:
         """Raise ReadOnlyError if the vault is configured as read-only.
@@ -1116,6 +1130,7 @@ class DocumentManager:
 
         Raises:
             ReadOnlyError: If the vault is read-only.
+            TimeoutError: If the configured index refresh times out.
             DocumentNotFoundError: If *old_path* does not exist.
             DocumentExistsError: If *new_path* already exists.
             ConcurrentModificationError: If *if_match* is provided and does
@@ -1128,6 +1143,8 @@ class DocumentManager:
         updated_links = 0
         hint: str | None = None
         backlink_callbacks: list[tuple[Path, str]] = []
+        if update_links and is_note(old_path):
+            self.ensure_index_current()
 
         with self._file_write_lock:
             if is_note(old_path):
@@ -1464,6 +1481,7 @@ class DocumentManager:
 
         Raises:
             ReadOnlyError: If the vault is read-only.
+            TimeoutError: If the configured index refresh times out.
             DocumentNotFoundError: If *old_dir* is missing, not a directory,
                 or empty.
             DocumentExistsError: If any destination file already exists.
@@ -1477,6 +1495,7 @@ class DocumentManager:
                 on-disk state.
         """
         self._check_writable()
+        self.ensure_index_current()
 
         with self._file_write_lock:
             old_abs = self._validate_dir_path(old_dir)

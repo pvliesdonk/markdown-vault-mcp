@@ -545,10 +545,16 @@ Move an entire folder subtree to a new prefix and rewrite all vault links that p
 
 **Link rewrites:** after the move, all vault links pointing into the subtree (markdown links and wikilinks, including links between documents inside the moved subtree and backlinks from outside) are rewritten in a single pass. Rewriting is best-effort; a document that cannot be rewritten is listed in `failed_links` and does not abort the move.
 
-**Index:** updated immediately after the call; no `reindex` needed.
+**Index:** refresh is queued after the move; no `reindex` needed.
 
 !!! warning
     Link rewrites are not rolled back if the process is interrupted after the move phase begins. The move phase itself is not OS-failure-atomic: an OS error during file moves (permission error, full disk, concurrent removal) can leave the subtree partially moved with the index unchanged; run `reindex` to recover. Use `rename` for single-file moves where full atomicity is required.
+
+### Index freshness after writes
+
+Writes save files and queue index updates. A following disk `read` sees the saved file; search and graph reads may still see earlier index state. Use `wait_for_pending_writes=true` on supported read tools and inspect `_meta.index_stale` when freshness matters. No extra `reindex` is needed.
+
+`okf_convert_links`, `okf_generate_index`, `rename` with `update_links=true`, and `move_folder` wait for a queued index refresh before deriving changes from links or listings. They wait up to 60 seconds and fail before mutation if the refresh fails or times out. This covers prior writes, including targets outside the requested folder; concurrent edits are not isolated into a snapshot.
 
 ### OKF migration transforms
 

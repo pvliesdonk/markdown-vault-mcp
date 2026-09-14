@@ -1,7 +1,8 @@
 """Build-readiness state machine for the index coordinator.
 
 Encapsulates the (built, done-event, error) triple that was
-formerly scattered across Vault. Sole owner: IndexWriteCoordinator.
+formerly scattered across Vault. BuildLifecycle owns production transitions;
+IndexWriteCoordinator delegates query observation to this projection (#1483).
 
 Invariant: a captured build error never gates queryability —
 ``is_queryable`` ignores it, ``wait`` does not raise on it,
@@ -95,9 +96,9 @@ class ReadinessState:
     def record_error(self, exc: BaseException) -> None:
         """Record an error WITHOUT touching the done-event.
 
-        For the deprecated background worker, whose ``except`` records the
-        error and whose ``finally`` sets the done-event regardless. Leaves the
-        ``built`` flag untouched.
+        Compatibility transition from the former background worker, which
+        recorded errors separately from its final done-event update. Leaves the
+        ``built`` flag untouched; BuildLifecycle publishes production outcomes.
         """
         self._verdict = _Verdict(built=self._verdict.built, error=exc)
 

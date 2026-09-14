@@ -174,30 +174,30 @@ def test_start_background_build_index_captures_error(
 def test_start_background_build_index_idempotent(tmp_path: Path) -> None:
     col = Vault(source_dir=_vault(tmp_path))
     col.index.start_background_build_index()
-    first = col._coordinator._background_build_thread
+    first = col._coordinator._builds._latest
     assert first is not None
     col.index.start_background_build_index()
-    assert col._coordinator._background_build_thread is first
+    assert col._coordinator._builds._latest is first
     col.index.wait_until_queryable(timeout=5.0)
     col.index.start_background_build_index()
-    assert col._coordinator._background_build_thread is first
+    assert col._coordinator._builds._latest is first
     col.close()
 
 
-def test_start_background_build_index_one_shot_after_thread_start_failure(
+def test_start_background_build_index_one_shot_after_submission_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """If thread.start() itself raises, the captured-error path runs
-    synchronously: event set, error recorded, _background_started True.
+    """If writer submission raises, the captured-error path runs
+    synchronously: event set, error recorded, one-shot request recorded.
     A retry call is a no-op (one-shot)."""
     col = Vault(source_dir=_vault(tmp_path))
 
-    def boom_start(_self: threading.Thread) -> None:
-        raise RuntimeError("system thread exhaustion (simulated)")
+    def boom_submit(_job: object) -> None:
+        raise RuntimeError("writer submission failed (simulated)")
 
-    monkeypatch.setattr(threading.Thread, "start", boom_start)
+    monkeypatch.setattr(col._coordinator.writer, "submit", boom_submit)
 
-    with pytest.raises(RuntimeError, match=r"thread exhaustion"):
+    with pytest.raises(RuntimeError, match="submission failed"):
         col.index.start_background_build_index()
 
     # Event must be set; error recorded.
@@ -287,7 +287,7 @@ def test_get_index_status_queryable_when_built_with_captured_error(
 def test_get_index_status_building_in_flight(tmp_path: Path) -> None:
     col = Vault(source_dir=_vault(tmp_path))
     col._coordinator._readiness._done.clear()
-    col._coordinator._background_started = True
+    col._coordinator._builds._legacy_started = True
     status = col.index.get_index_status()
     assert status["status"] == "building"
     assert status["error"] is None
@@ -347,11 +347,11 @@ def test_mcp_tool_get_index_status_reports_queryable(
 
 
 # ---------------------------------------------------------------------------
-# close() joins background thread (Task 7)
+# close() drains the shared writer (including legacy builds)
 # ---------------------------------------------------------------------------
 
 
-def test_close_joins_background_thread(tmp_path: Path) -> None:
+def test_close_drains_legacy_build(tmp_path: Path) -> None:
     vault = _vault(tmp_path)
     for i in range(3):
         _seed(vault, f"n_{i}.md", f"# N{i}\n\nbody {i}\n")
@@ -360,9 +360,10 @@ def test_close_joins_background_thread(tmp_path: Path) -> None:
     )
     col.index.start_background_build_index()
     col.close()
-    thread = col._coordinator._background_build_thread
-    assert thread is not None
-    assert not thread.is_alive()
+    attempt = col._coordinator._builds._latest
+    assert attempt is not None
+    assert attempt.future.done()
+    assert attempt.future.result().documents_indexed == 3
 
 
 def test_close_before_start_is_safe(tmp_path: Path) -> None:
@@ -785,11 +786,13 @@ def test_decorator_respects_env_timeout_override(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", str(tmp_path / "s.json"))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_BUILD_TIMEOUT_S", "0.1")
 
-    # Mock build_index to never finish so the timeout fires.
+    # Hold the build until the timeout is observed, then release it before
+    # client teardown so no sleeping writer survives the test.
+    release = threading.Event()
     original = index_mod.IndexManager.build_index
 
     def hang(self, *, force: bool = False):  # type: ignore[no-untyped-def]
-        time_mod.sleep(60)
+        assert release.wait(10)
         return original(self, force=force)
 
     monkeypatch.setattr(index_mod.IndexManager, "build_index", hang)
@@ -803,8 +806,12 @@ def test_decorator_respects_env_timeout_override(
                 await client.call_tool("get_backlinks", {"path": "a.md"})
             except Exception as exc:
                 elapsed = time_mod.perf_counter() - start
-                assert elapsed < 1.0, f"timeout not honored: elapsed {elapsed:.2f}s"
+                # Transport and traceback rendering add time outside the wait.
+                assert "timed out after 0.1s" in str(exc)
+                assert elapsed < 5.0, f"timeout not honored: elapsed {elapsed:.2f}s"
                 return exc
+            finally:
+                release.set()
             raise AssertionError("expected the tool call to raise")
 
     exc = asyncio.run(_call())
@@ -996,7 +1003,7 @@ def test_synchronous_build_index_clears_prior_background_error(
     col._coordinator._readiness.fail_build(
         RuntimeError("simulated prior background failure")
     )
-    col._coordinator._background_started = True
+    col._coordinator._builds._legacy_started = True
     assert col.index.is_queryable() is False
 
     # Synchronous recovery build.
@@ -1096,7 +1103,7 @@ def test_synchronous_build_index_warm_path_clears_prior_background_error(
     col._coordinator._readiness.fail_build(
         RuntimeError("simulated prior background failure")
     )
-    col._coordinator._background_started = True
+    col._coordinator._builds._legacy_started = True
     assert col.index.is_queryable() is False
 
     # Warm-restart short-circuit recovery.

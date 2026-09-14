@@ -17,7 +17,7 @@ import logging
 import stat as stat_module
 import time
 from collections import Counter
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
@@ -53,6 +53,14 @@ _EMBEDDING_BATCH_SIZE = 4
 _EMBED_OK = 0  # embedded (or nothing to embed)
 _EMBED_KEPT = 1  # provider failed before mutation — existing vectors preserved
 _EMBED_DROPPED = 2  # dimension mismatch after delete — existing vectors removed
+
+
+_PreparedEmbedding = tuple[
+    str,
+    list[list[float]] | None,
+    list[dict[str, Any]] | None,
+    Literal["ready", "unchanged", "failed"],
+]
 
 
 class EmbeddingsManager:
@@ -1036,8 +1044,13 @@ class EmbeddingsManager:
         Only successful re-parses with empty chunk lists (note exists
         but contains no embeddable content), or paths that have been
         removed/are no longer ``.md`` files, result in vector deletion.
-        Other exceptions (sqlite3 errors, programming bugs,
-        embedding-provider errors) propagate to the writer's Future.
+        Existing vectors whose complete chunk metadata matches the parsed
+        note are kept without calling the provider again. This comparison
+        includes content, title, headings, positions, and the frontmatter
+        preamble. Retrying a failed FTS/graph batch therefore does not charge
+        again for its unchanged, already embedded siblings.
+        Other exceptions (sqlite3 errors and programming bugs), plus all
+        vector-load/rebuild errors, propagate to the writer's Future.
 
         Args:
             paths: Paths to re-embed (relative to source_dir).
@@ -1055,28 +1068,31 @@ class EmbeddingsManager:
         # trigger a full vector rebuild via its
         # VectorIndexCompatibilityError handler — an expensive no-op
         # for a flush that has no real work to do.
-        if not any(not entry[3] for entry in pre_embedded):
+        if not any(entry[3] != "failed" for entry in pre_embedded):
             return
         vectors = self._load_vectors()
         for entry in pre_embedded:
-            entry_path, entry_vecs, entry_meta, entry_failed = entry
-            if entry_failed:
-                # Parse failure → keep prior embeddings; do not touch vectors.
+            entry_path, entry_vecs, entry_meta, disposition = entry
+            if disposition != "ready":
+                # Failed parsing or matching metadata: keep the existing rows.
                 continue
             vectors.delete_by_path(entry_path)
             if entry_vecs is not None and entry_meta:
                 vectors.add_vectors(entry_vecs, entry_meta)
+        # Save even when all rows were already current: a prior save may have
+        # failed after updating memory, and this retry must persist those rows.
         vectors.save(self._embeddings_path)
         logger.debug("Flushed deferred embeddings for %d paths", len(paths))
 
     def _pre_embed_dirty_paths(
         self, paths: set[str], provider: EmbeddingProvider
-    ) -> list[tuple[str, list[list[float]] | None, list[dict[str, Any]] | None, bool]]:
+    ) -> list[_PreparedEmbedding]:
         """Phase 1 of the deferred flush: parse and embed each dirty path.
 
-        Each entry is ``(path, vectors_or_None, meta_or_None, failed_flag)``.
-        ``failed=True`` means parse failed → Phase 2 must NOT delete the
-        existing vectors for this path (silent-data-loss guard).
+        Entries carry the path, optional vectors/metadata, and a disposition.
+        Only ``ready`` entries replace rows in Phase 2. ``unchanged`` entries
+        still participate in saving, so a failed save retries without another
+        provider call; ``failed`` entries preserve prior vectors.
 
         Args:
             paths: Paths to re-embed (relative to source_dir).
@@ -1085,41 +1101,60 @@ class EmbeddingsManager:
         Returns:
             One entry per input path, in iteration order.
         """
-        pre_embedded: list[
-            tuple[str, list[list[float]] | None, list[dict[str, Any]] | None, bool]
-        ] = []
+        pre_embedded: list[_PreparedEmbedding] = []
+        existing_by_path: dict[str, list[dict[str, Any]]] | None = None
         for path in paths:
             abs_path = self._source_dir / path
-            if self._is_path_excluded(path):
-                # Excluded paths (e.g. convention files) never get vectors,
-                # mirroring the FTS guard in process_dirty_paths → delete.
-                pre_embedded.append((path, None, None, False))
-            elif abs_path.is_file() and is_note(path):
-                try:
-                    note = parse_note(
-                        abs_path,
-                        self._source_dir,
-                        self._chunk_strategy,
-                        title_field=self._title_field,
-                    )
-                    texts, meta = self._embed_inputs(
-                        path=note.path,
-                        title=note.title,
-                        folder=_derive_folder(note.path),
-                        frontmatter=note.frontmatter,
-                        chunks=note.chunks,
-                    )
-                    if texts:
-                        raw_vecs = provider.embed(texts)
-                        pre_embedded.append((path, raw_vecs, meta, False))
-                    else:
-                        # Successful parse, no chunks → delete is correct.
-                        pre_embedded.append((path, None, None, False))
-                except (UnicodeDecodeError, OSError, yaml.YAMLError, ValueError) as exc:
-                    logger.warning("Deferred embedding failed for %s: %s", path, exc)
-                    # Parse failed → leave existing vectors intact.
-                    pre_embedded.append((path, None, None, True))
+            if (
+                self._is_path_excluded(path)
+                or not abs_path.is_file()
+                or not is_note(path)
+            ):
+                # Excluded or removed paths lose any stale vectors.
+                pre_embedded.append((path, None, None, "ready"))
+                continue
+            inputs = self._dirty_embedding_inputs(path)
+            if inputs is None:
+                pre_embedded.append((path, None, None, "failed"))
+                continue
+            texts, meta = inputs
+            if not texts:
+                pre_embedded.append((path, None, None, "ready"))
+                continue
+            # Load lazily, outside the per-note error handlers: sidecar I/O
+            # and rebuild failures must retain the writer's retry snapshot.
+            if existing_by_path is None:
+                existing_by_path = self._load_vectors().chunks_by_path()
+            if existing_by_path.get(path) == meta:
+                pre_embedded.append((path, None, meta, "unchanged"))
+                continue
+            try:
+                raw_vecs = provider.embed(texts)
+            except (UnicodeDecodeError, OSError, yaml.YAMLError, ValueError) as exc:
+                logger.warning("deferred_embedding_failed path=%s err=%s", path, exc)
+                pre_embedded.append((path, None, None, "failed"))
             else:
-                # File removed or not a .md file → delete is correct.
-                pre_embedded.append((path, None, None, False))
+                pre_embedded.append((path, raw_vecs, meta, "ready"))
         return pre_embedded
+
+    def _dirty_embedding_inputs(
+        self, path: str
+    ) -> tuple[list[str], list[dict[str, Any]]] | None:
+        """Parse one dirty note; a recoverable parse failure preserves its rows."""
+        try:
+            note = parse_note(
+                self._source_dir / path,
+                self._source_dir,
+                self._chunk_strategy,
+                title_field=self._title_field,
+            )
+            return self._embed_inputs(
+                path=note.path,
+                title=note.title,
+                folder=_derive_folder(note.path),
+                frontmatter=note.frontmatter,
+                chunks=note.chunks,
+            )
+        except (UnicodeDecodeError, OSError, yaml.YAMLError, ValueError) as exc:
+            logger.warning("deferred_embedding_failed path=%s err=%s", path, exc)
+            return None

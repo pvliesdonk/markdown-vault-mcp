@@ -291,7 +291,7 @@ Domain-config fields are composed inside `src/markdown_vault_mcp/config.py` betw
 - **Document identity is the relative path** with `.md` extension; frontmatter is optional by default (`REQUIRED_FIELDS` opts into enforcement).
 - **Hybrid search uses Reciprocal Rank Fusion** over the FTS5 and vector result lists, with diversity-aware ranking capping chunks per document.
 - **Tool semantics mirror Claude Code's Read/Write/Edit patterns**, so LLM clients drive the vault with habits they already have.
-- **The library is synchronous**; the MCP layer wraps calls in `asyncio.to_thread()`.
+- **The library is synchronous**; the MCP layer wraps calls in `asyncio.to_thread()`. File writes return after saving, while index updates run in the background. Index-dependent mutations wait for prior writes; see [index freshness](docs/api/vault.md#index-freshness-after-writes).
 - **Indexing is hash-based**: unchanged files are never re-parsed, and any change to how stored rows derive from a note's bytes bumps `INDEX_SEMANTICS_VERSION` so deployed vaults rebuild themselves once on upgrade.
 
 The full decision log lives in the [design document](docs/design/design.md).

@@ -43,7 +43,8 @@ src/markdown_vault_mcp/
   indexing/
     __init__.py        -- package aggregator: re-exports IndexWriteCoordinator, IndexWriter + writer job dataclasses, ReadinessState
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
-    readiness.py       -- ReadinessState: build-readiness state machine (#576)
+    readiness.py       -- ReadinessState: query-readiness projection and compatibility transitions (#576, #1483)
+    build_lifecycle.py -- BuildLifecycle: scheduling, per-attempt outcomes, marker writes and readiness publication; shared by sync/async/legacy entry points (#1483)
     coordinator.py     -- IndexWriteCoordinator: owns the writer + build/async orchestration (#576)
   facets/
     __init__.py        -- package aggregator: re-exports the five facets (Reader/Writer/Graph/Index/Summarize)
