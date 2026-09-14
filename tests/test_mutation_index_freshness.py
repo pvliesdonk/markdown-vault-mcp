@@ -328,10 +328,19 @@ def test_failed_refresh_does_not_starve_healthy_embeddings(
     from markdown_vault_mcp.indexing import FlushDirtyEmbeddings, ProcessDirtyPaths
     from tests.conftest import MockEmbeddingProvider
 
+    provider = MockEmbeddingProvider()
+    embedded: list[str] = []
+    original_embed = provider.embed
+
+    def record_embed(texts: list[str]) -> list[list[float]]:
+        embedded.extend(texts)
+        return original_embed(texts)
+
+    monkeypatch.setattr(provider, "embed", record_embed)
     col = Vault(
         source_dir=tmp_path,
         settings=VaultSettings(read_only=False, embeddings_path=tmp_path / ".vectors"),
-        embedding_provider=MockEmbeddingProvider(),
+        embedding_provider=provider,
     )
     original = index_module.parse_note
 
@@ -364,5 +373,13 @@ def test_failed_refresh_does_not_starve_healthy_embeddings(
                 assert col._vectors is not None
                 assert name in {m["path"] for m in col._vectors._metadata}
                 assert col.index.get_index_status()["dirty_paths"] >= 2
+                assert sum("healthy1.md" in text for text in embedded) == 1
+            before_edit = len(embedded)
+            (tmp_path / "healthy1.md").write_text("# Changed healthy note\n")
+            col._coordinator.writer.mark_dirty(["healthy1.md"])
+            with pytest.raises(OSError, match="persistent"):
+                col._coordinator.writer.submit(ProcessDirtyPaths()).result(5)
+            col._coordinator.writer.submit(FlushDirtyEmbeddings()).result(5)
+            assert len(embedded) == before_edit + 1
     finally:
         col.close()

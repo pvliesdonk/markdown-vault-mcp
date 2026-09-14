@@ -2376,12 +2376,17 @@ class TestEmbedTextEnrichment:
         mgr.build_embeddings()
         provider.texts.clear()
 
+        note_path = vault / "doc.md"
+        note_path.write_text(
+            note_path.read_text().replace("A crisp summary.", "Updated summary."),
+            encoding="utf-8",
+        )
         mgr.flush_dirty_embeddings({"doc.md"})
         assert provider.texts == [
-            "Enriched Doc\nA crisp summary.\n\n# Enriched Doc\n\nplain chunk body"
+            "Enriched Doc\nUpdated summary.\n\n# Enriched Doc\n\nplain chunk body"
         ]
         rows = holder["vectors"].chunks_by_path()["doc.md"]
-        assert rows[0]["preamble"] == "A crisp summary."
+        assert rows[0]["preamble"] == "Updated summary."
 
     def test_default_builder_embeds_raw_content(self, tmp_path: Path) -> None:
         """v1 (default) stays a byte-exact no-op on embedding input."""

@@ -1143,7 +1143,13 @@ refresh the other notes, then fail the job and retain the snapshot; tombstone
 read and stale-row deletion failures also remain retryable. A per-row success
 callback lets the writer enqueue embeddings for completed rows even if a sibling
 or final graph resolution fails. Failed snapshots remain retryable without
-starving healthy notes of vector updates. The boundary
+starving healthy notes of vector updates. Deferred flush compares freshly
+prepared chunk metadata with the stored vector rows before calling the provider,
+so repeated FTS/graph retries reuse completed embeddings. Changed content,
+chunk boundaries/positions, titles, headings, or configured frontmatter preambles
+refresh them; failed embedding attempts have no matching rows and remain eligible.
+Unchanged rows still participate in saving so a failed sidecar save retries
+without paying the provider again. The boundary
 guarantees visibility of prior writes, not isolation from concurrent
 edits. Graph read tools keep their existing optional wait and stale metadata.
 No link-extraction or stored-row semantics changed, so no index semantics
