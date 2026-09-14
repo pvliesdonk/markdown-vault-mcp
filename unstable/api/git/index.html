@@ -1714,6 +1714,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#migrating-from-4x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating from 4.x
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2165,6 +2176,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#migrating-from-4x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Migrating from 4.x
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#api-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2471,6 +2493,18 @@
 <span class="c1"># Clean up on shutdown</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 </code></pre></div>
+<h2 id="migrating-from-4x">Migrating from 4.x<a class="headerlink" href="#migrating-from-4x" title="Permanent link">&para;</a></h2>
+<p><code>GitWriteStrategy</code> no longer accepts <code>commit_name_claim</code> or <code>commit_email_claim</code>. Remove these constructor arguments. The remaining <code>git_lfs</code> and <code>repo_path</code> options must now be passed by keyword, so old positional claim arguments cannot silently become LFS or repository settings:</p>
+<div class="highlight"><pre><span></span><code><span class="n">strategy</span> <span class="o">=</span> <span class="n">GitWriteStrategy</span><span class="p">(</span>
+    <span class="n">commit_name</span><span class="o">=</span><span class="s2">"vault-service"</span><span class="p">,</span>
+    <span class="n">commit_email</span><span class="o">=</span><span class="s2">"vault-service@example.com"</span><span class="p">,</span>
+    <span class="n">git_lfs</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">repo_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/path/to/vault"</span><span class="p">),</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>Author identity is supplied per write as a resolved <code>Principal</code>, through the callback's <code>principal=</code> argument. Integrations writing through <code>Vault</code> can use <code>markdown_vault_mcp._identity.bound_principal</code> around the write. Claim extraction belongs at the request boundary; the strategy does not read tokens.</p>
+<p>Server operators keep using <code>MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM</code> and <code>MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM</code>. Configuration assembly registers those keys with the identity layer, which resolves them when the tool call arrives. A configured claim that an authenticated token cannot supply still produces its warning and falls back to the static identity.</p>
+<p>The older startup warning about missing <code>git config user.email</code> is removed. The strategy supplies its configured committer name and email, falling back to <code>markdown-vault-mcp &lt;noreply@markdown-vault-mcp&gt;</code>, so an empty checkout identity is supported.</p>
 <h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
 <!-- vale off -->
 
@@ -2480,7 +2514,7 @@
 
 
 <h2 id="markdown_vault_mcp.git.GitWriteStrategy" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">GitWriteStrategy</span><span class="p">(</span><span class="n">token</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="s1">'x-access-token'</span><span class="p">,</span> <span class="n">repo_url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">managed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">enable_pull</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">enable_push</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">push_delay_s</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">commit_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_email</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_name_claim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_email_claim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_lfs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">repo_path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">GitWriteStrategy</span><span class="p">(</span><span class="n">token</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">username</span><span class="o">=</span><span class="s1">'x-access-token'</span><span class="p">,</span> <span class="n">repo_url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">managed</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">enable_pull</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">enable_push</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">push_delay_s</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">commit_name</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">commit_email</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">git_lfs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">repo_path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.git.GitWriteStrategy" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -2672,47 +2706,6 @@ the timer (push only on :meth:<code>close</code>).</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>commit_name_claim</code>
-            </td>
-            <td>
-                  <code><span title="str">str</span> | None</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>OIDC claim key configured for the author name.</p>
-              </div>
-            </td>
-            <td>
-                  <code>None</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>commit_email_claim</code>
-            </td>
-            <td>
-                  <code><span title="str">str</span> | None</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>OIDC claim key configured for the author email.</p>
-<p>.. deprecated::
-    The two claim kwargs no longer drive claim extraction — the
-    strategy runs on the write-callback dispatcher thread, where
-    no request token exists (#1218). Claims are now resolved at
-    the MCP tool edge into the <code>principal</code> passed per
-    invocation (register the keys via
-    :func:<code>markdown_vault_mcp._identity.configure_identity_claims</code>).
-    They remain accepted, and still inform the startup
-    identity warning (:meth:<code>_check_identity</code>).</p>
-              </div>
-            </td>
-            <td>
-                  <code>None</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
                 <code>git_lfs</code>
             </td>
             <td>
@@ -2751,7 +2744,12 @@ if <code>origin</code> uses SSH transport instead of HTTPS.</p>
           </tr>
       </tbody>
     </table>
-        <p>Example::</p>
+        <p>Author identity arrives per write as a resolved <code>principal</code>. OIDC
+claim-key registration belongs to
+:func:<code>markdown_vault_mcp._identity.configure_identity_claims</code>, not this
+constructor. The removed claim keywords raise :exc:<code>TypeError</code>;
+<code>git_lfs</code> and <code>repo_path</code> must be passed by keyword (#1236).</p>
+<p>Example::</p>
 <div class="highlight"><pre><span></span><code>strategy = GitWriteStrategy(token="ghp_...", push_delay_s=30)
 vault = Vault(on_write=strategy, ...)
 # ... writes happen, push deferred ...
@@ -4523,7 +4521,7 @@ as a bare <code>WriteCallback</code> must retain a reference and call
       <tbody>
           <tr class="doc-section-item">
 <td><code>A</code></td>            <td>
-                  <code><a class="autorefs autorefs-internal" title="GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, commit_name_claim=None, commit_email_claim=None, git_lfs=True, repo_path=None) (markdown_vault_mcp.git.strategy.GitWriteStrategy)" href="#markdown_vault_mcp.git.GitWriteStrategy">GitWriteStrategy</a></code>
+                  <code><a class="autorefs autorefs-internal" title="GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, *, git_lfs=True, repo_path=None) (markdown_vault_mcp.git.strategy.GitWriteStrategy)" href="#markdown_vault_mcp.git.GitWriteStrategy">GitWriteStrategy</a></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -4533,7 +4531,7 @@ as a bare <code>WriteCallback</code> must retain a reference and call
           </tr>
           <tr class="doc-section-item">
 <td></td>            <td>
-                  <code><a class="autorefs autorefs-internal" title="GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, commit_name_claim=None, commit_email_claim=None, git_lfs=True, repo_path=None) (markdown_vault_mcp.git.strategy.GitWriteStrategy)" href="#markdown_vault_mcp.git.GitWriteStrategy">GitWriteStrategy</a></code>
+                  <code><a class="autorefs autorefs-internal" title="GitWriteStrategy(token=None, username='x-access-token', repo_url=None, managed=False, enable_pull=True, enable_push=True, push_delay_s=30.0, commit_name=None, commit_email=None, *, git_lfs=True, repo_path=None) (markdown_vault_mcp.git.strategy.GitWriteStrategy)" href="#markdown_vault_mcp.git.GitWriteStrategy">GitWriteStrategy</a></code>
             </td>
             <td>
               <div class="doc-md-description">
