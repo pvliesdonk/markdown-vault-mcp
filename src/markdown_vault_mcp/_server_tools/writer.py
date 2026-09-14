@@ -189,8 +189,8 @@ async def _resolve_verify_mode_subject(
 ) -> str | InputRequiredResult:
     """Resolve the ``human:`` subject to stamp, enforcing *mode*'s gate.
 
-    ``trust-auth`` requires an authenticated subject (refuses under auth mode
-    ``none``); any other mode is treated as ``elicit`` and requires an
+    ``trust-auth`` requires a human principal (refuses service credentials
+    and auth mode ``none``); any other mode is treated as ``elicit`` and requires an
     affirmative elicitation before attributing to the authenticated subject (or
     the local sentinel). ``off`` never reaches here — the server hides the tool.
 
@@ -202,8 +202,9 @@ async def _resolve_verify_mode_subject(
         if subject is None:
             raise ToolError(
                 "okf_verify (trust-auth mode) requires an authenticated "
-                "identity; the server is running with no auth, so a "
-                "verification cannot be attributed."
+                "identity with a human subject; no such identity is available. "
+                "Service credentials cannot attest a human review without "
+                "confirmation. Use elicit mode to confirm through the client UI."
             )
         return subject
     request_context = ctx.request_context
@@ -1044,8 +1045,7 @@ def register(mcp: FastMCP) -> None:
     ) -> dict[str, Any] | InputRequiredResult:
         """Attest a note as human-reviewed by appending an OKF verification.
 
-        Part of the OKF (Open Knowledge Format) enforced-write layer, available
-        only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. Appends a
+        Available when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. Appends a
         `{by: human:<subject>, at: <UTC instant>}` entry to the note's `verified`
         frontmatter list, promoting the note's trust tier to `human-reviewed`.
 
@@ -1056,9 +1056,12 @@ def register(mcp: FastMCP) -> None:
           affirmative reply. Fails closed — if the client cannot elicit or the
           review is declined, nothing is written. The client's handler must
           present the request to a person rather than answer automatically.
-        - **trust-auth**: attributes to the authenticated caller with no
-          confirmation; refuses (a tool error) when the server runs with no
-          auth. Only safe when the sole caller is a human-driven UI.
+          Service credentials record confirmed reviews as `human:local`.
+        - **trust-auth**: attributes to the token's `sub` with no confirmation;
+          refuses static bearer credentials, other client-ID-only identities,
+          and callers without auth. Only safe when the sole caller is a
+          human-driven UI. OAuth service tokens carrying `sub` remain a known
+          attribution limitation.
 
         Note: `human-reviewed` means a human deliberately confirmed the review,
         not that the content is provably correct.

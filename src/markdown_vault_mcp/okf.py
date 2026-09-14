@@ -1034,8 +1034,9 @@ def apply_okf_write_stamp(text: str, *, actor: str, now: _dt.datetime) -> str:
 
     Args:
         text: The full note file text (frontmatter and body).
-        actor: The provenance actor — ``human:<subject>`` when authenticated,
-            else a tool actor such as ``markdown-vault-mcp/<version>``.
+        actor: The provenance actor resolved by the caller — ``human:<subject>``
+            for human attribution, else a tool actor such as
+            ``markdown-vault-mcp/<version>``.
         now: The instant of the write, timezone-aware (spelled by
             :func:`okf_timestamp`).
 
@@ -1064,7 +1065,8 @@ def append_okf_verification(text: str, *, subject: str, now: _dt.datetime) -> st
 
     Args:
         text: The full note file text (frontmatter and body).
-        subject: The authenticated subject (without the ``human:`` prefix).
+        subject: The human verifier's subject (without the ``human:`` prefix),
+            or ``local`` for a confirmed review without human identity claims.
         now: The instant of the verification, timezone-aware (spelled by
             :func:`okf_timestamp`).
 

@@ -417,11 +417,13 @@ Tool tags following switches: #1412.
 - **Provenance stamping** (`OKF_WRITE`): writes through `write`/`edit` set/update
   `generated: {by, at}`, `at` the UTC instant of the write in the spec's
   example form (`2026-06-30T14:00:00Z`, a string; #1372). Actor string:
-  authenticated identity when available
-  (`human:<subject>` via the existing access-token dependency), else
+  the token's usable `sub` when available (`human:<subject>`), else
   `markdown-vault-mcp/<version>` as a tool actor. Existing `generated`
   values are overwritten (it describes the current bytes); `sources` are
-  never touched.
+  never touched. Client-ID-only identities, including static and mapped
+  bearer credentials, use the tool actor (#1463). OAuth service tokens with
+  `sub` remain a known attribution limitation (#1480); see
+  [authenticated subjects](reference/authenticated-subjects.md).
 
   A stamp is written *into* the note's frontmatter, so content whose block
   no parser can read leaves nothing to stamp and the write is **refused**
@@ -457,14 +459,15 @@ Tool tags following switches: #1412.
     client cannot elicit, or the human declines, it raises `ToolError` and
     writes nothing. A model cannot answer an elicitation, so the attestation
     leaves its control by construction; a headless agent (no human) can never
-    produce a `human-reviewed` entry. The subject stamped is the authenticated
-    subject when present, else the `local` sentinel — the elicitation, not the
+    produce a `human-reviewed` entry. The subject stamped is the token's `sub`
+    when present, else `local` (including service credentials) — the elicitation, not the
     token, is the human-presence proof.
   - **`off`**: hides the tool entirely (via the `okf-enforce` tag disable), so
     `verified` is set only by external tooling (CLI / git-hook / CI) beyond the
     model's reach.
-  - **`trust-auth`**: today's behaviour — attribute to the authenticated
-    subject with no elicitation; refuses (`ToolError`) when auth mode is `none`.
+  - **`trust-auth`**: attribute to the token's `sub` with no elicitation;
+    refuses (`ToolError`) without auth or with a client-ID-only identity,
+    including static bearer credentials (#1463).
     An explicit opt-in, only safe when the sole `okf_verify` caller is a
     genuinely human-driven UI, not an agent.
 

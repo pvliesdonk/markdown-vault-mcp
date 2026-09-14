@@ -50,7 +50,7 @@ from tests.conftest import (
 from tests.server_factory import make_server
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import AsyncIterator, Iterator
     from pathlib import Path
 
 _NOW = _dt.datetime(2026, 8, 9, 14, 30, 5, tzinfo=_dt.UTC)
@@ -212,6 +212,7 @@ class TestActorResolution:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         assert resolve_human_subject() == "peter"
 
     @pytest.mark.parametrize("value", [None, "local"])
@@ -598,6 +599,7 @@ class TestWriteToolThreadsActor:
         self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             await client.call_tool(
@@ -666,6 +668,7 @@ class TestFetchThreadsActor:
         # fetch writes .md notes through DocumentManager.write, so the enricher
         # fires; the provenance actor must be the authenticated caller (#964).
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         # The download is incidental here — only the actor threading on the
         # write path is under test — so fetch_url (a black-box library
         # boundary, #1028) is stubbed with a canned result.
@@ -706,6 +709,7 @@ class TestOkfVerifyTrustAuth:
         self, trust_auth_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
@@ -726,6 +730,7 @@ class TestOkfVerifyTrustAuth:
 
     async def test_missing_note_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="not found"):
@@ -739,6 +744,7 @@ class TestOkfVerifyTrustAuth:
         # inside the transform (which runs after the read); the etag no longer
         # matches, so the write is refused rather than clobbering the change.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         import markdown_vault_mcp._server_tools.writer as writer_mod
 
         real_append = writer_mod.append_okf_verification
@@ -761,6 +767,7 @@ class TestOkfVerifyTrustAuth:
         # verified_count is the list length after the append; a bare-mapping
         # verified is one entry, not zero (#1357).
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         (trust_auth_env / "guides" / "playbook.md").write_text(
             "---\nverified:\n  by: human:alice\n  at: 2026-01-01\n---\n# P\n",
             encoding="utf-8",
@@ -795,6 +802,7 @@ class TestOkfVerifyElicit:
         # An affirmative elicitation reply attributes to the authenticated
         # subject and records the verification.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server(), elicitation_handler=_accept_review) as client:
             await wait_for_mcp_writer_drain(client)
             result = await client.call_tool(
@@ -823,6 +831,7 @@ class TestOkfVerifyElicit:
         self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server(), elicitation_handler=_decline_review) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(ToolError, match="not confirmed"):
@@ -835,6 +844,7 @@ class TestOkfVerifyElicit:
     ) -> None:
         # Accepting the form but answering 'no' is not an affirmation.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(
             make_server(), elicitation_handler=_accept_negative
         ) as client:
@@ -850,6 +860,7 @@ class TestOkfVerifyElicit:
         # On the modern protocol the client drives the returned input request;
         # with no handler it refuses before issuing a continuation call.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
+        monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
             with pytest.raises(MCPError, match="Elicitation not supported"):
@@ -875,3 +886,82 @@ class TestOkfVerifyOff:
         async with Client(make_server()) as client:
             tools = await client.list_tools()
         assert "okf_verify" in [t.name for t in tools]
+
+
+@pytest.fixture(params=["single", "mapped"])
+async def service_token(
+    request: pytest.FixtureRequest, enforced_env: Path
+) -> AsyncIterator[None]:
+    """Bind a real static verifier result, including mapped subject labels."""
+    from fastmcp_pvl_core import ServerConfig, build_bearer_auth
+    from mcp.server.auth.middleware.auth_context import auth_context_var
+    from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+
+    tokens_file = enforced_env.parent / "tokens.toml"
+    tokens_file.write_text(
+        '[tokens]\n"test-only-1463" = "user:peter"\n', encoding="utf-8"
+    )
+    verifier = build_bearer_auth(
+        ServerConfig(
+            bearer_token="test-only-1463",
+            bearer_tokens_file=tokens_file if request.param == "mapped" else None,
+        )
+    )
+    assert verifier is not None
+    token = await verifier.verify_token("test-only-1463")
+    assert token is not None
+    marker = auth_context_var.set(AuthenticatedUser(token))
+    try:
+        yield
+    finally:
+        auth_context_var.reset(marker)
+
+
+@pytest.mark.usefixtures("service_token")
+class TestServiceTokenOkf:
+    async def test_write_uses_tool_provenance(self, enforced_env: Path) -> None:
+        async with Client(make_server()) as client:
+            await client.call_tool(
+                "write", {"path": "service.md", "content": "# Service\n"}
+            )
+            await wait_for_mcp_writer_drain(client)
+        meta = fm.loads(
+            (enforced_env / "service.md").read_text(encoding="utf-8")
+        ).metadata
+        assert meta["generated"]["by"] == tool_actor(_okf_write.package_version())
+
+    async def test_trust_auth_refuses_without_changing_note(
+        self, enforced_env: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_OKF_VERIFY", "trust-auth")
+        path = enforced_env / "guides" / "playbook.md"
+        before = path.read_bytes()
+        async with Client(make_server()) as client:
+            with pytest.raises(ToolError, match="Service credentials"):
+                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+            await wait_for_mcp_writer_drain(client)
+        assert path.read_bytes() == before
+
+    @pytest.mark.parametrize("legacy", [False, True])
+    async def test_elicit_attributes_confirmed_review_to_local_human(
+        self, enforced_env: Path, legacy: bool
+    ) -> None:
+        async with Client(
+            make_server(),
+            mode="legacy" if legacy else "auto",
+            elicitation_handler=_accept_review,
+        ) as client:
+            result = await client.call_tool(
+                "okf_verify", {"path": "guides/playbook.md"}
+            )
+            await wait_for_mcp_writer_drain(client)
+        assert _parse_tool_data(result)["verifier"] == "human:local"
+        (entry,) = _verified_meta(enforced_env / "guides" / "playbook.md")
+        assert entry["by"] == "human:local"
+
+    async def test_elicit_decline_does_not_verify(self, enforced_env: Path) -> None:
+        async with Client(make_server(), elicitation_handler=_decline_review) as client:
+            with pytest.raises(ToolError, match="not confirmed"):
+                await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
+            await wait_for_mcp_writer_drain(client)
+        assert _verified_meta(enforced_env / "guides" / "playbook.md") is None

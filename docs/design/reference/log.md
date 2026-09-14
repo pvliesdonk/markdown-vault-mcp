@@ -1,5 +1,9 @@
 # Log
 
+## 2026-09-14
+
+- Added [Authenticated subjects and human attribution](authenticated-subjects.md) for #1463, checked against pinned sources matching installed FastMCP 4.0.3 and pvl-core 7.1.0, plus RFC 9068 and RFC 9700. Reproduced static bearer attribution through the real verifier and SDK auth context. OAuth service subjects remain a separate limitation (#1480). Next review: 2027-03-14.
+
 ## 2026-09-13
 
 - Added [fastmcp-pvl-core transfer errors and retries](fastmcp-transfer.md) for PR #1477, checked against installed 7.1.0 and matching pinned upstream source. Records sink-selected status codes, empty error responses, release-on-failure limits, and the grace-window replay that invokes the sink again. Refute pass checked handler branches and token transitions, including backend release failures and expiry. Next review: 2027-03-13.

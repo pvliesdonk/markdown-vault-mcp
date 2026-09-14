@@ -2857,7 +2857,7 @@ partial commit succeeds there, where the whole-index form fails outright on
 reads `--author` and the committer: [`reference/git-staging-and-commits.md`](reference/git-staging-and-commits.md) § Committing and identity.) "Who is
 acting" is resolved **once, at the MCP tool edge**, into a frozen
 `Principal` (`_identity.py`: `subject`, `display_name`, `email`,
-`kind: human|local`) — credentials (`GIT_TOKEN`) and permissions
+`kind: human|service|local`) — credentials (`GIT_TOKEN`) and permissions
 (`read_only`) deliberately stay off it; they are service configuration, not
 properties of the caller. `resolve_mcp_principal()` performs the single
 request-context read (`fastmcp_pvl_core.get_subject()` + `get_claims()`,
@@ -2865,8 +2865,8 @@ applying the claim keys registered at startup via
 `configure_identity_claims()`), and the write tools bind the result on a
 contextvar (`write_identity_scope()` in `_server_tools/writer.py`) around
 their `asyncio.to_thread` call, together with the OKF write intent whose
-actor derives from the **same** Principal — so the OKF provenance stamp and
-the git commit author can no longer disagree by construction.
+actor derives from the **same** Principal. OKF uses the subject classification;
+Git independently uses the configured name/email claims or static fallback.
 
 Propagation to the deferred commit is **capture-at-fire**: the historical
 design had `GitWriteStrategy` read the OIDC claims itself via FastMCP's
@@ -2898,8 +2898,18 @@ Only the resolution site can distinguish an unusable configured claim from
 an intentionally static author identity.
 
 `resolve_mcp_principal()` is the **only** place the subject rules live
-(#1231) — `human:<subject>`, and the `"local"` sentinel counting as no human
-identity. `_okf_write.py` used to re-derive them in a fallback branch that
+(#1231, #1463). A usable token `sub` retains `human:<subject>` attribution;
+a subject obtained only from the client-ID fallback is a `service` principal
+that retains its identifier but stamps the tool actor. This covers single,
+custom and mapped bearer credentials, including their use alongside OIDC.
+Without an attributable token the principal is `local` with no subject.
+A real token `sub` spelled `local` is distinct from the no-auth sentinel.
+`resolve_human_subject()` checks the kind, so `trust-auth` refuses service
+credentials; an affirmative elicitation instead records `human:local`.
+The external contract is in [authenticated subjects](reference/authenticated-subjects.md).
+OAuth `sub` can also identify a service: retaining human attribution for that
+claim is an existing application assumption, with issuer-aware classification
+tracked separately in #1480. Name/email claim extraction is independent. `_okf_write.py` used to re-derive them in a fallback branch that
 read `get_subject()` itself; it now resolves a `Principal` instead, so the
 rules cannot drift between two copies. The dead `resolve_write_actor()` went
 with that branch: since #1160 the write tools stamp

@@ -124,7 +124,11 @@ class TestResolveMcpPrincipal:
         _patch_context(
             monkeypatch,
             subject="user123",
-            claims={"name": "Alice Human", "email": "alice@humans.org"},
+            claims={
+                "sub": "user123",
+                "name": "Alice Human",
+                "email": "alice@humans.org",
+            },
         )
         p = resolve_mcp_principal()
         assert p == Principal(
@@ -338,3 +342,61 @@ class TestAbsentCommitClaimIsReported:
             configure_identity_claims(name_claim="name", email_claim=None)
             resolve_mcp_principal()
         assert len(_claim_lines(caplog)) == 2
+
+
+class TestServicePrincipals:
+    @pytest.mark.parametrize("subject", ["bearer-anon", "agent", "user:peter", "local"])
+    async def test_real_bearer_verifier_is_not_human(self, subject: str) -> None:
+        from fastmcp_pvl_core import (
+            ServerConfig,
+            build_bearer_auth,
+            get_claims,
+            get_subject,
+        )
+        from mcp.server.auth.middleware.auth_context import auth_context_var
+        from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+
+        verifier = build_bearer_auth(
+            ServerConfig(bearer_token="test-only-1463", bearer_default_subject=subject)
+        )
+        assert verifier is not None
+        token = await verifier.verify_token("test-only-1463")
+        assert token is not None
+        marker = auth_context_var.set(AuthenticatedUser(token))
+        try:
+            assert get_subject() == subject
+            assert get_claims() == {"client_id": subject, "scopes": ["read", "write"]}
+            principal = resolve_mcp_principal()
+        finally:
+            auth_context_var.reset(marker)
+        assert principal == Principal(subject, None, None, "service")
+        assert principal.okf_actor("test") == "markdown-vault-mcp/test"
+
+    @pytest.mark.parametrize("sub", [None, "", 7, False, [], {}])
+    def test_unusable_sub_never_promotes_client_identity(
+        self, monkeypatch: pytest.MonkeyPatch, sub: Any
+    ) -> None:
+        configure_identity_claims(name_claim="name", email_claim="email")
+        _patch_context(
+            monkeypatch,
+            subject="client",
+            claims={"sub": sub, "client_id": "client", "name": "Agent", "email": "a@b"},
+        )
+        principal = resolve_mcp_principal()
+        assert principal == Principal("client", "Agent", "a@b", "service")
+
+    def test_authenticated_local_sub_is_not_the_no_auth_sentinel(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _patch_context(monkeypatch, subject="local", claims={"sub": "local"})
+        assert resolve_mcp_principal().kind == "human"
+
+    def test_bound_service_subject_cannot_attest_as_human(self) -> None:
+        from markdown_vault_mcp._okf_write import (
+            resolve_human_subject,
+            resolve_verify_subject,
+        )
+
+        with bound_principal(Principal("service", None, None, "service")):
+            assert resolve_human_subject() is None
+            assert resolve_verify_subject() == "local"
