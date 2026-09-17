@@ -221,6 +221,9 @@ Python 3.13.
   `[link] bar](/uri)` does not, Ex. 513; `[link \[bar](/uri)` does, Ex. 515).
   [source: cm] [observed: markdown-it-py 3.0.0, `[a [b] c](x.md)` one link
   with text `a [b] c`; `[a [b c](x.md)` links `b c`]
+  The escaped half is implemented (#1517); the balanced half is a departure
+  recorded in `docs/design/design.md`, so Ex. 512 stores no row here.
+  [pins: tests/test_links_escaped_text.py::TestEscapedBracketsInLinkText::test_an_escaped_closing_bracket_no_longer_ends_the_text, tests/test_links_escaped_text.py::TestEscapedBracketsInLinkText::test_an_escaped_pair_is_read_through, tests/test_links_escaped_text.py::TestWhatIsNotClaimed::test_balanced_brackets_are_still_not_a_link_here]
 - Links may not contain links, innermost wins (Ex. 518); an image
   description may (Ex. 575). [source: cm] [observed: markdown-it-py 3.0.0,
   `[a [b](y.md) c](x.md)` links `b`; `![a [b](y.md)](i.png)` is one image]
@@ -358,7 +361,7 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   (#1334). A span with a line ending inside is not stripped; a
   double-backtick span holding an inner backtick is stripped up to that
   backtick. [observed: `_strip_inline_code`, 2026-09-06]
-- `_RE_INLINE_LINK_OPEN` + `_parse_destination` in `_extract_inline_links` —
+- `_find_inline_link_open` + `_parse_destination` in `_extract_inline_links` —
   **right** on the #1334
   boundaries the decision table below marks honoured, since 2026-09-06:
   each pattern runs inside one paragraph region (`_paragraph_regions`,

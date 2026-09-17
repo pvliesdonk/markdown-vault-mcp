@@ -305,7 +305,19 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: path string. A vault holding duplicate note names resolved a bare
 #: ``[[Note]]`` to the shortest path everywhere; the bump re-resolves the
 #: rows whose source sits beside a same-named note, which now win.
-INDEX_SEMANTICS_VERSION = 9
+#:
+#: Version 10 (#1517): an inline link's text is read with escapes honoured,
+#: so a ``\]`` no longer closes it. ``[a\]b](x.md)`` is a valid CommonMark
+#: link that previously produced no row at all — the note's own outlink and
+#: the target's backlink both missing — and the bump records those links
+#: for notes whose bytes never changed. It also drops the rows behind the
+#: opposite spelling: ``[a\](x.md)``, whose text ends at an escaped ``]``,
+#: closes no link for CommonMark either and no longer stores one. Only
+#: notes whose link text carries a backslash are affected; the scan and
+#: the class it replaces agree on every other note (pinned by
+#: ``tests/test_links_escaped_text.py``). Reference links keep the plain
+#: class, a departure recorded in ``docs/design/design.md``.
+INDEX_SEMANTICS_VERSION = 10
 
 
 class ChunkingMeta(NamedTuple):

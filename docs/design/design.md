@@ -2297,6 +2297,42 @@ ending inside the parentheses (#1334); link text is still not
 bracket-balanced (`[a [b] c](x)`); wikilinks are untouched.
 `INDEX_SEMANTICS_VERSION` 7 → 8 gives those links their targets on upgrade.
 
+**An inline link's text is read with escapes honoured (#1517).** The
+destination learned CommonMark's grammar in #1353; the text did not, and
+stayed a negated class (`\[([^\]]*)\]\(`) that cannot see a backslash. So a
+`\]` closed the text and `[a\]b](x.md)` — a valid link — produced no row at
+all: no outlink, no backlink. #1513's escaped titles landed in exactly that
+hole, rendering in Obsidian and on the docs site while reaching the graph
+nowhere. `_find_inline_link_open` replaces the class with a scan that skips
+an escaped bracket, and the opposite spelling goes the other way:
+`[a\](x.md)`, whose `]` is escaped, closes no link for CommonMark either and
+no longer stores one.
+
+The opener is a **scan rather than a wider class** for a measured reason. An
+escape-aware class has to read past every escaped `]`, so the engine's retry
+from each `[` turns quadratic: on one 40 KB paragraph of `[a\]b` the class
+costs about 6 s where the scan costs about 7 ms, and the scan is also faster
+than the class it replaced on the *existing* pathological case, a long run of
+`[`. It steps between `[`, `]` and `\` with one regex search rather than over
+every character, so a note with no brackets costs a failed search rather than
+a Python loop its whole length — about 10% over the old class across this
+repository's own 2.7 MiB of markdown.
+
+Matching otherwise follows the class it replaces exactly: the first `[` since
+the last unescaped `]` opens the text, which ends at the first unescaped `]`,
+and that `]` must be followed by `(`. The equivalence is the claim the bump
+rests on, so it is pinned as a differential property over generated bracket
+soup (`tests/test_links_escaped_text.py`) rather than by example: a note
+carrying no backslash indexes exactly as it did. `INDEX_SEMANTICS_VERSION`
+9 → 10 records the links that were missing and drops the ones that were never
+links.
+
+Two things this deliberately leaves: the two **reference** patterns keep the
+plain class, so `[a\]b][ref]` is still unfound, and link text is still not
+bracket-balanced. The first is a different match shape (two adjacent spans,
+not one) and the second needs counting rather than escape-awareness; folding
+either in would have added an independent semantic delta to one bump.
+
 **A link is matched inside one paragraph, never across a boundary (#1334).**
 The three patterns used to run over the whole code-stripped body, and their
 negated character classes admit line endings, so a stray unmatched `[` paired
