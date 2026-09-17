@@ -1,8 +1,9 @@
-"""Link target helpers: decoding, replacement computation, substitution.
+"""Link target helpers: decoding, encoding, replacement, substitution.
 
-:func:`decode_link_target` is shared with link extraction; the rest compute
-replacement link targets and apply substitutions in file content when a note
-is renamed within the vault.
+:func:`decode_link_target` is shared with link extraction and
+:func:`encode_plain_destination` with every site that *writes* a markdown
+destination; the rest compute replacement link targets and apply
+substitutions in file content when a note is renamed within the vault.
 """
 
 from __future__ import annotations
