@@ -36,7 +36,7 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp.scanner import parse_frontmatter
-from markdown_vault_mcp.utils.links import encode_plain_destination
+from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
@@ -773,11 +773,15 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
     the same resolved ``target_path`` the wikilink already resolved to.
     Unresolvable wikilinks are left as-is and counted as skipped; a
     wikilink naming an attachment (``![[pic.png]]``) is not a link at all,
-    so it is left as-is and not counted (#1333). A wikilink target may hold
-    a space and a plain markdown destination may not, so the converted
-    destination is percent-encoded by
-    :func:`~markdown_vault_mcp.utils.links.encode_plain_destination`
-    (#1494). Interior whitespace and
+    so it is left as-is and not counted (#1333). A resolved path and an
+    alias are names, not markdown, and the two families differ on what a
+    name may hold: the destination goes through
+    :func:`~markdown_vault_mcp.utils.links.build_plain_destination` and the
+    display text through
+    :func:`~markdown_vault_mcp.utils.links.escape_link_text`, so a space,
+    a ``#``, a parenthesis that will not parse, or a bracket survives the
+    conversion as part of the name rather than changing what the link means
+    (#1494, #1513). Interior whitespace and
     the table-cell ``\\|`` escape are not matched (the same limitation as
     the rename/move link-rewrite engine).
 
@@ -805,7 +809,6 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
             continue
         by_target.setdefault(link.raw_target, (link.target_path, link.fragment))
     for raw_target, (target_path, fragment) in by_target.items():
-        frag_suffix = f"#{fragment}" if fragment else ""
         default_display = raw_target
         if fragment and default_display.endswith("#" + fragment):
             default_display = default_display[: -(len(fragment) + 1)]
@@ -814,15 +817,16 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
             match: re.Match[str],
             *,
             tp: str = target_path,
-            fs: str = frag_suffix,
+            fg: str | None = fragment,
             fallback: str = default_display,
         ) -> str:
             alias = match.group(1)
             display = alias.strip() if alias and alias.strip() else fallback
-            # The path and the fragment are names, not destinations: a space
-            # in either would end the destination and the converted link
-            # would not be a link at all (#1494).
-            return f"[{display}](/{encode_plain_destination(tp + fs)})"
+            # A resolved path and an alias are names, not markdown: written
+            # verbatim, a space ends the destination (#1494), a ``#`` or an
+            # unbalanced paren re-points it, and a bracket in the alias ends
+            # the link text (#1513).
+            return f"[{escape_link_text(display)}](/{build_plain_destination(tp, fg)})"
 
         pattern = re.compile(r"\[\[" + re.escape(raw_target) + r"(?:\|([^\]]*))?\]\]")
         content, n = pattern.subn(_replace, content)
@@ -901,16 +905,21 @@ def build_index_markdown(
     Args:
         heading: The H1 heading (bundle or folder name).
         entries: ``(title, root_absolute_path, description)`` per note,
-            already ordered; ``root_absolute_path`` is the path as the vault
-            spells it, percent-encoded here into a destination a markdown
-            reader can parse (#1494).
+            already ordered. Both the title and the path are *names*, not
+            markdown: the path becomes a destination through
+            :func:`~markdown_vault_mcp.utils.links.build_plain_destination`
+            (#1494, #1513) and the title through
+            :func:`~markdown_vault_mcp.utils.links.escape_link_text`, so an
+            entry stays a link to its note whatever the note is called.
+            ``description`` is emitted as written, being prose after the
+            link rather than part of it.
 
     Returns:
         The markdown body (no frontmatter).
     """
     lines = [f"# {heading}", ""]
     for title, path, description in entries:
-        line = f"- [{title}]({encode_plain_destination(path)})"
+        line = f"- [{escape_link_text(title)}]({build_plain_destination(path)})"
         if description:
             line += f" - {description}"
         lines.append(line)

@@ -255,27 +255,148 @@ def decode_markdown_destination(raw: str) -> str:
     return decode_link_target(_decode_escapes_and_entities(inner))
 
 
+#: How deep the destination parser balances parentheses before giving up —
+#: three, the depth §6.3's own examples reach, a departure recorded in
+#: ``docs/design/design.md``. :func:`_parentheses_parse_plainly` mirrors it
+#: on the write side, so the two cannot disagree about which names the plain
+#: form can hold; ``tests/test_links_generated_destinations.py`` pins the
+#: agreement.
+_MAX_PLAIN_PAREN_DEPTH = 3
+
+
+def _parentheses_parse_plainly(name: str) -> bool:
+    """Whether *name*'s parentheses survive a plain destination unescaped.
+
+    CommonMark §6.3 admits parentheses in the plain form only escaped or in
+    balanced pairs, and this project's parser balances them to
+    :data:`_MAX_PLAIN_PAREN_DEPTH`.
+
+    Args:
+        name: A destination path, backslash escapes already applied.
+
+    Returns:
+        ``True`` when the parentheses are balanced and no deeper than the
+        parser goes, so escaping them would be noise.
+    """
+    depth = 0
+    for char in name:
+        if char == "(":
+            depth += 1
+            if depth > _MAX_PLAIN_PAREN_DEPTH:
+                return False
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
 def _escape_meaning_changers(name: str, *, pointy: bool) -> str:
     """Backslash-escape the characters that would re-parse a rewritten link.
 
-    A rename introduces no escaping the author did not use — with one
-    bounded exception: a new name containing ``#`` would be read as a
-    fragment (and a name *beginning* with one as a same-document anchor),
-    and ``<`` / ``>`` inside the ``<…>`` form would end it early. Left
-    literal, the rewritten link would silently point elsewhere rather than
-    show up broken, so exactly those characters are escaped (#1353).
+    A rename introduces no escaping the author did not use — except where
+    the new name would otherwise be read as something other than itself.
+    Three cases qualify, and nothing else is touched:
+
+    * ``#`` is always escaped: it would be read as a fragment, and a name
+      *beginning* with one as a same-document anchor (#1353).
+    * ``<`` and ``>`` are escaped inside the ``<…>`` form, which they would
+      end early (#1353).
+    Parentheses are *not* handled here: §6.3 balances them across the whole
+    destination, fragment included, so the decision cannot be made on the
+    path alone — :func:`escape_unparsable_parentheses` makes it on the
+    assembled string (#1516).
 
     Args:
         name: The new destination path, not percent-encoded.
         pointy: Whether it will be wrapped in ``<…>``.
 
     Returns:
-        *name* with ``#`` (and, in the pointy form, ``<`` and ``>``) escaped.
+        *name* with the characters that would re-point it escaped.
     """
     name = name.replace("#", "\\#")
     if pointy:
         name = name.replace("<", "\\<").replace(">", "\\>")
     return name
+
+
+def escape_unparsable_parentheses(written: str) -> str:
+    """Escape a plain destination's parentheses when they would not parse.
+
+    The third repair in the re-pointing class, and the one that cannot be
+    made per-part: CommonMark §6.3 reads a destination's parentheses as one
+    balanced run, so ``a(b.md#c)d`` parses — the fragment closes what the
+    path opened — while escaping the path's ``(`` alone would unbalance it
+    and break a link that worked. The test therefore runs on the assembled
+    destination, and when it fails every parenthesis is escaped, the
+    author's fragment included: at that point the alternative is not a
+    tidier link but no link (#1516).
+
+    Left alone when they parse, so a balanced ``a(b).md`` stays literal.
+
+    Args:
+        written: The assembled destination — path, marker and fragment —
+            before percent-encoding.
+
+    Returns:
+        *written*, with every parenthesis escaped if any of them would not
+        parse.
+    """
+    if _parentheses_parse_plainly(written):
+        return written
+    return written.replace("(", "\\(").replace(")", "\\)")
+
+
+def build_plain_destination(path: str, fragment: str | None = None) -> str:
+    """Render a vault path as a destination a markdown reader parses.
+
+    The write-side entry point for every site that *generates* a link
+    rather than rewriting one: it applies the same two repairs the rename
+    path uses — :func:`_escape_meaning_changers` for what would re-point the
+    link, :func:`encode_plain_destination` for what a plain destination
+    cannot hold at all — so a generated destination and a rewritten one
+    cannot disagree about what a name needs (#1494, #1513).
+
+    The fragment is attached between the two repairs: after the ``#``
+    escape, so the marker that separates them stays a marker while a ``#``
+    inside either part does not become one, and before the parenthesis
+    test, which §6.3 runs on the whole destination.
+
+    Args:
+        path: The destination's path portion, as the vault spells it.
+        fragment: The heading fragment, without its ``#``, if any.
+
+    Returns:
+        The destination, ready to interpolate between ``(`` and ``)``.
+    """
+    written = _escape_meaning_changers(path, pointy=False)
+    if fragment:
+        written += "#" + fragment
+    return encode_plain_destination(escape_unparsable_parentheses(written))
+
+
+def escape_link_text(text: str) -> str:
+    """Backslash-escape the brackets that would end a link's text early.
+
+    A generated link's text is a title or an alias, not markdown the author
+    wrote, so a ``]`` in it ends the text and the line stops being a link;
+    an unmatched ``[`` re-opens it and a spec reader shows different text
+    than intended (#1513). Backslashes go first, or an escape this function
+    adds could be neutralised by one already in *text*.
+
+    Escaping makes the line valid CommonMark, which is what Obsidian and the
+    docs site read. This project's own scanner still does not index a link
+    whose text carries an escaped ``]`` — its link-text pattern is not
+    escape-aware — so such an entry renders correctly but contributes no
+    edge to the link graph until #1517 is fixed.
+
+    Args:
+        text: The display text, as the title or alias spells it.
+
+    Returns:
+        *text* with ``\\``, ``[`` and ``]`` backslash-escaped.
+    """
+    return text.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
 
 
 def compute_new_raw_target(
@@ -360,18 +481,26 @@ def compute_new_raw_target(
             new_path_part = quote(new_path_part, safe=_QUOTE_SAFE)
         else:
             new_path_part = _escape_meaning_changers(new_path_part, pointy=pointy)
-            if not pointy:
-                # A new name with a space cannot be written literally in the
-                # plain form: the space ends the destination, so the rewrite
-                # would leave behind something that is not a link at all
-                # (#1494). The pointy form already holds a space, and an
-                # encoded original was re-encoded above.
-                new_path_part = encode_plain_destination(new_path_part)
         # The fragment is the author's spelling, not a name this rewrite
-        # introduces, so it is re-attached as found — repairing one would be
-        # editing prose the rename was not asked to touch.
+        # introduces, so it is re-attached as found and never reformatted.
+        # The two plain-form repairs below still reach it, because both are
+        # properties of the destination as a whole rather than of the part
+        # that changed: a space anywhere in it ends the link, and the
+        # parentheses balance as one run. Repairing a fragment we are
+        # already rewriting the line around beats re-emitting something
+        # that is not a link.
         new_raw = new_path_part + ("#" + fragment if fragment else "")
-        return f"<{new_raw}>" if pointy else new_raw
+        if pointy:
+            # ``<…>`` holds a space and a parenthesis, so neither plain-form
+            # repair applies and the author's spelling survives whole.
+            return f"<{new_raw}>"
+        if not was_encoded:
+            # Both plain-form repairs, on the assembled destination: the
+            # parenthesis test is a property of the whole run (#1516), and a
+            # space anywhere in it ends the link (#1494). An encoded
+            # original was re-encoded by ``quote`` above, which covers both.
+            new_raw = encode_plain_destination(escape_unparsable_parentheses(new_raw))
+        return new_raw
 
 
 def apply_link_replacement(
