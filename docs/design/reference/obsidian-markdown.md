@@ -369,7 +369,9 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
 - Footnotes: `[^1]` references with `[^1]: text` definitions, inline
   `^[This is an inline footnote.]` ("the caret goes outside the brackets"),
   continuation lines indented two spaces. Single-bracket, so they cannot
-  match `_RE_WIKILINK`, but they do match reference-link regexes (#1104).
+  match `_RE_WIKILINK`, but they do match the reference-link shapes
+  (#1104; the scans `_find_reference_usage` and
+  `_iter_reference_definitions` since #1519, the regexes before it).
   [source: help-syntax] [source: help-ofm]
 - Comments: "You can add comments by wrapping text with `%%`", inline
   (`%%inline%%`) or spanning lines, "only visible in Editing view".

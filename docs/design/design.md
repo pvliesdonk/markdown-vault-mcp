@@ -1601,9 +1601,9 @@ the spec itself says, dated and sourced, in
   destination cannot disagree with a rewritten one (#1513). A generated
   link's *text* — a title or an alias, not markdown anyone wrote — has its
   brackets escaped by ``escape_link_text`` for the same reason; that output
-  is valid CommonMark, but the scanner's own link-text pattern is not
-  escape-aware, so such an entry renders and contributes no edge to the
-  graph until #1517 lands. The
+  is valid CommonMark, and since #1517 (inline) and #1519 (reference) the
+  scanner reads those escapes too, so such an entry both renders and
+  reaches the link graph. The
   tools are tagged ``{"okf", "write"}`` — hidden in read-only mode and
   under ``OKF_MODE=off`` — and gate on read-only only, not a future
   ``OKF_WRITE`` flag (they are migrations, not enforcement). Every write
@@ -2327,11 +2327,53 @@ carrying no backslash indexes exactly as it did. `INDEX_SEMANTICS_VERSION`
 9 → 10 records the links that were missing and drops the ones that were never
 links.
 
-Two things this deliberately leaves: the two **reference** patterns keep the
-plain class, so `[a\]b][ref]` is still unfound, and link text is still not
-bracket-balanced. The first is a different match shape (two adjacent spans,
-not one) and the second needs counting rather than escape-awareness; folding
-either in would have added an independent semantic delta to one bump.
+One thing this deliberately left: link text is still not bracket-balanced
+(`[a [b] c](x)`), which needs counting rather than escape-awareness.
+
+**The reference family reads its labels the same way (#1519).** The change
+above left `_RE_REF_USAGE` and `_RE_REF_DEF` on the plain class, so
+`[Bra\]cket][ref]` and `[r\]ef]: x.md` kept losing their rows while the
+inline spelling beside them gained its own — the same defect, one PR apart
+and inside the same unreleased range, which is why one semantics note
+covers both. Both now read a label through `_find_bracket_span`, the
+primitive the inline opener was refactored onto: it returns the next `[…]`
+with escapes honoured, and each caller adds its own shape test.
+`_find_inline_link_open`
+requires a `(` after the span; `_find_reference_usage` requires a second span
+immediately adjacent, which is why the inline scan did not simply drop in;
+`_iter_reference_definitions` requires a `:` and reads the target with the
+same multi-line tail the pattern it replaced used.
+
+A label spelled with an escape has to survive on **both** sides to link,
+because CommonMark normalises a label by case-folding and collapsing
+whitespace, not by resolving escapes. That is also why the definition side is
+not separable: `[a\]b]` can only ever be written with the backslash, so a
+usage that reads it and a definition that does not can never meet.
+
+The escape-aware class stays unaffordable here, now measured for this family
+too: on one 19 KB run of `[a\]b` the class costs 1.9 s against the scan's
+2.4 ms, and 23 KB of the definition shape costs 2.5 s against 2.4 ms, both
+quadrupling per doubling where the scan doubles. The definition scan also
+removes an existing quadratic that had nothing to do with escapes: 4000
+line-opening `[` that never close cost 395 ms before and 9 ms now. The price
+is about 6% across this repository's own 2.8 MiB of markdown (247 ms → 262 ms,
+the same 381 links), and roughly twice the old class on a bracket-dense body
+that yields no links at all.
+
+The equivalence is again the claim the semantics note rests on, and again
+pinned as a differential property rather than by example
+(`tests/test_links_escaped_reference_labels.py`): both scans agree with the
+patterns they replaced on *every* short backslash-free string, sequence and
+resume points included. `INDEX_SEMANTICS_VERSION` stays 10 rather than
+becoming 11 — no tag contains the commit that set it, so the value already
+covers the next release and its note is extended instead (`AGENTS.md`, once
+per release).
+
+What this leaves: the **shortcut** form `[ref]` is still not extracted, a
+standing gap rather than anything new. It is why `[a\][ref]` — whose label
+runs past the escaped `]` and so is not a full reference link — loses a row
+that a CommonMark reader still finds, by reading the leftover `[ref]` as a
+shortcut. Bracket balancing is likewise untouched.
 
 **A link is matched inside one paragraph, never across a boundary (#1334).**
 The three patterns used to run over the whole code-stripped body, and their

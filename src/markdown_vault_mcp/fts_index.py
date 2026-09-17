@@ -315,8 +315,18 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: closes no link for CommonMark either and no longer stores one. Only
 #: notes whose link text carries a backslash are affected; the scan and
 #: the class it replaces agree on every other note (pinned by
-#: ``tests/test_links_escaped_text.py``). Reference links keep the plain
-#: class, a departure recorded in ``docs/design/design.md``.
+#: ``tests/test_links_escaped_text.py``).
+#:
+#: Version 10 also covers the reference family (#1519), which the first
+#: change left on the plain class. A reference usage's two labels and a
+#: definition's one are read by the same scan, so ``[Bra\]cket][ref]``
+#: and ``[r\]ef]: x.md`` store the rows they always should have, and the
+#: mirror spelling — a label ending at an escaped ``]``, ``[a\][ref]`` —
+#: no longer stores one. This extends the note rather than bumping to 11
+#: because no tag contains the commit that set 10 (``AGENTS.md``, once per
+#: release): a deployed vault rebuilding to 10 gets both changes at once.
+#: The same "nothing else moved" property backs it, pinned by
+#: ``tests/test_links_escaped_reference_labels.py``.
 INDEX_SEMANTICS_VERSION = 10
 
 

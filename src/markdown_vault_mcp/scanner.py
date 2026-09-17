@@ -903,18 +903,17 @@ _RE_FENCED_CODE = re.compile(
 )
 # Inline code: a backtick run and its closing run on one line.
 _RE_INLINE_CODE = re.compile(r"`+[^`\n]+`+")
-#: An inline link's text is matched by an escape-aware scan rather than a
-#: negated character class, so a ``\\]`` does not close it (CommonMark §6.3;
-#: #1517) — :func:`_find_inline_link_open` below. The two reference
-#: patterns keep the plain class and are unchanged, a departure recorded in
-#: ``docs/design/design.md``.
+#: A bracket span (link text, reference label) is read by an escape-aware
+#: scan rather than a negated character class, so a ``\\]`` does not close
+#: it (CommonMark §6.3; #1517 for the inline text, #1519 for the two
+#: reference forms) — :func:`_find_bracket_span` below.
 #:
 #: The scan steps between the only characters that can matter rather than
 #: over every one of them, so the engine keeps doing the scanning and a
 #: note with no brackets costs one failed search rather than a Python loop
 #: the length of the note.
 #:
-#: These three and no others: :func:`_find_inline_link_open` handles the
+#: These three and no others: :func:`_find_bracket_span` handles the
 #: backslash and then treats what is left as the two brackets, so a
 #: character added here needs a branch added there.
 _RE_LINK_TEXT_MARK = re.compile(r"[\[\]\\]")
@@ -925,12 +924,19 @@ _RE_LINK_TEXT_MARK = re.compile(r"[\[\]\\]")
 _RE_TRAILING_TITLE = re.compile(
     r"""[ \t]+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\))[ \t]*$"""
 )
-# Reference-style link usage: [text][ref] or [text][]
-_RE_REF_USAGE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
-# Reference definition: [ref]: target  (at start of line, optional leading whitespace)
-_RE_REF_DEF = re.compile(r"^\s*\[([^\]]+)\]:\s*(.+)$", re.MULTILINE)
+#: A reference definition's line start: optional whitespace, then the ``[``
+#: that opens the label. What follows is read by :func:`_find_bracket_span`
+#: and :data:`_RE_REF_DEF_TAIL` rather than by one pattern, so an escaped
+#: ``]`` inside the label does not close it (#1519). ``\s*`` rather than
+#: ``[ \t]*`` because the class it replaces used ``\s*``: a line indented
+#: with an exotic Unicode space is still a definition, as it was before.
+_RE_REF_DEF_OPEN = re.compile(r"^\s*\[", re.MULTILINE)
+#: What follows a definition's ``]:`` — the target, to the end of its line.
+#: The destination may sit on the next line (§4.7), which is why the gap is
+#: ``\s*`` and not ``[ \t]*``; ``(.+)`` then requires a non-empty one.
+_RE_REF_DEF_TAIL = re.compile(r"\s*(.+)$", re.MULTILINE)
 # Markdown footnotes ([^label] / [^label]: body) differ from reference-style
-# links by exactly this character, and both reference regexes match them.
+# links by exactly this character, and both reference scans read them.
 _FOOTNOTE_LABEL_PREFIX = "^"
 # Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian table-cell
 # escape). The target excludes a line ending: a name carrying one names no
@@ -1389,38 +1395,38 @@ def _extract_inline_links(
     return links
 
 
-def _find_inline_link_open(region: str, pos: int) -> tuple[int, int, str] | None:
-    """Find the next ``[text](`` at or after *pos*, honouring escapes.
+def _find_bracket_span(region: str, pos: int) -> tuple[int, int, str] | None:
+    """Find the next ``[…]`` at or after *pos*, honouring escapes.
 
-    Replaces the negated character class the opener used to be matched with
-    (``\\[([^\\]]*)\\]\\(``). That class could not see a backslash, so a
-    ``\\]`` closed the link text and ``[a\\]b](x.md)`` — a valid CommonMark
-    link — produced no row at all (#1517). It is also why the OKF index
-    builder's escaped titles rendered but never reached the link graph.
+    The primitive under every bracket span the scanner reads: an inline
+    link's text, and a reference usage's two labels and a definition's one.
+    Each used to be matched by a negated character class (``[^\\]]*``), which
+    cannot see a backslash, so a ``\\]`` closed the span and the link it
+    belonged to produced no row at all — for inline text (#1517) and for the
+    reference family (#1519) alike.
 
     The scan, not a wider regex, is what makes that affordable. An
     escape-aware class has to read past every escaped ``]``, so the engine's
     retry from each ``[`` turns quadratic: on one 40 KB paragraph of
     ``[a\\]b`` the class costs seconds where this costs a single pass. The
-    walk also fixes the *existing* pathological case, a run of ``[`` that
-    never closes.
+    walk also improves the *existing* pathological case, a run of ``[`` that
+    never closes (#1343).
 
-    Matching follows the class it replaces, so backslash-free text behaves
-    exactly as before: the **first** ``[`` since the last unescaped ``]``
-    opens the text, and the text ends at the first unescaped ``]``. That
-    ``]`` must be followed by ``(``; when it is not, the candidate is
-    discarded and the search resumes after it, which is where the engine's
-    start-position retry would have landed.
+    Matching follows the classes it replaces, so backslash-free input
+    behaves exactly as before: the **first** ``[`` since the last unescaped
+    ``]`` opens the span, and the span ends at the first unescaped ``]``. A
+    caller that rejects the span it is handed resumes at ``close + 1``,
+    which is where the engine's start-position retry would have landed.
 
     Args:
-        region: One paragraph region, code already stripped (#1334).
-        pos: Index to resume from, so a destination already parsed is not
-            re-read as a second link.
+        region: The text to scan — one paragraph region for a usage, the
+            whole body for a definition (#1334).
+        pos: Index to resume from.
 
     Returns:
-        ``(open_index, index_after_the_paren, text)``, the last two matching
-        what the regex's ``end()`` and first group gave; ``None`` when the
-        region holds no further opener.
+        ``(open_index, close_index, inner)`` with ``region[close_index]``
+        the unescaped ``]`` that closed the span; ``None`` when no further
+        span exists.
     """
     first_open: int | None = None
     index = pos
@@ -1429,7 +1435,7 @@ def _find_inline_link_open(region: str, pos: int) -> tuple[int, int, str] | None
         char = region[at]
         if char == "\\":
             # An escaped character is literal, so neither a bracket that
-            # opens the text nor one that closes it.
+            # opens the span nor one that closes it.
             index = at + 2
             continue
         if char == "[":
@@ -1440,13 +1446,114 @@ def _find_inline_link_open(region: str, pos: int) -> tuple[int, int, str] | None
             # backslash above is handled, so this needs no test of its own
             # — and stays an ``else`` rather than a third branch that could
             # never be taken.
-            if first_open is not None and region[at + 1 : at + 2] == "(":
-                return first_open, at + 2, region[first_open + 1 : at]
-            # A ``]`` that closes nothing discards the candidate, which is
-            # where the engine's start-position retry used to land.
-            first_open = None
+            if first_open is not None:
+                return first_open, at, region[first_open + 1 : at]
+            # A ``]`` before any ``[`` closes nothing and is skipped, which
+            # is where the engine's start-position retry used to land.
         index = at + 1
     return None
+
+
+def _find_inline_link_open(region: str, pos: int) -> tuple[int, int, str] | None:
+    """Find the next ``[text](`` at or after *pos*, honouring escapes.
+
+    The link text is read by :func:`_find_bracket_span`; this adds the
+    requirement that its ``]`` be followed by ``(``. When it is not, the
+    candidate is discarded and the search resumes after that ``]``.
+
+    Args:
+        region: One paragraph region, code already stripped (#1334).
+        pos: Index to resume from, so a destination already parsed is not
+            re-read as a second link.
+
+    Returns:
+        ``(open_index, index_after_the_paren, text)``, the last two matching
+        what the class this replaced gave as ``end()`` and its first group;
+        ``None`` when the region holds no further opener.
+    """
+    while (span := _find_bracket_span(region, pos)) is not None:
+        open_index, close_index, text = span
+        if region[close_index + 1 : close_index + 2] == "(":
+            return open_index, close_index + 2, text
+        pos = close_index + 1
+    return None
+
+
+def _find_reference_usage(region: str, pos: int) -> tuple[int, str, str] | None:
+    """Find the next ``[text][ref]`` at or after *pos*, honouring escapes.
+
+    Both labels are read by :func:`_find_bracket_span`, so an escaped ``]``
+    closes neither: ``[Bra\\]cket][ref]`` is a valid CommonMark reference
+    link that the class this replaced could not see (#1519).
+
+    The two spans must be adjacent — the second ``[`` immediately after the
+    first ``]`` — which is the shape that made the inline opener's scan not
+    simply drop in. A first span the second does not follow is discarded
+    and the search resumes after it, where the engine's retry would have
+    landed.
+
+    Args:
+        region: One paragraph region, code already stripped (#1334).
+        pos: Index to resume from. Callers pass the end of the previous
+            usage, keeping the matches non-overlapping as ``finditer`` did
+            — which is what makes ``[^a][^b][^c]`` skip the third label
+            (#1104).
+
+    Returns:
+        ``(end, text, ref)`` with *end* the index after the closing ``]``;
+        ``None`` when the region holds no further usage.
+    """
+    while (first := _find_bracket_span(region, pos)) is not None:
+        _, close_index, text = first
+        if region[close_index + 1 : close_index + 2] == "[":
+            second = _find_bracket_span(region, close_index + 1)
+            if second is None:
+                # The scan starts on that ``[``, so a span is missing only
+                # when no unescaped ``]`` follows it at all — and then no
+                # later start position can hold one either.
+                return None
+            _, second_close, ref = second
+            return second_close + 1, text, ref
+        pos = close_index + 1
+    return None
+
+
+def _iter_reference_definitions(clean: str) -> Iterator[tuple[str, str]]:
+    """Yield ``(label, target)`` for each ``[label]: target`` line.
+
+    The label is read by :func:`_find_bracket_span` so an escaped ``]``
+    does not close it (#1519); the rest keeps the shape of the pattern this
+    replaced (``^\\s*\\[([^\\]]+)\\]:\\s*(.+)$``, multi-line), including the
+    non-empty label, the destination's freedom to sit on the next line, and
+    the greedy run to that line's end.
+
+    Args:
+        clean: Body text with code removed and line endings normalised.
+
+    Yields:
+        The label as written and the target as written, neither stripped.
+    """
+    pos = 0
+    while (opener := _RE_REF_DEF_OPEN.search(clean, pos)) is not None:
+        bracket = opener.end() - 1
+        span = _find_bracket_span(clean, bracket)
+        if span is None:
+            return
+        _, close_index, label = span
+        tail = (
+            _RE_REF_DEF_TAIL.match(clean, close_index + 2)
+            if label and clean[close_index + 1 : close_index + 2] == ":"
+            else None
+        )
+        if tail is None:
+            # Not a definition after all. Resume past this ``[``, where the
+            # engine's next start position would have been; the label's own
+            # ``]`` is not a safe resume point, since a line start inside
+            # the span can open a definition of its own.
+            pos = bracket + 1
+            continue
+        yield label, tail.group(1)
+        pos = tail.end()
 
 
 def _collect_reference_definitions(clean: str) -> dict[str, str]:
@@ -1465,8 +1572,8 @@ def _collect_reference_definitions(clean: str) -> dict[str, str]:
         Lower-cased label to raw target; a later definition wins.
     """
     ref_defs: dict[str, str] = {}
-    for m in _RE_REF_DEF.finditer(clean):
-        ref_key = m.group(1).strip().lower()
+    for label, target in _iter_reference_definitions(clean):
+        ref_key = label.strip().lower()
         if ref_key.startswith(_FOOTNOTE_LABEL_PREFIX):
             # Footnote definition: the body is prose, so storing it as a
             # target resolved whatever the footnote said as a vault path.
@@ -1474,7 +1581,7 @@ def _collect_reference_definitions(clean: str) -> dict[str, str]:
         # The destination as written, title stripped (escape-aware): the
         # pointy, escaped and entity spellings are decoded at resolution,
         # like an inline destination (#1353).
-        ref_target = _RE_TRAILING_TITLE.sub("", m.group(2).strip(" \t")).strip(" \t")
+        ref_target = _RE_TRAILING_TITLE.sub("", target.strip(" \t")).strip(" \t")
         if not ref_target or ref_target == "<>":
             continue
         ref_defs[ref_key] = ref_target
@@ -1498,16 +1605,17 @@ def _extract_reference_links(
     reference-style link and are skipped (#1104).
     """
     links: list[LinkInfo] = []
-    for m in _RE_REF_USAGE.finditer(region):
-        text = m.group(1)
-        ref = m.group(2).strip() or text  # empty [ref] falls back to link text
+    pos = 0
+    while (found := _find_reference_usage(region, pos)) is not None:
+        pos, text, raw_ref = found
+        ref = raw_ref.strip() or text  # empty [ref] falls back to link text
         if text.startswith(_FOOTNOTE_LABEL_PREFIX) or ref.startswith(
             _FOOTNOTE_LABEL_PREFIX
         ):
             # Consecutive footnote references read as one [text][ref] pair,
             # taking the first label as link text and the second as the
-            # reference — and finditer, being non-overlapping, then swallows
-            # the second label so a third reference goes unseen.
+            # reference — and the scan, resuming past both labels as
+            # finditer did, then swallows the second so a third goes unseen.
             continue
         ref_key = ref.lower()
         raw_target = ref_defs.get(ref_key)
