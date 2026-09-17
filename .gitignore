@@ -25,6 +25,9 @@ venv/
 coverage.xml
 coverage.json
 htmlcov/
+# `--cov-report=annotate` writes one of these beside every source file,
+# which `git add -A` will otherwise sweep into a commit (caught on #1520).
+*,cover
 
 # MkDocs build output
 site/
