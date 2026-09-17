@@ -913,6 +913,10 @@ _RE_INLINE_CODE = re.compile(r"`+[^`\n]+`+")
 #: over every one of them, so the engine keeps doing the scanning and a
 #: note with no brackets costs one failed search rather than a Python loop
 #: the length of the note.
+#:
+#: These three and no others: :func:`_find_inline_link_open` handles the
+#: backslash and then treats what is left as the two brackets, so a
+#: character added here needs a branch added there.
 _RE_LINK_TEXT_MARK = re.compile(r"[\[\]\\]")
 # An optional link title after the destination: "…", '…' or (…), escapes
 # honoured, whitespace-separated, at the end of the parenthesised text.
@@ -1431,7 +1435,11 @@ def _find_inline_link_open(region: str, pos: int) -> tuple[int, int, str] | None
         if char == "[":
             if first_open is None:
                 first_open = at
-        elif char == "]":
+        else:
+            # A ``]``: the mark class yields nothing else once the
+            # backslash above is handled, so this needs no test of its own
+            # — and stays an ``else`` rather than a third branch that could
+            # never be taken.
             if first_open is not None and region[at + 1 : at + 2] == "(":
                 return first_open, at + 2, region[first_open + 1 : at]
             # A ``]`` that closes nothing discards the candidate, which is
