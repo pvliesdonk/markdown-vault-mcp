@@ -392,14 +392,14 @@ class TestGeneratedLinkText:
         # escaping the escape, and the ``]`` would close the text again.
         assert escape_link_text("a\\]b") == "a\\\\\\]b"
 
-    def test_a_title_bracket_is_escaped_but_still_not_indexed_here(self) -> None:
+    def test_a_title_bracket_is_escaped_and_now_indexed_too(self) -> None:
         # Valid CommonMark, which is what Obsidian and the docs site read.
-        # This project's own link-text pattern is not escape-aware, so the
-        # entry contributes no edge until #1517 lands. Stated, not hidden:
-        # if this starts passing, #1517 is fixed and this test should say so.
+        # It used to contribute no edge either, because the scanner's own
+        # link-text pattern was not escape-aware; #1517 closed that, so the
+        # generated entry is now a link on both sides of the boundary.
         line = _index_line("Bra]cket", "/notes/x.md")
         assert line == "- [Bra\\]cket](/notes/x.md)"
-        assert extract_links(line, "index.md") == []
+        assert _one(line) == ("notes/x.md", None, "Bra\\]cket")
 
 
 class TestIssue1516RenameRewriter:

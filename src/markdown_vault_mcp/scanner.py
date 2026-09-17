@@ -903,12 +903,21 @@ _RE_FENCED_CODE = re.compile(
 )
 # Inline code: a backtick run and its closing run on one line.
 _RE_INLINE_CODE = re.compile(r"`+[^`\n]+`+")
-# Inline markdown link opener: [text]( — the text keeps the plain negated
-# class (a soft break inside link text is legal) and is bounded by the
-# paragraph region it is matched in (#1334); what follows the ``(`` is read
-# by _parse_destination against CommonMark §6.3's grammar (#1353), not by a
-# character class.
-_RE_INLINE_LINK_OPEN = re.compile(r"\[([^\]]*)\]\(")
+#: An inline link's text is matched by an escape-aware scan rather than a
+#: negated character class, so a ``\\]`` does not close it (CommonMark §6.3;
+#: #1517) — :func:`_find_inline_link_open` below. The two reference
+#: patterns keep the plain class and are unchanged, a departure recorded in
+#: ``docs/design/design.md``.
+#:
+#: The scan steps between the only characters that can matter rather than
+#: over every one of them, so the engine keeps doing the scanning and a
+#: note with no brackets costs one failed search rather than a Python loop
+#: the length of the note.
+#:
+#: These three and no others: :func:`_find_inline_link_open` handles the
+#: backslash and then treats what is left as the two brackets, so a
+#: character added here needs a branch added there.
+_RE_LINK_TEXT_MARK = re.compile(r"[\[\]\\]")
 # An optional link title after the destination: "…", '…' or (…), escapes
 # honoured, whitespace-separated, at the end of the parenthesised text.
 # Spaces and tabs separate it (§6.3; a NBSP is an ordinary destination
@@ -1339,19 +1348,19 @@ def _extract_inline_links(
     """
     links: list[LinkInfo] = []
     pos = 0
-    while (m := _RE_INLINE_LINK_OPEN.search(region, pos)) is not None:
-        parsed = _parse_destination(region, m.end())
+    while (found := _find_inline_link_open(region, pos)) is not None:
+        open_index, after_open, text = found
+        parsed = _parse_destination(region, after_open)
         if parsed is None:
-            pos = m.end()
+            pos = after_open
             continue
         raw_target, end = parsed
         # The search resumes after the whole link, so a ``[b](y)`` written
         # inside this link's title is not read as a second link.
         pos = end
         # Skip image links: ![alt](src) shares the same bracket syntax.
-        if m.start() > 0 and region[m.start() - 1] == "!":
+        if open_index > 0 and region[open_index - 1] == "!":
             continue
-        text = m.group(1)
         # The external test looks at what the spelling names, not at its
         # brackets or escapes; the anchor test at the spelling itself, since
         # a decoded ``%23x.md`` begins with ``#`` and is not an anchor (#1353).
@@ -1378,6 +1387,66 @@ def _extract_inline_links(
         )
 
     return links
+
+
+def _find_inline_link_open(region: str, pos: int) -> tuple[int, int, str] | None:
+    """Find the next ``[text](`` at or after *pos*, honouring escapes.
+
+    Replaces the negated character class the opener used to be matched with
+    (``\\[([^\\]]*)\\]\\(``). That class could not see a backslash, so a
+    ``\\]`` closed the link text and ``[a\\]b](x.md)`` — a valid CommonMark
+    link — produced no row at all (#1517). It is also why the OKF index
+    builder's escaped titles rendered but never reached the link graph.
+
+    The scan, not a wider regex, is what makes that affordable. An
+    escape-aware class has to read past every escaped ``]``, so the engine's
+    retry from each ``[`` turns quadratic: on one 40 KB paragraph of
+    ``[a\\]b`` the class costs seconds where this costs a single pass. The
+    walk also fixes the *existing* pathological case, a run of ``[`` that
+    never closes.
+
+    Matching follows the class it replaces, so backslash-free text behaves
+    exactly as before: the **first** ``[`` since the last unescaped ``]``
+    opens the text, and the text ends at the first unescaped ``]``. That
+    ``]`` must be followed by ``(``; when it is not, the candidate is
+    discarded and the search resumes after it, which is where the engine's
+    start-position retry would have landed.
+
+    Args:
+        region: One paragraph region, code already stripped (#1334).
+        pos: Index to resume from, so a destination already parsed is not
+            re-read as a second link.
+
+    Returns:
+        ``(open_index, index_after_the_paren, text)``, the last two matching
+        what the regex's ``end()`` and first group gave; ``None`` when the
+        region holds no further opener.
+    """
+    first_open: int | None = None
+    index = pos
+    while (mark := _RE_LINK_TEXT_MARK.search(region, index)) is not None:
+        at = mark.start()
+        char = region[at]
+        if char == "\\":
+            # An escaped character is literal, so neither a bracket that
+            # opens the text nor one that closes it.
+            index = at + 2
+            continue
+        if char == "[":
+            if first_open is None:
+                first_open = at
+        else:
+            # A ``]``: the mark class yields nothing else once the
+            # backslash above is handled, so this needs no test of its own
+            # — and stays an ``else`` rather than a third branch that could
+            # never be taken.
+            if first_open is not None and region[at + 1 : at + 2] == "(":
+                return first_open, at + 2, region[first_open + 1 : at]
+            # A ``]`` that closes nothing discards the candidate, which is
+            # where the engine's start-position retry used to land.
+            first_open = None
+        index = at + 1
+    return None
 
 
 def _collect_reference_definitions(clean: str) -> dict[str, str]:
