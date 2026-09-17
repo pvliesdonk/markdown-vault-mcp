@@ -1581,7 +1581,19 @@ the spec itself says, dated and sourced, in
   ``folder`` argument both places the log and scopes its content: a folder
   seeds only the commits that touched that subtree (via the read-only
   git-history layer's directory support — ``git log -- <dir>``), while the
-  bundle root seeds whole-vault history (#974). The
+  bundle root seeds whole-vault history (#974).
+  Both link-writing transforms percent-encode what a plain markdown
+  destination cannot hold (#1494): a vault path is a *name*, and
+  interpolating one that carries a space into ``[t](…)`` verbatim produced
+  something that is not a link — accepted by this project's deliberately
+  tolerant scanner, rejected by Obsidian and by CommonMark §6.3 alike. The
+  encoder is ``utils/links.py::encode_plain_destination``, the write-side
+  counterpart to ``decode_link_target``, and it touches only the space and
+  the ASCII control characters, so a destination stays as readable as the
+  one Obsidian's own writer emits. The tolerant reader is unchanged: what
+  the server *accepts* and what it *emits* are separate decisions, and
+  resolution through the index never established that emitted output
+  parses. The
   tools are tagged ``{"okf", "write"}`` — hidden in read-only mode and
   under ``OKF_MODE=off`` — and gate on read-only only, not a future
   ``OKF_WRITE`` flag (they are migrations, not enforcement). Every write
@@ -2202,8 +2214,8 @@ the #1105 fidelity defect reached by a second route. The comparison is now
 made against the decoded destination, and the replacement is re-encoded
 (`quote`, `safe="/"`) only when the original was encoded; a refused
 destination never decoded, so it is not re-encoded either. No encoding is
-introduced where the author used none, which also means a rename cannot repair
-a destination whose new name would need escaping to parse.
+introduced where the author used none, beyond what the new name needs to
+parse at all (below).
 
 **A destination is read by CommonMark's grammar, in any of its spellings
 (#1353).** It used to be everything up to the first `)`, so the five spellings
@@ -2238,13 +2250,18 @@ its brackets on, fell into the relative branch and would have written
 `[x](new.md#frag>)`. It now takes the brackets off for the comparison, decodes
 escapes and entities as well as percent-escapes, and puts the brackets back
 on the answer: pointy stays pointy, plain stays plain, and no escaping is
-introduced where the author used none — with one bounded exception. A new
-name with a space or an unbalanced paren is written literally in plain form
-and comes back *broken*, the pre-existing class; but a new name containing
-`#` (or `<`/`>` inside the pointy form) would come back *re-pointed* — read as
-a fragment or an anchor, the backlink silently gone — so exactly those
-characters are backslash-escaped on rewrite (`\#y.md`, `<new\>x.md>`). A
-percent-encoded original already encodes them.
+introduced where the author used none — with two bounded exceptions. A new
+name containing `#` (or `<`/`>` inside the pointy form) would come back
+*re-pointed* — read as a fragment or an anchor, the backlink silently gone —
+so exactly those characters are backslash-escaped on rewrite (`\#y.md`,
+`<new\>x.md>`). A new name containing a space (or an ASCII control
+character) would come back *not a link at all*, because a plain destination
+ends at the first space and the rest is read as a title, so exactly those
+characters are percent-encoded on rewrite into the plain form
+(`/Project%20Notes/target.md`, #1494). Neither repair reaches the other
+spellings: `<…>` holds a space already, and a percent-encoded original is
+re-encoded by `quote`. An unbalanced paren is still written literally and
+still comes back broken, the pre-existing class.
 
 Departures, pinned: parentheses balance to three levels, the depth §6.3's own
 examples reach, so a pathological line stays one linear regex pass (deeper

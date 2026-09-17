@@ -80,7 +80,10 @@ metadata but attaches no meaning to `type`, `status`, `stale_after`, `sources`,
   and `log.md` (change history, newest-first `## YYYY-MM-DD` headings).
 - **Links:** standard markdown links, untyped; bundle-root-absolute
   (`/path/x.md`) recommended, relative allowed. Wikilinks are not part of
-  the spec — but link style is *convention*, not conformance.
+  the spec — but link style is *convention*, not conformance. "Standard
+  markdown link" is the binding half: a destination the transforms write is
+  percent-encoded where a vault path would not parse as one
+  (`/Project%20Notes/x.md`, #1494).
 - **Extension keys:** arbitrary extra frontmatter keys are allowed and MUST
   be preserved on round-trip.
 - **Out of scope for this server:** Attested Computations (sanctioned

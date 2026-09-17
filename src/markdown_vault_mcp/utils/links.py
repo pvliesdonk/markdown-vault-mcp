@@ -1,8 +1,9 @@
-"""Link target helpers: decoding, replacement computation, substitution.
+"""Link target helpers: decoding, encoding, replacement, substitution.
 
-:func:`decode_link_target` is shared with link extraction; the rest compute
-replacement link targets and apply substitutions in file content when a note
-is renamed within the vault.
+:func:`decode_link_target` is shared with link extraction and
+:func:`encode_plain_destination` with every site that *writes* a markdown
+destination; the rest compute replacement link targets and apply
+substitutions in file content when a note is renamed within the vault.
 """
 
 from __future__ import annotations
@@ -59,6 +60,49 @@ def decode_link_target(target: str) -> str:
         return unquote(target, errors="strict")
     except UnicodeDecodeError:
         return target
+
+
+#: What a *plain* (unbracketed) markdown destination cannot hold: the space
+#: and the ASCII control characters (CommonMark §6.3, "Link destination").
+#: A literal space does not merely look wrong — it ends the destination and
+#: starts the title slot, so the link stops being a link (#1494).
+_RE_PLAIN_DESTINATION_ILLEGAL = re.compile(r"[\x00-\x20\x7f]")
+
+
+def encode_plain_destination(path: str) -> str:
+    """Percent-encode what a plain markdown destination cannot hold.
+
+    The counterpart to :func:`decode_link_target`, used wherever the server
+    *writes* a destination rather than reads one: a vault path is not a
+    markdown destination, and interpolating one into ``[t](…)`` verbatim
+    emits invalid markdown for every note or folder whose name carries a
+    space (#1494). Obsidian's own link writer does the same thing —
+    ``[Three laws of motion](Projects/Three%20laws%20of%20motion.md)``
+    (``docs/design/reference/obsidian-markdown.md``, "Markdown links
+    Obsidian writes") — so the output matches what a vault's other writer
+    produces.
+
+    Only the characters §6.3 forbids are touched. Everything else is left
+    literal, so the destination stays readable and
+    :func:`decode_link_target` reads back exactly *path*: a ``%`` already in
+    the name is not an escape (it is not followed by two hex digits once the
+    space beside it becomes ``%20``), and ``/`` is structure, never encoded.
+
+    A NUL is encoded like any other control character, to ``%00``, which
+    :func:`decode_link_target` then refuses — the link shows up broken
+    instead of resolving onto a name no file system allows. No path from a
+    real vault reaches that case.
+
+    Args:
+        path: A destination's path portion (and fragment, if any) as the
+            name spells it, not percent-encoded.
+
+    Returns:
+        *path* with spaces and ASCII control characters percent-encoded.
+    """
+    return _RE_PLAIN_DESTINATION_ILLEGAL.sub(
+        lambda match: f"%{ord(match.group()):02X}", path
+    )
 
 
 #: A backslash before an ASCII punctuation character is an escape (CommonMark
@@ -262,7 +306,9 @@ def compute_new_raw_target(
         The replacement raw_target string to write into the source file,
         written in the same shape *and the same spelling* the original used:
         a destination the author percent-encoded is re-encoded, one written
-        literally stays literal (#1105, #1332).
+        literally stays literal (#1105, #1332) — except where writing the
+        new name literally would not parse, when a space or an ASCII control
+        character is percent-encoded so the rewrite stays a link (#1494).
     """
     if link_type == "wikilink":
         # Determine whether the original wikilink included the .md extension.
@@ -314,6 +360,16 @@ def compute_new_raw_target(
             new_path_part = quote(new_path_part, safe=_QUOTE_SAFE)
         else:
             new_path_part = _escape_meaning_changers(new_path_part, pointy=pointy)
+            if not pointy:
+                # A new name with a space cannot be written literally in the
+                # plain form: the space ends the destination, so the rewrite
+                # would leave behind something that is not a link at all
+                # (#1494). The pointy form already holds a space, and an
+                # encoded original was re-encoded above.
+                new_path_part = encode_plain_destination(new_path_part)
+        # The fragment is the author's spelling, not a name this rewrite
+        # introduces, so it is re-attached as found — repairing one would be
+        # editing prose the rename was not asked to touch.
         new_raw = new_path_part + ("#" + fragment if fragment else "")
         return f"<{new_raw}>" if pointy else new_raw
 

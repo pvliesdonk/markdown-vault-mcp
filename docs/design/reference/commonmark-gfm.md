@@ -233,6 +233,7 @@ Python 3.13.
   no spaces — hence no line endings (Ex. 488, 490); parentheses only escaped
   or balanced, ≥ 3 levels (Ex. 496–498). [source: cm] [observed: markdown-it-py
   3.0.0, `[a](x(1).md)` links `x(1).md`; `[a](x(1.md)` and `[a](x\n.md)` no link]
+  [pins: tests/test_links_generated_destinations.py::TestNothingForbiddenSurvives::test_no_producer_emits_a_forbidden_character, tests/test_links_generated_destinations.py::TestTheOtherSpellingsAreUnchanged::test_the_pointy_form_keeps_its_literal_space]
 - Destination may be empty (Ex. 485); title is `"…"`, `'…'` or `(…)`,
   whitespace-separated, may span lines but not a blank line (Ex. 505, 510).
   [source: cm] [pins: tests/test_utils_links.py::TestApplyLinkReplacement::test_markdown_link_with_title]
