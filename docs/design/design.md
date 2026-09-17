@@ -1581,7 +1581,7 @@ the spec itself says, dated and sourced, in
   ``folder`` argument both places the log and scopes its content: a folder
   seeds only the commits that touched that subtree (via the read-only
   git-history layer's directory support — ``git log -- <dir>``), while the
-  bundle root seeds whole-vault history (#974). The
+  bundle root seeds whole-vault history (#974).
   Both link-writing transforms percent-encode what a plain markdown
   destination cannot hold (#1494): a vault path is a *name*, and
   interpolating one that carries a space into ``[t](…)`` verbatim produced

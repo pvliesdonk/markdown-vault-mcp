@@ -773,7 +773,11 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
     the same resolved ``target_path`` the wikilink already resolved to.
     Unresolvable wikilinks are left as-is and counted as skipped; a
     wikilink naming an attachment (``![[pic.png]]``) is not a link at all,
-    so it is left as-is and not counted (#1333). Interior whitespace and
+    so it is left as-is and not counted (#1333). A wikilink target may hold
+    a space and a plain markdown destination may not, so the converted
+    destination is percent-encoded by
+    :func:`~markdown_vault_mcp.utils.links.encode_plain_destination`
+    (#1494). Interior whitespace and
     the table-cell ``\\|`` escape are not matched (the same limitation as
     the rename/move link-rewrite engine).
 

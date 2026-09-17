@@ -420,12 +420,13 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   with "Use [[Wikilinks]]" off) to `Sub/We!rd (name) [x] #1.md`, from the
   root and from `Sub/` alike: `[We!rd (name) [x] #1](Sub/We!rd%20(name)%20[x]%20#1.md)`
   — the vault path with no leading slash, only spaces percent-encoded, `(`
-  `)` `[` `]` `!` `#` literal. `encode_plain_destination` shows the same
-  restraint, encoding only what §6.3 forbids (#1494).
-  [pins: tests/test_links_generated_destinations.py::TestWhatEncodePlainDestinationLeavesAlone::test_a_legal_destination_is_returned_untouched] Obsidian's own reader then cannot resolve it:
+  `)` `[` `]` `!` `#` literal. Obsidian's own reader then cannot resolve it:
   the link cache decodes it to `Sub/We!rd (name) [x] #1.md` but
   `unresolvedLinks` holds `Sub/We!rd (name) [x] ` — it splits at the `#`
   exactly as the scanner does (#1353). [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358]
+  `encode_plain_destination` shows the same restraint, encoding only what
+  §6.3 forbids (#1494).
+  [pins: tests/test_links_generated_destinations.py::TestWhatEncodePlainDestinationLeavesAlone::test_a_legal_destination_is_returned_untouched]
 
 ### File names
 
