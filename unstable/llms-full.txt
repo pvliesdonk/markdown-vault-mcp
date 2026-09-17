@@ -4265,7 +4265,7 @@ When using `write` to update an existing note or root index, read its current co
 
 Three tools handle the changes you should not make by hand. They are write tools, so they are hidden in read-only mode and when `OKF_MODE` is `off`, and on a git-backed vault each change is committed.
 
-- **`okf_convert_links`** rewrites `[[wikilinks]]` as the root-absolute markdown links OKF recommends, such as `[text](/guides/note.md)`. Only links whose target exists are converted, so your link graph is preserved exactly. Unresolvable wikilinks are left alone and reported. You can write in either link style day to day; run this before sharing the bundle.
+- **`okf_convert_links`** rewrites `[[wikilinks]]` as the root-absolute markdown links OKF recommends, such as `[text](/guides/note.md)`. Spaces in a note or folder name are percent-encoded, as Obsidian does when it writes a link, so `Project Notes/note.md` becomes `[text](/Project%20Notes/note.md)` and stays a link everywhere. Only links whose target exists are converted, so your link graph is preserved exactly. Unresolvable wikilinks are left alone and reported. You can write in either link style day to day; run this before sharing the bundle.
 - **`okf_generate_index`** writes a folder's `index.md` as a listing of the notes directly in that folder, plus a pointer into each subfolder's own `index.md`. It draws the description from each note's frontmatter and lists one level at a time, so a nested bundle stays navigable rather than flattening into one long page. It preserves existing frontmatter, so regenerating the root `index.md` keeps your `okf_version` declaration.
 - **`okf_seed_log`** creates a `log.md` change history from the vault's git commits, newest first. The `folder` argument both places the log and scopes its content: seeding a folder includes only the commits that touched that subtree, while seeding the bundle root includes the whole vault's history. It refuses to overwrite an existing `log.md`, so a hand-maintained history is safe.
 
@@ -5255,7 +5255,7 @@ Three one-shot [OKF (Open Knowledge Format)](https://github.com/GoogleCloudPlatf
 
 #### `okf_convert_links`
 
-Rewrite `[[wikilinks]]` as the bundle-root-absolute markdown links OKF recommends (`[text](/path/note.md)`) across the vault or one folder. Only links whose target is indexed are converted, so the link graph is preserved edge-for-edge; unresolvable wikilinks are left untouched and counted as skipped, and a wikilink naming an attachment (`![[pic.png]]`) is not a link, so it is left untouched and not counted. Re-running is safe (already-converted markdown links are not touched).
+Rewrite `[[wikilinks]]` as the bundle-root-absolute markdown links OKF recommends (`[text](/path/note.md)`) across the vault or one folder. Spaces in a note or folder name are percent-encoded (`[text](/Project%20Notes/note.md)`), the spelling Obsidian writes and every CommonMark reader parses. Only links whose target is indexed are converted, so the link graph is preserved edge-for-edge; unresolvable wikilinks are left untouched and counted as skipped, and a wikilink naming an attachment (`![[pic.png]]`) is not a link, so it is left untouched and not counted. Re-running is safe (already-converted markdown links are not touched).
 
 | Parameter | Type   | Description                                                      |
 | --------- | ------ | ---------------------------------------------------------------- |
@@ -5265,7 +5265,7 @@ Rewrite `[[wikilinks]]` as the bundle-root-absolute markdown links OKF recommend
 
 #### `okf_generate_index`
 
-Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing: `- [title](/path.md) - description` for each note directly in the folder, plus a pointer into each immediate subfolder's own `index.md`. Descriptions are drawn from frontmatter. The listing is one level deep (it does not flatten the subtree). Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted. When the vault sets `REQUIRED_FIELDS`, any required field the file lacks is added, so the generated listing is not itself excluded from the index.
+Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing: `- [title](/path.md) - description` for each note directly in the folder, plus a pointer into each immediate subfolder's own `index.md`. Descriptions are drawn from frontmatter. Spaces in a path are percent-encoded (`- [Target](/Project%20Notes/target.md)`), so a listing stays a set of links whatever the folder is called. The listing is one level deep (it does not flatten the subtree). Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted. When the vault sets `REQUIRED_FIELDS`, any required field the file lacks is added, so the generated listing is not itself excluded from the index.
 
 | Parameter | Type   | Description                               |
 | --------- | ------ | ----------------------------------------- |
