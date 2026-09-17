@@ -1593,7 +1593,17 @@ the spec itself says, dated and sourced, in
   one Obsidian's own writer emits. The tolerant reader is unchanged: what
   the server *accepts* and what it *emits* are separate decisions, and
   resolution through the index never established that emitted output
-  parses. The
+  parses. Both transforms reach the encoder through
+  ``build_plain_destination``, which first applies the same
+  ``_escape_meaning_changers`` the rename path uses and then attaches the
+  fragment marker, so a name carrying ``#`` or a parenthesis that will not
+  parse is escaped exactly as a rename escapes it and a generated
+  destination cannot disagree with a rewritten one (#1513). A generated
+  link's *text* — a title or an alias, not markdown anyone wrote — has its
+  brackets escaped by ``escape_link_text`` for the same reason; that output
+  is valid CommonMark, but the scanner's own link-text pattern is not
+  escape-aware, so such an entry renders and contributes no edge to the
+  graph until #1517 lands. The
   tools are tagged ``{"okf", "write"}`` — hidden in read-only mode and
   under ``OKF_MODE=off`` — and gate on read-only only, not a future
   ``OKF_WRITE`` flag (they are migrations, not enforcement). Every write
@@ -2250,18 +2260,34 @@ its brackets on, fell into the relative branch and would have written
 `[x](new.md#frag>)`. It now takes the brackets off for the comparison, decodes
 escapes and entities as well as percent-escapes, and puts the brackets back
 on the answer: pointy stays pointy, plain stays plain, and no escaping is
-introduced where the author used none — with two bounded exceptions. A new
-name containing `#` (or `<`/`>` inside the pointy form) would come back
-*re-pointed* — read as a fragment or an anchor, the backlink silently gone —
-so exactly those characters are backslash-escaped on rewrite (`\#y.md`,
-`<new\>x.md>`). A new name containing a space (or an ASCII control
-character) would come back *not a link at all*, because a plain destination
-ends at the first space and the rest is read as a title, so exactly those
-characters are percent-encoded on rewrite into the plain form
-(`/Project%20Notes/target.md`, #1494). Neither repair reaches the other
-spellings: `<…>` holds a space already, and a percent-encoded original is
-re-encoded by `quote`. An unbalanced paren is still written literally and
-still comes back broken, the pre-existing class.
+introduced where the author used none — with two bounded exceptions, drawn
+on what the new name would be *read as* rather than on which character it
+is.
+
+The first is the **re-pointing** class: the link still parses, so nothing
+looks wrong, and it names something else. `#` (and `<`/`>` inside the pointy
+form) is read as a fragment, or as an anchor when the name begins with one,
+and a parenthesis that will not parse in the plain form ends the destination
+early, so `/notes/a)b.md` becomes a link to `notes/a`. Exactly those are
+backslash-escaped on rewrite (`\#y.md`, `<new\>x.md>`, `/notes/a\)b.md`).
+The paren half was first assigned to the *other* class and left unrepaired;
+#1516 showed that only an unbalanced `(` breaks visibly, while a `)`
+re-points silently, so both now escape.
+
+The second is the **invalidity** class: a space (or an ASCII control
+character) ends a plain destination and the rest is read as a title, so the
+line is not a link at all. Those are percent-encoded rather than escaped,
+matching what Obsidian's own writer emits (`/Project%20Notes/target.md`,
+#1494).
+
+Neither repair reaches the other spellings: `<…>` holds a space and a
+parenthesis already, and a percent-encoded original is re-encoded by
+`quote`. Escaping stays minimal in both classes — a **balanced** `a(b).md`
+parses in the plain form, so it is left literal, and the write-side depth
+limit mirrors the parser's three levels rather than guessing
+(`_MAX_PLAIN_PAREN_DEPTH`; the agreement is pinned by a test, so a change to
+either side fails loudly rather than silently emitting a link that no longer
+resolves).
 
 Departures, pinned: parentheses balance to three levels, the depth §6.3's own
 examples reach, so a pathological line stays one linear regex pass (deeper

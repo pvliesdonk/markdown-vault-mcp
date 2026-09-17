@@ -16,6 +16,15 @@ is deliberately tolerant and reads the raw-space, pointy and percent-encoded
 spellings all onto the same note (a departure pinned in the same reference).
 So every case below asserts the *emitted spelling* as well, and the
 spec-property test asserts the one thing §6.3 actually forbids.
+
+Spaces are the *invalidity* half. The other half is a name that stays a
+link and means something else: a ``#`` read as a fragment, or an unbalanced
+parenthesis ending the destination early so the link resolves to the shorter
+path (#1513, #1516). Those are escaped rather than encoded, and only when
+they would not parse — a balanced ``a(b).md`` is legal and stays literal.
+A bracket in generated *link text* is escaped too; that output is valid
+CommonMark but this project's own scanner still will not index it (#1517),
+which the tests below state rather than paper over.
 """
 
 from __future__ import annotations
@@ -28,8 +37,13 @@ from markdown_vault_mcp.okf import build_index_markdown, convert_wikilinks_to_ma
 from markdown_vault_mcp.scanner import extract_links
 from markdown_vault_mcp.types import OutlinkInfo
 from markdown_vault_mcp.utils.links import (
+    _MAX_PLAIN_PAREN_DEPTH,
+    _parentheses_parse_plainly,
+    build_plain_destination,
     compute_new_raw_target,
     encode_plain_destination,
+    escape_link_text,
+    escape_unparsable_parentheses,
 )
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
@@ -61,6 +75,19 @@ def _destination(content: str) -> str:
     links = extract_links(content, SRC)
     assert len(links) == 1, links
     return links[0].raw_target
+
+
+def _index_line(title: str, path: str) -> str:
+    """The one entry line ``build_index_markdown`` writes for *title*."""
+    return build_index_markdown("I", [(title, path, None)]).splitlines()[-1]
+
+
+def _one(line: str) -> tuple[str, str | None, str]:
+    """The single link in *line* as ``(target_path, fragment, link_text)``."""
+    links = extract_links(line, "index.md")
+    assert len(links) == 1, links
+    link = links[0]
+    return link.target_path, link.fragment, link.link_text
 
 
 # ---------------------------------------------------------------------------
@@ -265,3 +292,289 @@ class TestEndToEnd:
 
         body = (tmp_path / "Project Notes" / "index.md").read_text(encoding="utf-8")
         assert "(/Project%20Notes/target.md)" in body
+
+
+# ---------------------------------------------------------------------------
+# The re-pointing class: a name that stays a link and means something else
+# ---------------------------------------------------------------------------
+
+
+class TestIssue1513Table:
+    """The three rows #1513 reported, through the index builder."""
+
+    def test_a_hash_in_the_path_no_longer_becomes_a_fragment(self) -> None:
+        # The quiet one: it stayed a link, to a note that does not exist.
+        line = _index_line("Hash", "/notes/a#b.md")
+        assert line == "- [Hash](/notes/a\\#b.md)"
+        assert _one(line) == ("notes/a#b.md", None, "Hash")
+
+    def test_an_unbalanced_open_paren_no_longer_kills_the_link(self) -> None:
+        line = _index_line("P", "/notes/a(b.md")
+        assert line == "- [P](/notes/a\\(b.md)"
+        assert _one(line) == ("notes/a(b.md", None, "P")
+
+    def test_an_unbalanced_close_paren_no_longer_truncates_the_target(self) -> None:
+        # Reported as "no link"; it was worse — the link resolved to
+        # ``notes/a``, a different note.
+        line = _index_line("P", "/notes/a)b.md")
+        assert line == "- [P](/notes/a\\)b.md)"
+        assert _one(line) == ("notes/a)b.md", None, "P")
+
+
+class TestOnlyWhatWouldNotParseIsEscaped:
+    def test_balanced_parentheses_stay_literal(self) -> None:
+        # Legal in the plain form and readable, so escaping them would be
+        # noise — the same restraint the space encoder shows.
+        line = _index_line("P", "/notes/a(b).md")
+        assert line == "- [P](/notes/a(b).md)"
+        assert _one(line) == ("notes/a(b).md", None, "P")
+
+    @pytest.mark.parametrize("depth", range(1, _MAX_PLAIN_PAREN_DEPTH + 3))
+    def test_the_write_side_depth_limit_matches_the_parser(self, depth: int) -> None:
+        # ``_MAX_PLAIN_PAREN_DEPTH`` mirrors the parser's own limit. If the
+        # parser's limit moves and this one does not, the generated link
+        # stops resolving — so pin the agreement, not either number.
+        name = "a" + "(" * depth + "x" + ")" * depth + ".md"
+        assert _one(_index_line("P", f"/notes/{name}")) == (
+            f"notes/{name}",
+            None,
+            "P",
+        )
+
+    def test_escaping_composes_with_the_space_encoder(self) -> None:
+        line = _index_line("P", "/Project Notes/a#b.md")
+        assert line == "- [P](/Project%20Notes/a\\#b.md)"
+        assert _one(line) == ("Project Notes/a#b.md", None, "P")
+
+    def test_a_fragment_marker_survives_a_hash_in_the_path(self) -> None:
+        # ``build_plain_destination`` attaches the marker after escaping, so
+        # the separator stays a separator and the name's ``#`` does not.
+        written = build_plain_destination("notes/a#b.md", "My Heading")
+        assert written == "notes/a\\#b.md#My%20Heading"
+        target, fragment, _text = _one(f"[t]({written})")
+        assert (target, fragment) == ("notes/a#b.md", "My%20Heading")
+
+
+class TestTheConverterSharesTheRepairs:
+    def test_a_resolved_path_with_a_hash_is_escaped(self) -> None:
+        new, _, _ = convert_wikilinks_to_markdown("[[T]]", [_wl("T", "notes/a#b.md")])
+        assert new == "[T](/notes/a\\#b.md)"
+        assert extract_links(new, SRC)[0].target_path == "notes/a#b.md"
+
+    def test_an_alias_bracket_is_escaped(self) -> None:
+        # An unmatched ``[`` makes a spec reader show different text than
+        # the alias intended; the wikilink grammar cannot deliver a ``]``.
+        new, _, _ = convert_wikilinks_to_markdown(
+            "[[T|Bra[cket]]", [_wl("T", "notes/x.md")]
+        )
+        assert new == "[Bra\\[cket](/notes/x.md)"
+        assert extract_links(new, SRC)[0].target_path == "notes/x.md"
+
+
+class TestGeneratedLinkText:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("Bra]cket", "Bra\\]cket"),
+            ("Note [draft]", "Note \\[draft\\]"),
+            ("back\\slash", "back\\\\slash"),
+            ("plain", "plain"),
+        ],
+        ids=["close", "pair", "backslash", "untouched"],
+    )
+    def test_brackets_and_backslashes_are_escaped(
+        self, text: str, expected: str
+    ) -> None:
+        assert escape_link_text(text) == expected
+
+    def test_a_backslash_is_escaped_before_the_bracket_it_precedes(self) -> None:
+        # Escaping ``]`` first would leave the author's own backslash
+        # escaping the escape, and the ``]`` would close the text again.
+        assert escape_link_text("a\\]b") == "a\\\\\\]b"
+
+    def test_a_title_bracket_is_escaped_but_still_not_indexed_here(self) -> None:
+        # Valid CommonMark, which is what Obsidian and the docs site read.
+        # This project's own link-text pattern is not escape-aware, so the
+        # entry contributes no edge until #1517 lands. Stated, not hidden:
+        # if this starts passing, #1517 is fixed and this test should say so.
+        line = _index_line("Bra]cket", "/notes/x.md")
+        assert line == "- [Bra\\]cket](/notes/x.md)"
+        assert extract_links(line, "index.md") == []
+
+
+class TestIssue1516RenameRewriter:
+    """A rename into a name whose parentheses would not parse (#1516)."""
+
+    @pytest.mark.parametrize(
+        ("new_path", "expected"),
+        [
+            ("notes/a(b.md", "/notes/a\\(b.md"),
+            ("notes/a)b.md", "/notes/a\\)b.md"),
+            ("notes/a(b).md", "/notes/a(b).md"),
+        ],
+        ids=["open", "close", "balanced"],
+    )
+    def test_the_rewrite_lands_on_the_renamed_file(
+        self, new_path: str, expected: str
+    ) -> None:
+        raw = compute_new_raw_target(
+            "markdown", "/old.md", None, new_path, source_path=SRC, old_path="old.md"
+        )
+        assert raw == expected
+        assert extract_links(f"[t]({raw})", SRC)[0].target_path == new_path
+
+    def test_the_pointy_form_needs_no_paren_escape(self) -> None:
+        # ``<…>`` admits a parenthesis, so the author's spelling survives.
+        assert (
+            compute_new_raw_target(
+                "markdown", "<old.md>", None, "a(b.md", SRC, "old.md"
+            )
+            == "<a(b.md>"
+        )
+
+    def test_an_encoded_original_is_still_re_encoded_not_escaped(self) -> None:
+        assert (
+            compute_new_raw_target(
+                "markdown", "/old%20name.md", None, "a(b.md", SRC, "old name.md"
+            )
+            == "/a%28b.md"
+        )
+
+    def test_end_to_end_a_rename_into_an_unbalanced_name(
+        self, tmp_path: Path, vault: Vault
+    ) -> None:
+        (tmp_path / "target.md").write_text("# Target\n", encoding="utf-8")
+        (tmp_path / SRC).write_text("See [it](/target.md).\n", encoding="utf-8")
+        vault.index.build_index()
+
+        result = vault.writer.rename("target.md", "a)b.md", update_links=True)
+
+        assert result.updated_links == 1
+        assert (tmp_path / SRC).read_text(encoding="utf-8") == (
+            "See [it](/a\\)b.md).\n"
+        )
+
+
+class TestParenthesesBalanceAcrossTheWholeDestination:
+    """§6.3 reads a destination's parentheses as one run (#1516).
+
+    Checking the path and the fragment separately is wrong in both
+    directions: it misses an unbalanced parenthesis that lives only in the
+    fragment, and it *breaks* a destination whose two parts balance each
+    other.
+    """
+
+    @pytest.mark.parametrize(
+        ("fragment", "expected"),
+        [
+            ("Heading (draft", "notes/x.md#Heading%20\\(draft"),
+            ("Heading) draft", "notes/x.md#Heading\\)%20draft"),
+            ("Heading (draft)", "notes/x.md#Heading%20(draft)"),
+        ],
+        ids=["open", "close", "balanced"],
+    )
+    def test_a_fragment_parenthesis_counts(self, fragment: str, expected: str) -> None:
+        written = build_plain_destination("notes/x.md", fragment)
+        assert written == expected
+        assert _one(f"[t]({written})")[0] == "notes/x.md"
+
+    def test_a_fragment_may_close_what_the_path_opened(self) -> None:
+        # ``a(b.md#c)d`` balances as a whole, so it parses and nothing is
+        # escaped. Escaping the path's ``(`` on its own would unbalance the
+        # run and break a destination that worked.
+        written = build_plain_destination("notes/a(b.md", "c)d")
+        assert written == "notes/a(b.md#c)d"
+        assert _one(f"[t]({written})")[:2] == ("notes/a(b.md", "c)d")
+
+    def test_the_rewriter_balances_the_assembled_destination_too(self) -> None:
+        raw = compute_new_raw_target(
+            "markdown", "/old.md", "c)d", "notes/a(b.md", SRC, "old.md"
+        )
+        assert raw == "/notes/a(b.md#c)d"
+        assert _one(f"[t]({raw})")[:2] == ("notes/a(b.md", "c)d")
+
+    def test_the_rewriter_still_encodes_a_space_beside_a_fragment(self) -> None:
+        raw = compute_new_raw_target(
+            "markdown", "/old.md", "My Heading", "Project Notes/a.md", SRC, "old.md"
+        )
+        assert raw == "/Project%20Notes/a.md#My%20Heading"
+        assert _one(f"[t]({raw})")[0] == "Project Notes/a.md"
+
+
+class TestTheRepairsReachTheAuthorsFragment:
+    def test_a_fragment_the_author_left_unparsable_is_repaired_on_rename(
+        self,
+    ) -> None:
+        # ``[x](old.md#My Heading)`` is not a link to begin with — the
+        # tolerant scanner reads it, CommonMark does not. The rename is
+        # already rewriting that destination, so it emits one that parses
+        # rather than re-emitting the broken spelling verbatim. The fragment
+        # is still never *reformatted*: both repairs are properties of the
+        # destination as a whole, not edits to the part that changed.
+        raw = compute_new_raw_target(
+            "markdown", "old.md#My Heading", "My Heading", "new.md", SRC, "old.md"
+        )
+        assert raw == "new.md#My%20Heading"
+        assert _one(f"[t]({raw})")[:2] == ("new.md", "My%20Heading")
+
+    def test_a_fragment_that_already_parses_is_left_exactly_as_found(self) -> None:
+        raw = compute_new_raw_target(
+            "markdown", "old.md#Top", "Top", "new.md", SRC, "old.md"
+        )
+        assert raw == "new.md#Top"
+
+
+class TestAnAlreadyEscapedParenthesisIsLeftAlone:
+    """§6.3 admits a parenthesis "escaped *or* balanced" (#1518 review).
+
+    An escaped one never needs a match, so counting it toward the balance
+    would judge a legal destination unbalanced and escape it again —
+    turning the author's ``\\(`` into ``\\\\(``, an escaped backslash
+    followed by a bare parenthesis, which is a different destination and,
+    in a fragment, not a link at all.
+    """
+
+    def test_a_rename_leaves_an_authors_escaped_fragment_paren_as_found(
+        self,
+    ) -> None:
+        # ``[x](old.md#a\(b)`` is already a valid link. The rename must not
+        # touch the escape it finds there.
+        raw = compute_new_raw_target(
+            "markdown", "old.md#a\\(b", "a\\(b", "new.md", SRC, "old.md"
+        )
+        assert raw == "new.md#a\\(b"
+        assert _one(f"[x]({raw})")[:2] == ("new.md", "a\\(b")
+
+    @pytest.mark.parametrize(
+        ("written", "parses", "expected"),
+        [
+            ("a\\(b", True, "a\\(b"),
+            ("a\\\\(b", False, "a\\\\\\(b"),
+            ("a\\\\\\(b", True, "a\\\\\\(b"),
+            ("a\\(b(c", False, "a\\(b\\(c"),
+            ("a\\(b\\)c", True, "a\\(b\\)c"),
+        ],
+        ids=["odd-run", "even-run", "three", "mixed", "both-escaped"],
+    )
+    def test_only_an_unescaped_parenthesis_counts_and_is_escaped(
+        self, written: str, parses: bool, expected: str
+    ) -> None:
+        # An odd run of backslashes escapes the parenthesis; an even run
+        # is an escaped backslash and leaves it bare.
+        assert _parentheses_parse_plainly(written) is parses
+        assert escape_unparsable_parentheses(written) == expected
+
+    @pytest.mark.parametrize(
+        ("written", "names"),
+        [
+            ("a\\(b", "a(b"),
+            ("a\\\\(b", "a\\(b"),
+            ("a(b", "a(b"),
+        ],
+        ids=["escaped", "backslash-then-paren", "bare"],
+    )
+    def test_the_repaired_destination_still_names_the_same_file(
+        self, written: str, names: str
+    ) -> None:
+        repaired = escape_unparsable_parentheses(written)
+        assert _one(f"[x]({repaired})")[0] == names
