@@ -2333,10 +2333,12 @@ One thing this deliberately left: link text is still not bracket-balanced
 **The reference family reads its labels the same way (#1519).** The change
 above left `_RE_REF_USAGE` and `_RE_REF_DEF` on the plain class, so
 `[Bra\]cket][ref]` and `[r\]ef]: x.md` kept losing their rows while the
-inline spelling beside them gained its own — the same defect, one release
-apart. Both now read a label through `_find_bracket_span`, the primitive the
-inline opener was refactored onto: it returns the next `[…]` with escapes
-honoured, and each caller adds its own shape test. `_find_inline_link_open`
+inline spelling beside them gained its own — the same defect, one PR apart
+and inside the same unreleased range, which is why one semantics note
+covers both. Both now read a label through `_find_bracket_span`, the
+primitive the inline opener was refactored onto: it returns the next `[…]`
+with escapes honoured, and each caller adds its own shape test.
+`_find_inline_link_open`
 requires a `(` after the span; `_find_reference_usage` requires a second span
 immediately adjacent, which is why the inline scan did not simply drop in;
 `_iter_reference_definitions` requires a `:` and reads the target with the

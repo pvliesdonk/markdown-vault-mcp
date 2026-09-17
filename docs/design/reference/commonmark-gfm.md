@@ -272,8 +272,7 @@ Python 3.13.
   unescaped brackets, `]` (Ex. 551, 552, 545). [source: cm]
   [observed: markdown-it-py 3.0.0, `[r[s]]: x.md` is a paragraph]
   The escaped half is implemented for both the usage and the definition
-  since #1519, matching what #1517 did for inline text; the 999-character
-  cap and the "≥ 1 non-whitespace" floor are not enforced.
+  since #1519, matching what #1517 did for inline text.
   [observed: markdown-it-py 3.0.0, `[Bra\]cket][ref]` and
   `[Bracket][r\]ef]` with the matching definition both link, 2026-09-17]
   [pins: tests/test_links_escaped_reference_labels.py::TestEscapedBracketsInReferenceLabels::test_an_escaped_bracket_in_the_link_text_no_longer_ends_it, tests/test_links_escaped_reference_labels.py::TestEscapedBracketsInReferenceLabels::test_an_escaped_bracket_in_the_reference_label_is_read_through]

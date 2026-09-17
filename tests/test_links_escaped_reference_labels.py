@@ -9,9 +9,9 @@ than one followed by ``(``. This module covers what that left.
 
 Both the usage (``[text][ref]``) and the definition (``[ref]: x.md``) sides
 are here, because a label spelled with an escape has to survive on both to
-match: CommonMark normalises a label by case-folding and collapsing
-whitespace, not by resolving escapes, so ``[a\]b]`` matches ``[a\]b]`` and
-the two sides must agree on the spelling.
+match — and the two sides can only ever spell it the same way, since a
+label ends at its first unescaped ``]`` and so a label holding one can be
+written no other way.
 
 Two properties carry the module, as in ``test_links_escaped_text.py``. The
 first is the defect. The second is what makes the change safe against
@@ -124,7 +124,9 @@ class TestWhatIsNotClaimed:
         # full reference link. A CommonMark reader does find a link here,
         # but by the *shortcut* form ``[ref]`` left over once ``[a\]`` is
         # literal text — a form this scanner has never extracted.
-        # [observed: markdown-it-py 'commonmark', 2026-09-17]
+        # [observed: markdown-it-py 'commonmark' renders this input as
+        # ``<p>See [a]<a href="notes/x.md">ref</a> here.</p>``, so its
+        # link text is ``ref`` and not the label, 2026-09-17]
         assert _links("See [a\\][ref].\n\n[ref]: notes/x.md\n") == []
 
     def test_the_shortcut_form_is_still_not_extracted(self) -> None:
