@@ -938,10 +938,22 @@ _RE_REF_DEF_TAIL = re.compile(r"\s*(.+)$", re.MULTILINE)
 # Markdown footnotes ([^label] / [^label]: body) differ from reference-style
 # links by exactly this character, and both reference scans read them.
 _FOOTNOTE_LABEL_PREFIX = "^"
-# Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian table-cell
-# escape). The target excludes a line ending: a name carrying one names no
-# file, and the row it stored was broken by construction (#1334).
-_RE_WIKILINK = re.compile(r"\[\[([^\]|\n]+)(?:\|([^\]]+))?\]\]")
+#: Wikilink: [[path]], [[path|alias]], or [[path\|alias]] (Obsidian
+#: table-cell escape). The target excludes a line ending: a name carrying
+#: one names no file, and the row it stored was broken by construction
+#: (#1334).
+#:
+#: Split into three pieces read by :func:`_find_wikilink` rather than left
+#: as one pattern (#1343). ``\[\[([^\]|\n]+)(?:\|([^\]]+))?\]\]``
+#: rescans forward from every ``[[``, so a run of ``[`` that never closes
+#: costs O(n²): 16000 of them took about 6 s, and a single such file
+#: stalled the whole vault, since indexing runs one write queue.
+_RE_WIKILINK_OPEN = re.compile(r"\[\[")
+#: Where a wikilink's target ends: the first character it may not contain.
+_RE_WIKILINK_TARGET_END = re.compile(r"[\]|\n]")
+#: Where its alias ends. The alias may hold ``|`` and a line ending; only
+#: ``]`` stops it.
+_RE_WIKILINK_ALIAS_END = re.compile(r"\]")
 
 # Line shapes at which a paragraph ends, each decidable from the line alone
 # (no container state beyond the quote depth read off the line itself). The
@@ -1643,6 +1655,68 @@ def _extract_reference_links(
     return links
 
 
+def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None] | None:
+    """Find the next ``[[target]]`` or ``[[target|alias]]`` at or after *pos*.
+
+    Replaces ``\\[\\[([^\\]|\\n]+)(?:\\|([^\\]]+))?\\]\\]`` (#1343). That
+    pattern is quadratic on a run of ``[`` that never closes, because the
+    engine retries from every one of them and each retry reads the rest of
+    the run: 16000 such characters cost about 6 s, and one file like that
+    stalled a whole vault, since indexing runs single-threaded over one
+    write queue. The shape is not hypothetical — a botched bracketed-citation
+    export, or pasted log or JSON that was never fenced, produces it.
+
+    What makes the scan *linear* is that those retries are all the same
+    question. A target ends at the first ``]``, ``|`` or line ending after
+    the ``[[``, and that stop is the same character whichever ``[[`` of a
+    run opened it; everything the match then needs is read from the stop
+    onwards. So one failure at the stop is a failure for every opener
+    before it, and the search resumes past the stop rather than at the
+    next ``[``. Each character is looked at a bounded number of times.
+
+    Matching otherwise follows the pattern exactly, including its
+    asymmetry: the target may not hold ``]``, ``|`` or a line ending and
+    the alias may hold everything but ``]``; both must be non-empty; the
+    leftmost ``[[`` wins, so ``[[[a]]`` links ``[a``.
+
+    Args:
+        region: One paragraph region, code already stripped (#1334).
+        pos: Index to resume from.
+
+    Returns:
+        ``(end, target, alias)`` with *end* the index after the closing
+        ``]]`` and *alias* ``None`` when the link carries none; ``None``
+        when the region holds no further wikilink.
+    """
+    while (opener := _RE_WIKILINK_OPEN.search(region, pos)) is not None:
+        start = opener.end()
+        stop_match = _RE_WIKILINK_TARGET_END.search(region, start)
+        if stop_match is None:
+            # No character that could end a target, so no ``]]`` either,
+            # here or after any later opener.
+            return None
+        stop = stop_match.start()
+        # Every opener up to here shares this stop and so fails with it.
+        # The stop is never ``[``, so no opener begins at it either.
+        pos = stop + 1
+        if stop == start:
+            continue  # empty target
+        if region[stop] == "|":
+            alias_end = _RE_WIKILINK_ALIAS_END.search(region, stop + 1)
+            if alias_end is None or alias_end.start() == stop + 1:
+                continue  # unterminated or empty alias
+            close = alias_end.start()
+            alias: str | None = region[stop + 1 : close]
+        elif region[stop] == "]":
+            close = stop
+            alias = None
+        else:
+            continue  # a line ending: the target ran out before ``]]``
+        if region[close : close + 2] == "]]":
+            return close + 2, region[start:stop], alias
+    return None
+
+
 def _extract_wikilinks(
     region: str, source_path: str, attachment_extensions: frozenset[str]
 ) -> list[LinkInfo]:
@@ -1661,16 +1735,17 @@ def _extract_wikilinks(
     the embed marker does not change what the target names.
     """
     links: list[LinkInfo] = []
-    for m in _RE_WIKILINK.finditer(region):
-        raw_path = m.group(1).strip()
+    pos = 0
+    while (found := _find_wikilink(region, pos)) is not None:
+        pos, target, alias_raw = found
+        raw_path = target.strip()
         # Obsidian escapes the alias pipe as `\|` in table cells, so the target
         # keeps a trailing `\` (#731). Strip it BEFORE wikilink_raw_target is
         # built — raw_target is the resolve_vault_wikilinks() anchor and must be
         # the clean stem, else the link never resolves.
         if raw_path.endswith("\\"):
             raw_path = raw_path[:-1]
-        alias = m.group(2)
-        link_text = alias.strip() if alias else raw_path
+        link_text = alias_raw.strip() if alias_raw else raw_path
 
         # Split fragment BEFORE appending .md so [[note#heading]] works.
         fragment = None

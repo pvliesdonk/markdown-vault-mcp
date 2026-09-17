@@ -110,7 +110,7 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
 - Does not cover: CommonMark/GFM proper (`commonmark-gfm.md`), Obsidian
   Publish/Sync/Bases/Canvas, plugin APIs beyond `MetadataCache` and the link
   helpers, rendering.
-- Depended on by: `src/markdown_vault_mcp/scanner.py` (`_RE_WIKILINK`,
+- Depended on by: `src/markdown_vault_mcp/scanner.py` (`_find_wikilink`,
   `_extract_wikilinks`, `_is_external_target`, `_resolve_title`),
   `src/markdown_vault_mcp/fts_index.py` (`FTSIndex.resolve_vault_wikilinks`,
   `FTSIndex._insert_aliases`), `src/markdown_vault_mcp/okf.py`
@@ -138,7 +138,7 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   contains the following characters may not work as a link:
   `# | ^ : %% [[ ]]`". This is the closest the help comes to a grammar; it
   implies `]`, `|` and `#` cannot be literal target characters, which is what
-  `_RE_WIKILINK` assumes, but it is a warning, not a parse rule.
+  `_find_wikilink` assumes, but it is a warning, not a parse rule.
   [source: help-links]
 - A single `]` inside the target does not end the link — only `]]` does:
   `[[Sq]uare]]` is recorded as a link to `Sq]uare`. Whitespace is fine
@@ -229,7 +229,7 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   `![[Engelbart.jpg|100]]` (the alias slot carries the size),
   `![[Document.pdf#page=3]]`, `![[Document.pdf#height=400]]`,
   `![[My note#^my-list-id]]`. [source: help-embeds]
-- `_RE_WIKILINK` has no `!` lookbehind, so a note embed is indexed as a
+- `_find_wikilink` has no `!` lookbehind, so a note embed is indexed as a
   link; an attachment embed is skipped by its target's extension, not by the
   `!` (#1333). [source: help-embeds]
   [pins: tests/test_links_attachment_references.py::TestWikilinkSite::test_a_note_embed_is_still_a_link, tests/test_links_attachment_references.py::TestWikilinkSite::test_an_embed_of_an_attachment_is_not_a_link, tests/test_links_attachment_references.py::TestWikilinkSite::test_a_plain_wikilink_to_an_attachment_is_not_a_link]
@@ -369,7 +369,7 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
 - Footnotes: `[^1]` references with `[^1]: text` definitions, inline
   `^[This is an inline footnote.]` ("the caret goes outside the brackets"),
   continuation lines indented two spaces. Single-bracket, so they cannot
-  match `_RE_WIKILINK`, but they do match the reference-link shapes
+  match a wikilink, but they do match the reference-link shapes
   (#1104; the scans `_find_reference_usage` and
   `_iter_reference_definitions` since #1519, the regexes before it).
   [source: help-syntax] [source: help-ofm]
@@ -446,9 +446,10 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
 
 Each entry names the function and the design section that decides it.
 
-- `_RE_WIKILINK` (scanner): the target class stops at the first `]`, where
+- `_find_wikilink` (scanner): the target stops at the first `]`, where
   Obsidian stops only at `]]` (`[[Sq]uare]]` is a link to `Sq]uare` there,
-  and no link here). Contrary, observed; #1384. The class also excludes a
+  and no link here). Contrary, observed; #1384. Carried over unchanged when
+  the pattern became a scan (#1343). The target also excludes a
   line ending, which agrees with Obsidian (`[[Multi⏎Line]]` is no link in
   either). design.md § Link Extraction.
 - `_extract_wikilinks` / `_extract_inline_links` / `_extract_reference_links`:

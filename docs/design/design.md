@@ -2433,8 +2433,53 @@ honoured, by choice: HTML block openers, GFM table delimiter rows, unclosed
 fences (a `_strip_fenced_code` matter), and a nested item indented four or more
 spaces (continuation by the shape rule; the under-split is bounded by the next
 honoured boundary). The quadratic cost of the wikilink pattern *inside* one
-region with no boundaries is #1343 and is unchanged. `INDEX_SEMANTICS_VERSION`
-6 → 7 drops the stray-bracket rows on upgrade.
+region with no boundaries was left open here and is closed below (#1343).
+`INDEX_SEMANTICS_VERSION` 6 → 7 drops the stray-bracket rows on upgrade.
+
+**The wikilink matcher is linear on a bracket run (#1343).** A region walk
+(#1334) bounds what the patterns see to one paragraph, which is why the two
+bracket scans above are the fast path on ordinary notes. It does nothing for
+a document with no blank lines in it, and that is the shape the defect takes:
+a bracketed-citation export gone wrong, or pasted log or JSON that was never
+fenced. `\[\[([^\]|\n]+)(?:\|([^\]]+))?\]\]` rescans forward from every
+`[[` in such a run, so the cost is quadratic — `extract_links` on 40000 `[`
+measured about 29 s when the issue was filed, and one file like that stalls
+the *whole vault*, because indexing runs single-threaded over one write queue
+and nothing surfaces which file is responsible.
+
+`_find_wikilink` replaces the pattern with a scan, and the reason it is
+linear rather than merely faster is worth stating: those retries all ask the
+same question. A target ends at the first `]`, `|` or line ending after the
+`[[`, and that stop is the same character whichever `[[` of a run opened it;
+everything the match then needs is read from the stop onwards. So a failure
+at the stop is a failure for every opener before it, and the search resumes
+past the stop rather than at the next `[`. The stop is never itself a `[`, so
+resuming there skips no opener that could have matched.
+
+| Input | before | after |
+| --- | --- | --- |
+| `extract_links` on `[` × 16000 | 6026 ms | 16 ms |
+| `extract_links` on `[` × 40000 | ~29 s (issue), 36 s measured for the pattern alone | 40 ms |
+
+Two alternatives were measured and rejected. **Possessive quantifiers**
+(`[^\]|\n]++`, Python 3.11+) are provably equivalent here — giving a
+character back can never help, because the given-back character is by
+construction not the `|` or `]` the pattern needs next — and they do remove
+the inner backtracking, 9x on this input. They leave the shape quadratic,
+because the retry from every `[[` is the real cost: 40 ms → 165 ms → 642 ms
+for 4000 → 8000 → 16000. **A guard on the scanned unit**, the issue's own
+suggested direction, was not pursued: refusing to link-scan a bracket-dense
+body drops real rows to bound a cost the scan simply removes.
+
+The scan changes no row for any input, so there is no
+`INDEX_SEMANTICS_VERSION` note — a claim carried by the same differential
+property the escape-aware scans use (`tests/test_links_wikilink_scan.py`):
+it agrees with the pattern on *every* string up to length 8 over the five
+characters that pattern can distinguish, and on 300k random strings over a
+wider alphabet. The departures the pattern carried are carried too: a single
+`]` still ends the target where Obsidian needs `]]` (#1384), an embed is
+still indexed as a link, and the leftmost `[[` still wins, so `[[[a]]` links
+`[a`.
 
 **Exclusions**: links inside fenced code blocks (`` ``` ``) and inline code (`` ` ``)
 are not extracted. External destinations and pure anchors are skipped. "External"
