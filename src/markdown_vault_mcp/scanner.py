@@ -1550,6 +1550,9 @@ def _iter_reference_definitions(clean: str) -> Iterator[tuple[str, str]]:
         bracket = opener.end() - 1
         span = _find_bracket_span(clean, bracket)
         if span is None:
+            # ``return``, not ``continue``: the scan starts on that ``[``,
+            # so a span is missing only when no unescaped ``]`` follows it
+            # anywhere — and a later definition would need one too.
             return
         _, close_index, label = span
         tail = (
