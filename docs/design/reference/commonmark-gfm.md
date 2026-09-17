@@ -271,6 +271,18 @@ Python 3.13.
 - A link label is `[`, ≥ 1 non-whitespace character, ≤ 999 characters, no
   unescaped brackets, `]` (Ex. 551, 552, 545). [source: cm]
   [observed: markdown-it-py 3.0.0, `[r[s]]: x.md` is a paragraph]
+  The escaped half is implemented for both the usage and the definition
+  since #1519, matching what #1517 did for inline text; the 999-character
+  cap and the "≥ 1 non-whitespace" floor are not enforced.
+  [observed: markdown-it-py 3.0.0, `[Bra\]cket][ref]` and
+  `[Bracket][r\]ef]` with the matching definition both link, 2026-09-17]
+  [pins: tests/test_links_escaped_reference_labels.py::TestEscapedBracketsInReferenceLabels::test_an_escaped_bracket_in_the_link_text_no_longer_ends_it, tests/test_links_escaped_reference_labels.py::TestEscapedBracketsInReferenceLabels::test_an_escaped_bracket_in_the_reference_label_is_read_through]
+- Label matching normalises by case fold, trim and whitespace collapse, and
+  does **not** resolve escapes, so a label holding a `]` matches only the
+  `\]` spelling — the one way it can be written.
+  [observed: markdown-it-py 3.0.0, `[a\]b][r\]ef]` links against
+  `[r\]ef]: x.md`, 2026-09-17]
+  [pins: tests/test_links_escaped_reference_labels.py::TestEscapedBracketsInReferenceLabels::test_both_labels_may_carry_one]
 - Labels match after Unicode case fold, trim, and collapsing internal
   whitespace runs (spaces, tabs, line endings) to one space (`[ẞ]` matches
   `[SS]`, Ex. 540; `[Foo\n  bar]` matches `[Foo bar]`, Ex. 541); the first
@@ -383,18 +395,23 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   links `b c`); `\[` ignored; links inside HTML blocks and fence info
   strings extracted. Right: images by `!` lookbehind; `[a] (x.md)` rejected.
   Decided in `docs/design/design.md` § Link Extraction.
-- `_RE_REF_USAGE` / `_RE_REF_DEF` in `_extract_reference_links` —
+- `_find_reference_usage` / `_iter_reference_definitions` in
+  `_extract_reference_links` and `_collect_reference_definitions` —
   **partial.** Right: full and collapsed forms, title stripping,
-  document-wide definitions, footnotes excluded. Wrong: shortcut `[label]`
-  not extracted; the *last* definition wins; labels are lower-cased, not
+  document-wide definitions, footnotes excluded, and since #1519 an escaped
+  `]` in either label (both read their spans through `_find_bracket_span`,
+  the primitive the inline opener uses). Wrong: shortcut `[label]`
+  not extracted — which is also why `[a\][ref]`, whose label runs past the
+  escaped `]`, stores no row where a reader still finds one; the *last*
+  definition wins; labels are lower-cased, not
   case-folded (`[ẞ]`/`[ss]` miss) and whitespace is not collapsed; a
   4-space-indented definition accepted, one inside `> ` rejected; trailing
   garbage kept in the target; label text may span a blank line. A `<x y.md>`
   definition resolves since #1353 (brackets, escapes and entities decoded as
   for an inline destination). A usage's text no longer spans a blank line, and the
-  CR-only miss is gone: line endings are normalised before `_RE_REF_DEF`
-  runs, so `[t][r]\r[r]: x.md\r` links (#1334). [observed: `extract_links`,
-  2026-09-06]
+  CR-only miss is gone: line endings are normalised before the definition
+  scan runs, so `[t][r]\r[r]: x.md\r` links (#1334). [observed:
+  `extract_links`, 2026-09-06; re-checked against the scans, 2026-09-17]
 - `_RE_URI_SCHEME` in `_is_external_target` — **right** against
   CommonMark's scheme (2+ characters, letter then `[A-Za-z0-9+.-]`), minus
   the 32 cap, plus `//host`; narrower than RFC 3986 by design (#1335).

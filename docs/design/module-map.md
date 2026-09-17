@@ -64,7 +64,7 @@ src/markdown_vault_mcp/
     conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
-  scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, whose inline opener is the escape-aware _find_inline_link_open (#1517)
+  scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, whose inline and reference openers read their brackets through the escape-aware _find_bracket_span (#1517, #1519)
   interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex/VectorStore: the search/index storage seam (#1230)
   fts_index.py         -- SQLite FTS5 schema, BM25 search
   _fts_connection.py   -- per-thread sqlite connection registry + SQLITE_LOCKED retry (#760)
