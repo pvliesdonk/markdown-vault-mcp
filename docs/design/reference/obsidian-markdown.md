@@ -412,12 +412,17 @@ name a version only for properties (1.4 deprecates `alias`/`tag`/`cssclass`,
   root and both spellings from `Sub/`. The link cache holds the decoded text
   (`link: "Sub/My Note.md"`). `[w](Sub/My Note.md)`, with a literal space,
   is not a link. [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358] The scanner resolves markdown links source-relative
-  after decoding (#1332), a departure recorded below and filed as #1383.
+  after decoding (#1332), a departure recorded below and filed as #1383. The
+  tolerance is one-way: every destination this server *writes* encodes its
+  spaces, because Obsidian will not read back the literal form (#1494).
+  [pins: tests/test_links_generated_destinations.py::TestIssueTable::test_the_index_builder_encodes_the_space, tests/test_links_generated_destinations.py::TestIssueTable::test_the_wikilink_converter_encodes_the_space, tests/test_links_generated_destinations.py::TestIssueTable::test_the_rename_rewriter_encodes_the_space]
 - What Obsidian *writes* for a markdown link (`fileManager.generateMarkdownLink`
   with "Use [[Wikilinks]]" off) to `Sub/We!rd (name) [x] #1.md`, from the
   root and from `Sub/` alike: `[We!rd (name) [x] #1](Sub/We!rd%20(name)%20[x]%20#1.md)`
   — the vault path with no leading slash, only spaces percent-encoded, `(`
-  `)` `[` `]` `!` `#` literal. Obsidian's own reader then cannot resolve it:
+  `)` `[` `]` `!` `#` literal. `encode_plain_destination` shows the same
+  restraint, encoding only what §6.3 forbids (#1494).
+  [pins: tests/test_links_generated_destinations.py::TestWhatEncodePlainDestinationLeavesAlone::test_a_legal_destination_is_returned_untouched] Obsidian's own reader then cannot resolve it:
   the link cache decodes it to `Sub/We!rd (name) [x] #1.md` but
   `unresolvedLinks` holds `Sub/We!rd (name) [x] ` — it splits at the `#`
   exactly as the scanner does (#1353). [observed: Obsidian 1.13.7 on Windows, scratch vault, `metadataCache` via the developer console, 2026-09-07; console output verbatim on issue #1358]

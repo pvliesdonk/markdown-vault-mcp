@@ -194,7 +194,8 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
             Snippet(
                 "If 'stats.okf' reports an OKF bundle ('okf_version' in root "
                 "'index.md'), discount deprecated, stale, or unverified notes by "
-                f"trust tier. {upkeep} Use root-relative Markdown links.",
+                f"trust tier. {upkeep} Use root-relative Markdown links, "
+                "percent-encoding spaces ('/Project%20Notes/note.md').",
                 InstructionRole.INSTANCE,
             )
         )

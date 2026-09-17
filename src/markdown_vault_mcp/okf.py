@@ -36,6 +36,7 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.utils.links import encode_plain_destination
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
@@ -814,7 +815,10 @@ def convert_wikilinks_to_markdown(content: str, outlinks: Any) -> tuple[str, int
         ) -> str:
             alias = match.group(1)
             display = alias.strip() if alias and alias.strip() else fallback
-            return f"[{display}](/{tp}{fs})"
+            # The path and the fragment are names, not destinations: a space
+            # in either would end the destination and the converted link
+            # would not be a link at all (#1494).
+            return f"[{display}](/{encode_plain_destination(tp + fs)})"
 
         pattern = re.compile(r"\[\[" + re.escape(raw_target) + r"(?:\|([^\]]*))?\]\]")
         content, n = pattern.subn(_replace, content)
@@ -893,15 +897,16 @@ def build_index_markdown(
     Args:
         heading: The H1 heading (bundle or folder name).
         entries: ``(title, root_absolute_path, description)`` per note,
-            already ordered; ``root_absolute_path`` is emitted verbatim in
-            the link target.
+            already ordered; ``root_absolute_path`` is the path as the vault
+            spells it, percent-encoded here into a destination a markdown
+            reader can parse (#1494).
 
     Returns:
         The markdown body (no frontmatter).
     """
     lines = [f"# {heading}", ""]
     for title, path, description in entries:
-        line = f"- [{title}]({path})"
+        line = f"- [{title}]({encode_plain_destination(path)})"
         if description:
             line += f" - {description}"
         lines.append(line)
