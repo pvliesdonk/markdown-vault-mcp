@@ -38,10 +38,12 @@ from markdown_vault_mcp.scanner import extract_links
 from markdown_vault_mcp.types import OutlinkInfo
 from markdown_vault_mcp.utils.links import (
     _MAX_PLAIN_PAREN_DEPTH,
+    _parentheses_parse_plainly,
     build_plain_destination,
     compute_new_raw_target,
     encode_plain_destination,
     escape_link_text,
+    escape_unparsable_parentheses,
 )
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
@@ -520,3 +522,59 @@ class TestTheRepairsReachTheAuthorsFragment:
             "markdown", "old.md#Top", "Top", "new.md", SRC, "old.md"
         )
         assert raw == "new.md#Top"
+
+
+class TestAnAlreadyEscapedParenthesisIsLeftAlone:
+    """§6.3 admits a parenthesis "escaped *or* balanced" (#1518 review).
+
+    An escaped one never needs a match, so counting it toward the balance
+    would judge a legal destination unbalanced and escape it again —
+    turning the author's ``\\(`` into ``\\\\(``, an escaped backslash
+    followed by a bare parenthesis, which is a different destination and,
+    in a fragment, not a link at all.
+    """
+
+    def test_a_rename_leaves_an_authors_escaped_fragment_paren_as_found(
+        self,
+    ) -> None:
+        # ``[x](old.md#a\(b)`` is already a valid link. The rename must not
+        # touch the escape it finds there.
+        raw = compute_new_raw_target(
+            "markdown", "old.md#a\\(b", "a\\(b", "new.md", SRC, "old.md"
+        )
+        assert raw == "new.md#a\\(b"
+        assert _one(f"[x]({raw})")[:2] == ("new.md", "a\\(b")
+
+    @pytest.mark.parametrize(
+        ("written", "parses", "expected"),
+        [
+            ("a\\(b", True, "a\\(b"),
+            ("a\\\\(b", False, "a\\\\\\(b"),
+            ("a\\\\\\(b", True, "a\\\\\\(b"),
+            ("a\\(b(c", False, "a\\(b\\(c"),
+            ("a\\(b\\)c", True, "a\\(b\\)c"),
+        ],
+        ids=["odd-run", "even-run", "three", "mixed", "both-escaped"],
+    )
+    def test_only_an_unescaped_parenthesis_counts_and_is_escaped(
+        self, written: str, parses: bool, expected: str
+    ) -> None:
+        # An odd run of backslashes escapes the parenthesis; an even run
+        # is an escaped backslash and leaves it bare.
+        assert _parentheses_parse_plainly(written) is parses
+        assert escape_unparsable_parentheses(written) == expected
+
+    @pytest.mark.parametrize(
+        ("written", "names"),
+        [
+            ("a\\(b", "a(b"),
+            ("a\\\\(b", "a\\(b"),
+            ("a(b", "a(b"),
+        ],
+        ids=["escaped", "backslash-then-paren", "bare"],
+    )
+    def test_the_repaired_destination_still_names_the_same_file(
+        self, written: str, names: str
+    ) -> None:
+        repaired = escape_unparsable_parentheses(written)
+        assert _one(f"[x]({repaired})")[0] == names

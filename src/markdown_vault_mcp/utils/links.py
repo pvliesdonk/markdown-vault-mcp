@@ -271,20 +271,28 @@ def _parentheses_parse_plainly(name: str) -> bool:
     balanced pairs, and this project's parser balances them to
     :data:`_MAX_PLAIN_PAREN_DEPTH`.
 
+    A parenthesis that is already backslash-escaped is exempt from the
+    balance requirement — §6.3 admits it "escaped **or** balanced" — so it
+    is skipped rather than counted, the way :func:`_is_fragment_marker`
+    skips an escaped ``#``. Counting it would judge an author's legal
+    ``a\\(b`` unbalanced and send it to be escaped again.
+
     Args:
-        name: A destination path, backslash escapes already applied.
+        name: A destination as it is written, escapes included.
 
     Returns:
-        ``True`` when the parentheses are balanced and no deeper than the
-        parser goes, so escaping them would be noise.
+        ``True`` when the unescaped parentheses are balanced and no deeper
+        than the parser goes, so escaping them would be noise.
     """
     depth = 0
-    for char in name:
+    for pos, char in enumerate(name):
+        if char not in "()" or _is_escaped(name, pos):
+            continue
         if char == "(":
             depth += 1
             if depth > _MAX_PLAIN_PAREN_DEPTH:
                 return False
-        elif char == ")":
+        else:
             depth -= 1
             if depth < 0:
                 return False
@@ -334,17 +342,27 @@ def escape_unparsable_parentheses(written: str) -> str:
 
     Left alone when they parse, so a balanced ``a(b).md`` stays literal.
 
+    Only *unescaped* parentheses are escaped. A blind replace would turn an
+    author's existing ``\\(`` into ``\\\\(`` — an escaped backslash followed by
+    a bare parenthesis — which is not the same destination and, on a
+    fragment carrying one, not a link at all.
+
     Args:
         written: The assembled destination — path, marker and fragment —
-            before percent-encoding.
+            as it is written, escapes included.
 
     Returns:
-        *written*, with every parenthesis escaped if any of them would not
-        parse.
+        *written*, with every unescaped parenthesis escaped if any of them
+        would not parse.
     """
     if _parentheses_parse_plainly(written):
         return written
-    return written.replace("(", "\\(").replace(")", "\\)")
+    out: list[str] = []
+    for pos, char in enumerate(written):
+        if char in "()" and not _is_escaped(written, pos):
+            out.append("\\")
+        out.append(char)
+    return "".join(out)
 
 
 def build_plain_destination(path: str, fragment: str | None = None) -> str:
