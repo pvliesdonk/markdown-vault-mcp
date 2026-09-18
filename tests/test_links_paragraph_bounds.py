@@ -347,11 +347,17 @@ class TestPreserved:
         # Stripping the span must not turn its line into a blank line.
         assert targets("[a\n`code`\nb](note.md)") == ["note.md"]
 
-    def test_a_definition_line_cannot_be_spanned_by_any_link(self) -> None:
-        # The table's "link reference definition" row has no observable
-        # boundary behaviour: the definition's own brackets end any link
-        # text, so nothing can pair across it either way.
-        assert targets("[a\n[r]: x.md\nb](note.md)") == []
+    def test_a_definition_line_is_spanned_like_any_other(self) -> None:
+        # The table's "link reference definition" row still has no
+        # boundary behaviour of its own; what changed is the reason. The
+        # definition's brackets used to end the link text, so nothing
+        # paired across the line. Since #1526 they are a balanced pair
+        # inside it, so the outer link forms — which is what a CommonMark
+        # reader sees, the definition being unable to interrupt a
+        # paragraph.
+        # [observed: markdown-it-py renders this as one link whose text
+        # spans all three lines, 2026-09-18]
+        assert targets("[a\n[r]: x.md\nb](note.md)") == ["note.md"]
 
     def test_backticks_in_prose_do_not_swallow_a_blank_line(self) -> None:
         # A fence opens at the start of a line (§4.5); three backticks in

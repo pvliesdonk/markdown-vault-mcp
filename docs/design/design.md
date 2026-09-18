@@ -2377,7 +2377,8 @@ carrying no backslash indexes exactly as it did. `INDEX_SEMANTICS_VERSION`
 links.
 
 One thing this deliberately left: link text is still not bracket-balanced
-(`[a [b] c](x)`), which needs counting rather than escape-awareness.
+(`[a [b] c](x)`), which needs counting rather than escape-awareness. #1526
+did the counting; see below.
 
 **The reference family reads its labels the same way (#1519).** The change
 above left `_RE_REF_USAGE` and `_RE_REF_DEF` on the plain class, so
@@ -2423,6 +2424,57 @@ standing gap rather than anything new. It is why `[a\][ref]` — whose label
 runs past the escaped `]` and so is not a full reference link — loses a row
 that a CommonMark reader still finds, by reading the leftover `[ref]` as a
 shortcut. Bracket balancing is likewise untouched.
+
+**A `]` closes the nearest unmatched `[` (#1526).** The opener was the
+*first* `[` since the last unescaped `]`. CommonMark's is the **nearest
+unmatched** one (§6.3): a `]` matches the innermost `[` still open, and an
+opener that closes nothing is discarded rather than swallowing what follows.
+
+That single difference was three separately recorded departures, which is
+why they are fixed together rather than one at a time — they were never
+three defects:
+
+| Input | stored before | stored now | a CommonMark reader |
+| --- | --- | --- | --- |
+| `[a[b](x.md)` | text `a[b` | text `b` | text `b` |
+| `[a [b] c](x.md)` | **no row** | text `a [b] c` | text `a [b] c` |
+| `![a[b](x.md)` | **no row** | text `b` | text `b` |
+
+The third is #1526 as filed: the `!` sits before the *outer* `[`, so the
+image test fired on a construct whose link opens at the inner one. The
+second is the bracket-balancing departure this document had recorded since
+#1334 on the ground that it "needs counting rather than escape-awareness" —
+true, and the counting is a stack, not a second pass. The first was never
+filed at all; it was visible only in a stored `link_text`.
+
+Two rules travel with the opener. An opener preceded by an unescaped `!` is
+an image, so its own span yields no row — but a link *inside* an image's
+description still does, because it closes first (§6.4, Ex. 575). And once a
+link is found, every opener still on the stack is deactivated, because links
+may not contain links (Ex. 518): in `[a [b](y) c](x)` only `b` links.
+
+`iter_inline_links` in `utils/links.py` is where this lives, and the
+destination grammar moved there with it. **One grammar, read and written**:
+`_extract_inline_links` and `apply_link_replacement` both consume the
+iterator, so the two cannot disagree about which links exist — the property
+whose absence was #1521, now covering the opener as well as the escape.
+The walk pushes and pops each opener at most once and steps between `[`,
+`]` and `\` rather than over every character, so it stays linear: 200000
+unmatched `[` cost one push apiece and no rescan, and the whole walk runs
+about 2x the opener scan it replaces while also parsing destinations.
+
+The claim is **agreement with a CommonMark reader**, not with the matcher
+this replaced — that matcher is what was wrong. Across 194801 generated
+bracket arrangements the scanner now disagrees with `markdown-it-py` in 0
+cases, where it disagreed in 200 before
+(`tests/test_links_commonmark_openers.py`). `INDEX_SEMANTICS_VERSION` stays
+10: no tag contains the commit that set it, so this reaches a deployed vault
+in the same rebuild as #1517 and #1519.
+
+What this leaves: an empty destination (`[a]()`) still stores no row, and
+reference links still take the first opener rather than the nearest — the
+reference family has its own match shape and its own scans, and folding it
+in would have put a second semantic delta in one bump.
 
 **A link is matched inside one paragraph, never across a boundary (#1334).**
 The three patterns used to run over the whole code-stripped body, and their

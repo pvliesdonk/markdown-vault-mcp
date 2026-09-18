@@ -36,7 +36,10 @@ from markdown_vault_mcp.utils.links import (
     find_bracket_span as _find_bracket_span,
 )
 from markdown_vault_mcp.utils.links import (
-    find_inline_link_open as _find_inline_link_open,
+    iter_inline_links as _iter_inline_links,
+)
+from markdown_vault_mcp.utils.links import (
+    trailing_title_pattern as _RE_TRAILING_TITLE,
 )
 from markdown_vault_mcp.utils.text import decode_utf8
 
@@ -909,13 +912,6 @@ _RE_FENCED_CODE = re.compile(
 )
 # Inline code: a backtick run and its closing run on one line.
 _RE_INLINE_CODE = re.compile(r"`+[^`\n]+`+")
-# An optional link title after the destination: "…", '…' or (…), escapes
-# honoured, whitespace-separated, at the end of the parenthesised text.
-# Spaces and tabs separate it (§6.3; a NBSP is an ordinary destination
-# character, Ex. 507); a line ending never reaches here (#1334).
-_RE_TRAILING_TITLE = re.compile(
-    r"""[ \t]+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\))[ \t]*$"""
-)
 #: A reference definition's line start: optional whitespace, then the ``[``
 #: that opens the label. What follows is read by :func:`_find_bracket_span`
 #: and :data:`_RE_REF_DEF_TAIL` rather than by one pattern, so an escaped
@@ -982,92 +978,6 @@ _RE_LINE_LIST_ITEM = re.compile(r"^ {0,3}(?:[-+*]|\d{1,9}[.)])[ \t]+\S")
 # and unwinds linearly on failure. Spaces are accepted, the recorded departure
 # that keeps ``[x](my note.md)`` working; a line ending is a control character
 # and ends the match with no link (the #1334 rule).
-_PLAIN_CHAR = r"[^()\\\x00-\x08\x0a-\x1f\x7f]|\\."
-_RE_PLAIN_DESTINATION = re.compile(
-    rf"(?:{_PLAIN_CHAR}"
-    rf"|\((?:{_PLAIN_CHAR}|\((?:{_PLAIN_CHAR}|\((?:{_PLAIN_CHAR})*\))*\))*\)"
-    rf")*\)"
-)
-
-
-def _scan_plain_destination(region: str, pos: int) -> int | None:
-    """Find the ``)`` that closes a plain destination (and title) at *pos*.
-
-    See :data:`_RE_PLAIN_DESTINATION` for the grammar.
-
-    Returns:
-        The index of the closing ``)``, or ``None``.
-    """
-    m = _RE_PLAIN_DESTINATION.match(region, pos)
-    return None if m is None else m.end() - 1
-
-
-def _scan_pointy_destination(region: str, pos: int) -> int | None:
-    """Find the end of a ``<…>`` destination opening at *pos*.
-
-    No line ending and no unescaped ``<`` or ``>`` inside (§6.3, Ex. 491,
-    493); a ``)`` or a space is fine (Ex. 489, 492).
-
-    Returns:
-        The index just past the closing ``>``, or ``None``.
-    """
-    i = pos + 1
-    while i < len(region):
-        char = region[i]
-        if char == "\n" or char == "<":
-            return None
-        if char == "\\" and i + 1 < len(region) and region[i + 1] != "\n":
-            i += 2
-            continue
-        if char == ">":
-            return i + 1
-        i += 1
-    return None
-
-
-def _parse_destination(region: str, pos: int) -> tuple[str, int] | None:
-    """Read an inline link's destination starting just after its ``(``.
-
-    Implements §6.3's two destination forms and the optional title (#1353).
-    The returned destination is the text **as written**, title excluded —
-    ``<my note.md>`` keeps its brackets, ``a\\(b\\).md`` its escapes — since
-    that is what the rename path searches the file for; decoding is
-    :func:`~markdown_vault_mcp.utils.links.decode_markdown_destination`'s job.
-
-    Args:
-        region: The paragraph region being scanned.
-        pos: Index of the first character after ``(``.
-
-    Returns:
-        ``(raw_destination, end)`` with *end* the index just past the closing
-        ``)``, or ``None`` when no link is written here.
-    """
-    i = pos
-    while i < len(region) and region[i] in " \t":
-        i += 1
-    if i < len(region) and region[i] == "<":
-        return _parse_pointy_destination(region, i)
-    close = _scan_plain_destination(region, i)
-    if close is None:
-        return None
-    # Only spaces and tabs are trimmed: a NBSP is a destination character.
-    raw = _RE_TRAILING_TITLE.sub("", region[i:close]).strip(" \t")
-    return (raw, close + 1) if raw else None
-
-
-def _parse_pointy_destination(region: str, pos: int) -> tuple[str, int] | None:
-    """The ``<…>`` half of :func:`_parse_destination`; *pos* is at the ``<``."""
-    end = _scan_pointy_destination(region, pos)
-    if end is None:
-        return None
-    raw = region[pos:end]
-    close = _scan_plain_destination(region, end)
-    if close is None or raw == "<>":
-        return None
-    rest = region[end:close]
-    if rest.strip(" \t") and not _RE_TRAILING_TITLE.fullmatch(rest):
-        return None
-    return raw, close + 1
 
 
 def _is_external_target(target: str) -> bool:
@@ -1352,25 +1262,17 @@ def _extract_inline_links(
 ) -> list[LinkInfo]:
     """Extract inline ``[text](path.md)`` links from one paragraph region.
 
-    Skips image links (``![alt](src)``), external URLs, pure anchor links
-    (``#section`` within the same document), and destinations naming an
-    attachment (#1333).
+    The grammar — where the text opens and closes, which spans are images —
+    is :func:`~markdown_vault_mcp.utils.links.iter_inline_links`, shared
+    with the rewrite side so the two cannot disagree about which links
+    exist (#1521). This function decides only which of those links the
+    index holds: external URLs, pure anchor links (``#section`` within the
+    same document) and destinations naming an attachment (#1333) are not
+    vault links and are skipped here.
     """
     links: list[LinkInfo] = []
-    pos = 0
-    while (found := _find_inline_link_open(region, pos)) is not None:
-        open_index, after_open, text = found
-        parsed = _parse_destination(region, after_open)
-        if parsed is None:
-            pos = after_open
-            continue
-        raw_target, end = parsed
-        # The search resumes after the whole link, so a ``[b](y)`` written
-        # inside this link's title is not read as a second link.
-        pos = end
-        # Skip image links: ![alt](src) shares the same bracket syntax.
-        if open_index > 0 and region[open_index - 1] == "!":
-            continue
+    for link in _iter_inline_links(region):
+        raw_target = link.raw_target
         # The external test looks at what the spelling names, not at its
         # brackets or escapes; the anchor test at the spelling itself, since
         # a decoded ``%23x.md`` begins with ``#`` and is not an anchor (#1353).
@@ -1389,7 +1291,7 @@ def _extract_inline_links(
         links.append(
             LinkInfo(
                 target_path=resolved,
-                link_text=text,
+                link_text=link.link_text,
                 link_type="markdown",
                 fragment=fragment,
                 raw_target=raw_target,

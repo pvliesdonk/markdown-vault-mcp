@@ -8,8 +8,9 @@ file back byte-identical — and reported ``updated_links=1``. The link went
 on naming a file that no longer existed, and the operation said it had
 handled it.
 
-The fix is one primitive, not two: ``find_inline_link_open`` moved into
-``utils/links.py`` and both sides call it. So the property this module
+The fix is one primitive, not two: the inline-link scan moved into
+``utils/links.py`` and both sides call it (it is ``iter_inline_links``
+since #1526). So the property this module
 pins is not "the rewrite still behaves as it did" but the stronger and more
 useful one — **for any content, the rewrite replaces exactly the
 destinations the index stored**. That is the invariant whose absence made
@@ -58,8 +59,25 @@ def _indexed(content: str) -> int:
 
 
 def _rewritten(content: str) -> int:
-    """How many destinations :func:`apply_link_replacement` replaced."""
+    """How many destinations :func:`apply_link_replacement` replaced.
+
+    The count comes from the length delta, but *which* bytes moved is
+    checked as well, by re-indexing the result: a delta alone cannot tell a
+    destination from a title that repeats it, and a rewrite that mangled
+    the title while leaving the destination stale satisfied the delta
+    exactly. That is what it missed, in review of #1526.
+    """
     after = apply_link_replacement(content, "markdown", OLD_TARGET, NEW_TARGET)
+    expected = [
+        NEW_TARGET if link.raw_target == OLD_TARGET else link.raw_target
+        for link in extract_links(content, SRC)
+        if link.link_type == "markdown"
+    ]
+    assert [
+        link.raw_target
+        for link in extract_links(after, SRC)
+        if link.link_type == "markdown"
+    ] == expected, content
     return (len(after) - len(content)) // _GROWTH
 
 
@@ -125,6 +143,55 @@ class TestAnEscapedBracketInLinkText:
 # ---------------------------------------------------------------------------
 
 
+class TestATitleThatRepeatsTheDestination:
+    """The splice is anchored, so only the destination moves."""
+
+    def test_a_title_naming_the_same_file_is_left_alone(self) -> None:
+        # The review case. Searching the link for the destination found the
+        # *title*'s copy of it, so the title was rewritten and the
+        # destination left naming a file the rename had just moved — a
+        # broken link, reported as a successful rewrite because the length
+        # delta came out right.
+        assert (
+            apply_link_replacement(
+                'See [a](old.md "old.md") here.', "markdown", "old.md", "new.md"
+            )
+            == 'See [a](new.md "old.md") here.'
+        )
+
+    def test_a_title_merely_containing_it_is_left_alone_too(self) -> None:
+        # The wider shape: the destination need not be the whole title for
+        # the search to land in the wrong place.
+        assert (
+            apply_link_replacement(
+                'See [a](old.md "the old.md note") here.',
+                "markdown",
+                "old.md",
+                "new.md",
+            )
+            == 'See [a](new.md "the old.md note") here.'
+        )
+
+    def test_link_text_repeating_it_is_left_alone(self) -> None:
+        # The mirror on the other side of the destination. This one the
+        # search got right by luck, since it took the *last* occurrence
+        # before the ``)``; it is pinned so the anchor covers both sides.
+        assert (
+            apply_link_replacement(
+                "See [old.md](old.md) here.", "markdown", "old.md", "new.md"
+            )
+            == "See [old.md](new.md) here."
+        )
+
+    def test_the_rename_end_to_end_keeps_the_title(self, tmp_path: Path) -> None:
+        manager = _vault(tmp_path, 'See [a](old.md "old.md") here.\n')
+        result = manager.rename("old.md", "new.md", update_links=True)
+        assert (tmp_path / SRC).read_text(encoding="utf-8") == (
+            'See [a](new.md "old.md") here.\n'
+        )
+        assert result.updated_links == 1
+
+
 class TestTheRewriteSeesWhatTheIndexSees:
     """For any content, replaced destinations == stored destinations."""
 
@@ -140,6 +207,26 @@ class TestTheRewriteSeesWhatTheIndexSees:
             for content in (base, base.replace("(", f"({OLD_TARGET}", 1)):
                 assert _indexed(content) == _rewritten(content), content
 
+    def test_titles_agree_too(self) -> None:
+        # The alphabets above hold no quote, so no input they generate has
+        # a *title* — and a title is where the two sides came apart, since
+        # a rewrite that searched the link for its destination found the
+        # title's copy of it. Exhaustive over the title spellings §6.3
+        # allows, each built to repeat the destination, so the property
+        # covers the shape rather than leaving it to the fixtures.
+        titles = [
+            "",
+            f' "{OLD_TARGET}"',
+            f" '{OLD_TARGET}'",
+            f" ({OLD_TARGET})",
+            f' "a {OLD_TARGET} b"',
+            ' "t"',
+        ]
+        texts = ["a", OLD_TARGET, "", "a[b"]
+        for title, text in itertools.product(titles, texts):
+            content = f"See [{text}]({OLD_TARGET}{title}) here."
+            assert _indexed(content) == _rewritten(content), content
+
     @pytest.mark.parametrize("length", range(6), ids=lambda n: f"len{n}")
     def test_a_wider_alphabet_agrees_too(self, length: int) -> None:
         # The same property over the characters a real destination is made
@@ -151,30 +238,31 @@ class TestTheRewriteSeesWhatTheIndexSees:
             assert _indexed(content) == _rewritten(content), content
 
 
-class TestWhatThatAgreementCosts:
-    def test_an_image_whose_alt_text_opens_a_bracket_is_left_alone(self) -> None:
-        # The one input where this fix changes backslash-free behaviour, and
-        # it is a deliberate trade. ``![[](old.md)`` is a link for
-        # CommonMark — ``![`` is literal text and ``[](old.md)`` is an empty
-        # link — but the scanner's ``!`` lookbehind reads the whole thing as
-        # an image and stores no row, a pre-existing departure.
-        # [observed: markdown-it-py renders it ``![<a href="old.md"></a>``
-        # while extract_links returns [], 2026-09-18]
+class TestTheAgreementNowCostsNothing:
+    def test_an_image_whose_alt_text_opens_a_bracket_is_a_link_on_both_sides(
+        self,
+    ) -> None:
+        # This case used to be the price of the read/write agreement. The
+        # scanner's ``!`` lookbehind read ``![[](old.md)`` as an image and
+        # stored no row, where CommonMark reads ``![`` as literal text
+        # followed by an empty link; the superseded rewrite pattern
+        # replaced it anyway, via the retry a failed lookbehind triggers.
+        # Aligning the rewrite with the index meant leaving it alone.
         #
-        # The superseded pattern rewrote it anyway, because a failed
-        # lookbehind made the engine retry from the inner ``[``. Keeping
-        # that retry costs a quadratic — 26 s on 16000 ``![`` — so the
-        # rewrite now agrees with the index instead, and the departure
-        # stays one question about the read side rather than two answers
-        # (#1526).
+        # #1526 fixed the read side instead, so the two now agree *and*
+        # agree with CommonMark: the link is indexed and it is rewritten.
+        # [observed: markdown-it-py renders it ``![<a href="old.md"></a>``,
+        # 2026-09-18]
         content = "![[](old.md)"
-        assert extract_links(content, SRC) == []
+        assert [link.raw_target for link in extract_links(content, SRC)] == ["old.md"]
         assert (
-            apply_link_replacement(content, "markdown", "old.md", "new.md") == content
+            apply_link_replacement(content, "markdown", "old.md", "new.md")
+            == "![[](new.md)"
         )
 
     def test_an_ordinary_image_is_still_left_alone(self) -> None:
         content = "![alt](old.md)"
+        assert extract_links(content, SRC) == []
         assert (
             apply_link_replacement(content, "markdown", "old.md", "new.md") == content
         )
