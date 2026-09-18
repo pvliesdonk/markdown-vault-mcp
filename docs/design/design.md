@@ -2251,6 +2251,55 @@ the `#` of a well-formed numeric reference (`&#46;`), for the same reason
 `%23` splits after the percent-decode; `split_markdown_fragment` is shared
 with the rename path.
 
+**The rewrite finds a link the same way the index does (#1521).** Those two
+had drifted apart. #1517 taught the read side that a `\]` does not close a
+link's text; `apply_link_replacement` kept the negated class
+(`(?<!!)(\[[^\]]*?\])\(`), so `[Bra\]cket](old.md)` became a link the index
+held and the rewrite could not see. A rename found the backlink row, computed
+a replacement, matched nothing, wrote the file back byte-identical — and
+reported it as updated. The link went on naming a file that no longer
+existed, and the operation said it had handled it.
+
+So `find_bracket_span` and `find_inline_link_open` moved out of `scanner.py`
+into `utils/links.py`, where both sides reach them, and the rewrite scans with
+the opener the index is built with. **One primitive, not two** is the whole
+point: any future change to where a link's text ends now moves both sides at
+once, which is the property whose absence produced the defect. Only the
+destination stays a literal comparison, and that is correct — `raw_target` is
+the destination as the file spells it, so equality is the right test and the
+pointy, encoded and escaped spellings need no case of their own.
+
+An escape-aware class was measured rather than assumed, as #1517 and #1519
+measured theirs: it is not affordable here either, and the literal
+destination that follows it does not bound the retry (39 KB of `[a\]b` costs
+about 5 s, quadrupling per doubling). The scan also removes an instance of
+#1343 nobody had noticed on this side — the superseded pattern was already
+quadratic on a run of bare `[`, 291 ms at 8000, paid once per source file on
+every rename. The honest cost is the ordinary case: about 2x on a file of
+20000 real links (12.3 ms to 25.7 ms), both linear.
+
+The claim is pinned as **agreement with the index** rather than as agreement
+with the pattern it replaced, because the latter is what was wrong: for any
+content, the rewrite replaces exactly the destinations the index stored
+(`tests/test_links_rewrite_agrees_with_index.py`, exhaustive over the
+characters that decide it).
+
+One backslash-free input changes, deliberately. `![[](old.md)` is a link for
+CommonMark — `![` is literal text and `[](old.md)` an empty link — which the
+scanner's `!` lookbehind reads as an image and does not index, a departure
+that predates this. The old pattern rewrote it anyway, because a failed
+`(?<!!)` made the engine retry from the inner `[`. Keeping that retry costs
+26 s on 16000 `![`, so the rewrite now agrees with the index and the
+misreading stays **one** question about the read side rather than two
+answers; it is filed as #1526.
+
+A source the rewrite cannot change is no longer counted as updated, written
+back, or announced to the write callbacks — and the mismatch is logged
+(`link_rewrite_matched_nothing`). A row the rewrite cannot find means the
+index and the file disagree, which is a defect to see rather than a no-op to
+absorb; #1521 was invisible precisely because that case was counted as a
+success.
+
 `raw_target` keeps the destination **as written, title excluded** —
 `<my note.md>`, `a\(b\).md` — because `apply_link_replacement` searches the
 file for it; `target_path` comes from the decoded form. That is also why the

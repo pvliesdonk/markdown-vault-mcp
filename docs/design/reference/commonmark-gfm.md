@@ -392,7 +392,13 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   (a deliberate cap, pinned); spaces in a plain destination accepted; no
   bracket balancing in link text (`[a [b] c](x.md)` missed, `[a [b c](x.md)`
   links `b c`); `\[` ignored; links inside HTML blocks and fence info
-  strings extracted. Right: images by `!` lookbehind; `[a] (x.md)` rejected.
+  strings extracted. `[a] (x.md)` rejected, correctly. The `!` lookbehind is
+  right for an ordinary image and **wrong when the alt text opens a bracket**:
+  CommonMark reads `![a[b](x.md)` as literal `![a` followed by a link, and
+  `![[](x.md)` likewise, where the lookbehind takes the whole thing for an
+  image and stores no row.
+  [observed: markdown-it-py 3.0.0 renders `![a[b](x.md)` as
+  `![a<a href="x.md">b</a>` while `extract_links` returns [], 2026-09-18]
   Decided in `docs/design/design.md` § Link Extraction.
 - `_find_reference_usage` / `_iter_reference_definitions` in
   `_extract_reference_links` and `_collect_reference_definitions` —
@@ -431,7 +437,12 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   `(?:\s[^)]*)?` admits a line ending; runs on raw content including code
   spans (documented there). Since #1353 the rewrite keeps a `<…>`
   destination pointy and compares the decoded spelling, but introduces no
-  escaping the author did not use.
+  escaping the author did not use. Since #1521 the markdown branch finds a
+  link with `find_inline_link_open`, the opener the index itself is built
+  with, so the two cannot disagree about where a link's text ends; it
+  therefore inherits the `!` departure noted above rather than the retry the
+  old pattern happened to perform.
+  [pins: tests/test_links_rewrite_agrees_with_index.py::TestTheRewriteSeesWhatTheIndexSees::test_every_short_string_agrees, tests/test_links_rewrite_agrees_with_index.py::TestWhatThatAgreementCosts::test_an_image_whose_alt_text_opens_a_bracket_is_left_alone]
   [pins: tests/test_links_destination_spellings.py::TestRenameKeepsTheSpelling::test_pointy_relative_with_fragment_stays_pointy]
   [pins: tests/test_utils_links.py::TestApplyLinkReplacement::test_markdown_image_not_affected, tests/test_utils_links.py::TestApplyLinkReplacement::test_reference_link_with_title]
 - Ingestion: `parse_note` decodes `utf-8-sig`, then `frontmatter.loads`;

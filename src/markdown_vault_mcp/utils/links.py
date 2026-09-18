@@ -521,6 +521,172 @@ def compute_new_raw_target(
         return new_raw
 
 
+#: A bracket span (link text, reference label) is read by an escape-aware
+#: scan rather than a negated character class, so a ``\\]`` does not close
+#: it (CommonMark §6.3; #1517 for the inline text, #1519 for the two
+#: reference forms) — :func:`find_bracket_span` below.
+#:
+#: It lives in this module, not in ``scanner.py``, because the rewrite
+#: side needs the same answer: when the two disagreed about where a
+#: link's text ends, a rename found a link the index held and silently
+#: failed to rewrite it (#1521).
+#:
+#: The scan steps between the only characters that can matter rather than
+#: over every one of them, so the engine keeps doing the scanning and a
+#: note with no brackets costs one failed search rather than a Python loop
+#: the length of the note.
+#:
+#: These three and no others: :func:`find_bracket_span` handles the
+#: backslash and then treats what is left as the two brackets, so a
+#: character added here needs a branch added there.
+_RE_LINK_TEXT_MARK = re.compile(r"[\[\]\\]")
+
+
+def find_bracket_span(region: str, pos: int) -> tuple[int, int, str] | None:
+    """Find the next ``[…]`` at or after *pos*, honouring escapes.
+
+    The primitive under every bracket span the scanner reads: an inline
+    link's text, and a reference usage's two labels and a definition's one.
+    Each used to be matched by a negated character class (``[^\\]]*``), which
+    cannot see a backslash, so a ``\\]`` closed the span and the link it
+    belonged to produced no row at all — for inline text (#1517) and for the
+    reference family (#1519) alike.
+
+    The scan, not a wider regex, is what makes that affordable. An
+    escape-aware class has to read past every escaped ``]``, so the engine's
+    retry from each ``[`` turns quadratic: on one 40 KB paragraph of
+    ``[a\\]b`` the class costs seconds where this costs a single pass. The
+    walk also improves the *existing* pathological case, a run of ``[`` that
+    never closes (#1343).
+
+    Matching follows the classes it replaces, so backslash-free input
+    behaves exactly as before: the **first** ``[`` since the last unescaped
+    ``]`` opens the span, and the span ends at the first unescaped ``]``. A
+    caller that rejects the span it is handed resumes at ``close + 1``,
+    which is where the engine's start-position retry would have landed.
+
+    Args:
+        region: The text to scan — one paragraph region for a usage, the
+            whole body for a definition (#1334).
+        pos: Index to resume from.
+
+    Returns:
+        ``(open_index, close_index, inner)`` with ``region[close_index]``
+        the unescaped ``]`` that closed the span; ``None`` when no further
+        span exists.
+    """
+    first_open: int | None = None
+    index = pos
+    while (mark := _RE_LINK_TEXT_MARK.search(region, index)) is not None:
+        at = mark.start()
+        char = region[at]
+        if char == "\\":
+            # An escaped character is literal, so neither a bracket that
+            # opens the span nor one that closes it.
+            index = at + 2
+            continue
+        if char == "[":
+            if first_open is None:
+                first_open = at
+        else:
+            # A ``]``: the mark class yields nothing else once the
+            # backslash above is handled, so this needs no test of its own
+            # — and stays an ``else`` rather than a third branch that could
+            # never be taken.
+            if first_open is not None:
+                return first_open, at, region[first_open + 1 : at]
+            # A ``]`` before any ``[`` closes nothing and is skipped, which
+            # is where the engine's start-position retry used to land.
+        index = at + 1
+    return None
+
+
+def find_inline_link_open(region: str, pos: int) -> tuple[int, int, str] | None:
+    """Find the next ``[text](`` at or after *pos*, honouring escapes.
+
+    The link text is read by :func:`find_bracket_span`; this adds the
+    requirement that its ``]`` be followed by ``(``. When it is not, the
+    candidate is discarded and the search resumes after that ``]``.
+
+    Args:
+        region: One paragraph region, code already stripped (#1334).
+        pos: Index to resume from, so a destination already parsed is not
+            re-read as a second link.
+
+    Returns:
+        ``(open_index, index_after_the_paren, text)``, the last two matching
+        what the class this replaced gave as ``end()`` and its first group;
+        ``None`` when the region holds no further opener.
+    """
+    while (span := find_bracket_span(region, pos)) is not None:
+        open_index, close_index, text = span
+        if region[close_index + 1 : close_index + 2] == "(":
+            return open_index, close_index + 2, text
+        pos = close_index + 1
+    return None
+
+
+def _replace_inline_destinations(content: str, old_raw: str, new_raw: str) -> str:
+    r"""Rewrite every ``[text](old_raw)`` destination in *content*.
+
+    The link text is found by :func:`find_inline_link_open`, the same scan
+    the index is built with, because a rewrite has to see exactly the links
+    the index holds. It did not: the class this replaces
+    (``(?<!!)(\[[^\]]*?\])\(``) could not cross an escaped ``]``, so after
+    #1517 made ``[Bra\]cket](old.md)`` an indexed link, a rename computed a
+    replacement for it and then quietly matched nothing (#1521).
+
+    The scan is also what keeps the rewrite linear. An escape-aware class
+    is not affordable here even though a literal destination follows it:
+    39 KB of ``[a\]b`` costs it about 5 s, quadrupling per doubling, and
+    the class it replaces is already quadratic on a run of bare ``[``
+    (285 ms at 8000). The scan is a single pass over both.
+
+    Only the destination is matched literally, exactly as before: *old_raw*
+    is the destination as the file spells it, which is what the index
+    stored, so an equality test is the right one and the pointy, encoded
+    and escaped spellings need no special case here.
+
+    Args:
+        content: Full file content.
+        old_raw: The destination to replace, as written in the file.
+        new_raw: The destination to write in its place.
+
+    Returns:
+        *content* with every matching destination replaced.
+
+    Note:
+        Operates on raw file content, so an occurrence inside a backtick
+        code span is rewritten too. Pre-existing, and low risk in practice.
+    """
+    # The destination and its optional title, anchored: matched at a fixed
+    # position rather than searched for, so it adds no retry of its own.
+    tail = re.compile(re.escape(old_raw) + r"((?:\s[^)]*)?)\)")
+    out: list[str] = []
+    read = 0
+    pos = 0
+    while (found := find_inline_link_open(content, pos)) is not None:
+        open_index, after_open, _text = found
+        pos = after_open
+        if open_index > 0 and content[open_index - 1] == "!":
+            # An image shares the bracket syntax; the ``!`` is the
+            # discriminator, and the index skips it for the same reason —
+            # including where that reading is wrong (``![a[b](x)`` is a
+            # link for CommonMark), which is #1526 and now belongs to both
+            # sides at once, since they share this scan.
+            continue
+        match = tail.match(content, after_open)
+        if match is None:
+            continue
+        out.append(content[read:after_open])
+        out.append(new_raw)
+        out.append(match.group(1))
+        out.append(")")
+        read = pos = match.end()
+    out.append(content[read:])
+    return "".join(out)
+
+
 def apply_link_replacement(
     content: str, link_type: str, old_raw: str, new_raw: str
 ) -> str:
@@ -536,17 +702,7 @@ def apply_link_replacement(
         Updated content with all occurrences of *old_raw* replaced.
     """
     if link_type == "markdown":
-        # Negative lookbehind (?<!!) excludes image links ![](url) — the `!`
-        # immediately before `[` is the discriminator. Anchored to [text]( so
-        # bare (old_raw) occurrences in plain text are also excluded.
-        # Captures and preserves optional link title (e.g. "title" or 'title').
-        # NOTE: operates on raw file content; occurrences inside backtick code
-        # spans would also be rewritten. Risk is low in practice.
-        return re.sub(
-            r"(?<!!)(\[[^\]]*?\])\(" + re.escape(old_raw) + r"((?:\s[^)]*)?)\)",
-            lambda m: m.group(1) + "(" + new_raw + m.group(2) + ")",
-            content,
-        )
+        return _replace_inline_destinations(content, old_raw, new_raw)
     elif link_type == "reference":
         # Match reference definition lines: [id]: url optional-title
         # Anchored to line start with MULTILINE so we don't match inline text.

@@ -398,7 +398,9 @@ class RenameResult:
     Attributes:
         old_path: Original relative path.
         new_path: New relative path after the rename.
-        updated_links: Number of backlinks in other documents that were rewritten.
+        updated_links: Number of source documents whose links were actually
+            rewritten. A source the rewrite left byte-identical is not
+            counted, because it still names the old path (#1521).
         hint: Why no links were rewritten although ``update_links`` was
             requested — set when the renamed file is an attachment, whose
             references are not tracked as links (#1338). ``None`` otherwise.
