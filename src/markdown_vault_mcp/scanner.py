@@ -47,7 +47,7 @@ from markdown_vault_mcp.utils.links import (
 from markdown_vault_mcp.utils.text import decode_utf8
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator
+    from collections.abc import Callable, Iterable, Iterator, Mapping
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -923,9 +923,17 @@ _RE_INLINE_CODE = re.compile(r"`+[^`\n]+`+")
 #: with an exotic Unicode space is still a definition, as it was before.
 _RE_REF_DEF_OPEN = re.compile(r"^\s*\[", re.MULTILINE)
 #: What follows a definition's ``]:`` — the target, to the end of its line.
-#: The destination may sit on the next line (§4.7), which is why the gap is
-#: ``\s*`` and not ``[ \t]*``; ``(.+)`` then requires a non-empty one.
-_RE_REF_DEF_TAIL = re.compile(r"\s*(.+)$", re.MULTILINE)
+#: The destination may sit on the next line (§4.7), so the gap admits one
+#: line ending; ``(.+)`` then requires a non-empty destination.
+#:
+#: **One** line ending, not any run of whitespace. A blank line ends the
+#: attempt (§4.7: the destination may be "preceded by ... up to one line
+#: ending"), and a gap of ``\s*`` crossed it — so ``[:]:`` followed by a
+#: blank line and an unrelated ``[ar]: x.md`` defined the label ``:`` with
+#: that whole line as its target. Nothing referenced such a definition
+#: until the shortcut form arrived (#1531), which is why a wrong entry in
+#: the table produced no wrong row and went unseen.
+_RE_REF_DEF_TAIL = re.compile(r"[ \t]*\n?[ \t]*(.+)$", re.MULTILINE)
 # Markdown footnotes ([^label] / [^label]: body) differ from reference-style
 # links by exactly this character, and both reference scans read them.
 _FOOTNOTE_LABEL_PREFIX = "^"
@@ -1304,24 +1312,131 @@ def _extract_inline_links(
     return links
 
 
-def _follow_reference_label(region: str, close_index: int) -> tuple[str, int] | None:
-    """The reference family's shape test: a second span, immediately adjacent.
+#: §6.3's cap on a link label's length, in characters between the
+#: brackets. Enforced for faithfulness and relied on for cost: it is what
+#: bounds :func:`_parse_link_label`'s forward scan.
+_MAX_LABEL_CHARS = 999
 
-    The shape that kept this family off the inline scan when #1526 rewrote
-    it: a link here is two bracket spans rather than one followed by ``(``.
-    Sharing the walk rather than the whole scan is what let the rule move
-    across (#1528).
+
+def _parse_link_label(region: str, pos: int) -> tuple[str, int] | None:
+    r"""Read a CommonMark link label at *pos*, or report that none is there.
+
+    Distinct from :func:`_find_bracket_span`, and the distinction decides a
+    rung of the ladder. A label's brackets must **balance** (§6.3: "one or
+    more characters ... between an opening ``[`` and a closing ``]`` ...
+    Unescaped square bracket characters are not allowed inside the opening
+    and closing delimiters unless they are backslash-escaped or balanced").
+    ``[[]`` is therefore a bracket span but not a label.
+
+    That is what separates the two ways a full reference can fail. When the
+    label is *valid but undefined*, the reader has spent the second span on
+    it and the whole thing is simply not a link. When no label parses at
+    all, the second span was never a candidate, so the reader falls back to
+    reading the first span as a shortcut. Telling those apart is the
+    difference between ``[ar][a]`` (no link, ``a`` undefined) and
+    ``[a][[]`` (a shortcut link on ``a``).
+
+    The 999-character cap is §6.3's own ("A link label can have at most 999
+    characters inside the square brackets"), and it is what keeps the walk
+    linear rather than merely what keeps it faithful. Without it a run of
+    ``[ar][`` is quadratic: every closed span starts a parse that reads to
+    the end of the region looking for a balance that never comes. With it
+    each parse is bounded, so the run costs a constant per span. Measured
+    at 20000 repeats, which is the shape
+    ``tests/test_links_shortcut_references.py`` pins.
+
+    Args:
+        region: The text being scanned.
+        pos: Index of the candidate ``[``.
+
+    Returns:
+        ``(label, end)`` with *end* just past the closing ``]``, or ``None``
+        when no balanced label is written here.
     """
-    if region[close_index + 1 : close_index + 2] != "[":
+    if pos >= len(region) or region[pos] != "[":
         return None
-    second = _find_bracket_span(region, close_index + 1)
-    if second is None:
-        return None
-    _, second_close, ref = second
-    return ref, second_close + 1
+    depth = 0
+    index = pos
+    limit = min(len(region), pos + _MAX_LABEL_CHARS + 2)
+    while index < limit:
+        char = region[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+            if depth == 0:
+                return region[pos + 1 : index], index + 1
+        index += 1
+    return None
 
 
-def _iter_reference_usages(region: str) -> Iterator[tuple[int, str, str]]:
+def _make_reference_follow(
+    ref_defs: Mapping[str, str],
+) -> Callable[[str, int, int], tuple[str, int] | None]:
+    """Build the reference family's shape test, closed over *ref_defs*.
+
+    CommonMark §6.3 does not test one shape but walks a **ladder**, and the
+    rungs are not independent: the full form ``[text][label]`` counts only
+    when *label is defined*, and when it is not, the parser falls back to
+    reading the first span as a collapsed or shortcut reference. So the
+    test cannot be purely syntactic the way the inline one is — it has to
+    see the definition table, which is why this is a closure rather than a
+    plain function (#1531).
+
+    The rungs, in order:
+
+    * **full** — ``[text][label]`` with *label* defined;
+    * **collapsed** — ``[text][]``, resolving on *text*;
+    * **shortcut** — ``[text]`` with nothing usable after it, resolving on
+      *text*.
+
+    A label that is not defined is not a link on any rung, so the walk is
+    told ``None`` and the span stays literal, exactly as a reader leaves
+    it.
+
+    Args:
+        ref_defs: The document's definitions, keyed by lower-cased label.
+
+    Returns:
+        A ``follow`` callable for
+        :func:`~markdown_vault_mcp.utils.links.iter_bracket_links`.
+    """
+
+    def defined(label: str) -> bool:
+        return label.strip().lower() in ref_defs
+
+    def follow(
+        region: str, open_index: int, close_index: int
+    ) -> tuple[str, int] | None:
+        text = region[open_index + 1 : close_index]
+        parsed = _parse_link_label(region, close_index + 1)
+        if parsed is not None:
+            label, label_end = parsed
+            if label.strip():
+                # Full form. A label that parses but is not defined ends
+                # the ladder: the reader spent the second span on it and
+                # does not reread the first as a shortcut.
+                return (label, label_end) if defined(label) else None
+            # Collapsed: an empty second span resolves on the text, and
+            # likewise ends the ladder if that is undefined.
+            return (text, label_end) if defined(text) else None
+        # No label parsed at all — an unbalanced ``[[]`` is a bracket span
+        # but not a label — so the second span was never a candidate and
+        # the ladder falls through to the shortcut rung below.
+        # Shortcut: the span resolves on its own text, and consumes only
+        # itself. Definitions cannot reach here — they are blanked out of
+        # the region before the scan (:func:`_blank_reference_definitions`).
+        return (text, close_index + 1) if defined(text) else None
+
+    return follow
+
+
+def _iter_reference_usages(
+    region: str, ref_defs: Mapping[str, str]
+) -> Iterator[tuple[int, str, str]]:
     r"""Yield every ``[text][ref]`` usage in *region*, honouring escapes.
 
     Both labels honour escapes, so an escaped ``]`` closes neither:
@@ -1345,12 +1460,12 @@ def _iter_reference_usages(region: str) -> Iterator[tuple[int, str, str]]:
         makes ``[^a][^b][^c]`` skip the third label (#1104).
     """
     for open_index, close_index, ref, end in _iter_bracket_links(
-        region, _follow_reference_label
+        region, _make_reference_follow(ref_defs)
     ):
         yield end, region[open_index + 1 : close_index], ref
 
 
-def _iter_reference_definitions(clean: str) -> Iterator[tuple[str, str]]:
+def _iter_definition_matches(clean: str) -> Iterator[tuple[str, str, int, int]]:
     """Yield ``(label, target)`` for each ``[label]: target`` line.
 
     The label is read by :func:`_find_bracket_span` so an escaped ``]``
@@ -1363,7 +1478,9 @@ def _iter_reference_definitions(clean: str) -> Iterator[tuple[str, str]]:
         clean: Body text with code removed and line endings normalised.
 
     Yields:
-        The label as written and the target as written, neither stripped.
+        ``(label, target, start, end)`` — both as written and neither
+        stripped, with *start* and *end* bounding the whole definition so
+        that :func:`_blank_reference_definitions` can cut it out.
     """
     pos = 0
     while (opener := _RE_REF_DEF_OPEN.search(clean, pos)) is not None:
@@ -1377,7 +1494,15 @@ def _iter_reference_definitions(clean: str) -> Iterator[tuple[str, str]]:
         _, close_index, label = span
         tail = (
             _RE_REF_DEF_TAIL.match(clean, close_index + 2)
-            if label and clean[close_index + 1 : close_index + 2] == ":"
+            # A label may run across a line ending but never across a
+            # *blank* one (§6.3), and the span scan does not know that: in
+            # ``[ar]\n[\n\n[ar]: x.md`` the stray ``[`` opened a label that
+            # swallowed the blank line and the real definition with it, so
+            # ``ar`` was never defined at all. Invisible until the shortcut
+            # form (#1531) started resolving against this table.
+            if label
+            and "\n\n" not in label
+            and clean[close_index + 1 : close_index + 2] == ":"
             else None
         )
         if tail is None:
@@ -1387,8 +1512,48 @@ def _iter_reference_definitions(clean: str) -> Iterator[tuple[str, str]]:
             # the span can open a definition of its own.
             pos = bracket + 1
             continue
-        yield label, tail.group(1)
+        yield label, tail.group(1), opener.start(), tail.end()
         pos = tail.end()
+
+
+def _iter_reference_definitions(clean: str) -> Iterator[tuple[str, str]]:
+    """Yield ``(label, target)`` for each ``[label]: target`` line."""
+    for label, target, _start, _end in _iter_definition_matches(clean):
+        yield label, target
+
+
+def _blank_reference_definitions(region: str) -> str:
+    """Return *region* with every definition replaced by spaces.
+
+    A reader takes reference definitions out of the document before it
+    parses inlines, and until #1531 this scanner never had to: no usage
+    shape could match ``[r]: x.md``. The shortcut form matches it at once,
+    so without this every definition in a vault would resolve as a link to
+    itself.
+
+    Blanking rather than deleting, and keeping the line endings, so the
+    region's line structure — which paragraph bounds and the definition
+    scan both depend on — is exactly as it was.
+
+    Doing it this way rather than by testing each span in place is what
+    makes it *right* instead of nearly right. A span-local test has to
+    guess at what the definition scan already knows, and three successive
+    guesses were each wrong on some input the generated corpus found:
+    a bare ``:`` is not enough (``See [ar]: here`` is a link), a
+    line-initial ``:`` is not either (``[ar]:`` with no destination
+    defines nothing), and the destination may sit on the following line.
+    Here there is nothing to guess: the definitions removed are precisely
+    the ones collected.
+    """
+    spans = [(start, end) for _l, _t, start, end in _iter_definition_matches(region)]
+    if not spans:
+        return region
+    out = list(region)
+    for start, end in spans:
+        for index in range(start, end):
+            if out[index] != "\n":
+                out[index] = " "
+    return "".join(out)
 
 
 def _collect_reference_definitions(clean: str) -> dict[str, str]:
@@ -1440,7 +1605,8 @@ def _extract_reference_links(
     reference-style link and are skipped (#1104).
     """
     links: list[LinkInfo] = []
-    for _end, text, raw_ref in _iter_reference_usages(region):
+    usable = _blank_reference_definitions(region)
+    for _end, text, raw_ref in _iter_reference_usages(usable, ref_defs):
         ref = raw_ref.strip() or text  # empty [ref] falls back to link text
         if text.startswith(_FOOTNOTE_LABEL_PREFIX) or ref.startswith(
             _FOOTNOTE_LABEL_PREFIX

@@ -206,10 +206,12 @@ class TestWhatStaysAsItWas:
         # the reference mirror of ``[a]()`` storing no row.
         assert extract_links("[a][r]\n\n[r]: <>\n", SRC) == []
 
-    def test_the_shortcut_form_is_still_not_extracted(self) -> None:
-        # Stated here so the generated property's exclusion below is read
-        # as a standing gap rather than as something this change made.
-        assert _links("[ar]") == []
+    def test_the_shortcut_form_is_extracted_since_1531(self) -> None:
+        # This module shipped asserting the opposite, and said so as a
+        # standing gap. #1531 closed it; the form itself is covered by
+        # ``tests/test_links_shortcut_references.py``, and the line stays
+        # here because the properties below changed shape when it landed.
+        assert _links("[ar]") == [("ar", "x.md")]
 
 
 # ---------------------------------------------------------------------------
@@ -219,74 +221,44 @@ class TestWhatStaysAsItWas:
 
 class TestAgreementWithACommonMarkReader:
     @pytest.mark.parametrize("length", range(1, 8), ids=lambda n: f"len{n}")
-    def test_we_never_find_a_link_a_reader_does_not(self, length: int) -> None:
+    def test_every_short_bracket_arrangement_agrees(self, length: int) -> None:
         # Exhaustive over the characters that decide the opener question: the
         # two brackets, the ``!`` that makes an image, and the two letters
         # that spell the one defined label.
         #
-        # The claim is containment, and it is the exact shape of what #1528
-        # was: every row we store is a row a CommonMark reader stores, with
-        # the same text, the same target and in the same order. Inventing a
-        # row (``![alt][ar]``), mistexting one (``[a[b][ar]``) or reordering
-        # them all break it. It needs no exclusion for the shortcut form,
-        # because *missing* a link cannot break containment — which is why
-        # this is the claim worth asserting unconditionally, with the
-        # shortfall pinned separately below.
+        # **Equality**, and with no exclusion but the wikilink one. This
+        # module shipped asserting mere containment — every row we store is
+        # one a reader stores — because the shortcut form was missing and a
+        # missing form can only ever lose rows. #1531 supplied it, so the
+        # weaker claim is no longer the strongest true one: on this corpus
+        # the scanner now reads references exactly as a CommonMark reader
+        # does. The count that used to be pinned beside this (390 shortfalls
+        # at length 7) is gone because it is zero.
         markdown_it = pytest.importorskip("markdown_it").MarkdownIt("commonmark")
         for chars in itertools.product("[]!ar", repeat=length):
             body = "".join(chars)
             if _has_wikilink(body):
                 continue
-            assert _is_subsequence(_links(body), _oracle(markdown_it, body)), body
+            assert _links(body) == _oracle(markdown_it, body), body
 
     @pytest.mark.parametrize("length", range(1, 8), ids=lambda n: f"len{n}")
-    def test_the_shortfall_is_the_shortcut_gap_and_no_wider(self, length: int) -> None:
-        # Containment alone would be satisfied by storing nothing at all, so
-        # the inputs where we fall short of the reader are counted, not
-        # waved at. Every one of them is the shortcut form.
-        #
-        # A number that *rises* means rows were lost and the change that
-        # lost them owes an explanation; one that *falls* means the gap
-        # narrowed and these figures want rewriting rather than relaxing.
-        # Before this change the same corpus disagreed on 5682 inputs; after
-        # it, 5574, with none newly disagreeing.
-        expected = {1: 0, 2: 0, 3: 0, 4: 1, 5: 9, 6: 62, 7: 390}
+    def test_the_wider_corpus_agrees_too(self, length: int) -> None:
+        # The corpus where both filler letters are defined labels, so the
+        # shapes this family's fixes are about actually fit inside seven
+        # characters. It used to be pinned by a count (5574 disagreements)
+        # because containment failed here: a shortcut link deactivates the
+        # openers around it, so without the form we read one full reference
+        # where a reader reads two shortcuts. With the form, that whole
+        # class resolves and the count is zero, so it is asserted as
+        # equality like the narrow one rather than pinned as a number.
         markdown_it = pytest.importorskip("markdown_it").MarkdownIt("commonmark")
-        short = sum(
-            1
-            for chars in itertools.product("[]!ar", repeat=length)
-            if not _has_wikilink(body := "".join(chars))
-            and _links(body) != _oracle(markdown_it, body)
-        )
-        assert short == expected[length]
-
-    @pytest.mark.parametrize("length", range(1, 8), ids=lambda n: f"len{n}")
-    def test_the_wider_corpus_disagrees_only_where_recorded(self, length: int) -> None:
-        # The corpus the documented figures come from, pinned so the
-        # evidence in ``design.md`` and the ``INDEX_SEMANTICS_VERSION``
-        # note is what CI computes rather than a number from a notebook.
-        #
-        # It is counted rather than contained because containment does not
-        # hold here, and for a reason already in this module's docstring: a
-        # shortcut link deactivates the openers around it, so where a
-        # reader makes two shortcut links this scanner makes one full
-        # reference. Single-letter labels make that shape common. The
-        # narrow corpus above carries the containment claim; this one
-        # carries the count.
-        #
-        # Measured before and after this change on identical inputs:
-        # 5,682 disagreements before, 5,574 after, 108 inputs fixed and
-        # none newly broken. The before half needs the pre-change code, so
-        # only the after half can live in CI — which is this.
-        expected = {1: 0, 2: 0, 3: 2, 4: 18, 5: 124, 6: 780, 7: 4650}
-        markdown_it = pytest.importorskip("markdown_it").MarkdownIt("commonmark")
-        disagreeing = sum(
-            1
-            for chars in itertools.product("[]!ar", repeat=length)
-            if not _has_wikilink(body := "".join(chars), WIDE_DEFS)
-            and _links(body, WIDE_DEFS) != _oracle(markdown_it, body, WIDE_DEFS)
-        )
-        assert disagreeing == expected[length]
+        for chars in itertools.product("[]!ar", repeat=length):
+            body = "".join(chars)
+            if _has_wikilink(body, WIDE_DEFS):
+                continue
+            assert _links(body, WIDE_DEFS) == _oracle(markdown_it, body, WIDE_DEFS), (
+                body
+            )
 
     @pytest.mark.parametrize(
         ("body", "expected"),
@@ -326,20 +298,23 @@ class TestAgreementWithACommonMarkReader:
 class TestLinksMayNotContainLinks:
     def test_only_the_inner_reference_links(self) -> None:
         # §6.3 Ex. 518. The outer opener is deactivated the moment the
-        # inner link closes, so ``[a [b][ar] c]`` yields only ``b`` — and the
-        # trailing ``[r]`` that a CommonMark reader then reads as a shortcut
-        # is the gap this module does not close.
-        assert _links("[a [b][ar] c][ar]") == [("b", "x.md")]
+        # inner link closes, so the outer span yields nothing — and the
+        # trailing ``[ar]`` is then read as a shortcut, which is what a
+        # CommonMark reader does and what this module could not match
+        # until #1531.
+        assert _links("[a [b][ar] c][ar]") == [("b", "x.md"), ("ar", "x.md")]
 
 
 class TestTheBracketSpanPrimitive:
     """``find_bracket_span`` is now only ever entered at a ``[``.
 
-    Both remaining callers — ``_follow_reference_label`` and
-    ``_iter_reference_definitions`` — hand it the index of an opener, so
-    its "a ``]`` before any ``[`` closes nothing" path stopped being
-    reachable through either of them when the reference scan moved onto
-    the shared walk. The behaviour is still part of a public helper's
+    Its remaining caller, ``_iter_reference_definitions``, hands it the
+    index of an opener, so its "a ``]`` before any ``[`` closes nothing"
+    path stopped being reachable through it when the reference scan moved
+    onto the shared walk. #1531 took the other caller away entirely: a
+    reference *label* must have balanced brackets, which this primitive
+    does not require, so the ladder reads it with ``_parse_link_label``
+    instead. The behaviour is still part of a public helper's
     contract, and the docstring still promises it, so it is tested
     directly rather than deleted or left to rot untested.
     """
@@ -378,7 +353,7 @@ class TestTheWalkStaysLinear:
         # generous on purpose.
         region = unit * 200000
         started = time.perf_counter()
-        list(iter_bracket_links(region, lambda _region, _at: None))
+        list(iter_bracket_links(region, lambda _region, _open, _close: None))
         assert time.perf_counter() - started < 5.0, label
 
     def test_a_body_of_reference_usages_does_not_stall(self) -> None:

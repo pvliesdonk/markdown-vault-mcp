@@ -2532,18 +2532,55 @@ count instead. Both are in `tests/test_links_reference_openers.py`; the
 *before* column needs the pre-change code, so it is a recorded measurement
 rather than one CI repeats.
 
-What this leaves is the **shortcut form** (`[label]` with no second span),
-which no version has ever stored and which is now the whole of the
-remaining disagreement. It is not a shape test away. CommonMark falls back
-from the full form to the shortcut one when the label lookup *fails*, so
-the scan would have to consult the definition table it currently cannot
-see; bolting a shortcut test onto the walk leaves 774 inputs of the
-wider corpus above still
-disagreeing. And the gap is not merely subtractive, which is the part worth
-recording: a shortcut link deactivates the openers enclosing it like any
-other link, so *not* making one leaves an opener active that a reader has
-retired — in `[[a]b][r]` a reader makes two shortcut links where the
-scanner makes one full reference with the text `[a]b`. Tracked separately.
+What this left was the **shortcut form** (`[label]` with no second span),
+which no version had ever stored and which was then the whole of the
+remaining disagreement. #1531 supplied it; the paragraph below records
+what that took.
+
+**`[label]` alone is a link (#1531).** The last of the four reference
+forms, and the one that turned the family's agreement with a CommonMark
+reader from "contained" into "exact": 462 disagreements to 0 on the narrow
+corpus, 5574 to 0 on the wide one.
+
+It is a **ladder**, not another shape, and the rungs are not independent:
+full (`[text][label]`, only when *label* is defined), then collapsed
+(`[text][]`), then shortcut (`[text]`). Two things follow that a shape test
+cannot express, and both were found by measuring rather than by reading the
+spec:
+
+- **The test consults the definition table.** Whether `[a][b]` is a link
+  depends on what is defined, so the reference family's `follow` is a
+  closure over `ref_defs` where the inline family's is a plain function.
+  That is the layering change #1531 was filed to warn about, and it is the
+  reason this could not ride along with #1528.
+- **Failing to *resolve* differs from failing to *parse*.** A label that
+  parses but is undefined ends the ladder — the reader spent the second
+  span on it. A second span that is not a valid label at all (`[[]`, whose
+  brackets do not balance) was never a candidate, so the ladder falls
+  through to the shortcut. That is the whole difference between `[ar][a]`
+  (no link) and `[a][[]` (a link on `a`), and it needs `_parse_link_label`,
+  which requires balance, rather than `find_bracket_span`, which does not.
+
+The form also breaks something nothing else did: **a definition line is
+itself a label standing alone**. `[r]: x.md` matched no previous usage
+shape, so nothing had to exclude it; under the shortcut rung it matches at
+once. Definitions are therefore blanked out of a region before the usage
+scan, which is what a reader does. Three successive attempts to test for
+one *in place* were each wrong on some generated input — a bare `:` is not
+enough (`See [ar]: here` is a link), a line-initial `:` is not either
+(`[ar]:` with no destination defines nothing), and the destination may sit
+on the next line — which is the argument for reusing the definition scan's
+own answer instead of approximating it.
+
+Two **pre-existing** defects in that definition scan surfaced here, and
+both change rows for every form, not just the new one. A destination could
+be taken from beyond a blank line, and a label could contain one; §4.7 and
+§6.3 allow neither. Each produced a wrong entry in the definition table
+that nothing ever resolved against, because the two-span usage shape could
+not reference it — so the table was wrong for as long as it has existed and
+no row showed it. The shortcut form is the first thing to read that table
+for a label the author wrote bare, which is why these appear in this
+change and not an earlier one.
 
 **A link is matched inside one paragraph, never across a boundary (#1334).**
 The three patterns used to run over the whole code-stripped body, and their

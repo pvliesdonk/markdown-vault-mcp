@@ -372,7 +372,31 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: consult the definition table it currently knows nothing about. Tracked
 #: separately rather than guessed at here.
 #:
-#: Still one bump: no tag contains the commit that set 10, so all four
+#: Version 10 finally covers the shortcut form (#1531) — ``[label]``
+#: standing alone, which no version had ever stored. It is the largest of
+#: these in rows added: every bare label in a vault that matches a
+#: definition gains an outlink and gives its target a backlink. A label
+#: with no definition stores nothing, which is what keeps a bracketed
+#: aside from becoming a link.
+#:
+#: Two corrections to the *definition* side ride with it, and they change
+#: which rows every form produces, not just the new one. A definition's
+#: destination may sit on the next line but not across a blank one, and
+#: its label may not contain a blank line either; the scan allowed both,
+#: so ``[:]:`` followed by a blank line and an unrelated ``[ar]: x.md``
+#: defined the label ``:`` with that whole line as its target, and a stray
+#: ``[`` could swallow a real definition into a label. Neither produced a
+#: wrong row before, because nothing resolved against those entries — the
+#: two-span usage shape could not reference them. The shortcut form can,
+#: which is how they surfaced.
+#:
+#: With this the reference family agrees with a CommonMark reader on the
+#: whole generated corpus: 462 disagreements before and 0 after on the
+#: narrow corpus, 5574 and 0 on the wide one
+#: (``tests/test_links_reference_openers.py``, now asserted as equality
+#: rather than containment, and ``tests/test_links_shortcut_references.py``).
+#:
+#: Still one bump: no tag contains the commit that set 10, so all five
 #: changes reach a deployed vault as a single rebuild (``AGENTS.md``, once
 #: per release).
 INDEX_SEMANTICS_VERSION = 10
