@@ -1405,8 +1405,8 @@ def _make_reference_follow(
         :func:`~markdown_vault_mcp.utils.links.iter_bracket_links`.
     """
 
-    def defined(label: str) -> bool:
-        return label.strip().lower() in ref_defs
+    def resolve(label: str) -> str | None:
+        return ref_defs.get(label.strip().lower())
 
     def follow(
         region: str, open_index: int, close_index: int
@@ -1419,24 +1419,27 @@ def _make_reference_follow(
                 # Full form. A label that parses but is not defined ends
                 # the ladder: the reader spent the second span on it and
                 # does not reread the first as a shortcut.
-                return (label, label_end) if defined(label) else None
+                target = resolve(label)
+                return (target, label_end) if target is not None else None
             # Collapsed: an empty second span resolves on the text, and
             # likewise ends the ladder if that is undefined.
-            return (text, label_end) if defined(text) else None
+            target = resolve(text)
+            return (target, label_end) if target is not None else None
         # No label parsed at all — an unbalanced ``[[]`` is a bracket span
         # but not a label — so the second span was never a candidate and
         # the ladder falls through to the shortcut rung below.
         # Shortcut: the span resolves on its own text, and consumes only
         # itself. Definitions cannot reach here — they are blanked out of
         # the region before the scan (:func:`_blank_reference_definitions`).
-        return (text, close_index + 1) if defined(text) else None
+        target = resolve(text)
+        return (target, close_index + 1) if target is not None else None
 
     return follow
 
 
 def _iter_reference_usages(
     region: str, ref_defs: Mapping[str, str]
-) -> Iterator[tuple[int, str, str]]:
+) -> Iterator[tuple[str, str]]:
     r"""Yield every ``[text][ref]`` usage in *region*, honouring escapes.
 
     Both labels honour escapes, so an escaped ``]`` closes neither:
@@ -1455,14 +1458,19 @@ def _iter_reference_usages(
         region: One paragraph region, code already stripped (#1334).
 
     Yields:
-        ``(end, text, ref)`` with *end* the index after the closing ``]``.
-        Matches stay non-overlapping, as ``finditer``'s were — which is what
-        makes ``[^a][^b][^c]`` skip the third label (#1104).
+        ``(text, raw_target)`` — the link text as written and the target
+        its label resolved to. The *target* rather than the label, because
+        the ladder has already looked it up: handing back the label would
+        make the caller repeat the lookup, and a second lookup is a second
+        chance to normalise differently from the first.
+
+        Matches stay non-overlapping, as ``finditer``'s were — which is
+        what makes ``[^a][^b][^c]`` skip the third label (#1104).
     """
-    for open_index, close_index, ref, end in _iter_bracket_links(
+    for open_index, close_index, raw_target, _end in _iter_bracket_links(
         region, _make_reference_follow(ref_defs)
     ):
-        yield end, region[open_index + 1 : close_index], ref
+        yield region[open_index + 1 : close_index], raw_target
 
 
 def _iter_definition_matches(clean: str) -> Iterator[tuple[str, str, int, int]]:
@@ -1594,32 +1602,32 @@ def _extract_reference_links(
     source_path: str,
     attachment_extensions: frozenset[str],
 ) -> list[LinkInfo]:
-    """Extract reference-style ``[text][ref]`` links from one paragraph region.
+    """Extract reference-style links from one paragraph region.
 
-    Resolves each usage against *ref_defs* (see
-    :func:`_collect_reference_definitions`); an empty ``[ref]`` falls back
-    to the link text per CommonMark shortcut semantics. External URLs, pure
-    anchors, and definitions naming an attachment (#1333) are skipped.
+    All four forms, since #1531: inline beats reference, full and
+    collapsed beat shortcut, and :func:`_make_reference_follow` walks that
+    ladder. Definitions are removed from the region first, because a
+    definition line is itself a label standing alone and the shortcut rung
+    would read every one of them as a link to itself.
 
-    Two adjacent footnote references (``[^a][^b]``) are not one
-    reference-style link and are skipped (#1104).
+    What arrives here has therefore **already resolved**: the ladder
+    consults *ref_defs* to decide whether a span is a link at all, so this
+    receives the target rather than the label and does not look it up
+    again. Two guards went with that. A usage whose label is undefined
+    never reaches here, and neither does a footnote reference — a
+    footnote's definition is prose and
+    :func:`_collect_reference_definitions` keeps it out of the table
+    (#1104), so its label resolves to nothing and the ladder declines it.
+    Both were live checks until the ladder subsumed them, and leaving
+    either behind would have been a second lookup free to normalise
+    differently from the first.
+
+    What is decided here is only which resolved targets the index holds:
+    external URLs, pure anchors and attachments (#1333) are skipped.
     """
     links: list[LinkInfo] = []
     usable = _blank_reference_definitions(region)
-    for _end, text, raw_ref in _iter_reference_usages(usable, ref_defs):
-        ref = raw_ref.strip() or text  # empty [ref] falls back to link text
-        if text.startswith(_FOOTNOTE_LABEL_PREFIX) or ref.startswith(
-            _FOOTNOTE_LABEL_PREFIX
-        ):
-            # Consecutive footnote references read as one [text][ref] pair,
-            # taking the first label as link text and the second as the
-            # reference — and the scan, resuming past both labels as
-            # finditer did, then swallows the second so a third goes unseen.
-            continue
-        ref_key = ref.lower()
-        raw_target = ref_defs.get(ref_key)
-        if raw_target is None:
-            continue
+    for text, raw_target in _iter_reference_usages(usable, ref_defs):
         if _is_external_target(decode_markdown_destination(raw_target)):
             continue
         if is_anchor_destination(raw_target):
