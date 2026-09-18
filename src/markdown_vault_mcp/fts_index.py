@@ -327,6 +327,25 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: release): a deployed vault rebuilding to 10 gets both changes at once.
 #: The same "nothing else moved" property backs it, pinned by
 #: ``tests/test_links_escaped_reference_labels.py``.
+#:
+#: Version 10 also adopts CommonMark's opener rule (#1526), and this part
+#: moves rows on purpose, so "nothing else moved" is precisely what it does
+#: *not* claim. A ``]`` closes the **nearest unmatched** ``[`` rather than
+#: the first one since the last ``]``, which was three recorded departures
+#: at once: ``[a[b](x.md)`` stored its text as ``a[b`` where it is ``b``;
+#: ``[a [b] c](x.md)`` stored no row at all, though its text merely holds a
+#: balanced pair; and ``![a[b](x.md)`` was read as an image, because the
+#: ``!`` sits before the outer ``[`` while the link opens at the inner one.
+#: So the bump adds rows for balanced and image-prefixed spellings, and
+#: rewrites ``link_text`` for any link whose text held an unmatched ``[``;
+#: no ``target_path`` changes for a link that already had a row. Agreement
+#: with a CommonMark reader is pinned over every short bracket arrangement
+#: (``tests/test_links_commonmark_openers.py``) — the claim that matters
+#: once "unchanged" is no longer one.
+#:
+#: Still one bump: no tag contains the commit that set 10, so all three
+#: changes reach a deployed vault as a single rebuild (``AGENTS.md``, once
+#: per release).
 INDEX_SEMANTICS_VERSION = 10
 
 

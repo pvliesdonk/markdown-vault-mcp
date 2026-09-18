@@ -151,30 +151,31 @@ class TestTheRewriteSeesWhatTheIndexSees:
             assert _indexed(content) == _rewritten(content), content
 
 
-class TestWhatThatAgreementCosts:
-    def test_an_image_whose_alt_text_opens_a_bracket_is_left_alone(self) -> None:
-        # The one input where this fix changes backslash-free behaviour, and
-        # it is a deliberate trade. ``![[](old.md)`` is a link for
-        # CommonMark — ``![`` is literal text and ``[](old.md)`` is an empty
-        # link — but the scanner's ``!`` lookbehind reads the whole thing as
-        # an image and stores no row, a pre-existing departure.
-        # [observed: markdown-it-py renders it ``![<a href="old.md"></a>``
-        # while extract_links returns [], 2026-09-18]
+class TestTheAgreementNowCostsNothing:
+    def test_an_image_whose_alt_text_opens_a_bracket_is_a_link_on_both_sides(
+        self,
+    ) -> None:
+        # This case used to be the price of the read/write agreement. The
+        # scanner's ``!`` lookbehind read ``![[](old.md)`` as an image and
+        # stored no row, where CommonMark reads ``![`` as literal text
+        # followed by an empty link; the superseded rewrite pattern
+        # replaced it anyway, via the retry a failed lookbehind triggers.
+        # Aligning the rewrite with the index meant leaving it alone.
         #
-        # The superseded pattern rewrote it anyway, because a failed
-        # lookbehind made the engine retry from the inner ``[``. Keeping
-        # that retry costs a quadratic — 26 s on 16000 ``![`` — so the
-        # rewrite now agrees with the index instead, and the departure
-        # stays one question about the read side rather than two answers
-        # (#1526).
+        # #1526 fixed the read side instead, so the two now agree *and*
+        # agree with CommonMark: the link is indexed and it is rewritten.
+        # [observed: markdown-it-py renders it ``![<a href="old.md"></a>``,
+        # 2026-09-18]
         content = "![[](old.md)"
-        assert extract_links(content, SRC) == []
+        assert [link.raw_target for link in extract_links(content, SRC)] == ["old.md"]
         assert (
-            apply_link_replacement(content, "markdown", "old.md", "new.md") == content
+            apply_link_replacement(content, "markdown", "old.md", "new.md")
+            == "![[](new.md)"
         )
 
     def test_an_ordinary_image_is_still_left_alone(self) -> None:
         content = "![alt](old.md)"
+        assert extract_links(content, SRC) == []
         assert (
             apply_link_replacement(content, "markdown", "old.md", "new.md") == content
         )

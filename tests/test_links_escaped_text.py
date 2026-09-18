@@ -7,36 +7,25 @@ see a backslash, so that link produced no row at all: no outlink on the
 note, no backlink on the target. The generated output of #1513 landed in
 exactly that hole, rendering everywhere and reaching the graph nowhere.
 
-Two properties carry this module. The first is the defect itself: such a
-link is now found, with its target resolved. The second is what makes the
-change safe to ship against existing vaults — the scan that replaced the
-class agrees with it on every input that carries no backslash, so a note
-without one indexes exactly as before. The second is asserted as a
-differential property over *every* short bracket string rather than a
-handful of examples, because "nothing else moved" is the claim an
-``INDEX_SEMANTICS_VERSION`` bump rests on.
+This module carries the defect itself: such a link is found, with its
+target resolved.
 
-What this module does *not* claim: that link text is bracket-balanced.
-``[a [b] c](x.md)`` is a link for CommonMark and still is not one here —
-a departure recorded in ``docs/design/design.md`` and tracked separately,
-because it needs counting rather than escape-awareness.
+It used to carry a second property — that the scan agreed with the class
+it replaced on every backslash-free input, the "nothing else moved" claim
+the #1517 bump rested on. That property is gone on purpose. #1526 adopted
+CommonMark's rule that a ``]`` closes the *nearest* unmatched ``[``, which
+deliberately disagrees with the old class on nested brackets, so agreeing
+with it is no longer a property worth having. The successor lives in
+``tests/test_links_commonmark_openers.py`` and compares against a
+CommonMark reader rather than against a superseded regex, which is the
+stronger claim and the one a semantics note should rest on.
 """
 
 from __future__ import annotations
 
-import itertools
-import re
-
-import pytest
-
-from markdown_vault_mcp.scanner import _find_inline_link_open, extract_links
+from markdown_vault_mcp.scanner import extract_links
 
 SRC = "source.md"
-
-#: The class the scan replaced. Kept here, not imported, precisely because
-#: it no longer exists in the scanner: the differential property below is
-#: only meaningful against the spelling that actually shipped.
-_SUPERSEDED_OPENER = re.compile(r"\[([^\]]*)\]\(")
 
 
 def _links(content: str) -> list[tuple[str, str]]:
@@ -89,72 +78,17 @@ class TestWhatIsNotClaimed:
         # question from whether the link is found.
         assert _links(r"[a\]b](x.md)") == [(r"a\]b", "x.md")]
 
-    def test_balanced_brackets_are_still_not_a_link_here(self) -> None:
-        # A departure, not an oversight: CommonMark links this and the
-        # scanner does not, because balancing needs counting rather than
-        # escape-awareness. Stated so a reader is not misled into thinking
-        # #1517 covered it.
-        assert _links("[Note [draft]](x.md)") == []
+    def test_balanced_brackets_are_a_link_now(self) -> None:
+        # This was the departure #1517 left standing, on the ground that
+        # balancing needs counting rather than escape-awareness. True, and
+        # #1526 did the counting: a ``]`` closes the nearest unmatched
+        # ``[``, so the inner pair is part of the text.
+        assert _links("[Note [draft]](x.md)") == [("Note [draft]", "x.md")]
 
 
 # ---------------------------------------------------------------------------
 # The property the bump rests on
 # ---------------------------------------------------------------------------
-
-
-class TestTheScanAgreesWithTheClassItReplaced:
-    """Backslash-free input indexes exactly as it did before the bump."""
-
-    @pytest.mark.parametrize("length", range(8), ids=lambda n: f"len{n}")
-    def test_no_backslash_free_input_changed_meaning(self, length: int) -> None:
-        # Exhaustive rather than sampled: every string of this length over
-        # the characters the opener can distinguish — a bracket that opens,
-        # one that closes, the paren that must follow, its partner, and a
-        # filler standing for everything else. No backslash appears, so the
-        # two must agree on all of them.
-        for chars in itertools.product("[]()a", repeat=length):
-            text = "".join(chars)
-            match = _SUPERSEDED_OPENER.search(text)
-            expected = (match.start(), match.end(), match.group(1)) if match else None
-            assert _find_inline_link_open(text, 0) == expected, text
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "[a](x.md)",
-            "[[a](x.md)",
-            "[a]b[c](x.md)",
-            "[a]b](x.md)",
-            "[](x.md)",
-            "[a [b] c](x.md)",
-            "no brackets at all",
-            "[unclosed",
-            "](x.md)",
-        ],
-        ids=[
-            "plain",
-            "double-open",
-            "failed-then-found",
-            "closer-without-opener",
-            "empty-text",
-            "inner-brackets",
-            "none",
-            "unclosed",
-            "closer-first",
-        ],
-    )
-    def test_the_named_shapes_agree_too(self, text: str) -> None:
-        match = _SUPERSEDED_OPENER.search(text)
-        expected = (match.start(), match.end(), match.group(1)) if match else None
-        assert _find_inline_link_open(text, 0) == expected
-
-    def test_a_backslash_free_note_indexes_identically(self) -> None:
-        note = (
-            "# Title\n\n"
-            "See [one](a.md) and [two](b.md).\n\n"
-            "An ![image](c.png) and a [broken] bracket](d.md).\n"
-        )
-        assert _links(note) == [("one", "a.md"), ("two", "b.md")]
 
 
 class TestTheScanStaysLinear:

@@ -221,12 +221,17 @@ Python 3.13.
   `[link] bar](/uri)` does not, Ex. 513; `[link \[bar](/uri)` does, Ex. 515).
   [source: cm] [observed: markdown-it-py 3.0.0, `[a [b] c](x.md)` one link
   with text `a [b] c`; `[a [b c](x.md)` links `b c`]
-  The escaped half is implemented (#1517); the balanced half is a departure
-  recorded in `docs/design/design.md`, so Ex. 512 stores no row here.
-  [pins: tests/test_links_escaped_text.py::TestEscapedBracketsInLinkText::test_an_escaped_closing_bracket_no_longer_ends_the_text, tests/test_links_escaped_text.py::TestEscapedBracketsInLinkText::test_an_escaped_pair_is_read_through, tests/test_links_escaped_text.py::TestWhatIsNotClaimed::test_balanced_brackets_are_still_not_a_link_here]
+  Both halves are implemented: the escaped one since #1517, the balanced one
+  since #1526, which adopted the rule underneath it — a `]` closes the
+  *nearest unmatched* `[`. Ex. 512 stores a row.
+  [pins: tests/test_links_escaped_text.py::TestEscapedBracketsInLinkText::test_an_escaped_closing_bracket_no_longer_ends_the_text, tests/test_links_commonmark_openers.py::TestBracketBalancing::test_a_balanced_pair_inside_the_text_is_a_link, tests/test_links_commonmark_openers.py::TestTheNearestOpenerWins::test_an_inner_bracket_opens_the_link]
 - Links may not contain links, innermost wins (Ex. 518); an image
   description may (Ex. 575). [source: cm] [observed: markdown-it-py 3.0.0,
   `[a [b](y.md) c](x.md)` links `b`; `![a [b](y.md)](i.png)` is one image]
+  Implemented since #1526: an opener is deactivated once a link closes over
+  it, and a link inside an image's description is stored because it closes
+  first.
+  [pins: tests/test_links_commonmark_openers.py::TestLinksMayNotContainLinks::test_only_the_inner_link_is_stored, tests/test_links_commonmark_openers.py::TestImagesAndTheirDescriptions::test_a_link_inside_an_image_description_is_still_found]
 - No whitespace between `]` and `(` (Ex. 511); inside the parentheses,
   spaces, tabs and up to one line ending may surround destination and title
   (Ex. 510). [source: cm]
@@ -388,17 +393,19 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   reference; `&notes` stays literal), decoded before the URL layer.
   [observed: `extract_links`, 2026-09-07]
   [pins: tests/test_links_destination_spellings.py::TestIssueTable::test_pointy_brackets_hold_spaces, tests/test_links_destination_spellings.py::TestPlainForm::test_three_levels_of_balanced_parentheses, tests/test_links_destination_spellings.py::TestPlainForm::test_entity_without_semicolon_stays_literal]
+  **Right** on the opener since #1526: a `]` closes the nearest unmatched
+  `[`, link text is bracket-balanced, an opener is deactivated once a link
+  closes over it, and `![` makes an image only when it is that opener — so
+  `![a[b](x.md)` is literal `![a` followed by a link, as a reader reads it.
+  Agreement is pinned against a CommonMark reader over every short bracket
+  arrangement rather than by example.
+  [observed: markdown-it-py 3.0.0, 194801 comparable generated inputs, 0
+  disagreements, 2026-09-18]
+  [pins: tests/test_links_commonmark_openers.py::TestAgreementWithACommonMarkReader::test_every_short_bracket_arrangement_agrees]
   **Partial** elsewhere: parentheses balance to three levels, not any depth
-  (a deliberate cap, pinned); spaces in a plain destination accepted; no
-  bracket balancing in link text (`[a [b] c](x.md)` missed, `[a [b c](x.md)`
-  links `b c`); `\[` ignored; links inside HTML blocks and fence info
-  strings extracted. `[a] (x.md)` rejected, correctly. The `!` lookbehind is
-  right for an ordinary image and **wrong when the alt text opens a bracket**:
-  CommonMark reads `![a[b](x.md)` as literal `![a` followed by a link, and
-  `![[](x.md)` likewise, where the lookbehind takes the whole thing for an
-  image and stores no row.
-  [observed: markdown-it-py 3.0.0 renders `![a[b](x.md)` as
-  `![a<a href="x.md">b</a>` while `extract_links` returns [], 2026-09-18]
+  (a deliberate cap, pinned); spaces in a plain destination accepted; an
+  empty destination (`[a]()`) stores no row; `\[` ignored; links inside HTML
+  blocks and fence info strings extracted. `[a] (x.md)` rejected, correctly.
   Decided in `docs/design/design.md` § Link Extraction.
 - `_find_reference_usage` / `_iter_reference_definitions` in
   `_extract_reference_links` and `_collect_reference_definitions` —
@@ -438,11 +445,11 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   spans (documented there). Since #1353 the rewrite keeps a `<…>`
   destination pointy and compares the decoded spelling, but introduces no
   escaping the author did not use. Since #1521 the markdown branch finds a
-  link with `find_inline_link_open`, the opener the index itself is built
-  with, so the two cannot disagree about where a link's text ends; it
-  therefore inherits the `!` departure noted above rather than the retry the
-  old pattern happened to perform.
-  [pins: tests/test_links_rewrite_agrees_with_index.py::TestTheRewriteSeesWhatTheIndexSees::test_every_short_string_agrees, tests/test_links_rewrite_agrees_with_index.py::TestWhatThatAgreementCosts::test_an_image_whose_alt_text_opens_a_bracket_is_left_alone]
+  link with `iter_inline_links`, the grammar the index itself is built with,
+  so the two cannot disagree about where a link's text ends. Since #1526
+  that grammar is CommonMark's, so both sides moved to the nearest-unmatched
+  rule together and the `!` departure noted above is gone from both.
+  [pins: tests/test_links_rewrite_agrees_with_index.py::TestTheRewriteSeesWhatTheIndexSees::test_every_short_string_agrees, tests/test_links_commonmark_openers.py::TestAgreementWithACommonMarkReader::test_the_rewrite_agrees_with_the_index_on_these_too]
   [pins: tests/test_links_destination_spellings.py::TestRenameKeepsTheSpelling::test_pointy_relative_with_fragment_stays_pointy]
   [pins: tests/test_utils_links.py::TestApplyLinkReplacement::test_markdown_image_not_affected, tests/test_utils_links.py::TestApplyLinkReplacement::test_reference_link_with_title]
 - Ingestion: `parse_note` decodes `utf-8-sig`, then `frontmatter.loads`;
