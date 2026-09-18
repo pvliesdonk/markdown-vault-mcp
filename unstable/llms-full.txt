@@ -10302,12 +10302,12 @@ Result of a rename operation.
 
 Attributes:
 
-| Name            | Type  | Description                                                 |
-| --------------- | ----- | ----------------------------------------------------------- |
-| `old_path`      | `str` | Original relative path.                                     |
-| `new_path`      | `str` | New relative path after the rename.                         |
-| `updated_links` | `int` | Number of backlinks in other documents that were rewritten. |
-| `hint`          | \`str | None\`                                                      |
+| Name            | Type  | Description                                                                                                                                                           |
+| --------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `old_path`      | `str` | Original relative path.                                                                                                                                               |
+| `new_path`      | `str` | New relative path after the rename.                                                                                                                                   |
+| `updated_links` | `int` | Number of source documents whose links were actually rewritten. A source the rewrite left byte-identical is not counted, because it still names the old path (#1521). |
+| `hint`          | \`str | None\`                                                                                                                                                                |
 
 ## `IndexStats(documents_indexed, chunks_indexed, skipped)`
 

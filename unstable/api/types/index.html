@@ -5043,7 +5043,9 @@ vault writer can change which note occupies the path in between.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of backlinks in other documents that were rewritten.</p>
+                <p>Number of source documents whose links were actually
+rewritten. A source the rewrite left byte-identical is not
+counted, because it still names the old path (#1521).</p>
               </div>
             </td>
           </tr>
