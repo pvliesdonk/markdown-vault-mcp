@@ -374,6 +374,22 @@ class TestADefinitionOnlyHidesItsOwnDestination:
         # exactly a title, never when it is prose.
         assert extract_links('[zz]: y.md "See [ar]"' + DEFS, SRC) == []
 
+    def test_a_definition_with_no_destination_hides_nothing(self) -> None:
+        # ``[ar]:`` followed by only whitespace defines nothing, so a
+        # reader reads the line as a paragraph and ``[ar]`` in it is a
+        # shortcut like any other. Cutting the line would take that row —
+        # the same mistake the greedy tail makes one case over, and the
+        # one the destination-bounded cut does not by itself avoid.
+        # [observed: markdown-it-py 'commonmark' renders ``[ar]:   `` with
+        # ``[ar]`` defined as ``<p><a href="x.md">ar</a>:</p>``, 2026-09-18]
+        assert _links("[ar]:   ") == [("ar", "x.md")]
+
+    def test_an_unclosed_pointy_destination_hides_nothing_either(self) -> None:
+        # The other route to "no destination": ``<`` with no ``>`` before
+        # the line ends is not a destination, so the line is not a
+        # definition.
+        assert _links("[zz]: <unclosed\nSee [ar] here") == [("ar", "x.md")]
+
     def test_a_pointy_destination_is_hidden_whole(self) -> None:
         # ``<a b.md>`` holds a space, so "the destination ends at the
         # first whitespace" is wrong for the pointy form.

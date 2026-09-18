@@ -94,6 +94,23 @@ def _crosses_a_blank_line(text: str) -> bool:
     return any("\n\n" in match.group(0) for match in _SUPERSEDED_DEF.finditer(text))
 
 
+def _has_a_whitespace_only_destination(text: str) -> bool:
+    """Whether the old pattern called pure whitespace a destination.
+
+    ``[r]:`` followed by a space matched ``(.+)$`` and was read as a
+    definition of ``r`` with a one-space target. §4.7 requires an actual
+    destination, so the line defines nothing and a reader parses it as
+    prose — which matters now that the shortcut form reads the table and
+    the region the definitions are cut from. The scan therefore rejects
+    it and the pattern does not, so these inputs are outside the
+    comparison rather than failures of it.
+
+    Narrow, measured rather than asserted: 0 inputs at lengths 0-4, 5 at
+    length 5 and 49 at length 6, which is 0.105% of that sweep.
+    """
+    return any(not match.group(2).strip() for match in _SUPERSEDED_DEF.finditer(text))
+
+
 # ---------------------------------------------------------------------------
 # The defect
 # ---------------------------------------------------------------------------
@@ -187,8 +204,9 @@ class TestTheScansAgreeWithThePatternsTheyReplaced:
     Narrowed twice since it was written, and the class name now overstates
     it. The usage half of the property is gone — the pattern it compared
     against cannot express the shortcut form — and the definition half
-    excludes inputs crossing a blank line, where §4.7 says the old pattern
-    was the wrong one. The whole-note case below expects a shortcut row
+    excludes two classes where §4.7 says the old pattern was the wrong
+    one: inputs crossing a blank line, and inputs where it called pure
+    whitespace a destination. The whole-note case below expects a shortcut row
     that did not exist before, which is the change, not a violation of it.
     """
 
@@ -200,7 +218,7 @@ class TestTheScansAgreeWithThePatternsTheyReplaced:
         # indent and the target.
         for chars in itertools.product("[]:\na ", repeat=length):
             text = "".join(chars)
-            if _crosses_a_blank_line(text):
+            if _crosses_a_blank_line(text) or _has_a_whitespace_only_destination(text):
                 continue
             assert list(_iter_reference_definitions(text)) == _regex_definitions(
                 text

@@ -1535,15 +1535,17 @@ def _definition_destination_end(clean: str, pos: int) -> int | None:
 
     Args:
         clean: Body text with code removed and line endings normalised.
-        pos: Index of the destination's first character.
+        pos: Index of the tail's first character. ``_RE_REF_DEF_TAIL``'s
+            ``(.+)`` guarantees one exists, so this never reads past the
+            end — but it may be a *space*, since the pattern backtracks
+            to leave one behind on a tail of pure whitespace, and that is
+            the "no destination here" case.
 
     Returns:
         The index just past the destination, or ``None`` when nothing
         parses as one — in which case the caller keeps the greedy end,
         since there is no better answer than the one the scan already had.
     """
-    if pos >= len(clean):
-        return None
     if clean[pos] == "<":
         index = pos + 1
         while index < len(clean) and clean[index] not in ">\n":
@@ -1563,7 +1565,7 @@ _RE_TITLE_ONLY = re.compile(
 )
 
 
-def _blank_end(clean: str, tail: re.Match[str]) -> int:
+def _blank_end(clean: str, tail: re.Match[str], dest_end: int) -> int:
     """How far :func:`_blank_reference_definitions` may cut this definition.
 
     To the end of the destination, plus a trailing title when the rest of
@@ -1571,9 +1573,6 @@ def _blank_end(clean: str, tail: re.Match[str]) -> int:
     still parses, so it stays — that is the whole point of not simply
     using ``tail.end()``.
     """
-    dest_end = _definition_destination_end(clean, tail.start(1))
-    if dest_end is None:
-        return tail.end()
     rest = clean[dest_end : tail.end()]
     return tail.end() if _RE_TITLE_ONLY.fullmatch(rest) else dest_end
 
@@ -1628,14 +1627,31 @@ def _iter_definition_matches(clean: str) -> Iterator[tuple[str, str, int, int]]:
             and clean[close_index + 1 : close_index + 2] == ":"
             else None
         )
-        if tail is None:
-            # Not a definition after all. Resume past this ``[``, where the
-            # engine's next start position would have been; the label's own
-            # ``]`` is not a safe resume point, since a line start inside
-            # the span can open a definition of its own.
+        dest_end = (
+            None if tail is None else _definition_destination_end(clean, tail.start(1))
+        )
+        if tail is None or dest_end is None:
+            # Not a definition after all — either nothing followed the
+            # ``:``, or what did is no destination: ``[r]:`` alone and
+            # ``[r]: <unclosed`` both define nothing, and a reader reads
+            # such a line as ordinary prose, so a ``[r]`` in it is a
+            # shortcut like any other. Rejecting it *here* rather than
+            # when blanking is what keeps the table and the cut in
+            # lockstep: leave it in the table and the label resolves to
+            # junk; drop it from the cut alone and the two disagree.
+            #
+            # Resume past this ``[``, where the engine's next start
+            # position would have been; the label's own ``]`` is not a
+            # safe resume point, since a line start inside the span can
+            # open a definition of its own.
             pos = bracket + 1
             continue
-        yield label, tail.group(1), opener.start(), _blank_end(clean, tail)
+        yield (
+            label,
+            tail.group(1),
+            opener.start(),
+            _blank_end(clean, tail, dest_end),
+        )
         pos = tail.end()
 
 

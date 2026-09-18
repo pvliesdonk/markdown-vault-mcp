@@ -2585,7 +2585,7 @@ for a label the author wrote bare, which is why these appear in this
 change and not an earlier one.
 
 **What self-review then caught, and the one lesson worth keeping.** A
-review pass over #1531's cumulative diff found five further defects, all
+review pass over #1531's cumulative diff found six further defects, all
 fixed here, and the pattern joining them is sharper than any of them:
 *every earlier reference form needed a second bracket span, and the
 shortcut rung does not*. Rather than a fourth rung, it is the first form whose match is
@@ -2638,6 +2638,18 @@ really does read `[[a]]` as a bracket around a shortcut. The corpus passed
 on two errors cancelling. Removing the row exposed the divergence, which
 is the older, deliberate Obsidian departure, so all three corpora now skip
 inputs the wikilink family claims, and say why.
+
+A **sixth** came out of the fix for the second, and is the same lesson
+one level down. `_blank_end` cutting to the destination left open what to
+do when there is no destination: `[r]:` followed by nothing, or
+`[r]: <unclosed`. Cutting the line lost a row (a reader parses it as
+prose, so a `[r]` in it is a shortcut); cutting nothing kept the row but
+left the *table* holding `r → <unclosed`, which the shortcut rung then
+resolved. Neither half works alone, because the defect is that the scan
+yields a "definition" that `_collect_reference_definitions` and the cut
+then disagree about. §4.7 settles it: no destination, no definition, so
+`_iter_definition_matches` rejects it outright and the table and the cut
+stay in lockstep by construction.
 
 **The lesson is about the corpora, not the code.** Each was built from the
 characters its own form needs: `[]!ar` for the opener rule, `[]:\nar` for
