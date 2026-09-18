@@ -186,15 +186,24 @@ class TestTheLadderStaysLinear:
         # retire enclosing openers. Both were quadratic; the run cost 8.5 s
         # at 20000 repeats and now costs about a tenth of that.
         #
-        # 10000 rather than the 200000 the other link modules use, because
-        # the surviving constant is §6.3's own: a failed label parse reads
-        # up to 999 characters before giving up, once per span. Linear, but
-        # not cheap, so the count is chosen to leave the bound real
-        # headroom on a slow runner rather than to sit just under it.
-        body = unit * 10000
+        # The count and the bound are both chosen from measurements, and
+        # the bound is loose on purpose. The surviving constant is §6.3's
+        # own — a failed label parse reads up to 999 characters before
+        # giving up, once per span — so this shape is linear but not
+        # cheap, and CI runners vary by about 8x: 20000 repeats cost 1.7 s
+        # on a local 3.11 and 6.5 s on the runner that first ran it at
+        # half that size.
+        #
+        # What the bound has to separate is growth, not absolute time.
+        # Either quadratic this caught multiplies the cost by 4 per
+        # doubling, putting 20000 repeats near 8.5 s locally and far past
+        # 30 s on a slow runner, while the linear version has room to
+        # spare on both. A tighter bound would police the constant and
+        # flake; this one fails only on the defect.
+        body = unit * 20000
         started = time.perf_counter()
         extract_links(body + DEFS, SRC)
-        assert time.perf_counter() - started < 5.0, label
+        assert time.perf_counter() - started < 30.0, label
 
 
 class TestAgreementWithACommonMarkReader:
