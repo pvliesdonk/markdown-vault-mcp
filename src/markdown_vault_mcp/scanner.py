@@ -1271,7 +1271,8 @@ def _extract_inline_links(
     vault links and are skipped here.
     """
     links: list[LinkInfo] = []
-    for _open_index, text, raw_target, _end in _iter_inline_links(region):
+    for link in _iter_inline_links(region):
+        raw_target = link.raw_target
         # The external test looks at what the spelling names, not at its
         # brackets or escapes; the anchor test at the spelling itself, since
         # a decoded ``%23x.md`` begins with ``#`` and is not an anchor (#1353).
@@ -1290,7 +1291,7 @@ def _extract_inline_links(
         links.append(
             LinkInfo(
                 target_path=resolved,
-                link_text=text,
+                link_text=link.link_text,
                 link_type="markdown",
                 fragment=fragment,
                 raw_target=raw_target,

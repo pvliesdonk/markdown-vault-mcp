@@ -377,7 +377,7 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   (#1334). A span with a line ending inside is not stripped; a
   double-backtick span holding an inner backtick is stripped up to that
   backtick. [observed: `_strip_inline_code`, 2026-09-06]
-- `_find_inline_link_open` + `_parse_destination` in `_extract_inline_links` —
+- `iter_inline_links` (which calls `_parse_destination`) in `_extract_inline_links` —
   **right** on the #1334
   boundaries the decision table below marks honoured, since 2026-09-06:
   each pattern runs inside one paragraph region (`_paragraph_regions`,

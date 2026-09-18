@@ -12,7 +12,7 @@ import os.path as osp
 import re
 from html.entities import html5 as _HTML5_ENTITIES
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 from urllib.parse import quote, unquote
 
 if TYPE_CHECKING:
@@ -601,7 +601,7 @@ def _scan_pointy_destination(region: str, pos: int) -> int | None:
     return None
 
 
-def _parse_destination(region: str, pos: int) -> tuple[str, int] | None:
+def _parse_destination(region: str, pos: int) -> tuple[str, int, int] | None:
     """Read an inline link's destination starting just after its ``(``.
 
     Implements §6.3's two destination forms and the optional title (#1353).
@@ -615,8 +615,12 @@ def _parse_destination(region: str, pos: int) -> tuple[str, int] | None:
         pos: Index of the first character after ``(``.
 
     Returns:
-        ``(raw_destination, end)`` with *end* the index just past the closing
-        ``)``, or ``None`` when no link is written here.
+        ``(raw_destination, start, end)`` with *start* the index of the
+        destination's first character and *end* the index just past the
+        closing ``)``, or ``None`` when no link is written here. The offset
+        is returned rather than re-derived by the caller: a rewrite that
+        searches the region for *raw_destination* finds the wrong
+        occurrence whenever the title repeats it (#1526 review).
     """
     i = pos
     while i < len(region) and region[i] in " \t":
@@ -627,11 +631,13 @@ def _parse_destination(region: str, pos: int) -> tuple[str, int] | None:
     if close is None:
         return None
     # Only spaces and tabs are trimmed: a NBSP is a destination character.
+    # Only trailing text is removed above, so the destination still
+    # begins at ``i`` and ``region[i : i + len(raw)] == raw``.
     raw = trailing_title_pattern.sub("", region[i:close]).strip(" \t")
-    return (raw, close + 1) if raw else None
+    return (raw, i, close + 1) if raw else None
 
 
-def _parse_pointy_destination(region: str, pos: int) -> tuple[str, int] | None:
+def _parse_pointy_destination(region: str, pos: int) -> tuple[str, int, int] | None:
     """The ``<…>`` half of :func:`_parse_destination`; *pos* is at the ``<``."""
     end = _scan_pointy_destination(region, pos)
     if end is None:
@@ -643,7 +649,7 @@ def _parse_pointy_destination(region: str, pos: int) -> tuple[str, int] | None:
     rest = region[end:close]
     if rest.strip(" \t") and not trailing_title_pattern.fullmatch(rest):
         return None
-    return raw, close + 1
+    return raw, pos, close + 1
 
 
 def find_bracket_span(region: str, pos: int) -> tuple[int, int, str] | None:
@@ -705,7 +711,27 @@ def find_bracket_span(region: str, pos: int) -> tuple[int, int, str] | None:
     return None
 
 
-def iter_inline_links(region: str) -> Iterator[tuple[int, str, str, int]]:
+class InlineLink(NamedTuple):
+    """One inline link, as :func:`iter_inline_links` reads it.
+
+    Named rather than a bare tuple because *target_start* is easy to
+    confuse with *open_index*, and a rewrite that reaches for the wrong one
+    corrupts a file silently.
+    """
+
+    #: Index of the ``[`` that opened the link.
+    open_index: int
+    #: The link text as written, escapes and all.
+    link_text: str
+    #: The destination as written, title excluded.
+    raw_target: str
+    #: Index of *raw_target*'s first character in the region.
+    target_start: int
+    #: Index just past the closing ``)``.
+    end: int
+
+
+def iter_inline_links(region: str) -> Iterator[InlineLink]:
     r"""Yield every inline ``[text](destination)`` link in *region*.
 
     The one place the inline-link grammar is decided, for the index and for
@@ -738,9 +764,7 @@ def iter_inline_links(region: str) -> Iterator[tuple[int, str, str, int]]:
         region: One paragraph region, code already stripped (#1334).
 
     Yields:
-        ``(open_index, text, raw_target, end)`` — the opening ``[``, the
-        link text as written, the destination as written (title excluded),
-        and the index just past the closing ``)``.
+        An :class:`InlineLink` per link, in the order the links close.
     """
     stack: list[tuple[int, bool]] = []
     # "Links may not contain links" deactivates every opener on the stack at
@@ -780,9 +804,11 @@ def iter_inline_links(region: str) -> Iterator[tuple[int, str, str, int]]:
         if parsed is None:
             index = at + 1
             continue
-        raw_target, end = parsed
+        raw_target, target_start, end = parsed
         if not is_image:
-            yield open_index, region[open_index + 1 : at], raw_target, end
+            yield InlineLink(
+                open_index, region[open_index + 1 : at], raw_target, target_start, end
+            )
             active_from = len(stack)
         index = end
 
@@ -790,9 +816,9 @@ def iter_inline_links(region: str) -> Iterator[tuple[int, str, str, int]]:
 def _replace_inline_destinations(content: str, old_raw: str, new_raw: str) -> str:
     r"""Rewrite every ``[text](old_raw)`` destination in *content*.
 
-    The link text is found by :func:`find_inline_link_open`, the same scan
-    the index is built with, because a rewrite has to see exactly the links
-    the index holds. It did not: the class this replaces
+    The links are read by :func:`iter_inline_links`, the same scan the
+    index is built with, because a rewrite has to see exactly the links the
+    index holds. It did not: the class this replaces
     (``(?<!!)(\[[^\]]*?\])\(``) could not cross an escaped ``]``, so after
     #1517 made ``[Bra\]cket](old.md)`` an indexed link, a rename computed a
     replacement for it and then quietly matched nothing (#1521).
@@ -816,27 +842,31 @@ def _replace_inline_destinations(content: str, old_raw: str, new_raw: str) -> st
     Returns:
         *content* with every matching destination replaced.
 
+    The scan reports where each destination starts, and the splice uses
+    that offset rather than searching the region for *old_raw*. A search
+    finds the wrong occurrence whenever the text after the destination
+    repeats it: given ``[a](x.md "the x.md note")`` it rewrote the title
+    and left the destination stale, a broken link reported as a successful
+    rewrite. Caught in review of #1526; the scan this replaced anchored at
+    a fixed offset and so never had the ambiguity.
+
     Note:
         Operates on raw file content, so an occurrence inside a backtick
         code span is rewritten too. Pre-existing, and low risk in practice.
     """
-    # The destination and its optional title, anchored: matched at a fixed
-    # position rather than searched for, so it adds no retry of its own.
     out: list[str] = []
     read = 0
-    for _open_index, _text, raw_target, end in iter_inline_links(content):
-        if raw_target != old_raw:
+    for link in iter_inline_links(content):
+        if link.raw_target != old_raw:
             continue
-        # ``end`` is just past the closing ``)``; the destination starts
-        # after the ``](`` and runs to the title or that ``)``. Splice the
-        # new destination in and keep everything the author wrote after it.
-        close = content.rindex(")", 0, end)
-        start = content.rindex(old_raw, 0, close)
+        # Everything from the destination's end to ``link.end`` is the
+        # author's: an optional title, whatever spacing they chose, and the
+        # closing ``)``. It is carried across untouched.
+        start = link.target_start
         out.append(content[read:start])
         out.append(new_raw)
-        out.append(content[start + len(old_raw) : close])
-        out.append(")")
-        read = end
+        out.append(content[start + len(old_raw) : link.end])
+        read = link.end
     out.append(content[read:])
     return "".join(out)
 

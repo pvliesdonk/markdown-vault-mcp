@@ -180,9 +180,75 @@ class TestAgreementWithACommonMarkReader:
             "![alt](x.md)",
             "[[a]](x.md)",
         ):
-            stored = sum(1 for _, target in _links(content) if target == "x.md")
+            stored = [target for _, target in _links(content)]
             after = apply_link_replacement(content, "markdown", "x.md", "yy.md")
-            assert (len(after) - len(content)) == stored, content
+            assert (len(after) - len(content)) == stored.count("x.md"), content
+            # Not only how much moved but which: see
+            # ``test_links_rewrite_agrees_with_index.py`` for why a length
+            # delta alone is too weak a check.
+            assert [target for _, target in _links(after)] == [
+                "yy.md" if target == "x.md" else target for target in stored
+            ], content
+
+
+class TestTheOffsetsItReports:
+    """Each link is reported at the offsets it actually occupies.
+
+    The rewrite splices at ``target_start`` and resumes at ``end``, so an
+    offset that is merely plausible corrupts a file quietly. An earlier
+    draft of #1526 dropped the offset and had the rewrite search the link
+    for the destination instead; it found the *title*'s copy whenever one
+    repeated the destination, and the file came out with a mangled title
+    and a stale link. Asserted exhaustively, because the shape that broke
+    it was not among anybody's examples.
+    """
+
+    @pytest.mark.parametrize("length", range(7), ids=lambda n: f"len{n}")
+    def test_every_short_string_reports_honest_offsets(self, length: int) -> None:
+        for chars in itertools.product("[]!()\\", repeat=length):
+            base = "".join(chars)
+            for region in (base, base.replace("(", "(x.md", 1)):
+                for link in iter_inline_links(region):
+                    assert region[link.open_index] == "[", region
+                    assert (
+                        region[
+                            link.target_start : link.target_start + len(link.raw_target)
+                        ]
+                        == link.raw_target
+                    ), region
+                    assert region[link.end - 1] == ")", region
+
+    @pytest.mark.parametrize(
+        "region",
+        [
+            '[a](x.md "x.md")',
+            '[a](x.md "the x.md note")',
+            "[x.md](x.md)",
+            "[a](<x.md>)",
+            '[a](<x.md> "x.md")',
+            "[a](  x.md  )",
+            "[a[b](x.md)",
+            "![alt](img.png) and [real](x.md)",
+        ],
+        ids=[
+            "title-repeats-destination",
+            "title-contains-destination",
+            "text-repeats-destination",
+            "pointy",
+            "pointy-with-title",
+            "padded",
+            "nested-opener",
+            "image-then-link",
+        ],
+    )
+    def test_the_named_shapes_report_honest_offsets(self, region: str) -> None:
+        links = list(iter_inline_links(region))
+        assert links, region
+        for link in links:
+            assert (
+                region[link.target_start : link.target_start + len(link.raw_target)]
+                == link.raw_target
+            ), region
 
 
 class TestTheWalkStaysLinear:
