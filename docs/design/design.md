@@ -2490,7 +2490,7 @@ The scan changes no row for any input, so there is no
 `INDEX_SEMANTICS_VERSION` note — a claim carried by the same differential
 property the escape-aware scans use (`tests/test_links_wikilink_scan.py`):
 it agrees with the pattern on *every* string up to length 8 over the five
-characters that pattern can distinguish, and on 300k random strings over a
+characters that pattern can distinguish, and on 400k random strings over a
 wider alphabet. The departures the pattern carried are carried too: a single
 `]` still ends the target where Obsidian needs `]]` (#1384), an embed is
 still indexed as a link, and the leftmost `[[` still wins, so `[[[a]]` links
