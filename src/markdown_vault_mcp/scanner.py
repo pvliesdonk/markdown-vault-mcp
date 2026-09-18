@@ -1661,6 +1661,26 @@ def _iter_reference_definitions(clean: str) -> Iterator[tuple[str, str]]:
         yield label, target
 
 
+def _blank_spans(region: str, spans: list[tuple[int, int]]) -> str:
+    """Return *region* with each of *spans* replaced by spaces.
+
+    Length and every line ending are preserved, because the region's line
+    structure is what paragraph bounds and the definition scan both read.
+    A span really can hold a line ending: a definition's destination may
+    sit on the line below its label, and a wikilink alias may run across
+    one (``[[a|b\nc]]``), so the newline skip is load-bearing rather than
+    defensive.
+    """
+    if not spans:
+        return region
+    out = list(region)
+    for start, end in spans:
+        for index in range(start, end):
+            if out[index] != "\n":
+                out[index] = " "
+    return "".join(out)
+
+
 def _blank_reference_definitions(region: str) -> str:
     """Return *region* with every definition replaced by spaces.
 
@@ -1669,10 +1689,6 @@ def _blank_reference_definitions(region: str) -> str:
     shape could match ``[r]: x.md``. The shortcut form matches it at once,
     so without this every definition in a vault would resolve as a link to
     itself.
-
-    Blanking rather than deleting, and keeping the line endings, so the
-    region's line structure — which paragraph bounds and the definition
-    scan both depend on — is exactly as it was.
 
     The cut stops at the destination (and its title), not at the line's
     end, because the definition scan's tail is deliberately greedy and so
@@ -1691,15 +1707,10 @@ def _blank_reference_definitions(region: str) -> str:
     Here there is nothing to guess: the definitions removed are precisely
     the ones collected.
     """
-    spans = [(start, end) for _l, _t, start, end in _iter_definition_matches(region)]
-    if not spans:
-        return region
-    out = list(region)
-    for start, end in spans:
-        for index in range(start, end):
-            if out[index] != "\n":
-                out[index] = " "
-    return "".join(out)
+    return _blank_spans(
+        region,
+        [(start, end) for _l, _t, start, end in _iter_definition_matches(region)],
+    )
 
 
 def _blank_wikilinks(region: str) -> str:
@@ -1714,22 +1725,14 @@ def _blank_wikilinks(region: str) -> str:
     by shape, for the reason :func:`_blank_reference_definitions` gives at
     length — a span-local guess has to re-derive what another scan already
     knows, and ``[[a]b][r]`` (where a reader *does* read ``[a]`` as a
-    shortcut) is exactly the input a shape test gets wrong. Length and
-    line endings are preserved, as there.
+    shortcut) is exactly the input a shape test gets wrong.
     """
     spans: list[tuple[int, int]] = []
     pos = 0
     while (found := _find_wikilink(region, pos)) is not None:
         pos, _target, _alias, start = found
         spans.append((start, pos))
-    if not spans:
-        return region
-    out = list(region)
-    for start, end in spans:
-        for index in range(start, end):
-            if out[index] != "\n":
-                out[index] = " "
-    return "".join(out)
+    return _blank_spans(region, spans)
 
 
 def _collect_reference_definitions(clean: str) -> dict[str, str]:

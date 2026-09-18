@@ -324,6 +324,19 @@ class TestTheOtherFormsKeepTheirSpans:
         ]
         assert sorted(rows) == [("reference", "x.md"), ("wikilink", "note.md")]
 
+    def test_an_alias_across_a_line_ending_keeps_its_line(self) -> None:
+        # A wikilink span can hold a newline — the alias search stops at
+        # ``]``, not at the line end — so the cut has to preserve it or
+        # the region's line structure shifts under the paragraph bounds
+        # and the definition scan. The blanking is shared with the
+        # definition cut, where a destination on the following line makes
+        # the same demand.
+        rows = [
+            (link.link_type, link.target_path)
+            for link in extract_links("[[note|two\nlines]] and [ar]." + DEFS, SRC)
+        ]
+        assert sorted(rows) == [("reference", "x.md"), ("wikilink", "note.md")]
+
     def test_a_bracket_run_that_is_no_wikilink_keeps_its_reference(self) -> None:
         # ``[[a]b][ar]`` opens with ``[[`` but never closes ``]]``, so the
         # wikilink scan claims nothing and the full form stands. This is
