@@ -1202,7 +1202,7 @@ class DocumentManager:
         source_abs: Path,
         rewrites: list[tuple[str, str, str | None, str, str]],
         source_path: str,
-    ) -> str:
+    ) -> str | None:
         """Rewrite all link targets in a single source file in one pass.
 
         Reads *source_abs*, applies every ``(link_type, raw_target, fragment,
@@ -1219,9 +1219,13 @@ class DocumentManager:
                 location — used for correct relative-path computation.
 
         Returns:
-            The rewritten file content.
+            The rewritten file content, or ``None`` when every replacement
+            matched nothing and the file is unchanged. The caller must not
+            count, write back or announce such a source: it still names the
+            old target, and saying otherwise is what made #1521 silent.
         """
-        content = _read_text_utf8(source_abs)
+        original = _read_text_utf8(source_abs)
+        content = original
         for link_type, raw_target, fragment, target_old, target_new in rewrites:
             new_raw = _compute_new_raw_target(
                 link_type,
@@ -1232,6 +1236,17 @@ class DocumentManager:
                 old_path=target_old,
             )
             content = _apply_link_replacement(content, link_type, raw_target, new_raw)
+        if content == original:
+            # The index held a row the rewrite could not find. That is a
+            # disagreement between the two, not a no-op, so it is logged
+            # rather than passed over: #1521 was exactly this, invisible
+            # because the source was still counted as updated.
+            logger.warning(
+                "link_rewrite_matched_nothing source=%s links=%d",
+                source_path,
+                len(rewrites),
+            )
+            return None
         atomic_write(source_abs, content)
         return content
 
@@ -1264,7 +1279,9 @@ class DocumentManager:
             Tuple ``(callbacks, dirty_paths, failed_sources)``:
 
             * ``callbacks`` — ``(abs_path, new_content)`` pairs for every
-              source document that was successfully rewritten.
+              source document whose bytes actually changed. A source the
+              rewrite left untouched is in none of the three lists: it is
+              not a failure, but it is not an update either (#1521).
             * ``dirty_paths`` — vault-relative paths of those same sources,
               for the caller to feed to ``mark_paths_dirty``.
             * ``failed_sources`` — sources that were skipped or failed.
@@ -1294,6 +1311,10 @@ class DocumentManager:
                     for target_old, row in items
                 ]
                 content = self._rewrite_one_source(source_abs, rewrites, source_path)
+                if content is None:
+                    # Nothing changed on disk, so there is nothing to
+                    # reindex, announce or count (#1521).
+                    continue
                 pending_callbacks.append((source_abs, content))
                 dirty_paths.append(source_path)
             except (OSError, UnicodeDecodeError, ValueError, sqlite3.Error) as exc:

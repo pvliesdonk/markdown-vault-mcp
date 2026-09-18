@@ -20,7 +20,7 @@ src/markdown_vault_mcp/
   utils/
     __init__.py        -- shared path-traversal guard (resolve_inside + validate_path variants) + attachment/exclusion helpers re-exported for managers and facets (#876)
     text.py            -- text normalization, position mapping, fuzzy matching
-    links.py           -- link target computation and replacement; decode_link_target/decode_markdown_destination read a destination, build_plain_destination/encode_plain_destination/escape_link_text write one (#1494, #1513)
+    links.py           -- link target computation and replacement; decode_link_target/decode_markdown_destination read a destination, build_plain_destination/encode_plain_destination/escape_link_text write one (#1494, #1513); find_bracket_span/find_inline_link_open live here, not in scanner.py, so the index and the rewrite agree on where a link's text ends (#1521)
     serialization.py   -- toc_payload: TocEntry/SubtreeToc → JSON-able dicts
     content_kind.py    -- is_note/has_md_suffix/artifact_suffix/is_allowed_artifact(_suffix): single owner of the note-vs-artifact boundary + the registry of the three '.md' axes (#1235); names_attachment/canonical_attachment_extensions: whether a link *target* names an attachment, and the allowlist's provenance rendering (#1333)
     fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
@@ -64,7 +64,7 @@ src/markdown_vault_mcp/
     conflict.py        -- rebase-conflict resolution mechanics (caller holds the strategy lock)
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
-  scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, whose inline and reference openers read their brackets through the escape-aware _find_bracket_span (#1517, #1519) and whose wikilinks are matched by the linear _find_wikilink (#1343)
+  scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, whose inline and reference openers read their brackets through the escape-aware find_bracket_span from utils/links.py (#1517, #1519, #1521) and whose wikilinks are matched by the linear _find_wikilink (#1343)
   interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex/VectorStore: the search/index storage seam (#1230)
   fts_index.py         -- SQLite FTS5 schema, BM25 search
   _fts_connection.py   -- per-thread sqlite connection registry + SQLITE_LOCKED retry (#760)
