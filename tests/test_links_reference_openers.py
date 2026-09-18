@@ -179,6 +179,19 @@ class TestWhatStaysAsItWas:
         # places the scanner is knowingly not a CommonMark reader.
         assert extract_links("a [^1][^2] b\n\n[^1]: one\n[^2]: two\n", SRC) == []
 
+    def test_an_anchor_target_is_not_a_vault_link(self) -> None:
+        # A definition naming a fragment points inside the same document,
+        # so it is no more a vault link than an inline ``[a](#x)`` is.
+        # Covered here because this change moved which shapes reach the
+        # resolution branches at all, and an unexercised branch is one
+        # nobody notices breaking.
+        assert extract_links("[a][r]\n\n[r]: #section\n", SRC) == []
+
+    def test_a_definition_with_an_empty_target_is_ignored(self) -> None:
+        # ``[r]: <>`` names nothing, so the usage resolves to nothing —
+        # the reference mirror of ``[a]()`` storing no row.
+        assert extract_links("[a][r]\n\n[r]: <>\n", SRC) == []
+
     def test_the_shortcut_form_is_still_not_extracted(self) -> None:
         # Stated here so the generated property's exclusion below is read
         # as a standing gap rather than as something this change made.
