@@ -1675,7 +1675,15 @@ def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None] | None:
     run opened it; everything the match then needs is read from the stop
     onwards. So one failure at the stop is a failure for every opener
     before it, and the search resumes past the stop rather than at the
-    next ``[``. Each character is looked at a bounded number of times.
+    next ``[``.
+
+    The argument has to be applied at **every** forward search, not only
+    the first, which is the trap this function fell into once already: a
+    pipe is also a stop, and the alias search that follows it left its
+    resume point back at the pipe, so a run of ``[[x|`` re-ran that search
+    once per opener and was quadratic exactly like the pattern it
+    replaced. Both searches now resume past what they read, so each
+    character is looked at a bounded number of times.
 
     Matching otherwise follows the pattern exactly, including its
     asymmetry: the target may not hold ``]``, ``|`` or a line ending and
@@ -1706,8 +1714,14 @@ def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None] | None:
             continue  # empty target
         if region[stop] == "|":
             alias_end = _RE_WIKILINK_ALIAS_END.search(region, stop + 1)
-            if alias_end is None or alias_end.start() == stop + 1:
-                continue  # unterminated or empty alias
+            if alias_end is None:
+                # No ``]`` remains at all, so neither this opener nor any
+                # later one can close. The same exit as a missing target
+                # stop, and it is what keeps a run of ``[[x|`` from
+                # re-scanning the tail once per opener.
+                return None
+            if alias_end.start() == stop + 1:
+                continue  # empty alias
             close = alias_end.start()
             alias: str | None = region[stop + 1 : close]
         elif region[stop] == "]":
@@ -1715,6 +1729,14 @@ def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None] | None:
             alias = None
         else:
             continue  # a line ending: the target ran out before ``]]``
+        # The shared-stop argument again, one character further on: this
+        # ``]`` is the first after the pipe, so it is the same character
+        # for every opener behind it and they all fail with it. Resuming
+        # past it therefore skips no possible match — and it is what keeps
+        # the alias search from being re-run per opener. Without it a run
+        # of ``[[x|y`` ending in a lone ``]`` is quadratic, the very shape
+        # this function exists to remove.
+        pos = close + 1
         if region[close : close + 2] == "]]":
             return close + 2, region[start:stop], alias
     return None

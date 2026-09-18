@@ -2456,6 +2456,21 @@ at the stop is a failure for every opener before it, and the search resumes
 past the stop rather than at the next `[`. The stop is never itself a `[`, so
 resuming there skips no opener that could have matched.
 
+**The argument binds every forward search, not just the first.** The scan's
+first version applied it only to the target and was therefore still
+quadratic on a shape one character to the right: a pipe ends a target too,
+and the alias search that follows it resumed at the pipe rather than past
+its own reading, so every opener re-ran it. `[[a|` × 32000 cost 515 ms and
+quadrupled per doubling; `[[a|b` × n closed by a single `]` did the same by
+a second route, where the alias search *succeeded* and the `]]` test failed.
+Caught in review on #1524 by reading the argument rather than by the tests,
+which measured only bare `[` — all three shapes are pinned now, by a growth
+ratio and by a wall clock chosen to be one the defect actually crosses. The
+same shared-stop reasoning licenses the alias resume: the first `]` after
+the pipe is the same character for every opener behind it, so they all fail
+with it. The pipe shape is the realistic one, not the exotic one: an
+unfenced markdown table pasted into a note is a wall of `|`.
+
 | Input | before | after |
 | --- | --- | --- |
 | `extract_links` on `[` × 16000 | 6026 ms | 16 ms |

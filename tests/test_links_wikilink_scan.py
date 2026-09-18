@@ -72,14 +72,36 @@ class TestTheScanIsLinear:
         assert extract_links("[" * 40000, SRC) == []
         assert time.perf_counter() - started < 5.0
 
-    def test_doubling_the_input_does_not_quadruple_the_work(self) -> None:
+    @pytest.mark.parametrize(
+        ("unit", "tail"),
+        [
+            ("[", ""),
+            ("[[a|", ""),
+            ("[[a|b", "]"),
+        ],
+        ids=["bare-openers", "unterminated-alias", "alias-then-lone-bracket"],
+    )
+    def test_doubling_the_input_does_not_quadruple_the_work(
+        self, unit: str, tail: str
+    ) -> None:
         # The shape of the cost, not its absolute value: quadratic growth
         # is what the issue reported ("doubling n roughly quadruples the
         # time"), so the assertion is on the ratio. The bound is loose
         # enough for timer noise and interpreter warm-up and still an
         # order of magnitude below 4x.
+        #
+        # Three shapes, not one, because the first version of this scan
+        # was linear only in the first of them. A pipe ends a target too,
+        # and the alias search that follows it had its own resume point
+        # left behind at the pipe, so every opener re-ran it: ``[[a|``
+        # x 32000 cost 515 ms and quadrupled per doubling, and ``[[a|b``
+        # x n closed by one lone ``]`` did the same by a second route.
+        # Caught in review on #1524 — by inspection of the argument, not
+        # by this file, which is why all three are now pinned. The pipe
+        # shape is the realistic one: an unfenced markdown table pasted
+        # into a note is a wall of ``|``.
         def elapsed(n: int) -> float:
-            region = "[" * n
+            region = unit * n + tail
             best = float("inf")
             for _ in range(3):
                 started = time.perf_counter()
@@ -90,6 +112,26 @@ class TestTheScanIsLinear:
         small = elapsed(20000)
         large = elapsed(40000)
         assert large < small * 3, (small, large)
+
+    @pytest.mark.parametrize(
+        "region",
+        ["[[a|" * 100000, "[[a|b" * 100000 + "]"],
+        ids=["unterminated-alias", "alias-then-lone-bracket"],
+    )
+    def test_the_alias_shapes_do_not_stall_either(self, region: str) -> None:
+        # The wall-clock counterpart of the ratio test above, for the two
+        # shapes that used to be quadratic.
+        #
+        # 100000 and one second, rather than the 40000 and five seconds
+        # the bare-opener case above uses, because a bound has to be one
+        # the defect would actually cross: the quadratic version of this
+        # shape cost about 0.8 s at 40000, which 5 s would have waved
+        # through. At 100000 it costs several seconds and the linear one
+        # costs under a millisecond, so the bound sits four orders of
+        # magnitude clear of the truth on either side.
+        started = time.perf_counter()
+        assert extract_links(region, SRC) == []
+        assert time.perf_counter() - started < 1.0
 
     def test_an_unclosed_run_inside_real_prose_is_still_scanned(self) -> None:
         # The run must not swallow the links around it.
