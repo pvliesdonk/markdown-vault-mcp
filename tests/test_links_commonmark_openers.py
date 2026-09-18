@@ -158,6 +158,8 @@ def _oracle(markdown_it, src: str) -> list[tuple[str, str]]:
 
 
 class TestAgreementWithACommonMarkReader:
+    """Every bracket arrangement is read the way a reader reads it."""
+
     def test_a_link_inside_an_image_is_seen(self) -> None:
         # Guards the oracle, not the scanner. A top-level token walk
         # reports no link for this input, because markdown-it nests the
@@ -166,8 +168,6 @@ class TestAgreementWithACommonMarkReader:
         content = "![an [a](x.md) alt](y.md)"
         assert _oracle(markdown_it, content) == [("a", "x.md")]
         assert _links(content) == [("a", "x.md")]
-
-    """Every bracket arrangement is read the way a reader reads it."""
 
     @pytest.mark.parametrize("length", range(8), ids=lambda n: f"len{n}")
     def test_every_short_bracket_arrangement_agrees(self, length: int) -> None:
