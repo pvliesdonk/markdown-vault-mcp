@@ -12,11 +12,11 @@ import os.path as osp
 import re
 from html.entities import html5 as _HTML5_ENTITIES
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple, TypeVar
 from urllib.parse import quote, unquote
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
 #: Characters left unescaped when re-encoding a destination that the author
 #: already wrote percent-encoded. Only ``/`` — it is the path separator, and
@@ -711,6 +711,107 @@ def find_bracket_span(region: str, pos: int) -> tuple[int, int, str] | None:
     return None
 
 
+#: What :func:`iter_bracket_links` hands back for a link its caller accepted.
+_Payload = TypeVar("_Payload")
+
+
+def iter_bracket_links(
+    region: str,
+    follow: Callable[[str, int], tuple[_Payload, int] | None],
+) -> Iterator[tuple[int, int, _Payload, int]]:
+    r"""Walk *region*'s brackets under CommonMark's delimiter-stack rule.
+
+    The one place the rule lives, for both link families. It replaces a scan
+    that took the **first** ``[`` since the last unescaped ``]`` as the
+    opener, where CommonMark takes the **nearest unmatched** one (§6.3): a
+    ``]`` closes the innermost ``[`` still open, and an opener that closes
+    nothing is discarded rather than swallowing what follows.
+
+    What differs between the families is only what has to *follow* a closed
+    span for a link to exist — a destination in ``(…)`` for the inline form
+    (#1526), a second adjacent span for the reference form (#1528) — so
+    that is the argument, and the walk itself is shared rather than written
+    twice. Sharing it is the point: the two families drifted apart once
+    already (#1521), and a rule that lives in one function cannot.
+
+    Two rules travel with it. An opener preceded by an unescaped ``!`` is an
+    image, so its own span yields nothing — but a link *inside* an image's
+    description still does, since it closes first (§6.4, Ex. 575). And once
+    a link is found, every opener still on the stack is deactivated, because
+    links may not contain links (Ex. 518).
+
+    The walk steps between ``[``, ``]`` and ``\`` rather than over every
+    character, and pushes and pops each opener at most once, so it stays
+    linear: a run of ``[`` costs one push apiece and no rescan.
+
+    Args:
+        region: One paragraph region, code already stripped (#1334).
+        follow: Given *region* and the index of the ``]`` that closed a
+            span, returns ``(payload, end)`` when a link is written there
+            and ``None`` when one is not. *end* is the index just past the
+            whole link.
+
+    Yields:
+        ``(open_index, close_index, payload, end)`` per link, in the order
+        the links close. An image is consumed but never yielded.
+    """
+    stack: list[tuple[int, bool]] = []
+    # "Links may not contain links" deactivates every opener on the stack at
+    # once, so a watermark says it as well as a flag per entry would: the
+    # opener at depth *i* is still active exactly when ``i >= active_from``.
+    active_from = 0
+    index = 0
+    while (mark := _RE_LINK_TEXT_MARK.search(region, index)) is not None:
+        at = mark.start()
+        char = region[at]
+        if char == "\\":
+            # An escaped character is literal, so neither bracket nor image
+            # marker.
+            index = at + 2
+            continue
+        if char == "[":
+            is_image = (
+                at > 0 and region[at - 1] == "!" and not _is_escaped(region, at - 1)
+            )
+            stack.append((at, is_image))
+            index = at + 1
+            continue
+        # A ``]``. With no opener it is literal; otherwise it consumes the
+        # nearest one whether or not a link comes of it, which is what stops
+        # a failed candidate from being retried and keeps the walk linear.
+        if not stack:
+            index = at + 1
+            continue
+        open_index, is_image = stack.pop()
+        active = len(stack) >= active_from
+        active_from = min(active_from, len(stack))
+        matched = follow(region, at) if active else None
+        if matched is None:
+            index = at + 1
+            continue
+        payload, end = matched
+        if not is_image:
+            yield open_index, at, payload, end
+            active_from = len(stack)
+        # An image is consumed rather than retried: its own span yields no
+        # link, but the text it spans has already been walked, so anything
+        # linking inside it was yielded on the way.
+        index = end
+
+
+def _follow_inline_destination(
+    region: str, close_index: int
+) -> tuple[tuple[str, int], int] | None:
+    """The inline family's shape test: a destination in ``(…)``."""
+    if region[close_index + 1 : close_index + 2] != "(":
+        return None
+    parsed = _parse_destination(region, close_index + 2)
+    if parsed is None:
+        return None
+    raw_target, target_start, end = parsed
+    return (raw_target, target_start), end
+
+
 class InlineLink(NamedTuple):
     """One inline link, as :func:`iter_inline_links` reads it.
 
@@ -766,51 +867,16 @@ def iter_inline_links(region: str) -> Iterator[InlineLink]:
     Yields:
         An :class:`InlineLink` per link, in the order the links close.
     """
-    stack: list[tuple[int, bool]] = []
-    # "Links may not contain links" deactivates every opener on the stack at
-    # once, so a watermark says it as well as a flag per entry would: the
-    # opener at depth *i* is still active exactly when ``i >= active_from``.
-    active_from = 0
-    index = 0
-    while (mark := _RE_LINK_TEXT_MARK.search(region, index)) is not None:
-        at = mark.start()
-        char = region[at]
-        if char == "\\":
-            # An escaped character is literal, so neither bracket nor image
-            # marker.
-            index = at + 2
-            continue
-        if char == "[":
-            is_image = (
-                at > 0 and region[at - 1] == "!" and not _is_escaped(region, at - 1)
-            )
-            stack.append((at, is_image))
-            index = at + 1
-            continue
-        # A ``]``. With no opener it is literal; otherwise it consumes the
-        # nearest one whether or not a link comes of it, which is what stops
-        # a failed candidate from being retried and keeps the walk linear.
-        if not stack:
-            index = at + 1
-            continue
-        open_index, is_image = stack.pop()
-        active = len(stack) >= active_from
-        active_from = min(active_from, len(stack))
-        parsed = (
-            _parse_destination(region, at + 2)
-            if active and region[at + 1 : at + 2] == "("
-            else None
+    for open_index, close_index, (raw_target, target_start), end in iter_bracket_links(
+        region, _follow_inline_destination
+    ):
+        yield InlineLink(
+            open_index,
+            region[open_index + 1 : close_index],
+            raw_target,
+            target_start,
+            end,
         )
-        if parsed is None:
-            index = at + 1
-            continue
-        raw_target, target_start, end = parsed
-        if not is_image:
-            yield InlineLink(
-                open_index, region[open_index + 1 : at], raw_target, target_start, end
-            )
-            active_from = len(stack)
-        index = end
 
 
 def _replace_inline_destinations(content: str, old_raw: str, new_raw: str) -> str:

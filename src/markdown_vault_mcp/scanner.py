@@ -36,6 +36,9 @@ from markdown_vault_mcp.utils.links import (
     find_bracket_span as _find_bracket_span,
 )
 from markdown_vault_mcp.utils.links import (
+    iter_bracket_links as _iter_bracket_links,
+)
+from markdown_vault_mcp.utils.links import (
     iter_inline_links as _iter_inline_links,
 )
 from markdown_vault_mcp.utils.links import (
@@ -1301,43 +1304,50 @@ def _extract_inline_links(
     return links
 
 
-def _find_reference_usage(region: str, pos: int) -> tuple[int, str, str] | None:
-    """Find the next ``[text][ref]`` at or after *pos*, honouring escapes.
+def _follow_reference_label(region: str, close_index: int) -> tuple[str, int] | None:
+    """The reference family's shape test: a second span, immediately adjacent.
 
-    Both labels are read by :func:`_find_bracket_span`, so an escaped ``]``
-    closes neither: ``[Bra\\]cket][ref]`` is a valid CommonMark reference
-    link that the class this replaced could not see (#1519).
+    The shape that kept this family off the inline scan when #1526 rewrote
+    it: a link here is two bracket spans rather than one followed by ``(``.
+    Sharing the walk rather than the whole scan is what let the rule move
+    across (#1528).
+    """
+    if region[close_index + 1 : close_index + 2] != "[":
+        return None
+    second = _find_bracket_span(region, close_index + 1)
+    if second is None:
+        return None
+    _, second_close, ref = second
+    return ref, second_close + 1
 
-    The two spans must be adjacent — the second ``[`` immediately after the
-    first ``]`` — which is the shape that made the inline opener's scan not
-    simply drop in. A first span the second does not follow is discarded
-    and the search resumes after it, where the engine's retry would have
-    landed.
+
+def _iter_reference_usages(region: str) -> Iterator[tuple[int, str, str]]:
+    r"""Yield every ``[text][ref]`` usage in *region*, honouring escapes.
+
+    Both labels honour escapes, so an escaped ``]`` closes neither:
+    ``[Bra\]cket][ref]`` is a valid CommonMark reference link that the class
+    this replaced could not see (#1519).
+
+    The text opens at the **nearest unmatched** ``[``, not at the first one
+    since the last unescaped ``]``, because the walk is
+    :func:`~markdown_vault_mcp.utils.links.iter_bracket_links` — the same
+    one the inline family uses. That is #1528: ``[a[b][r]`` reads as ``b``
+    and not ``a[b``, ``[a [b] c][r]`` is a link rather than nothing, and
+    ``![alt][r]`` is an image and stores no row where it used to store one.
+    All three follow from the shared rule; none needed its own repair.
 
     Args:
         region: One paragraph region, code already stripped (#1334).
-        pos: Index to resume from. Callers pass the end of the previous
-            usage, keeping the matches non-overlapping as ``finditer`` did
-            — which is what makes ``[^a][^b][^c]`` skip the third label
-            (#1104).
 
-    Returns:
-        ``(end, text, ref)`` with *end* the index after the closing ``]``;
-        ``None`` when the region holds no further usage.
+    Yields:
+        ``(end, text, ref)`` with *end* the index after the closing ``]``.
+        Matches stay non-overlapping, as ``finditer``'s were — which is what
+        makes ``[^a][^b][^c]`` skip the third label (#1104).
     """
-    while (first := _find_bracket_span(region, pos)) is not None:
-        _, close_index, text = first
-        if region[close_index + 1 : close_index + 2] == "[":
-            second = _find_bracket_span(region, close_index + 1)
-            if second is None:
-                # The scan starts on that ``[``, so a span is missing only
-                # when no unescaped ``]`` follows it at all — and then no
-                # later start position can hold one either.
-                return None
-            _, second_close, ref = second
-            return second_close + 1, text, ref
-        pos = close_index + 1
-    return None
+    for open_index, close_index, ref, end in _iter_bracket_links(
+        region, _follow_reference_label
+    ):
+        yield end, region[open_index + 1 : close_index], ref
 
 
 def _iter_reference_definitions(clean: str) -> Iterator[tuple[str, str]]:
@@ -1430,9 +1440,7 @@ def _extract_reference_links(
     reference-style link and are skipped (#1104).
     """
     links: list[LinkInfo] = []
-    pos = 0
-    while (found := _find_reference_usage(region, pos)) is not None:
-        pos, text, raw_ref = found
+    for _end, text, raw_ref in _iter_reference_usages(region):
         ref = raw_ref.strip() or text  # empty [ref] falls back to link text
         if text.startswith(_FOOTNOTE_LABEL_PREFIX) or ref.startswith(
             _FOOTNOTE_LABEL_PREFIX

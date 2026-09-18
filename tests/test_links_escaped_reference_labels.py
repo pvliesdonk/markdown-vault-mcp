@@ -29,8 +29,8 @@ import re
 import pytest
 
 from markdown_vault_mcp.scanner import (
-    _find_reference_usage,
     _iter_reference_definitions,
+    _iter_reference_usages,
     extract_links,
 )
 
@@ -49,13 +49,8 @@ def _links(content: str) -> list[tuple[str, str]]:
 
 
 def _scan_usages(text: str) -> list[tuple[int, str, str]]:
-    """Every usage the scan finds, resuming as the caller does."""
-    found: list[tuple[int, str, str]] = []
-    pos = 0
-    while (usage := _find_reference_usage(text, pos)) is not None:
-        pos, link_text, ref = usage
-        found.append((pos, link_text, ref))
-    return found
+    """Every usage the scan finds."""
+    return list(_iter_reference_usages(text))
 
 
 def _regex_usages(text: str) -> list[tuple[int, str, str]]:
@@ -65,6 +60,22 @@ def _regex_usages(text: str) -> list[tuple[int, str, str]]:
 
 def _regex_definitions(text: str) -> list[tuple[str, str]]:
     return [(m.group(1), m.group(2)) for m in _SUPERSEDED_DEF.finditer(text)]
+
+
+def _label_nests_a_bracket(text: str) -> bool:
+    """True where either side reads a link text holding a ``[``.
+
+    The one shape on which the pattern and the scan are allowed to differ:
+    a nested opener is where "outermost ``[``" and "nearest unmatched ``[``"
+    stop meaning the same thing. Both sides are asked, because the
+    disagreement runs both ways — the pattern reads ``[[[[[[][]``'s text as
+    ``[[[[[`` where the scan reads ``""``, and the scan finds a link in
+    ``[a [b] c][r]`` where the pattern, whose text class excludes ``[``,
+    finds none at all.
+    """
+    return any(
+        "[" in match.group(1) for match in _SUPERSEDED_USAGE.finditer(text)
+    ) or any("[" in link_text for _, link_text, _ in _scan_usages(text))
 
 
 # ---------------------------------------------------------------------------
@@ -155,9 +166,28 @@ class TestTheScansAgreeWithThePatternsTheyReplaced:
         # filler standing for everything else. The whole sequence is
         # compared, not the first match, so the scan's resume points are
         # pinned against ``finditer``'s non-overlapping ones.
+        #
+        # Inputs whose label nests a bracket are excluded, because there
+        # the two rules genuinely differ and the scan is *meant* to win:
+        # the pattern opened at the outermost ``[``, the scan opens at the
+        # nearest unmatched one (#1528). What that exclusion gives up is
+        # not given up, only moved — ``test_links_reference_openers.py``
+        # holds those inputs against a CommonMark reader instead of
+        # against the pattern the scan replaced.
         for chars in itertools.product("[]a", repeat=length):
             text = "".join(chars)
+            if _label_nests_a_bracket(text):
+                continue
             assert _scan_usages(text) == _regex_usages(text), text
+
+    @pytest.mark.parametrize("length", range(10), ids=lambda n: f"len{n}")
+    def test_the_exclusion_is_narrow(self, length: int) -> None:
+        # The exclusion above is only honest if it is small: a property
+        # that skipped most of its inputs would assert nearly nothing.
+        # Under a tenth of the strings at every length reach the shape.
+        texts = ["".join(chars) for chars in itertools.product("[]a", repeat=length)]
+        excluded = sum(1 for text in texts if _label_nests_a_bracket(text))
+        assert excluded <= len(texts) // 10, f"{excluded}/{len(texts)}"
 
     @pytest.mark.parametrize("length", range(7), ids=lambda n: f"len{n}")
     def test_no_backslash_free_definition_changed_meaning(self, length: int) -> None:

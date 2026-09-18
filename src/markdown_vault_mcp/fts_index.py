@@ -343,7 +343,36 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: (``tests/test_links_commonmark_openers.py``) — the claim that matters
 #: once "unchanged" is no longer one.
 #:
-#: Still one bump: no tag contains the commit that set 10, so all three
+#: Version 10 also carries that opener rule across to the reference family
+#: (#1528), which #1526 left on the old one because its shape is two
+#: adjacent bracket spans rather than one followed by ``(``. Sharing the
+#: *walk* rather than the whole scan is what let the rule move: both
+#: families now step through ``iter_bracket_links`` and differ only in what
+#: must follow a closed span. This moves rows on purpose too.
+#: ``[a[b][r]`` stores its text as ``b`` and not ``a[b``; ``[a [b] c][r]``
+#: gains the row it never had; and ``![alt][r]`` loses one, because it is
+#: an image and the inline family has always skipped those. That last is
+#: the only part that *removes* a row a real vault is likely to hold, and
+#: it removes only image references naming a **note**: one naming an image
+#: already stored nothing, dropped by the attachment filter. Agreement with
+#: a CommonMark reader is pinned in
+#: ``tests/test_links_reference_openers.py``, and measured over every
+#: bracket arrangement up to seven characters with two single-letter
+#: labels defined: 5682 inputs disagreed before and 5574 after, so 108
+#: were fixed and **none** that agreed now disagree. The before half of
+#: that comparison needs the pre-change code and so cannot live in CI;
+#: the after half is pinned by
+#: ``test_the_wider_corpus_disagrees_only_where_recorded``.
+#:
+#: What version 10 still does not cover is the shortcut form (``[label]``
+#: with no second span), which no version has ever stored. It is the whole
+#: of the remaining disagreement with a CommonMark reader, and it is not a
+#: shape test away: CommonMark falls back from the full form to the
+#: shortcut one when the label lookup *fails*, so the scan would have to
+#: consult the definition table it currently knows nothing about. Tracked
+#: separately rather than guessed at here.
+#:
+#: Still one bump: no tag contains the commit that set 10, so all four
 #: changes reach a deployed vault as a single rebuild (``AGENTS.md``, once
 #: per release).
 INDEX_SEMANTICS_VERSION = 10
