@@ -1440,7 +1440,13 @@ def _make_reference_follow(
 def _iter_reference_usages(
     region: str, ref_defs: Mapping[str, str]
 ) -> Iterator[tuple[str, str]]:
-    r"""Yield every ``[text][ref]`` usage in *region*, honouring escapes.
+    r"""Yield every reference usage in *region*, honouring escapes.
+
+    All three forms, since #1531: full (``[text][label]``), collapsed
+    (``[text][]``) and shortcut (``[text]``). Which one applies is not a
+    property of the span alone, so *ref_defs* is consulted while walking
+    rather than afterwards; :func:`_make_reference_follow` holds the
+    ladder.
 
     Both labels honour escapes, so an escaped ``]`` closes neither:
     ``[Bra\]cket][ref]`` is a valid CommonMark reference link that the class
@@ -1455,7 +1461,12 @@ def _iter_reference_usages(
     All three follow from the shared rule; none needed its own repair.
 
     Args:
-        region: One paragraph region, code already stripped (#1334).
+        region: One paragraph region, code already stripped (#1334), with
+            definitions already blanked out by
+            :func:`_blank_reference_definitions`.
+        ref_defs: The document's definitions, keyed by lower-cased label.
+            The ladder resolves against these to decide whether a span is
+            a link at all, so an undefined label yields nothing.
 
     Yields:
         ``(text, raw_target)`` — the link text as written and the target
@@ -1474,7 +1485,7 @@ def _iter_reference_usages(
 
 
 def _iter_definition_matches(clean: str) -> Iterator[tuple[str, str, int, int]]:
-    """Yield ``(label, target)`` for each ``[label]: target`` line.
+    """Yield ``(label, target, start, end)`` for each ``[label]: target`` line.
 
     The label is read by :func:`_find_bracket_span` so an escaped ``]``
     does not close it (#1519); the rest keeps the shape of the pattern this

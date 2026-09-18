@@ -361,23 +361,22 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: labels defined: 5682 inputs disagreed before and 5574 after, so 108
 #: were fixed and **none** that agreed now disagree. The before half of
 #: that comparison needs the pre-change code and so cannot live in CI;
-#: the after half is pinned by
-#: ``test_the_wider_corpus_disagrees_only_where_recorded``.
+#: the after half was pinned by that module's wider-corpus property,
+#: which #1531 then tightened from a recorded shortfall to exact
+#: agreement.
 #:
-#: What version 10 still does not cover is the shortcut form (``[label]``
-#: with no second span), which no version has ever stored. It is the whole
-#: of the remaining disagreement with a CommonMark reader, and it is not a
-#: shape test away: CommonMark falls back from the full form to the
-#: shortcut one when the label lookup *fails*, so the scan would have to
-#: consult the definition table it currently knows nothing about. Tracked
-#: separately rather than guessed at here.
+#: What that left was the shortcut form (``[label]`` with no second
+#: span), the whole of the remaining disagreement with a CommonMark
+#: reader. It was never a shape test away: a reader falls back from the
+#: full form to the shortcut one when the label lookup *fails*, so the
+#: scan had to consult a definition table it knew nothing about.
 #:
-#: Version 10 finally covers the shortcut form (#1531) — ``[label]``
-#: standing alone, which no version had ever stored. It is the largest of
-#: these in rows added: every bare label in a vault that matches a
-#: definition gains an outlink and gives its target a backlink. A label
-#: with no definition stores nothing, which is what keeps a bracketed
-#: aside from becoming a link.
+#: #1531 supplied exactly that, so version 10 covers the shortcut form
+#: too — ``[label]`` standing alone, which no version had ever stored.
+#: It is the largest of these in rows added: every bare label in a vault
+#: that matches a definition gains an outlink and gives its target a
+#: backlink. A label with no definition stores nothing, which is what
+#: keeps a bracketed aside from becoming a link.
 #:
 #: Two corrections to the *definition* side ride with it, and they change
 #: which rows every form produces, not just the new one. A definition's

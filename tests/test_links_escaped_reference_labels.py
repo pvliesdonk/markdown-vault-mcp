@@ -13,12 +13,34 @@ match — and the two sides can only ever spell it the same way, since a
 label ends at its first unescaped ``]`` and so a label holding one can be
 written no other way.
 
-Two properties carry the module, as in ``test_links_escaped_text.py``. The
-first is the defect. The second is what makes the change safe against
-existing vaults: each scan agrees with the pattern it replaced on every
-input carrying no backslash, asserted exhaustively over short strings
-rather than by example, because "nothing else moved" is the claim an
+Two properties carried the module when it was written, as in
+``test_links_escaped_text.py``. The first is the defect. The second was
+"nothing else moved" — each scan agreeing with the pattern it replaced on
+every backslash-free input, asserted exhaustively over short strings
+rather than by example, because that is the claim an
 ``INDEX_SEMANTICS_VERSION`` note rests on.
+
+**Only the definition half of that second property is still here, and it
+now carries an exclusion.** Both changes are deliberate and neither
+weakens the claim, because a stronger instrument replaced the part that
+went:
+
+* The *usage* half was retired by #1531. The pattern it compared against
+  cannot express the shortcut form at all, so it stopped being a
+  description of correct behaviour and started being a description of the
+  old behaviour. The usage side is asserted against a CommonMark reader
+  instead: ``tests/test_links_reference_openers.py`` over bracket and
+  bang arrangements, ``tests/test_links_shortcut_references.py`` over a
+  label-shaped alphabet carrying the colon and the newline. Different
+  alphabets from this module's, and a stronger instrument — an oracle
+  says what the rows *should* be, where the pattern only ever said what
+  they used to be.
+* The *definition* half excludes inputs that cross a blank line, via
+  ``_crosses_a_blank_line``. The old pattern read a destination across one
+  and could swallow a real definition into a label; CommonMark forbids
+  both (§4.7), so on exactly those inputs the pattern is wrong and
+  disagreeing with it is the correct outcome. The exclusion is pinned
+  narrow by ``_SUPERSEDED_DEF``, which spells out what it covers.
 """
 
 from __future__ import annotations
