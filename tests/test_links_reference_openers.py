@@ -56,7 +56,7 @@ import time
 import pytest
 
 from markdown_vault_mcp.scanner import extract_links
-from markdown_vault_mcp.utils.links import iter_bracket_links
+from markdown_vault_mcp.utils.links import find_bracket_span, iter_bracket_links
 
 SRC = "source.md"
 
@@ -288,6 +288,34 @@ class TestLinksMayNotContainLinks:
         # trailing ``[r]`` that a CommonMark reader then reads as a shortcut
         # is the gap this module does not close.
         assert _links("[a [b][ar] c][ar]") == [("b", "x.md")]
+
+
+class TestTheBracketSpanPrimitive:
+    """``find_bracket_span`` is now only ever entered at a ``[``.
+
+    Both remaining callers — ``_follow_reference_label`` and
+    ``_iter_reference_definitions`` — hand it the index of an opener, so
+    its "a ``]`` before any ``[`` closes nothing" path stopped being
+    reachable through either of them when the reference scan moved onto
+    the shared walk. The behaviour is still part of a public helper's
+    contract, and the docstring still promises it, so it is tested
+    directly rather than deleted or left to rot untested.
+    """
+
+    def test_a_closer_before_any_opener_is_skipped(self) -> None:
+        assert find_bracket_span("]] [a] b", 0) == (3, 5, "a")
+
+    def test_a_region_of_closers_alone_finds_nothing(self) -> None:
+        assert find_bracket_span("]]]", 0) is None
+
+    def test_an_escaped_closer_does_not_close_the_span(self) -> None:
+        assert find_bracket_span(r"[a\]b] c", 0) == (0, 5, r"a\]b")
+
+    def test_the_first_opener_since_the_last_closer_wins(self) -> None:
+        # The primitive keeps the *outermost* rule; the nearest-unmatched
+        # rule lives in ``iter_bracket_links``, one level up. Pinned so the
+        # two are not confused when reading either in isolation.
+        assert find_bracket_span("[a[b] c", 0) == (0, 4, "a[b")
 
 
 # ---------------------------------------------------------------------------
