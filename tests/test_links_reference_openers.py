@@ -35,8 +35,8 @@ disagreement with a CommonMark reader. It is out of scope on evidence, not
 by preference: CommonMark falls back from the full form to the shortcut one
 when the label lookup *fails*, so a scan that supports it has to consult the
 definition table, which this walk does not see. Bolting a shortcut shape
-test onto the walk leaves 774 inputs still disagreeing, where the proper
-ladder would leave none.
+test onto the walk leaves 774 inputs still disagreeing, measured on the
+``WIDE_DEFS`` corpus below, where the proper ladder would leave none.
 
 That gap is not merely subtractive, which is worth stating because it is
 easy to assume otherwise. A shortcut link *deactivates the openers enclosing
@@ -68,23 +68,37 @@ SRC = "source.md"
 LABEL = "ar"
 DEFS = f"\n\n[{LABEL}]: x.md\n"
 
+#: A second definition set, where **both filler letters are themselves
+#: defined labels**. It matters because the corpus above barely reaches
+#: this change's own shapes: with a two-character label, ``[a[b][ar]``
+#: needs nine characters and the generator stops at seven, so only four
+#: inputs in 97,655 actually exercise the fix. Single-letter labels make
+#: those shapes fit, at the cost of firing the shortcut form constantly —
+#: which is why the containment property above uses the narrow set and
+#: this one is pinned by count instead.
+#:
+#: The figures in ``docs/design/design.md`` and the
+#: ``INDEX_SEMANTICS_VERSION`` note come from *this* corpus, and are
+#: pinned here so the documented evidence is what CI computes.
+WIDE_DEFS = "\n\n[r]: x.md\n[a]: x.md\n"
 
-def _links(body: str) -> list[tuple[str, str]]:
+
+def _links(body: str, defs: str = DEFS) -> list[tuple[str, str]]:
     """``(link_text, raw_target)`` for every reference link in *body*."""
     return [
         (link.link_text, link.raw_target)
-        for link in extract_links(body + DEFS, SRC)
+        for link in extract_links(body + defs, SRC)
         if link.link_type == "reference"
     ]
 
 
-def _has_wikilink(body: str) -> bool:
+def _has_wikilink(body: str, defs: str = DEFS) -> bool:
     """``[[a]]`` is a wikilink here and a reference for CommonMark.
 
     A deliberate, long-standing departure of its own, so inputs that reach
     it are outside this module's comparison rather than failures of it.
     """
-    return any(link.link_type == "wikilink" for link in extract_links(body + DEFS, SRC))
+    return any(link.link_type == "wikilink" for link in extract_links(body + defs, SRC))
 
 
 def _collect(children, found: list[tuple[str, str]]) -> None:
@@ -112,10 +126,10 @@ def _collect(children, found: list[tuple[str, str]]) -> None:
             text += child.content
 
 
-def _oracle(markdown_it, body: str) -> list[tuple[str, str]]:
+def _oracle(markdown_it, body: str, defs: str = DEFS) -> list[tuple[str, str]]:
     """``(text, href)`` for every link — not image — a CommonMark reader finds."""
     found: list[tuple[str, str]] = []
-    for token in markdown_it.parse(body + DEFS):
+    for token in markdown_it.parse(body + defs):
         if token.children:
             _collect(token.children, found)
     return [(text, href) for text, href in found if href == "x.md"]
@@ -245,6 +259,34 @@ class TestAgreementWithACommonMarkReader:
             and _links(body) != _oracle(markdown_it, body)
         )
         assert short == expected[length]
+
+    @pytest.mark.parametrize("length", range(1, 8), ids=lambda n: f"len{n}")
+    def test_the_wider_corpus_disagrees_only_where_recorded(self, length: int) -> None:
+        # The corpus the documented figures come from, pinned so the
+        # evidence in ``design.md`` and the ``INDEX_SEMANTICS_VERSION``
+        # note is what CI computes rather than a number from a notebook.
+        #
+        # It is counted rather than contained because containment does not
+        # hold here, and for a reason already in this module's docstring: a
+        # shortcut link deactivates the openers around it, so where a
+        # reader makes two shortcut links this scanner makes one full
+        # reference. Single-letter labels make that shape common. The
+        # narrow corpus above carries the containment claim; this one
+        # carries the count.
+        #
+        # Measured before and after this change on identical inputs:
+        # 5,682 disagreements before, 5,574 after, 108 inputs fixed and
+        # none newly broken. The before half needs the pre-change code, so
+        # only the after half can live in CI — which is this.
+        expected = {1: 0, 2: 0, 3: 2, 4: 18, 5: 124, 6: 780, 7: 4650}
+        markdown_it = pytest.importorskip("markdown_it").MarkdownIt("commonmark")
+        disagreeing = sum(
+            1
+            for chars in itertools.product("[]!ar", repeat=length)
+            if not _has_wikilink(body := "".join(chars), WIDE_DEFS)
+            and _links(body, WIDE_DEFS) != _oracle(markdown_it, body, WIDE_DEFS)
+        )
+        assert disagreeing == expected[length]
 
     @pytest.mark.parametrize(
         ("body", "expected"),

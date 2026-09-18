@@ -2510,16 +2510,35 @@ stated as **containment**: every row the scanner stores is a row the reader
 stores, with the same text, target and order. That is asserted over the
 whole generated corpus with no exclusions, and it is the exact shape of
 what #1528 was — inventing a row, mistexting one, or reordering them all
-break it. Over 97655 arrangements the scanner disagreed with `markdown-it-py`
-on 5682 inputs before and 5574 after, and **none** that agreed before
-disagree now (`tests/test_links_reference_openers.py`).
+break it.
+
+The counts want their corpus named, because two are in play and they differ
+by an order of magnitude. Both run the same 97655 bracket arrangements
+(97131 once those reaching a wikilink are excluded) and differ only in
+which labels are defined:
+
+| defined labels | disagreed before | after | fixed | newly broken |
+| --- | --- | --- | --- | --- |
+| one, `[ar]` | 466 | 462 | 4 | 0 |
+| two, `[a]` and `[r]` | 5682 | 5574 | 108 | 0 |
+
+The narrow set is what the containment property runs on, and it is nearly
+blind to this change: with a two-character label, `[a[b][ar]` needs nine
+characters and the generator stops at seven, so only four of its inputs
+exercise the fix at all. Single-letter labels make those shapes fit, which
+is where the 108 comes from — at the cost of firing the shortcut form
+constantly, so containment does not hold there and that corpus is pinned by
+count instead. Both are in `tests/test_links_reference_openers.py`; the
+*before* column needs the pre-change code, so it is a recorded measurement
+rather than one CI repeats.
 
 What this leaves is the **shortcut form** (`[label]` with no second span),
 which no version has ever stored and which is now the whole of the
 remaining disagreement. It is not a shape test away. CommonMark falls back
 from the full form to the shortcut one when the label lookup *fails*, so
 the scan would have to consult the definition table it currently cannot
-see; bolting a shortcut test onto the walk leaves 774 inputs still
+see; bolting a shortcut test onto the walk leaves 774 inputs of the
+wider corpus above still
 disagreeing. And the gap is not merely subtractive, which is the part worth
 recording: a shortcut link deactivates the openers enclosing it like any
 other link, so *not* making one leaves an opener active that a reader has

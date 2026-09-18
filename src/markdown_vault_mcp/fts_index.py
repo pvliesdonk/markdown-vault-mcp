@@ -356,9 +356,13 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: it removes only image references naming a **note**: one naming an image
 #: already stored nothing, dropped by the attachment filter. Agreement with
 #: a CommonMark reader is pinned in
-#: ``tests/test_links_reference_openers.py``, and measured: over every
-#: bracket arrangement up to seven characters, 108 inputs that disagreed
-#: now agree and **none** that agreed now disagree.
+#: ``tests/test_links_reference_openers.py``, and measured over every
+#: bracket arrangement up to seven characters with two single-letter
+#: labels defined: 5682 inputs disagreed before and 5574 after, so 108
+#: were fixed and **none** that agreed now disagree. The before half of
+#: that comparison needs the pre-change code and so cannot live in CI;
+#: the after half is pinned by
+#: ``test_the_wider_corpus_disagrees_only_where_recorded``.
 #:
 #: What version 10 still does not cover is the shortcut form (``[label]``
 #: with no second span), which no version has ever stored. It is the whole
