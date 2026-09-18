@@ -2473,8 +2473,58 @@ in the same rebuild as #1517 and #1519.
 
 What this leaves: an empty destination (`[a]()`) still stores no row, and
 reference links still take the first opener rather than the nearest — the
-reference family has its own match shape and its own scans, and folding it
-in would have put a second semantic delta in one bump.
+reference family's shape is two adjacent bracket spans rather than one
+followed by `(`, so the inline iterator did not drop in, and its before and
+after wanted measuring on their own. Carried across in #1528, below. (An
+earlier draft of this paragraph gave the reason as keeping a second
+semantic delta out of one `INDEX_SEMANTICS_VERSION` bump. That was wrong:
+the bump is once per *release*, so a second delta in the same unreleased
+range rides the same version and costs nothing — which is exactly what
+#1528 then did.)
+
+**The reference family opens at the nearest unmatched `[` too (#1528).**
+Carrying the rule across, one family to the right, with the same three
+shapes falling out of it:
+
+| Input | stored before | stored now | a CommonMark reader |
+| --- | --- | --- | --- |
+| `[a[b][r]` | text `a[b` | text `b` | text `b` |
+| `[a [b] c][r]` | **no row** | text `a [b] c` | text `a [b] c` |
+| `![alt][r]` | text `alt` | **no row** | an image, no link |
+
+The third is the one that *removes* rows, and it removes only an image
+reference naming a **note**: one naming an actual image already stored
+nothing, dropped by the attachment filter, which is why a reference scan
+with no image test at all went unnoticed for so long.
+
+What made the carry-across cheap is that the shared piece is the **walk**,
+not the scan. `iter_bracket_links` in `utils/links.py` holds the delimiter
+stack, the image rule and the deactivation rule; each family passes only a
+test for what must *follow* a closed span — a destination in `(…)` for the
+inline form, a second adjacent span for the reference form. So the rule
+lives in one function and cannot drift between the families, which is
+#1521's lesson applied one abstraction lower.
+
+The claim is again agreement with a CommonMark reader, and this time it is
+stated as **containment**: every row the scanner stores is a row the reader
+stores, with the same text, target and order. That is asserted over the
+whole generated corpus with no exclusions, and it is the exact shape of
+what #1528 was — inventing a row, mistexting one, or reordering them all
+break it. Over 97655 arrangements the scanner disagreed with `markdown-it-py`
+on 5682 inputs before and 5574 after, and **none** that agreed before
+disagree now (`tests/test_links_reference_openers.py`).
+
+What this leaves is the **shortcut form** (`[label]` with no second span),
+which no version has ever stored and which is now the whole of the
+remaining disagreement. It is not a shape test away. CommonMark falls back
+from the full form to the shortcut one when the label lookup *fails*, so
+the scan would have to consult the definition table it currently cannot
+see; bolting a shortcut test onto the walk leaves 774 inputs still
+disagreeing. And the gap is not merely subtractive, which is the part worth
+recording: a shortcut link deactivates the openers enclosing it like any
+other link, so *not* making one leaves an opener active that a reader has
+retired — in `[[a]b][r]` a reader makes two shortcut links where the
+scanner makes one full reference with the text `[a]b`. Tracked separately.
 
 **A link is matched inside one paragraph, never across a boundary (#1334).**
 The three patterns used to run over the whole code-stripped body, and their

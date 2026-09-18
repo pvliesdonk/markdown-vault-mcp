@@ -121,26 +121,52 @@ class TestEscapesStillHold:
 # ---------------------------------------------------------------------------
 
 
+def _collect(children, found: list[tuple[str, str]]) -> None:
+    """Collect links from *children*, descending into image descriptions.
+
+    The descent matters: Ex. 575 lets an image description contain a link,
+    markdown-it nests that link's tokens under the image token, and a
+    walker that reads only the top level reports no link there at all —
+    turning a real disagreement into a pass. It never fires on this
+    module's own corpus (measured: zero inputs of the generated set parse
+    to a link inside an image), but ``test_a_link_inside_an_image_is_seen``
+    below holds the case that would, so the hole cannot open unnoticed.
+    """
+    href: str | None = None
+    text = ""
+    for child in children:
+        if child.type == "link_open":
+            href, text = child.attrGet("href"), ""
+        elif child.type == "link_close" and href is not None:
+            found.append((text, href))
+            href = None
+        elif child.type == "image":
+            _collect(child.children or [], found)
+            if href is not None:
+                text += child.attrGet("alt") or ""
+        elif href is not None:
+            text += child.content
+
+
 def _oracle(markdown_it, src: str) -> list[tuple[str, str]]:
     """``(text, href)`` for every link a CommonMark reader finds."""
     found: list[tuple[str, str]] = []
     for token in markdown_it.parse(src):
-        if not token.children:
-            continue
-        href: str | None = None
-        text = ""
-        for child in token.children:
-            if child.type == "link_open":
-                href, text = child.attrGet("href"), ""
-            elif child.type == "link_close" and href is not None:
-                found.append((text, href))
-                href = None
-            elif href is not None:
-                text += child.content
+        if token.children:
+            _collect(token.children, found)
     return found
 
 
 class TestAgreementWithACommonMarkReader:
+    def test_a_link_inside_an_image_is_seen(self) -> None:
+        # Guards the oracle, not the scanner. A top-level token walk
+        # reports no link for this input, because markdown-it nests the
+        # link under the image; the scanner has always been right about it.
+        markdown_it = pytest.importorskip("markdown_it").MarkdownIt("commonmark")
+        content = "![an [a](x.md) alt](y.md)"
+        assert _oracle(markdown_it, content) == [("a", "x.md")]
+        assert _links(content) == [("a", "x.md")]
+
     """Every bracket arrangement is read the way a reader reads it."""
 
     @pytest.mark.parametrize("length", range(8), ids=lambda n: f"len{n}")

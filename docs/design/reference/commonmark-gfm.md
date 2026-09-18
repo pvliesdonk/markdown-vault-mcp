@@ -223,15 +223,18 @@ Python 3.13.
   with text `a [b] c`; `[a [b c](x.md)` links `b c`]
   Both halves are implemented: the escaped one since #1517, the balanced one
   since #1526, which adopted the rule underneath it — a `]` closes the
-  *nearest unmatched* `[`. Ex. 512 stores a row.
-  [pins: tests/test_links_escaped_text.py::TestEscapedBracketsInLinkText::test_an_escaped_closing_bracket_no_longer_ends_the_text, tests/test_links_commonmark_openers.py::TestBracketBalancing::test_a_balanced_pair_inside_the_text_is_a_link, tests/test_links_commonmark_openers.py::TestTheNearestOpenerWins::test_an_inner_bracket_opens_the_link]
+  *nearest unmatched* `[`. Ex. 512 stores a row. The reference family reads
+  its labels by the same rule since #1528, so `[a [b] c][r]` stores one too.
+  [pins: tests/test_links_escaped_text.py::TestEscapedBracketsInLinkText::test_an_escaped_closing_bracket_no_longer_ends_the_text, tests/test_links_commonmark_openers.py::TestBracketBalancing::test_a_balanced_pair_inside_the_text_is_a_link, tests/test_links_commonmark_openers.py::TestTheNearestOpenerWins::test_an_inner_bracket_opens_the_link, tests/test_links_reference_openers.py::TestTheNearestOpenerWins::test_a_balanced_pair_inside_the_text_is_a_link_now]
 - Links may not contain links, innermost wins (Ex. 518); an image
   description may (Ex. 575). [source: cm] [observed: markdown-it-py 3.0.0,
   `[a [b](y.md) c](x.md)` links `b`; `![a [b](y.md)](i.png)` is one image]
-  Implemented since #1526: an opener is deactivated once a link closes over
-  it, and a link inside an image's description is stored because it closes
-  first.
-  [pins: tests/test_links_commonmark_openers.py::TestLinksMayNotContainLinks::test_only_the_inner_link_is_stored, tests/test_links_commonmark_openers.py::TestImagesAndTheirDescriptions::test_a_link_inside_an_image_description_is_still_found]
+  Implemented since #1526 for inline links and since #1528 for reference
+  links: an opener is deactivated once a link closes over it, and a link
+  inside an image's description is stored because it closes first. The
+  reference scan had no image test at all before #1528, so `![alt][r]`
+  stored a link row.
+  [pins: tests/test_links_commonmark_openers.py::TestLinksMayNotContainLinks::test_only_the_inner_link_is_stored, tests/test_links_commonmark_openers.py::TestImagesAndTheirDescriptions::test_a_link_inside_an_image_description_is_still_found, tests/test_links_reference_openers.py::TestTheNearestOpenerWins::test_an_image_reference_stores_no_row]
 - No whitespace between `]` and `(` (Ex. 511); inside the parentheses,
   spaces, tabs and up to one line ending may surround destination and title
   (Ex. 510). [source: cm]
@@ -377,7 +380,7 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   (#1334). A span with a line ending inside is not stripped; a
   double-backtick span holding an inner backtick is stripped up to that
   backtick. [observed: `_strip_inline_code`, 2026-09-06]
-- `iter_inline_links` (which calls `_parse_destination`) in `_extract_inline_links` —
+- `iter_bracket_links` (via `iter_inline_links`, which calls `_parse_destination`) in `_extract_inline_links`, and via `_iter_reference_usages` in `_extract_reference_links` (#1528) —
   **right** on the #1334
   boundaries the decision table below marks honoured, since 2026-09-06:
   each pattern runs inside one paragraph region (`_paragraph_regions`,
