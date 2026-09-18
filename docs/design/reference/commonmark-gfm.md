@@ -305,6 +305,31 @@ Python 3.13.
   [pins: tests/test_links.py::TestExtractReferenceLinks::test_reference_link_basic, tests/test_links.py::TestExtractReferenceLinks::test_undefined_reference_skipped, tests/test_links_shortcut_references.py::TestTheLadderIsOrdered::test_a_defined_label_with_an_undefined_second_span_is_no_link, tests/test_links_shortcut_references.py::TestTheLadderIsOrdered::test_an_unparseable_second_span_falls_through_to_the_shortcut]
 - Reference link text follows inline-link rules, so a blank line inside
   `[t\n\nu][r]` breaks it. [observed: markdown-it-py 3.0.0, that input]
+- **Three places markdown-it departs from the spec**, found while widening
+  the corpus for #1531 and recorded because the corpora use it as their
+  oracle — a deviation in the oracle reads as a defect in the scanner.
+  1. When only whitespace follows a `(` to the end of the inline block,
+     markdown-it abandons the link outright instead of falling back to a
+     reference. §6.3 says a failed inline attempt falls through, so
+     `[a](` with `[a]` defined is a shortcut link.
+     [observed: markdown-it-py `commonmark`, `[a](\n\n[a]: x.md\n` renders
+     `<p>[a](</p>`, while `[a](u` renders the link, 2026-09-18]
+     [pins: tests/test_links_shortcut_references.py::TestAgreementWhereTheOtherFormsMeet::test_a_body_ending_in_an_open_paren_is_a_shortcut]
+  2. A whitespace-only second span normalises to `""`, misses, and
+     markdown-it stops. §4.7 wants a non-whitespace character in a label,
+     so `[ ]` is no label and the ladder should reach the text.
+     [observed: markdown-it-py `commonmark`, `[ar][ ]` renders
+     `<p>[ar][ ]</p>`, 2026-09-18]
+     [pins: tests/test_links_shortcut_references.py::TestAgreementWhereTheOtherFormsMeet::test_a_whitespace_only_second_span_falls_through]
+  3. markdown-it's label scan counts bracket nesting, so it reads
+     `[a[b]]` as a label. §4.7 allows no unescaped bracket in a label at
+     all — the "or balanced" allowance is §6.3's rule for link *text*.
+     This scanner balances too, so the two agree; `[unverified]` whether
+     cmark does, which is reported to stop at the first inner `[` and
+     would therefore make `[x][a[b]]` a shortcut link on `x` where both
+     this scanner and markdown-it make nothing.
+     [observed: markdown-it-py `commonmark`, `[x][a[b]]` with `[x]: y.md`
+     renders `<p>[x][a[b]]</p>`, 2026-09-18]
 
 ### Autolinks and the URI scheme (§6.5; GFM §6.9)
 
@@ -420,7 +445,12 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   the ladder's fallback on a second span that is not a valid label, title
   stripping, document-wide definitions, footnotes excluded, definitions
   removed before the usage scan, and since #1519 an escaped `]` in either
-  label. `[a\][ref]` now links by the shortcut its label leaves over, as a
+  label. Inline precedence is real rather than incidental since #1531: a
+  span an inline link closed is not offered to the ladder, which the
+  shortcut rung made necessary because it resolves on the text alone.
+  Definition removal stops at the destination and its title, not at the
+  line's end, so prose on a line the greedy tail over-matched
+  (`[TODO]: revisit [a][r] later`) keeps its links. `[a\][ref]` now links by the shortcut its label leaves over, as a
   reader reads it. Agreement is exact over every bracket arrangement up to
   seven characters, under two definition sets. Wrong: the *last* definition
   wins where the first should; labels are lower-cased, not case-folded
@@ -483,7 +513,7 @@ Behaviour lines are [observed: `extract_links`, `_strip_fenced_code`,
   `extract_links` normalises CRLF and CR to LF itself, so the question no
   longer reaches the parser.
 - No test covers `<dest>` destinations, inline titles, balanced parentheses,
-  nested brackets, `\[`, shortcut references, first-definition precedence,
+  nested brackets, `\[`, first-definition precedence,
   whitespace-collapsed labels, definitions in quotes, or CR-only files; the
   departures above are observed, not pinned.
 

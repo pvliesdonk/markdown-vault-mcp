@@ -36,6 +36,9 @@ from markdown_vault_mcp.utils.links import (
     find_bracket_span as _find_bracket_span,
 )
 from markdown_vault_mcp.utils.links import (
+    inline_link_follows as _inline_link_follows,
+)
+from markdown_vault_mcp.utils.links import (
     iter_bracket_links as _iter_bracket_links,
 )
 from markdown_vault_mcp.utils.links import (
@@ -934,6 +937,9 @@ _RE_REF_DEF_OPEN = re.compile(r"^\s*\[", re.MULTILINE)
 #: until the shortcut form arrived (#1531), which is why a wrong entry in
 #: the table produced no wrong row and went unseen.
 _RE_REF_DEF_TAIL = re.compile(r"[ \t]*\n?[ \t]*(.+)$", re.MULTILINE)
+#: A CommonMark blank line holds only spaces or tabs, so a label may not
+#: cross one even when the "empty" line is not literally empty.
+_RE_BLANK_LINE = re.compile(r"\n[ \t]*\n")
 # Markdown footnotes ([^label] / [^label]: body) differ from reference-style
 # links by exactly this character, and both reference scans read them.
 _FOOTNOTE_LABEL_PREFIX = "^"
@@ -1322,11 +1328,26 @@ def _parse_link_label(region: str, pos: int) -> tuple[str, int] | None:
     r"""Read a CommonMark link label at *pos*, or report that none is there.
 
     Distinct from :func:`_find_bracket_span`, and the distinction decides a
-    rung of the ladder. A label's brackets must **balance** (§6.3: "one or
-    more characters ... between an opening ``[`` and a closing ``]`` ...
-    Unescaped square bracket characters are not allowed inside the opening
-    and closing delimiters unless they are backslash-escaped or balanced").
-    ``[[]`` is therefore a bracket span but not a label.
+    rung of the ladder: ``[[]`` is a bracket span but not a label.
+
+    This **balances** brackets rather than rejecting them. The spec is
+    stricter — §4.7's link label says "unescaped square bracket characters
+    are not allowed inside the opening and closing square brackets",
+    without the "or balanced" allowance that §6.3 grants a link *text* —
+    so ``[a[b]]`` is not a label to the letter of the spec and is one
+    here. The oracle behaves as this does: markdown-it's label scan counts
+    nesting, so it reads ``[a[b]]`` as a label too, and the corpora assert
+    equality with it. [unverified] whether cmark agrees; it is reported to
+    stop at the first inner ``[``, which would make ``[x][a[b]]`` a
+    shortcut link on ``x`` where both this scanner and markdown-it make no
+    link at all. Recorded in ``docs/design/reference/commonmark-gfm.md``
+    rather than resolved here.
+
+    The empty label parses (``[]`` returns ``("", 2)``) although §4.7 wants
+    a non-whitespace character. That is deliberate and load-bearing: the
+    *collapsed* rung is spelled ``[text][]``, so the second span has to
+    parse before anything can tell it is empty. The emptiness test lives
+    in ``follow``, where the rung is chosen.
 
     That is what separates the two ways a full reference can fail. When the
     label is *valid but undefined*, the reader has spent the second span on
@@ -1411,6 +1432,18 @@ def _make_reference_follow(
     def follow(
         region: str, open_index: int, close_index: int
     ) -> tuple[str, int] | None:
+        if _inline_link_follows(region, close_index):
+            # Rung zero, and the reason it has to be here rather than in
+            # the caller: CommonMark tries the inline destination before
+            # any reference rung (§6.3), so a span the inline family owns
+            # is not a reference at all. The two families are separate
+            # scans over the same region, which was safe while a reference
+            # needed a *second bracket span* — a ``(`` can never be one —
+            # and stopped being safe the moment the shortcut rung landed,
+            # because the shortcut resolves on the text alone. Without
+            # this, ``[a](x.md)`` with ``[a]`` defined stored the inline
+            # row *and* a second row to the definition's target.
+            return None
         text = region[open_index + 1 : close_index]
         parsed = _parse_link_label(region, close_index + 1)
         if parsed is not None:
@@ -1484,14 +1517,80 @@ def _iter_reference_usages(
         yield region[open_index + 1 : close_index], raw_target
 
 
+def _definition_destination_end(clean: str, pos: int) -> int | None:
+    """Index just past a definition's destination, or ``None`` if there is none.
+
+    §4.7's destination, not §6.3's: a definition's runs to the first
+    whitespace (or to ``>``, in the pointy form), where an inline one runs
+    to its closing ``)``. That is why :func:`_parse_destination` cannot be
+    reused here despite parsing the same two forms.
+
+    This exists because the definition scan's tail is deliberately greedy
+    to the end of the line, which over-matches: ``[TODO]: revisit [a][r]
+    later`` is yielded as a definition of ``TODO``. Harmless while nothing
+    consumed the span — but :func:`_blank_reference_definitions` now cuts
+    that span out of the region, so the whole line, links and all, left
+    the index. Blanking stops at the destination instead, so prose a
+    reader still parses survives the cut.
+
+    Args:
+        clean: Body text with code removed and line endings normalised.
+        pos: Index of the destination's first character.
+
+    Returns:
+        The index just past the destination, or ``None`` when nothing
+        parses as one — in which case the caller keeps the greedy end,
+        since there is no better answer than the one the scan already had.
+    """
+    if pos >= len(clean):
+        return None
+    if clean[pos] == "<":
+        index = pos + 1
+        while index < len(clean) and clean[index] not in ">\n":
+            index += 2 if clean[index] == "\\" else 1
+        return index + 1 if index < len(clean) and clean[index] == ">" else None
+    index = pos
+    while index < len(clean) and clean[index] not in " \t\n":
+        index += 2 if clean[index] == "\\" else 1
+    return min(index, len(clean)) if index > pos else None
+
+
+#: A definition's optional title, and nothing else, to the line's end. What
+#: follows the destination is blanked with it when it is a title, and left
+#: alone when it is prose.
+_RE_TITLE_ONLY = re.compile(
+    r"""[ \t]*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\((?:[^()\\]|\\.)*\))[ \t]*"""
+)
+
+
+def _blank_end(clean: str, tail: re.Match[str]) -> int:
+    """How far :func:`_blank_reference_definitions` may cut this definition.
+
+    To the end of the destination, plus a trailing title when the rest of
+    the line is exactly one. Anything else on the line is prose a reader
+    still parses, so it stays — that is the whole point of not simply
+    using ``tail.end()``.
+    """
+    dest_end = _definition_destination_end(clean, tail.start(1))
+    if dest_end is None:
+        return tail.end()
+    rest = clean[dest_end : tail.end()]
+    return tail.end() if _RE_TITLE_ONLY.fullmatch(rest) else dest_end
+
+
 def _iter_definition_matches(clean: str) -> Iterator[tuple[str, str, int, int]]:
     """Yield ``(label, target, start, end)`` for each ``[label]: target`` line.
 
     The label is read by :func:`_find_bracket_span` so an escaped ``]``
     does not close it (#1519); the rest keeps the shape of the pattern this
     replaced (``^\\s*\\[([^\\]]+)\\]:\\s*(.+)$``, multi-line), including the
-    non-empty label, the destination's freedom to sit on the next line, and
-    the greedy run to that line's end.
+    destination's freedom to sit on the next line and the greedy run to
+    that line's end — **except where §4.7 says the old pattern was wrong**.
+    Neither the destination nor the label may cross a blank line, and the
+    old pattern let both; a label must hold a non-whitespace character,
+    and ``[^\\]]+`` admitted ``[ ]``. The greedy tail is kept, because the
+    table has always been built from it, but *end* no longer follows it —
+    see :func:`_blank_end`.
 
     Args:
         clean: Body text with code removed and line endings normalised.
@@ -1519,8 +1618,13 @@ def _iter_definition_matches(clean: str) -> Iterator[tuple[str, str, int, int]]:
             # swallowed the blank line and the real definition with it, so
             # ``ar`` was never defined at all. Invisible until the shortcut
             # form (#1531) started resolving against this table.
+            #
+            # A blank line is one holding only spaces or tabs, not just
+            # ``\n\n``: testing for the literal pair let the same defect
+            # through on the whitespace-dirty spelling, which is the more
+            # common one in a hand-edited note.
             if label
-            and "\n\n" not in label
+            and _RE_BLANK_LINE.search(label) is None
             and clean[close_index + 1 : close_index + 2] == ":"
             else None
         )
@@ -1531,7 +1635,7 @@ def _iter_definition_matches(clean: str) -> Iterator[tuple[str, str, int, int]]:
             # the span can open a definition of its own.
             pos = bracket + 1
             continue
-        yield label, tail.group(1), opener.start(), tail.end()
+        yield label, tail.group(1), opener.start(), _blank_end(clean, tail)
         pos = tail.end()
 
 
@@ -1554,6 +1658,13 @@ def _blank_reference_definitions(region: str) -> str:
     region's line structure — which paragraph bounds and the definition
     scan both depend on — is exactly as it was.
 
+    The cut stops at the destination (and its title), not at the line's
+    end, because the definition scan's tail is deliberately greedy and so
+    over-matches: ``[TODO]: revisit [a][r] later`` is yielded as a
+    definition. Cutting the whole line would take the ``[a][r]`` link with
+    it — a row ``main`` stores and a CommonMark reader agrees with.
+    :func:`_blank_end` draws that line.
+
     Doing it this way rather than by testing each span in place is what
     makes it *right* instead of nearly right. A span-local test has to
     guess at what the definition scan already knows, and three successive
@@ -1565,6 +1676,36 @@ def _blank_reference_definitions(region: str) -> str:
     the ones collected.
     """
     spans = [(start, end) for _l, _t, start, end in _iter_definition_matches(region)]
+    if not spans:
+        return region
+    out = list(region)
+    for start, end in spans:
+        for index in range(start, end):
+            if out[index] != "\n":
+                out[index] = " "
+    return "".join(out)
+
+
+def _blank_wikilinks(region: str) -> str:
+    """Return *region* with every wikilink replaced by spaces.
+
+    ``[[a]]`` is a wikilink here, and its inner ``[a]`` is a bracket span
+    like any other, so the shortcut rung read it as a reference the moment
+    the rung existed: a vault using both forms grew a spurious row
+    wherever a wikilink target matched a definition label.
+
+    Blanked from the wikilink scan's **own answer** rather than tested for
+    by shape, for the reason :func:`_blank_reference_definitions` gives at
+    length — a span-local guess has to re-derive what another scan already
+    knows, and ``[[a]b][r]`` (where a reader *does* read ``[a]`` as a
+    shortcut) is exactly the input a shape test gets wrong. Length and
+    line endings are preserved, as there.
+    """
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    while (found := _find_wikilink(region, pos)) is not None:
+        pos, _target, _alias, start = found
+        spans.append((start, pos))
     if not spans:
         return region
     out = list(region)
@@ -1593,6 +1734,14 @@ def _collect_reference_definitions(clean: str) -> dict[str, str]:
     ref_defs: dict[str, str] = {}
     for label, target in _iter_reference_definitions(clean):
         ref_key = label.strip().lower()
+        if not ref_key:
+            # §4.7 requires a non-whitespace character in the label, and
+            # the old pattern's ``[^\]]+`` admitted ``[ ]``, keying it as
+            # ``""``. Another latent table entry nothing could reference
+            # until the shortcut rung arrived, at which point both ``[]``
+            # and ``[ ]`` resolved against it — the second being every
+            # unchecked task-list box in the vault.
+            continue
         if ref_key.startswith(_FOOTNOTE_LABEL_PREFIX):
             # Footnote definition: the body is prose, so storing it as a
             # target resolved whatever the footnote said as a vault path.
@@ -1629,16 +1778,29 @@ def _extract_reference_links(
     footnote's definition is prose and
     :func:`_collect_reference_definitions` keeps it out of the table
     (#1104), so its label resolves to nothing and the ladder declines it.
-    Both were live checks until the ladder subsumed them, and leaving
-    either behind would have been a second lookup free to normalise
-    differently from the first.
+    The footnote guard is only *half* subsumed, which self-review caught:
+    the ladder handles a footnote in the **second** span, because its
+    definition is prose and never enters the table, but ``[^a][r]`` has a
+    real label there and the ladder makes a link whose text is a footnote
+    reference. That half is still a live check below.
 
     What is decided here is only which resolved targets the index holds:
     external URLs, pure anchors and attachments (#1333) are skipped.
     """
     links: list[LinkInfo] = []
-    usable = _blank_reference_definitions(region)
+    usable = _blank_wikilinks(_blank_reference_definitions(region))
     for text, raw_target in _iter_reference_usages(usable, ref_defs):
+        if text.startswith(_FOOTNOTE_LABEL_PREFIX):
+            # #1104's *text*-side guard, which the ladder does not
+            # subsume. The label side it does: a footnote definition is
+            # prose, so `_collect_reference_definitions` keeps it out of
+            # the table and `[a][^b]` resolves to nothing. But `[^a][r]`
+            # has a real label in its second span, so the ladder makes a
+            # link whose text is a footnote reference. CommonMark agrees
+            # with the ladder here; GFM does not, and treating footnotes
+            # as prose rather than vault links is this project's
+            # deliberate departure (#1104), so it outlives the rewrite.
+            continue
         if _is_external_target(decode_markdown_destination(raw_target)):
             continue
         if is_anchor_destination(raw_target):
@@ -1661,7 +1823,7 @@ def _extract_reference_links(
     return links
 
 
-def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None] | None:
+def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None, int] | None:
     """Find the next ``[[target]]`` or ``[[target|alias]]`` at or after *pos*.
 
     Replaces ``\\[\\[([^\\]|\\n]+)(?:\\|([^\\]]+))?\\]\\]`` (#1343). That
@@ -1698,9 +1860,13 @@ def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None] | None:
         pos: Index to resume from.
 
     Returns:
-        ``(end, target, alias)`` with *end* the index after the closing
-        ``]]`` and *alias* ``None`` when the link carries none; ``None``
-        when the region holds no further wikilink.
+        ``(end, target, alias, start)`` with *end* the index after the
+        closing ``]]``, *alias* ``None`` when the link carries none, and
+        *start* the index of the first ``[``; ``None`` when the region
+        holds no further wikilink. *start* is returned rather than
+        re-derived because :func:`_blank_wikilinks` needs the span the
+        scan actually matched, not one inferred from its end — the
+        leftmost ``[[`` wins, so the two differ on ``[[[a]]``.
     """
     while (opener := _RE_WIKILINK_OPEN.search(region, pos)) is not None:
         start = opener.end()
@@ -1741,7 +1907,7 @@ def _find_wikilink(region: str, pos: int) -> tuple[int, str, str | None] | None:
         # this function exists to remove.
         pos = close + 1
         if region[close : close + 2] == "]]":
-            return close + 2, region[start:stop], alias
+            return close + 2, region[start:stop], alias, opener.start()
     return None
 
 
@@ -1765,7 +1931,7 @@ def _extract_wikilinks(
     links: list[LinkInfo] = []
     pos = 0
     while (found := _find_wikilink(region, pos)) is not None:
-        pos, target, alias_raw = found
+        pos, target, alias_raw, _start = found
         raw_path = target.strip()
         # Obsidian escapes the alias pipe as `\|` in table cells, so the target
         # keeps a trailing `\` (#731). Strip it BEFORE wikilink_raw_target is

@@ -34,13 +34,16 @@ is itself a label standing alone**. ``[r]: x.md`` matched no previous
 usage shape, so nothing had to exclude it; under the shortcut rung it
 matches immediately, and every definition in a vault would become a link
 to itself. A reader removes definitions before parsing inlines; this scan
-does the same test line-wise, which is why a label *inside* a line
-(``See [ar]: here``) still links.
+blanks out precisely the ones its own definition scan collects, which is
+why a label *inside* a line (``See [ar]: here``) still links. Testing each
+span in place was tried three times and was wrong three times, so the
+answer is reused rather than re-derived.
 """
 
 from __future__ import annotations
 
 import itertools
+import re
 import time
 
 import pytest
@@ -132,7 +135,8 @@ class TestDefinitionsAreNotUsages:
         assert extract_links("   [ar]: x.md\n", SRC) == []
 
     def test_a_label_inside_a_line_still_links(self) -> None:
-        # Why the test is line-aware rather than a bare check for ``:``.
+        # Why the definitions are blanked from the scan's own answer
+        # rather than tested for in place with a check for ``:``.
         # Here the colon is prose, and a reader links the label.
         # [observed: markdown-it-py 'commonmark' renders
         # ``See [ar]: here`` as ``<p>See <a href="x.md">ar</a>: here</p>``,
@@ -246,3 +250,276 @@ class TestAgreementWithACommonMarkReader:
                         # oracle's, not the scanner's.
                         text += "\n" if child.type == "softbreak" else child.content
             assert ours == expected, body
+
+
+# ---------------------------------------------------------------------------
+# What the shortcut rung must not claim
+# ---------------------------------------------------------------------------
+
+
+class TestTheOtherFormsKeepTheirSpans:
+    """Found by self-review, not by the corpora — see the class below.
+
+    The shortcut rung resolves on a span's *text alone*. Every earlier
+    reference form needed a second bracket span, which meant a span some
+    other family had already claimed could never also be a reference: a
+    ``(`` is not a bracket span. That safety was structural, and the
+    shortcut rung removed it without anything failing, because no
+    generated alphabet in this suite contained a ``(``.
+    """
+
+    def test_an_inline_link_is_not_also_a_shortcut(self) -> None:
+        # The one most likely to be hit: any inline link whose text
+        # happens to match a definition stored a second row, to a
+        # different target.
+        # [observed: markdown-it-py 'commonmark' renders ``[ar](y.md)``
+        # with ``[ar]`` defined as ``<p><a href="y.md">ar</a></p>`` — one
+        # link, 2026-09-18]
+        rows = [
+            (link.link_type, link.raw_target)
+            for link in extract_links("[ar](y.md)" + DEFS, SRC)
+        ]
+        assert rows == [("markdown", "y.md")]
+
+    def test_a_title_does_not_change_that(self) -> None:
+        rows = [
+            (link.link_type, link.raw_target)
+            for link in extract_links("[ar](y.md 'T')" + DEFS, SRC)
+        ]
+        assert rows == [("markdown", "y.md")]
+
+    def test_an_empty_destination_still_claims_the_span(self) -> None:
+        # ``[ar]()`` is a link to the empty string for a reader, so the
+        # span is spoken for even though there is nothing to index. The
+        # precedence test therefore asks whether the inline form *closed*,
+        # not whether it yielded a target — the two differ here and only
+        # here.
+        assert _links("[ar]()") == []
+
+    def test_a_wikilink_is_not_also_a_shortcut(self) -> None:
+        # ``[[a]]`` is a wikilink here, and its inner ``[a]`` is a bracket
+        # span like any other, so the rung read it as a reference too.
+        # [observed: markdown-it-py 'commonmark' renders ``[[a]]`` with
+        # ``[a]`` defined as ``<p>[<a href="y.md">a</a>]</p>`` — this
+        # project follows Obsidian here instead, a departure that predates
+        # the rung, 2026-09-18]
+        rows = [
+            (link.link_type, link.target_path)
+            for link in extract_links("[[note]]\n\n[note]: y.md\n", SRC)
+        ]
+        assert rows == [("wikilink", "note.md")]
+
+    def test_an_embed_is_not_either(self) -> None:
+        rows = [
+            (link.link_type, link.target_path)
+            for link in extract_links("![[note]]\n\n[note]: y.md\n", SRC)
+        ]
+        assert rows == [("wikilink", "note.md")]
+
+    def test_a_shortcut_beside_a_wikilink_still_resolves(self) -> None:
+        # The blanking must take the wikilink and nothing else.
+        rows = [
+            (link.link_type, link.target_path)
+            for link in extract_links("[[note]] and [ar]." + DEFS, SRC)
+        ]
+        assert sorted(rows) == [("reference", "x.md"), ("wikilink", "note.md")]
+
+    def test_a_bracket_run_that_is_no_wikilink_keeps_its_reference(self) -> None:
+        # ``[[a]b][ar]`` opens with ``[[`` but never closes ``]]``, so the
+        # wikilink scan claims nothing and the full form stands. This is
+        # the input a shape test for "inside a ``[[…]]``" gets wrong, and
+        # the reason the blanking reuses the scan's own answer.
+        # [observed: markdown-it-py 'commonmark' renders ``[[a]b][ar]`` as
+        # ``<p><a href="x.md">[a]b</a></p>``, 2026-09-18]
+        assert _links("[[a]b][ar]") == [("[a]b", "x.md")]
+
+    def test_an_unclosed_paren_is_still_a_shortcut(self) -> None:
+        # And the mirror, which is why the test cannot be a check for a
+        # literal ``(``: nothing closes, so the inline form never claimed
+        # the span.
+        # [observed: markdown-it-py 'commonmark' renders ``[ar](unclosed``
+        # as ``<p><a href="x.md">ar</a>(unclosed</p>``, 2026-09-18]
+        assert _links("[ar](unclosed") == [("ar", "x.md")]
+
+
+class TestADefinitionOnlyHidesItsOwnDestination:
+    """The greedy definition tail over-matches, so the cut has to be short.
+
+    ``_iter_definition_matches`` reads the destination greedily to the end
+    of the line, which was harmless while nothing consumed the span
+    bounds. Blanking consumes them, so a line the scan *thinks* is a
+    definition took its links with it.
+    """
+
+    def test_prose_after_a_false_definition_survives(self) -> None:
+        # ``[TODO]: revisit ... later`` is not a definition for a reader:
+        # ``revisit`` is the destination and what follows is not a valid
+        # title. The row here is one ``main`` stores too.
+        # [observed: markdown-it-py 'commonmark' renders
+        # ``[TODO]: revisit [a][ar] later`` as
+        # ``<p>[TODO]: revisit <a href="x.md">a</a> later</p>``, 2026-09-18]
+        assert _links("[TODO]: revisit [a][ar] later") == [("a", "x.md")]
+
+    def test_prose_on_a_definitions_second_line_survives(self) -> None:
+        # Same defect by the other route: the destination may sit on the
+        # following line, so the greedy tail swallowed that line instead.
+        assert _links("[zz]:\nSee [ar] here") == [("ar", "x.md")]
+
+    def test_a_real_definition_is_still_hidden_whole(self) -> None:
+        assert extract_links("[ar]: x.md\n", SRC) == []
+
+    def test_a_title_is_hidden_with_its_destination(self) -> None:
+        # Otherwise a bracket *inside* a title leaks out as a usage. The
+        # cut runs past the destination only when what follows it is
+        # exactly a title, never when it is prose.
+        assert extract_links('[zz]: y.md "See [ar]"' + DEFS, SRC) == []
+
+    def test_a_pointy_destination_is_hidden_whole(self) -> None:
+        # ``<a b.md>`` holds a space, so "the destination ends at the
+        # first whitespace" is wrong for the pointy form.
+        assert _links("[zz]: <a b.md>\n\nSee [ar].") == [("ar", "x.md")]
+
+
+class TestLabelsThatDefineNothing:
+    def test_a_whitespace_only_label_defines_nothing(self) -> None:
+        # §4.7 wants a non-whitespace character in the label. The old
+        # pattern's ``[^\]]+`` admitted ``[ ]`` and keyed it ``""``, a
+        # third latent table entry of exactly the kind this PR set out to
+        # close — and the one that would have made ``[]`` a link.
+        assert extract_links("[ ]: x.md\n\nA [] here and [ ] too.\n", SRC) == []
+
+    def test_an_unchecked_task_box_is_not_a_link(self) -> None:
+        # Why that entry mattered rather than being a curiosity: ``[ ]``
+        # is every unchecked box in the vault.
+        assert extract_links("- [ ] a task\n- [x] done\n\n[ ]: x.md\n", SRC) == []
+
+    def test_a_blank_line_holding_spaces_still_bounds_a_label(self) -> None:
+        # A blank line is one holding only spaces or tabs, so testing for
+        # a literal ``\n\n`` let the label-swallowing defect through on
+        # the whitespace-dirty spelling — the likelier one in a
+        # hand-edited note.
+        assert _links("[ar]\n[\n   \n", "\n[ar]: x.md\n") == [("ar", "x.md")]
+
+
+class TestFootnotesStayProse:
+    def test_a_footnote_reference_is_not_a_links_text(self) -> None:
+        # #1104's *text*-side guard. The ladder subsumes the label side —
+        # a footnote definition is prose, so it never enters the table —
+        # but ``[^a][r]`` has a real label in its second span, and the
+        # ladder makes a link whose text is a footnote reference. Plain
+        # CommonMark agrees with the ladder; GFM reads ``[^a]`` as a
+        # footnote, and following GFM here is this project's deliberate
+        # departure.
+        assert extract_links("See [^a][ar] here." + DEFS, SRC) == []
+
+
+class TestAgreementWhereTheOtherFormsMeet:
+    r"""The corpus that would have caught the class above.
+
+    Every generated alphabet in this suite was built from the characters
+    the form under test needed. None contained a ``(``, so no property
+    here could see the shortcut rung colliding with the inline family —
+    the defect was found by reading, which is the weaker instrument. This
+    corpus adds the parenthesis and the space, and compares **both**
+    families' rows against a CommonMark reader at once.
+
+    Rows are compared as a sorted multiset rather than in order, because
+    ``extract_links`` returns them grouped by kind (``[*inline,
+    *reference, *wiki]``) and a reader returns them in document order. The
+    reference-only corpora in ``tests/test_links_reference_openers.py``
+    still check order, so nothing is lost.
+
+    Two classes are excluded, both places where **markdown-it departs
+    from the spec** rather than places we are unsure. Each is pinned by a
+    named test below, so excluding it from the sweep hides nothing:
+
+    * a body ending in ``(`` — markdown-it abandons the whole link when
+      only whitespace follows the ``(`` to the end of the inline block,
+      where §6.3 says a failed inline attempt falls back to a reference;
+    * a whitespace-only second span ``[ ]`` — §4.7 wants a non-whitespace
+      character in a label, so it is no label and the ladder falls
+      through; markdown-it normalises it to ``""``, misses, and stops.
+
+    Empty destinations are dropped from the reader's side: ``[a]()`` is a
+    link to the empty string, which is not a vault path and is nothing to
+    index. Destinations are compared percent-decoded, since ``raw_target``
+    is the destination *as written* by contract.
+    """
+
+    ALPHABET = "[]()a "
+    DEFS = "\n\n[a]: x.md\n"
+
+    @staticmethod
+    def _ours(body: str) -> list[tuple[str, str]]:
+        return sorted(
+            (link.link_text, link.raw_target)
+            for link in extract_links(
+                body + TestAgreementWhereTheOtherFormsMeet.DEFS, SRC
+            )
+            if link.link_type in ("markdown", "reference")
+        )
+
+    @staticmethod
+    def _theirs(markdown_it: object, body: str) -> list[tuple[str, str]]:
+        from urllib.parse import unquote
+
+        out: list[tuple[str, str]] = []
+
+        def walk(children: list) -> None:  # type: ignore[type-arg]
+            href: str | None = None
+            text = ""
+            for child in children:
+                if child.type == "link_open":
+                    href, text = child.attrGet("href"), ""
+                elif child.type == "link_close" and href is not None:
+                    out.append((text, unquote(href)))
+                    href = None
+                elif child.type == "image":
+                    # An image description may contain a link (Ex. 575).
+                    walk(child.children or [])
+                elif href is not None:
+                    text += "\n" if child.type == "softbreak" else child.content
+
+        for token in markdown_it.parse(  # type: ignore[attr-defined]
+            body + TestAgreementWhereTheOtherFormsMeet.DEFS
+        ):
+            if token.children:
+                walk(token.children)
+        return sorted(pair for pair in out if pair[1])
+
+    @pytest.mark.parametrize("length", range(1, 7), ids=lambda n: f"len{n}")
+    def test_both_families_agree_over_a_parenthesis_alphabet(self, length: int) -> None:
+        markdown_it = pytest.importorskip("markdown_it").MarkdownIt("commonmark")
+        trailing_open = re.compile(r"\([ \t]*$")
+        empty_label = re.compile(r"\[[ \t]+\]")
+        for chars in itertools.product(self.ALPHABET, repeat=length):
+            body = "".join(chars)
+            if trailing_open.search(body) or empty_label.search(body):
+                continue
+            rows = extract_links(body + self.DEFS, SRC)
+            if any(link.link_type == "wikilink" for link in rows):
+                # ``[[a]]`` is a wikilink here and two CommonMark
+                # shortcuts to a reader — a long-standing deliberate
+                # departure, and the same skip the other two corpora
+                # carry. Worth spelling out why it is *needed* now: until
+                # the wikilink spans were blanked out of the reference
+                # scan, such an input produced a reference row too, and
+                # that spurious row happened to match the reader. The
+                # comparison passed because two wrongs lined up.
+                continue
+            assert self._ours(body) == self._theirs(markdown_it, body), body
+
+    def test_a_body_ending_in_an_open_paren_is_a_shortcut(self) -> None:
+        # The first excluded class, pinned. §6.3 falls back when the
+        # inline attempt fails, and nothing closes this one.
+        # [observed: markdown-it-py 'commonmark' renders ``[a](`` with
+        # ``[a]`` defined as ``<p>[a](</p>`` — no link, and no fallback,
+        # which is the departure, 2026-09-18]
+        assert _links("[ar](") == [("ar", "x.md")]
+
+    def test_a_whitespace_only_second_span_falls_through(self) -> None:
+        # The second. ``[ ]`` holds no non-whitespace character, so §4.7
+        # says it is not a label at all and the ladder reaches the text.
+        # [observed: markdown-it-py 'commonmark' renders ``[ar][ ]`` as
+        # ``<p>[ar][ ]</p>``, 2026-09-18]
+        assert _links("[ar][ ]") == [("ar", "x.md")]

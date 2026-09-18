@@ -737,7 +737,8 @@ def iter_bracket_links(
     Two rules travel with it. An opener preceded by an unescaped ``!`` is an
     image, so its own span yields nothing — but a link *inside* an image's
     description still does, since it closes first (§6.4, Ex. 575). And once
-    a link is found, every opener still on the stack is deactivated, because
+    a link is found, every *link* opener still on the stack is deactivated,
+    while an image opener stays live (Ex. 575), because
     links may not contain links (Ex. 518).
 
     The walk steps between ``[``, ``]`` and ``\`` rather than over every
@@ -824,6 +825,35 @@ def iter_bracket_links(
         index = end
 
 
+def inline_link_follows(region: str, close_index: int) -> bool:
+    """Whether a ``(…)`` inline destination closes just after *close_index*.
+
+    The *reference* family's precedence test. CommonMark tries the inline
+    destination before any reference rung (§6.3), so a span the inline
+    family owns is not a reference at all — and while a reference needed a
+    second bracket span, that was free, because a ``(`` can never be one.
+    The shortcut rung resolves on the text alone, so it is no longer free.
+
+    Deliberately **not** :func:`_follow_inline_destination`, though the two
+    look like the same question. That one answers "is there a destination
+    to store", and returns ``None`` for ``[a]()`` because there is nothing
+    to index. This one answers "did the inline form claim this span", and
+    ``[a]()`` is a link to the empty string for a reader, so the span is
+    claimed and must not resolve as a shortcut. Equally it is not a test
+    for a literal ``(``: ``[a](unclosed`` never closes, so the inline form
+    did not claim it and the shortcut rung is right to have it.
+    """
+    if region[close_index + 1 : close_index + 2] != "(":
+        return False
+    index = close_index + 2
+    while index < len(region) and region[index] in " \t":
+        index += 1
+    if index < len(region) and region[index] == "<":
+        end = _scan_pointy_destination(region, index)
+        return end is not None and _scan_plain_destination(region, end) is not None
+    return _scan_plain_destination(region, index) is not None
+
+
 def _follow_inline_destination(
     region: str, _open_index: int, close_index: int
 ) -> tuple[tuple[str, int], int] | None:
@@ -882,7 +912,8 @@ def iter_inline_links(region: str) -> Iterator[InlineLink]:
     Two rules travel with it. An opener preceded by an unescaped ``!`` is an
     image, so its own span yields no link — but a link *inside* an image's
     description still does, since it closes first (§6.4, Ex. 575). And once
-    a link is found, every opener still on the stack is deactivated, because
+    a link is found, every *link* opener still on the stack is deactivated,
+    while an image opener stays live (Ex. 575), because
     links may not contain links (Ex. 518): in ``[a [b](y) c](x)`` only ``b``
     links.
 

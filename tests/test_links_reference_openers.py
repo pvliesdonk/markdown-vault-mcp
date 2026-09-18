@@ -29,23 +29,28 @@ with a CommonMark reader rather than with the matcher this replaced. The
 "nothing else moved" claim belongs to a change that moves nothing; this one
 moves rows on purpose.
 
-**What this does not claim.** The shortcut form (``[label]`` with no second
-span) is still not extracted, and it is the whole of the remaining
-disagreement with a CommonMark reader. It is out of scope on evidence, not
-by preference: CommonMark falls back from the full form to the shortcut one
-when the label lookup *fails*, so a scan that supports it has to consult the
-definition table, which this walk does not see. Bolting a shortcut shape
-test onto the walk leaves 774 inputs still disagreeing, measured on the
-``WIDE_DEFS`` corpus below, where the proper ladder would leave none.
+**What this claimed, and what closed it.** When this module was written
+the shortcut form (``[label]`` with no second span) was not extracted, and
+it was the whole of the remaining disagreement with a CommonMark reader —
+774 inputs of the ``WIDE_DEFS`` corpus below, and not a shape test away,
+since a reader falls back from the full form to the shortcut one when the
+label lookup *fails* and this walk could not see the definition table.
+#1531 gave the walk that table, so the properties below now assert
+**equality** with a reader rather than containment plus a recorded
+shortfall.
 
-That gap is not merely subtractive, which is worth stating because it is
-easy to assume otherwise. A shortcut link *deactivates the openers enclosing
-it*, exactly as any other link does, so not making one leaves an opener
-active that a reader has retired: in ``[[a]b][r]`` a reader reads ``[a]`` as
-a shortcut and then ``[r]`` as another, where we read the whole thing as one
-full reference with the text ``[a]b``. So the residue is not "rows we miss"
-but "inputs a shortcut would have changed", and the property below is scoped
-by what the *input* could do, never by what we happened to output.
+The gap was never merely subtractive, which is worth keeping because it is
+easy to assume otherwise. A shortcut link *deactivates the openers
+enclosing it*, exactly as any other link does, so not making one left an
+opener active that a reader had retired: in ``[[a]b][r]`` a reader reads
+``[a]`` as a shortcut and then ``[r]`` as another, where this scanner read
+the whole thing as one full reference with the text ``[a]b``. That is why
+closing the gap moved rows the shortcut form does not itself appear in.
+
+**What this module still does not reach.** Its alphabet is ``[]!ar`` — no
+``(``, no space, no ``^``. Those characters are where the shortcut rung
+meets the *other* families, and the collisions there are covered by
+``tests/test_links_shortcut_references.py`` instead.
 """
 
 from __future__ import annotations
@@ -62,9 +67,10 @@ SRC = "source.md"
 
 #: Appended to every generated body. One label, and a two-character one,
 #: so that the generator's single-letter fillers cannot spell it by
-#: accident: a bare ``[a]`` is then not a link on either side, and the
-#: shortcut form — the one gap this module does not close — stays rare
-#: enough that excluding it leaves most of the corpus intact.
+#: accident: a bare ``[a]`` is then not a link on either side. That was
+#: chosen to keep the shortcut form rare while it was unimplemented; since
+#: #1531 nothing is excluded for it, and the narrow set simply keeps this
+#: corpus focused on the opener rule rather than on the ladder.
 LABEL = "ar"
 DEFS = f"\n\n[{LABEL}]: x.md\n"
 
@@ -74,12 +80,14 @@ DEFS = f"\n\n[{LABEL}]: x.md\n"
 #: needs nine characters and the generator stops at seven, so only four
 #: inputs in 97,655 actually exercise the fix. Single-letter labels make
 #: those shapes fit, at the cost of firing the shortcut form constantly —
-#: which is why the containment property above uses the narrow set and
-#: this one is pinned by count instead.
+#: which is why, while the form was unimplemented, the narrow set carried
+#: the containment property and this one was pinned by count. Since #1531
+#: both assert equality and the distinction is historical.
 #:
 #: The figures in ``docs/design/design.md`` and the
-#: ``INDEX_SEMANTICS_VERSION`` note come from *this* corpus, and are
-#: pinned here so the documented evidence is what CI computes.
+#: ``INDEX_SEMANTICS_VERSION`` note come from *this* corpus. Only the
+#: *after* column is what CI computes: the before column needs the
+#: pre-change code and is a recorded measurement, not an assertion.
 WIDE_DEFS = "\n\n[r]: x.md\n[a]: x.md\n"
 
 
@@ -123,7 +131,11 @@ def _collect(children, found: list[tuple[str, str]]) -> None:
             if href is not None:
                 text += child.attrGet("alt") or ""
         elif href is not None:
-            text += child.content
+            # A softbreak's ``content`` is empty, so summing it silently
+            # drops the line ending. This alphabet holds no newline, but
+            # an oracle that is wrong only for inputs nobody generates
+            # yet is a trap for whoever widens it.
+            text += "\n" if child.type == "softbreak" else child.content
 
 
 def _oracle(markdown_it, body: str, defs: str = DEFS) -> list[tuple[str, str]]:
@@ -133,12 +145,6 @@ def _oracle(markdown_it, body: str, defs: str = DEFS) -> list[tuple[str, str]]:
         if token.children:
             _collect(token.children, found)
     return [(text, href) for text, href in found if href == "x.md"]
-
-
-def _is_subsequence(ours: list[tuple[str, str]], theirs: list[tuple[str, str]]) -> bool:
-    """Every row of *ours* is one of *theirs*, in order."""
-    remaining = iter(theirs)
-    return all(row in remaining for row in ours)
 
 
 # ---------------------------------------------------------------------------

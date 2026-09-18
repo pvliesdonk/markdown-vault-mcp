@@ -182,7 +182,15 @@ class TestWhatThisModuleOnceDidNotClaim:
 
 
 class TestTheScansAgreeWithThePatternsTheyReplaced:
-    """Backslash-free input indexes exactly as it did before."""
+    """Backslash-free *definitions* parse as they did before.
+
+    Narrowed twice since it was written, and the class name now overstates
+    it. The usage half of the property is gone — the pattern it compared
+    against cannot express the shortcut form — and the definition half
+    excludes inputs crossing a blank line, where §4.7 says the old pattern
+    was the wrong one. The whole-note case below expects a shortcut row
+    that did not exist before, which is the change, not a violation of it.
+    """
 
     @pytest.mark.parametrize("length", range(7), ids=lambda n: f"len{n}")
     def test_no_backslash_free_definition_changed_meaning(self, length: int) -> None:

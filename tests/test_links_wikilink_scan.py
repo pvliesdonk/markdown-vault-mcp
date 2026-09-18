@@ -45,7 +45,11 @@ def _scan(text: str) -> list[tuple[int, str, str | None]]:
     pos = 0
     while (link := _find_wikilink(text, pos)) is not None:
         pos = link[0]
-        found.append(link)
+        # The scan also hands back where the span began, which
+        # ``_blank_wikilinks`` needs and the superseded pattern never
+        # reported; the comparison below is against that pattern, so it
+        # stops at the three elements both produce.
+        found.append(link[:3])
     return found
 
 
