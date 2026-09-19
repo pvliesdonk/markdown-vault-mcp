@@ -120,7 +120,7 @@ GitLab has no handshake event. Its **Test** button sends a real `Push Hook`, so 
 - `ping`, GitHub's handshake delivery, answers `pong`; every other event returns 200 and does nothing.
 - A delivery whose pull did not apply returns 503, so the host retries it instead of marking it delivered. A pull that keeps failing, such as an unresolved conflict, exhausts the retries and waits for the next periodic tick. Divergent history is not a failure: it flows through the Syncthing-style sibling resolution described under [`git_sync`](#manual-sync-git_sync-tool) below.
 - A delivery to a server with no managed remote returns 200, not 503. No remote exists to pull from and a retry cannot change that, so the delivery is recorded rather than retried. Each one logs a warning naming the problem, and the server logs the same warning once at startup.
-- A delivery arriving while the initial index build is still running is handled, not dropped. The pull is a pure git operation and runs regardless of index state; only the reindex is skipped, and the boot reconciliation pass that follows the build picks the pulled changes up.
+- A delivery arriving while the initial index build is still running is handled, not dropped. The pull is a pure git operation and runs regardless of index state; only the reindex is skipped, and the boot reconciliation pass that follows the build picks the pulled changes up when `MARKDOWN_VAULT_MCP_BOOT_REINDEX` is left at its default. With it off, that delivery's changes wait for the next push that moves HEAD, or a manual reindex.
 
 Managed mode only
 
