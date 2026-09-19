@@ -283,3 +283,52 @@ class TestConcurrentWarmBoots:
             assert status["last_reindex_error"] is None
             assert status["error"] is None
             assert status["documents_indexed"] == 4
+
+
+class TestBootReindexDisabled:
+    """MARKDOWN_VAULT_MCP_BOOT_REINDEX=false skips offline reconciliation (#1535)."""
+
+    def test_offline_add_not_reconciled_until_manual_reindex(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from markdown_vault_mcp.server import make_server
+
+        vault = _make_vault_dir(tmp_path, n_docs=3)
+        _prebuild(vault, tmp_path)
+
+        # An offline change while no server runs — the exact case the boot
+        # reindex exists to catch, and the one this switch opts out of.
+        (vault / "offline_added.md").write_text(
+            "# Offline\n\nWritten while the server was down.\n", encoding="utf-8"
+        )
+
+        _set_env(monkeypatch, vault, tmp_path)
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BOOT_REINDEX", "false")
+        server = make_server()
+
+        async def _run() -> tuple[dict[str, Any], list[str], dict[str, Any], list[str]]:
+            async with Client(server) as client:
+                await wait_for_mcp_writer_drain(client)
+                before_status = await client.call_tool("get_index_status", {})
+                before = await client.call_tool("search", {"query": "Offline"})
+
+                # The documented recovery path: reindex out of band.
+                await client.call_tool("reindex", {})
+                await wait_for_mcp_writer_drain(client)
+                after_status = await client.call_tool("get_index_status", {})
+                after = await client.call_tool("search", {"query": "Offline"})
+                return (
+                    before_status.structured_content or {},
+                    [r["path"] for r in _parse_tool_data(before)],
+                    after_status.structured_content or {},
+                    [r["path"] for r in _parse_tool_data(after)],
+                )
+
+        before_status, before_paths, after_status, after_paths = asyncio.run(_run())
+
+        # Boot left the prebuilt 3 alone: the offline addition is invisible.
+        assert before_status["documents_indexed"] == 3
+        assert "offline_added.md" not in before_paths
+        # And the reindex tool recovers it, so the switch is opt-out, not a trap.
+        assert after_status["documents_indexed"] == 4
+        assert "offline_added.md" in after_paths
