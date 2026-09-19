@@ -23,3 +23,4 @@ follow OKF v0.2 (`generated`, `verified`, `stale_after`).
 - [Authenticated subjects and human attribution](/authenticated-subjects.md): bearer client identifiers, token claims, and the limits of OAuth identity for OKF provenance. Read before changing `_identity.py`.
 
 - [Python Future completion and cancellation](/python-futures.md): result publication, callback ordering, cancellation and executor lock ownership. Read before changing the index build lifecycle or writer cancellation.
+- [SQLite FTS5 delete cost and shadow-table architecture](/sqlite-fts5.md): why a content-carrying FTS5 table full-scans on non-rowid deletes (#1535), rowid vs. ordinary-column query plans, the `'delete'` special command's external-content-only restriction. Read before touching `_delete_document`, `_insert_sections`, or any `notes_fts` DELETE/INSERT in `fts_index.py`.

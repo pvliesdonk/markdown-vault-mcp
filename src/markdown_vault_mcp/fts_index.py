@@ -18,6 +18,12 @@ Links pointing at a tombstoned file intentionally stay *broken* (and
 vault-wide wikilinks never resolve to a tombstone): the file contributes no
 readable content, so pretending its link target exists would only hide the
 problem the tombstone records.
+
+Delete cost: ``notes_fts`` is content-carrying FTS5, so an ordinary-column
+filter has no index and forces a full scan of its shadow content table.
+``_delete_document`` avoids this via the ``notes_fts_rowid_map`` bridge
+table instead (#1535). See ``docs/design/reference/sqlite-fts5.md`` before
+changing any ``notes_fts`` INSERT/DELETE statement.
 """
 
 from __future__ import annotations

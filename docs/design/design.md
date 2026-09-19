@@ -2145,6 +2145,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
     summary,
     tokenize='porter unicode61'
 );
+
+-- Bridge table: maps each notes_fts row (one per chunk) back to its
+-- document, so deletes go through an indexed rowid lookup instead of a
+-- full scan of the content-carrying notes_fts shadow table (#1535).
+CREATE TABLE IF NOT EXISTS notes_fts_rowid_map (
+    document_id INTEGER NOT NULL,
+    fts_rowid INTEGER NOT NULL,
+    PRIMARY KEY (document_id, fts_rowid),
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+) WITHOUT ROWID;
 ```
 
 ### Link Extraction
@@ -5464,3 +5474,9 @@ Later decisions (2026-08-18, #1082/#1086):
 |-|-|-|-|
 | 24 | Release mechanics — how a release is cut | The knope release-PR flow replaces python-semantic-release: `Release Prepare` computes the version into a reviewed release PR, merging the PR tags and publishes, promotion is a plain stable prepare guarded by the same-source promotion guard, and a bookkeeping port PR replaces the mandatory merge-back. Decision 23's channel model (trunk-first, short-lived `release/X.Y`, rolling `edge`) survives intact; superseded within it are the semantic-release branch groups, the `finalize`/`force` inputs, the merge-back, and the rc-only-from-branch rule (an rc may continue a reachable series from quiescent trunk) | The version becomes a reviewed decision instead of a publish-time computation, and the "already released forever" failure class dies with the reachability requirement. Authoritative pair: [`release-vision.md`](release-vision.md) (target design) and [`release-migration.md`](release-migration.md) (decisions M1–M6 and the migration record); the implemented behaviour is summarised under [Release channels](#release-channels) above |
 | 25 | OKF ownership — how an operator declares what the server may write into a shared bundle | Three independent boolean switches, each default off and none implying another (`OKF_WRITE` stamps own writes; proposed `OKF_MAINTAIN` owns `index.md`/`log.md`; proposed `OKF_RECONCILE` repairs external notes), not a single ladder | The three writes collide with different things and an operator may want any combination (a git-hook-stamped vault still wants the listing maintained); a ladder forbids valid combinations and forces an enum with aliases; a default that follows another switch is the ladder's mistake in a smaller form. How shipped `OKF_WRITE=true` deployments get there is the epic's plan, not the design (`docs/design/okf.md` §6.0, 2026-09-09) |
+
+Later decisions (2026-09-19, #1535):
+
+| # | Topic | Decision | Rationale |
+|-|-|-|-|
+| 26 | `notes_fts` delete cost | A small ordinary `notes_fts_rowid_map` bridge table (`document_id`, `fts_rowid`, `WITHOUT ROWID`), populated on insert and consulted by `_delete_document` to delete by `rowid` instead of `WHERE path = ?` | `notes_fts` is content-carrying FTS5 (no index on ordinary columns — every non-`MATCH`, non-`rowid` filter forces a full scan of the shadow content table), so every upsert/delete paid one full scan; O(N × table_size) for a batch of N changed notes. **Rejected:** the reporter's `rowid = documents.id` suggestion — `notes_fts` holds one row per chunk, not one per document, so a document's rows cannot share a single rowid. **Rejected:** converting to an external-content table keyed off `sections.id` — the migration would need to recompute the `summary` column in Python per document rather than a pure-SQL join, and `notes_fts`'s column set (`path`/`title`/`folder`/`summary`) doesn't map onto `sections`'s columns without denormalizing further. See docs/design/reference/sqlite-fts5.md. |
