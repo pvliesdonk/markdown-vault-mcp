@@ -317,6 +317,19 @@ class TestTheOtherFormsKeepTheirSpans:
         # see the corpus class below for why no sweep reaches it.
         assert _links("[ar](<>a)") == [("ar", "x.md")]
 
+    def test_an_unterminated_pointy_destination_claims_nothing(self) -> None:
+        # No closing ``>``, so nothing closed and the shortcut rung is
+        # right to take the span — the pointy mirror of ``[ar](unclosed``.
+        # [observed: markdown-it-py 'commonmark' renders
+        # ``[ar](<x.md and more`` with ``[ar]`` defined as
+        # ``<p><a href="x.md">ar</a>(&lt;x.md and more</p>``, 2026-09-19]
+        assert _links("[ar](<x.md and more") == [("ar", "x.md")]
+
+    def test_a_closed_pointy_destination_with_no_paren_claims_nothing(self) -> None:
+        # The ``>`` closed but the ``)`` never did. Same answer, different
+        # arm of the grammar, and the one the corpus cannot reach either.
+        assert _links("[ar](<x.md> still open") == [("ar", "x.md")]
+
     def test_an_empty_pointy_destination_claims_the_span(self) -> None:
         # ``<>`` closes an inline link but names nothing: a span spoken
         # for with nothing to index, exactly like ``()``. The shared
