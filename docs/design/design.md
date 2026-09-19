@@ -225,6 +225,16 @@ at open: dropped, recreated with six columns, and repopulated in pure SQL
 from `sections`/`documents` (no filesystem rescan; the `meta` table — and
 with it the warm-restart sentinel — survives).
 
+A second table, `notes_fts_rowid_map`, bridges each `notes_fts` chunk row's
+`rowid` back to its owning `document_id` so deletes can go through an
+indexed rowid lookup instead of an ordinary-column scan of the
+content-carrying FTS5 table (see the [Database Schema](#database-schema)
+DDL, and decision 26 below for why a bridge table rather than a direct
+`sections.fts_rowid` column). A second open-time migration backfills this
+map, once, for a database created before it existed — the same
+`sections`/`documents`/`notes_fts` join, run in pure SQL after the
+summary-column migration above.
+
 Domain-specific filtering (by cluster, topic, tag) happens via the
 `document_tags` table, not FTS5 columns.
 
@@ -5479,4 +5489,4 @@ Later decisions (2026-09-19, #1535):
 
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
-| 26 | `notes_fts` delete cost | A small ordinary `notes_fts_rowid_map` bridge table (`document_id`, `fts_rowid`, `WITHOUT ROWID`), populated on insert and consulted by `_delete_document` to delete by `rowid` instead of `WHERE path = ?` | `notes_fts` is content-carrying FTS5 (no index on ordinary columns — every non-`MATCH`, non-`rowid` filter forces a full scan of the shadow content table), so every upsert/delete paid one full scan; O(N × table_size) for a batch of N changed notes. **Rejected:** the reporter's `rowid = documents.id` suggestion — `notes_fts` holds one row per chunk, not one per document, so a document's rows cannot share a single rowid. **Rejected:** converting to an external-content table keyed off `sections.id` — the migration would need to recompute the `summary` column in Python per document rather than a pure-SQL join, and `notes_fts`'s column set (`path`/`title`/`folder`/`summary`) doesn't map onto `sections`'s columns without denormalizing further. See docs/design/reference/sqlite-fts5.md. |
+| 26 | `notes_fts` delete cost | A small ordinary `notes_fts_rowid_map` bridge table (`document_id`, `fts_rowid`, `WITHOUT ROWID`), populated on insert and consulted by `_delete_document` to delete by `rowid` instead of `WHERE path = ?` | `notes_fts` is content-carrying FTS5 (no index on ordinary columns — every non-`MATCH`, non-`rowid` filter forces a full scan of the shadow content table), so every upsert/delete paid one full scan; O(N × table_size) for a batch of N changed notes. **Rejected:** the reporter's `rowid = documents.id` suggestion — `notes_fts` holds one row per chunk, not one per document, so a document's rows cannot share a single rowid. **Rejected:** converting to an external-content table keyed off `sections.id` — the migration would need to recompute the `summary` column in Python per document rather than a pure-SQL join, and `notes_fts`'s column set (`path`/`title`/`folder`/`summary`) doesn't map onto `sections`'s columns without denormalizing further. **Rejected:** a `fts_rowid` column added directly to `sections` (1:1 with `notes_fts` rows — same loop in `_insert_sections`), which would need no new table — backfilling `sections.fts_rowid` on a legacy database would require assuming a positional correspondence between `sections` rows and `notes_fts` rows that nothing in the schema guarantees, whereas the bridge table's backfill is a path join that is correct regardless of row order. See docs/design/reference/sqlite-fts5.md. |

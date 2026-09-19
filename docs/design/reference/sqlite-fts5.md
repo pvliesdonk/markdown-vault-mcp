@@ -2,7 +2,7 @@
 type: Reference
 title: SQLite FTS5 delete cost and shadow-table architecture
 description: Why a content-carrying FTS5 table full-scans on non-rowid deletes, and what rowid-based access avoids.
-subject_version: "SQLite FTS5 documentation, sqlite.org (unversioned page; current as read 2026-09-19)"
+subject_version: "SQLite FTS5 documentation, sqlite.org (unversioned page; current as read 2026-09-19); observed on SQLite 3.53.4"
 valid_for: "SQLite FTS5 as shipped in Python's sqlite3 stdlib module"
 generated:
   by: process:researching-references
@@ -56,11 +56,16 @@ where they bear on delete cost.
   ordinary column: querying `notes_fts` by `path` with no `MATCH` plans as
   a full virtual-table scan, confirmed live against this project's schema —
   `EXPLAIN QUERY PLAN SELECT rowid FROM notes_fts WHERE path = ?` returns
-  `SCAN notes_fts VIRTUAL TABLE INDEX 0:`, while
-  `... WHERE rowid IN (...)` does not. FTS5's own documentation does not
-  state this outright — §4.4.3's `content_rowid` join implies rowid access
-  is the fast path, but the page never contrasts it with ordinary-column
-  filters. [observed: EXPLAIN QUERY PLAN against notes_fts, reproduced in
+  `SCAN notes_fts VIRTUAL TABLE INDEX 0:` (bare — no idxStr, no constraint
+  accepted), while `... WHERE rowid IN (...)` returns
+  `SCAN notes_fts VIRTUAL TABLE INDEX 0:=` (the `=` idxStr signals FTS5
+  accepted a rowid-equality constraint). The `:=` suffix — not the absence
+  of the `SCAN ... INDEX 0:` prefix, which is always present for a virtual
+  table — is what the regression test actually keys on. FTS5's own
+  documentation does not state this outright — §4.4.3's `content_rowid`
+  join implies rowid access is the fast path, but the page never contrasts
+  it with ordinary-column filters. [observed: EXPLAIN QUERY PLAN against
+  notes_fts on SQLite 3.53.4, reproduced in
   tests/test_fts_index.py::TestDelete::test_delete_does_not_full_scan_notes_fts]
   [pins: tests/test_fts_index.py::TestDelete::test_delete_does_not_full_scan_notes_fts]
 

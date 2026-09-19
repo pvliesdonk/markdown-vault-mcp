@@ -1641,6 +1641,17 @@ class TestFtsRowidMapMigration:
         deleted = idx.delete_by_path("a.md")
         assert deleted == 1
         assert idx._conn().execute("SELECT COUNT(*) FROM notes_fts").fetchone()[0] == 0
+
+        # Migration-assigned and insert-path-assigned rowids interoperate:
+        # a document inserted after the backfill is bridged and deleted the
+        # same way as the migrated ones above, on the same now-migrated index.
+        idx.upsert_note(make_note("new-after-migration.md"))
+        assert idx.delete_by_path("new-after-migration.md") == 1
+        conn = idx._conn()
+        assert conn.execute("SELECT COUNT(*) FROM notes_fts").fetchone()[0] == 0
+        assert (
+            conn.execute("SELECT COUNT(*) FROM notes_fts_rowid_map").fetchone()[0] == 0
+        )
         idx.close()
 
     def test_reopening_current_schema_does_not_rebackfill(self, tmp_path: Path) -> None:

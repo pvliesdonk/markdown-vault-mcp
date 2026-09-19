@@ -859,13 +859,18 @@ class FTSIndex:
         ).fetchone()
         if row is not None:
             return
+        logger.info(
+            "fts_index: starting one-time notes_fts_rowid_map backfill for a "
+            "pre-#1535 database; this is a full notes_fts scan and may take "
+            "a while on a large vault"
+        )
         conn.execute(
             "INSERT OR IGNORE INTO notes_fts_rowid_map (document_id, fts_rowid) "
             "SELECT d.id, f.rowid FROM notes_fts f "
             "JOIN documents d ON d.path = f.path"
         )
         conn.execute(
-            "INSERT INTO meta (key, value) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
             (_META_FTS_ROWID_MAP_BACKFILLED_KEY, "1"),
         )
         conn.commit()
@@ -995,7 +1000,10 @@ class FTSIndex:
     ) -> None:
         """Insert all chunks for a document into ``sections``.
 
-        Also inserts one row per chunk into the ``notes_fts`` virtual table.
+        Also inserts one row per chunk into the ``notes_fts`` virtual table,
+        and one bridging row per chunk into ``notes_fts_rowid_map`` (mapping
+        ``document_id`` to the new ``notes_fts`` rowid), so a later delete
+        can target ``notes_fts`` by rowid instead of scanning it by path.
         The ``summary`` column carries the newline-joined scalar values of
         the configured ``searchable_frontmatter_fields`` on the chunk-0 row
         only (``""`` for every other row and when no fields are configured),
@@ -1006,6 +1014,9 @@ class FTSIndex:
             cur: Active cursor inside the current transaction.
             document_id: The ``id`` of the parent document row.
             note: Parsed document whose chunks are to be inserted.
+
+        Raises:
+            RuntimeError: If the INSERT did not return a row ID.
         """
         folder = _derive_folder(note.path)
         summary = _fields_text(note.frontmatter, self._searchable_fields)
