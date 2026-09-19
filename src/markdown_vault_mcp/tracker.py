@@ -245,6 +245,48 @@ class ChangeTracker:
             skipped_unchanged=skipped_unchanged,
         )
 
+    def _merge_state(
+        self,
+        notes: list[ParsedNote],
+        skipped: dict[str, str] | None,
+        skip_reasons: dict[str, dict[str, str]] | None,
+    ) -> tuple[dict[str, str], dict[str, str], dict[str, dict[str, str]]]:
+        """Merge *notes* with the carried skip maps into the three state maps.
+
+        Reads the carries without consuming them, so the caller decides
+        whether its write ends the pass: :meth:`update_state` clears them
+        afterwards, :meth:`checkpoint_state` does not.
+
+        Args:
+            notes: Parsed notes whose ``path`` and ``content_hash`` form the
+                new indexed state.
+            skipped: Newly observed skipped paths, or ``None``.
+            skip_reasons: Newly observed skip reasons, or ``None``.
+
+        Returns:
+            Tuple of ``(indexed, skipped, skip_reasons)`` maps, with indexed
+            paths removed from skipped and reasons clamped to the skipped keys.
+        """
+        new_indexed = {note.path: note.content_hash for note in notes}
+        new_skipped = {
+            path: content_hash
+            for path, content_hash in {
+                **self._skipped_carry,
+                **(skipped or {}),
+            }.items()
+            if path not in new_indexed
+        }
+        merged_reasons = {
+            **self._skip_reasons_carry,
+            **(skip_reasons or {}),
+        }
+        new_skip_reasons = {
+            path: reason
+            for path, reason in merged_reasons.items()
+            if path in new_skipped
+        }
+        return new_indexed, new_skipped, new_skip_reasons
+
     def update_state(
         self,
         notes: list[ParsedNote],
@@ -274,24 +316,9 @@ class ChangeTracker:
                 this scan. Merged with the carried reasons and clamped to the
                 new skipped key set. ``None`` records no new reasons.
         """
-        new_indexed = {note.path: note.content_hash for note in notes}
-        new_skipped = {
-            path: content_hash
-            for path, content_hash in {
-                **self._skipped_carry,
-                **(skipped or {}),
-            }.items()
-            if path not in new_indexed
-        }
-        merged_reasons = {
-            **self._skip_reasons_carry,
-            **(skip_reasons or {}),
-        }
-        new_skip_reasons = {
-            path: reason
-            for path, reason in merged_reasons.items()
-            if path in new_skipped
-        }
+        new_indexed, new_skipped, new_skip_reasons = self._merge_state(
+            notes, skipped, skip_reasons
+        )
         self._save_state(new_indexed, new_skipped, new_skip_reasons)
         # The carries are consumed by exactly one update_state call; clearing
         # them keeps a later call without a fresh detect_changes (e.g. a full
@@ -303,6 +330,38 @@ class ChangeTracker:
             len(new_indexed),
             len(new_skipped),
             len(new_skip_reasons),
+        )
+
+    def checkpoint_state(
+        self,
+        notes: list[ParsedNote],
+        skipped: dict[str, str] | None = None,
+        skip_reasons: dict[str, dict[str, str]] | None = None,
+    ) -> None:
+        """Persist a mid-pass snapshot without ending the pass.
+
+        The same write as :meth:`update_state`, except the carried skip maps
+        survive it. A reindex writes several checkpoints and exactly one
+        closing ``update_state``, and only that last call may consume the
+        carries left by :meth:`detect_changes` — a checkpoint that consumed
+        them would drop every unchanged skipped file from the final snapshot,
+        which the next scan would then re-report as added (#1535).
+
+        Args:
+            notes: Parsed notes forming this snapshot's indexed state. For an
+                in-progress reindex these come from the index's current
+                contents, which is what has actually been committed so far.
+            skipped: Newly observed skipped paths so far, or ``None``.
+            skip_reasons: Newly observed skip reasons so far, or ``None``.
+        """
+        new_indexed, new_skipped, new_skip_reasons = self._merge_state(
+            notes, skipped, skip_reasons
+        )
+        self._save_state(new_indexed, new_skipped, new_skip_reasons)
+        logger.debug(
+            "checkpoint_state: snapshot with %d indexed, %d skipped path(s)",
+            len(new_indexed),
+            len(new_skipped),
         )
 
     def reset(self) -> None:
