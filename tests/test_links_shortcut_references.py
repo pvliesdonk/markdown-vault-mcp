@@ -288,6 +288,42 @@ class TestTheOtherFormsKeepTheirSpans:
         ]
         assert rows == [("markdown", "y.md")]
 
+    def test_a_pointy_destination_with_a_junk_tail_does_not_claim_it(self) -> None:
+        # The precedence test has to be the inline form's *real* grammar,
+        # not a paren-balance approximation of it. ``<x.md> not a title``
+        # closes its parens, so a looser test claimed the span — and the
+        # real parser then rejected it, since the tail is neither blank
+        # nor a title. Neither family stored the row, and the reader
+        # finds one. (``main`` drops it too, so this is a gap the
+        # shortcut rung should have closed rather than a regression.)
+        # [observed: markdown-it-py 'commonmark' renders
+        # ``[ar](<x.md> not a title)`` with ``[ar]`` defined as
+        # ``<p><a href="x.md">ar</a>(&lt;x.md&gt; not a title)</p>``,
+        # 2026-09-19]
+        assert _links("[ar](<x.md> not a title)") == [("ar", "x.md")]
+
+    def test_a_pointy_destination_with_a_real_title_does_claim_it(self) -> None:
+        rows = [
+            (link.link_type, link.raw_target)
+            for link in extract_links("[ar](<y.md> 'T')" + DEFS, SRC)
+        ]
+        assert rows == [("markdown", "<y.md>")]
+
+    def test_the_shortest_shape_that_separates_the_two_questions(self) -> None:
+        # ``[ar](<>a)`` is the minimum: a pointy destination that closes,
+        # names nothing, and carries a tail that is not a title. The
+        # precedence test must say "no inline link closed here" so the
+        # ladder reaches the shortcut. Recorded because of its *length* —
+        # see the corpus class below for why no sweep reaches it.
+        assert _links("[ar](<>a)") == [("ar", "x.md")]
+
+    def test_an_empty_pointy_destination_claims_the_span(self) -> None:
+        # ``<>`` closes an inline link but names nothing: a span spoken
+        # for with nothing to index, exactly like ``()``. The shared
+        # grammar says "yes, a destination is written here"; only the
+        # parser's extra ``<>`` rejection says "and nothing to store".
+        assert _links("[ar](<>)") == []
+
     def test_an_empty_destination_still_claims_the_span(self) -> None:
         # ``[ar]()`` is a link to the empty string for a reader, so the
         # span is spoken for even though there is nothing to index. The
@@ -457,6 +493,17 @@ class TestAgreementWhereTheOtherFormsMeet:
     *reference, *wiki]``) and a reader returns them in document order. The
     reference-only corpora in ``tests/test_links_reference_openers.py``
     still check order, so nothing is lost.
+
+    **What no sweep here reaches.** The alphabet deliberately stops at
+    ``[]()a `` and the length at six. Adding ``<`` and ``>`` was tried
+    and reverted: the shortest input where the pointy destination's
+    grammar and the precedence test can disagree *observably* is
+    ``[ar](<>a)`` at **eight** characters (a defined label, a closing
+    pointy destination naming nothing, and a tail that is not a title),
+    and an exhaustive sweep of eight characters over seven symbols is
+    5.7 million inputs. The characters were never the barrier; the shape
+    length is. That class is pinned by name above instead, which is the
+    honest remedy rather than a wider alphabet that still cannot see it.
 
     Two classes are excluded, both places where **markdown-it departs
     from the spec** rather than places we are unsure. Each is pinned by a

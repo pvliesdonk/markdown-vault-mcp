@@ -637,19 +637,42 @@ def _parse_destination(region: str, pos: int) -> tuple[str, int, int] | None:
     return (raw, i, close + 1) if raw else None
 
 
-def _parse_pointy_destination(region: str, pos: int) -> tuple[str, int, int] | None:
-    """The ``<…>`` half of :func:`_parse_destination`; *pos* is at the ``<``."""
+def _pointy_destination_span(region: str, pos: int) -> tuple[str, int] | None:
+    """``(raw, close)`` for a ``<…>`` destination at *pos*, or ``None``.
+
+    The grammar shared by the two questions asked about a pointy
+    destination: *is one written here* (this), and *is there one worth
+    storing* (:func:`_parse_pointy_destination`, which additionally
+    rejects the empty ``<>``). Separated because an over-loose copy of
+    this test, checking only that the parens balanced, let
+    ``[a](<x.md> not a title)`` claim its span as an inline link although
+    the parser then rejected it — so neither family stored the row a
+    reader finds. One grammar, two callers, no room to drift.
+
+    *close* is the index of the closing ``)``.
+    """
     end = _scan_pointy_destination(region, pos)
     if end is None:
         return None
-    raw = region[pos:end]
     close = _scan_plain_destination(region, end)
-    if close is None or raw == "<>":
+    if close is None:
         return None
     rest = region[end:close]
     if rest.strip(" \t") and not trailing_title_pattern.fullmatch(rest):
         return None
-    return raw, pos, close + 1
+    return region[pos:end], close
+
+
+def _parse_pointy_destination(region: str, pos: int) -> tuple[str, int, int] | None:
+    """The ``<…>`` half of :func:`_parse_destination`; *pos* is at the ``<``."""
+    span = _pointy_destination_span(region, pos)
+    if span is None:
+        return None
+    raw, close = span
+    # ``<>`` closes an inline link but names nothing, so there is a span
+    # here and no destination to store. That is exactly the distinction
+    # :func:`inline_link_follows` keeps and this function does not.
+    return None if raw == "<>" else (raw, pos, close + 1)
 
 
 def find_bracket_span(region: str, pos: int) -> tuple[int, int, str] | None:
@@ -849,8 +872,7 @@ def inline_link_follows(region: str, close_index: int) -> bool:
     while index < len(region) and region[index] in " \t":
         index += 1
     if index < len(region) and region[index] == "<":
-        end = _scan_pointy_destination(region, index)
-        return end is not None and _scan_plain_destination(region, end) is not None
+        return _pointy_destination_span(region, index) is not None
     return _scan_plain_destination(region, index) is not None
 
 
