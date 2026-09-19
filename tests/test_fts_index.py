@@ -818,6 +818,114 @@ class TestDelete:
         ).fetchone()[0]
         assert orphan_tags == 0
 
+    def test_delete_does_not_full_scan_notes_fts(self) -> None:
+        """The notes_fts DELETE plans as an indexed rowid lookup, not a
+        virtual-table scan of the content-carrying shadow table (#1535).
+
+        Uses the exact SQL text ``_delete_document`` executes (imported,
+        not retyped) so this test cannot drift from the implementation.
+        """
+        from markdown_vault_mcp.fts_index import _DELETE_NOTES_FTS_BY_DOCUMENT_SQL
+
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(make_note("scanned.md"))
+        conn = idx._conn()
+        plan_rows = conn.execute(
+            "EXPLAIN QUERY PLAN " + _DELETE_NOTES_FTS_BY_DOCUMENT_SQL,
+            (1,),
+        ).fetchall()
+        detail = " ".join(str(row[-1]) for row in plan_rows)
+        assert "SEARCH notes_fts_rowid_map USING PRIMARY KEY" in detail
+        assert "INDEX 0:=" in detail
+        idx.close()
+
+    def test_delete_removes_all_chunks_leaves_other_documents(self) -> None:
+        """Deleting a multi-chunk document removes every notes_fts row for
+        its path and its bridge-table entries, leaving a neighbour intact."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(
+            make_note(
+                "multi.md",
+                chunks=[
+                    Chunk(
+                        heading="A",
+                        heading_level=1,
+                        content="alpha unique1",
+                        start_line=0,
+                    ),
+                    Chunk(
+                        heading="B",
+                        heading_level=1,
+                        content="beta unique2",
+                        start_line=5,
+                    ),
+                    Chunk(
+                        heading="C",
+                        heading_level=1,
+                        content="gamma unique3",
+                        start_line=10,
+                    ),
+                ],
+            )
+        )
+        idx.upsert_note(
+            make_note(
+                "neighbour.md",
+                chunks=[
+                    Chunk(
+                        heading=None,
+                        heading_level=0,
+                        content="neighbour text",
+                        start_line=0,
+                    )
+                ],
+            )
+        )
+
+        deleted = idx.delete_by_path("multi.md")
+        assert deleted == 1
+
+        conn = idx._conn()
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM notes_fts WHERE path = ?", ("multi.md",)
+        ).fetchone()[0]
+        assert remaining == 0
+        orphan_map_rows = conn.execute(
+            "SELECT COUNT(*) FROM notes_fts_rowid_map WHERE document_id NOT IN "
+            "(SELECT id FROM documents)"
+        ).fetchone()[0]
+        assert orphan_map_rows == 0
+        assert idx.search("unique1") == []
+        assert len(idx.search("neighbour")) == 1
+        idx.close()
+
+    def test_delete_by_path_missing_document_is_a_noop(self) -> None:
+        """Deleting a path that was never indexed returns 0 and touches
+        nothing (the early-return path in _delete_document)."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(make_note("present.md"))
+        assert idx.delete_by_path("absent.md") == 0
+        assert len(idx.search("test")) == 1
+        idx.close()
+
+    def test_build_from_notes_delete_path_also_avoids_full_scan(self) -> None:
+        """build_from_notes calls _delete_document per note too (idempotent
+        re-index of an already-populated table, per its own docstring) —
+        same fix must cover it. ``build_from_notes`` takes a plain iterable
+        of ``ParsedNote`` (fts_index.py:1137), not folder/note pairs."""
+        idx = FTSIndex(":memory:")
+        note = make_note("cold.md")
+        idx.build_from_notes([note])
+        idx.build_from_notes([note])
+        conn = idx._conn()
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM notes_fts WHERE path = ?", ("cold.md",)
+            ).fetchone()[0]
+            == 1
+        )
+        idx.close()
+
 
 class TestFtsRowidMap:
     def test_upsert_populates_bridge_table_one_row_per_chunk(self) -> None:

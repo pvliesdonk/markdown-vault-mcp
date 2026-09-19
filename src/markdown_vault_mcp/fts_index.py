@@ -197,6 +197,13 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 """
 
+# Extracted so tests/test_fts_index.py can EXPLAIN QUERY PLAN the exact
+# statement _delete_document executes, instead of a copy that could drift.
+_DELETE_NOTES_FTS_BY_DOCUMENT_SQL = (
+    "DELETE FROM notes_fts WHERE rowid IN "
+    "(SELECT fts_rowid FROM notes_fts_rowid_map WHERE document_id = ?)"
+)
+
 # Key written into ``meta`` after :meth:`IndexFacet.build_index` completes
 # a full scan successfully. Warm-restart short-circuits keyed solely on
 # ``documents`` row presence would otherwise treat a partial index (left
@@ -1137,9 +1144,14 @@ class FTSIndex:
             )
 
     def _delete_document(self, cur: sqlite3.Cursor, path: str) -> int:
-        """Delete a document row (cascade deletes sections and tags).
+        """Delete a document row (cascade deletes sections, tags, and the
+        notes_fts rowid bridge entries) and its notes_fts rows.
 
-        Also removes all FTS rows for the document's path.
+        Looks up ``document_id`` through the ``documents.path`` unique
+        index, then deletes notes_fts rows by an indexed rowid lookup
+        through ``notes_fts_rowid_map`` rather than scanning notes_fts's
+        content-carrying shadow table (#1535; see
+        docs/design/reference/sqlite-fts5.md).
 
         Args:
             cur: Active cursor inside the current transaction.
@@ -1148,7 +1160,11 @@ class FTSIndex:
         Returns:
             Number of document rows deleted (0 or 1).
         """
-        cur.execute("DELETE FROM notes_fts WHERE path = ?", (path,))
+        row = cur.execute("SELECT id FROM documents WHERE path = ?", (path,)).fetchone()
+        if row is None:
+            return 0
+        document_id = row["id"]
+        cur.execute(_DELETE_NOTES_FTS_BY_DOCUMENT_SQL, (document_id,))
         cur.execute("DELETE FROM documents WHERE path = ?", (path,))
         return cur.rowcount
 
