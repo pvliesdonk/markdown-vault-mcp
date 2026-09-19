@@ -184,6 +184,12 @@ class TestFTSIndexMethodRetry:
         try:
             note = _parse(tmp_path / "a.md", tmp_path, HeadingChunker())
 
+            # Index the note once unwrapped, so the second call is an update
+            # (not a brand-new insert). _delete_document's SELECT will then
+            # find an existing document row and execute the DELETE, which the
+            # wrapper can intercept (#1535).
+            fts.upsert_note(note)
+
             # Wrap _conn() so the FIRST DELETE call inside upsert_note's
             # transaction raises SQLITE_LOCKED. The retry decorator
             # rolls back the with-block and re-invokes upsert_note,
@@ -249,10 +255,20 @@ class TestFTSIndexMethodRetry:
         fts = FTSIndex(db_path=tmp_path / "fts.db")
         try:
             chunker = HeadingChunker()
+            notes = [
+                _parse(tmp_path / "a.md", tmp_path, chunker),
+                _parse(tmp_path / "b.md", tmp_path, chunker),
+            ]
 
-            def _gen():
-                yield _parse(tmp_path / "a.md", tmp_path, chunker)
-                yield _parse(tmp_path / "b.md", tmp_path, chunker)
+            # Index the notes once unwrapped, so the second call is an update
+            # (not a brand-new insert). _delete_document's SELECT will then
+            # find existing document rows and execute the DELETE, which the
+            # wrapper can intercept (#1535).
+            fts.build_from_notes(notes)
+
+            def _gen():  # type: ignore[no-untyped-def]
+                yield notes[0]
+                yield notes[1]
 
             call_state = {"failed": False}
             real_conn_method = fts._conn

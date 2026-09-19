@@ -18,6 +18,12 @@ Links pointing at a tombstoned file intentionally stay *broken* (and
 vault-wide wikilinks never resolve to a tombstone): the file contributes no
 readable content, so pretending its link target exists would only hide the
 problem the tombstone records.
+
+Delete cost: ``notes_fts`` is content-carrying FTS5, so an ordinary-column
+filter has no index and forces a full scan of its shadow content table.
+``_delete_document`` avoids this via the ``notes_fts_rowid_map`` bridge
+table instead (#1535). See ``docs/design/reference/sqlite-fts5.md`` before
+changing any ``notes_fts`` INSERT/DELETE statement.
 """
 
 from __future__ import annotations
@@ -177,11 +183,32 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
     tokenize='porter unicode61'
 );
 
+-- Bridge table: notes_fts is content-carrying, so an ordinary-column
+-- filter (WHERE path = ?) has no index and forces a full scan of the
+-- shadow content table (#1535, docs/design/reference/sqlite-fts5.md).
+-- notes_fts holds one row per CHUNK, not one per document, so its rowid
+-- cannot be documents.id directly; this table maps each chunk's fts
+-- rowid back to its owning document so deletes can go through an
+-- indexed lookup instead.
+CREATE TABLE IF NOT EXISTS notes_fts_rowid_map (
+    document_id INTEGER NOT NULL,
+    fts_rowid INTEGER NOT NULL,
+    PRIMARY KEY (document_id, fts_rowid),
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+) WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 """
+
+# Extracted so tests/test_fts_index.py can EXPLAIN QUERY PLAN the exact
+# statement _delete_document executes, instead of a copy that could drift.
+_DELETE_NOTES_FTS_BY_DOCUMENT_SQL = (
+    "DELETE FROM notes_fts WHERE rowid IN "
+    "(SELECT fts_rowid FROM notes_fts_rowid_map WHERE document_id = ?)"
+)
 
 # Key written into ``meta`` after :meth:`IndexFacet.build_index` completes
 # a full scan successfully. Warm-restart short-circuits keyed solely on
@@ -237,6 +264,11 @@ _META_ATTACHMENT_EXTENSIONS_KEY = "attachment_extensions"
 # first start after the upgrade rebuilds — which is the repair #1124 found
 # missing after the link-extraction fixes in #1104 / #1107.
 _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
+
+# Sentinel: the ``notes_fts_rowid_map`` bridge table has been backfilled for a
+# pre-#1535 database. Written once by :meth:`_migrate_fts_rowid_map` and read
+# on every boot to short-circuit a redundant backfill pass.
+_META_FTS_ROWID_MAP_BACKFILLED_KEY = "fts_rowid_map_backfilled"
 
 #: Current version of the parse-to-row pipeline whose output is stored in the
 #: index (link extraction, chunk boundaries, tag/alias/heading derivation).
@@ -690,6 +722,7 @@ class FTSIndex:
         )
         conn.commit()
         self._migrate_notes_fts_summary(conn)
+        self._migrate_fts_rowid_map(conn)
         self._persist_rank_config(conn)
         # WAL is a DB-header pragma — persists across opens. Skip for in-memory
         # databases (SQLite silently falls back to 'memory' journal mode there).
@@ -801,6 +834,48 @@ class FTSIndex:
         logger.info(
             "fts_index: migrated notes_fts — added summary column and "
             "repopulated from sections"
+        )
+
+    def _migrate_fts_rowid_map(self, conn: sqlite3.Connection) -> None:
+        """Backfill ``notes_fts_rowid_map`` for a pre-#1535 database.
+
+        A database created before the rowid-delete fix (#1535) has
+        ``notes_fts`` rows with no corresponding bridge-table entry, so
+        :meth:`_delete_document` would find nothing to delete by rowid.
+        Populate it once, in pure SQL, from the ``notes_fts``/``documents``
+        join on path — the same join every reader already performs, so no
+        filesystem rescan is needed. Idempotent (``INSERT OR IGNORE`` plus
+        a meta sentinel), so a crash between the backfill and the sentinel
+        write just reruns harmlessly on the next open. Must run after
+        :meth:`_migrate_notes_fts_summary`, whose DROP/CREATE assigns fresh
+        rowids this join has to see.
+
+        Args:
+            conn: The primary connection (inside :meth:`_init_schema`).
+        """
+        row = conn.execute(
+            "SELECT 1 FROM meta WHERE key = ?",
+            (_META_FTS_ROWID_MAP_BACKFILLED_KEY,),
+        ).fetchone()
+        if row is not None:
+            return
+        logger.info(
+            "fts_index: starting one-time notes_fts_rowid_map backfill for a "
+            "pre-#1535 database; this is a full notes_fts scan and may take "
+            "a while on a large vault"
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO notes_fts_rowid_map (document_id, fts_rowid) "
+            "SELECT d.id, f.rowid FROM notes_fts f "
+            "JOIN documents d ON d.path = f.path"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
+            (_META_FTS_ROWID_MAP_BACKFILLED_KEY, "1"),
+        )
+        conn.commit()
+        logger.info(
+            "fts_index: backfilled notes_fts_rowid_map for a pre-#1535 database"
         )
 
     def _persist_rank_config(self, conn: sqlite3.Connection) -> None:
@@ -925,7 +1000,10 @@ class FTSIndex:
     ) -> None:
         """Insert all chunks for a document into ``sections``.
 
-        Also inserts one row per chunk into the ``notes_fts`` virtual table.
+        Also inserts one row per chunk into the ``notes_fts`` virtual table,
+        and one bridging row per chunk into ``notes_fts_rowid_map`` (mapping
+        ``document_id`` to the new ``notes_fts`` rowid), so a later delete
+        can target ``notes_fts`` by rowid instead of scanning it by path.
         The ``summary`` column carries the newline-joined scalar values of
         the configured ``searchable_frontmatter_fields`` on the chunk-0 row
         only (``""`` for every other row and when no fields are configured),
@@ -936,6 +1014,9 @@ class FTSIndex:
             cur: Active cursor inside the current transaction.
             document_id: The ``id`` of the parent document row.
             note: Parsed document whose chunks are to be inserted.
+
+        Raises:
+            RuntimeError: If the INSERT did not return a row ID.
         """
         folder = _derive_folder(note.path)
         summary = _fields_text(note.frontmatter, self._searchable_fields)
@@ -968,6 +1049,14 @@ class FTSIndex:
                     chunk.content,
                     summary if i == 0 else "",
                 ),
+            )
+            fts_rowid = cur.lastrowid
+            if fts_rowid is None:
+                raise RuntimeError("INSERT did not return a row ID")
+            cur.execute(
+                "INSERT INTO notes_fts_rowid_map (document_id, fts_rowid) "
+                "VALUES (?, ?)",
+                (document_id, fts_rowid),
             )
 
     def _insert_tags(
@@ -1115,9 +1204,14 @@ class FTSIndex:
             )
 
     def _delete_document(self, cur: sqlite3.Cursor, path: str) -> int:
-        """Delete a document row (cascade deletes sections and tags).
+        """Delete a document row (cascade deletes sections, tags, and the
+        notes_fts rowid bridge entries) and its notes_fts rows.
 
-        Also removes all FTS rows for the document's path.
+        Looks up ``document_id`` through the ``documents.path`` unique
+        index, then deletes notes_fts rows by an indexed rowid lookup
+        through ``notes_fts_rowid_map`` rather than scanning notes_fts's
+        content-carrying shadow table (#1535; see
+        docs/design/reference/sqlite-fts5.md).
 
         Args:
             cur: Active cursor inside the current transaction.
@@ -1126,7 +1220,11 @@ class FTSIndex:
         Returns:
             Number of document rows deleted (0 or 1).
         """
-        cur.execute("DELETE FROM notes_fts WHERE path = ?", (path,))
+        row = cur.execute("SELECT id FROM documents WHERE path = ?", (path,)).fetchone()
+        if row is None:
+            return 0
+        document_id = row["id"]
+        cur.execute(_DELETE_NOTES_FTS_BY_DOCUMENT_SQL, (document_id,))
         cur.execute("DELETE FROM documents WHERE path = ?", (path,))
         return cur.rowcount
 

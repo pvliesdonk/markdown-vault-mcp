@@ -818,6 +818,150 @@ class TestDelete:
         ).fetchone()[0]
         assert orphan_tags == 0
 
+    def test_delete_does_not_full_scan_notes_fts(self) -> None:
+        """The notes_fts DELETE plans as an indexed rowid lookup, not a
+        virtual-table scan of the content-carrying shadow table (#1535).
+
+        Uses the exact SQL text ``_delete_document`` executes (imported,
+        not retyped) so this test cannot drift from the implementation.
+        """
+        from markdown_vault_mcp.fts_index import _DELETE_NOTES_FTS_BY_DOCUMENT_SQL
+
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(make_note("scanned.md"))
+        conn = idx._conn()
+        plan_rows = conn.execute(
+            "EXPLAIN QUERY PLAN " + _DELETE_NOTES_FTS_BY_DOCUMENT_SQL,
+            (1,),
+        ).fetchall()
+        detail = " ".join(str(row[-1]) for row in plan_rows)
+        assert "SEARCH notes_fts_rowid_map USING PRIMARY KEY" in detail
+        assert "INDEX 0:=" in detail
+        idx.close()
+
+    def test_delete_removes_all_chunks_leaves_other_documents(self) -> None:
+        """Deleting a multi-chunk document removes every notes_fts row for
+        its path and its bridge-table entries, leaving a neighbour intact."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(
+            make_note(
+                "multi.md",
+                chunks=[
+                    Chunk(
+                        heading="A",
+                        heading_level=1,
+                        content="alpha unique1",
+                        start_line=0,
+                    ),
+                    Chunk(
+                        heading="B",
+                        heading_level=1,
+                        content="beta unique2",
+                        start_line=5,
+                    ),
+                    Chunk(
+                        heading="C",
+                        heading_level=1,
+                        content="gamma unique3",
+                        start_line=10,
+                    ),
+                ],
+            )
+        )
+        idx.upsert_note(
+            make_note(
+                "neighbour.md",
+                chunks=[
+                    Chunk(
+                        heading=None,
+                        heading_level=0,
+                        content="neighbour text",
+                        start_line=0,
+                    )
+                ],
+            )
+        )
+
+        deleted = idx.delete_by_path("multi.md")
+        assert deleted == 1
+
+        conn = idx._conn()
+        remaining = conn.execute(
+            "SELECT COUNT(*) FROM notes_fts WHERE path = ?", ("multi.md",)
+        ).fetchone()[0]
+        assert remaining == 0
+        orphan_map_rows = conn.execute(
+            "SELECT COUNT(*) FROM notes_fts_rowid_map WHERE document_id NOT IN "
+            "(SELECT id FROM documents)"
+        ).fetchone()[0]
+        assert orphan_map_rows == 0
+        assert idx.search("unique1") == []
+        assert len(idx.search("neighbour")) == 1
+        idx.close()
+
+    def test_delete_by_path_missing_document_is_a_noop(self) -> None:
+        """Deleting a path that was never indexed returns 0 and touches
+        nothing (the early-return path in _delete_document)."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(make_note("present.md"))
+        assert idx.delete_by_path("absent.md") == 0
+        assert len(idx.search("test")) == 1
+        idx.close()
+
+    def test_build_from_notes_delete_path_also_avoids_full_scan(self) -> None:
+        """build_from_notes calls _delete_document per note too (idempotent
+        re-index of an already-populated table, per its own docstring) —
+        same fix must cover it. ``build_from_notes`` takes a plain iterable
+        of ``ParsedNote`` (fts_index.py:1137), not folder/note pairs."""
+        idx = FTSIndex(":memory:")
+        note = make_note("cold.md")
+        idx.build_from_notes([note])
+        idx.build_from_notes([note])
+        conn = idx._conn()
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM notes_fts WHERE path = ?", ("cold.md",)
+            ).fetchone()[0]
+            == 1
+        )
+        idx.close()
+
+
+class TestFtsRowidMap:
+    def test_upsert_populates_bridge_table_one_row_per_chunk(self) -> None:
+        """Each notes_fts row (one per chunk) gets a matching
+        notes_fts_rowid_map row pointing back at its document."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(
+            make_note(
+                "multi.md",
+                chunks=[
+                    Chunk(heading="A", heading_level=1, content="alpha", start_line=0),
+                    Chunk(heading="B", heading_level=1, content="beta", start_line=5),
+                ],
+            )
+        )
+        conn = idx._conn()
+        doc_id = conn.execute(
+            "SELECT id FROM documents WHERE path = ?", ("multi.md",)
+        ).fetchone()["id"]
+        fts_rowids = {
+            r[0]
+            for r in conn.execute(
+                "SELECT rowid FROM notes_fts WHERE path = ?", ("multi.md",)
+            ).fetchall()
+        }
+        mapped_rowids = {
+            r["fts_rowid"]
+            for r in conn.execute(
+                "SELECT fts_rowid FROM notes_fts_rowid_map WHERE document_id = ?",
+                (doc_id,),
+            ).fetchall()
+        }
+        assert mapped_rowids == fts_rowids
+        assert len(mapped_rowids) == 2
+        idx.close()
+
 
 class TestListFolders:
     def test_list_folders_returns_sorted_distinct_values(self) -> None:
@@ -1445,6 +1589,87 @@ class TestNotesFtsSummaryMigration:
         assert cols2 == ["path", "title", "folder", "heading", "content", "summary"]
         assert len(idx.search("hello")) == 1
         idx.close()
+
+
+class TestFtsRowidMapMigration:
+    def test_backfills_bridge_table_for_pre_1535_database(self, tmp_path: Path) -> None:
+        """Opening a pre-#1535 database (no notes_fts_rowid_map, and still
+        on the legacy 5-column notes_fts) backfills the bridge table from
+        the notes_fts/documents join, after the summary-column migration
+        assigns fresh rowids — and delete works immediately, no rescan."""
+        db = tmp_path / "legacy.db"
+        conn = sqlite3.connect(db)
+        conn.executescript(_LEGACY_SCHEMA)
+        conn.execute(
+            "INSERT INTO documents (id, path, title, folder, frontmatter_json,"
+            " content_hash, modified_at, chunk_count)"
+            " VALUES (1, 'a.md', 'Alpha', '', '{}', 'h1', 1000.0, 2)"
+        )
+        conn.execute(
+            "INSERT INTO sections (document_id, heading, heading_level, content,"
+            " start_line) VALUES (1, 'Intro', 1, 'hello world body', 0)"
+        )
+        conn.execute(
+            "INSERT INTO sections (document_id, heading, heading_level, content,"
+            " start_line) VALUES (1, NULL, 0, 'preamble text', 5)"
+        )
+        conn.execute(
+            "INSERT INTO notes_fts (path, title, folder, heading, content)"
+            " VALUES ('a.md', 'Alpha', '', 'Intro', 'hello world body')"
+        )
+        conn.execute(
+            "INSERT INTO notes_fts (path, title, folder, heading, content)"
+            " VALUES ('a.md', 'Alpha', '', '', 'preamble text')"
+        )
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES ('build_completed_at', 'ts')"
+        )
+        conn.commit()
+        conn.close()
+
+        idx = FTSIndex(db_path=db)
+        rows = (
+            idx._conn()
+            .execute(
+                "SELECT document_id, fts_rowid FROM notes_fts_rowid_map"
+                " ORDER BY fts_rowid"
+            )
+            .fetchall()
+        )
+        assert [tuple(r) for r in rows] == [(1, 1), (1, 2)]
+
+        deleted = idx.delete_by_path("a.md")
+        assert deleted == 1
+        assert idx._conn().execute("SELECT COUNT(*) FROM notes_fts").fetchone()[0] == 0
+
+        # Migration-assigned and insert-path-assigned rowids interoperate:
+        # a document inserted after the backfill is bridged and deleted the
+        # same way as the migrated ones above, on the same now-migrated index.
+        idx.upsert_note(make_note("new-after-migration.md"))
+        assert idx.delete_by_path("new-after-migration.md") == 1
+        conn = idx._conn()
+        assert conn.execute("SELECT COUNT(*) FROM notes_fts").fetchone()[0] == 0
+        assert (
+            conn.execute("SELECT COUNT(*) FROM notes_fts_rowid_map").fetchone()[0] == 0
+        )
+        idx.close()
+
+    def test_reopening_current_schema_does_not_rebackfill(self, tmp_path: Path) -> None:
+        """A second open is a no-op: the meta sentinel short-circuits the
+        backfill join instead of rerunning it on every boot."""
+        db = tmp_path / "current.db"
+        idx = FTSIndex(db_path=db)
+        idx.upsert_note(make_note("a.md"))
+        idx.close()
+
+        idx2 = FTSIndex(db_path=db)
+        count = (
+            idx2._conn()
+            .execute("SELECT COUNT(*) FROM notes_fts_rowid_map")
+            .fetchone()[0]
+        )
+        assert count == 1
+        idx2.close()
 
 
 def test_unknown_fts_weights_column_logs_warning(
