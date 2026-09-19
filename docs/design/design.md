@@ -231,9 +231,9 @@ indexed rowid lookup instead of an ordinary-column scan of the
 content-carrying FTS5 table (see the [Database Schema](#database-schema)
 DDL, and decision 26 below for why a bridge table rather than a direct
 `sections.fts_rowid` column). A second open-time migration backfills this
-map, once, for a database created before it existed — the same
-`sections`/`documents`/`notes_fts` join, run in pure SQL after the
-summary-column migration above.
+map, once, for a database created before it existed — a `notes_fts`/
+`documents` join on `path`, run in pure SQL after the summary-column
+migration above.
 
 Domain-specific filtering (by cluster, topic, tag) happens via the
 `document_tags` table, not FTS5 columns.
