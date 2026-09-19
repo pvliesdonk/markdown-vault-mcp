@@ -177,6 +177,20 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
     tokenize='porter unicode61'
 );
 
+-- Bridge table: notes_fts is content-carrying, so an ordinary-column
+-- filter (WHERE path = ?) has no index and forces a full scan of the
+-- shadow content table (#1535, docs/design/reference/sqlite-fts5.md).
+-- notes_fts holds one row per CHUNK, not one per document, so its rowid
+-- cannot be documents.id directly; this table maps each chunk's fts
+-- rowid back to its owning document so deletes can go through an
+-- indexed lookup instead.
+CREATE TABLE IF NOT EXISTS notes_fts_rowid_map (
+    document_id INTEGER NOT NULL,
+    fts_rowid INTEGER NOT NULL,
+    PRIMARY KEY (document_id, fts_rowid),
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+) WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -968,6 +982,14 @@ class FTSIndex:
                     chunk.content,
                     summary if i == 0 else "",
                 ),
+            )
+            fts_rowid = cur.lastrowid
+            if fts_rowid is None:
+                raise RuntimeError("INSERT did not return a row ID")
+            cur.execute(
+                "INSERT INTO notes_fts_rowid_map (document_id, fts_rowid) "
+                "VALUES (?, ?)",
+                (document_id, fts_rowid),
             )
 
     def _insert_tags(

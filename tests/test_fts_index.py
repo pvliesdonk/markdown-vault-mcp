@@ -819,6 +819,42 @@ class TestDelete:
         assert orphan_tags == 0
 
 
+class TestFtsRowidMap:
+    def test_upsert_populates_bridge_table_one_row_per_chunk(self) -> None:
+        """Each notes_fts row (one per chunk) gets a matching
+        notes_fts_rowid_map row pointing back at its document."""
+        idx = FTSIndex(":memory:")
+        idx.upsert_note(
+            make_note(
+                "multi.md",
+                chunks=[
+                    Chunk(heading="A", heading_level=1, content="alpha", start_line=0),
+                    Chunk(heading="B", heading_level=1, content="beta", start_line=5),
+                ],
+            )
+        )
+        conn = idx._conn()
+        doc_id = conn.execute(
+            "SELECT id FROM documents WHERE path = ?", ("multi.md",)
+        ).fetchone()["id"]
+        fts_rowids = {
+            r[0]
+            for r in conn.execute(
+                "SELECT rowid FROM notes_fts WHERE path = ?", ("multi.md",)
+            ).fetchall()
+        }
+        mapped_rowids = {
+            r["fts_rowid"]
+            for r in conn.execute(
+                "SELECT fts_rowid FROM notes_fts_rowid_map WHERE document_id = ?",
+                (doc_id,),
+            ).fetchall()
+        }
+        assert mapped_rowids == fts_rowids
+        assert len(mapped_rowids) == 2
+        idx.close()
+
+
 class TestListFolders:
     def test_list_folders_returns_sorted_distinct_values(self) -> None:
         """list_folders() returns all distinct folder values in sorted order."""
