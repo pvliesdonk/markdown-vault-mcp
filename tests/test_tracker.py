@@ -973,10 +973,12 @@ class TestCheckpointState:
         )
 
         # Second pass: detect_changes() re-parks skipped.md in the carries.
+        # good.md never appears in the skipped map, so its hash is never
+        # compared against a computed digest — an arbitrary literal distinct
+        # from good_md_hash is enough to prove the closing write's notes
+        # (not the checkpoint's) are what land in state.json.
         tracker.detect_changes(vault)
-        good_md_hash_v2 = hashlib.sha256(
-            b"---\ntitle: Good\n---\n# Good\n\nbody\n"
-        ).hexdigest()
+        good_md_hash_v2 = "second-pass-hash-for-good-md"
         tracker.checkpoint_state([_make_note("good.md", good_md_hash_v2)])
         tracker.update_state([_make_note("good.md", good_md_hash_v2)])
 

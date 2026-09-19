@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
@@ -2683,3 +2684,42 @@ class TestReindexCheckpointing:
 
         assert result.modified == 1
         assert any("checkpoint" in r.getMessage() for r in caplog.records)
+
+    def test_checkpoint_withholds_between_intervals(
+        self, index_vault: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The interval timer must reset after each checkpoint, or every
+        note past the first elapsed interval checkpoints unconditionally
+        (#1535) — this fails if ``last_checkpoint`` stops being reassigned.
+        """
+        monkeypatch.setattr(
+            "markdown_vault_mcp.managers.index._CHECKPOINT_INTERVAL_S", 10.0
+        )
+        mgr, _, _ = _make_index_mgr(index_vault, tmp_path)
+        mgr.build_index()
+
+        # Edit all four notes so the next pass sees them all as modified.
+        for name in ("alpha.md", "beta.md", "notes/gamma.md", "notes/delta.md"):
+            note = index_vault / name
+            note.write_text(
+                note.read_text(encoding="utf-8") + "\nEdited.\n", encoding="utf-8"
+            )
+
+        # One monotonic() call seeds last_checkpoint before the loop, then
+        # one comparison call per note, plus one reset call whenever a
+        # checkpoint fires. With a reset: 0.0, 6.0 (note1, no fire), 12.0
+        # (note2, fires -> reset to 18.0), 24.0 (note3, no fire), 30.0
+        # (note4, fires -> reset to 36.0) = 7 ticks, 2 checkpoints. A spare
+        # tick is included so the iterator cannot run dry either way.
+        ticks = iter([0.0, 6.0, 12.0, 18.0, 24.0, 30.0, 36.0, 42.0])
+        monkeypatch.setattr(
+            "markdown_vault_mcp.managers.index.time",
+            SimpleNamespace(monotonic=lambda: next(ticks)),
+        )
+
+        spy = MagicMock(wraps=mgr._tracker.checkpoint_state)
+        monkeypatch.setattr(mgr._tracker, "checkpoint_state", spy)
+        result = mgr.reindex()
+
+        assert result.modified == 4
+        assert spy.call_count == 2

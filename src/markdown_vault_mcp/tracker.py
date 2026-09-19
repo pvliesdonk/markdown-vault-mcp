@@ -350,7 +350,10 @@ class ChangeTracker:
         Args:
             notes: Parsed notes forming this snapshot's indexed state. For an
                 in-progress reindex these come from the index's current
-                contents, which is what has actually been committed so far.
+                contents, which is what has actually been committed so far
+                (durable against process death; not against a power loss or
+                kernel crash, since the FTS write and this state write are
+                not fsynced together).
             skipped: Newly observed skipped paths so far, or ``None``.
             skip_reasons: Newly observed skip reasons so far, or ``None``.
         """
