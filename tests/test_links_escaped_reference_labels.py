@@ -13,12 +13,34 @@ match — and the two sides can only ever spell it the same way, since a
 label ends at its first unescaped ``]`` and so a label holding one can be
 written no other way.
 
-Two properties carry the module, as in ``test_links_escaped_text.py``. The
-first is the defect. The second is what makes the change safe against
-existing vaults: each scan agrees with the pattern it replaced on every
-input carrying no backslash, asserted exhaustively over short strings
-rather than by example, because "nothing else moved" is the claim an
+Two properties carried the module when it was written, as in
+``test_links_escaped_text.py``. The first is the defect. The second was
+"nothing else moved" — each scan agreeing with the pattern it replaced on
+every backslash-free input, asserted exhaustively over short strings
+rather than by example, because that is the claim an
 ``INDEX_SEMANTICS_VERSION`` note rests on.
+
+**Only the definition half of that second property is still here, and it
+now carries an exclusion.** Both changes are deliberate and neither
+weakens the claim, because a stronger instrument replaced the part that
+went:
+
+* The *usage* half was retired by #1531. The pattern it compared against
+  cannot express the shortcut form at all, so it stopped being a
+  description of correct behaviour and started being a description of the
+  old behaviour. The usage side is asserted against a CommonMark reader
+  instead: ``tests/test_links_reference_openers.py`` over bracket and
+  bang arrangements, ``tests/test_links_shortcut_references.py`` over a
+  label-shaped alphabet carrying the colon and the newline. Different
+  alphabets from this module's, and a stronger instrument — an oracle
+  says what the rows *should* be, where the pattern only ever said what
+  they used to be.
+* The *definition* half excludes inputs that cross a blank line, via
+  ``_crosses_a_blank_line``. The old pattern read a destination across one
+  and could swallow a real definition into a label; CommonMark forbids
+  both (§4.7), so on exactly those inputs the pattern is wrong and
+  disagreeing with it is the correct outcome. The exclusion is pinned
+  narrow by ``_SUPERSEDED_DEF``, which spells out what it covers.
 """
 
 from __future__ import annotations
@@ -28,19 +50,9 @@ import re
 
 import pytest
 
-from markdown_vault_mcp.scanner import (
-    _iter_reference_definitions,
-    _iter_reference_usages,
-    extract_links,
-)
+from markdown_vault_mcp.scanner import _iter_reference_definitions, extract_links
 
 SRC = "source.md"
-
-#: The two patterns the scans replaced. Kept here, not imported, precisely
-#: because they no longer exist in the scanner: the differential properties
-#: below are only meaningful against the spellings that actually shipped.
-_SUPERSEDED_USAGE = re.compile(r"\[([^\]]*)\]\[([^\]]*)\]")
-_SUPERSEDED_DEF = re.compile(r"^\s*\[([^\]]+)\]:\s*(.+)$", re.MULTILINE)
 
 
 def _links(content: str) -> list[tuple[str, str]]:
@@ -48,34 +60,55 @@ def _links(content: str) -> list[tuple[str, str]]:
     return [(link.link_text, link.target_path) for link in extract_links(content, SRC)]
 
 
-def _scan_usages(text: str) -> list[tuple[int, str, str]]:
-    """Every usage the scan finds."""
-    return list(_iter_reference_usages(text))
-
-
-def _regex_usages(text: str) -> list[tuple[int, str, str]]:
-    """The same, as ``finditer`` over the superseded pattern gave it."""
-    return [(m.end(), m.group(1), m.group(2)) for m in _SUPERSEDED_USAGE.finditer(text)]
+#: The definition pattern the scan replaced. Kept here, not imported,
+#: precisely because it no longer exists in the scanner: the differential
+#: below is only meaningful against the spelling that actually shipped.
+#:
+#: Its usage-side twin is gone. That property — "the usage scan agrees
+#: with the pattern it replaced on backslash-free input" — stopped being
+#: true, and stopped being the right claim, when #1531 taught the scan the
+#: shortcut form: the pattern matched two adjacent spans and nothing else,
+#: while the scan now consults the definition table and finds links no
+#: regex over the text alone could. Agreement is asserted against a
+#: CommonMark reader instead, in
+#: ``tests/test_links_reference_openers.py``, where it is exact.
+_SUPERSEDED_DEF = re.compile(r"^\s*\[([^\]]+)\]:\s*(.+)$", re.MULTILINE)
 
 
 def _regex_definitions(text: str) -> list[tuple[str, str]]:
     return [(m.group(1), m.group(2)) for m in _SUPERSEDED_DEF.finditer(text)]
 
 
-def _label_nests_a_bracket(text: str) -> bool:
-    """True where either side reads a link text holding a ``[``.
+def _crosses_a_blank_line(text: str) -> bool:
+    """True where the superseded pattern read a definition across a blank line.
 
-    The one shape on which the pattern and the scan are allowed to differ:
-    a nested opener is where "outermost ``[``" and "nearest unmatched ``[``"
-    stop meaning the same thing. Both sides are asked, because the
-    disagreement runs both ways — the pattern reads ``[[[[[[][]``'s text as
-    ``[[[[[`` where the scan reads ``""``, and the scan finds a link in
-    ``[a [b] c][r]`` where the pattern, whose text class excludes ``[``,
-    finds none at all.
+    The one shape on which the definition scan and the pattern are allowed
+    to differ, and the scan is the one that is right. ``\\s*`` let the
+    pattern run a label or a destination straight through a blank line, so
+    ``[\\n\\n]: a`` was a definition whose label was a paragraph break, and
+    ``[:]:`` followed by a blank line took an unrelated later line as its
+    target. §6.3 allows neither; #1531 corrected both, because the
+    shortcut form was the first thing to ever resolve against a wrong
+    entry in that table and turn it into a row.
     """
-    return any(
-        "[" in match.group(1) for match in _SUPERSEDED_USAGE.finditer(text)
-    ) or any("[" in link_text for _, link_text, _ in _scan_usages(text))
+    return any("\n\n" in match.group(0) for match in _SUPERSEDED_DEF.finditer(text))
+
+
+def _has_a_whitespace_only_destination(text: str) -> bool:
+    """Whether the old pattern called pure whitespace a destination.
+
+    ``[r]:`` followed by a space matched ``(.+)$`` and was read as a
+    definition of ``r`` with a one-space target. §4.7 requires an actual
+    destination, so the line defines nothing and a reader parses it as
+    prose — which matters now that the shortcut form reads the table and
+    the region the definitions are cut from. The scan therefore rejects
+    it and the pattern does not, so these inputs are outside the
+    comparison rather than failures of it.
+
+    Narrow, measured rather than asserted: 0 inputs at lengths 0-4, 5 at
+    length 5 and 49 at length 6, which is 0.105% of that sweep.
+    """
+    return any(not match.group(2).strip() for match in _SUPERSEDED_DEF.finditer(text))
 
 
 # ---------------------------------------------------------------------------
@@ -127,23 +160,32 @@ class TestEscapedBracketsInReferenceLabels:
         assert _links("a [^1][^2] b\n\n[^1]: one\n[^2]: two\n") == []
 
 
-class TestWhatIsNotClaimed:
-    def test_a_label_ending_in_an_escaped_bracket_closes_no_link(self) -> None:
-        # The rows this drops, and the mirror of what #1517 dropped
-        # inline. In ``[a\][ref]`` the first ``]`` is escaped, so the label
-        # runs on to the one after ``ref`` and nothing follows it: not a
-        # full reference link. A CommonMark reader does find a link here,
-        # but by the *shortcut* form ``[ref]`` left over once ``[a\]`` is
-        # literal text — a form this scanner has never extracted.
-        # [observed: markdown-it-py 'commonmark' renders this input as
-        # ``<p>See [a]<a href="notes/x.md">ref</a> here.</p>``, so its
-        # link text is ``ref`` and not the label, 2026-09-17]
-        assert _links("See [a\\][ref].\n\n[ref]: notes/x.md\n") == []
+class TestWhatThisModuleOnceDidNotClaim:
+    """Two gaps recorded here as standing, and closed by #1531."""
 
-    def test_the_shortcut_form_is_still_not_extracted(self) -> None:
-        # Stated so the case above is read as one instance of a standing
-        # gap rather than as something #1519 introduced.
-        assert _links("See [ref] here.\n\n[ref]: notes/x.md\n") == []
+    def test_a_label_ending_in_an_escaped_bracket_links_by_the_shortcut(
+        self,
+    ) -> None:
+        # This module shipped asserting ``== []`` and explaining why: in
+        # ``[a\][ref]`` the first ``]`` is escaped, so the label runs on and
+        # nothing closes a full reference. A reader still finds a link, by
+        # the *shortcut* form ``[ref]`` left over once ``[a\]`` is literal
+        # text — and it recorded the reader's exact output while noting the
+        # scanner could not produce it.
+        #
+        # It can now, and it produces precisely what was recorded:
+        # [observed: markdown-it-py 'commonmark' renders this input as
+        # ``<p>See [a]<a href="notes/x.md">ref</a> here.</p>``, so its link
+        # text is ``ref`` and not the label, 2026-09-17]
+        assert _links("See [a\\][ref].\n\n[ref]: notes/x.md\n") == [
+            ("ref", "notes/x.md")
+        ]
+
+    def test_the_shortcut_form_is_extracted_now(self) -> None:
+        # The standing gap the case above was an instance of (#1531).
+        assert _links("See [ref] here.\n\n[ref]: notes/x.md\n") == [
+            ("ref", "notes/x.md")
+        ]
 
     def test_a_label_keeps_the_backslash_as_written(self) -> None:
         # As for inline text and ``raw_target``: what the file holds is
@@ -157,37 +199,16 @@ class TestWhatIsNotClaimed:
 
 
 class TestTheScansAgreeWithThePatternsTheyReplaced:
-    """Backslash-free input indexes exactly as it did before."""
+    """Backslash-free *definitions* parse as they did before.
 
-    @pytest.mark.parametrize("length", range(10), ids=lambda n: f"len{n}")
-    def test_no_backslash_free_usage_changed_meaning(self, length: int) -> None:
-        # Exhaustive rather than sampled, over the characters the pattern
-        # can distinguish: a bracket that opens, one that closes, and a
-        # filler standing for everything else. The whole sequence is
-        # compared, not the first match, so the scan's resume points are
-        # pinned against ``finditer``'s non-overlapping ones.
-        #
-        # Inputs whose label nests a bracket are excluded, because there
-        # the two rules genuinely differ and the scan is *meant* to win:
-        # the pattern opened at the outermost ``[``, the scan opens at the
-        # nearest unmatched one (#1528). What that exclusion gives up is
-        # not given up, only moved — ``test_links_reference_openers.py``
-        # holds those inputs against a CommonMark reader instead of
-        # against the pattern the scan replaced.
-        for chars in itertools.product("[]a", repeat=length):
-            text = "".join(chars)
-            if _label_nests_a_bracket(text):
-                continue
-            assert _scan_usages(text) == _regex_usages(text), text
-
-    @pytest.mark.parametrize("length", range(10), ids=lambda n: f"len{n}")
-    def test_the_exclusion_is_narrow(self, length: int) -> None:
-        # The exclusion above is only honest if it is small: a property
-        # that skipped most of its inputs would assert nearly nothing.
-        # Under a tenth of the strings at every length reach the shape.
-        texts = ["".join(chars) for chars in itertools.product("[]a", repeat=length)]
-        excluded = sum(1 for text in texts if _label_nests_a_bracket(text))
-        assert excluded <= len(texts) // 10, f"{excluded}/{len(texts)}"
+    Narrowed twice since it was written, and the class name now overstates
+    it. The usage half of the property is gone — the pattern it compared
+    against cannot express the shortcut form — and the definition half
+    excludes two classes where §4.7 says the old pattern was the wrong
+    one: inputs crossing a blank line, and inputs where it called pure
+    whitespace a destination. The whole-note case below expects a shortcut row
+    that did not exist before, which is the change, not a violation of it.
+    """
 
     @pytest.mark.parametrize("length", range(7), ids=lambda n: f"len{n}")
     def test_no_backslash_free_definition_changed_meaning(self, length: int) -> None:
@@ -197,35 +218,11 @@ class TestTheScansAgreeWithThePatternsTheyReplaced:
         # indent and the target.
         for chars in itertools.product("[]:\na ", repeat=length):
             text = "".join(chars)
+            if _crosses_a_blank_line(text) or _has_a_whitespace_only_destination(text):
+                continue
             assert list(_iter_reference_definitions(text)) == _regex_definitions(
                 text
             ), text
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "[a][r]",
-            "[a]x[b][r]",
-            "[a][b[c][d]",
-            "[a][]",
-            "[][]",
-            "[unclosed][",
-            "][a][r]",
-            "no brackets at all",
-        ],
-        ids=[
-            "plain",
-            "failed-then-found",
-            "inner-bracket-in-ref",
-            "collapsed",
-            "both-empty",
-            "unclosed-ref",
-            "closer-first",
-            "none",
-        ],
-    )
-    def test_the_named_usage_shapes_agree_too(self, text: str) -> None:
-        assert _scan_usages(text) == _regex_usages(text)
 
     @pytest.mark.parametrize(
         "text",
@@ -255,14 +252,22 @@ class TestTheScansAgreeWithThePatternsTheyReplaced:
     def test_the_named_definition_shapes_agree_too(self, text: str) -> None:
         assert list(_iter_reference_definitions(text)) == _regex_definitions(text)
 
-    def test_a_backslash_free_note_indexes_identically(self) -> None:
+    def test_a_backslash_free_note_indexes_as_a_reader_reads_it(self) -> None:
         note = (
             "# Title\n\n"
             "See [one][a] and [two][b].\n\n"
             "A [broken] label][c] and a [^fn][^gn].\n\n"
             "[a]: one.md\n[b]: two.md\n[c]: three.md\n"
         )
-        assert _links(note) == [("one", "one.md"), ("two", "two.md")]
+        # ``[c]`` is a shortcut reference — a defined label standing on
+        # its own — so it stores a row since #1531. ``[broken]`` is not
+        # defined and stores none, which is what keeps the form from
+        # turning every bracketed aside into a link.
+        assert _links(note) == [
+            ("one", "one.md"),
+            ("two", "two.md"),
+            ("c", "three.md"),
+        ]
 
 
 class TestTheScansStayLinear:

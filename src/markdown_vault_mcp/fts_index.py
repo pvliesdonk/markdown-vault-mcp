@@ -361,18 +361,41 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 #: labels defined: 5682 inputs disagreed before and 5574 after, so 108
 #: were fixed and **none** that agreed now disagree. The before half of
 #: that comparison needs the pre-change code and so cannot live in CI;
-#: the after half is pinned by
-#: ``test_the_wider_corpus_disagrees_only_where_recorded``.
+#: the after half was pinned by that module's wider-corpus property,
+#: which #1531 then tightened from a recorded shortfall to exact
+#: agreement.
 #:
-#: What version 10 still does not cover is the shortcut form (``[label]``
-#: with no second span), which no version has ever stored. It is the whole
-#: of the remaining disagreement with a CommonMark reader, and it is not a
-#: shape test away: CommonMark falls back from the full form to the
-#: shortcut one when the label lookup *fails*, so the scan would have to
-#: consult the definition table it currently knows nothing about. Tracked
-#: separately rather than guessed at here.
+#: What that left was the shortcut form (``[label]`` with no second
+#: span), the whole of the remaining disagreement with a CommonMark
+#: reader. It was never a shape test away: a reader falls back from the
+#: full form to the shortcut one when the label lookup *fails*, so the
+#: scan had to consult a definition table it knew nothing about.
 #:
-#: Still one bump: no tag contains the commit that set 10, so all four
+#: #1531 supplied exactly that, so version 10 covers the shortcut form
+#: too — ``[label]`` standing alone, which no version had ever stored.
+#: It is the largest of these in rows added: every bare label in a vault
+#: that matches a definition gains an outlink and gives its target a
+#: backlink. A label with no definition stores nothing, which is what
+#: keeps a bracketed aside from becoming a link.
+#:
+#: Two corrections to the *definition* side ride with it, and they change
+#: which rows every form produces, not just the new one. A definition's
+#: destination may sit on the next line but not across a blank one, and
+#: its label may not contain a blank line either; the scan allowed both,
+#: so ``[:]:`` followed by a blank line and an unrelated ``[ar]: x.md``
+#: defined the label ``:`` with that whole line as its target, and a stray
+#: ``[`` could swallow a real definition into a label. Neither produced a
+#: wrong row before, because nothing resolved against those entries — the
+#: two-span usage shape could not reference them. The shortcut form can,
+#: which is how they surfaced.
+#:
+#: With this the reference family agrees with a CommonMark reader on the
+#: whole generated corpus: 462 disagreements before and 0 after on the
+#: narrow corpus, 5574 and 0 on the wide one
+#: (``tests/test_links_reference_openers.py``, now asserted as equality
+#: rather than containment, and ``tests/test_links_shortcut_references.py``).
+#:
+#: Still one bump: no tag contains the commit that set 10, so all five
 #: changes reach a deployed vault as a single rebuild (``AGENTS.md``, once
 #: per release).
 INDEX_SEMANTICS_VERSION = 10

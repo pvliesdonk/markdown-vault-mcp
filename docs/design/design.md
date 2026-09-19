@@ -2419,11 +2419,12 @@ becoming 11 — no tag contains the commit that set it, so the value already
 covers the next release and its note is extended instead (`AGENTS.md`, once
 per release).
 
-What this leaves: the **shortcut** form `[ref]` is still not extracted, a
+What this left: the **shortcut** form `[ref]` was still not extracted, a
 standing gap rather than anything new. It is why `[a\][ref]` — whose label
-runs past the escaped `]` and so is not a full reference link — loses a row
-that a CommonMark reader still finds, by reading the leftover `[ref]` as a
-shortcut. Bracket balancing is likewise untouched.
+runs past the escaped `]` and so is not a full reference link — lost a row
+that a CommonMark reader still found, by reading the leftover `[ref]` as a
+shortcut. #1531 supplied the form and that input now links; bracket
+balancing was likewise untouched until then.
 
 **A `]` closes the nearest unmatched `[` (#1526).** The opener was the
 *first* `[` since the last unescaped `]`. CommonMark's is the **nearest
@@ -2450,7 +2451,8 @@ filed at all; it was visible only in a stored `link_text`.
 Two rules travel with the opener. An opener preceded by an unescaped `!` is
 an image, so its own span yields no row — but a link *inside* an image's
 description still does, because it closes first (§6.4, Ex. 575). And once a
-link is found, every opener still on the stack is deactivated, because links
+link is found, every *link* opener still on the stack is deactivated while
+an image opener stays live (Ex. 575), because links
 may not contain links (Ex. 518): in `[a [b](y) c](x)` only `b` links.
 
 `iter_inline_links` in `utils/links.py` is where this lives, and the
@@ -2532,18 +2534,139 @@ count instead. Both are in `tests/test_links_reference_openers.py`; the
 *before* column needs the pre-change code, so it is a recorded measurement
 rather than one CI repeats.
 
-What this leaves is the **shortcut form** (`[label]` with no second span),
-which no version has ever stored and which is now the whole of the
-remaining disagreement. It is not a shape test away. CommonMark falls back
-from the full form to the shortcut one when the label lookup *fails*, so
-the scan would have to consult the definition table it currently cannot
-see; bolting a shortcut test onto the walk leaves 774 inputs of the
-wider corpus above still
-disagreeing. And the gap is not merely subtractive, which is the part worth
-recording: a shortcut link deactivates the openers enclosing it like any
-other link, so *not* making one leaves an opener active that a reader has
-retired — in `[[a]b][r]` a reader makes two shortcut links where the
-scanner makes one full reference with the text `[a]b`. Tracked separately.
+What this left was the **shortcut form** (`[label]` with no second span),
+which no version had ever stored and which was then the whole of the
+remaining disagreement. #1531 supplied it; the paragraph below records
+what that took.
+
+**`[label]` alone is a link (#1531).** The last of the four reference
+forms, and the one that turned the family's agreement with a CommonMark
+reader from "contained" into "exact": 462 disagreements to 0 on the narrow
+corpus, 5574 to 0 on the wide one.
+
+It is a **ladder**, not another shape, and the rungs are not independent:
+full (`[text][label]`, only when *label* is defined), then collapsed
+(`[text][]`), then shortcut (`[text]`). Two things follow that a shape test
+cannot express, and both were found by measuring rather than by reading the
+spec:
+
+- **The test consults the definition table.** Whether `[a][b]` is a link
+  depends on what is defined, so the reference family's `follow` is a
+  closure over `ref_defs` where the inline family's is a plain function.
+  That is the layering change #1531 was filed to warn about, and it is the
+  reason this could not ride along with #1528.
+- **Failing to *resolve* differs from failing to *parse*.** A label that
+  parses but is undefined ends the ladder — the reader spent the second
+  span on it. A second span that is not a valid label at all (`[[]`, whose
+  brackets do not balance) was never a candidate, so the ladder falls
+  through to the shortcut. That is the whole difference between `[ar][a]`
+  (no link) and `[a][[]` (a link on `a`), and it needs `_parse_link_label`,
+  which requires balance, rather than `find_bracket_span`, which does not.
+
+The form also breaks something nothing else did: **a definition line is
+itself a label standing alone**. `[r]: x.md` matched no previous usage
+shape, so nothing had to exclude it; under the shortcut rung it matches at
+once. Definitions are therefore blanked out of a region before the usage
+scan, which is what a reader does. Three successive attempts to test for
+one *in place* were each wrong on some generated input — a bare `:` is not
+enough (`See [ar]: here` is a link), a line-initial `:` is not either
+(`[ar]:` with no destination defines nothing), and the destination may sit
+on the next line — which is the argument for reusing the definition scan's
+own answer instead of approximating it.
+
+Two **pre-existing** defects in that definition scan surfaced here, and
+both change rows for every form, not just the new one. A destination could
+be taken from beyond a blank line, and a label could contain one; §4.7 and
+§6.3 allow neither. Each produced a wrong entry in the definition table
+that nothing ever resolved against, because the two-span usage shape could
+not reference it — so the table was wrong for as long as it has existed and
+no row showed it. The shortcut form is the first thing to read that table
+for a label the author wrote bare, which is why these appear in this
+change and not an earlier one.
+
+**What self-review then caught, and the one lesson worth keeping.** A
+review pass over #1531's cumulative diff found six further defects, all
+fixed here, and the pattern joining them is sharper than any of them:
+*every earlier reference form needed a second bracket span, and the
+shortcut rung does not*. Rather than a fourth rung, it is the first form whose match is
+decided by a span's text alone — so every guarantee that rested on "some
+other construct already owns this span, and a `(` or a `[[` is not a
+bracket span" stopped holding at once.
+
+| what broke | before | after the rung | a reader |
+| --- | --- | --- | --- |
+| `[a](x.md)` with `[a]` defined | `a → x.md` | **plus** `a → y.md` | `a → x.md` |
+| `[TODO]: revisit [a][r] later` | `a → x.md` | **no row** | `a → x.md` |
+| `[ ]: x.md`, then `[]` or `[ ]` | no row | **two rows** | no row |
+| `[^a][r]` | no row | `^a → x.md` | CommonMark yes, GFM no |
+| `[[a]]` with `[a]` defined | wikilink only | **plus** `a → y.md` | n/a (Obsidian) |
+
+The first is precedence: §6.3 tries the inline destination before any
+reference rung, so `inline_link_follows` is now rung zero. It asks whether
+the inline form *closed*, not whether it yielded a target, because `[a]()`
+is a link to the empty string for a reader — a span spoken for with
+nothing to index — while `[a](unclosed` never closed and is a genuine
+shortcut. Those two cases pull in opposite directions and are why a test
+for a literal `(` is wrong both ways.
+
+The second is the greedy definition tail meeting a consumer for the first
+time. The tail has always run to the end of the line, which over-matches;
+that was free while nothing used the span bounds, and blanking uses them.
+`_blank_end` cuts to the destination and its title instead, so prose on a
+line the scan merely *thought* was a definition keeps its links.
+
+The third is a third latent table entry of exactly the kind described
+above — `[^\]]+` admitted `[ ]` and keyed it `""` — and the one that would
+have made every unchecked task box in the vault a link. The fourth is half
+of #1104's footnote guard: the ladder subsumes a footnote in the *second*
+span, never in the text, and treating footnotes as prose is a deliberate
+GFM departure that outlives the rewrite.
+
+The fifth is the same collision one family over: `[[a]]` is a wikilink
+here, and its inner `[a]` is a bracket span like any other. Wikilink spans
+are now blanked out of the reference scan exactly as definitions are, from
+`_find_wikilink`'s **own answer** rather than by testing for the `[[…]]`
+shape — `_find_wikilink` grew a start offset for it. The shape test is
+what `[[a]b][ar]` defeats: it opens with `[[` and never closes `]]`, so no
+wikilink is there and the full reference stands, which is what a reader
+reads too.
+
+That one also shows why the corpora had to change and not merely grow.
+Before the blanking, `[[a]]` produced a wikilink row *and* a spurious
+reference row — and the spurious row matched markdown-it, because a reader
+really does read `[[a]]` as a bracket around a shortcut. The corpus passed
+on two errors cancelling. Removing the row exposed the divergence, which
+is the older, deliberate Obsidian departure, so all three corpora now skip
+inputs the wikilink family claims, and say why.
+
+A **sixth** came out of the fix for the second, and is the same lesson
+one level down. `_blank_end` cutting to the destination left open what to
+do when there is no destination: `[r]:` followed by nothing, or
+`[r]: <unclosed`. Cutting the line lost a row (a reader parses it as
+prose, so a `[r]` in it is a shortcut); cutting nothing kept the row but
+left the *table* holding `r → <unclosed`, which the shortcut rung then
+resolved. Neither half works alone, because the defect is that the scan
+yields a "definition" that `_collect_reference_definitions` and the cut
+then disagree about. §4.7 settles it: no destination, no definition, so
+`_iter_definition_matches` rejects it outright and the table and the cut
+stay in lockstep by construction.
+
+**The lesson is about the corpora, not the code.** Each was built from the
+characters its own form needs: `[]!ar` for the opener rule, `[]:\nar` for
+the ladder. None contained a `(`, a space, a `^` or a `[[`, and every
+defect above lives in one of those characters. "0 disagreements over
+97,655 arrangements" was true and still missed all five, because an
+exhaustive sweep of the wrong alphabet is exhaustive about nothing else.
+`TestAgreementWhereTheOtherFormsMeet` adds `()` and a space and compares
+*both* families' rows at once; it fails at length five without the
+precedence fix.
+
+Widening the alphabet also turned up three places **markdown-it departs
+from the spec**, which matter because the corpora use it as their oracle
+and a deviation there reads as a defect here. They are recorded with
+their evidence in
+[`reference/commonmark-gfm.md`](reference/commonmark-gfm.md) and excluded
+from the sweep by name rather than silently.
 
 **A link is matched inside one paragraph, never across a boundary (#1334).**
 The three patterns used to run over the whole code-stripped body, and their

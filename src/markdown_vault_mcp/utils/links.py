@@ -637,19 +637,42 @@ def _parse_destination(region: str, pos: int) -> tuple[str, int, int] | None:
     return (raw, i, close + 1) if raw else None
 
 
-def _parse_pointy_destination(region: str, pos: int) -> tuple[str, int, int] | None:
-    """The ``<…>`` half of :func:`_parse_destination`; *pos* is at the ``<``."""
+def _pointy_destination_span(region: str, pos: int) -> tuple[str, int] | None:
+    """``(raw, close)`` for a ``<…>`` destination at *pos*, or ``None``.
+
+    The grammar shared by the two questions asked about a pointy
+    destination: *is one written here* (this), and *is there one worth
+    storing* (:func:`_parse_pointy_destination`, which additionally
+    rejects the empty ``<>``). Separated because an over-loose copy of
+    this test, checking only that the parens balanced, let
+    ``[a](<x.md> not a title)`` claim its span as an inline link although
+    the parser then rejected it — so neither family stored the row a
+    reader finds. One grammar, two callers, no room to drift.
+
+    *close* is the index of the closing ``)``.
+    """
     end = _scan_pointy_destination(region, pos)
     if end is None:
         return None
-    raw = region[pos:end]
     close = _scan_plain_destination(region, end)
-    if close is None or raw == "<>":
+    if close is None:
         return None
     rest = region[end:close]
     if rest.strip(" \t") and not trailing_title_pattern.fullmatch(rest):
         return None
-    return raw, pos, close + 1
+    return region[pos:end], close
+
+
+def _parse_pointy_destination(region: str, pos: int) -> tuple[str, int, int] | None:
+    """The ``<…>`` half of :func:`_parse_destination`; *pos* is at the ``<``."""
+    span = _pointy_destination_span(region, pos)
+    if span is None:
+        return None
+    raw, close = span
+    # ``<>`` closes an inline link but names nothing, so there is a span
+    # here and no destination to store. That is exactly the distinction
+    # :func:`inline_link_follows` keeps and this function does not.
+    return None if raw == "<>" else (raw, pos, close + 1)
 
 
 def find_bracket_span(region: str, pos: int) -> tuple[int, int, str] | None:
@@ -717,7 +740,7 @@ _Payload = TypeVar("_Payload")
 
 def iter_bracket_links(
     region: str,
-    follow: Callable[[str, int], tuple[_Payload, int] | None],
+    follow: Callable[[str, int, int], tuple[_Payload, int] | None],
 ) -> Iterator[tuple[int, int, _Payload, int]]:
     r"""Walk *region*'s brackets under CommonMark's delimiter-stack rule.
 
@@ -737,7 +760,8 @@ def iter_bracket_links(
     Two rules travel with it. An opener preceded by an unescaped ``!`` is an
     image, so its own span yields nothing — but a link *inside* an image's
     description still does, since it closes first (§6.4, Ex. 575). And once
-    a link is found, every opener still on the stack is deactivated, because
+    a link is found, every *link* opener still on the stack is deactivated,
+    while an image opener stays live (Ex. 575), because
     links may not contain links (Ex. 518).
 
     The walk steps between ``[``, ``]`` and ``\`` rather than over every
@@ -746,20 +770,24 @@ def iter_bracket_links(
 
     Args:
         region: One paragraph region, code already stripped (#1334).
-        follow: Given *region* and the index of the ``]`` that closed a
-            span, returns ``(payload, end)`` when a link is written there
-            and ``None`` when one is not. *end* is the index just past the
-            whole link.
+        follow: Given *region*, the index of the ``[`` that opened a span
+            and the index of the ``]`` that closed it, returns
+            ``(payload, end)`` when a link is written there and ``None``
+            when one is not. *end* is the index just past the whole link.
+            The opener is passed because a reference form may resolve on
+            the span's own text (#1531), which only its bounds identify.
 
     Yields:
         ``(open_index, close_index, payload, end)`` per link, in the order
         the links close. An image is consumed but never yielded.
     """
-    stack: list[tuple[int, bool]] = []
-    # "Links may not contain links" deactivates every opener on the stack at
-    # once, so a watermark says it as well as a flag per entry would: the
-    # opener at depth *i* is still active exactly when ``i >= active_from``.
-    active_from = 0
+    # Each entry is ``(index, is_image, rank)``. *rank* is how many link
+    # openers sat below this one when it was pushed, and ``-1`` for an
+    # image — which is what lets the deactivation below stay O(1) while
+    # still being selective.
+    stack: list[tuple[int, bool, int]] = []
+    link_depth = 0
+    retired_below = 0
     index = 0
     while (mark := _RE_LINK_TEXT_MARK.search(region, index)) is not None:
         at = mark.start()
@@ -773,7 +801,8 @@ def iter_bracket_links(
             is_image = (
                 at > 0 and region[at - 1] == "!" and not _is_escaped(region, at - 1)
             )
-            stack.append((at, is_image))
+            stack.append((at, is_image, -1 if is_image else link_depth))
+            link_depth += 0 if is_image else 1
             index = at + 1
             continue
         # A ``]``. With no opener it is literal; otherwise it consumes the
@@ -782,27 +811,79 @@ def iter_bracket_links(
         if not stack:
             index = at + 1
             continue
-        open_index, is_image = stack.pop()
-        active = len(stack) >= active_from
-        active_from = min(active_from, len(stack))
-        matched = follow(region, at) if active else None
+        open_index, is_image, rank = stack.pop()
+        # An image opener is never retired; a link opener is retired when
+        # its rank falls below the watermark. Read *before* the watermark
+        # is clamped below, or popping the outer opener of
+        # ``[a [b](y) c](x)`` lowers the mark past its own rank and revives
+        # the very opener the inner link retired.
+        active = is_image or rank >= retired_below
+        if not is_image:
+            link_depth -= 1
+            retired_below = min(retired_below, link_depth)
+        matched = follow(region, open_index, at) if active else None
         if matched is None:
             index = at + 1
             continue
         payload, end = matched
         if not is_image:
             yield open_index, at, payload, end
-            active_from = len(stack)
+            # "Links may not contain links" (Ex. 518) retires the openers
+            # this one sits inside — but only the *link* openers. An image
+            # may contain a link (Ex. 575) and stays live, so it can still
+            # take the label or destination that follows, which is how
+            # ``![an [a][r] alt][r]`` is one image and one link rather than
+            # two links.
+            #
+            # Ranking the link openers separately is what keeps that
+            # selective *and* constant-time. Walking the stack to clear a
+            # flag each time reads more plainly and is quadratic on a run
+            # of unclosed ``[``, which is the shape this file exists to
+            # keep linear: it cost 8.5 s on 20000 ``[ar][`` before this
+            # was a watermark again.
+            retired_below = link_depth
         # An image is consumed rather than retried: its own span yields no
         # link, but the text it spans has already been walked, so anything
         # linking inside it was yielded on the way.
         index = end
 
 
+def inline_link_follows(region: str, close_index: int) -> bool:
+    """Whether a ``(…)`` inline destination closes just after *close_index*.
+
+    The *reference* family's precedence test. CommonMark tries the inline
+    destination before any reference rung (§6.3), so a span the inline
+    family owns is not a reference at all — and while a reference needed a
+    second bracket span, that was free, because a ``(`` can never be one.
+    The shortcut rung resolves on the text alone, so it is no longer free.
+
+    Deliberately **not** :func:`_follow_inline_destination`, though the two
+    look like the same question. That one answers "is there a destination
+    to store", and returns ``None`` for ``[a]()`` because there is nothing
+    to index. This one answers "did the inline form claim this span", and
+    ``[a]()`` is a link to the empty string for a reader, so the span is
+    claimed and must not resolve as a shortcut. Equally it is not a test
+    for a literal ``(``: ``[a](unclosed`` never closes, so the inline form
+    did not claim it and the shortcut rung is right to have it.
+    """
+    if region[close_index + 1 : close_index + 2] != "(":
+        return False
+    index = close_index + 2
+    while index < len(region) and region[index] in " \t":
+        index += 1
+    if index < len(region) and region[index] == "<":
+        return _pointy_destination_span(region, index) is not None
+    return _scan_plain_destination(region, index) is not None
+
+
 def _follow_inline_destination(
-    region: str, close_index: int
+    region: str, _open_index: int, close_index: int
 ) -> tuple[tuple[str, int], int] | None:
-    """The inline family's shape test: a destination in ``(…)``."""
+    """The inline family's shape test: a destination in ``(…)``.
+
+    The opener is unused here: an inline link is decided entirely by what
+    follows its ``]``, never by its own text.
+    """
     if region[close_index + 1 : close_index + 2] != "(":
         return None
     parsed = _parse_destination(region, close_index + 2)
@@ -853,7 +934,8 @@ def iter_inline_links(region: str) -> Iterator[InlineLink]:
     Two rules travel with it. An opener preceded by an unescaped ``!`` is an
     image, so its own span yields no link — but a link *inside* an image's
     description still does, since it closes first (§6.4, Ex. 575). And once
-    a link is found, every opener still on the stack is deactivated, because
+    a link is found, every *link* opener still on the stack is deactivated,
+    while an image opener stays live (Ex. 575), because
     links may not contain links (Ex. 518): in ``[a [b](y) c](x)`` only ``b``
     links.
 

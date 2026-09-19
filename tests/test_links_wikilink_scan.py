@@ -30,7 +30,11 @@ import time
 
 import pytest
 
-from markdown_vault_mcp.scanner import _find_wikilink, extract_links
+from markdown_vault_mcp.scanner import (
+    _extract_wikilinks,
+    _find_wikilink,
+    extract_links,
+)
 
 SRC = "source.md"
 
@@ -45,7 +49,11 @@ def _scan(text: str) -> list[tuple[int, str, str | None]]:
     pos = 0
     while (link := _find_wikilink(text, pos)) is not None:
         pos = link[0]
-        found.append(link)
+        # The scan also hands back where the span began, which
+        # ``_blank_wikilinks`` needs and the superseded pattern never
+        # reported; the comparison below is against that pattern, so it
+        # stops at the three elements both produce.
+        found.append(link[:3])
     return found
 
 
@@ -62,15 +70,50 @@ def _regex(text: str) -> list[tuple[int, str, str | None]]:
 
 
 class TestTheScanIsLinear:
+    """Timed on the scan, not on the whole extraction (#1534).
+
+    These asserted on ``extract_links`` until the bound went red twice on
+    CI, and the diagnosis that mattered was not "the runner is slow". The
+    scan they guard costs **0.2-0.36 ms** on these inputs; the extraction
+    around it costs **55-296 ms**, because the CommonMark bracket walk
+    pushes every one of those ``[`` onto a delimiter stack. So the
+    assertion was measuring a quantity 275x to 980x larger than the one
+    under test, and almost all of it was other people's linear work.
+
+    That is not a slack-bound problem, it is a wrong-instrument problem.
+    A bound loose enough to survive the extraction's cost on a slow
+    runner *under coverage* — which is how CI runs them — is nowhere near
+    tight enough to say anything about the scan, and one tight enough to
+    say something goes red whenever unrelated code gets slower. It did:
+    adding a definition-blanking pass elsewhere in the scanner moved
+    these by 1.3x without touching the scan at all.
+
+    Timing the function named in the test fixes both ends. 0.3 ms against
+    a 2 s bound is roughly 5000x of headroom, so runner speed and
+    coverage instrumentation are both irrelevant, while the quadratic
+    each case guards costs seconds and still crosses it comfortably.
+
+    What is given up is end-to-end coverage of these inputs. That is the
+    point: end-to-end is what made the test report on code it was not
+    about. ``extract_links`` keeps its own correctness tests below.
+    """
+
+    #: 5000x the measured linear cost, and still crossed by every
+    #: quadratic these cases were written for. Deliberately far from both,
+    #: so the bound separates *growth* rather than policing a constant.
+    BOUND = 2.0
+
     def test_the_issue_input_no_longer_stalls(self) -> None:
         # 40000 unmatched ``[`` — the issue's own headline case, measured
-        # there at about 29 s for the whole extraction. A generous wall
-        # clock rather than a tight one, so a loaded runner does not make
-        # this flaky: the quadratic version exceeded it by orders of
-        # magnitude and no linear one comes close to it.
+        # there at about 29 s. The scan now costs about 0.2 ms.
         started = time.perf_counter()
+        assert _extract_wikilinks("[" * 40000, SRC, frozenset()) == []
+        assert time.perf_counter() - started < self.BOUND
+
+    def test_the_whole_extraction_still_reads_that_input(self) -> None:
+        # The end-to-end case the timing tests used to carry, kept as a
+        # correctness check with no clock on it.
         assert extract_links("[" * 40000, SRC) == []
-        assert time.perf_counter() - started < 5.0
 
     # There is deliberately no growth-ratio test here, and the reason is
     # worth recording: one was written, and it went flaky on CI within a
@@ -101,15 +144,14 @@ class TestTheScanIsLinear:
         # different route, where the alias search succeeds and the ``]]``
         # test fails.
         #
-        # 100000 and one second, rather than the 40000 and five seconds
-        # the bare-opener case above uses, because a bound has to be one
-        # the defect would actually cross: the quadratic version of this
-        # shape cost about 0.8 s at 40000, which 5 s would have waved
-        # through. At 100000 it costs several seconds and the linear one
-        # costs under a millisecond.
+        # 100000 rather than the 40000 the bare-opener case uses, because
+        # a bound has to be one the defect would actually cross: the
+        # quadratic version of this shape cost about 0.8 s at 40000. At
+        # 100000 it costs several seconds, and the linear scan costs
+        # about 0.3 ms.
         started = time.perf_counter()
-        assert extract_links(region, SRC) == []
-        assert time.perf_counter() - started < 1.0
+        assert _extract_wikilinks(region, SRC, frozenset()) == []
+        assert time.perf_counter() - started < self.BOUND
 
     def test_an_unclosed_run_inside_real_prose_is_still_scanned(self) -> None:
         # The run must not swallow the links around it.
