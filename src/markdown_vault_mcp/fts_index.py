@@ -259,6 +259,11 @@ _META_ATTACHMENT_EXTENSIONS_KEY = "attachment_extensions"
 # missing after the link-extraction fixes in #1104 / #1107.
 _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 
+# Sentinel: the ``notes_fts_rowid_map`` bridge table has been backfilled for a
+# pre-#1535 database. Written once by :meth:`_migrate_fts_rowid_map` and read
+# on every boot to short-circuit a redundant backfill pass.
+_META_FTS_ROWID_MAP_BACKFILLED_KEY = "fts_rowid_map_backfilled"
+
 #: Current version of the parse-to-row pipeline whose output is stored in the
 #: index (link extraction, chunk boundaries, tag/alias/heading derivation).
 #:
@@ -711,6 +716,7 @@ class FTSIndex:
         )
         conn.commit()
         self._migrate_notes_fts_summary(conn)
+        self._migrate_fts_rowid_map(conn)
         self._persist_rank_config(conn)
         # WAL is a DB-header pragma — persists across opens. Skip for in-memory
         # databases (SQLite silently falls back to 'memory' journal mode there).
@@ -822,6 +828,43 @@ class FTSIndex:
         logger.info(
             "fts_index: migrated notes_fts — added summary column and "
             "repopulated from sections"
+        )
+
+    def _migrate_fts_rowid_map(self, conn: sqlite3.Connection) -> None:
+        """Backfill ``notes_fts_rowid_map`` for a pre-#1535 database.
+
+        A database created before the rowid-delete fix (#1535) has
+        ``notes_fts`` rows with no corresponding bridge-table entry, so
+        :meth:`_delete_document` would find nothing to delete by rowid.
+        Populate it once, in pure SQL, from the ``notes_fts``/``documents``
+        join on path — the same join every reader already performs, so no
+        filesystem rescan is needed. Idempotent (``INSERT OR IGNORE`` plus
+        a meta sentinel), so a crash between the backfill and the sentinel
+        write just reruns harmlessly on the next open. Must run after
+        :meth:`_migrate_notes_fts_summary`, whose DROP/CREATE assigns fresh
+        rowids this join has to see.
+
+        Args:
+            conn: The primary connection (inside :meth:`_init_schema`).
+        """
+        row = conn.execute(
+            "SELECT 1 FROM meta WHERE key = ?",
+            (_META_FTS_ROWID_MAP_BACKFILLED_KEY,),
+        ).fetchone()
+        if row is not None:
+            return
+        conn.execute(
+            "INSERT OR IGNORE INTO notes_fts_rowid_map (document_id, fts_rowid) "
+            "SELECT d.id, f.rowid FROM notes_fts f "
+            "JOIN documents d ON d.path = f.path"
+        )
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?)",
+            (_META_FTS_ROWID_MAP_BACKFILLED_KEY, "1"),
+        )
+        conn.commit()
+        logger.info(
+            "fts_index: backfilled notes_fts_rowid_map for a pre-#1535 database"
         )
 
     def _persist_rank_config(self, conn: sqlite3.Connection) -> None:

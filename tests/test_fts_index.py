@@ -1591,6 +1591,76 @@ class TestNotesFtsSummaryMigration:
         idx.close()
 
 
+class TestFtsRowidMapMigration:
+    def test_backfills_bridge_table_for_pre_1535_database(self, tmp_path: Path) -> None:
+        """Opening a pre-#1535 database (no notes_fts_rowid_map, and still
+        on the legacy 5-column notes_fts) backfills the bridge table from
+        the notes_fts/documents join, after the summary-column migration
+        assigns fresh rowids — and delete works immediately, no rescan."""
+        db = tmp_path / "legacy.db"
+        conn = sqlite3.connect(db)
+        conn.executescript(_LEGACY_SCHEMA)
+        conn.execute(
+            "INSERT INTO documents (id, path, title, folder, frontmatter_json,"
+            " content_hash, modified_at, chunk_count)"
+            " VALUES (1, 'a.md', 'Alpha', '', '{}', 'h1', 1000.0, 2)"
+        )
+        conn.execute(
+            "INSERT INTO sections (document_id, heading, heading_level, content,"
+            " start_line) VALUES (1, 'Intro', 1, 'hello world body', 0)"
+        )
+        conn.execute(
+            "INSERT INTO sections (document_id, heading, heading_level, content,"
+            " start_line) VALUES (1, NULL, 0, 'preamble text', 5)"
+        )
+        conn.execute(
+            "INSERT INTO notes_fts (path, title, folder, heading, content)"
+            " VALUES ('a.md', 'Alpha', '', 'Intro', 'hello world body')"
+        )
+        conn.execute(
+            "INSERT INTO notes_fts (path, title, folder, heading, content)"
+            " VALUES ('a.md', 'Alpha', '', '', 'preamble text')"
+        )
+        conn.execute(
+            "INSERT INTO meta (key, value) VALUES ('build_completed_at', 'ts')"
+        )
+        conn.commit()
+        conn.close()
+
+        idx = FTSIndex(db_path=db)
+        rows = (
+            idx._conn()
+            .execute(
+                "SELECT document_id, fts_rowid FROM notes_fts_rowid_map"
+                " ORDER BY fts_rowid"
+            )
+            .fetchall()
+        )
+        assert [tuple(r) for r in rows] == [(1, 1), (1, 2)]
+
+        deleted = idx.delete_by_path("a.md")
+        assert deleted == 1
+        assert idx._conn().execute("SELECT COUNT(*) FROM notes_fts").fetchone()[0] == 0
+        idx.close()
+
+    def test_reopening_current_schema_does_not_rebackfill(self, tmp_path: Path) -> None:
+        """A second open is a no-op: the meta sentinel short-circuits the
+        backfill join instead of rerunning it on every boot."""
+        db = tmp_path / "current.db"
+        idx = FTSIndex(db_path=db)
+        idx.upsert_note(make_note("a.md"))
+        idx.close()
+
+        idx2 = FTSIndex(db_path=db)
+        count = (
+            idx2._conn()
+            .execute("SELECT COUNT(*) FROM notes_fts_rowid_map")
+            .fetchone()[0]
+        )
+        assert count == 1
+        idx2.close()
+
+
 def test_unknown_fts_weights_column_logs_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
