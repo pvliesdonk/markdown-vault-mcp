@@ -2,10 +2,11 @@
 
 A warm restart short-circuits ``build_index_async()`` in O(1) via the FTS
 sentinel (#526), so nothing scans the filesystem at boot.  The lifespan now
-also submits an incremental ``reindex_async()`` job behind the build: files
-added, modified, or deleted while no server was running are reconciled as
-soon as the writer drains, instead of staying invisible until an unrelated
-watcher event, git pull, or manual reindex.
+also submits an incremental ``reindex_async()`` job behind the build
+(conditional on ``BOOT_REINDEX`` since #1535): files added, modified, or
+deleted while no server was running are reconciled as soon as the writer
+drains, instead of staying invisible until an unrelated watcher event, git
+pull, or manual reindex.
 """
 
 from __future__ import annotations
@@ -332,3 +333,28 @@ class TestBootReindexDisabled:
         # And the reindex tool recovers it, so the switch is opt-out, not a trap.
         assert after_status["documents_indexed"] == 4
         assert "offline_added.md" in after_paths
+
+    def test_cold_boot_still_builds_with_boot_reindex_disabled(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Decision 28: a cold vault still gets its initial build with BOOT_REINDEX=false."""
+        from markdown_vault_mcp.server import make_server
+
+        vault = _make_vault_dir(tmp_path, n_docs=3)
+        # No _prebuild(): there is no persistent index yet, so this is the
+        # cold-build path, not the warm-restart short-circuit.
+
+        _set_env(monkeypatch, vault, tmp_path)
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BOOT_REINDEX", "false")
+        server = make_server()
+
+        async def _run() -> dict[str, Any]:
+            async with Client(server) as client:
+                await wait_for_mcp_writer_drain(client)
+                status = await client.call_tool("get_index_status", {})
+                return status.structured_content or {}
+
+        status = asyncio.run(_run())
+
+        # The initial build ran despite the switch: all 3 notes are indexed.
+        assert status["documents_indexed"] == 3

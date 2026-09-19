@@ -660,8 +660,13 @@ class Vault:
         """One-time git fetch + ff-only update before build_index().
 
         Intended to run during server startup before the initial index build.
-        No reindex is triggered here because build_index() will scan the updated
-        working tree.
+        No reindex is triggered here: on a cold start build_index() will scan
+        the updated working tree, but on a warm restart build_index_async()
+        short-circuits in O(1) on the existing FTS sentinel and scans
+        nothing. In that case the boot reindex (gated by
+        ``config.boot_reindex``, see #1535) is what actually indexes the tree
+        this pull just updated — with it disabled, the pulled content stays
+        unindexed until a later pull moves HEAD.
         """
         if self._git_strategy is None or self._git_pull_interval_s <= 0:
             return

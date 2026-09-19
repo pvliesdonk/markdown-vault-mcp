@@ -1086,20 +1086,33 @@ itself succeed even during shutdown drain, so `ProcessDirtyPaths` can
 chain into `FlushDirtyEmbeddings` and both flush before the sentinel
 ends the worker loop.
 
-The boot reconciliation is conditional as of #1535: `MARKDOWN_VAULT_MCP_BOOT_REINDEX=false`
-skips the `reindex_async()` submission while leaving the initial build and the
-embeddings submission untouched. The trade is explicit — an operator of a large
-vault stops paying a filesystem scan per server start, and in exchange changes
-made while no server was running stay invisible until a reindex runs out of band
-(the `reindex` tool, or `markdown-vault-mcp reindex`). Two consequences are worth
+When it is off, only the reconciliation reindex is skipped; the initial
+build and the embeddings submission run as before (decision 28). The trade
+is explicit — an operator of a large vault stops paying a filesystem scan
+per server start, and in exchange changes made while no server was running
+stay invisible until a reindex runs out of band (the `reindex` tool, or
+`markdown-vault-mcp reindex`). Two consequences are worth
 stating plainly. First, `index_stale` (#646) is a writer-idle signal —
 `write_generation` unchanged and the writer drained — not a claim that the index
 agrees with the filesystem; with the boot reindex off the writer drains sooner, so
 `index_stale` reads false while the index may still differ from disk. That is not a
 change to what `index_stale` means, but the removal of the work that used to make
-the two coincide at boot. Second, an operator who disables both this and the file
-watcher has no automatic offline-change path left at all, since the git-pull path
-triggers its own reindex only when git sync is configured.
+the two coincide at boot. Second, the combination to worry about is not "both
+disabled by the operator" — the file watcher is auto-disabled by
+`should_start_file_watcher` (`_file_watcher.py`) whenever git pull or a
+deliverable webhook is active, so an operator running git sync never gets a
+choice about the watcher. On such a deployment, `BOOT_REINDEX=false` leaves
+only pull-triggered reindexes in place, and the startup pull is not one of
+them: `sync_from_remote_before_index()` deliberately runs no reindex of its
+own (see above), so content it just fetched stays unindexed until a later
+pull moves HEAD. Bounded and self-healing, but silent; #1542 tracks the
+observability gap and a proposed refinement (submitting the boot reindex only
+when the startup pull actually moved HEAD). The picture is more forgiving on
+a watcher-active deployment (stdio, no git — the regime #1535 was reported
+against): `_on_file_change` (`domain.py`) calls the full incremental
+`reindex()`, not a targeted single-path update, so the first in-session
+filesystem event reconciles every change accumulated while offline, not just
+the one file that triggered it.
 
 **File watcher scoping (#823/#828/#830).** When the file watcher is
 active (neither git pull nor a webhook that can deliver on this
