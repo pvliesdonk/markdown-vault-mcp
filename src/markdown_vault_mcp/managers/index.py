@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import time
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -52,6 +53,14 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.tracker import ChangeTracker
 
 logger = logging.getLogger(__name__)
+
+# Wall-clock gap between mid-pass ``state.json`` snapshots during a reindex.
+# Without them an interrupted pass — a short-lived MCP client exiting while
+# the boot reindex runs — restarts from the last COMPLETED pass and redoes
+# every note it had already committed (#1535). Time-based rather than
+# note-count-based because note sizes vary by orders of magnitude. ``0.0``
+# checkpoints after every note, which is how the tests exercise it.
+_CHECKPOINT_INTERVAL_S = 60.0
 
 
 class IndexManager:
@@ -343,6 +352,31 @@ class IndexManager:
         for row in self._fts.list_tombstones():
             if row["path"] not in reasons:
                 self._fts.delete_by_path(row["path"])
+
+    def _state_notes_from_index(self) -> list[ParsedNote]:
+        """Build tracker-state notes from the index's current contents.
+
+        The FTS index is the ground truth for what has actually been
+        persisted: per-document upserts each commit, so a note already
+        re-indexed this pass carries its new hash while one not yet reached
+        still carries its old one. Both the mid-pass checkpoint and the
+        closing state write snapshot exactly that, which is what makes an
+        interrupted pass resumable rather than restart-from-zero (#1535).
+
+        Returns:
+            One hash-carrying :class:`ParsedNote` per indexed document.
+        """
+        return [
+            ParsedNote(
+                path=r["path"],
+                frontmatter={},
+                title=r["title"],
+                chunks=[],
+                content_hash=r["content_hash"],
+                modified_at=r["modified_at"],
+            )
+            for r in self._fts.list_notes()
+        ]
 
     def _purge_stale_excluded(
         self,
@@ -644,8 +678,28 @@ class IndexManager:
         if should_optimize(deleted_purged + stale_excluded, docs_before_purge):
             self._fts.optimize()
 
+        def _checkpoint() -> None:
+            """Snapshot tracker state mid-pass; never abort the reindex.
+
+            A checkpoint is an optimisation for the *next* boot, so a failure
+            here (disk full, state file momentarily locked) must not lose the
+            FTS work this pass has already committed — the closing
+            update_state still attempts its own write.
+            """
+            try:
+                self._tracker.checkpoint_state(
+                    self._state_notes_from_index(),
+                    skipped=newly_skipped,
+                    skip_reasons=newly_skip_reasons,
+                )
+            except Exception:
+                logger.warning(
+                    "reindex: mid-pass checkpoint failed; pass continues",
+                    exc_info=True,
+                )
+
         indexed_added, indexed_modified = self._upsert_parsed_notes(
-            parsed, vectors, added_paths=set(changes.added)
+            parsed, vectors, added_paths=set(changes.added), checkpoint=_checkpoint
         )
 
         # Persist the vector index only when this pass actually mutated it.
@@ -666,17 +720,7 @@ class IndexManager:
         self._fts.resolve_vault_wikilinks()
 
         # Rebuild tracker state from current FTS index contents.
-        state_notes: list[ParsedNote] = [
-            ParsedNote(
-                path=r["path"],
-                frontmatter={},
-                title=r["title"],
-                chunks=[],
-                content_hash=r["content_hash"],
-                modified_at=r["modified_at"],
-            )
-            for r in self._fts.list_notes()
-        ]
+        state_notes = self._state_notes_from_index()
         self._tracker.update_state(
             state_notes, skipped=newly_skipped, skip_reasons=newly_skip_reasons
         )
@@ -774,6 +818,7 @@ class IndexManager:
         vectors: VectorStore | None,
         *,
         added_paths: set[str],
+        checkpoint: Callable[[], None] | None = None,
     ) -> tuple[int, int]:
         """Upsert parsed notes into FTS (and inline-embed when loaded).
 
@@ -791,6 +836,10 @@ class IndexManager:
             parsed: ``(path, note)`` pairs from :meth:`_parse_changed_notes`.
             vectors: The (possibly lazily-loaded) vector index, or ``None``.
             added_paths: Paths counted as added rather than modified.
+            checkpoint: Called at most every ``_CHECKPOINT_INTERVAL_S``
+                seconds after a successful upsert, to snapshot tracker state
+                so an interrupted pass resumes rather than restarting
+                (#1535). ``None`` disables mid-pass checkpointing.
 
         Returns:
             Tuple ``(indexed_added, indexed_modified)``.
@@ -799,6 +848,7 @@ class IndexManager:
         indexed_modified = 0
         embed_kept = 0
         embed_dropped = 0
+        last_checkpoint = time.monotonic()
         for path, note in parsed:
             try:
                 self._fts.upsert_note(note)
@@ -816,6 +866,12 @@ class IndexManager:
                     embed_kept += 1
                 elif outcome == _EMBED_DROPPED:
                     embed_dropped += 1
+
+            if checkpoint is not None and (
+                time.monotonic() - last_checkpoint >= _CHECKPOINT_INTERVAL_S
+            ):
+                checkpoint()
+                last_checkpoint = time.monotonic()
         if embed_kept:
             logger.warning(
                 "reindex_inline_embed_failed_docs total=%d "
