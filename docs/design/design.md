@@ -3771,6 +3771,9 @@ class ChangeTracker:
     def update_state(self, notes: list[ParsedNote],
                      skipped: dict[str, str] | None = None,
                      skip_reasons: dict[str, dict[str, str]] | None = None) -> None: ...
+    def checkpoint_state(self, notes: list[ParsedNote],
+                         skipped: dict[str, str] | None = None,
+                         skip_reasons: dict[str, dict[str, str]] | None = None) -> None: ...
     def skip_reasons(self) -> dict[str, dict[str, str]]: ...
     def reset(self) -> None: ...
 ```
@@ -3784,6 +3787,19 @@ deterministic skips (parse / encoding / missing-frontmatter / internal-error);
 a version-2 file without it loads it as empty. The legacy flat
 `{"Journal/note.md": "sha256hex", ...}` format loads with every entry treated
 as indexed.
+
+`checkpoint_state` is `update_state` without the carry consumption (#1535).
+`reindex` writes a snapshot every `_CHECKPOINT_INTERVAL_S` seconds during its
+upsert loop and exactly one closing `update_state`; only that closing call may
+consume the skipped entries `detect_changes` carried, so a checkpoint that
+used `update_state` would drop every unchanged skipped file from the final
+state. Snapshots are taken from the FTS index's current contents rather than
+from a running tally: per-document upserts each commit, so a note already
+re-indexed this pass carries its new hash and one not yet reached still
+carries its old one — the snapshot is accurate by construction, and an
+interrupted pass resumes at the right place instead of restarting from the
+last completed pass. The scan-and-parse phase that precedes the upsert loop
+is not covered; an interruption there is still redone in full.
 
 ### `server.py`: Generic MCP Server
 
@@ -5490,3 +5506,4 @@ Later decisions (2026-09-19, #1535):
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
 | 26 | `notes_fts` delete cost | A small ordinary `notes_fts_rowid_map` bridge table (`document_id`, `fts_rowid`, `WITHOUT ROWID`), populated on insert and consulted by `_delete_document` to delete by `rowid` instead of `WHERE path = ?` | `notes_fts` is content-carrying FTS5 (no index on ordinary columns — every non-`MATCH`, non-`rowid` filter forces a full scan of the shadow content table), so every upsert/delete paid one full scan; O(N × table_size) for a batch of N changed notes. **Rejected:** the reporter's `rowid = documents.id` suggestion — `notes_fts` holds one row per chunk, not one per document, so a document's rows cannot share a single rowid. **Rejected:** converting to an external-content table keyed off `sections.id` — the migration would need to recompute the `summary` column in Python per document rather than a pure-SQL join, and `notes_fts`'s column set (`path`/`title`/`folder`/`summary`) doesn't map onto `sections`'s columns without denormalizing further. **Rejected:** a `fts_rowid` column added directly to `sections` (1:1 with `notes_fts` rows — same loop in `_insert_sections`), which would need no new table — backfilling `sections.fts_rowid` on a legacy database would require assuming a positional correspondence between `sections` rows and `notes_fts` rows that nothing in the schema guarantees, whereas the bridge table's backfill is a path join that is correct regardless of row order. See docs/design/reference/sqlite-fts5.md. |
+| 27 | Reindex interruption | Snapshot `state.json` on a wall-clock timer during the upsert loop, from the FTS index's current contents, via a `checkpoint_state` that deliberately does not consume the tracker's skipped carries | A pass interrupted by a short-lived MCP client otherwise restarts from the last *completed* pass and redoes every note it had already committed (#1535). The index is already durable per note for process death — the failure #1535 names — though not for a power loss or kernel crash (the FTS connection runs WAL with `PRAGMA synchronous = NORMAL` and `_save_state` does not fsync before its rename, so the two can disagree about what actually reached disk), so its own `content_hash` column is an accurate record of progress in the covered case — no separate delta tracking is needed, and a checkpoint is just the closing write run early. The 30s interval trades measured cost against restart latency: the first snapshot lands one interval after the upsert loop starts (the parse phase precedes it and is not covered), so the interval also bounds how much committed work an interrupted pass redoes; 30s is ~0.4% overhead at the benchmarked 119 ms/checkpoint on 25k notes, and the cost argument alone does not distinguish 60s from 15–30s, so the latency side decides it. **Rejected:** a `final: bool` flag on `update_state` — the carry consumption is a correctness contract ("consumed by exactly one call"), and a flag invites a caller to get it wrong; a separate method makes the two intents distinct. **Rejected:** in-memory delta tracking of applied hashes — `list_notes()` per checkpoint is tens to hundreds of milliseconds at 25k notes, noise at a 30s interval, and correct by construction rather than by bookkeeping. **Not covered:** the parse phase, which runs to completion before the first upsert; and inline-embedded vectors, which stay in memory until pass end and converge via `build_embeddings` (#665) rather than being re-embedded after a checkpointed restart. |

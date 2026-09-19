@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
@@ -2585,3 +2586,140 @@ class TestBodyLessNotesAreNotEmbedded:
         assert mgr.build_embeddings() == 0
         assert mgr.build_embeddings() == 0
         assert provider.calls == []
+
+
+# ---------------------------------------------------------------------------
+# Checkpointing during reindex (#1535)
+# ---------------------------------------------------------------------------
+
+
+class TestReindexCheckpointing:
+    def test_interrupted_reindex_keeps_completed_work(
+        self, index_vault: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An interruption mid-upsert leaves state.json describing exactly the
+        notes already committed, so the next pass redoes only the rest (#1535).
+        """
+        monkeypatch.setattr(
+            "markdown_vault_mcp.managers.index._CHECKPOINT_INTERVAL_S", 0.0
+        )
+        mgr, fts, _ = _make_index_mgr(index_vault, tmp_path)
+        mgr.build_index()
+
+        # Edit all four notes so the next pass sees them all as modified.
+        for name in ("alpha.md", "beta.md", "notes/gamma.md", "notes/delta.md"):
+            note = index_vault / name
+            note.write_text(
+                note.read_text(encoding="utf-8") + "\nEdited.\n", encoding="utf-8"
+            )
+
+        # _upsert_parsed_notes catches Exception per note, so abort with a
+        # BaseException subclass — the shape of a client exiting mid-pass.
+        real_upsert = fts.upsert_note
+        calls = {"n": 0}
+
+        def _upsert_then_abort(note):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            if calls["n"] > 2:
+                raise KeyboardInterrupt("simulated client exit mid-reindex")
+            return real_upsert(note)
+
+        monkeypatch.setattr(fts, "upsert_note", _upsert_then_abort)
+        with pytest.raises(KeyboardInterrupt):
+            mgr.reindex()
+
+        # Two notes landed and were checkpointed; the next pass redoes only
+        # the two that never made it.
+        monkeypatch.setattr(fts, "upsert_note", real_upsert)
+        result = mgr.reindex()
+        assert result.modified == 2
+
+    def test_no_checkpoint_when_interval_not_reached(
+        self, index_vault: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A pass shorter than the interval writes state only at the end."""
+        monkeypatch.setattr(
+            "markdown_vault_mcp.managers.index._CHECKPOINT_INTERVAL_S", 3600.0
+        )
+        mgr, _, _ = _make_index_mgr(index_vault, tmp_path)
+        mgr.build_index()
+        (index_vault / "alpha.md").write_text(
+            "---\ntitle: Alpha\n---\n# Alpha\n\nChanged.\n", encoding="utf-8"
+        )
+
+        spy = MagicMock(wraps=mgr._tracker.checkpoint_state)
+        monkeypatch.setattr(mgr._tracker, "checkpoint_state", spy)
+        result = mgr.reindex()
+
+        assert result.modified == 1
+        spy.assert_not_called()
+
+    def test_checkpoint_failure_does_not_abort_the_pass(
+        self,
+        index_vault: Path,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A failing checkpoint (disk full, locked state file) is logged and
+        the reindex still completes — the checkpoint is an optimisation for
+        the next boot, never a reason to lose this pass's committed work."""
+        monkeypatch.setattr(
+            "markdown_vault_mcp.managers.index._CHECKPOINT_INTERVAL_S", 0.0
+        )
+        mgr, _, _ = _make_index_mgr(index_vault, tmp_path)
+        mgr.build_index()
+        (index_vault / "alpha.md").write_text(
+            "---\ntitle: Alpha\n---\n# Alpha\n\nChanged.\n", encoding="utf-8"
+        )
+
+        def _boom(*args, **kwargs):  # type: ignore[no-untyped-def]  # noqa: ARG001
+            raise OSError("no space left on device")
+
+        monkeypatch.setattr(mgr._tracker, "checkpoint_state", _boom)
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.index"
+        ):
+            result = mgr.reindex()
+
+        assert result.modified == 1
+        assert any("checkpoint" in r.getMessage() for r in caplog.records)
+
+    def test_checkpoint_withholds_between_intervals(
+        self, index_vault: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The interval timer must reset after each checkpoint, or every
+        note past the first elapsed interval checkpoints unconditionally
+        (#1535) — this fails if ``last_checkpoint`` stops being reassigned.
+        """
+        monkeypatch.setattr(
+            "markdown_vault_mcp.managers.index._CHECKPOINT_INTERVAL_S", 10.0
+        )
+        mgr, _, _ = _make_index_mgr(index_vault, tmp_path)
+        mgr.build_index()
+
+        # Edit all four notes so the next pass sees them all as modified.
+        for name in ("alpha.md", "beta.md", "notes/gamma.md", "notes/delta.md"):
+            note = index_vault / name
+            note.write_text(
+                note.read_text(encoding="utf-8") + "\nEdited.\n", encoding="utf-8"
+            )
+
+        # One monotonic() call seeds last_checkpoint before the loop, then
+        # one comparison call per note, plus one reset call whenever a
+        # checkpoint fires. With a reset: 0.0, 6.0 (note1, no fire), 12.0
+        # (note2, fires -> reset to 18.0), 24.0 (note3, no fire), 30.0
+        # (note4, fires -> reset to 36.0) = 7 ticks, 2 checkpoints. A spare
+        # tick is included so the iterator cannot run dry either way.
+        ticks = iter([0.0, 6.0, 12.0, 18.0, 24.0, 30.0, 36.0, 42.0])
+        monkeypatch.setattr(
+            "markdown_vault_mcp.managers.index.time",
+            SimpleNamespace(monotonic=lambda: next(ticks)),
+        )
+
+        spy = MagicMock(wraps=mgr._tracker.checkpoint_state)
+        monkeypatch.setattr(mgr._tracker, "checkpoint_state", spy)
+        result = mgr.reindex()
+
+        assert result.modified == 4
+        assert spy.call_count == 2

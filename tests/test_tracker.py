@@ -932,3 +932,66 @@ class TestSkipReasonsSanitization:
         assert tracker.skip_reasons() == {
             "bad.md": {"category": "parse_error", "detail": "boom"},
         }
+
+
+class TestCheckpointState:
+    def test_checkpoint_preserves_carries_for_the_closing_update(
+        self, tmp_path: Path
+    ) -> None:
+        """A mid-pass checkpoint must not consume the skipped carries.
+
+        detect_changes() parks unchanged skipped files in the carries, and
+        update_state() merges them into the snapshot exactly once. If a
+        checkpoint consumed them, the closing update_state() would drop every
+        unchanged skipped file from state.json, and the next scan would
+        re-report it as added (#1535).
+        """
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / "good.md").write_text(
+            "---\ntitle: Good\n---\n# Good\n\nbody\n", encoding="utf-8"
+        )
+        (vault / "skipped.md").write_text("no frontmatter here\n", encoding="utf-8")
+
+        tracker = ChangeTracker(tmp_path / "state.json")
+        # First pass: record skipped.md as a skipped file with a reason, so a
+        # later detect_changes() parks it in the carries as unchanged-skipped.
+        tracker.detect_changes(vault)
+        good_md_hash = hashlib.sha256(
+            b"---\ntitle: Good\n---\n# Good\n\nbody\n"
+        ).hexdigest()
+        skipped_md_hash = hashlib.sha256(b"no frontmatter here\n").hexdigest()
+        tracker.update_state(
+            [_make_note("good.md", good_md_hash)],
+            skipped={"skipped.md": skipped_md_hash},
+            skip_reasons={
+                "skipped.md": {
+                    "category": "missing_frontmatter",
+                    "detail": "no required fields",
+                }
+            },
+        )
+
+        # Second pass: detect_changes() re-parks skipped.md in the carries.
+        # good.md never appears in the skipped map, so its hash is never
+        # compared against a computed digest — an arbitrary literal distinct
+        # from good_md_hash is enough to prove the closing write's notes
+        # (not the checkpoint's) are what land in state.json.
+        tracker.detect_changes(vault)
+        good_md_hash_v2 = "second-pass-hash-for-good-md"
+        tracker.checkpoint_state([_make_note("good.md", good_md_hash_v2)])
+        tracker.update_state([_make_note("good.md", good_md_hash_v2)])
+
+        state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+        assert state["indexed"] == {"good.md": good_md_hash_v2}
+        # The carry survived the checkpoint and reached the closing write.
+        assert "skipped.md" in state["skipped"]
+        assert "skipped.md" in state["skip_reasons"]
+
+    def test_checkpoint_writes_the_snapshot(self, tmp_path: Path) -> None:
+        """checkpoint_state persists indexed hashes just like update_state."""
+        tracker = ChangeTracker(tmp_path / "state.json")
+        tracker.checkpoint_state([_make_note("a.md", "hash-a")])
+
+        state = json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))
+        assert state["indexed"] == {"a.md": "hash-a"}
