@@ -2406,3 +2406,23 @@ class TestCuratedRankingValidation:
     def test_searchable_frontmatter_frozen_to_tuple(self) -> None:
         cfg = IndexingConfig(searchable_frontmatter=["summary", "type"])
         assert cfg.searchable_frontmatter == ("summary", "type")
+
+
+def test_boot_reindex_defaults_to_true(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Omitting the var preserves today's behaviour: the boot reindex runs."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_BOOT_REINDEX", raising=False)
+
+    assert ProjectConfig.from_env().boot_reindex is True
+
+
+def test_boot_reindex_env_override_disables_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """MARKDOWN_VAULT_MCP_BOOT_REINDEX=false turns the boot reindex off."""
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_BOOT_REINDEX", "false")
+
+    assert ProjectConfig.from_env().boot_reindex is False

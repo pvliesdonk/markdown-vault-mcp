@@ -381,6 +381,12 @@
           "default": "true"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_BOOT_REINDEX",
+          "description": "Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp reindex'). Note that `index_stale` reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault.",
+          "format": "boolean",
+          "default": "true"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET",
           "description": "Shared secret for the GitHub push-event webhook; when set, mounts POST /github-webhook on HTTP/SSE transports to trigger an immediate pull + reindex on push events.",
           "isSecret": true
@@ -961,6 +967,12 @@
         {
           "name": "MARKDOWN_VAULT_MCP_FILE_WATCHER_ROOT_FLOOR",
           "description": "Keep the non-recursive watch on the vault root; set false to register zero source-dir-rooted FSEvents streams (avoids repeated macOS access prompts on a home-rooted vault) at the cost of root-level files relying on scans.",
+          "format": "boolean",
+          "default": "true"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_BOOT_REINDEX",
+          "description": "Reconcile offline changes at startup by reindexing once the initial build completes. Set false on a large vault to start without paying a full filesystem scan per server start; changes made while no server was running are then invisible until a reindex runs (the reindex tool, or 'markdown-vault-mcp reindex'). Note that `index_stale` reports writer idleness, not agreement with disk, so it reads false while the index may still differ from the vault.",
           "format": "boolean",
           "default": "true"
         },

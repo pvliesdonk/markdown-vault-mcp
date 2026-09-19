@@ -195,8 +195,18 @@ class Service:
         # second full parse.  While this job is pending, the writer is
         # non-drained, so #646's out-of-band `index_stale` meta signal
         # honestly reports True until the boot reconciliation completes.
-        vault.index.reindex_async()
-        logger.info("Submitted boot Reindex job to writer")
+        # This job is now conditional on config.boot_reindex (#1535);
+        # index_stale consequently reports drained sooner without implying
+        # the index agrees with disk.
+        if config.boot_reindex:
+            vault.index.reindex_async()
+            logger.info("Submitted boot Reindex job to writer")
+        else:
+            logger.info(
+                "Boot reindex disabled by configuration; changes made while "
+                "no server was running stay invisible until a reindex runs "
+                "(reindex tool or 'markdown-vault-mcp reindex')"
+            )
 
         if instances.embedding_provider is not None:
             vault.index.build_embeddings_async()

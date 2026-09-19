@@ -752,6 +752,23 @@ class ProjectConfig:
             "wizard": {"group": "Change detection"},
         },
     )
+    boot_reindex: bool = field(
+        default=True,
+        metadata={
+            "help": (
+                "Reconcile offline changes at startup by reindexing once the "
+                "initial build completes. Set false on a large vault to start "
+                "without paying a full filesystem scan per server start; "
+                "changes made while no server was running are then invisible "
+                "until a reindex runs (the reindex tool, or "
+                "'markdown-vault-mcp reindex'). Note that `index_stale` reports "
+                "writer idleness, not agreement with disk, so it reads false "
+                "while the index may still differ from the vault."
+            ),
+            "tags": ("sync",),
+            "wizard": {"group": "Change detection"},
+        },
+    )
     github_webhook_secret: str | None = field(
         default=None,
         metadata={
@@ -1197,6 +1214,7 @@ class ProjectConfig:
             file_watcher_root_floor=to_bool(
                 env(_ENV_PREFIX, "FILE_WATCHER_ROOT_FLOOR"), default=True
             ),
+            boot_reindex=to_bool(env(_ENV_PREFIX, "BOOT_REINDEX"), default=True),
             github_webhook_secret=env(_ENV_PREFIX, "GITHUB_WEBHOOK_SECRET") or None,
             gitlab_webhook_signing_token=(
                 env(_ENV_PREFIX, "GITLAB_WEBHOOK_SIGNING_TOKEN") or None
