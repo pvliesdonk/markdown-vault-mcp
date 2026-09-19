@@ -1069,21 +1069,50 @@ fast run returns its real result inline, and a run outliving the jobs
 soft deadline is promoted to a background job polled via
 ``get_job_result`` while the writer thread keeps working.
 
-**Boot reconciliation (#665).** The server lifespan submits
-`reindex_async()` immediately after `build_index_async()`. On a warm
+**Boot reconciliation (#665).** The server lifespan conditionally submits
+`reindex_async()` immediately after `build_index_async()` (gated by
+`MARKDOWN_VAULT_MCP_BOOT_REINDEX`, default `true`; see #1535). On a warm
 restart the build short-circuits in O(1) via the FTS sentinel and scans
 nothing, so the queued `ReindexAll` job is what picks up files added,
 modified, or deleted while no server was running (the file watcher only
 sees future events). FIFO ordering guarantees build-before-reindex; on a
 cold boot the full build has just recorded tracker state (including
 skipped files), so the reindex degenerates to a hash scan with zero
-re-parses and zero re-upserts. While the boot reindex is pending or in
-flight the writer is non-drained, so the `_meta.index_stale` signal
-(#646) reports `true` to early readers until offline changes are
-reconciled; no extra staleness bookkeeping is needed. Follow-up submissions issued from inside the writer thread
+re-parses and zero re-upserts. When enabled, the boot reindex keeps the
+writer non-drained, so the `_meta.index_stale` signal (#646) reports
+`true` to early readers until offline changes are reconciled; no extra
+staleness bookkeeping is needed. Follow-up submissions issued from inside the writer thread
 itself succeed even during shutdown drain, so `ProcessDirtyPaths` can
 chain into `FlushDirtyEmbeddings` and both flush before the sentinel
 ends the worker loop.
+
+When it is off, only the reconciliation reindex is skipped; the initial
+build and the embeddings submission run as before (decision 28). The trade
+is explicit — an operator of a large vault stops paying a filesystem scan
+per server start, and in exchange changes made while no server was running
+stay invisible until a reindex runs out of band (the `reindex` tool, or
+`markdown-vault-mcp reindex`). Two consequences are worth
+stating plainly. First, `index_stale` (#646) is a writer-idle signal —
+`write_generation` unchanged and the writer drained — not a claim that the index
+agrees with the filesystem; with the boot reindex off the writer drains sooner, so
+`index_stale` reads false while the index may still differ from disk. That is not a
+change to what `index_stale` means, but the removal of the work that used to make
+the two coincide at boot. Second, the combination to worry about is not "both
+disabled by the operator" — the file watcher is auto-disabled by
+`should_start_file_watcher` (`_file_watcher.py`) whenever git pull or a
+deliverable webhook is active, so an operator running git sync never gets a
+choice about the watcher. On such a deployment, `BOOT_REINDEX=false` leaves
+only pull-triggered reindexes in place, and the startup pull is not one of
+them: `sync_from_remote_before_index()` deliberately runs no reindex of its
+own (see above), so content it just fetched stays unindexed until a later
+pull moves HEAD. Bounded and self-healing, but silent; #1542 tracks the
+observability gap and a proposed refinement (submitting the boot reindex only
+when the startup pull actually moved HEAD). The picture is more forgiving on
+a watcher-active deployment (stdio, no git — the regime #1535 was reported
+against): `_on_file_change` (`domain.py`) calls the full incremental
+`reindex()`, not a targeted single-path update, so the first in-session
+filesystem event reconciles every change accumulated while offline, not just
+the one file that triggered it.
 
 **File watcher scoping (#823/#828/#830).** When the file watcher is
 active (neither git pull nor a webhook that can deliver on this
@@ -5507,3 +5536,4 @@ Later decisions (2026-09-19, #1535):
 |-|-|-|-|
 | 26 | `notes_fts` delete cost | A small ordinary `notes_fts_rowid_map` bridge table (`document_id`, `fts_rowid`, `WITHOUT ROWID`), populated on insert and consulted by `_delete_document` to delete by `rowid` instead of `WHERE path = ?` | `notes_fts` is content-carrying FTS5 (no index on ordinary columns — every non-`MATCH`, non-`rowid` filter forces a full scan of the shadow content table), so every upsert/delete paid one full scan; O(N × table_size) for a batch of N changed notes. **Rejected:** the reporter's `rowid = documents.id` suggestion — `notes_fts` holds one row per chunk, not one per document, so a document's rows cannot share a single rowid. **Rejected:** converting to an external-content table keyed off `sections.id` — the migration would need to recompute the `summary` column in Python per document rather than a pure-SQL join, and `notes_fts`'s column set (`path`/`title`/`folder`/`summary`) doesn't map onto `sections`'s columns without denormalizing further. **Rejected:** a `fts_rowid` column added directly to `sections` (1:1 with `notes_fts` rows — same loop in `_insert_sections`), which would need no new table — backfilling `sections.fts_rowid` on a legacy database would require assuming a positional correspondence between `sections` rows and `notes_fts` rows that nothing in the schema guarantees, whereas the bridge table's backfill is a path join that is correct regardless of row order. See docs/design/reference/sqlite-fts5.md. |
 | 27 | Reindex interruption | Snapshot `state.json` on a wall-clock timer during the upsert loop, from the FTS index's current contents, via a `checkpoint_state` that deliberately does not consume the tracker's skipped carries | A pass interrupted by a short-lived MCP client otherwise restarts from the last *completed* pass and redoes every note it had already committed (#1535). The index is already durable per note for process death — the failure #1535 names — though not for a power loss or kernel crash (the FTS connection runs WAL with `PRAGMA synchronous = NORMAL` and `_save_state` does not fsync before its rename, so the two can disagree about what actually reached disk), so its own `content_hash` column is an accurate record of progress in the covered case — no separate delta tracking is needed, and a checkpoint is just the closing write run early. The 30s interval trades measured cost against restart latency: the first snapshot lands one interval after the upsert loop starts (the parse phase precedes it and is not covered), so the interval also bounds how much committed work an interrupted pass redoes; 30s is ~0.4% overhead at the benchmarked 119 ms/checkpoint on 25k notes, and the cost argument alone does not distinguish 60s from 15–30s, so the latency side decides it. **Rejected:** a `final: bool` flag on `update_state` — the carry consumption is a correctness contract ("consumed by exactly one call"), and a flag invites a caller to get it wrong; a separate method makes the two intents distinct. **Rejected:** in-memory delta tracking of applied hashes — `list_notes()` per checkpoint is tens to hundreds of milliseconds at 25k notes, noise at a 30s interval, and correct by construction rather than by bookkeeping. **Not covered:** the parse phase, which runs to completion before the first upsert; and inline-embedded vectors, which stay in memory until pass end and converge via `build_embeddings` (#665) rather than being re-embedded after a checkpointed restart. |
+| 28 | Boot-reindex kill switch | `MARKDOWN_VAULT_MCP_BOOT_REINDEX` (default `true`) gates exactly the `reindex_async()` submission in `Service.start()`, leaving `build_index_async()` and `build_embeddings_async()` unconditional | An operator of a large vault should not have to pay a full filesystem reconciliation on every server start, which for a per-session-spawned MCP server is every session (#1535). Gating only the reindex keeps the two invariants either side of it: the initial build is a correctness requirement (a fresh install must still get an index), and the embeddings submission is what lets the inline-embed windows from decision 27 self-heal at boot. **Rejected:** a defer-by-N-seconds knob, which the issue also proposed — it made sense when an interrupted reindex could restart forever, but decisions 26 and 27 bounded that cost and made a pass resumable, so a delay now only relocates bounded work while adding a numeric knob and its validation rule. **Rejected:** threading the flag through `VaultSettings` — the submission is domain-owned and `Service.start()` already holds the config, so settings plumbing nothing reads would be pure indirection. |

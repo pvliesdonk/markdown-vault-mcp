@@ -213,7 +213,10 @@ so a test delivery pulls exactly as a push does.
 - A delivery arriving while the initial index build is still running is
   handled, not dropped. The pull is a pure git operation and runs
   regardless of index state; only the reindex is skipped, and the boot
-  reconciliation pass that follows the build picks the pulled changes up.
+  reconciliation pass that follows the build picks the pulled changes up
+  when `MARKDOWN_VAULT_MCP_BOOT_REINDEX` is left at its default. With it
+  off, that delivery's changes wait for the next push that moves HEAD, or a
+  manual reindex.
 
 !!! warning "Managed mode only"
     Set these only where the server owns the remote. Outside managed
