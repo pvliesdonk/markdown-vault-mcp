@@ -275,6 +275,7 @@ Generated guidance targets 1,536 UTF-16 units, reserving 512 units for normal op
 | `MARKDOWN_VAULT_MCP_TRANSPORT`            | `stdio`     | Transport the server speaks: `stdio` for local Claude Desktop/Code, `http` or `sse` for a network server.                                                                                                                                                   |
 | `MARKDOWN_VAULT_MCP_HOST`                 | `127.0.0.1` | Interface the HTTP server binds to.                                                                                                                                                                                                                         |
 | `MARKDOWN_VAULT_MCP_PORT`                 | `8000`      | TCP port for the HTTP server.                                                                                                                                                                                                                               |
+| `MARKDOWN_VAULT_MCP_SHUTDOWN_GRACE_S`     | `3`         | Seconds SIGTERM may spend draining in-flight requests before the HTTP server exits. Keep it at or below the termination grace period the orchestrator allows. `0` drops in-flight requests immediately.                                                     |
 | `MARKDOWN_VAULT_MCP_BASE_URL`             | (none)      | Public base URL of the deployed server (`https://mcp.example.com`). Required for OIDC. Also the fallback source of the MCP Apps domain when `app_domain` is unset.                                                                                          |
 | `MARKDOWN_VAULT_MCP_TOOLS_ALLOW`          | (none)      | Comma-separated explicit tool names this instance exposes; every other tool is hidden from listings and cannot be invoked. Names matching no registered tool are inert. Mutually exclusive with `tools_deny`. Takes effect through `apply_tool_visibility`. |
 | `MARKDOWN_VAULT_MCP_TOOLS_DENY`           | (none)      | Comma-separated explicit tool names hidden from this instance (absent from listings, cannot be invoked). Names matching no registered tool are inert. Mutually exclusive with `tools_allow`. Takes effect through `apply_tool_visibility`.                  |
@@ -338,14 +339,18 @@ Worker tuning stays on the native `FASTMCP_DOCKET_*` variables below. Set the ba
 
 ## Logging
 
-`FASTMCP_ENABLE_RICH_LOGGING` picks the shape of FastMCP's own log output, the request-logging middleware included. Left on, Rich renders each record with color, a time column and the source file that emitted it. Turned off, the middleware emits one JSON object per record and the rest of FastMCP's loggers emit `LEVEL: message`. This server's own `markdown_vault_mcp.*` lines are not affected either way: the CLI attaches its own one-line handler to the root logger.
+`MARKDOWN_VAULT_MCP_LOG_LEVEL` sets how much every logger in the process says, FastMCP's own included; `-v` on the command line forces `DEBUG`. The unprefixed `FASTMCP_LOG_LEVEL` still works for one major version and logs a deprecation warning that names the replacement.
 
-The container image and the packaged systemd unit both default it to `false`, because neither stream is a terminal. Rich falls back to 80 columns there, and a structured record does not fit in what its own columns leave, so each record wraps across three space-padded lines that neither `docker logs` nor a collector reads back. `docker logs -t` and `journalctl` both carry a timestamp per line, covering the column Rich stops printing. Both are ordinary environment defaults: `.env`, the compose `environment:` block and `/etc/markdown-vault-mcp/env` all override them. Turning Rich back on inside a container wraps the records again unless `COLUMNS` is set too, which is what Rich reads in preference to asking the terminal.
+`MARKDOWN_VAULT_MCP_LOG_FORMAT` picks the renderer. `rich` writes one coloured `event key=value` line per record, for a person at a terminal. `json` writes one JSON object per record, with `ts`, `level`, `logger` and the event's own fields as keys, for a log collector. Unset, the server chooses by itself: `rich` when stderr is a terminal and `json` everywhere else, so a container and a systemd unit log JSON with no configuration. Neither the image nor the packaged unit sets anything.
 
-| Variable                      | Default | Description                                                                                                                                                                                                                 |
-| ----------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FASTMCP_LOG_LEVEL`           | `INFO`  | Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG.                                                                                            |
-| `FASTMCP_ENABLE_RICH_LOGGING` | `true`  | Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback. |
+The choice applies to the whole process. pvl-core owns the root logger and switches FastMCP's own handlers off, so this server's `markdown_vault_mcp.*` lines and FastMCP's render through the same chain, as do uvicorn's. Access lines from `uvicorn.access` are filtered rather than levelled: below `DEBUG` only failed requests (status 400 and above) appear, and at every level the query string is stripped and a credential in the path is redacted.
+
+Set `MARKDOWN_VAULT_MCP_LOG_FORMAT=rich` in `.env` or in `/etc/markdown-vault-mcp/env` to read a container's or a unit's log in colour. A test runner is not a terminal either: a test that asserts on Rich-shaped stderr needs the same setting, or it reads JSON.
+
+| Variable                        | Default | Description                                                                                                                                                                                                                                                              |
+| ------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MARKDOWN_VAULT_MCP_LOG_LEVEL`  | `INFO`  | Log level for every logger in the process, FastMCP's included (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. The unprefixed FASTMCP_LOG_LEVEL still works for one major version and logs a deprecation warning.                        |
+| `MARKDOWN_VAULT_MCP_LOG_FORMAT` | (none)  | Log rendering. rich is one colour event key=value line per record, for a terminal; json is one JSON object per record, for a collector. Unset picks rich when stderr is a terminal and json everywhere else, so a container or journald gets JSON with no configuration. |
 
 ## Container runtime
 
@@ -6530,20 +6535,17 @@ curl -s http://localhost:8000/health/ready
 
 ### Logs
 
-The image sets `FASTMCP_ENABLE_RICH_LOGGING=false`, so `docker logs` gets one line per record: a JSON object for every MCP request the logging middleware sees, `LEVEL: message` from the rest of FastMCP. Both grep cleanly and both survive a log collector. The server's own loggers print one line either way.
+`docker logs` gets one JSON object per record: a container's stderr is not a terminal, so the server picks its JSON renderer with nothing configured. Each line carries `ts`, `level` and `logger`, then the event name and its fields for a request or a tool call, and Docker adds its own timestamp on `docker logs -t`. Every logger in the process renders this way, FastMCP's and uvicorn's included.
 
-The reason is that a container has no terminal. Rich falls back to 80 columns, its time, level and source columns claim most of them, and a structured record then wraps across three space-padded lines that no reader and no parser puts back together. Rich's time column goes with the setting, and Docker timestamps every line it captures anyway, so `docker logs -t` prints them.
-
-This is an image default like any other, so `.env` or the compose `environment:` block overrides it. Turning Rich back on for a human reading `docker logs` needs `COLUMNS` set as well, since that is what Rich reads in place of asking a terminal it does not have. In `.env`:
+The image sets no log format, so `.env` or the compose `environment:` block decides. To read the stream in colour instead, for a person rather than a collector:
 
 ```
-FASTMCP_ENABLE_RICH_LOGGING=true
-COLUMNS=200
+MARKDOWN_VAULT_MCP_LOG_FORMAT=rich
 ```
 
-Records then render one line each, in color, padded out to the full width. The packaged Debian and RPM installs make the same trade for `journalctl`: the systemd unit sets `FASTMCP_ENABLE_RICH_LOGGING=false`, and `/etc/markdown-vault-mcp/env` overrides it.
+Records then render one `event key=value` line each. The packaged Debian and RPM installs behave the same way under `journalctl`: the systemd unit sets nothing, and `/etc/markdown-vault-mcp/env` carries the choice.
 
-`FASTMCP_LOG_LEVEL` sets how much is logged; see [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/#logging).
+`MARKDOWN_VAULT_MCP_LOG_LEVEL` sets how much is logged; see [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/#logging).
 
 ## Image tags
 
@@ -6566,16 +6568,16 @@ docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revis
 
 ## Environment variables
 
-| Variable                                  | Default               | Description                                                                                                   |
-| ----------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_BEARER_TOKEN`         | n/a                   | Enable bearer token auth                                                                                      |
-| `FASTMCP_LOG_LEVEL`                       | `INFO`                | Log level (`DEBUG` / `INFO` / `WARNING` / `ERROR`)                                                            |
-| `FASTMCP_ENABLE_RICH_LOGGING`             | `false` in the image  | Rich output; off means one plain or JSON line per record (see [Logs](#logs))                                  |
-| `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION` | n/a                   | Routing context that distinguishes this deployment                                                            |
-| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`   | n/a                   | Deployment-specific behavioral policy added to the generated MCP instructions                                 |
-| `MARKDOWN_VAULT_MCP_INSTRUCTIONS`         | (computed at startup) | Legacy full replacement of the generated instructions (deprecated)                                            |
-| `MARKDOWN_VAULT_MCP_DEBUG_PORT`           | n/a                   | Remote-debugger TCP port (see [Remote debugging](#remote-debugging); requires `--build-arg DEBUG=true` image) |
-| `MARKDOWN_VAULT_MCP_DEBUG_WAIT`           | `false`               | Block startup until IDE attaches (see [Remote debugging](#remote-debugging))                                  |
+| Variable                                  | Default                      | Description                                                                                                   |
+| ----------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_BEARER_TOKEN`         | n/a                          | Enable bearer token auth                                                                                      |
+| `MARKDOWN_VAULT_MCP_LOG_LEVEL`            | `INFO`                       | Log level (`DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`)                                               |
+| `MARKDOWN_VAULT_MCP_LOG_FORMAT`           | unset: `json` in a container | `rich` or `json`; unset picks by whether stderr is a terminal (see [Logs](#logs))                             |
+| `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION` | n/a                          | Routing context that distinguishes this deployment                                                            |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA`   | n/a                          | Deployment-specific behavioral policy added to the generated MCP instructions                                 |
+| `MARKDOWN_VAULT_MCP_INSTRUCTIONS`         | (computed at startup)        | Legacy full replacement of the generated instructions (deprecated)                                            |
+| `MARKDOWN_VAULT_MCP_DEBUG_PORT`           | n/a                          | Remote-debugger TCP port (see [Remote debugging](#remote-debugging); requires `--build-arg DEBUG=true` image) |
+| `MARKDOWN_VAULT_MCP_DEBUG_WAIT`           | `false`                      | Block startup until IDE attaches (see [Remote debugging](#remote-debugging))                                  |
 
 For OIDC auth variables, see [Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/index.md).
 
@@ -7566,11 +7568,29 @@ Let the workflow run on every pull request to a protected branch and decide insi
 
 ### `codecov/patch`, if you require it
 
+CI requires the full test suite to pass on Python 3.11 through 3.14. Only the Python 3.14 job collects branch coverage, using `uv run pytest --cov --cov-report=xml --durations=20`. The other interpreters run `uv run pytest --durations=20`. The coverage job retains the 80% total and patch thresholds. Each job has a 20-minute timeout and reports its [slowest test durations](https://docs.pytest.org/en/stable/how-to/usage.html#profiling-test-execution-duration) when `pytest` finishes.
+
+Python 3.14 supports branch measurement with coverage.py's [`sys.monitoring` core](https://coverage.readthedocs.io/en/latest/config.html#run-core). Python 3.12 and 3.13 cannot use that core for branch coverage.
+
 `codecov/patch` is the one context this rule applies to that the template itself ships, and it is worth knowing how it reaches a pull request before you add it to `extra_required_checks`.
 
 Two workflows post it. `ci.yml` posts it directly for a pull request from a branch in this repository. A pull request from a fork gets a read-only token, so `ci.yml` cannot write the status there; `coverage-status.yml` posts it instead, from a `workflow_run` that executes in this repository's context after CI finishes.
 
 Both post under every outcome, including an `error` state when the coverage result is missing. That is deliberate: an `error` is recoverable, because a maintainer can re-run the workflow, while a missing status is not. If you require this context and a fork pull request stalls on it, check the **Post Coverage Status** workflow's runs rather than the CI run: the status comes from there.
+
+## Security reporting and alerts
+
+The same workflow turns on three settings that GitHub otherwise leaves for someone to click, in a separate `security` job so a ruleset failure and a security-settings failure show up apart:
+
+| Setting                         | Effect                                                                                                       | Applied when                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Private vulnerability reporting | Adds **Report a vulnerability** to the Security tab, the channel the root `SECURITY.md` sends researchers to | Public repositories only; GitHub does not offer it on private ones                             |
+| Dependabot alerts               | Lists known-vulnerable dependencies on the Security tab; Renovate still owns the update pull requests        | Every repository                                                                               |
+| Secret scanning push protection | Blocks a push that contains a recognised secret                                                              | Public repositories, when the plan allows it; a refusal is a warning in the run, not a failure |
+
+Without private vulnerability reporting, a researcher's only path is a public issue asking for a private one, which is how a project generated from this template was contacted. `SECURITY.md` at the repository root is the policy GitHub shows next to that button. It covers the reporting path, the response targets, the supported versions, and where a fix lands. The response targets and the scope live inside its `DOMAIN-SECURITY` block, which a project edits once and keeps across template updates.
+
+The job runs with `RELEASE_TOKEN`, the same `administration: write` the rulesets need. Each call is idempotent, so a re-run converges on the same enabled state. An organisation-level security configuration outranks these repository settings. Where one applies, GitHub may reject the job's calls, and the run log names the rejected one.
 
 ## Applying by hand
 

@@ -1619,6 +1619,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#security-reporting-and-alerts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security reporting and alerts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#applying-by-hand" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2028,6 +2039,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#security-reporting-and-alerts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security reporting and alerts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#applying-by-hand" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2218,6 +2240,16 @@ there is not. Verify on a pull request that touches nothing the check
 cares about: the context must still appear, and pass.</p>
 </div>
 <h3 id="codecovpatch-if-you-require-it"><code>codecov/patch</code>, if you require it<a class="headerlink" href="#codecovpatch-if-you-require-it" title="Permanent link">&para;</a></h3>
+<p>CI requires the full test suite to pass on Python 3.11 through 3.14.
+Only the Python 3.14 job collects branch coverage, using
+<code>uv run pytest --cov --cov-report=xml --durations=20</code>. The other interpreters
+run <code>uv run pytest --durations=20</code>. The coverage job retains the 80% total
+and patch thresholds. Each job has a 20-minute timeout and reports its
+<a href="https://docs.pytest.org/en/stable/how-to/usage.html#profiling-test-execution-duration">slowest test durations</a>
+when <code>pytest</code> finishes.</p>
+<p>Python 3.14 supports branch measurement with coverage.py's
+<a href="https://coverage.readthedocs.io/en/latest/config.html#run-core"><code>sys.monitoring</code> core</a>.
+Python 3.12 and 3.13 cannot use that core for branch coverage.</p>
 <p><code>codecov/patch</code> is the one context this rule applies to that the template
 itself ships, and it is worth knowing how it reaches a pull request before
 you add it to <code>extra_required_checks</code>.</p>
@@ -2232,6 +2264,48 @@ maintainer can re-run the workflow, while a missing status is not. If you
 require this context and a fork pull request stalls on it, check the <strong>Post
 Coverage Status</strong> workflow's runs rather than the CI run: the status comes
 from there.</p>
+<h2 id="security-reporting-and-alerts">Security reporting and alerts<a class="headerlink" href="#security-reporting-and-alerts" title="Permanent link">&para;</a></h2>
+<p>The same workflow turns on three settings that GitHub otherwise leaves for
+someone to click, in a separate <code>security</code> job so a ruleset failure and a
+security-settings failure show up apart:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Effect</th>
+<th>Applied when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Private vulnerability reporting</td>
+<td>Adds <strong>Report a vulnerability</strong> to the Security tab, the channel the root <code>SECURITY.md</code> sends researchers to</td>
+<td>Public repositories only; GitHub does not offer it on private ones</td>
+</tr>
+<tr>
+<td>Dependabot alerts</td>
+<td>Lists known-vulnerable dependencies on the Security tab; Renovate still owns the update pull requests</td>
+<td>Every repository</td>
+</tr>
+<tr>
+<td>Secret scanning push protection</td>
+<td>Blocks a push that contains a recognised secret</td>
+<td>Public repositories, when the plan allows it; a refusal is a warning in the run, not a failure</td>
+</tr>
+</tbody>
+</table>
+<p>Without private vulnerability reporting, a researcher's only path is a public
+issue asking for a private one, which is how a project generated from this
+template was contacted. <code>SECURITY.md</code> at the repository root is the policy
+GitHub shows next to that button. It covers the reporting path, the response
+targets, the supported versions, and where a fix lands. The response targets
+and the scope live inside its <code>DOMAIN-SECURITY</code> block, which a project edits
+once and keeps across template updates.</p>
+<p>The job runs with <code>RELEASE_TOKEN</code>, the same <code>administration: write</code> the
+rulesets need. Each call is idempotent, so a re-run converges on the same
+enabled state. An organisation-level security configuration outranks these
+repository settings. Where one applies, GitHub may reject the job's calls,
+and the run log names the rejected one.</p>
 <h2 id="applying-by-hand">Applying by hand<a class="headerlink" href="#applying-by-hand" title="Permanent link">&para;</a></h2>
 <p>Without the bootstrap workflow (or when importing into another repository):</p>
 <div class="highlight"><pre><span></span><code>gh<span class="w"> </span>api<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"repos/OWNER/REPO/rulesets"</span><span class="w"> </span><span class="se">\</span>

@@ -71,11 +71,29 @@ Let the workflow run on every pull request to a protected branch and decide insi
 
 ### `codecov/patch`, if you require it
 
+CI requires the full test suite to pass on Python 3.11 through 3.14. Only the Python 3.14 job collects branch coverage, using `uv run pytest --cov --cov-report=xml --durations=20`. The other interpreters run `uv run pytest --durations=20`. The coverage job retains the 80% total and patch thresholds. Each job has a 20-minute timeout and reports its [slowest test durations](https://docs.pytest.org/en/stable/how-to/usage.html#profiling-test-execution-duration) when `pytest` finishes.
+
+Python 3.14 supports branch measurement with coverage.py's [`sys.monitoring` core](https://coverage.readthedocs.io/en/latest/config.html#run-core). Python 3.12 and 3.13 cannot use that core for branch coverage.
+
 `codecov/patch` is the one context this rule applies to that the template itself ships, and it is worth knowing how it reaches a pull request before you add it to `extra_required_checks`.
 
 Two workflows post it. `ci.yml` posts it directly for a pull request from a branch in this repository. A pull request from a fork gets a read-only token, so `ci.yml` cannot write the status there; `coverage-status.yml` posts it instead, from a `workflow_run` that executes in this repository's context after CI finishes.
 
 Both post under every outcome, including an `error` state when the coverage result is missing. That is deliberate: an `error` is recoverable, because a maintainer can re-run the workflow, while a missing status is not. If you require this context and a fork pull request stalls on it, check the **Post Coverage Status** workflow's runs rather than the CI run: the status comes from there.
+
+## Security reporting and alerts
+
+The same workflow turns on three settings that GitHub otherwise leaves for someone to click, in a separate `security` job so a ruleset failure and a security-settings failure show up apart:
+
+| Setting                         | Effect                                                                                                       | Applied when                                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Private vulnerability reporting | Adds **Report a vulnerability** to the Security tab, the channel the root `SECURITY.md` sends researchers to | Public repositories only; GitHub does not offer it on private ones                             |
+| Dependabot alerts               | Lists known-vulnerable dependencies on the Security tab; Renovate still owns the update pull requests        | Every repository                                                                               |
+| Secret scanning push protection | Blocks a push that contains a recognised secret                                                              | Public repositories, when the plan allows it; a refusal is a warning in the run, not a failure |
+
+Without private vulnerability reporting, a researcher's only path is a public issue asking for a private one, which is how a project generated from this template was contacted. `SECURITY.md` at the repository root is the policy GitHub shows next to that button. It covers the reporting path, the response targets, the supported versions, and where a fix lands. The response targets and the scope live inside its `DOMAIN-SECURITY` block, which a project edits once and keeps across template updates.
+
+The job runs with `RELEASE_TOKEN`, the same `administration: write` the rulesets need. Each call is idempotent, so a re-run converges on the same enabled state. An organisation-level security configuration outranks these repository settings. Where one applies, GitHub may reject the job's calls, and the run log names the rejected one.
 
 ## Applying by hand
 

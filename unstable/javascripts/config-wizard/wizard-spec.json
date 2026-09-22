@@ -95,6 +95,19 @@
       }
     },
     {
+      "id": "shutdown_grace_s",
+      "label": "Shutdown Grace S",
+      "type": "number",
+      "var": "MARKDOWN_VAULT_MCP_SHUTDOWN_GRACE_S",
+      "help": "Seconds SIGTERM may spend draining in-flight requests before the HTTP server exits. Keep it at or below the termination grace period the orchestrator allows. `0` drops in-flight requests immediately.",
+      "advancedGroup": "Server",
+      "showIf": {
+        "deployment": [
+          "server"
+        ]
+      }
+    },
+    {
       "id": "base_url",
       "label": "Public base URL",
       "type": "text",
@@ -431,19 +444,19 @@
       }
     },
     {
-      "id": "fastmcp_log_level",
+      "id": "log_level",
       "label": "Log level",
       "type": "text",
-      "var": "FASTMCP_LOG_LEVEL",
-      "help": "Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG.",
+      "var": "MARKDOWN_VAULT_MCP_LOG_LEVEL",
+      "help": "Log level for every logger in the process, FastMCP's included (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. The unprefixed FASTMCP_LOG_LEVEL still works for one major version and logs a deprecation warning.",
       "advancedGroup": "Logging"
     },
     {
-      "id": "fastmcp_enable_rich_logging",
-      "label": "Rich logging",
-      "type": "bool",
-      "var": "FASTMCP_ENABLE_RICH_LOGGING",
-      "help": "Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback.",
+      "id": "log_format",
+      "label": "Log format",
+      "type": "text",
+      "var": "MARKDOWN_VAULT_MCP_LOG_FORMAT",
+      "help": "Log rendering. rich is one colour event key=value line per record, for a terminal; json is one JSON object per record, for a collector. Unset picks rich when stderr is a terminal and json everywhere else, so a container or journald gets JSON with no configuration.",
       "advancedGroup": "Logging"
     },
     {

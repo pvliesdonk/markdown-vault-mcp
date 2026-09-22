@@ -2333,14 +2333,21 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 </code></pre></div>
 <p><code>MARKDOWN_VAULT_MCP_HEALTH_DETAIL</code> decides how much the bodies say, because anyone who can reach the port can read them. <code>status</code> returns the status alone. The default, <code>standard</code>, adds the server name and version on <code>/health</code> and a verdict per check on <code>/health/ready</code>. <code>full</code> adds the exception type and a redacted reason for each check that raised, and belongs only where the port is reachable from a trusted network.</p>
 <h3 id="logs">Logs<a class="headerlink" href="#logs" title="Permanent link">&para;</a></h3>
-<p>The image sets <code>FASTMCP_ENABLE_RICH_LOGGING=false</code>, so <code>docker logs</code> gets one line per record: a JSON object for every MCP request the logging middleware sees, <code>LEVEL: message</code> from the rest of FastMCP. Both grep cleanly and both survive a log collector. The server's own loggers print one line either way.</p>
-<p>The reason is that a container has no terminal. Rich falls back to 80 columns, its time, level and source columns claim most of them, and a structured record then wraps across three space-padded lines that no reader and no parser puts back together. Rich's time column goes with the setting, and Docker timestamps every line it captures anyway, so <code>docker logs -t</code> prints them.</p>
-<p>This is an image default like any other, so <code>.env</code> or the compose <code>environment:</code> block overrides it. Turning Rich back on for a human reading <code>docker logs</code> needs <code>COLUMNS</code> set as well, since that is what Rich reads in place of asking a terminal it does not have. In <code>.env</code>:</p>
-<div class="highlight"><pre><span></span><code><span class="na">FASTMCP_ENABLE_RICH_LOGGING</span><span class="o">=</span><span class="s">true</span>
-<span class="na">COLUMNS</span><span class="o">=</span><span class="s">200</span>
+<p><code>docker logs</code> gets one JSON object per record: a container's stderr is not a
+terminal, so the server picks its JSON renderer with nothing configured. Each
+line carries <code>ts</code>, <code>level</code> and <code>logger</code>, then the event name and its fields
+for a request or a tool call, and Docker adds its own timestamp on
+<code>docker logs -t</code>. Every logger in the process renders this way, FastMCP's and
+uvicorn's included.</p>
+<p>The image sets no log format, so <code>.env</code> or the compose <code>environment:</code> block
+decides. To read the stream in colour instead, for a person rather than a
+collector:</p>
+<div class="highlight"><pre><span></span><code><span class="na">MARKDOWN_VAULT_MCP_LOG_FORMAT</span><span class="o">=</span><span class="s">rich</span>
 </code></pre></div>
-<p>Records then render one line each, in color, padded out to the full width. The packaged Debian and RPM installs make the same trade for <code>journalctl</code>: the systemd unit sets <code>FASTMCP_ENABLE_RICH_LOGGING=false</code>, and <code>/etc/markdown-vault-mcp/env</code> overrides it.</p>
-<p><code>FASTMCP_LOG_LEVEL</code> sets how much is logged; see <a href="../../configuration/#logging">Configuration</a>.</p>
+<p>Records then render one <code>event key=value</code> line each. The packaged Debian and
+RPM installs behave the same way under <code>journalctl</code>: the systemd unit sets
+nothing, and <code>/etc/markdown-vault-mcp/env</code> carries the choice.</p>
+<p><code>MARKDOWN_VAULT_MCP_LOG_LEVEL</code> sets how much is logged; see <a href="../../configuration/#logging">Configuration</a>.</p>
 <h2 id="image-tags">Image tags<a class="headerlink" href="#image-tags" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -2399,14 +2406,14 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 <td>Enable bearer token auth</td>
 </tr>
 <tr>
-<td><code>FASTMCP_LOG_LEVEL</code></td>
+<td><code>MARKDOWN_VAULT_MCP_LOG_LEVEL</code></td>
 <td><code>INFO</code></td>
-<td>Log level (<code>DEBUG</code> / <code>INFO</code> / <code>WARNING</code> / <code>ERROR</code>)</td>
+<td>Log level (<code>DEBUG</code> / <code>INFO</code> / <code>WARNING</code> / <code>ERROR</code> / <code>CRITICAL</code>)</td>
 </tr>
 <tr>
-<td><code>FASTMCP_ENABLE_RICH_LOGGING</code></td>
-<td><code>false</code> in the image</td>
-<td>Rich output; off means one plain or JSON line per record (see <a href="#logs">Logs</a>)</td>
+<td><code>MARKDOWN_VAULT_MCP_LOG_FORMAT</code></td>
+<td>unset: <code>json</code> in a container</td>
+<td><code>rich</code> or <code>json</code>; unset picks by whether stderr is a terminal (see <a href="#logs">Logs</a>)</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION</code></td>
