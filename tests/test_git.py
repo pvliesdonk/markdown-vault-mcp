@@ -1046,7 +1046,7 @@ class TestTokenRedactionInLogs:
             # Must not raise.
             strategy._push_scheduler.do_push_safe()
 
-        assert any("Git push failed" in r.message for r in caplog.records)
+        assert any("git_push_unexpected_error" in r.message for r in caplog.records)
 
     def test_push_if_unpushed_token_redacted_on_failure(
         self, git_repo_with_remote: tuple[Path, Path], caplog: pytest.LogCaptureFixture
@@ -1133,7 +1133,7 @@ class TestGitLfsSupport:
             "lfs",
             "pull",
         ]
-        assert any("LFS" in r.message for r in caplog.records)
+        assert any("git_lfs_pull_succeeded" in r.message for r in caplog.records)
 
     def test_git_lfs_disabled_skips_pull(self, git_repo: Path) -> None:
         """When git_lfs=False, no git lfs commands are issued."""
@@ -1183,7 +1183,7 @@ class TestGitLfsSupport:
             # Must not raise.
             strategy._lfs_pull()
 
-        assert any("LFS pull failed" in r.message for r in caplog.records)
+        assert any("git_lfs_pull_failed" in r.message for r in caplog.records)
 
     def test_git_lfs_pull_file_not_found_logged_not_raised(
         self, git_repo: Path, caplog: pytest.LogCaptureFixture
@@ -1205,7 +1205,7 @@ class TestGitLfsSupport:
             # Must not raise.
             strategy._lfs_pull()
 
-        assert any("LFS pull failed" in r.message for r in caplog.records)
+        assert any("git_lfs_pull_failed" in r.message for r in caplog.records)
 
     def test_git_lfs_default_is_true(self) -> None:
         """GitWriteStrategy defaults to git_lfs=True."""
@@ -1716,9 +1716,7 @@ class TestGitSyncOnce:
             did_advance = strategy.sync_once(work)
 
         assert did_advance is True
-        assert any(
-            "rebased local commits onto upstream" in r.message for r in caplog.records
-        )
+        assert any("git_rebase_succeeded" in r.message for r in caplog.records)
         # Both files should be present after the rebase.
         assert (work / "local-note.md").exists()
         assert (work / "obsidian-note.md").exists()
@@ -1787,7 +1785,7 @@ class TestGitSyncOnce:
 
         # Conflict resolved — HEAD advanced.
         assert did_advance is True
-        assert any("conflict resolved" in r.message for r in caplog.records)
+        assert any("git_conflict_resolved" in r.message for r in caplog.records)
 
         # Original file has upstream content.
         assert "# Remote diverge" in (work / "README.md").read_text()
@@ -2064,9 +2062,7 @@ class TestGitSyncOnce:
         # Commit failed → sync_once reports no advance to the caller.
         assert did_advance is False
         # The detail line still names what happened, for whoever is diagnosing.
-        assert any(
-            "conflict commit failed, skipping" in r.message for r in caplog.records
-        )
+        assert any("git_conflict_commit_failed" in r.message for r in caplog.records)
         # Operator visibility is the tracker's once-per-outage line (#1287).
         assert any(
             "git_remote_unsynced" in r.message and r.levelno == logging.ERROR
@@ -2156,7 +2152,7 @@ class TestGitSyncOnce:
         # Commit failed: helper signals failure to its caller via None.
         assert written is None
         # The line was logged, at DEBUG since #1287 (it repeats per pull cycle).
-        assert any("conflict commit failed" in r.message for r in caplog.records)
+        assert any("git_conflict_commit_failed" in r.message for r in caplog.records)
 
     def test_write_conflict_files_commit_failure_redacts_token(
         self,
@@ -5747,9 +5743,9 @@ class TestWriteQuiescer:
         with caplog.at_level(logging.WARNING), strategy._quiesce_writes():
             ran.append("body")
         assert ran == ["body"]  # proceeded despite incomplete drain
-        assert any("did not fully drain" in r.getMessage() for r in caplog.records), [
-            r.getMessage() for r in caplog.records
-        ]
+        assert any(
+            "git_write_queue_drain_incomplete" in r.getMessage() for r in caplog.records
+        ), [r.getMessage() for r in caplog.records]
 
 
 class TestDrainBeforePull:
@@ -7045,7 +7041,7 @@ class TestConflictPathsAreUsable:
         assert len(saved) == 1
         assert "# local diverge" in saved[0].read_text()
         assert not any(
-            "could not read MCP version" in r.message for r in caplog.records
+            "git_conflict_mcp_version_unreadable" in r.message for r in caplog.records
         )
 
 

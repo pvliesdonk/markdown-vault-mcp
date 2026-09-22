@@ -66,7 +66,7 @@ async def _get_branch_name(strategy: Syncer, git_root: Path) -> str:
         # Narrow the catch per CLAUDE.md's logging standard so a real bug
         # (e.g. AttributeError) still propagates.
         logger.warning(
-            "git_sync: failed to read branch name, using 'HEAD' fallback",
+            "git_sync_branch_read_failed fallback=HEAD",
             exc_info=True,
         )
         return "HEAD"
@@ -145,10 +145,10 @@ async def _reindex_after_pull(vault: Vault, pull_dict: dict[str, Any]) -> None:
     try:
         await asyncio.to_thread(_pause_and_reindex)
     except Exception:
-        logger.exception(
-            "git_sync: reindex after pull failed — FTS index "
-            "is stale until the next reindex / write tick"
-        )
+        # FTS index is stale until the next reindex or write tick; the pull
+        # itself already succeeded, so this is surfaced on the response
+        # payload (reindex_failed / reindex_hint) rather than raised.
+        logger.exception("reindex_after_pull_failed source=git_sync")
         pull_dict["reindex_failed"] = True
         pull_dict["reindex_hint"] = (
             "Pull succeeded but the FTS index could not be "

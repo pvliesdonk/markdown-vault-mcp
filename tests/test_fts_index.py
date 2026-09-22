@@ -1123,9 +1123,7 @@ class TestWALMode:
         ):
             FTSIndex(db_path=db_path)
 
-        assert any(
-            "Could not enable WAL journal mode" in r.message for r in caplog.records
-        )
+        assert any("wal_mode_not_enabled" in r.message for r in caplog.records)
 
     def test_wal_allows_concurrent_reader_during_write(self, tmp_path: Path) -> None:
         """A reader on a second connection succeeds while the first connection writes."""
@@ -1683,7 +1681,8 @@ def test_unknown_fts_weights_column_logs_warning(
         idx = FTSIndex(db_path=":memory:", fts_weights={"titel": 3.0, "title": 2.0})
     idx.close()
     assert any(
-        "unknown fts_weights" in r.getMessage() and "titel" in r.getMessage()
+        "fts_index_unknown_weights_ignored" in r.getMessage()
+        and "titel" in r.getMessage()
         for r in caplog.records
     )
 

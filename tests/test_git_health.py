@@ -930,10 +930,10 @@ class TestPullFailureIsDiagnosable:
 
         with caplog.at_level(logging.DEBUG, logger="markdown_vault_mcp.git"):
             strategy.force_pull()
-            caused = [r for r in caplog.records if "rebase onto" in r.message]
+            caused = [r for r in caplog.records if "git_rebase_stopped" in r.message]
             caplog.clear()
             strategy.sync_once(git_repo_pair.local_path, timer_driven=True)
-            ticked = [r for r in caplog.records if "rebase onto" in r.message]
+            ticked = [r for r in caplog.records if "git_rebase_stopped" in r.message]
             loud_on_tick = [r for r in caplog.records if r.levelno >= logging.WARNING]
 
         assert [r.levelno for r in caused] == [logging.WARNING]

@@ -555,7 +555,7 @@ class TestGitHubWebhookWiring:
         # The no-remote warning is about a mounted route whose deliveries have
         # nothing to pull; under stdio there is no route to deliver to, so only
         # the transport warning fires.
-        assert "webhook_inert:" not in caplog.text
+        assert "webhook_inert" not in caplog.text
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_no_transport_warning_without_a_secret_on_stdio(

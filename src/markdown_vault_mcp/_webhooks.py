@@ -245,12 +245,11 @@ def gitlab_hmac_key(signing_token: str) -> bytes:
         # Not fatal: the prefix is GitLab's convention, not part of the key,
         # and a future version could change it. It is a strong signal the
         # wrong value was pasted, so say so once rather than silently
-        # authenticating nothing.
+        # authenticating nothing. GitLab generates this value; copy it from
+        # 'Generate signing token' rather than inventing one — a self-chosen
+        # string authenticates no delivery.
         logger.warning(
-            "gitlab_signing_token_unprefixed: the signing token does not "
-            "start with %r — GitLab generates this value, so copy it from "
-            "'Generate signing token' rather than inventing one; a "
-            "self-chosen string authenticates no delivery",
+            "gitlab_signing_token_unprefixed prefix=%r",
             GITLAB_SIGNING_TOKEN_PREFIX,
         )
     body = signing_token.removeprefix(GITLAB_SIGNING_TOKEN_PREFIX)
@@ -419,9 +418,9 @@ def _reindex_after_pull(vault: Any, provider_name: str) -> None:
         with vault.pause_writes():
             vault.index.reindex()
     except Exception:
+        # FTS index is stale until the next reindex or write tick.
         logger.error(
-            "%s: reindex after pull failed — FTS index is "
-            "stale until the next reindex or write tick",
+            "reindex_after_pull_failed kind=%s",
             provider_name,
             exc_info=True,
         )
@@ -456,27 +455,27 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
         # here would surface as an unhandled 500 with a traceback (#1128).
         # A retry may still succeed, so 503 rather than 200.
         logger.error(
-            "%s: force_pull raised delivery_id=%s", name, delivery_id, exc_info=True
+            "webhook_force_pull_raised kind=%s delivery_id=%s",
+            name,
+            delivery_id,
+            exc_info=True,
         )
         return JSONResponse({"error": "pull failed"}, status_code=503)
 
     if pull_result is None:
         # Reachable for a library consumer that constructed Vault with
         # git_strategy=None; a config-driven server always has one.
-        logger.info("%s: no git strategy configured delivery_id=%s", name, delivery_id)
+        logger.info("webhook_no_git_strategy kind=%s delivery_id=%s", name, delivery_id)
         return JSONResponse({"ok": True, "message": "no git strategy"})
 
     if pull_result.reason == PULL_REASON_PULL_DISABLED:
         # A webhook credential set on a deployment with no managed remote
         # (#1128). Nothing was fetched and nothing can be: answer 200 so the
-        # host records the delivery instead of retrying every push.
+        # host records the delivery instead of retrying every push. Set
+        # MARKDOWN_VAULT_MCP_GIT_REPO_URL (or unset the webhook credentials)
+        # to fix.
         logger.warning(
-            "%s: delivery received but this deployment has no managed git "
-            "remote, so there is nothing to pull — set "
-            "MARKDOWN_VAULT_MCP_GIT_REPO_URL (or unset the webhook "
-            "credentials) delivery_id=%s",
-            name,
-            delivery_id,
+            "webhook_pull_disabled kind=%s delivery_id=%s", name, delivery_id
         )
         return JSONResponse({"ok": True, "message": "pull disabled"})
 
@@ -485,7 +484,7 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
         # Permanent failures (no_remote, conflict) exhaust the retry budget
         # and fall back to the next periodic pull tick.
         logger.warning(
-            "%s: force_pull not applied reason=%s delivery_id=%s",
+            "webhook_force_pull_not_applied kind=%s reason=%s delivery_id=%s",
             name,
             pull_result.reason,
             delivery_id,
@@ -500,14 +499,13 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
             await asyncio.to_thread(_reindex_after_pull, vault, name)
         else:
             logger.info(
-                "%s: pull applied but vault not queryable, skipping reindex "
-                "delivery_id=%s",
+                "webhook_reindex_skipped_not_queryable kind=%s delivery_id=%s",
                 name,
                 delivery_id,
             )
 
     logger.info(
-        "%s: push processed commits_pulled=%s delivery_id=%s",
+        "webhook_push_processed kind=%s commits_pulled=%s delivery_id=%s",
         name,
         pull_result.commits_pulled,
         delivery_id,
@@ -551,19 +549,26 @@ def make_webhook_handler(provider: WebhookProvider) -> Callable[[Request], Any]:
 
         if not provider.verify(request.headers, body):
             logger.warning(
-                "%s: invalid or missing credentials delivery_id=%s", name, delivery_id
+                "webhook_invalid_credentials kind=%s delivery_id=%s",
+                name,
+                delivery_id,
             )
             return JSONResponse({"error": "invalid signature"}, status_code=401)
 
         event = request.headers.get(provider.event_header, "")
 
         if provider.ping_event is not None and event == provider.ping_event:
-            logger.info("%s: ping received delivery_id=%s", name, delivery_id)
+            logger.info(
+                "webhook_ping_received kind=%s delivery_id=%s", name, delivery_id
+            )
             return JSONResponse({"ok": True, "message": "pong"})
 
         if event != provider.push_event:
             logger.debug(
-                "%s: event=%s ignored delivery_id=%s", name, event, delivery_id
+                "webhook_event_ignored kind=%s event=%s delivery_id=%s",
+                name,
+                event,
+                delivery_id,
             )
             return JSONResponse({"ok": True, "message": "event ignored"})
 
@@ -571,7 +576,7 @@ def make_webhook_handler(provider: WebhookProvider) -> Callable[[Request], Any]:
             vault = get_vault_singleton()
         except RuntimeError:
             logger.info(
-                "%s: vault not initialised, returning 503 delivery_id=%s",
+                "webhook_vault_not_initialised kind=%s delivery_id=%s",
                 name,
                 delivery_id,
             )
@@ -627,27 +632,19 @@ def register_webhook_routes(mcp: Any, config: Any, transport: str) -> None:
             # #1263 the file watcher covers change detection here rather than
             # standing down for a webhook that cannot deliver, but the
             # credential itself is still inert and the operator should hear it
-            # once at startup rather than infer it from silence.
-            logger.warning(
-                "webhook_transport_inert: webhook credentials are set but "
-                "transport=%s serves no HTTP routes, so no push delivery can "
-                "arrive — run with --transport http to enable the endpoints, "
-                "or unset the credentials",
-                transport,
-            )
+            # once at startup rather than infer it from silence. Run with
+            # --transport http to enable the endpoints, or unset the
+            # credentials.
+            logger.warning("webhook_transport_inert transport=%s", transport)
         return
 
     if config.git.repo_url is None and config.git.token is None:
         # The routes still mount and answer 200, but every delivery is a
         # no-op: this deployment has no managed remote to pull from.  Say so
         # at startup rather than leaving the operator to infer it from
-        # per-delivery logs (#1128).
-        logger.warning(
-            "webhook_inert: webhook credentials are set but no managed git "
-            "remote is configured, so push deliveries have nothing to pull — "
-            "set GIT_REPO_URL to enable sync, or unset the webhook "
-            "credentials to drop the endpoints"
-        )
+        # per-delivery logs (#1128). Set GIT_REPO_URL to enable sync, or
+        # unset the webhook credentials to drop the endpoints.
+        logger.warning("webhook_inert reason=no_managed_remote")
 
     if config.sync.github_webhook_secret:
         mcp.custom_route("/github-webhook", methods=["POST"])(
@@ -660,12 +657,11 @@ def register_webhook_routes(mcp: Any, config: Any, transport: str) -> None:
         if not signing:
             # Reachable only by choosing the weaker of two documented options,
             # which an operator on GitLab 19.0+ has no reason to do — so say it
-            # once at startup rather than per delivery.
+            # once at startup rather than per delivery. The plain-text secret
+            # token proves nothing about the body and cannot expire; set
+            # GITLAB_WEBHOOK_SIGNING_TOKEN instead on GitLab 19.0+.
             logger.warning(
-                "gitlab_webhook_secret_token_only: authenticating GitLab "
-                "deliveries with the plain-text secret token, which proves "
-                "nothing about the body and cannot expire — set "
-                "GITLAB_WEBHOOK_SIGNING_TOKEN instead on GitLab 19.0+"
+                "gitlab_webhook_secret_token_only hint=configure_signing_token"
             )
         mcp.custom_route("/gitlab-webhook", methods=["POST"])(
             make_webhook_handler(gitlab_provider(signing, secret))

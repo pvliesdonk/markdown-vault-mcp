@@ -171,7 +171,7 @@ class TestRead:
         """Assert read() logged the documented degrade-to-None warning for *path*."""
         assert any(
             record.levelno == logging.WARNING
-            and "could not parse file" in record.getMessage()
+            and "read_parse_failed" in record.getMessage()
             and path in record.getMessage()
             for record in caplog.records
         ), f"expected a degrade-to-None warning for {path!r}; got {caplog.records!r}"

@@ -180,9 +180,11 @@ def register_apps(mcp: FastMCP) -> None:
         or _compute_claude_app_domain()
     )
     if app_domain:
-        logger.info("MCP Apps domain: %s", app_domain)
+        logger.info("apps_domain_resolved domain=%s", app_domain)
     else:
-        logger.debug("MCP Apps domain: not configured (stdio or no BASE_URL)")
+        # No sandbox iframe domain: either running under stdio (no HTTP
+        # server to derive it from) or BASE_URL/APP_DOMAIN is unset.
+        logger.debug("apps_domain_unconfigured reason=stdio_or_no_base_url")
     app_resource_config = AppConfig(
         domain=app_domain,
         csp=ResourceCSP(resource_domains=_CDN_RESOURCE_DOMAINS),

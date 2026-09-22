@@ -189,7 +189,7 @@ class VectorIndex:
         if isinstance(payload, list):
             metadata = payload
             logger.warning(
-                "VectorIndex.load: legacy metadata format at %s without provider/model identity",
+                "vector_index_load_legacy_metadata path=%s",
                 path,
             )
         else:
@@ -226,7 +226,7 @@ class VectorIndex:
         index._metadata = metadata
 
         logger.info(
-            "VectorIndex.load: loaded %d vectors from %s",
+            "vector_index_load_completed vector_count=%d path=%s",
             len(metadata),
             path,
         )
@@ -365,7 +365,7 @@ class VectorIndex:
         self._metadata.extend(metadata)
 
         logger.debug(
-            "VectorIndex.add_vectors: added %d rows (total=%d)",
+            "vector_index_add_vectors_completed row_count=%d total_count=%d",
             len(raw_vectors),
             self.count,
         )
@@ -405,14 +405,14 @@ class VectorIndex:
             RuntimeError: Propagated from the embedding provider.
         """
         if self.count == 0:
-            logger.debug("VectorIndex.search: index empty, returning []")
+            logger.debug("vector_index_search_empty_index")
             return []
 
         if limit <= 0:
             # The collect-until-full loop below checks its stop condition
             # after appending, so a non-positive cap has to be refused here
             # or it would yield one row.
-            logger.debug("VectorIndex.search: limit=%d, returning []", limit)
+            logger.debug("vector_index_search_nonpositive_limit limit=%d", limit)
             return []
 
         if not is_embeddable(query):
@@ -421,11 +421,11 @@ class VectorIndex:
             # hard HTTP 400 (#1111).  SearchManager guards its own channels
             # so hybrid takes the same path; this backstops a library
             # consumer calling VectorIndex directly.
-            logger.debug("VectorIndex.search: blank query, returning []")
+            logger.debug("vector_index_search_blank_query")
             return []
 
         logger.debug(
-            "VectorIndex.search: query=%r limit=%d index_size=%d",
+            "vector_index_search query=%r limit=%d index_size=%d",
             query,
             limit,
             self.count,
@@ -456,7 +456,7 @@ class VectorIndex:
             if len(results) >= limit:
                 break
 
-        logger.debug("VectorIndex.search: returning %d results", len(results))
+        logger.debug("vector_index_search_completed result_count=%d", len(results))
         return results
 
     def search_by_path(
@@ -527,7 +527,11 @@ class VectorIndex:
             entry["score"] = score
             results.append(entry)
 
-        logger.debug("VectorIndex.search_by_path: %s → %d results", path, len(results))
+        logger.debug(
+            "vector_index_search_by_path_completed path=%s result_count=%d",
+            path,
+            len(results),
+        )
         return results
 
     def delete_by_path(self, path: str) -> int:
@@ -561,7 +565,8 @@ class VectorIndex:
             ]
 
         logger.debug(
-            "VectorIndex.delete_by_path: removed %d rows for %s (remaining=%d)",
+            "vector_index_delete_by_path_completed removed_count=%d path=%s "
+            "remaining_count=%d",
             removed,
             path,
             self.count,
@@ -632,7 +637,7 @@ class VectorIndex:
             raise
 
         logger.info(
-            "VectorIndex.save: saved %d vectors to %s",
+            "vector_index_save_completed vector_count=%d path=%s",
             self.count,
             path,
         )

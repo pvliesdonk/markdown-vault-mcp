@@ -438,7 +438,9 @@ class TestUnparseableCommitCount:
 
         assert result.applied is True
         assert result.commits_pulled == 0
-        assert any("could not parse commit count" in r.message for r in caplog.records)
+        assert any(
+            "git_rev_list_count_parse_failed" in r.message for r in caplog.records
+        )
 
     def test_a_push_reports_zero_commits_and_says_so(
         self, git_repo_pair: GitRepoPair, caplog: pytest.LogCaptureFixture
@@ -457,7 +459,9 @@ class TestUnparseableCommitCount:
 
         assert result.applied is True
         assert result.commits_pushed == 0
-        assert any("could not parse commit count" in r.message for r in caplog.records)
+        assert any(
+            "git_rev_list_count_parse_failed" in r.message for r in caplog.records
+        )
 
 
 class TestForceMethodsErrorBranches:

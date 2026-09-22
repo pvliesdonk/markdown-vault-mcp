@@ -608,11 +608,11 @@ def test_lifespan_cold_start_with_embeddings_submits_both_jobs(
         "before the handshake completed despite the embeddings build being gated"
     )
     # Both build jobs were submitted during startup.
-    assert any("Submitted BuildIndex job" in m for m in messages), (
-        f"expected 'Submitted BuildIndex job' log; got: {messages}"
+    assert any("build_index_job_submitted" in m for m in messages), (
+        f"expected 'build_index_job_submitted' log; got: {messages}"
     )
-    assert any("Submitted BuildEmbeddings job" in m for m in messages), (
-        f"expected 'Submitted BuildEmbeddings job' log; got: {messages}"
+    assert any("build_embeddings_job_submitted" in m for m in messages), (
+        f"expected 'build_embeddings_job_submitted' log; got: {messages}"
     )
 
 

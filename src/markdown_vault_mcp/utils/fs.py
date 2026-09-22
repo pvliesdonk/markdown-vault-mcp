@@ -174,7 +174,9 @@ def iter_markdown_files(
         # os.walk drops the offending directory and continues; surface it so a
         # permission-denied or broken-link subtree does not silently disappear
         # from discovery/indexing (#835).
-        logger.warning("markdown_walk_dir_unreadable path=%s: %s", exc.filename, exc)
+        logger.warning(
+            "markdown_walk_dir_unreadable path=%s error=%s", exc.filename, exc
+        )
         if on_error is not None:
             on_error(exc)
 

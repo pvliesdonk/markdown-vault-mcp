@@ -146,8 +146,7 @@ def _resolve_internal_dirs(internal_dirs: Sequence[Path]) -> list[Path]:
             # Dropping a protected dir fails open on the #830 guard — its child
             # could then be watched — so warn rather than drop silently.
             logger.warning(
-                "file_watcher: could not resolve internal dir=%s; it will not "
-                "be protected from watching",
+                "file_watcher_internal_dir_resolve_failed path=%s action=unprotected",
                 d,
                 exc_info=True,
             )
@@ -180,7 +179,7 @@ def _contains_internal_dir(child: Path, internal_dirs: frozenset[Path]) -> bool:
         # non-internal. A symlink-loop child is screened by is_dir() upstream, so
         # the realistic trigger here is OSError; log so it is not silent.
         logger.debug(
-            "file_watcher: could not resolve child=%s; treating as non-internal",
+            "file_watcher_child_resolve_failed path=%s action=treat_as_non_internal",
             child,
             exc_info=True,
         )
@@ -217,7 +216,7 @@ def _resolve_or_original(path: Path) -> Path:
         return path.resolve()
     except (OSError, RuntimeError):
         logger.warning(
-            "file_watcher: could not resolve watch path=%s; using it unresolved",
+            "file_watcher_watch_path_resolve_failed path=%s action=use_unresolved",
             path,
             exc_info=True,
         )
@@ -297,9 +296,9 @@ def _derive_watch_roots(
         children = sorted(source_dir.iterdir())
     except OSError:
         logger.warning(
-            "file_watcher: could not enumerate source_dir=%s; %s",
+            "file_watcher_enumerate_failed source_dir=%s action=%s",
             source_dir,
-            "watching root only" if root_floor else "watching nothing",
+            "watch_root_only" if root_floor else "watch_nothing",
         )
         return [_WatchRoot(source_dir, recursive=False)] if root_floor else []
 
@@ -463,7 +462,7 @@ class VaultFileWatcher:
         try:
             self._on_change()
         except Exception:
-            logger.error("file_watcher: on_change callback raised", exc_info=True)
+            logger.error("file_watcher_on_change_raised", exc_info=True)
 
     def start(self) -> None:
         """Start watching *source_dir*.
@@ -473,11 +472,7 @@ class VaultFileWatcher:
         A no-op if the observer is already running (double-call guard).
         """
         if not _WATCHDOG_AVAILABLE:
-            logger.warning(
-                "file_watcher: watchdog not installed; external file changes "
-                "will not trigger automatic reindex. "
-                "Install watchdog: pip install 'markdown-vault-mcp[file-watcher]'"
-            )
+            logger.warning("file_watcher_watchdog_missing")
             return
 
         with self._lock:
@@ -501,7 +496,7 @@ class VaultFileWatcher:
                 # A single root can fail (e.g. watchdog cannot watch a symlinked
                 # child's target); keep the rest, notably the source_dir floor.
                 logger.warning(
-                    "file_watcher: could not schedule watch on root=%s recursive=%s",
+                    "file_watcher_schedule_failed root=%s recursive=%s",
                     root.path,
                     root.recursive,
                     exc_info=True,
@@ -517,9 +512,8 @@ class VaultFileWatcher:
             # "no roots at all" case (root_floor off, no children), where roots
             # is empty and this does not fire.
             logger.error(
-                "file_watcher: all %d watch root(s) failed to schedule; live "
-                "change detection is disabled — changes are only picked up by "
-                "scans (source_dir=%s)",
+                "file_watcher_all_roots_failed roots=%d fallback=scan_only "
+                "source_dir=%s",
                 len(roots),
                 self._source_dir,
             )
@@ -537,8 +531,8 @@ class VaultFileWatcher:
 
         recursive_count = sum(1 for root in scheduled if root.recursive)
         logger.info(
-            "file_watcher: watching roots=%d (recursive=%d) floor=%s under=%s "
-            "debounce_s=%s roots=[%s]",
+            "file_watcher_watching roots=%d recursive=%d floor=%s under=%s "
+            "debounce_s=%s roots=%s",
             len(scheduled),
             recursive_count,
             "on" if self._root_floor else "off",
@@ -561,7 +555,7 @@ class VaultFileWatcher:
                 observer.stop()
                 observer.join(timeout=5.0)
             except Exception:
-                logger.warning("file_watcher: error stopping observer", exc_info=True)
+                logger.warning("file_watcher_stop_failed", exc_info=True)
 
 
 if _WATCHDOG_AVAILABLE:

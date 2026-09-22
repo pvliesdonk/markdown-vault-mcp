@@ -66,13 +66,13 @@ def _arg_names_valid(kind: str, name: str, arg_defs: list[dict[str, Any]]) -> bo
     for arg in arg_defs:
         arg_name = arg["name"]
         if not _VALID_IDENT.match(arg_name):
-            reason = "is not a valid Python identifier"
+            reason = "invalid_identifier"
         elif keyword.iskeyword(arg_name):
-            reason = "is a reserved Python keyword"
+            reason = "reserved_keyword"
         else:
             continue
         logger.warning(
-            "%s prompt %r argument name %r %s — skipping prompt",
+            "prompt_arg_invalid kind=%s prompt=%r arg_name=%r reason=%s",
             kind,
             name,
             arg_name,
@@ -163,8 +163,7 @@ def _load_user_prompt_defs(prompts_folder: str | None) -> dict[str, dict[str, An
     folder = Path(prompts_folder)
     if not folder.exists() or not folder.is_dir():
         logger.warning(
-            "PROMPTS_FOLDER=%r does not exist or is not a directory — "
-            "user-defined prompts will not be loaded",
+            "prompts_folder_invalid path=%r reason=missing_or_not_directory",
             str(folder),
         )
         return {}
@@ -176,7 +175,7 @@ def _load_user_prompt_defs(prompts_folder: str | None) -> dict[str, dict[str, An
             post = parse_frontmatter(read_text_utf8(md_file))
         except Exception:
             logger.warning(
-                "Failed to parse user prompt file %r — skipping",
+                "user_prompt_parse_failed path=%r",
                 str(md_file),
                 exc_info=True,
             )
@@ -208,7 +207,7 @@ def _load_user_prompt_defs(prompts_folder: str | None) -> dict[str, dict[str, An
             "tags": tags,
             "content": post.content,
         }
-        logger.debug("Loaded user prompt definition: %s (from %s)", name, md_file.name)
+        logger.debug("user_prompt_loaded name=%s file=%s", name, md_file.name)
 
     return defs
 
@@ -250,10 +249,11 @@ def _register_one_user_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) -> 
         try:
             fn = _build_prompt_fn(content_template, arg_defs)
         except ValueError:
+            # Raised by inspect.Signature when the arguments cannot form a
+            # valid signature, e.g. a duplicate name, or an optional
+            # argument before a required one.
             logger.warning(
-                "User prompt %r has arguments that cannot form a valid signature "
-                "(e.g. a duplicate name, or an optional argument before a required "
-                "one) — skipping prompt",
+                "user_prompt_signature_invalid prompt=%r",
                 name,
                 exc_info=True,
             )
@@ -267,7 +267,7 @@ def _register_one_user_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) -> 
         decorator_kwargs["tags"] = tags
 
     mcp.prompt(**decorator_kwargs)(fn)
-    logger.debug("Registered user-defined prompt: %s", name)
+    logger.debug("user_prompt_registered prompt=%s", name)
 
 
 def _load_builtin_prompt(name: str) -> dict[str, Any] | None:
@@ -280,13 +280,13 @@ def _load_builtin_prompt(name: str) -> dict[str, Any] | None:
             encoding="utf-8-sig"
         )
     except FileNotFoundError:
-        logger.warning("Built-in prompt file %s.md not found — skipping", name)
+        logger.warning("builtin_prompt_file_missing prompt=%s", name)
         return None
     try:
         post = parse_frontmatter(text)
     except Exception:
         logger.warning(
-            "Failed to parse built-in prompt file %s.md — skipping",
+            "builtin_prompt_parse_failed prompt=%s",
             name,
             exc_info=True,
         )
@@ -343,9 +343,11 @@ def _register_one_builtin_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) 
         try:
             fn = _build_prompt_fn(content_template, arg_defs, derive=derive)
         except ValueError:
+            # Raised by inspect.Signature when the arguments cannot form a
+            # valid signature, e.g. a duplicate name, or an optional
+            # argument before a required one.
             logger.warning(
-                "Built-in prompt %r has arguments that cannot form a valid "
-                "signature — skipping",
+                "builtin_prompt_signature_invalid prompt=%r",
                 name,
                 exc_info=True,
             )
@@ -355,7 +357,7 @@ def _register_one_builtin_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) 
     fn.__doc__ = description
 
     mcp.prompt(**decorator_kwargs)(fn)
-    logger.debug("Registered built-in prompt: %s", name)
+    logger.debug("builtin_prompt_registered prompt=%s", name)
 
 
 def register_prompts(mcp: FastMCP) -> None:
@@ -387,9 +389,10 @@ def register_prompts(mcp: FastMCP) -> None:
             try:
                 _register_one_builtin_prompt(mcp, md_name, defn)
             except Exception:
+                # A first-party built-in failing to register is a packaging
+                # defect (its static file shipped broken) — please file a bug.
                 logger.error(
-                    "Built-in prompt %r failed to register — this is a packaging "
-                    "defect, please file a bug",
+                    "builtin_prompt_register_failed prompt=%r",
                     md_name,
                     exc_info=True,
                 )
@@ -483,9 +486,13 @@ def _register_summarize_subtree(mcp: FastMCP, tool_available: bool) -> None:
     try:
         _register_one_builtin_prompt(mcp, "summarize-subtree", defn)
     except Exception:
+        # A first-party built-in failing to register is a packaging defect
+        # (its static file shipped broken) — please file a bug. Reuses
+        # register_prompts' event name; the prompt name is a literal here
+        # rather than a loop variable.
         logger.error(
-            "Built-in prompt 'summarize-subtree' failed to register — this is "
-            "a packaging defect, please file a bug",
+            "builtin_prompt_register_failed prompt=%r",
+            "summarize-subtree",
             exc_info=True,
         )
 
@@ -531,7 +538,7 @@ def register_domain_prompts(
     user_prompt_defs = _load_user_prompt_defs(prompts_folder)
     if user_prompt_defs:
         logger.info(
-            "User-defined prompts found in %r: %s",
+            "user_prompts_found folder=%r names=%s",
             prompts_folder,
             sorted(user_prompt_defs),
         )
@@ -556,7 +563,7 @@ def register_domain_prompts(
             try:
                 mcp.local_provider.remove_prompt(name)
             except KeyError:
-                logger.debug("no built-in %r to prune before user override", name)
+                logger.debug("builtin_prompt_prune_skipped prompt=%r", name)
 
     # --- Pass 3: register user-defined prompts ---
     for name, defn in user_prompt_defs.items():
@@ -568,7 +575,7 @@ def register_domain_prompts(
             _register_one_user_prompt(mcp, name, defn)
         except Exception:
             logger.warning(
-                "User prompt %r failed to register — skipping",
+                "user_prompt_register_failed prompt=%r",
                 name,
                 exc_info=True,
             )

@@ -293,10 +293,12 @@ class IndexManager:
         except OSError as exc:
             if surfaced:
                 logger.warning(
-                    "%s_surfaced_skip_dropped path=%s err=%s", event, rel_path, exc
+                    "skip_hash_dropped phase=%s path=%s err=%s", event, rel_path, exc
                 )
             else:
-                logger.debug("%s_skip_hash_failed path=%s err=%s", event, rel_path, exc)
+                logger.debug(
+                    "skip_hash_failed phase=%s path=%s err=%s", event, rel_path, exc
+                )
             return False
         return True
 
@@ -460,7 +462,7 @@ class IndexManager:
             was indexed.
         """
         if force:
-            logger.info("build_index(force=True): dropping and rebuilding index")
+            logger.info("build_index_force_rebuild")
             for row in self._fts.list_notes():
                 self._fts.delete_by_path(row["path"])
             # list_notes() is live-only, so tombstones need their own wipe;
@@ -468,7 +470,7 @@ class IndexManager:
             for row in self._fts.list_tombstones():
                 self._fts.delete_by_path(row["path"])
 
-        logger.info("build_index: scanning %s", self._source_dir)
+        logger.info("build_index_scanning path=%s", self._source_dir)
 
         skip_reasons: dict[str, dict[str, str]] = {}
         skip_files: dict[str, SkippedFile] = {}
@@ -504,7 +506,7 @@ class IndexManager:
             except Exception:
                 errored += 1
                 logger.warning(
-                    "build_index: failed to index %s",
+                    "build_index_index_failed path=%s",
                     note.path,
                     exc_info=True,
                 )
@@ -574,7 +576,7 @@ class IndexManager:
 
         if errored:
             logger.warning(
-                "build_index: indexed %d documents, %d chunks (%d skipped, %d errors)",
+                "build_index_complete documents=%d chunks=%d skipped=%d errors=%d",
                 len(notes) - errored,
                 total_chunks,
                 skipped,
@@ -582,7 +584,7 @@ class IndexManager:
             )
         else:
             logger.info(
-                "build_index: indexed %d documents, %d chunks (%d skipped)",
+                "build_index_complete documents=%d chunks=%d skipped=%d",
                 len(notes),
                 total_chunks,
                 skipped,
@@ -638,7 +640,8 @@ class IndexManager:
             self._source_dir, exclude_patterns=self._exclude_patterns
         )
         logger.info(
-            "reindex: %d added, %d modified, %d deleted, %d unchanged, %d skipped",
+            "reindex_changes_detected added=%d modified=%d deleted=%d "
+            "unchanged=%d skipped=%d",
             len(changes.added),
             len(changes.modified),
             len(changes.deleted),
@@ -670,7 +673,7 @@ class IndexManager:
         stale_excluded, vectors = self._purge_stale_excluded(vectors)
         if stale_excluded:
             logger.info(
-                "reindex: purged %d stale excluded document(s)",
+                "reindex_purged_stale_excluded count=%d",
                 stale_excluded,
             )
 
@@ -697,7 +700,7 @@ class IndexManager:
                 )
             except Exception:
                 logger.warning(
-                    "reindex: mid-pass checkpoint failed; pass continues",
+                    "reindex_checkpoint_failed",
                     exc_info=True,
                 )
 
@@ -784,7 +787,7 @@ class IndexManager:
                 sf = outcome.skip
                 if sf.category == "missing_frontmatter":
                     logger.info(
-                        "reindex: skipping %s — missing frontmatter (%s)",
+                        "reindex_skip_missing_frontmatter path=%s detail=%s",
                         path,
                         sf.detail,
                     )
@@ -856,7 +859,7 @@ class IndexManager:
             try:
                 self._fts.upsert_note(note)
             except Exception:
-                logger.warning("reindex: failed to index %s", path, exc_info=True)
+                logger.warning("reindex_index_failed path=%s", path, exc_info=True)
                 continue
             if path in added_paths:
                 indexed_added += 1
@@ -878,13 +881,13 @@ class IndexManager:
         if embed_kept:
             logger.warning(
                 "reindex_inline_embed_failed_docs total=%d "
-                "(existing vectors kept; retried on the next build_embeddings)",
+                "action=vectors_kept_retry_on_build",
                 embed_kept,
             )
         if embed_dropped:
             logger.warning(
                 "reindex_inline_embed_dropped_docs total=%d "
-                "(vectors removed; re-embedded on the next build_embeddings)",
+                "action=vectors_removed_reembed_on_build",
                 embed_dropped,
             )
         return indexed_added, indexed_modified
@@ -1017,7 +1020,7 @@ class IndexManager:
             try:
                 self._fts.resolve_vault_wikilinks()
             except Exception:
-                logger.exception("process_dirty_paths: resolve_vault_wikilinks failed")
+                logger.exception("process_dirty_paths_resolve_wikilinks_failed")
             raise
         else:
             # A graph failure must fail the job and retain its dirty paths;

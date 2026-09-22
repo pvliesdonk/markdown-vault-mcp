@@ -146,7 +146,7 @@ class Service:
     async def start(self) -> None:
         """Build the Vault and submit the boot jobs; start background tasks."""
         config = self._config
-        logger.info("Initialising vault from %s", config.source_dir)
+        logger.info("vault_initialising source_dir=%s", config.source_dir)
 
         # Settings-first construction (#1158): the config-derived knobs
         # travel as one VaultSettings; the constructed collaborators stay
@@ -155,7 +155,7 @@ class Service:
         settings = to_vault_settings(config, instances=instances)
         if instances.embedding_provider is not None:
             logger.info(
-                "Embedding provider: %s",
+                "embedding_provider_resolved provider=%s",
                 type(instances.embedding_provider).__name__,
             )
         vault = Vault(
@@ -182,7 +182,7 @@ class Service:
         # completes; bucket-2 tools return whatever is currently in
         # the index per #526.
         vault.index.build_index_async()
-        logger.info("Submitted BuildIndex job to writer")
+        logger.info("build_index_job_submitted")
 
         # Reconcile offline changes (#665): files added, modified, or
         # deleted while no server was running are invisible to both the
@@ -200,17 +200,17 @@ class Service:
         # the index agrees with disk.
         if config.boot_reindex:
             vault.index.reindex_async()
-            logger.info("Submitted boot Reindex job to writer")
+            logger.info("boot_reindex_job_submitted")
         else:
-            logger.info(
-                "Boot reindex disabled by configuration; changes made while "
-                "no server was running stay invisible until a reindex runs "
-                "(reindex tool or 'markdown-vault-mcp reindex')"
-            )
+            # Offline changes (files added/modified/deleted while no server
+            # was running) stay invisible to the index until an explicit
+            # reindex runs — either the `reindex` tool or the
+            # `markdown-vault-mcp reindex` CLI command.
+            logger.info("boot_reindex_disabled reason=config")
 
         if instances.embedding_provider is not None:
             vault.index.build_embeddings_async()
-            logger.info("Submitted BuildEmbeddings job to writer")
+            logger.info("build_embeddings_job_submitted")
 
         # Start any other background tasks (e.g. git pull loop).
         vault.start()
@@ -249,10 +249,10 @@ class Service:
                         vault.index.reindex()
                 except IndexUnavailableError:
                     logger.info(
-                        "file_watcher: index not yet queryable, skipping reindex"
+                        "file_watcher_reindex_skipped reason=index_not_queryable"
                     )
                 except Exception:
-                    logger.error("file_watcher: reindex failed", exc_info=True)
+                    logger.error("file_watcher_reindex_failed", exc_info=True)
 
             # Never watch the vault's own write targets: reindex() rewrites the
             # state file on every run, and a watch on its dir would re-trigger
@@ -283,11 +283,9 @@ class Service:
             )
             self._file_watcher.start()
         elif not config.sync.file_watcher_enabled:
-            logger.debug("file_watcher: disabled via FILE_WATCHER=false")
+            logger.debug("file_watcher_disabled reason=file_watcher_false")
         else:
-            logger.info(
-                "file_watcher: disabled — git pull loop / webhook handles reindex cadence"
-            )
+            logger.info("file_watcher_disabled reason=other_cadence_source_active")
 
     async def stop(self) -> None:
         """Stop the file watcher and close the Vault."""
@@ -298,7 +296,7 @@ class Service:
         set_vault_singleton(None)
         if self._vault is not None:
             self._vault.close()
-        logger.info("Vault shut down")
+        logger.info("vault_shut_down")
 
 
 def get_vault(ctx: Context = CurrentContext()) -> Vault:

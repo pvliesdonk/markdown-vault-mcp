@@ -85,7 +85,7 @@ class TestCallbackException:
             dispatcher.fire(Path("b.md"), "good", "write")
             dispatcher.close()
         assert calls == ["good"]  # second item processed despite first raising
-        assert any("Write callback failed" in r.getMessage() for r in caplog.records)
+        assert any("write_callback_failed" in r.getMessage() for r in caplog.records)
 
 
 class TestClose:
@@ -116,7 +116,9 @@ class TestClose:
         assert started.wait(2)  # worker is now blocked inside the callback
         with caplog.at_level(logging.WARNING):
             dispatcher.close(timeout=0.05)  # join times out -> warn
-        assert any("did not finish" in r.getMessage() for r in caplog.records)
+        assert any(
+            "write_callback_close_timeout" in r.getMessage() for r in caplog.records
+        )
         release.set()  # let the daemon worker exit
 
     def test_close_timeout_warning_quantifies_pending(self, caplog) -> None:
@@ -135,12 +137,14 @@ class TestClose:
         with caplog.at_level(logging.WARNING):
             dispatcher.close(timeout=0.05)
         warning = next(
-            r.getMessage() for r in caplog.records if "did not finish" in r.getMessage()
+            r.getMessage()
+            for r in caplog.records
+            if "write_callback_close_timeout" in r.getMessage()
         )
         # Worker is blocked on "first" (in-flight); "second" is queued; close()
         # adds the sentinel. qsize() = [second, sentinel] = 2, which equals the
         # commits genuinely at risk: the in-flight "first" + the queued "second".
-        assert "2 pending" in warning, warning
+        assert "pending=2" in warning, warning
         release.set()
 
 
@@ -164,9 +168,9 @@ class TestThreadContract:
         assert calls == [(Path("a.md"), "before", "write")]
         # ...nor resurrect a fresh worker thread.
         assert dispatcher._worker is worker_after_close
-        assert any("after close" in r.getMessage().lower() for r in caplog.records), [
-            r.getMessage() for r in caplog.records
-        ]
+        assert any(
+            "write_callback_fired_after_close" in r.getMessage() for r in caplog.records
+        ), [r.getMessage() for r in caplog.records]
 
     def test_double_close_is_idempotent_noop(self) -> None:
         calls, cb = _recorder()
@@ -243,9 +247,9 @@ class TestDrain:
         warning = next(
             r.getMessage()
             for r in caplog.records
-            if "drain did not finish" in r.getMessage()
+            if "write_callback_drain_timeout" in r.getMessage()
         )
-        assert "2 pending" in warning, warning
+        assert "pending=2" in warning, warning
         release.set()
         dispatcher.close()
 
@@ -271,9 +275,10 @@ class TestDrain:
         assert any("write_callback_worker_died" in m for m in messages), messages
         # The dead-worker drain reports the stranded backlog including the
         # in-flight commit the worker died on (already dequeued, so qsize()+1).
-        assert any("found a dead worker" in m and "1 pending" in m for m in messages), (
-            messages
-        )
+        assert any(
+            "write_callback_drain_dead_worker" in m and "pending_approx=1" in m
+            for m in messages
+        ), messages
         dispatcher.close()
 
 

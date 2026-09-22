@@ -320,7 +320,7 @@ class OllamaProvider(EmbeddingProvider):
         self._context_queried = False
 
         logger.debug(
-            "OllamaProvider initialised: host=%s model=%s cpu_only=%s",
+            "ollama_provider_initialised host=%s model=%s cpu_only=%s",
             self._host,
             self._model,
             self._cpu_only,
@@ -344,7 +344,12 @@ class OllamaProvider(EmbeddingProvider):
             "options": {"num_gpu": 0},
         }
         url = f"{self._host}/api/embed"
-        logger.debug("POST %s model=%s texts=%d", url, self._model, len(texts))
+        logger.debug(
+            "ollama_embed_request url=%s model=%s texts=%d",
+            url,
+            self._model,
+            len(texts),
+        )
 
         with self._httpx.Client() as client:
             response = client.post(url, json=payload, timeout=self._timeout)
@@ -512,7 +517,7 @@ class OpenAIProvider(EmbeddingProvider):
         self._dimension: int | None = None
 
         logger.debug(
-            "OpenAIProvider initialised: base_url=%s model=%s",
+            "openai_provider_initialised base_url=%s model=%s",
             self._base_url,
             self._model,
         )
@@ -639,7 +644,7 @@ class VoyageProvider(EmbeddingProvider):
         )
         self._dimension: int | None = None
 
-        logger.debug("VoyageProvider initialised: model=%s", self._model)
+        logger.debug("voyage_provider_initialised model=%s", self._model)
 
     def _embed(self, texts: list[str], input_type: str) -> list[list[float]]:
         """Embed *texts* with an explicit Voyage ``input_type``.
@@ -787,7 +792,7 @@ class FastEmbedProvider(EmbeddingProvider):
             self._model = TextEmbedding(model_name=self._model_name)
         self._dimension: int | None = None
         logger.debug(
-            "FastEmbedProvider initialised: model=%s cache_dir=%s",
+            "fastembed_provider_initialised model=%s cache_dir=%s",
             self._model_name,
             self._cache_dir,
         )
@@ -863,7 +868,7 @@ def _explicit_provider(name: str, config: ProjectConfig) -> EmbeddingProvider:
         ConfigurationError: If *name* is not a recognised provider.
     """
     if name == "openai":
-        logger.info("Using OpenAIProvider (embedding_provider=openai)")
+        logger.info("embedding_provider_selected provider=openai")
         return OpenAIProvider(
             api_key=config.embeddings.openai_api_key or "",
             base_url=config.embeddings.openai_base_url,
@@ -872,7 +877,7 @@ def _explicit_provider(name: str, config: ProjectConfig) -> EmbeddingProvider:
         )
 
     if name == "voyage":
-        logger.info("Using VoyageProvider (embedding_provider=voyage)")
+        logger.info("embedding_provider_selected provider=voyage")
         return VoyageProvider(
             api_key=config.embeddings.voyage_api_key or "",
             model=config.embeddings.voyage_model,
@@ -880,7 +885,7 @@ def _explicit_provider(name: str, config: ProjectConfig) -> EmbeddingProvider:
         )
 
     if name == "ollama":
-        logger.info("Using OllamaProvider (embedding_provider=ollama)")
+        logger.info("embedding_provider_selected provider=ollama")
         return OllamaProvider(
             host=config.embeddings.ollama_host,
             model=config.embeddings.ollama_model,
@@ -889,7 +894,7 @@ def _explicit_provider(name: str, config: ProjectConfig) -> EmbeddingProvider:
         )
 
     if name == "fastembed":
-        logger.info("Using FastEmbedProvider (embedding_provider=%s)", name)
+        logger.info("embedding_provider_selected provider=%s", name)
         return FastEmbedProvider(
             model_name=config.embeddings.fastembed_model,
             cache_dir=config.embeddings.fastembed_cache_dir,
@@ -938,7 +943,9 @@ def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
 
     # Auto-detect: OpenAI API key present?
     if config.embeddings.openai_api_key:
-        logger.info("Auto-detected OpenAIProvider (openai_api_key is set)")
+        logger.info(
+            "embedding_provider_autodetected provider=openai reason=openai_api_key_set"
+        )
         return OpenAIProvider(
             api_key=config.embeddings.openai_api_key,
             base_url=config.embeddings.openai_base_url,
@@ -955,7 +962,11 @@ def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
         with httpx.Client(timeout=2.0) as client:
             response = client.get(f"{host}/api/tags")
         if response.status_code == 200:
-            logger.info("Auto-detected OllamaProvider (Ollama reachable at %s)", host)
+            logger.info(
+                "embedding_provider_autodetected provider=ollama "
+                "reason=reachable host=%s",
+                host,
+            )
             return OllamaProvider(
                 host=host,
                 model=config.embeddings.ollama_model,
@@ -963,19 +974,19 @@ def get_embedding_provider(config: ProjectConfig) -> EmbeddingProvider:
                 timeout=config.embeddings.embed_timeout_s,
             )
     except Exception:
-        logger.debug("Ollama not reachable at %s, skipping", host)
+        logger.debug("ollama_unreachable host=%s", host)
 
     # Auto-detect: fastembed importable?
     try:
         import fastembed  # noqa: F401
 
-        logger.info("Auto-detected FastEmbedProvider")
+        logger.info("embedding_provider_autodetected provider=fastembed")
         return FastEmbedProvider(
             model_name=config.embeddings.fastembed_model,
             cache_dir=config.embeddings.fastembed_cache_dir,
         )
     except ImportError:
-        logger.debug("fastembed not available, skipping")
+        logger.debug("fastembed_unavailable")
 
     raise RuntimeError(
         "No embedding provider is available. Install one of:\n"

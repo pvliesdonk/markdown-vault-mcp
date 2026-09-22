@@ -151,7 +151,7 @@ class PushScheduler:
                 one_line(self._redact(exc.stderr or "")),
             )
         except Exception:
-            logger.error("Git push failed", exc_info=True)
+            logger.error("git_push_unexpected_error", exc_info=True)
 
     def do_push(self) -> None:
         """Execute git push and clear the pending flag on success.
@@ -192,7 +192,7 @@ class PushScheduler:
                 raise
             self._push_pending = False
             self._health.push_succeeded()
-            logger.info("Git: pushed to remote")
+            logger.info("git_push_succeeded")
 
     def push_if_unpushed(self) -> None:
         """On startup, push any local commits ahead of the remote.
@@ -208,7 +208,7 @@ class PushScheduler:
             ref = resolve_tracking_ref(git_root)
             if ref is None:
                 # No remote-tracking ref resolvable — not an error at startup.
-                logger.debug("Git: no remote ref to check for unpushed commits")
+                logger.debug("git_push_no_remote_ref")
                 return
             result = subprocess.run(
                 [
@@ -223,16 +223,16 @@ class PushScheduler:
                 text=True,
             )
         except FileNotFoundError:
-            logger.debug("Git: git not found, skipping unpushed check")
+            logger.debug("git_push_skipped reason=git_not_found")
             return
 
         if result.returncode != 0:
             # No remote-tracking ref or no remote — not an error at startup.
-            logger.debug("Git: no remote ref to check for unpushed commits")
+            logger.debug("git_push_no_remote_ref")
             return
 
         if result.stdout.strip():
-            logger.info("Git: found unpushed commits on startup, pushing now")
+            logger.info("git_startup_push_pending")
             try:
                 _push(git_root, self._token, self._username)
             except subprocess.CalledProcessError as exc:

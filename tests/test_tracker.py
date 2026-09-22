@@ -252,7 +252,7 @@ class TestResetNoStateFile:
             tracker.reset()
 
         assert any(
-            "does not exist" in r.message or "nothing to delete" in r.message
+            "reset_state_file_absent" in r.message
             for r in caplog.records
             if r.levelno == logging.DEBUG
         )
@@ -304,7 +304,7 @@ class TestMalformedStateFile:
             changes = tracker.detect_changes(vault)
 
         assert "b.md" in changes.added
-        assert any("Cannot read state file" in r.message for r in caplog.records)
+        assert any("state_file_read_failed" in r.message for r in caplog.records)
 
     def test_oserror_on_state_read_treated_as_empty(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -332,7 +332,7 @@ class TestMalformedStateFile:
             state_path.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
         assert result == ({}, {}, {})
-        assert any("Cannot read state file" in r.message for r in caplog.records)
+        assert any("state_file_read_failed" in r.message for r in caplog.records)
 
 
 class TestSaveStateFailure:
@@ -518,7 +518,7 @@ class TestUnreadableFiles:
             locked.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
         assert changes.added == ["ok.md"]
-        assert any("Cannot read" in r.message for r in caplog.records)
+        assert any("cannot_read_file" in r.message for r in caplog.records)
 
     def test_file_outside_source_dir_skipped(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -546,7 +546,7 @@ class TestUnreadableFiles:
             changes = tracker.detect_changes(vault)
 
         assert changes.added == []
-        assert any("File outside source_dir" in r.message for r in caplog.records)
+        assert any("path_outside_source_dir" in r.message for r in caplog.records)
 
     def test_transient_fd_exhaustion_is_retried_within_the_scan(
         self, tmp_path: Path

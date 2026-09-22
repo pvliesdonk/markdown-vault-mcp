@@ -193,7 +193,7 @@ class WriteCallbackDispatcher:
         with self._worker_lock:
             if self._closed:
                 logger.warning(
-                    "Write callback fired after close(); dropping %s (%s)",
+                    "write_callback_fired_after_close path=%s operation=%s",
                     abs_path,
                     operation,
                 )
@@ -287,7 +287,7 @@ class WriteCallbackDispatcher:
                 on_write(abs_path, content, operation)
         except Exception:
             logger.error(
-                "Write callback failed for %s (%s)",
+                "write_callback_failed path=%s operation=%s",
                 abs_path,
                 operation,
                 exc_info=True,
@@ -386,8 +386,8 @@ class WriteCallbackDispatcher:
                 # alert; do NOT "simplify" it back to qsize(), which undercounts
                 # the common case.)
                 logger.error(
-                    "Write-callback drain found a dead worker; ~%d pending git "
-                    "commit(s) will never be committed.",
+                    "write_callback_drain_dead_worker "
+                    "pending_approx=%d outcome=will_not_commit",
                     self._queue.qsize() + 1,
                 )
                 return False
@@ -404,8 +404,8 @@ class WriteCallbackDispatcher:
         # number of commits genuinely at risk -- same accounting as close().
         # Do NOT "correct" this to qsize()-1.
         logger.warning(
-            "Write-callback drain did not finish within %s s; "
-            "%d pending git commit(s) not yet committed before pull.",
+            "write_callback_drain_timeout "
+            "timeout_s=%s pending=%d outcome=not_committed_before_pull",
             timeout,
             self._queue.qsize(),
         )
@@ -437,8 +437,8 @@ class WriteCallbackDispatcher:
                 # number of commits genuinely at risk. Do NOT "fix" this to
                 # qsize()-1 — that would undercount by one.
                 logger.warning(
-                    "Write-callback worker did not finish within %s s; "
-                    "%d pending git commit(s) may be lost.",
+                    "write_callback_close_timeout "
+                    "timeout_s=%s pending=%d outcome=may_be_lost",
                     timeout,
                     self._queue.qsize(),
                 )

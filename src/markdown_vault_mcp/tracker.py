@@ -143,7 +143,7 @@ class ChangeTracker:
             try:
                 rel_str = abs_path.relative_to(source_dir).as_posix()
             except ValueError:
-                logger.warning("File outside source_dir, skipping: %s", abs_path)
+                logger.warning("path_outside_source_dir path=%s", abs_path)
                 continue
             # Skip excluded subtrees before hashing — saves the I/O and keeps
             # them out of the ChangeSet (#257).
@@ -164,7 +164,7 @@ class ChangeTracker:
                     # on the next scan and reported deleted then.
                     disk_state[rel_str] = prior
                     logger.warning(
-                        "hash_read_failed_keeping_indexed path=%s errno=%s: %s",
+                        "hash_read_failed_keeping_indexed path=%s errno=%s error=%s",
                         abs_path,
                         exc.errno,
                         exc,
@@ -177,13 +177,13 @@ class ChangeTracker:
                     # so it is not lost among a busy watcher's INFO reindex
                     # summaries.
                     logger.error(
-                        "hash_read_failed_after_retry path=%s errno=%s: %s",
+                        "hash_read_failed_after_retry path=%s errno=%s error=%s",
                         abs_path,
                         exc.errno,
                         exc,
                     )
                 else:
-                    logger.warning("Cannot read %s, skipping: %s", abs_path, exc)
+                    logger.warning("cannot_read_file path=%s error=%s", abs_path, exc)
                 continue
             disk_state[rel_str] = content_hash
 
@@ -228,8 +228,7 @@ class ChangeTracker:
         ]
 
         logger.debug(
-            "detect_changes: %d added, %d modified, %d deleted, %d unchanged, "
-            "%d skipped-unchanged",
+            "detect_changes added=%d modified=%d deleted=%d unchanged=%d skipped=%d",
             len(added),
             len(modified),
             len(deleted),
@@ -326,7 +325,7 @@ class ChangeTracker:
         self._skipped_carry = {}
         self._skip_reasons_carry = {}
         logger.debug(
-            "update_state: wrote state for %d indexed, %d skipped, %d skip-reason(s)",
+            "update_state_wrote_state indexed=%d skipped=%d skip_reasons=%d",
             len(new_indexed),
             len(new_skipped),
             len(new_skip_reasons),
@@ -362,7 +361,7 @@ class ChangeTracker:
         )
         self._save_state(new_indexed, new_skipped, new_skip_reasons)
         logger.debug(
-            "checkpoint_state: snapshot with %d indexed, %d skipped path(s)",
+            "checkpoint_state_snapshot indexed=%d skipped=%d",
             len(new_indexed),
             len(new_skipped),
         )
@@ -376,9 +375,9 @@ class ChangeTracker:
         self._skip_reasons_carry = {}
         if self._state_path.exists():
             self._state_path.unlink()
-            logger.debug("reset: deleted state file %s", self._state_path)
+            logger.debug("reset_deleted_state_file path=%s", self._state_path)
         else:
-            logger.debug("reset: state file does not exist, nothing to delete")
+            logger.debug("reset_state_file_absent")
 
     def skip_reasons(self) -> dict[str, dict[str, str]]:
         """Return the persisted surfaced-skip reasons (path → category/detail).
@@ -418,7 +417,7 @@ class ChangeTracker:
         """
         if not self._state_path.exists():
             logger.debug(
-                "No state file at %s; treating all files as added", self._state_path
+                "state_file_missing path=%s outcome=all_added", self._state_path
             )
             return {}, {}, {}
         try:
@@ -426,7 +425,7 @@ class ChangeTracker:
                 state = json.load(fh)
             if not isinstance(state, dict):
                 logger.warning(
-                    "State file %s is malformed (expected object); resetting",
+                    "state_file_malformed path=%s reason=not_object outcome=reset",
                     self._state_path,
                 )
                 return {}, {}, {}
@@ -440,7 +439,8 @@ class ChangeTracker:
                     or not isinstance(skip_reasons, dict)
                 ):
                     logger.warning(
-                        "State file %s is malformed (expected object maps); resetting",
+                        "state_file_malformed path=%s reason=not_object_maps "
+                        "outcome=reset",
                         self._state_path,
                     )
                     return {}, {}, {}
@@ -449,7 +449,7 @@ class ChangeTracker:
             return state, {}, {}
         except (OSError, json.JSONDecodeError) as exc:
             logger.warning(
-                "Cannot read state file %s (%s); treating all files as added",
+                "state_file_read_failed path=%s error=%s outcome=all_added",
                 self._state_path,
                 exc,
             )
@@ -488,7 +488,9 @@ class ChangeTracker:
                 }
             else:
                 logger.warning(
-                    "skip_reason_malformed path=%s reason=%r; dropping", path, reason
+                    "skip_reason_malformed path=%s reason=%r outcome=dropped",
+                    path,
+                    reason,
                 )
         return clean
 
@@ -527,7 +529,7 @@ class ChangeTracker:
             Path(tmp_path).unlink(missing_ok=True)
             raise
         logger.debug(
-            "Saved state for %d indexed, %d skipped, %d skip-reason path(s) to %s",
+            "state_saved indexed=%d skipped=%d skip_reasons=%d path=%s",
             len(indexed),
             len(skipped),
             len(skip_reasons),
@@ -566,7 +568,7 @@ class ChangeTracker:
                     raise
                 sleep_s = _HASH_RETRY_SLEEPS_S[attempt]
                 logger.debug(
-                    "hash_read_retry path=%s errno=%s backoff=%ss",
+                    "hash_read_retry path=%s errno=%s backoff_s=%s",
                     path,
                     exc.errno,
                     sleep_s,

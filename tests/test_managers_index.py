@@ -363,7 +363,9 @@ class TestSkipStateMemory:
         with caplog.at_level(logging.INFO, logger="markdown_vault_mcp.managers.index"):
             mgr.reindex()
         first_run_skips = [
-            r for r in caplog.records if "missing frontmatter" in r.getMessage()
+            r
+            for r in caplog.records
+            if "reindex_skip_missing_frontmatter" in r.getMessage()
         ]
         assert len(first_run_skips) == 1
 
@@ -371,7 +373,9 @@ class TestSkipStateMemory:
         with caplog.at_level(logging.INFO, logger="markdown_vault_mcp.managers.index"):
             result = mgr.reindex()
         second_run_skips = [
-            r for r in caplog.records if "missing frontmatter" in r.getMessage()
+            r
+            for r in caplog.records
+            if "reindex_skip_missing_frontmatter" in r.getMessage()
         ]
         assert second_run_skips == []
         assert result.skipped == 1
@@ -961,13 +965,16 @@ class TestBuildEmbeddings:
             total = mgr.build_embeddings()
         assert total >= 40  # many chunks => many batches
 
-        per_batch = [r for r in caplog.records if "embedded chunks" in r.getMessage()]
+        per_batch = [
+            r
+            for r in caplog.records
+            if "build_embeddings_embedded_batch" in r.getMessage()
+        ]
         info_progress = [
             r
             for r in caplog.records
             if r.levelno == logging.INFO
-            and "build_embeddings:" in r.getMessage()
-            and "%" in r.getMessage()
+            and "build_embeddings_progress" in r.getMessage()
         ]
         # Per-batch detail is still emitted, but only at DEBUG.
         assert per_batch, "per-batch detail should still be logged (at DEBUG)"
@@ -1066,7 +1073,7 @@ class TestBuildEmbeddings:
         assert count >= 1
         # The malformed file was skipped with a warning naming it.
         assert any(
-            "build_embeddings: skipping" in r.getMessage()
+            "build_embeddings_skip_note" in r.getMessage()
             and "bad.md" in r.getMessage()
             for r in caplog.records
         )
@@ -2118,7 +2125,9 @@ class TestBuildIndexSkipReasons:
         finally:
             vault.close()
         assert any(
-            "build_index_surfaced_skip_dropped" in r.message and "bad.md" in r.message
+            "skip_hash_dropped" in r.message
+            and "phase=build_index" in r.message
+            and "bad.md" in r.message
             for r in caplog.records
         )
 

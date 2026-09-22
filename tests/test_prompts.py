@@ -48,7 +48,7 @@ class TestLoadUserPromptDefs:
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
             _load_user_prompt_defs(str(missing))
-        assert "does not exist" in caplog.text
+        assert "prompts_folder_invalid" in caplog.text
 
     def test_finds_md_files(self, tmp_path: Path) -> None:
         (tmp_path / "hello.md").write_text("Hello world", encoding="utf-8")
@@ -126,7 +126,7 @@ class TestLoadUserPromptDefs:
         ):
             result = _load_user_prompt_defs(str(tmp_path))
         assert "broken" not in result
-        assert "Failed to parse" in caplog.text
+        assert "user_prompt_parse_failed" in caplog.text
 
     def test_strips_bom_from_user_prompt(self, tmp_path: Path) -> None:
         """A UTF-8 BOM before the frontmatter must not break parsing (#673)."""
@@ -234,7 +234,7 @@ class TestRegisterOneUserPromptArgValidation:
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
             _register_one_user_prompt(mcp, "bad_prompt", defn)
-        assert "is a reserved Python keyword" in caplog.text
+        assert "reason=reserved_keyword" in caplog.text
 
     def test_skips_prompt_with_non_identifier_arg_name(
         self, caplog: pytest.LogCaptureFixture
@@ -257,7 +257,7 @@ class TestRegisterOneUserPromptArgValidation:
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
             _register_one_user_prompt(mcp, "bad_prompt2", defn)
-        assert "is not a valid Python identifier" in caplog.text
+        assert "reason=invalid_identifier" in caplog.text
 
     def test_formerly_reserved_name_now_allowed(
         self, caplog: pytest.LogCaptureFixture
@@ -281,7 +281,7 @@ class TestRegisterOneUserPromptArgValidation:
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
             _register_one_user_prompt(mcp, "ok_name", defn)
-        assert "skipping prompt" not in caplog.text
+        assert "prompt_arg_invalid" not in caplog.text
 
     def test_builtin_prompt_skips_invalid_arg_name(
         self, caplog: pytest.LogCaptureFixture
@@ -306,7 +306,7 @@ class TestRegisterOneUserPromptArgValidation:
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
             _register_one_builtin_prompt(mcp, "bad_builtin", defn)
-        assert "is not a valid Python identifier" in caplog.text
+        assert "reason=invalid_identifier" in caplog.text
 
     def test_module_has_no_exec(self) -> None:
         """The prompt-registration module compiles no source and calls no exec
@@ -341,7 +341,7 @@ class TestRegisterOneUserPromptArgValidation:
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
             _register_one_user_prompt(mcp, "bad_order", defn)
-        assert "cannot form a valid signature" in caplog.text
+        assert "user_prompt_signature_invalid" in caplog.text
 
     def test_builtin_prompt_skips_invalid_arg_order(
         self, caplog: pytest.LogCaptureFixture
@@ -369,7 +369,7 @@ class TestRegisterOneUserPromptArgValidation:
             logging.WARNING, logger="markdown_vault_mcp._server_prompts"
         ):
             _register_one_builtin_prompt(mcp, "bad_order_builtin", defn)
-        assert "cannot form a valid signature" in caplog.text
+        assert "builtin_prompt_signature_invalid" in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -960,7 +960,8 @@ class TestSummarizeSubtree:
             logging.ERROR, logger="markdown_vault_mcp._server_prompts"
         ):
             _server_prompts._register_summarize_subtree(mcp, tool_available=False)
-        assert "summarize-subtree' failed to register" in caplog.text
+        assert "builtin_prompt_register_failed" in caplog.text
+        assert "summarize-subtree" in caplog.text
 
     @pytest.mark.usefixtures("_clear_vars")
     async def test_user_prompt_overrides(
@@ -1033,7 +1034,8 @@ class TestRegisterPromptsPerPromptGuard:
                 mcp, templates_folder=None, prompts_folder="/whatever"
             )
 
-        assert "User prompt 'bad' failed to register" in caplog.text
+        assert "user_prompt_register_failed" in caplog.text
+        assert "'bad'" in caplog.text
         async with Client(mcp) as client:
             names = {p.name for p in await client.list_prompts()}
         assert "good" in names
@@ -1067,8 +1069,8 @@ class TestRegisterPromptsPerPromptGuard:
         ):
             register_prompts(mcp)
 
-        assert "Built-in prompt 'summarize' failed to register" in caplog.text
-        assert "packaging defect" in caplog.text
+        assert "builtin_prompt_register_failed" in caplog.text
+        assert "'summarize'" in caplog.text
         async with Client(mcp) as client:
             names = {p.name for p in await client.list_prompts()}
         assert "summarize" not in names
@@ -1119,8 +1121,8 @@ class TestRegisterPromptsPerPromptGuard:
                 mcp, templates_folder=None, prompts_folder="/whatever"
             )
 
-        assert "cannot form a valid signature" in caplog.text
-        assert "failed to register" not in caplog.text
+        assert "user_prompt_signature_invalid" in caplog.text
+        assert "register_failed" not in caplog.text
         async with Client(mcp) as client:
             names = {p.name for p in await client.list_prompts()}
         assert "good2" in names
@@ -1183,7 +1185,8 @@ class TestRegisterPromptsPerPromptGuard:
                 mcp, templates_folder=None, prompts_folder="/whatever"
             )
 
-        assert "User prompt 'bad' failed to register" in caplog.text
+        assert "user_prompt_register_failed" in caplog.text
+        assert "'bad'" in caplog.text
         async with Client(mcp) as client:
             names = {p.name for p in await client.list_prompts()}
         assert "good" in names
@@ -1237,8 +1240,8 @@ class TestRegisterPromptsPerPromptGuard:
         ):
             register_prompts(mcp)
 
-        assert "Built-in prompt 'summarize' failed to register" in caplog.text
-        assert "packaging defect" in caplog.text
+        assert "builtin_prompt_register_failed" in caplog.text
+        assert "'summarize'" in caplog.text
         async with Client(mcp) as client:
             names = {p.name for p in await client.list_prompts()}
         assert "summarize" not in names

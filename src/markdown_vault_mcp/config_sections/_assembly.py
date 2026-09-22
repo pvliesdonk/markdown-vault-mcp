@@ -225,12 +225,9 @@ def _resolve_embedding_provider(config: ProjectConfig) -> EmbeddingProvider | No
                 f"could not be loaded: {exc}. Fix the configuration, or "
                 "unset the variable to fall back to auto-detection."
             ) from exc
-        logger.warning(
-            "Could not auto-detect an embedding provider; semantic "
-            "search disabled. Set MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER "
-            "to require a specific backend.",
-            exc_info=True,
-        )
+        # Semantic search is disabled until the operator sets
+        # MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER to require a specific backend.
+        logger.warning("embedding_provider_autodetect_failed", exc_info=True)
         return None
 
 
@@ -268,12 +265,9 @@ def _resolve_summarizer(config: ProjectConfig) -> Summarizer | None:
                 f"be loaded: {exc}. Fix the configuration, or unset the "
                 "variable to fall back to auto-detection."
             ) from exc
-        logger.warning(
-            "Could not load a summarization backend; the summarize "
-            "tool is disabled. Install the SDK with "
-            "pip install 'markdown-vault-mcp[summarize]'.",
-            exc_info=True,
-        )
+        # The summarize tool is disabled until the SDK is installed:
+        # pip install 'markdown-vault-mcp[summarize]'.
+        logger.warning("summarize_backend_autodetect_failed", exc_info=True)
         return None
 
 
@@ -405,10 +399,10 @@ def resolve_git_repo_url(raw: str | None, token: str | None, prefix: str) -> str
     """
     repo_url = raw or None
     if token and not repo_url:
+        # Legacy mode is deprecated; set GIT_REPO_URL to enable explicit
+        # managed mode instead of relying on a bare token.
         logger.warning(
-            "from_env: %s_GIT_TOKEN is set without %s_GIT_REPO_URL. This "
-            "legacy mode is deprecated; set GIT_REPO_URL to enable explicit "
-            "managed mode.",
+            "git_token_without_repo_url token_var_prefix=%s repo_url_var_prefix=%s",
             prefix,
             prefix,
         )
