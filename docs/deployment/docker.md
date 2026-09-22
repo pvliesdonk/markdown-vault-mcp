@@ -114,20 +114,26 @@ curl -s http://localhost:8000/health/ready
 
 ### Logs
 
-The image sets `FASTMCP_ENABLE_RICH_LOGGING=false`, so `docker logs` gets one line per record: a JSON object for every MCP request the logging middleware sees, `LEVEL: message` from the rest of FastMCP. Both grep cleanly and both survive a log collector. The server's own loggers print one line either way.
+`docker logs` gets one JSON object per record: a container's stderr is not a
+terminal, so the server picks its JSON renderer with nothing configured. Each
+line carries `ts`, `level` and `logger`, then the event name and its fields
+for a request or a tool call, and Docker adds its own timestamp on
+`docker logs -t`. Every logger in the process renders this way, FastMCP's and
+uvicorn's included.
 
-The reason is that a container has no terminal. Rich falls back to 80 columns, its time, level and source columns claim most of them, and a structured record then wraps across three space-padded lines that no reader and no parser puts back together. Rich's time column goes with the setting, and Docker timestamps every line it captures anyway, so `docker logs -t` prints them.
-
-This is an image default like any other, so `.env` or the compose `environment:` block overrides it. Turning Rich back on for a human reading `docker logs` needs `COLUMNS` set as well, since that is what Rich reads in place of asking a terminal it does not have. In `.env`:
+The image sets no log format, so `.env` or the compose `environment:` block
+decides. To read the stream in colour instead, for a person rather than a
+collector:
 
 ```ini
-FASTMCP_ENABLE_RICH_LOGGING=true
-COLUMNS=200
+MARKDOWN_VAULT_MCP_LOG_FORMAT=rich
 ```
 
-Records then render one line each, in color, padded out to the full width. The packaged Debian and RPM installs make the same trade for `journalctl`: the systemd unit sets `FASTMCP_ENABLE_RICH_LOGGING=false`, and `/etc/markdown-vault-mcp/env` overrides it.
+Records then render one `event key=value` line each. The packaged Debian and
+RPM installs behave the same way under `journalctl`: the systemd unit sets
+nothing, and `/etc/markdown-vault-mcp/env` carries the choice.
 
-`FASTMCP_LOG_LEVEL` sets how much is logged; see [Configuration](../configuration.md#logging).
+`MARKDOWN_VAULT_MCP_LOG_LEVEL` sets how much is logged; see [Configuration](../configuration.md#logging).
 
 ## Image tags
 
@@ -153,8 +159,8 @@ docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revis
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MARKDOWN_VAULT_MCP_BEARER_TOKEN` | n/a | Enable bearer token auth |
-| `FASTMCP_LOG_LEVEL` | `INFO` | Log level (`DEBUG` / `INFO` / `WARNING` / `ERROR`) |
-| `FASTMCP_ENABLE_RICH_LOGGING` | `false` in the image | Rich output; off means one plain or JSON line per record (see [Logs](#logs)) |
+| `MARKDOWN_VAULT_MCP_LOG_LEVEL` | `INFO` | Log level (`DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`) |
+| `MARKDOWN_VAULT_MCP_LOG_FORMAT` | unset: `json` in a container | `rich` or `json`; unset picks by whether stderr is a terminal (see [Logs](#logs)) |
 | `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION` | n/a | Routing context that distinguishes this deployment |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | n/a | Deployment-specific behavioral policy added to the generated MCP instructions |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | (computed at startup) | Legacy full replacement of the generated instructions (deprecated) |

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from fastmcp import Client, FastMCP
+from fastmcp.server.providers.addressing import TOOL_HASH_META_KEY, hash_tool
 
 import markdown_vault_mcp._server_apps as apps
 import markdown_vault_mcp._vault_apps as vault_apps
@@ -172,3 +176,33 @@ def test_declared_csp_origins_reach_the_app_resource() -> None:
         "https://fonts.googleapis.com",
         "https://fonts.gstatic.com",
     ]
+
+
+def test_app_tool_hash_survives_protocol_serialisation() -> None:
+    """The hash reaches a client under fastmcp's public key.
+
+    FastMCP strips underscore-prefixed keys from ``meta["fastmcp"]`` when it
+    serialises a tool, so the previous ``_tool_hash`` key was present in
+    process and absent on the wire (#614). The round trip through a client
+    is the assertion, because that is where the addressing code reads it.
+    """
+    tool_name = next(iter(apps._APP_TOOL_NAMES))
+    meta = apps._app_tool_meta(tool_name)
+    assert not any(key.startswith("_") for key in meta["fastmcp"])
+    assert meta["fastmcp"][TOOL_HASH_META_KEY] == hash_tool(apps._APP_NAME, tool_name)
+
+    mcp = FastMCP("apps-meta-probe")
+
+    @mcp.tool(name=tool_name, meta=meta)
+    def _probe() -> str:
+        return "ok"
+
+    async def _listed() -> dict[str, object]:
+        async with Client(mcp) as client:
+            (tool,) = [t for t in await client.list_tools() if t.name == tool_name]
+        return dict(tool.meta or {})
+
+    on_the_wire = asyncio.run(_listed())
+    assert on_the_wire["fastmcp"][TOOL_HASH_META_KEY] == hash_tool(  # type: ignore[index]
+        apps._APP_NAME, tool_name
+    )

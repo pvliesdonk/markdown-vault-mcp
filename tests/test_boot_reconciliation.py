@@ -196,10 +196,10 @@ class TestWarmBootReconciliation:
         asyncio.run(_run())
         messages = [record.message for record in caplog.records]
         build_idx = next(
-            i for i, m in enumerate(messages) if "Submitted BuildIndex job" in m
+            i for i, m in enumerate(messages) if "build_index_job_submitted" in m
         )
         reindex_idx = next(
-            i for i, m in enumerate(messages) if "Submitted boot Reindex job" in m
+            i for i, m in enumerate(messages) if "boot_reindex_job_submitted" in m
         )
         assert build_idx < reindex_idx, "reindex must be enqueued after the build"
 

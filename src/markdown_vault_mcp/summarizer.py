@@ -202,7 +202,7 @@ class OpenAISummarizer(Summarizer):
             # names the budget and the concrete ways to fit under it, so the
             # model/user sees guidance instead of an opaque "timed out".
             logger.warning(
-                "summarize_timeout model=%s timeout=%ss", self._model, self._timeout
+                "summarize_timeout model=%s timeout_s=%s", self._model, self._timeout
             )
             raise RuntimeError(
                 f"Summarization exceeded the {self._timeout:g}s per-request budget. "
@@ -315,7 +315,7 @@ def get_summarizer(config: ProjectConfig) -> Summarizer:
 
     if explicit == _OPENAI or summ.has_provider():
         logger.info(
-            "Using OpenAISummarizer (summarize_provider=%s) base_url=%s model=%s",
+            "openai_summarizer_selected summarize_provider=%s base_url=%s model=%s",
             explicit or "auto",
             summ.openai_base_url or "default",
             summ.openai_model,

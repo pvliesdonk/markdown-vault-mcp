@@ -299,7 +299,8 @@ class SearchManager:
         default = self._default_mode
         if default != "keyword" and not self._vectors_available():
             logger.debug(
-                "search: default mode %r needs embeddings; using keyword", default
+                "search_default_mode_fallback requested_mode=%r fallback_mode=keyword",
+                default,
             )
             return "keyword"
         if default == "auto":
@@ -381,7 +382,7 @@ class SearchManager:
             result: dict[str, Any] = json.loads(raw)
             return result
         except (json.JSONDecodeError, TypeError) as exc:
-            logger.warning("invalid frontmatter JSON for %s — %s", path, exc)
+            logger.warning("frontmatter_json_invalid path=%s error=%s", path, exc)
             return {}
 
     def get_metadata(self, path: str) -> DocumentMeta | None:
@@ -1323,7 +1324,7 @@ class SearchManager:
             rel = abs_path.relative_to(self._source_dir)
         except ValueError as exc:
             logger.warning(
-                "_list_attachments: skipping %s — outside source_dir (%s)",
+                "attachment_skipped path=%s reason=outside_source_dir error=%s",
                 abs_path,
                 exc,
             )
@@ -1384,7 +1385,7 @@ class SearchManager:
             stat = abs_path.stat()
         except OSError as exc:
             logger.warning(
-                "_list_attachments: skipping %s — stat error (%s)",
+                "attachment_skipped path=%s reason=stat_error error=%s",
                 abs_path,
                 exc,
             )
@@ -1638,7 +1639,9 @@ class SearchManager:
             try:
                 return self._link_manager.get_backlinks(path, limit=link_limit)
             except (ValueError, sqlite3.OperationalError) as exc:
-                logger.warning("get_context: backlinks for %s: %s", path, exc)
+                logger.warning(
+                    "get_context_backlinks_failed path=%s error=%s", path, exc
+                )
             return []
         try:
             backlinks = self._fts.get_backlinks(path, limit=link_limit)
@@ -1655,7 +1658,7 @@ class SearchManager:
             ]
         except sqlite3.OperationalError as exc:
             logger.warning(
-                "get_context: failed to retrieve backlinks for %s: %s",
+                "get_context_backlinks_failed path=%s error=%s",
                 path,
                 exc,
             )
@@ -1672,7 +1675,9 @@ class SearchManager:
             try:
                 return self._link_manager.get_outlinks(path, limit=link_limit)
             except (ValueError, sqlite3.OperationalError) as exc:
-                logger.warning("get_context: outlinks for %s: %s", path, exc)
+                logger.warning(
+                    "get_context_outlinks_failed path=%s error=%s", path, exc
+                )
             return []
         try:
             outlinks = self._fts.get_outlinks(path, limit=link_limit)
@@ -1689,7 +1694,7 @@ class SearchManager:
             ]
         except sqlite3.OperationalError as exc:
             logger.warning(
-                "get_context: failed to retrieve outlinks for %s: %s",
+                "get_context_outlinks_failed path=%s error=%s",
                 path,
                 exc,
             )
@@ -1750,7 +1755,7 @@ class SearchManager:
                 # vector sidecar surfaced by _load_vectors()) — surface it at
                 # WARNING instead of silently reducing the dossier to similar=[]
                 # (#804). Not broadened to Exception: unexpected types propagate.
-                logger.warning("get_context: get_similar failed for %s — %s", path, exc)
+                logger.warning("get_context_similar_failed path=%s error=%s", path, exc)
 
         # Folder peers — other notes in the same folder, capped.
         folder = row["folder"]

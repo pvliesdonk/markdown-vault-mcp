@@ -221,7 +221,7 @@ class SqliteConnectionRegistry:
                 primary.close()
             except Exception:
                 logger.debug(
-                    "connection_registry.open_primary cleanup: error closing primary",
+                    "connection_registry_open_primary_cleanup_error",
                     exc_info=True,
                 )
             # Mirror the conn() slow-path TLS clear: if a partially-built
@@ -298,9 +298,7 @@ class SqliteConnectionRegistry:
                     try:
                         conn.close()
                     except sqlite3.ProgrammingError:
-                        logger.debug(
-                            "connection_registry.close: connection already closed"
-                        )
+                        logger.debug("connection_registry_close_already_closed")
                     except Exception:
                         # Catch non-sqlite3.Error subclasses too (e.g. OSError
                         # from underlying file handle, RuntimeError from C
@@ -308,7 +306,7 @@ class SqliteConnectionRegistry:
                         # leaves connections un-closed. KeyboardInterrupt /
                         # SystemExit still propagate.
                         logger.error(
-                            "connection_registry.close: error closing connection",
+                            "connection_registry_close_error",
                             exc_info=True,
                         )
             finally:

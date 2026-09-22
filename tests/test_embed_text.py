@@ -58,7 +58,8 @@ class TestFieldsText:
             )
         assert result == "kept"
         assert any(
-            "skipping non-scalar" in r.getMessage() and "key=tags" in r.getMessage()
+            "fields_text_non_scalar_field_skipped" in r.getMessage()
+            and "key=tags" in r.getMessage()
             for r in caplog.records
         )
 

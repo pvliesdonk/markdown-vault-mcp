@@ -419,7 +419,7 @@ class TestLoadConfig:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_TOKEN", "ghp_legacy")
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_REPO_URL", raising=False)
         _ = ProjectConfig.from_env()
-        assert "legacy mode is deprecated" in caplog.text
+        assert "git_token_without_repo_url" in caplog.text
 
     def test_invalid_pull_interval_raises(
         self, monkeypatch: pytest.MonkeyPatch

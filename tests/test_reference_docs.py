@@ -47,7 +47,8 @@ def test_references_are_dated_sourced_and_pinned() -> None:
 
 
 def test_expired_references_are_surfaced_as_warnings() -> None:
-    today = dt.date.today()
+    # UTC, matching how the checker reads ``stale_after`` (see its ``main``).
+    today = dt.datetime.now(dt.UTC).date()
     for path in discover(ROOT):
         ref, _ = load(path)
         if ref is None:

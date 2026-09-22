@@ -280,7 +280,7 @@ class GraphFacet:
                 # Expected when embeddings are not configured for this vault.
                 continue
             except Exception:
-                logger.warning("get_similar failed for %s", node_path, exc_info=True)
+                logger.warning("get_similar_failed path=%s", node_path, exc_info=True)
                 continue
             seen_sr: set[str] = set()
             for sr in similar:

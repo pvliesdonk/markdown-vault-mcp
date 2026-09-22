@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Literal
 
 import typer
 from fastmcp_pvl_core import (
+    ConfigurationError,
     build_event_store,
     configure_logging_from_env,
     maybe_start_debugpy,
     normalise_http_path,
+    run_http,
 )
 
 from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
@@ -33,24 +34,18 @@ def _root(
 ) -> None:
     """Root callback — bootstraps logging for every subcommand.
 
-    ``configure_logging_from_env`` sets the root logger *level* and
-    configures FastMCP's own logger tree, but does NOT attach a handler
-    to the root logger — so ``markdown_vault_mcp.*`` loggers would have
-    no output.  Attach one here.  Kept idempotent via the
-    ``if not root.handlers`` guard so repeated calls (e.g. from
-    ``make_server()`` on the same process) are safe.
+    pvl-core owns the root logger.  ``configure_logging_from_env`` installs
+    the one console handler chain every logger in the process renders
+    through — ``markdown_vault_mcp.*``, ``fastmcp.*`` and uvicorn alike —
+    picks Rich or JSON from ``MARKDOWN_VAULT_MCP_LOG_FORMAT`` (unset: Rich on
+    a terminal, JSON anywhere else), resolves the level from ``-v`` or
+    ``MARKDOWN_VAULT_MCP_LOG_LEVEL``, and governs the noisy third-party
+    loggers (``httpx``, ``httpcore``, the MCP SDK request line) itself.
+    Nothing to attach or quiet here: a second root handler would render
+    every line twice.  The call is idempotent, so ``make_server()``
+    repeating it in the same process is safe.
     """
-    configure_logging_from_env(verbose=verbose)
-    root = logging.getLogger()
-    if not root.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-        root.addHandler(handler)
-    if verbose:
-        # httpx/httpcore are noisy at DEBUG; keep them quiet.  Core doesn't
-        # own these deps, so the silencing stays domain-local.
-        logging.getLogger("httpx").setLevel(logging.WARNING)
-        logging.getLogger("httpcore").setLevel(logging.WARNING)
+    configure_logging_from_env(_ENV_PREFIX, verbose=verbose)
 
 
 @app.command()
@@ -83,33 +78,43 @@ def serve(
     # unless ``MARKDOWN_VAULT_MCP_DEBUG_PORT`` is set; ``debugpy`` is only
     # present when the image was built with ``--build-arg DEBUG=true``
     # (a missing import logs a WARNING and continues).  ``_root`` has
-    # already attached the StreamHandler by the time ``serve`` runs, so
-    # the helper's INFO/WARNING logs route through the configured
-    # formatter rather than Python's lastResort.
+    # already installed pvl-core's root handler chain by the time ``serve``
+    # runs, so the helper's INFO/WARNING logs render through it rather
+    # than Python's lastResort.
     maybe_start_debugpy(_ENV_PREFIX)
 
-    config = ProjectConfig.from_env()
-    # Resolved once, ahead of ``make_server``: the health routes it registers
-    # derive their prefix from the mount path, so the value handed to
-    # ``http_app(path=...)`` below and the one the server saw must be the
-    # same object, not two reads that could drift.
-    path = normalise_http_path(http_path or os.environ.get(f"{_ENV_PREFIX}_HTTP_PATH"))
-    server = make_server(transport=transport, config=config, http_path=path)
+    try:
+        config = ProjectConfig.from_env()
+        # Resolved once, ahead of ``make_server``: the health routes it
+        # registers derive their prefix from the mount path, so the value
+        # handed to ``http_app(path=...)`` below and the one the server saw
+        # must be the same object, not two reads that could drift.
+        path = normalise_http_path(
+            http_path or os.environ.get(f"{_ENV_PREFIX}_HTTP_PATH")
+        )
+        server = make_server(transport=transport, config=config, http_path=path)
+    except ConfigurationError as exc:
+        # A malformed or missing operator value is one actionable line on
+        # stderr, not Typer's Rich traceback: the message already names the
+        # variable and the problem (#616). stderr keeps stdout clean for the
+        # stdio transport.
+        typer.echo(f"ERROR: configuration error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
     if transport == "http":
-        import uvicorn
-
         event_store = build_event_store(_ENV_PREFIX, config.server)
-        # lifespan="on" is essential: FastMCP's server_lifespan (startup/shutdown
-        # hooks, including service init) runs through the ASGI lifespan protocol.
-        # timeout_graceful_shutdown=3 lets SIGTERM drain requests within 3s so
-        # containers (Docker/k8s) stop cleanly.
-        uvicorn.run(
+        # pvl-core runs uvicorn.  It pins ``lifespan="on"`` (FastMCP's
+        # startup/shutdown hooks run through the ASGI lifespan protocol),
+        # ``log_config=None`` (uvicorn must not reinstall its own handlers
+        # over the root chain ``_root`` set up) and the SIGTERM drain window
+        # from ``MARKDOWN_VAULT_MCP_SHUTDOWN_GRACE_S`` (default 3s, so
+        # containers stop cleanly).  ``None`` for host or port means "not
+        # given on the command line"; ``run_http`` then reads ``config.server``.
+        run_http(
             server.http_app(path=path, event_store=event_store),
-            host=host if host is not None else config.server.host,
-            port=port if port is not None else config.server.port,
-            lifespan="on",
-            timeout_graceful_shutdown=3,
+            config=config.server,
+            host=host,
+            port=port,
         )
     else:
         server.run(transport=transport)

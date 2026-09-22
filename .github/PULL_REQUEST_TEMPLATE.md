@@ -33,7 +33,8 @@ found nothing.
 - [ ] Ran a local code-review pass on the cumulative diff before `gh pr create`.
 - [ ] Any commit carrying `!` breaks an operator or library surface that
       existed at the **last stable release** (see the breaking-change policy
-      in `AGENTS.md`) — MCP tool-surface changes alone do not earn a `!`.
+      in `AGENTS.md`) — MCP-surface changes (tools, resources, prompts) alone
+      do not earn a `!`.
 
 ## Docs impact
 

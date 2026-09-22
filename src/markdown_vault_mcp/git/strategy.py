@@ -362,9 +362,7 @@ class GitWriteStrategy:
         first_path = items[0][0]
         self._ensure_git_root(first_path)
         if self._git_root is None:
-            logger.debug(
-                "No git repository found for %s; git operations disabled", first_path
-            )
+            logger.debug("git_repo_not_found path=%s", first_path)
             return
 
         self._ensure_write_init()
@@ -396,7 +394,7 @@ class GitWriteStrategy:
                 self._push_scheduler.schedule_push()
         except subprocess.CalledProcessError as exc:
             logger.error(
-                "git_batch_failed tool=%s files=%s: %s",
+                "git_batch_failed tool=%s files=%s error=%s",
                 tool_name,
                 len(items),
                 self._redact(exc.stderr or ""),
@@ -432,9 +430,7 @@ class GitWriteStrategy:
 
         self._ensure_git_root(path)
         if self._git_root is None:
-            logger.debug(
-                "No git repository found for %s; git operations disabled", path
-            )
+            logger.debug("git_repo_not_found path=%s", path)
             return
 
         self._ensure_write_init()
@@ -474,7 +470,8 @@ class GitWriteStrategy:
         except subprocess.CalledProcessError as exc:
             sanitized_stderr = self._redact(exc.stderr or "")
             logger.error(
-                "Git operation failed for %s (%s): command %s returned %d\n%s",
+                "git_operation_failed path=%s operation=%s command=%s "
+                "returncode=%d error=%s",
                 path,
                 operation,
                 exc.cmd,
@@ -483,7 +480,7 @@ class GitWriteStrategy:
             )
         except Exception:
             logger.error(
-                "Git operation failed for %s (%s)",
+                "git_operation_failed path=%s operation=%s",
                 path,
                 operation,
                 exc_info=True,
@@ -507,21 +504,18 @@ class GitWriteStrategy:
                 check=True,
                 env=env,
             )
-            logger.info("Git LFS: pulled from remote")
+            logger.info("git_lfs_pull_succeeded")
             if result.stdout.strip():
-                logger.debug("Git LFS pull output: %s", result.stdout.strip())
+                logger.debug("git_lfs_pull_output output=%s", result.stdout.strip())
         except subprocess.CalledProcessError as exc:
             logger.error(
-                "Git LFS pull failed: command %s returned %d\n%s",
+                "git_lfs_pull_failed command=%s returncode=%d error=%s",
                 exc.cmd,
                 exc.returncode,
                 exc.stderr or "",
             )
         except FileNotFoundError:
-            logger.error(
-                "Git LFS pull failed: git not found on PATH. "
-                "Install git or set MARKDOWN_VAULT_MCP_GIT_LFS=false to suppress this error."
-            )
+            logger.error("git_lfs_pull_failed reason=git_not_found_on_path")
 
     def _build_pull_result_advanced(
         self,
@@ -759,8 +753,8 @@ class GitWriteStrategy:
             # broken in a way we should surface rather than silently
             # report 0 commits.  Fall back to 0 but log loudly.
             logger.warning(
-                "%s: could not parse commit count %r "
-                "from `git rev-list --count %s..%s`",
+                "git_rev_list_count_parse_failed strategy=%s raw_count=%r "
+                "from_sha=%s to_sha=%s",
                 log_prefix,
                 commits_ahead,
                 from_sha,
@@ -847,8 +841,7 @@ class GitWriteStrategy:
         """
         if not self._enable_pull:
             logger.info(
-                "Git force_pull: pull is disabled for this strategy "
-                "(no managed remote); skipping git entirely"
+                "git_pull_disabled strategy=force_pull reason=no_managed_remote"
             )
             return PullResult(
                 applied=False,
@@ -947,7 +940,7 @@ class GitWriteStrategy:
             # ``force_push``.
             stderr = self._redact((exc.stderr or "").strip())
             logger.warning(
-                "%s: fetch failed: %s",
+                "git_fetch_failed strategy=%s error=%s",
                 log_prefix,
                 stderr,
             )
@@ -1029,7 +1022,7 @@ class GitWriteStrategy:
             self._git(git_root, "merge", "--ff-only", remote_sha, env=env)
         except subprocess.CalledProcessError as ff_exc:
             logger.debug(
-                "%s: ff-only merge failed, attempting rebase: %s",
+                "git_ff_only_failed strategy=%s error=%s",
                 log_prefix,
                 (ff_exc.stderr or "").strip(),
             )
@@ -1116,7 +1109,7 @@ class GitWriteStrategy:
             rebase_stderr = self._redact((rebase_exc.stderr or "").strip())
             logger.log(
                 logging.DEBUG if entry.timer_driven else logging.WARNING,
-                "%s: rebase onto %s stopped: %s",
+                "git_rebase_stopped strategy=%s target=%s error=%s",
                 log_prefix,
                 ref,
                 one_line(rebase_stderr) or "(no stderr)",
@@ -1166,7 +1159,7 @@ class GitWriteStrategy:
                 # divergence stands.  Entering the unsynced state is logged
                 # once at ERROR by SyncHealthTracker, which this outcome feeds.
                 logger.debug(
-                    "%s: conflict resolution failed, leaving HEAD unchanged",
+                    "git_conflict_resolution_failed strategy=%s",
                     log_prefix,
                 )
                 return PullResult.head_unchanged_failure(
@@ -1186,7 +1179,7 @@ class GitWriteStrategy:
             )
             if written is None:
                 # DEBUG for the same reason as the line above (#1287).
-                logger.debug("%s: conflict commit failed, skipping", log_prefix)
+                logger.debug("git_conflict_commit_failed strategy=%s", log_prefix)
                 return PullResult(
                     applied=False,
                     fast_forward=False,
@@ -1197,12 +1190,12 @@ class GitWriteStrategy:
                 )
             for cf in written:
                 logger.warning(
-                    "%s: conflict resolved, saved MCP version as %s",
+                    "git_conflict_resolved strategy=%s sibling_path=%s",
                     log_prefix,
                     cf,
                 )
             logger.info(
-                "%s: rebase completed with %d conflict file(s)",
+                "git_rebase_conflicts_resolved strategy=%s conflict_files=%d",
                 log_prefix,
                 len(written),
             )
@@ -1220,7 +1213,7 @@ class GitWriteStrategy:
         # Plain rebase succeeded — local commits replayed cleanly on top
         # of the upstream.  HEAD has advanced.
         logger.info(
-            "%s: ff-only not possible, rebased local commits onto upstream",
+            "git_rebase_succeeded strategy=%s reason=no_ff_only",
             log_prefix,
         )
         return self._build_pull_result_advanced(
@@ -1401,8 +1394,8 @@ class GitWriteStrategy:
             commits_pushed = int(commits_ahead_str)
         except ValueError:
             logger.warning(
-                "Git force_push: could not parse commit count %r "
-                "from `git rev-list --count %s..%s`",
+                "git_rev_list_count_parse_failed strategy=force_push "
+                "raw_count=%r from_sha=%s to_sha=%s",
                 commits_ahead_str,
                 remote_sha_before,
                 local_head,
@@ -1427,8 +1420,8 @@ class GitWriteStrategy:
                 # deferred push reads the same stderr the same way.
                 if push_failure_reason(stderr) == PUSH_REASON_NON_FAST_FORWARD:
                     logger.warning(
-                        "Git force_push: rejected as non-fast-forward "
-                        "(local %s vs remote %s)",
+                        "git_push_rejected_non_fast_forward strategy=force_push "
+                        "local_sha=%s remote_sha=%s",
                         local_head,
                         remote_sha_before,
                     )
@@ -1448,7 +1441,7 @@ class GitWriteStrategy:
                     )
 
                 logger.error(
-                    "Git force_push: push failed: %s",
+                    "git_push_failed strategy=force_push error=%s",
                     stderr,
                 )
                 truncated = stderr[:200]
@@ -1511,18 +1504,20 @@ class GitWriteStrategy:
             # loop tick.
             if self._tracking_ref(git_root, None) is None:
                 logger.info(
-                    "Git pull: no remote-tracking ref resolvable; skipping fetch"
+                    "git_tracking_ref_unresolved context=sync_once action=skip_fetch"
                 )
                 return False
             result = self._pull_pipeline(
                 git_root, entry=_LOOP_PULL if timer_driven else _STARTUP_PULL
             )
         except FileNotFoundError:
-            logger.info("Git pull: git not found on PATH; pull loop disabled")
+            logger.info(
+                "git_binary_missing context=sync_once action=pull_loop_disabled"
+            )
             return False
         except subprocess.CalledProcessError as exc:
             logger.warning(
-                "Git pull: git command failed, skipping: %s",
+                "git_command_failed context=sync_once error=%s",
                 (exc.stderr or "").strip(),
             )
             return False
@@ -1578,14 +1573,7 @@ class GitWriteStrategy:
             return
         with self._pause_writes():
             if not self._drain_writes():
-                logger.warning(
-                    "Git pull: write-callback queue did not fully drain before "
-                    "the merge; proceeding anyway. A still-pending commit may "
-                    "cause the pre-fix dirty-tree churn for this one merge. If "
-                    "this recurs on every pull, the dispatcher worker may be "
-                    "dead (see the prior 'dead worker' ERROR) and pending "
-                    "commits will never land."
-                )
+                logger.warning("git_write_queue_drain_incomplete action=proceed_anyway")
             yield
 
     def start(
@@ -1615,11 +1603,11 @@ class GitWriteStrategy:
             env = self._git_env()
             if self._tracking_ref(git_root, env) is None:
                 logger.info(
-                    "Git pull: no remote-tracking ref resolvable; pull loop disabled"
+                    "git_tracking_ref_unresolved context=start action=pull_loop_disabled"
                 )
                 return
         except FileNotFoundError:
-            logger.info("Git pull: git not found on PATH; pull loop disabled")
+            logger.info("git_binary_missing context=start action=pull_loop_disabled")
             return
         finally:
             self._cleanup_git_env(env)
@@ -1659,7 +1647,7 @@ class GitWriteStrategy:
                 if self._enable_push:
                     self._push_scheduler.do_push_safe(retry=True)
             except Exception:
-                logger.exception("Git pull loop tick failed")
+                logger.exception("git_pull_loop_tick_failed")
             # Wait until the next interval, or stop early.
             if self._pull_stop.wait(timeout=self._pull_interval_s):
                 break
@@ -2211,9 +2199,7 @@ def _stage_and_commit(
 
     # Skip commit if staging produced no diff (e.g. writing identical content).
     if _index_matches_head(root, scope):
-        logger.debug(
-            "Git: nothing staged for %s (%s), skipping commit", rel_path, operation
-        )
+        logger.debug("git_nothing_staged path=%s operation=%s", rel_path, operation)
         return
 
     _commit_staged(
@@ -2223,7 +2209,7 @@ def _stage_and_commit(
         scope,
     )
 
-    logger.info("Git: committed %s (%s)", rel_path, operation)
+    logger.info("git_committed path=%s operation=%s", rel_path, operation)
 
 
 @dataclass(frozen=True, slots=True)

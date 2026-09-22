@@ -4195,7 +4195,7 @@ class TestLoggingAuditSilentPaths:
             results = col.reader.list_documents(include_attachments=True)
         attachment_paths = [r.path for r in results if isinstance(r, AttachmentInfo)]
         assert "data.csv" not in attachment_paths
-        assert any("stat error" in rec.message for rec in caplog.records)
+        assert any("reason=stat_error" in rec.message for rec in caplog.records)
 
     def test_get_frontmatter_invalid_json_logs_warning(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -4222,7 +4222,7 @@ class TestLoggingAuditSilentPaths:
         ):
             result = col._search_mgr._get_frontmatter("note.md")
         assert result == {}
-        assert any("invalid frontmatter JSON" in rec.message for rec in caplog.records)
+        assert any("frontmatter_json_invalid" in rec.message for rec in caplog.records)
 
 
 def test_vault_constructs_chunker_with_max_chunk_words(tmp_path):

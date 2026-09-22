@@ -384,7 +384,7 @@ class DocumentManager:
             )
             raw_content = _read_text_utf8(abs_path)
         except (UnicodeDecodeError, OSError, yaml.YAMLError) as exc:
-            logger.warning("read(%s): could not parse file — %s", path, exc)
+            logger.warning("read_parse_failed path=%s err=%s", path, exc)
             return None
 
         etag = note.content_hash
@@ -1294,7 +1294,7 @@ class DocumentManager:
                 source_abs = self._validate_path(source_path)
                 if not source_abs.is_file():
                     logger.warning(
-                        "%s: skipping %s — file not found",
+                        "link_rewrite_source_skipped op=%s path=%s reason=not_found",
                         op_name,
                         source_path,
                     )
@@ -1318,11 +1318,16 @@ class DocumentManager:
                 pending_callbacks.append((source_abs, content))
                 dirty_paths.append(source_path)
             except (OSError, UnicodeDecodeError, ValueError, sqlite3.Error) as exc:
-                logger.warning("%s: failed to update %s: %s", op_name, source_path, exc)
+                logger.warning(
+                    "link_rewrite_source_failed op=%s path=%s err=%s",
+                    op_name,
+                    source_path,
+                    exc,
+                )
                 failed_sources.append(source_path)
             except Exception as exc:
                 logger.warning(
-                    "%s: unexpected error updating %s: %s",
+                    "link_rewrite_source_unexpected_error op=%s path=%s err=%s",
                     op_name,
                     source_path,
                     exc,
@@ -1585,7 +1590,7 @@ class DocumentManager:
                 shutil.rmtree(old_abs)
             except OSError as exc:
                 logger.warning(
-                    "move_folder: failed to remove source tree %s: %s",
+                    "move_folder_remove_source_tree_failed path=%s err=%s",
                     old_dir,
                     exc,
                 )

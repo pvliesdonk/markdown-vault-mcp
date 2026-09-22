@@ -251,7 +251,9 @@ class VaultTransferSink:
         try:
             return self._vault()
         except RuntimeError as exc:
-            logger.warning("transfer_vault_unavailable: %s", type(exc).__name__)
+            logger.warning(
+                "transfer_vault_unavailable error_type=%s", type(exc).__name__
+            )
             raise TransferUnavailableError(
                 "vault is not currently available; retry shortly"
             ) from exc

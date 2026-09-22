@@ -48,9 +48,37 @@ classifiers = [
     # PROJECT-LICENSE-CLASSIFIER-END
 ]
 dependencies = [
-    # >=7.1.0 for register_health_routes: the unauthenticated /health and
-    # /health/ready routes make_server wires under HTTP, which compose.yml
-    # now probes instead of opening a socket.
+    # >=9.0.0 for the operator-input contract and the reworded config help.
+    # Every config-driven builder (build_kv_store / build_event_store,
+    # build_jobs, register_health_routes, register_transfer_routes /
+    # build_transfer_links) raises ConfigurationError where 8.x raised
+    # ValueError or ImportError, so a malformed
+    # MARKDOWN_VAULT_MCP_KV_STORE_URL reaches cli.py's one-line handler
+    # instead of a traceback (pvl-core #337).  A resolved auth mode that
+    # builds no provider now refuses to start instead of serving
+    # unauthenticated (pvl-core #316), and compute_app_domain strips
+    # userinfo from the value it hands the MCP Apps CSP origin (pvl-core
+    # #343).  The cap matters as much as the floor here: the config-surface
+    # generator resolves this whole constraint, and only 9.0.0's
+    # SHUTDOWN_GRACE_S help text keeps the generated table in
+    # docs/configuration.md clear of ai-tells' MicDrop rule (#639).
+    #
+    # 8.0.0 was the previous floor, for the logging topology and the HTTP
+    # seam: pvl-core owns the root logger, configure_logging_from_env takes
+    # the env prefix as its first argument (7.x's call without one no longer
+    # exists), run_http replaces the uvicorn.run call cli.py used to make,
+    # and the logging variables moved from FASTMCP_* to
+    # MARKDOWN_VAULT_MCP_LOG_LEVEL / _LOG_FORMAT (template #624).
+    #
+    # 7.2.0 was the floor before that, for find_nonconforming_log_calls: the AST
+    # check tests/test_logging_standard.py runs over src/, which turns the
+    # logging-standard skill's ``event_name key=value`` message format from
+    # prose into a build gate (#611).  7.2.0 is additive; nothing about
+    # logging behaviour changed with it.
+    #
+    # 7.1.0 was the previous floor, for register_health_routes: the
+    # unauthenticated /health and /health/ready routes make_server wires
+    # under HTTP, which compose.yml now probes instead of opening a socket.
     #
     # 7.0.0 was the previous floor, for the FastMCP 4 adoption:
     # configure_task_backend takes the
@@ -99,12 +127,12 @@ dependencies = [
     # this whole constraint rather than the floor alone (#335), but a floor
     # naming a release nobody can install is still a trap for anyone pinning
     # to it.
-    "fastmcp-pvl-core>=7.1.0,<8",
+    "fastmcp-pvl-core>=9.0.0,<10",
     "typer>=0.12",
 
     # fastmcp.apps and fastmcp.server.providers.addressing are imported
     # directly by _server_apps.py, so the floor is declared here even though
-    # fastmcp-pvl-core>=7 already guarantees fastmcp>=4 transitively.
+    # fastmcp-pvl-core>=8 already guarantees fastmcp>=4 transitively.
     "fastmcp>=4",
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
     "python-frontmatter>=1.0",
@@ -298,6 +326,11 @@ ignore = ["E501"]
 "scripts/promote_release_notes.py" = ["S603", "S607"]
 # Package bookkeeping invokes gh with fixed argv and JSON on stdin, never a shell.
 "scripts/package_milestones.py" = ["S603", "S607"]
+# The copier-update migration reads the pre-update CLAUDE.md with a fixed-argv
+# `git show HEAD:CLAUDE.md` (a list, never a shell): the same S607 bare-name
+# and S603 subprocess exceptions as the stamper, and the same reason — the
+# file is template-owned, so a hit reddens the adopter's diff-gate (#524).
+"scripts/migrate_agent_instructions.py" = ["S603", "S607"]
 "scripts/check_pins.py" = ["S310"]  # urlopen on a validated api.github.com URL
 "scripts/report_seeded_changes.py" = ["S603", "S606", "S607"]
 
@@ -378,17 +411,6 @@ ignore = ["E501"]
 "tests/test_summarize.py" = ["PLR0913"]
 "tests/test_smoke.py" = ["TC002", "TC003"]
 "tests/test_server.py" = ["TC003"]
-# The v6.0.0 copier migration script runs `git show HEAD:CLAUDE.md` with a
-# fixed argv and no shell, the same call its sibling template-owned scripts
-# make. The template exempts those three (stamp_manifests,
-# promote_release_notes, report_seeded_changes) from S603/S607 but not this
-# one, so its single S607 reddens the structural diff-gate on the adoption
-# diff, where every line of the new file counts as changed. Carried here
-# rather than upstream because the template declined the fix
-# (fastmcp-server-template#524, closed not_planned; its PR #527 closed
-# unmerged), naming this local entry as the downstream resolution — so no
-# future template entry will collide with this key.
-"scripts/migrate_agent_instructions.py" = ["S603", "S607"]
 # PROJECT-RUFF-IGNORES-END
 
 [tool.ruff.lint.isort]

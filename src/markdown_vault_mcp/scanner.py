@@ -2094,7 +2094,7 @@ def parse_note(
         content_chars=content_chars,
     )
     logger.debug(
-        "parse_note: %s — title=%r chunks=%d links=%d",
+        "parse_note path=%s title=%r chunks=%d links=%d",
         rel_str,
         title,
         len(chunks),
@@ -2179,7 +2179,7 @@ def parse_note_categorized(
         )
     except UnicodeDecodeError as exc:
         logger.warning(
-            "%s: skipping %s — cannot decode as UTF-8 (%s)",
+            "scan_skip_file caller=%s path=%s reason=decode_error error=%s",
             log_context,
             rel_path,
             exc,
@@ -2189,16 +2189,26 @@ def parse_note_categorized(
         )
     except OSError as exc:
         # Possibly transient (I/O error) — do not surface; retry next scan.
-        logger.warning("%s: skipping %s — I/O error (%s)", log_context, rel_path, exc)
+        logger.warning(
+            "scan_skip_file caller=%s path=%s reason=io_error error=%s",
+            log_context,
+            rel_path,
+            exc,
+        )
         return None
     except yaml.YAMLError as exc:
-        logger.warning("%s: skipping %s — parse error (%s)", log_context, rel_path, exc)
+        logger.warning(
+            "scan_skip_file caller=%s path=%s reason=parse_error error=%s",
+            log_context,
+            rel_path,
+            exc,
+        )
         return CategorizedSkip(
             SkippedFile(path=rel_path, category="parse_error", detail=str(exc))
         )
     except Exception as exc:
         logger.error(
-            "%s: skipping %s — unexpected error (%s)",
+            "scan_skip_file caller=%s path=%s reason=unexpected_error error=%s",
             log_context,
             rel_path,
             exc,
@@ -2292,7 +2302,7 @@ def scan_directory(
             rel = abs_path.relative_to(source_dir)
         except ValueError:
             # Shouldn't happen, but be safe.
-            logger.warning("File outside source_dir, skipping: %s", abs_path)
+            logger.warning("scan_file_outside_source_dir path=%s", abs_path)
             continue
 
         # Check exclude patterns against the relative POSIX path string.
@@ -2300,7 +2310,7 @@ def scan_directory(
         # not support ** patterns in Python < 3.12.
         rel_posix = rel.as_posix()
         if any(fnmatch.fnmatch(rel_posix, pat) for pat in exclude_patterns):
-            logger.debug("Excluding %s (matched exclude pattern)", rel)
+            logger.debug("scan_exclude_pattern_match path=%s", rel)
             continue
 
         # Parse and categorize; skip on decode / I/O / YAML / frontmatter.
@@ -2320,7 +2330,7 @@ def scan_directory(
         if isinstance(outcome, CategorizedSkip):
             if outcome.skip.category == "missing_frontmatter":
                 logger.debug(
-                    "Skipping %s: missing required frontmatter fields (%s)",
+                    "scan_skip_missing_frontmatter path=%s detail=%s",
                     rel,
                     outcome.skip.detail,
                 )
@@ -2333,6 +2343,6 @@ def scan_directory(
 
     if skipped_required:
         logger.info(
-            "%d document(s) skipped due to missing required frontmatter fields.",
+            "scan_skipped_missing_frontmatter count=%d",
             skipped_required,
         )

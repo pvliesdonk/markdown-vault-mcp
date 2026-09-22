@@ -28,9 +28,7 @@ def fts_row_to_note_info(row: dict[str, Any]) -> NoteInfo:
         try:
             frontmatter = json.loads(raw_json)
         except (json.JSONDecodeError, TypeError):
-            logger.warning(
-                "Could not parse frontmatter_json for path %s", row.get("path")
-            )
+            logger.warning("frontmatter_json_parse_failed path=%s", row.get("path"))
     return NoteInfo(
         path=row["path"],
         title=row["title"],

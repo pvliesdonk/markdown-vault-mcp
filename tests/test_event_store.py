@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from fastmcp_pvl_core import ServerConfig, build_event_store
+from fastmcp_pvl_core import ConfigurationError, ServerConfig, build_event_store
 
 from markdown_vault_mcp.config import _ENV_PREFIX, ProjectConfig
 
@@ -67,13 +67,13 @@ class TestBuildEventStore:
         assert not ignored.exists()
 
     def test_unsupported_scheme_raises(self):
-        """An unrecognised URL scheme propagates a ValueError from the core factory."""
-        with pytest.raises(ValueError):
+        """An unrecognised URL scheme propagates a ConfigurationError from the core factory."""
+        with pytest.raises(ConfigurationError):
             build_event_store(_ENV_PREFIX, ServerConfig(event_store_url="bogus://host"))
 
     def test_file_url_without_path_raises(self):
-        """pvl-core 3.x rejects a path-less file:// URL (use the file:///path form)."""
-        with pytest.raises(ValueError):
+        """pvl-core rejects a path-less file:// URL (use the file:///path form)."""
+        with pytest.raises(ConfigurationError):
             build_event_store(_ENV_PREFIX, ServerConfig(event_store_url="file://"))
 
 

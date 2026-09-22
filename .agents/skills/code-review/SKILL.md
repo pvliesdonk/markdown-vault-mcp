@@ -212,7 +212,9 @@ Coverage: <"full" | what was skipped or unavailable, plainly>
 ```
 
 A clean review still states the range, charters, and coverage — never a
-bare "LGTM". If a charter could not run (no network, no `gh`, a missing
+bare "LGTM". Posted to GitHub, the report ends with the attribution footer
+from `CONTRIBUTING.md`'s "Agent-authored posts" section, like any other
+agent post. If a charter could not run (no network, no `gh`, a missing
 tool), the review is still valid; the coverage line names the gap so the
 reader knows what this review is not.
 

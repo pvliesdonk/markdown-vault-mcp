@@ -24,16 +24,16 @@ from fastmcp_pvl_core import (
     configure_task_backend,
     env,  # also used by DOMAIN-WIRING additions, so no new import is needed there
     finalize_instructions,
+    get_current_auth_mode,
     instructions_for,
     normalise_http_path,
     register_health_routes,
     register_server_info_tool,
-    resolve_auth_mode,
     wire_middleware_stack,
 )
 
 from markdown_vault_mcp._server_apps import register_apps
-from markdown_vault_mcp._server_deps import server_lifespan
+from markdown_vault_mcp._server_deps import bind_config, server_lifespan
 from markdown_vault_mcp._server_prompts import register_prompts
 from markdown_vault_mcp._server_resources import register_resources
 from markdown_vault_mcp._server_tools import register_tools
@@ -59,7 +59,10 @@ def make_server(
             stdio), gates the template's own liveness and readiness
             routes, which register for ``"http"`` alone, and appears as
             ``transport=%s`` in the startup log.
-        config: Optional pre-loaded config; default loads from env.
+        config: Optional pre-loaded config; default loads from env.  Bound
+            to the server before the registrars run, so ``register_*``
+            code reads it back with ``_server_deps.config_for(mcp)`` and
+            handlers with ``Depends(get_config)``.
         http_path: The MCP mount path the caller will hand to
             ``http_app(path=...)``.  The health routes derive their prefix
             from it, so the CLI passes the value it resolved; unset, the
@@ -72,7 +75,7 @@ def make_server(
         A configured :class:`fastmcp.FastMCP` instance.
     """
     config = config or ProjectConfig.from_env()
-    configure_logging_from_env()
+    configure_logging_from_env(_ENV_PREFIX)
     mount_path = normalise_http_path(http_path or env(_ENV_PREFIX, "HTTP_PATH"))
 
     # One source for the name, so `FastMCP(name=...)` below and the shaped
@@ -86,13 +89,17 @@ def make_server(
     server_name = config.server_name
 
     auth = build_auth(config.server)
-    auth_mode = resolve_auth_mode(config.server) if auth is not None else "none"
-    if auth_mode == "none":
-        logger.warning(
-            "No auth configured — server accepts unauthenticated connections"
-        )
-    else:
-        logger.info("Auth enabled: mode=%s", auth_mode)
+    # pvl-core records the mode ``build_auth`` resolved and announces it as
+    # ``auth_mode_resolved mode=… source=…`` (pvl-core#310); reading it back
+    # here replaces a second ``resolve_auth_mode`` run and a second
+    # announcement (#605).
+    auth_mode = get_current_auth_mode() or "none"
+    if transport == "stdio" and auth is not None:
+        # FastMCP applies auth on the HTTP transports only; stdio inherits
+        # the security of its local execution environment, so the provider
+        # built above is never consulted there. Say so rather than let the
+        # ``auth=`` field below read as enforcement (#617).
+        logger.warning("auth_configured_but_stdio_skips_enforcement mode=%s", auth_mode)
 
     try:
         pkg_ver = _pkg_version("markdown-vault-mcp")
@@ -100,7 +107,7 @@ def make_server(
         pkg_ver = "unknown"
 
     logger.info(
-        "Server config: version=%s name=%s transport=%s auth=%s",
+        "server_configured version=%s name=%s transport=%s auth=%s",
         pkg_ver,
         server_name,
         transport,
@@ -112,6 +119,14 @@ def make_server(
         lifespan=server_lifespan,
         auth=auth,
     )
+
+    # Make the resolved config reachable from the registrars below without
+    # threading it through their signatures, which are project-owned and
+    # vary: ``config_for(mcp)`` at registration time, ``Depends(get_config)``
+    # in a handler — both in ``_server_deps``.  A subsystem a registrar builds
+    # from the environment instead silently disagrees with a ``config`` passed
+    # in here (#534).
+    bind_config(mcp, config)
 
     wire_middleware_stack(mcp)
 

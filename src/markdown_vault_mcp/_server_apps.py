@@ -35,6 +35,7 @@ from fastmcp.dependencies import Depends
 try:
     from fastmcp.apps import AppConfig, ResourceCSP
     from fastmcp.server.providers.addressing import (
+        TOOL_HASH_META_KEY,
         hash_tool,
         hashed_backend_name,
     )
@@ -85,13 +86,20 @@ _APP_TOOL_NAMES: frozenset[str] = frozenset(
 
 
 def _app_tool_meta(tool_name: str) -> dict[str, Any]:
-    """Build the per-tool ``meta`` dict for a post-3.2.4 app-only tool."""
+    """Build the per-tool ``meta`` dict for a post-3.2.4 app-only tool.
+
+    The hash goes under fastmcp's public ``TOOL_HASH_META_KEY``
+    (``"tool_hash"``), the key ``get_tool_by_hash`` reads. An
+    underscore-prefixed key looks the same in-process but is stripped from
+    ``meta["fastmcp"]`` when the tool is serialised for the protocol, so a
+    client never saw the hash (#614).
+    """
     if tool_name not in _APP_TOOL_NAMES:
         raise ValueError(f"Unknown app tool {tool_name!r}; add to _APP_TOOL_NAMES.")
     return {
         "fastmcp": {
             "app": _APP_NAME,
-            "_tool_hash": hash_tool(_APP_NAME, tool_name),
+            TOOL_HASH_META_KEY: hash_tool(_APP_NAME, tool_name),
         }
     }
 
@@ -172,9 +180,11 @@ def register_apps(mcp: FastMCP) -> None:
         or _compute_claude_app_domain()
     )
     if app_domain:
-        logger.info("MCP Apps domain: %s", app_domain)
+        logger.info("apps_domain_resolved domain=%s", app_domain)
     else:
-        logger.debug("MCP Apps domain: not configured (stdio or no BASE_URL)")
+        # No sandbox iframe domain: either running under stdio (no HTTP
+        # server to derive it from) or BASE_URL/APP_DOMAIN is unset.
+        logger.debug("apps_domain_unconfigured reason=stdio_or_no_base_url")
     app_resource_config = AppConfig(
         domain=app_domain,
         csp=ResourceCSP(resource_domains=_CDN_RESOURCE_DOMAINS),

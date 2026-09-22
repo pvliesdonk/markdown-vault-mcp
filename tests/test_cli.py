@@ -6,6 +6,7 @@ import json
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from markdown_vault_mcp.cli import _ENV_PREFIX, _build_vault, app
@@ -13,7 +14,6 @@ from markdown_vault_mcp.cli import _ENV_PREFIX, _build_vault, app
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import pytest
     from typer.testing import Result
 
 runner = CliRunner()
@@ -127,7 +127,7 @@ def test_reindex_help_exits_zero() -> None:
 # serve — patch targets:
 #   make_server  → markdown_vault_mcp.server.make_server  (function-local import)
 #   build_event_store → markdown_vault_mcp.cli.build_event_store (top-level import)
-#   uvicorn.run  → uvicorn.run  (imported inside serve as `import uvicorn`)
+#   run_http     → markdown_vault_mcp.cli.run_http  (pvl-core owns uvicorn now)
 # ---------------------------------------------------------------------------
 
 
@@ -136,16 +136,25 @@ def _invoke_http_serve(
     host: str = "127.0.0.1",
     port: int = 8000,
 ) -> tuple[Result, dict[str, object]]:
-    """Invoke ``serve --transport http`` with all side effects patched.
+    """Invoke ``serve --transport http`` with all blocking side effects patched.
 
-    Returns the CliRunner result and the kwargs captured by the fake uvicorn.run.
-    ``host`` and ``port`` are wired into the mock config so tests that rely on
-    env-var fallbacks see the expected values without needing SOURCE_DIR set.
+    Patches ``make_server``, ``build_event_store``, and pvl-core's
+    ``run_http`` so the test never binds a socket or writes to ``/data``.
+    Returns the CliRunner result and the bind address the fake ``run_http``
+    resolved the way the real one does: a CLI flag beats ``config.server``,
+    and ``None`` means the flag was not given.
     """
     captured: dict[str, object] = {}
 
-    def fake_uvicorn_run(_asgi_app: object, **kwargs: object) -> None:
-        captured.update(kwargs)
+    def fake_run_http(
+        _asgi_app: object,
+        *,
+        config: object,
+        host: str | None = None,
+        port: int | None = None,
+    ) -> None:
+        captured["host"] = config.host if host is None else host  # type: ignore[attr-defined]
+        captured["port"] = config.port if port is None else port  # type: ignore[attr-defined]
 
     fake_server = MagicMock()
     fake_server.http_app.return_value = MagicMock()
@@ -155,7 +164,7 @@ def _invoke_http_serve(
     mock_config.server.port = port
 
     with (
-        patch("uvicorn.run", side_effect=fake_uvicorn_run),
+        patch("markdown_vault_mcp.cli.run_http", side_effect=fake_run_http),
         patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
         patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
         patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
@@ -167,8 +176,8 @@ def _invoke_http_serve(
     return result, captured
 
 
-def test_serve_http_runs_uvicorn() -> None:
-    """``serve --transport http`` calls uvicorn.run."""
+def test_serve_http_runs_run_http() -> None:
+    """``serve --transport http`` calls pvl-core's ``run_http``."""
     result, captured = _invoke_http_serve(["--host", "127.0.0.1", "--port", "9001"])
     assert result.exit_code == 0, result.output
     assert captured.get("port") == 9001
@@ -220,7 +229,7 @@ def test_serve_http_default_path_is_mcp() -> None:
     fake_server = MagicMock()
     fake_server.http_app.return_value = MagicMock()
     with (
-        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.cli.run_http"),
         patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
         patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
         patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
@@ -241,7 +250,7 @@ def test_serve_http_custom_path() -> None:
     fake_server = MagicMock()
     fake_server.http_app.return_value = MagicMock()
     with (
-        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.cli.run_http"),
         patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
         patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
         patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
@@ -260,7 +269,7 @@ def test_serve_http_path_normalised() -> None:
     fake_server = MagicMock()
     fake_server.http_app.return_value = MagicMock()
     with (
-        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.cli.run_http"),
         patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
         patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
         patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
@@ -280,7 +289,7 @@ def test_serve_http_path_env_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_server = MagicMock()
     fake_server.http_app.return_value = MagicMock()
     with (
-        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.cli.run_http"),
         patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
         patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
         patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
@@ -298,7 +307,7 @@ def test_serve_http_path_cli_overrides_env(monkeypatch: pytest.MonkeyPatch) -> N
     fake_server = MagicMock()
     fake_server.http_app.return_value = MagicMock()
     with (
-        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.cli.run_http"),
         patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
         patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
         patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
@@ -331,7 +340,7 @@ def test_serve_http_reads_config_once() -> None:
     fake_server = MagicMock()
     fake_server.http_app.return_value = MagicMock()
     with (
-        patch("uvicorn.run"),
+        patch("markdown_vault_mcp.cli.run_http"),
         patch(
             "markdown_vault_mcp.server.make_server", return_value=fake_server
         ) as mock_ms,
@@ -349,12 +358,27 @@ def test_serve_http_reads_config_once() -> None:
     mock_bes.assert_called_once_with(_ENV_PREFIX, mock_config.server)
 
 
-def test_serve_http_lifespan_and_graceful_shutdown() -> None:
-    """``serve --transport http`` passes lifespan='on' and timeout_graceful_shutdown=3."""
-    result, captured = _invoke_http_serve()
+def test_serve_http_passes_config_to_run_http() -> None:
+    """``serve --transport http`` hands ``run_http`` the resolved ``config.server``.
+
+    pvl-core's ``run_http`` reads ``lifespan``, ``timeout_graceful_shutdown``
+    and ``shutdown_grace_s`` from that object rather than from CLI kwargs
+    (v8 adoption), so the CLI's contract is limited to passing the same
+    config object through, not choosing those settings itself.
+    """
+    fake_server = MagicMock()
+    fake_server.http_app.return_value = MagicMock()
+    with (
+        patch("markdown_vault_mcp.cli.run_http") as mock_run_http,
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+        patch("markdown_vault_mcp.cli.build_event_store", return_value=MagicMock()),
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
+    ):
+        mock_config = _fake_config()
+        mock_cfg_cls.from_env.return_value = mock_config
+        result = runner.invoke(app, ["serve", "--transport", "http"])
     assert result.exit_code == 0, result.output
-    assert captured.get("lifespan") == "on"
-    assert captured.get("timeout_graceful_shutdown") == 3
+    assert mock_run_http.call_args.kwargs.get("config") is mock_config.server
 
 
 @patch("markdown_vault_mcp.server.make_server")
@@ -375,6 +399,64 @@ def test_serve_legacy_path_alias_accepted() -> None:
     """``--path`` alias for ``--http-path`` still works (kept for Dockerfiles/units, #401)."""
     result, _captured = _invoke_http_serve(["--path", "/legacy/mcp"])
     assert result.exit_code == 0, result.output
+
+
+def test_serve_reports_a_configuration_error_in_one_line(
+    monkeypatch: pytest.MonkeyPatch, vault_path: Path
+) -> None:
+    """A malformed operator value is one ``ERROR:`` line and exit 1, no traceback.
+
+    ``ServerConfig.from_env`` raises ``ConfigurationError`` for a non-integer
+    port; before #616 that reached Typer, which rendered it as a multi-screen
+    Rich traceback.
+    """
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_path))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_PORT", "notanint")
+
+    result = runner.invoke(app, ["serve", "--transport", "http"])
+
+    assert result.exit_code == 1
+    assert "ERROR: configuration error:" in result.output
+    assert f"{_ENV_PREFIX}_PORT" in result.output
+    assert "Traceback" not in result.output
+    assert "│" not in result.output, "Rich traceback frame detected"
+
+
+@pytest.mark.xfail(
+    reason=(
+        "build_event_store() sits outside the try/except ConfigurationError "
+        "block in serve() — matches the pristine fastmcp-server-template "
+        "v9.0.0 cli.py.jinja skeleton exactly, so fixing it here forks the "
+        "file and fails test_template_conformance.py. Fix belongs upstream "
+        "in fastmcp-server-template; tracked locally as #1551."
+    ),
+    strict=True,
+)
+def test_serve_http_reports_configuration_error_from_event_store() -> None:
+    """``build_event_store`` raising ``ConfigurationError`` should get the
+    same one-line treatment as a bad ``ProjectConfig``/``make_server``
+    value, but does not yet (#1551) — this call sits outside the
+    ``try``/``except ConfigurationError`` block in ``serve()``, so this
+    exact error class reaches Typer as an uncaught exception under
+    ``--transport http``.
+    """
+    from fastmcp_pvl_core import ConfigurationError
+
+    fake_server = MagicMock()
+    fake_server.http_app.return_value = MagicMock()
+    with (
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+        patch(
+            "markdown_vault_mcp.cli.build_event_store",
+            side_effect=ConfigurationError("bad EVENT_STORE_URL"),
+        ),
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
+    ):
+        mock_cfg_cls.from_env.return_value = _fake_config()
+        result = runner.invoke(app, ["serve", "--transport", "http"])
+    assert result.exit_code == 1
+    assert "ERROR: configuration error: bad EVENT_STORE_URL" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_build_vault_valueerror_exits_nonzero() -> None:
@@ -864,11 +946,19 @@ def test_reindex_against_real_vault(
 
 
 def test_verbose_enables_debug_logging(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``-v`` sets ``FASTMCP_LOG_LEVEL=DEBUG`` in the process environment."""
-    import os
+    """``-v`` forces the root logger to DEBUG regardless of any configured level.
+
+    pvl-core v8's ``configure_logging_from_env`` resolves the level itself and
+    installs the root handler chain directly; it never writes the level back
+    to the environment, so the effective root level is the only observable
+    contract left to assert on.
+    """
+    import logging
 
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", "/tmp/vault")
-    saved = os.environ.pop("FASTMCP_LOG_LEVEL", None)
+    monkeypatch.setenv(f"{_ENV_PREFIX}_LOG_LEVEL", "WARNING")
+    root = logging.getLogger()
+    saved_level = root.level
     try:
         mock_vault = MagicMock()
         mock_stats = MagicMock()
@@ -877,12 +967,9 @@ def test_verbose_enables_debug_logging(monkeypatch: pytest.MonkeyPatch) -> None:
         mock_vault.index.build_index.return_value = mock_stats
         with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
             runner.invoke(app, ["-v", "index"])
-        assert os.environ.get("FASTMCP_LOG_LEVEL") == "DEBUG"
+        assert root.getEffectiveLevel() == logging.DEBUG
     finally:
-        if saved is not None:
-            os.environ["FASTMCP_LOG_LEVEL"] = saved
-        else:
-            os.environ.pop("FASTMCP_LOG_LEVEL", None)
+        root.setLevel(saved_level)
 
 
 def test_default_level_pins_httpx_httpcore_to_warning(

@@ -94,7 +94,7 @@ def resolve_rebase_conflicts(
                 saved[rel_path] = show_result.stdout
             else:
                 logger.warning(
-                    "Git pull: could not read MCP version of %s, skipping conflict file",
+                    "git_conflict_mcp_version_unreadable path=%s",
                     rel_path,
                 )
 
@@ -201,14 +201,13 @@ def resolve_conflicts_safely(
         saved = _resolve(git_root, env)
     except Exception:
         logger.error(
-            "Git force_pull: conflict resolution raised — aborting rebase",
+            "git_conflict_resolution_raised action=abort_rebase",
             exc_info=True,
         )
         abort_proc = run_git_capturing(git_root, "rebase", "--abort", env=env)
         if abort_proc.returncode != 0:
             logger.warning(
-                "Git force_pull: defensive `git rebase --abort` "
-                "after conflict-resolution failure also failed: %s",
+                "git_conflict_defensive_abort_failed stderr=%s",
                 redact((abort_proc.stderr or "").strip(), token),
             )
         return None, PullResult.head_unchanged_failure(
@@ -253,8 +252,8 @@ def rebase_in_progress(
     git_dir_proc = run_git_capturing(git_root, "rev-parse", "--git-dir", env=env)
     if git_dir_proc.returncode != 0:
         logger.error(
-            "Git force_pull: `git rev-parse --git-dir` failed; "
-            "conservatively assuming rebase is in progress: %s",
+            "git_conflict_git_dir_lookup_failed "
+            "action=assume_rebase_in_progress stderr=%s",
             redact((git_dir_proc.stderr or "").strip(), token),
         )
         return True
@@ -287,7 +286,7 @@ def abort_in_progress_rebase(
     abort_proc = run_git_capturing(git_root, "rebase", "--abort", env=env)
     if abort_proc.returncode != 0:
         logger.error(
-            "Git force_pull: failed to abort rebase: %s",
+            "git_conflict_abort_failed stderr=%s",
             redact((abort_proc.stderr or "").strip(), token),
         )
         return False
@@ -342,10 +341,8 @@ def restore_upstream_paths(
         )
         if checkout_proc.returncode != 0:
             logger.error(
-                "Git force_pull: failed to restore upstream "
-                "version of %r after rebase abort; dropping it "
-                "from conflict siblings to avoid duplicate MCP "
-                "content: %s",
+                "git_conflict_upstream_restore_failed "
+                "path=%r action=drop_sibling stderr=%s",
                 rel_path,
                 redact((checkout_proc.stderr or "").strip(), token),
             )
@@ -404,7 +401,7 @@ def write_conflict_files(
         except Exception:
             # If frontmatter parsing fails, treat as plain content.
             logger.warning(
-                "Git pull: failed to parse frontmatter for conflict file %s; treating as plain content",
+                "git_conflict_frontmatter_parse_failed path=%s fallback=plain_content",
                 conflict_rel,
                 exc_info=True,
             )
@@ -433,7 +430,8 @@ def write_conflict_files(
                     orig_post = parse_frontmatter(content)
                 except Exception:
                     logger.warning(
-                        "Git pull: failed to parse frontmatter for original file %s; treating as plain content",
+                        "git_conflict_original_frontmatter_parse_failed "
+                        "path=%s fallback=plain_content",
                         rel_path,
                         exc_info=True,
                     )
@@ -449,9 +447,7 @@ def write_conflict_files(
                 # text to merge frontmatter. Either way, skip just this original's
                 # update; the conflict sibling is already written.
                 logger.warning(
-                    "Git pull: could not read or update original file %s with "
-                    "conflict frontmatter (inaccessible, removed, or not UTF-8); "
-                    "skipping its update",
+                    "git_conflict_original_update_failed path=%s action=skip_update",
                     rel_path,
                     exc_info=True,
                 )
@@ -509,7 +505,7 @@ def write_conflict_files(
         # DEBUG for the reason given at the loop-cap line above (#1287): this
         # outcome marks the clone unsynced, and the tracker logs that once.
         logger.debug(
-            "Git pull: conflict commit failed (rc=%d): %s",
+            "git_conflict_commit_failed rc=%d stderr=%s",
             commit_result.returncode,
             redact(
                 (commit_result.stderr or commit_result.stdout or "").strip(),

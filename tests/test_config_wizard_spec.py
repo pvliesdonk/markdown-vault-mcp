@@ -72,11 +72,18 @@ GENERATORS_JS_PATH = REPO_ROOT / "docs/javascripts/config-wizard/generators.js"
 # by any config code here.
 GENERATOR_INJECTED = {"FASTMCP_HOME"}
 
-# FASTMCP_* runtime/logging vars: read by FastMCP itself, not by any config code
-# we own. The only hand-listed framework tier; kept tiny on purpose.
+# {PREFIX}_* runtime/logging vars: read by FastMCP (pvl-core) itself, not by
+# any config code we own — no literal ``env(prefix, "LOG_LEVEL")`` call
+# exists for the static extractor to find. The only hand-listed framework
+# tier; kept tiny on purpose.
+#
+# pvl-core v8 renamed these from bare FASTMCP_* names to the prefixed
+# {PREFIX}_LOG_LEVEL / {PREFIX}_LOG_FORMAT (FASTMCP_ENABLE_RICH_LOGGING was
+# removed outright, not renamed; the bare FASTMCP_LOG_LEVEL keeps working as
+# a deprecated fallback for one major, read by pvl-core the same way).
 FRAMEWORK_VARS = {
-    "FASTMCP_LOG_LEVEL",
-    "FASTMCP_ENABLE_RICH_LOGGING",
+    f"{PREFIX}_LOG_LEVEL",
+    f"{PREFIX}_LOG_FORMAT",
 }
 
 # Vars read through runtime indirection the static extractor cannot resolve:

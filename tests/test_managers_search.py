@@ -1599,8 +1599,7 @@ class TestGetContextSurfacesInternalFailure:
         assert result.similar == []
         # And the internal failure is visible at WARNING, not swallowed at DEBUG.
         assert any(
-            "get_context: get_similar failed" in r.message
-            and r.levelno == logging.WARNING
+            "get_context_similar_failed" in r.message and r.levelno == logging.WARNING
             for r in caplog.records
         )
 

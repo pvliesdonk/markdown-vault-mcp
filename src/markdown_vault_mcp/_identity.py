@@ -178,7 +178,7 @@ def _resolve_claim(
         _warned_absent_claims.add((field, key))
         logger.warning(
             "git_commit_claim_unusable field=%s claim=%s state=%s "
-            "detail=commits fall back to the static commit identity",
+            "detail=static_identity_fallback",
             field,
             key,
             _claim_state(claims, key),

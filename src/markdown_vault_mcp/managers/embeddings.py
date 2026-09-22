@@ -249,7 +249,9 @@ class EmbeddingsManager:
 
         candidates = self._discover_candidates(on_walk_error=_record_walk_error)
         if walk_incomplete:
-            logger.warning("build_embeddings_source_walk_incomplete (no vectors saved)")
+            logger.warning(
+                "build_embeddings_source_walk_incomplete outcome=no_vectors_saved"
+            )
             return False
 
         for _abs_path, path in candidates:
@@ -259,7 +261,7 @@ class EmbeddingsManager:
                 # Deliberately skipped — the absence is recorded, not a gap.
                 continue
             logger.warning(
-                "build_embeddings_unindexed_source path=%s (no vectors saved)",
+                "build_embeddings_unindexed_source path=%s outcome=no_vectors_saved",
                 path,
             )
             return False
@@ -293,7 +295,7 @@ class EmbeddingsManager:
         if stale_paths and not self._source_dir.is_dir():
             logger.warning(
                 "build_embeddings_converge_source_root_unavailable kept=%d "
-                "(no vectors removed)",
+                "outcome=no_vectors_removed",
                 len(stale_paths),
             )
             return []
@@ -307,8 +309,7 @@ class EmbeddingsManager:
                 confirmed.append(path)
                 continue
             logger.warning(
-                "build_embeddings_converge_kept path=%s "
-                "(source present but absent from FTS; vectors kept)",
+                "build_embeddings_converge_kept path=%s outcome=vectors_kept",
                 path,
             )
         return confirmed
@@ -536,27 +537,27 @@ class EmbeddingsManager:
 
         if embedded > 0:
             vectors.save(self._embeddings_path)
-            logger.info("build_embeddings: embedded and saved %d chunks", embedded)
+            logger.info("build_embeddings_saved chunks=%d", embedded)
         elif total > 0:
             # Every batch was skipped (e.g. provider down for the whole build,
             # or a dimension mismatch). Surface it loudly rather than as the
             # benign "nothing to embed" so an operator can tell an empty vault
             # apart from a wholesale embedding failure (#649).
             logger.warning(
-                "build_embeddings_all_batches_failed total=%d (no vectors saved)",
+                "build_embeddings_all_batches_failed total=%d outcome=no_vectors_saved",
                 total,
             )
         elif had_parse_failure:
             logger.warning(
-                "build_embeddings_parse_failures_with_no_inputs (no vectors saved)"
+                "build_embeddings_parse_failures_with_no_inputs outcome=no_vectors_saved"
             )
         elif not self._empty_embedding_build_is_authoritative(indexed_paths):
             logger.warning(
-                "build_embeddings_empty_not_authoritative (no vectors saved)"
+                "build_embeddings_empty_not_authoritative outcome=no_vectors_saved"
             )
         else:
             vectors.save(self._embeddings_path)
-            logger.info("build_embeddings: saved empty index")
+            logger.info("build_embeddings_saved_empty_index")
         return embedded
 
     def _collect_cold_build_inputs(
@@ -574,7 +575,7 @@ class EmbeddingsManager:
             empty vault from a build with gaps).
         """
         num_notes = len(rows)
-        logger.info("build_embeddings: parsing %d notes into chunks", num_notes)
+        logger.info("build_embeddings_parsing_notes notes_total=%d", num_notes)
         texts: list[str] = []
         meta: list[dict[str, Any]] = []
         had_parse_failure = False
@@ -592,7 +593,7 @@ class EmbeddingsManager:
                     title_field=self._title_field,
                 )
             except (UnicodeDecodeError, OSError, yaml.YAMLError) as exc:
-                logger.warning("build_embeddings: skipping %s — %s", path, exc)
+                logger.warning("build_embeddings_skip_note path=%s err=%s", path, exc)
                 had_parse_failure = True
                 continue
             note_texts, note_meta = self._embed_inputs(
@@ -606,7 +607,8 @@ class EmbeddingsManager:
             meta.extend(note_meta)
             if i % 100 == 0 or i == num_notes:
                 logger.info(
-                    "build_embeddings: parsed %d/%d notes (%d chunks so far)",
+                    "build_embeddings_parse_progress notes_done=%d notes_total=%d "
+                    "chunks_so_far=%d",
                     i,
                     num_notes,
                     len(texts),
@@ -652,7 +654,8 @@ class EmbeddingsManager:
                 # traceback so a genuinely unexpected error caught here is still
                 # diagnosable rather than reduced to a one-line message.
                 logger.warning(
-                    "build_embeddings_skip_batch chunks=%d-%d of %d err=%s",
+                    "build_embeddings_skip_batch chunks_start=%d chunks_end=%d "
+                    "chunks_total=%d err=%s",
                     start + 1,
                     end,
                     total,
@@ -660,7 +663,8 @@ class EmbeddingsManager:
                     exc_info=True,
                 )
             logger.debug(
-                "build_embeddings: embedded chunks %d-%d of %d",
+                "build_embeddings_embedded_batch chunks_start=%d chunks_end=%d "
+                "chunks_total=%d",
                 start + 1,
                 end,
                 total,
@@ -672,7 +676,8 @@ class EmbeddingsManager:
                 rate = end / elapsed if elapsed > 0 else 0.0
                 remaining = (total - end) / rate if rate > 0 else 0.0
                 logger.info(
-                    "build_embeddings: %d%% (%d/%d chunks, %.0fs elapsed, ~%.0fs remaining)",
+                    "build_embeddings_progress pct=%d chunks_done=%d chunks_total=%d "
+                    "elapsed_s=%.0f eta_s=%.0f",
                     decile * 10,
                     end,
                     total,
@@ -756,14 +761,13 @@ class EmbeddingsManager:
 
         if failed:
             logger.warning(
-                "build_embeddings_converge_failed_chunks total=%d "
-                "(existing vectors kept; retried on the next run)",
+                "build_embeddings_converge_failed_chunks total=%d outcome=vectors_kept",
                 failed,
             )
         if dropped:
             logger.warning(
                 "build_embeddings_converge_dropped_chunks total=%d "
-                "(vectors removed; re-embedded on the next run)",
+                "outcome=vectors_removed",
                 dropped,
             )
         logger.info(
@@ -1014,7 +1018,7 @@ class EmbeddingsManager:
                             count = len(loaded_meta.get("rows", []))
                     except (OSError, json.JSONDecodeError) as exc:
                         logger.warning(
-                            "embeddings_status: could not read metadata from %s — %s",
+                            "embeddings_status_metadata_read_failed path=%s err=%s",
                             json_path,
                             exc,
                         )
@@ -1082,7 +1086,7 @@ class EmbeddingsManager:
         # Save even when all rows were already current: a prior save may have
         # failed after updating memory, and this retry must persist those rows.
         vectors.save(self._embeddings_path)
-        logger.debug("Flushed deferred embeddings for %d paths", len(paths))
+        logger.debug("deferred_embeddings_flushed paths=%d", len(paths))
 
     def _pre_embed_dirty_paths(
         self, paths: set[str], provider: EmbeddingProvider

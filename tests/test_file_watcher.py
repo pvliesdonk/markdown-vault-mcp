@@ -297,7 +297,7 @@ def test_start_skips_root_whose_schedule_raises(
         watcher.start()  # must not raise despite the first schedule failing
         watcher.stop()
 
-    assert any("could not schedule watch" in r.getMessage() for r in caplog.records)
+    assert any("file_watcher_schedule_failed" in r.getMessage() for r in caplog.records)
     # The floor + the two children is three roots; one raised, so two scheduled.
     assert len(fake.scheduled) == 2
 
@@ -339,9 +339,7 @@ def test_start_logs_error_when_all_roots_fail_to_schedule(
         watcher.stop()
 
     assert any(
-        r.levelno == logging.ERROR
-        and "live" in r.getMessage()
-        and "change detection is disabled" in r.getMessage()
+        r.levelno == logging.ERROR and "file_watcher_all_roots_failed" in r.getMessage()
         for r in caplog.records
     ), "a fully-blind watcher must be surfaced at ERROR"
 
@@ -446,7 +444,7 @@ def test_start_logs_warning_when_watchdog_unavailable(
         caplog.at_level(logging.WARNING, logger="markdown_vault_mcp._file_watcher"),
     ):
         watcher.start()
-    assert "watchdog not installed" in caplog.text
+    assert "file_watcher_watchdog_missing" in caplog.text
     watcher.stop()
 
 
@@ -1020,7 +1018,7 @@ def test_resolve_or_original_falls_back_and_warns(
     ):
         result = _resolve_or_original(p)
     assert result == p
-    assert "could not resolve watch path" in caplog.text
+    assert "file_watcher_watch_path_resolve_failed" in caplog.text
 
 
 def test_derive_watch_roots_survives_symlink_loop_source_dir(tmp_path: Path) -> None:
@@ -1061,7 +1059,7 @@ def test_resolve_internal_dirs_skips_on_resolve_error(
         caplog.at_level(logging.WARNING),
     ):
         assert _resolve_internal_dirs([Path("/x")]) == []
-    assert "will not be protected from watching" in caplog.text
+    assert "file_watcher_internal_dir_resolve_failed" in caplog.text
 
 
 def test_contains_internal_dir_false_on_resolve_error(
@@ -1081,7 +1079,7 @@ def test_contains_internal_dir_false_on_resolve_error(
         caplog.at_level(logging.DEBUG),
     ):
         assert _contains_internal_dir(Path("/x"), frozenset()) is False
-    assert "treating as non-internal" in caplog.text
+    assert "file_watcher_child_resolve_failed" in caplog.text
 
 
 def test_derive_watch_roots_survives_symlink_loop_internal_dir(tmp_path: Path) -> None:

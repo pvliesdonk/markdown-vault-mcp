@@ -635,7 +635,7 @@ class FTSIndex:
         unknown_weight_cols = set(self._fts_weights) - set(self._FTS_COLUMNS)
         if unknown_weight_cols:
             logger.warning(
-                "fts_index: ignoring unknown fts_weights columns=%s (valid: %s)",
+                "fts_index_unknown_weights_ignored columns=%s valid_columns=%s",
                 sorted(unknown_weight_cols),
                 ", ".join(self._FTS_COLUMNS),
             )
@@ -684,30 +684,22 @@ class FTSIndex:
                     "ALTER TABLE documents ADD COLUMN chunk_count INTEGER NOT NULL DEFAULT 1"
                 )
                 conn.commit()
-                logger.info(
-                    "fts_index: migrated documents table — added chunk_count column"
-                )
+                logger.info("fts_index_migrated_column column=chunk_count")
             except sqlite3.OperationalError as exc:
                 if "duplicate column name" not in str(exc).lower():
                     raise
-                logger.debug(
-                    "fts_index: chunk_count column already added by concurrent process"
-                )
+                logger.debug("fts_index_column_already_added column=chunk_count")
         if "content_chars" not in cols:
             try:
                 conn.execute(
                     "ALTER TABLE documents ADD COLUMN content_chars INTEGER NOT NULL DEFAULT 0"
                 )
                 conn.commit()
-                logger.info(
-                    "fts_index: migrated documents table — added content_chars column"
-                )
+                logger.info("fts_index_migrated_column column=content_chars")
             except sqlite3.OperationalError as exc:
                 if "duplicate column name" not in str(exc).lower():
                     raise
-                logger.debug(
-                    "fts_index: content_chars column already added by concurrent process"
-                )
+                logger.debug("fts_index_column_already_added column=content_chars")
         self._migrate_tombstone_columns(conn, cols)
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_sections_docid ON sections(document_id)"
@@ -730,8 +722,7 @@ class FTSIndex:
             result = conn.execute("PRAGMA journal_mode = WAL").fetchone()
             if result is None or str(result[0]).lower() != "wal":
                 logger.warning(
-                    "Could not enable WAL journal mode (got %s); "
-                    "concurrent reads during writes may block",
+                    "wal_mode_not_enabled result=%s impact=concurrent_reads_may_block",
                     result[0] if result else "no result",
                 )
         conn.commit()
@@ -763,15 +754,11 @@ class FTSIndex:
             try:
                 conn.execute(ddl)
                 conn.commit()
-                logger.info(
-                    "fts_index: migrated documents table — added %s column", name
-                )
+                logger.info("fts_index_migrated_column column=%s", name)
             except sqlite3.OperationalError as exc:
                 if "duplicate column name" not in str(exc).lower():
                     raise
-                logger.debug(
-                    "fts_index: %s column already added by concurrent process", name
-                )
+                logger.debug("fts_index_column_already_added column=%s", name)
 
     def _migrate_notes_fts_summary(self, conn: sqlite3.Connection) -> None:
         """Migrate a legacy 5-column ``notes_fts`` to the 6-column schema.
@@ -826,15 +813,12 @@ class FTSIndex:
         except sqlite3.Error:
             conn.rollback()
             logger.error(
-                "fts_index: notes_fts summary migration failed; "
-                "legacy table preserved for retry",
+                "fts_index_notes_fts_summary_migration_failed "
+                "table_state=legacy_preserved retry=on_next_boot",
                 exc_info=True,
             )
             raise
-        logger.info(
-            "fts_index: migrated notes_fts — added summary column and "
-            "repopulated from sections"
-        )
+        logger.info("fts_index_migrated_notes_fts_summary source=sections")
 
     def _migrate_fts_rowid_map(self, conn: sqlite3.Connection) -> None:
         """Backfill ``notes_fts_rowid_map`` for a pre-#1535 database.
@@ -860,9 +844,8 @@ class FTSIndex:
         if row is not None:
             return
         logger.info(
-            "fts_index: starting one-time notes_fts_rowid_map backfill for a "
-            "pre-#1535 database; this is a full notes_fts scan and may take "
-            "a while on a large vault"
+            "fts_index_rowid_map_backfill_started "
+            "scope=full_notes_fts_scan reason=pre_1535_database"
         )
         conn.execute(
             "INSERT OR IGNORE INTO notes_fts_rowid_map (document_id, fts_rowid) "
@@ -874,9 +857,7 @@ class FTSIndex:
             (_META_FTS_ROWID_MAP_BACKFILLED_KEY, "1"),
         )
         conn.commit()
-        logger.info(
-            "fts_index: backfilled notes_fts_rowid_map for a pre-#1535 database"
-        )
+        logger.info("fts_index_rowid_map_backfill_completed reason=pre_1535_database")
 
     def _persist_rank_config(self, conn: sqlite3.Connection) -> None:
         """Persist the BM25 per-column weights into the FTS5 rank config.
@@ -901,7 +882,7 @@ class FTSIndex:
             (rank,),
         )
         conn.commit()
-        logger.debug("fts_index: persisted rank config %s", rank)
+        logger.debug("fts_index_rank_config_persisted rank=%s", rank)
 
     def _probe_shared_cache(self) -> None:
         """Verify that a second connection to the same in-memory URI sees the schema.
@@ -931,7 +912,7 @@ class FTSIndex:
                 probe.close()
             except sqlite3.Error:
                 logger.debug(
-                    "fts_index._probe_shared_cache: probe.close failed",
+                    "fts_index_probe_close_failed",
                     exc_info=True,
                 )
 
@@ -1107,7 +1088,7 @@ class FTSIndex:
             elif isinstance(value, dict):
                 # Complex type — skip.
                 logger.debug(
-                    "Skipping complex frontmatter value for key %r in %s",
+                    "complex_frontmatter_value_skipped key=%r path=%s",
                     key,
                     note.path,
                 )
@@ -1277,11 +1258,11 @@ class FTSIndex:
                 self._insert_links(cur, doc_id, note)
                 total_chunks += len(note.chunks)
                 logger.debug(
-                    "build_from_notes: indexed %d chunks for %s",
+                    "build_from_notes_indexed_note chunk_count=%d path=%s",
                     len(note.chunks),
                     note.path,
                 )
-        logger.info("build_from_notes: indexed %d chunks total", total_chunks)
+        logger.info("build_from_notes_completed total_chunk_count=%d", total_chunks)
         return total_chunks
 
     @_retry_on_locked
@@ -1308,7 +1289,7 @@ class FTSIndex:
             self._insert_aliases(cur, doc_id, note)
             self._insert_links(cur, doc_id, note)
         logger.debug(
-            "upsert_note: indexed %d chunks for %s", len(note.chunks), note.path
+            "upsert_note_indexed chunk_count=%d path=%s", len(note.chunks), note.path
         )
         return len(note.chunks)
 
@@ -1327,7 +1308,7 @@ class FTSIndex:
             cur = conn.cursor()
             deleted = self._delete_document(cur, path)
         if deleted:
-            logger.debug("delete_by_path: removed %s", path)
+            logger.debug("delete_by_path_removed path=%s", path)
         return deleted
 
     # ------------------------------------------------------------------
@@ -1379,7 +1360,7 @@ class FTSIndex:
                 ),
             )
         logger.debug(
-            "upsert_tombstone: recorded %s (category=%s)", skip.path, skip.category
+            "upsert_tombstone_recorded path=%s category=%s", skip.path, skip.category
         )
 
     @_retry_on_locked
@@ -1472,8 +1453,8 @@ class FTSIndex:
             msg = str(exc).lower()
             if "busy" in msg or "locked" in msg:
                 logger.warning(
-                    "optimize: skipped — database contended (%s); "
-                    "next bulk purge will retry",
+                    "optimize_skipped reason=database_contended error=%s "
+                    "next_action=retry_on_next_purge",
                     exc,
                 )
                 return False
@@ -1482,8 +1463,8 @@ class FTSIndex:
         page_size = conn.execute("PRAGMA page_size").fetchone()[0]
         reclaimable = int(freelist) * int(page_size)
         logger.info(
-            "optimize: merged FTS5 segments — %d bytes reclaimable "
-            "(run VACUUM on the index file to reclaim disk space)",
+            "optimize_completed reclaimable_bytes=%d "
+            "vacuum_hint=run_vacuum_to_reclaim_disk",
             reclaimable,
         )
         return True
@@ -1777,7 +1758,7 @@ class FTSIndex:
             )
 
         logger.debug(
-            "FTS search: query=%r folder=%r filters=%r limit=%d snippet_words=%r",
+            "fts_search_started query=%r folder=%r filters=%r limit=%d snippet_words=%r",
             query,
             folder,
             filters,
@@ -1797,10 +1778,10 @@ class FTSIndex:
             # as a semantic-only result).
             fallback = _quote_fts_query(query)
             if not fallback:
-                logger.debug("FTS search: unrecoverable query %r — %s", query, exc)
+                logger.debug("fts_search_unrecoverable query=%r reason=%s", query, exc)
                 return []
             logger.debug(
-                "FTS search: query %r rejected by FTS5 (%s); retrying quoted %r",
+                "fts_search_rejected_retrying query=%r reason=%s fallback=%r",
                 query,
                 exc,
                 fallback,
@@ -1822,7 +1803,7 @@ class FTSIndex:
                 )
                 return []
         rows = cur.fetchall()
-        logger.debug("FTS search: %d results for query=%r", len(rows), query)
+        logger.debug("fts_search_completed result_count=%d query=%r", len(rows), query)
 
         results: list[FTSResult] = []
         for row in rows:
@@ -2303,7 +2284,7 @@ class FTSIndex:
         updated = len(updates)
 
         if updated:
-            logger.debug("resolve_vault_wikilinks: resolved %d wikilink(s)", updated)
+            logger.debug("resolve_vault_wikilinks_completed resolved_count=%d", updated)
         return updated
 
     @_retry_on_locked
@@ -2504,7 +2485,8 @@ class FTSIndex:
                 new_path = [*current_path, neighbour]
                 if neighbour == target_path:
                     logger.debug(
-                        "get_connection_path: found path %s → %s in %d hops",
+                        "get_connection_path_found source_path=%s target_path=%s "
+                        "hop_count=%d",
                         source_path,
                         target_path,
                         len(new_path) - 1,
@@ -2514,7 +2496,7 @@ class FTSIndex:
                 queue.append((neighbour, new_path))
 
         logger.debug(
-            "get_connection_path: no path found between %r and %r within depth %d",
+            "get_connection_path_not_found source_path=%r target_path=%r max_depth=%d",
             source_path,
             target_path,
             max_depth,
@@ -2652,4 +2634,4 @@ class FTSIndex:
         ``sqlite3.ProgrammingError`` from ``_conn()``.
         """
         self._registry.close()
-        logger.debug("FTSIndex closed (db_path=%s)", self._db_path)
+        logger.debug("fts_index_closed db_path=%s", self._db_path)

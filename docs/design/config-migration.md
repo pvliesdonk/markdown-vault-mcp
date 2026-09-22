@@ -293,18 +293,29 @@ key in the document, including `version` and the `oci` package's
 `scripts/stamp_manifests.py` on stable releases, so keeping the generator
 off them is intentional, not an oversight.
 
-**Merge hazard for the release-managed keys:** `copier update` can leave
-conflict hunks in `server.json` whose template side carries the
-fresh-scaffold values — `"version": "0.1.0"` and an `oci` identifier
-ending `:v0.1.0`. Resolving toward the template side (natural, since the
-env-var arrays get regenerated anyway) silently regresses those
-release-managed keys, and no shipped gate catches it: the generator
-leaves both keys alone by design, and `gen_config_surface.py --check`
-passes either way. When resolving such a conflict, keep your side's
-`version` and `oci` `identifier` (or restore them from the pre-update
-commit), and diff `server.json` against your default branch before
-committing. A regressed identifier ships a wrong manifest until the next
-release re-bumps it.
+**Conflicts inside the arrays resolve themselves.** `copier update`
+merges `server.json` three ways and, under its default
+`--conflict=inline`, leaves diff3 markers where your committed file (the
+generator's own earlier output) and the re-rendered template seed both
+changed a region. The update-time migration runs the generator against
+that merged file. When every conflicted line lies inside one of the two
+`environmentVariables` arrays, the generator takes your side of the
+document, regenerates both arrays, and the update completes with no
+markers left; it used to fail the whole update as "not valid JSON" for
+text it was about to overwrite anyway.
+
+**Merge hazard for the release-managed keys:** a conflict *outside* the
+arrays is still yours to resolve, and the generator stops with a message
+naming the markers rather than picking a side. The template side of such
+a hunk carries the fresh-scaffold values — `"version": "0.1.0"` and an
+`oci` identifier ending `:v0.1.0`. Resolving toward the template side
+silently regresses those release-managed keys, and no shipped gate
+catches it: the generator leaves both keys alone by design, and
+`gen_config_surface.py --check` passes either way. When resolving such a
+conflict, keep your side's `version` and `oci` `identifier` (or restore
+them from the pre-update commit), rerun the generator, and diff
+`server.json` against your default branch before committing. A regressed
+identifier ships a wrong manifest until the next release re-bumps it.
 
 **Overwrite hazard:** if you hand-edited entries inside either
 `environmentVariables` array, the next `gen_config_surface.py --check`
@@ -321,10 +332,14 @@ see.
 auth vars such as `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` and
 `MARKDOWN_VAULT_MCP_BEARER_TOKEN` now appear only in the `oci` package's
 array, the one a remote HTTP deployment reads. The `pypi` package's
-array keeps only what a stdio install needs: the log-level and
-rich-logging switches, together with `MARKDOWN_VAULT_MCP_SERVER_NAME`,
-`MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION`, the two instruction overrides, and
-`MARKDOWN_VAULT_MCP_KV_STORE_URL`.
+array keeps only what a stdio install needs: `MARKDOWN_VAULT_MCP_LOG_LEVEL`
+and `MARKDOWN_VAULT_MCP_LOG_FORMAT`, the tool-visibility pair
+`MARKDOWN_VAULT_MCP_TOOLS_ALLOW` and `MARKDOWN_VAULT_MCP_TOOLS_DENY`, together
+with `MARKDOWN_VAULT_MCP_SERVER_NAME`, `MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION`,
+the two instruction overrides, and `MARKDOWN_VAULT_MCP_KV_STORE_URL`.
+`MARKDOWN_VAULT_MCP_SHUTDOWN_GRACE_S` is `oci`-only for the same reason the
+OIDC vars are: it is the SIGTERM drain window of the HTTP listener a stdio
+install never starts.
 If you diff your project's old `server.json` against the regenerated
 one, expect the `pypi` array to shrink. That is the intended split, not
 lost data; the vars that dropped out of the `pypi` array are still

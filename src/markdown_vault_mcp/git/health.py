@@ -262,8 +262,7 @@ class SyncHealthTracker:
                 cause = one_line(detail) if detail else ""
                 logger.error(
                     "git_remote_unsynced kind=%s reason=%s "
-                    "detail=writes are committed locally and are not reaching "
-                    "the remote cause=%s",
+                    "detail=writes_not_reaching_remote cause=%s",
                     kind,
                     reason,
                     cause or "unavailable",

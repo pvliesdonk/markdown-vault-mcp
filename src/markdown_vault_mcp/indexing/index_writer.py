@@ -292,7 +292,7 @@ class IndexWriter:
                 # _closed or draining pending Futures, so every
                 # submit().result() hangs.
                 with contextlib.suppress(Exception):
-                    logger.exception("Writer job %s failed", job.kind)
+                    logger.exception("writer_job_failed kind=%s", job.kind)
             except BaseException as exc:
                 # KeyboardInterrupt / SystemExit / asyncio.CancelledError —
                 # capture into the Future so waiters unblock, then re-raise

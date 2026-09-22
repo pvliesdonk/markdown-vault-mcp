@@ -90,7 +90,7 @@ def fields_text(
         try:
             parsed = json.loads(frontmatter_or_json)
         except json.JSONDecodeError:
-            logger.warning("fields_text: invalid frontmatter JSON — ignoring")
+            logger.warning("fields_text_invalid_json")
             return ""
         if not isinstance(parsed, dict):
             return ""
@@ -116,7 +116,7 @@ def fields_text(
             # nothing (e.g. a YAML `tags:` list). Log so the operator can tell
             # "unsupported type" apart from "field not present".
             logger.debug(
-                "fields_text: skipping non-scalar searchable field key=%s type=%s",
+                "fields_text_non_scalar_field_skipped key=%s type=%s",
                 key,
                 type(value).__name__,
             )

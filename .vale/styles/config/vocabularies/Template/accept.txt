@@ -30,12 +30,18 @@ id_token
 # --- Python / runtime ecosystem ---
 debugpy
 fastmcp's
+journald
+json
 lockfile
 middleware
 namespace
 scaffolded
+stderr
 stdio
+unprefixed
 uv
+uvicorn
+uvicorn's
 venv
 venv's
 virtualenv
@@ -46,6 +52,7 @@ allowlist
 backports
 codecov
 config
+Dependabot
 dev
 env
 hotfix

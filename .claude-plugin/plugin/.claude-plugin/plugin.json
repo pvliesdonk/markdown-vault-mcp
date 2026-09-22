@@ -124,7 +124,7 @@
     "log_level": {
       "type": "string",
       "title": "Log level",
-      "description": "Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG.",
+      "description": "Log level for every logger in the process, FastMCP's included (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. The unprefixed FASTMCP_LOG_LEVEL still works for one major version and logs a deprecation warning.",
       "required": false,
       "default": "INFO"
     }

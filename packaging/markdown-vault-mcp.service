@@ -26,13 +26,11 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=markdown-vault-mcp
-# Journald is not a terminal, so Rich falls back to 80 columns and wraps every
-# structured request-log record across three space-padded lines. Off, each
-# record is one line journalctl can grep and a collector can parse, and
-# journald supplies the timestamp Rich would have printed. EnvironmentFile=
-# above overrides Environment=, so /etc/markdown-vault-mcp/env can set it back
-# to true.
-Environment=FASTMCP_ENABLE_RICH_LOGGING=false
+# No log-format setting on purpose: journald is not a terminal, so pvl-core
+# renders one JSON object per record that journalctl can grep and a collector
+# can parse, and journald supplies the timestamp. MARKDOWN_VAULT_MCP_LOG_FORMAT=rich
+# in /etc/markdown-vault-mcp/env (the EnvironmentFile= above) forces the
+# colour renderer back.
 
 # --- Security hardening ---
 

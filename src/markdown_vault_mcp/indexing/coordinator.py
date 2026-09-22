@@ -390,7 +390,7 @@ class IndexWriteCoordinator:
         except BaseException as exc:
             # Record, never propagate — escaping strands the writer (#584).
             self._last_reindex_error = exc
-            logger.exception("Async reindex job failed")
+            logger.exception("async_reindex_job_failed")
 
     def _on_build_embeddings_done(self, fut: Future[int]) -> None:
         """Capture async build_embeddings outcome for get_index_status (#561)."""
@@ -403,7 +403,7 @@ class IndexWriteCoordinator:
         except BaseException as exc:
             # Record, never propagate — escaping strands the writer (#584).
             self._last_build_embeddings_error = exc
-            logger.exception("Async build_embeddings job failed")
+            logger.exception("async_build_embeddings_job_failed")
 
     def reindex_async(self) -> Future[ReindexResult]:
         """Submit an incremental FTS reindex and return the Future.
