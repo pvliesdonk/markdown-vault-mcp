@@ -41,6 +41,10 @@ services:
       # Determined by this file, not an operator knob: points the server at
       # the state volume mounted above.  Everything else belongs in `.env`.
       FASTMCP_HOME: /data/state/fastmcp
+      # A container's stderr is not a terminal, so the server logs one JSON
+      # object per record with nothing set.  Uncomment to read `docker logs`
+      # in colour instead (`.env` works too; this is the same knob).
+      # MARKDOWN_VAULT_MCP_LOG_FORMAT: rich
       # DOMAIN-COMPOSE-ENVIRONMENT-START — project env; kept across copier update
       MARKDOWN_VAULT_MCP_SOURCE_DIR: /data/vault
       MARKDOWN_VAULT_MCP_INDEX_PATH: /data/state/index.db

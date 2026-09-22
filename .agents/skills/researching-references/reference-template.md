@@ -6,8 +6,8 @@ subject_version: "<version or line the claims were checked against, e.g. 1.9>"
 valid_for: "<expiry condition in the subject's terms, e.g. Obsidian 1.x>"
 generated:
   by: process:researching-references
-  at: <YYYY-MM-DD>
-stale_after: <YYYY-MM-DD, six months for a moving target, twelve for a frozen spec>
+  at: <YYYY-MM-DDTHH:MM:SS+HH:MM, the research instant with its UTC offset>
+stale_after: <YYYY-MM-DDTHH:MM:SS+HH:MM, six months on for a moving target, twelve for a frozen spec>
 status: stable
 sources:
   - id: <short-id>

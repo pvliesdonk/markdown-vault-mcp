@@ -10,10 +10,13 @@ can be checked mechanically:
 
 * the YAML frontmatter carries every key in ``REQUIRED_KEYS``; ``type`` is
   ``Reference``; ``generated`` is ``{by, at}`` with an actor and an ISO date
-  or datetime; ``stale_after`` is a calendar date (``YYYY-MM-DD``); ``status``,
-  when present, is one of OKF's ``draft`` / ``stable`` / ``deprecated``;
-  ``verified`` is a list of ``{by, at}`` entries; a ``superseded_by`` names a
-  file under the reference root;
+  or datetime; ``stale_after`` is an instant, written as an ISO 8601 datetime
+  with an explicit offset or, for pages that predate the OKF v0.2 amendment
+  of 2026-08-21, a calendar date (``YYYY-MM-DD``, read as midnight UTC);
+  ``status``, when present, is one of OKF's ``draft`` / ``stable`` /
+  ``deprecated``; ``verified`` is a list of ``{by, at}`` entries, or one such
+  mapping, which OKF says to read as a one-element list; a ``superseded_by``
+  names a file under the reference root;
 * ``sources`` is a non-empty list, each entry with an ``id``, a ``resource``
   and an ``accessed`` calendar date;
 * every ``[source: id]`` marker in the body names a declared source, and every
@@ -21,9 +24,11 @@ can be checked mechanically:
 * the bundle root carries an ``index.md`` declaring ``okf_version``, and a
   ``log.md``, if present, uses ``## YYYY-MM-DD`` headings.
 
-A passed ``stale_after`` date is *reported*, not failed, unless ``--strict`` is
+A passed ``stale_after`` is *reported*, not failed, unless ``--strict`` is
 given: staleness is a reason to re-research, and a build must not turn red on
-a day nobody changed anything.  ``tests/test_reference_docs.py`` runs the
+a day nobody changed anything.  The comparison is at day granularity in UTC:
+a page is stale from the UTC calendar day its ``stale_after`` instant falls
+in, so a check that runs once a day never reports it a day late.  ``tests/test_reference_docs.py`` runs the
 non-strict form in CI and surfaces staleness as a warning.
 
 Exit status 1 with one line per finding; 0 when clean.  ``README.md``,
@@ -157,6 +162,35 @@ def _as_day(value: object) -> dt.date | None:
     return None
 
 
+def _instant_from_text(text: str) -> dt.datetime | None:
+    """The string half of :func:`_as_instant`: ``YYYY-MM-DD`` or an offset datetime."""
+    if not _DAY_PREFIX_RE.match(text):
+        return None
+    try:
+        if _DAY_RE.match(text):
+            day = dt.date.fromisoformat(text)
+            return dt.datetime.combine(day, dt.time.min, tzinfo=dt.UTC)
+        parsed = dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+def _as_instant(value: object) -> dt.datetime | None:
+    """``stale_after`` as an aware instant, or ``None`` when it is not one.
+
+    Accepts a calendar date (midnight UTC) or an ISO 8601 datetime that
+    carries an explicit offset, as YAML's own datetime or as a string. A
+    datetime without an offset is rejected: an instant compared against
+    "now" needs a zone, and OKF v0.2 requires the offset to be explicit.
+    """
+    if isinstance(value, dt.datetime):
+        return value if value.tzinfo is not None else None
+    if isinstance(value, dt.date):
+        return dt.datetime.combine(value, dt.time.min, tzinfo=dt.UTC)
+    return _instant_from_text(value) if isinstance(value, str) else None
+
+
 def _as_date(value: object) -> dt.date | None:
     """A calendar date or a datetime whose date part is spelt ``YYYY-MM-DD``."""
     if isinstance(value, dt.datetime):
@@ -173,11 +207,21 @@ def _as_date(value: object) -> dt.date | None:
     return None
 
 
-def _verified_entries(meta: dict[str, Any]) -> list[dict[str, Any]]:
+def _verified_list(meta: dict[str, Any]) -> list[Any] | None:
+    """``verified`` as a list; a bare mapping is a one-element list (OKF §5.2)."""
     value = meta.get("verified")
-    if isinstance(value, list):
-        return [e for e in value if isinstance(e, dict)]
-    return []
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return [value]
+    return value if isinstance(value, list) else None
+
+
+def _verified_entries(meta: dict[str, Any]) -> list[dict[str, Any]]:
+    value = _verified_list(meta)
+    if value is None:
+        return []
+    return [e for e in value if isinstance(e, dict)]
 
 
 def _check_keys(ref: Reference) -> list[str]:
@@ -190,9 +234,10 @@ def _check_keys(ref: Reference) -> list[str]:
     ]
     if ref.meta.get("type") is not None and ref.meta["type"] != REFERENCE_TYPE:
         problems.append(f"`type` must be {REFERENCE_TYPE!r}, got {ref.meta['type']!r}")
-    if "stale_after" in ref.meta and _as_day(ref.meta["stale_after"]) is None:
+    if "stale_after" in ref.meta and _as_instant(ref.meta["stale_after"]) is None:
         problems.append(
-            "`stale_after` must be a calendar date (YYYY-MM-DD, no time part), "
+            "`stale_after` must be an ISO 8601 datetime with an explicit offset "
+            "(YYYY-MM-DDTHH:MM:SS+HH:MM) or a calendar date (YYYY-MM-DD), "
             f"got {ref.meta['stale_after']!r}"
         )
     for key in ("title", "description", "subject_version", "valid_for"):
@@ -221,13 +266,14 @@ def _check_trust(ref: Reference) -> list[str]:
     problems: list[str] = []
     if ref.meta.get("generated") is not None:
         problems += _check_actor_entry("generated", ref.meta["generated"])
-    value = ref.meta.get("verified")
-    if value is None:
+    if ref.meta.get("verified") is None:
         return problems
-    if not isinstance(value, list):
-        # OKF lets a single verifier be written as a bare mapping, but not
-        # every consumer honours that shorthand; the list form is read by all.
-        return [*problems, "`verified` must be a list of `{by, at}` mappings"]
+    value = _verified_list(ref.meta)
+    if value is None:
+        return [
+            *problems,
+            "`verified` must be a list of `{by, at}` mappings, or one such mapping",
+        ]
     for i, entry in enumerate(value):
         problems += _check_actor_entry(f"verified[{i}]", entry)
     return problems
@@ -406,9 +452,20 @@ def expiry(ref: Reference, today: dt.date) -> str | None:
     """Why the reference should be re-researched, or ``None`` if it is current."""
     if ref.status == "deprecated":
         return None
-    stale_after = _as_day(ref.meta.get("stale_after"))
-    if stale_after is not None and today >= stale_after:
-        return f"stale since {stale_after.isoformat()} (`stale_after`)"
+    stale_after = _as_instant(ref.meta.get("stale_after"))
+    if stale_after is None:
+        return None
+    # Day granularity, in UTC: stale from the calendar day the instant falls
+    # in. ``now >= stale_after`` is the spec's rule; a check that runs once a
+    # day cannot do better than the day, and this errs towards early rather
+    # than a day late.
+    stale_day = stale_after.astimezone(dt.UTC).date()
+    if today >= stale_day:
+        # A bare date reports as the date; an instant reports in canonical
+        # ISO form (a YAML-parsed ``Z`` comes back as ``+00:00``).
+        raw = ref.meta.get("stale_after")
+        spelt = stale_day.isoformat() if _as_day(raw) else stale_after.isoformat()
+        return f"stale since {spelt} (`stale_after`)"
     return None
 
 
@@ -467,7 +524,10 @@ def main(argv: list[str] | None = None) -> int:
         help="print findings only, no per-reference summary",
     )
     args = parser.parse_args(argv)
-    today = dt.date.today()
+    # The UTC calendar day, to match how ``expiry`` reads ``stale_after``;
+    # the local date lags it on a machine behind UTC and would report a
+    # page stale a day late.
+    today = dt.datetime.now(dt.UTC).date()
 
     problems: list[str] = bundle_findings(args.root)
     for path in discover(args.root):

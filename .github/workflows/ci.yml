@@ -56,9 +56,7 @@ jobs:
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    # Prevent a stalled `uv python install` from blocking the PR for hours.
-    # 20 min covers the full test matrix with headroom; cold interpreter
-    # downloads from python-build-standalone are the most likely stall source.
+    # Bound both environment setup and test execution for each interpreter.
     timeout-minutes: 20
     continue-on-error: ${{ matrix.experimental || false }}
     permissions:
@@ -75,7 +73,7 @@ jobs:
           - python-version: "3.13"
             experimental: false
           - python-version: "3.14"
-            experimental: true
+            experimental: false
     steps:
       - uses: actions/checkout@v7
         with:
@@ -94,11 +92,18 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Run tests
+        if: matrix.python-version != '3.14'
+        run: uv run pytest --durations=20
+
       - name: Run tests with coverage
-        run: uv run pytest --cov --cov-report=xml
+        # Only this required interpreter supplies coverage to the steps below.
+        # Repeating branch instrumentation on other entries wastes their budget.
+        if: matrix.python-version == '3.14'
+        run: uv run pytest --cov --cov-report=xml --durations=20
 
       - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.13'
+        if: matrix.python-version == '3.14'
         uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml
@@ -108,12 +113,12 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Fetch base branch for diff-cover
-        if: matrix.python-version == '3.13' && github.event_name == 'pull_request'
+        if: matrix.python-version == '3.14' && github.event_name == 'pull_request'
         run: git fetch origin ${{ github.base_ref }} --depth=50
 
       - name: Check patch coverage
         id: diffcover
-        if: matrix.python-version == '3.13' && github.event_name == 'pull_request'
+        if: matrix.python-version == '3.14' && github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
@@ -161,7 +166,7 @@ jobs:
           fi
 
       - name: Save patch coverage result
-        if: matrix.python-version == '3.13' && github.event_name == 'pull_request'
+        if: matrix.python-version == '3.14' && github.event_name == 'pull_request'
         env:
           PATCH_STATE: ${{ steps.diffcover.outputs.state || 'error' }}
           PATCH_DESC: ${{ steps.diffcover.outputs.description || 'diff-cover step did not run' }}
@@ -170,7 +175,7 @@ jobs:
             '{"state":$state,"description":$description}' > patch-coverage.json
 
       - name: Upload patch coverage artifact
-        if: matrix.python-version == '3.13' && github.event_name == 'pull_request'
+        if: matrix.python-version == '3.14' && github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: patch-coverage
@@ -181,7 +186,7 @@ jobs:
         # Fork PRs: GITHUB_TOKEN is read-only for pull_request events from forks regardless
         # of the permissions block — GitHub security restriction. continue-on-error prevents
         # the job from failing; coverage-status.yml posts the status via workflow_run instead.
-        if: matrix.python-version == '3.13' && github.event_name == 'pull_request' && always()
+        if: matrix.python-version == '3.14' && github.event_name == 'pull_request' && always()
         continue-on-error: true
         uses: actions/github-script@v9
         env:
@@ -233,11 +238,10 @@ jobs:
       - name: Run pip-audit
         run: |
           uvx pip-audit --strict --progress-spinner off \
-            --ignore-vuln CVE-2026-42561 \
             -r ${{ runner.temp }}/requirements.txt
-          # CVE-2026-42561: python-multipart <0.0.27, pulled in transitively by
-          # fastmcp/starlette. Ignored until the upstream pin chain propagates
-          # the fix to 0.0.27. Remove once `uv lock` resolves >=0.0.27.
+          # No standing --ignore-vuln: a suppression outlives the advisory it
+          # was added for and then hides the next one in the same package
+          # (#604). Add one only with its removal condition in this comment.
 
   secrets:
     name: Secret Detection

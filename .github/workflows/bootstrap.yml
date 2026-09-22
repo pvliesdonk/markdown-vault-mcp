@@ -16,6 +16,11 @@ name: Bootstrap repo
 #      immediately; the gate is what holds the merge until CI is green.
 #      Posture, bypass model, and per-branch rules are documented in
 #      docs/deployment/repository-protection.md.
+#   3. Security reporting and alerts: private vulnerability reporting (the
+#      "Report a vulnerability" button SECURITY.md points at; public
+#      repositories only), Dependabot alerts, and secret scanning push
+#      protection where the plan allows it. See
+#      docs/design/reference/github-repository-security-settings.md.
 #
 # Idempotent: label create is `--force`; the settings call is a PATCH and the
 # ruleset apply upserts by name (PUT onto the existing id, POST otherwise), so
@@ -23,8 +28,8 @@ name: Bootstrap repo
 # branch applies everything; a push touching this workflow or a ruleset file
 # re-applies; `workflow_dispatch` re-applies on demand.
 #
-# Auth: the settings + ruleset calls need `administration:write`, which the
-# default GITHUB_TOKEN lacks — they use RELEASE_TOKEN.
+# Auth: the settings, ruleset and security calls need `administration:write`,
+# which the default GITHUB_TOKEN lacks — they use RELEASE_TOKEN.
 
 on:
   push:
@@ -161,3 +166,47 @@ jobs:
           # the steady state on repos bootstrapped after this migration.
           gh api -X DELETE "repos/${REPO}/branches/main/protection" \
             || echo "No classic branch protection to remove — already migrated."
+
+  security:
+    name: Enable security reporting and alerts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable private vulnerability reporting, Dependabot alerts, push protection
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Private vulnerability reporting is the private channel SECURITY.md
+          # sends researchers to. Without it their only path is a public
+          # issue asking for one (pvliesdonk/markdown-vault-mcp#1510). GitHub
+          # documents it for public repositories only, so a private
+          # repository skips it rather than fail the job. The PUT is
+          # idempotent: 204 whether or not it was already on.
+          private=$(gh api "repos/${REPO}" --jq '.private')
+          if [ "$private" = "false" ]; then
+            gh api -X PUT "repos/${REPO}/private-vulnerability-reporting"
+            echo "Private vulnerability reporting: enabled."
+          else
+            echo "Private repository: private vulnerability reporting is not offered, skipped."
+          fi
+
+          # Dependabot alerts populate the Security tab on every visibility.
+          # Renovate still owns the update PRs; the alerts are the signal.
+          if gh api -X PUT "repos/${REPO}/vulnerability-alerts"; then
+            echo "Dependabot alerts: enabled."
+          else
+            echo "::warning::Could not enable Dependabot alerts; enable them under Settings → Advanced Security."
+          fi
+
+          # Repository-level push protection needs GitHub Secret Protection
+          # on private repositories, and GitHub's docs do not promise the
+          # PATCH on a personal public repository either. Try it on public
+          # repositories and report a refusal instead of failing bootstrap.
+          if [ "$private" = "false" ]; then
+            if jq -n '{security_and_analysis: {secret_scanning_push_protection: {status: "enabled"}}}' \
+              | gh api -X PATCH "repos/${REPO}" --input - >/dev/null; then
+              echo "Secret scanning push protection: enabled."
+            else
+              echo "::warning::Could not enable secret scanning push protection; enable it under Settings → Advanced Security if your plan offers it."
+            fi
+          fi

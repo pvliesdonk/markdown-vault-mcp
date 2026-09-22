@@ -49,8 +49,8 @@
           "description": "Legacy: replaces all generated MCP instructions (deprecated; use _INSTANCE_DESCRIPTION for routing and _INSTRUCTIONS_EXTRA for policy)."
         },
         {
-          "name": "FASTMCP_LOG_LEVEL",
-          "description": "Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG.",
+          "name": "MARKDOWN_VAULT_MCP_LOG_LEVEL",
+          "description": "Log level for every logger in the process, FastMCP's included (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. The unprefixed FASTMCP_LOG_LEVEL still works for one major version and logs a deprecation warning.",
           "default": "INFO",
           "choices": [
             "DEBUG",
@@ -61,10 +61,12 @@
           ]
         },
         {
-          "name": "FASTMCP_ENABLE_RICH_LOGGING",
-          "description": "Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback.",
-          "format": "boolean",
-          "default": "true"
+          "name": "MARKDOWN_VAULT_MCP_LOG_FORMAT",
+          "description": "Log rendering. rich is one colour event key=value line per record, for a terminal; json is one JSON object per record, for a collector. Unset picks rich when stderr is a terminal and json everywhere else, so a container or journald gets JSON with no configuration.",
+          "choices": [
+            "rich",
+            "json"
+          ]
         },
         {
           "name": "OLLAMA_HOST",
@@ -510,6 +512,12 @@
       ],
       "environmentVariables": [
         {
+          "name": "MARKDOWN_VAULT_MCP_SHUTDOWN_GRACE_S",
+          "description": "Seconds SIGTERM may spend draining in-flight requests before the HTTP server exits. Keep it at or below the termination grace period the orchestrator allows. `0` drops in-flight requests immediately.",
+          "format": "number",
+          "default": "3"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_BASE_URL",
           "description": "Public base URL of the deployed server, for example `https://mcp.example.com`. Required for OIDC. Also the fallback source of the MCP Apps domain when `app_domain` is unset.",
           "placeholder": "https://mcp.example.com"
@@ -639,8 +647,8 @@
           "default": "1000"
         },
         {
-          "name": "FASTMCP_LOG_LEVEL",
-          "description": "Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG.",
+          "name": "MARKDOWN_VAULT_MCP_LOG_LEVEL",
+          "description": "Log level for every logger in the process, FastMCP's included (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. The unprefixed FASTMCP_LOG_LEVEL still works for one major version and logs a deprecation warning.",
           "default": "INFO",
           "choices": [
             "DEBUG",
@@ -651,10 +659,12 @@
           ]
         },
         {
-          "name": "FASTMCP_ENABLE_RICH_LOGGING",
-          "description": "Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback.",
-          "format": "boolean",
-          "default": "true"
+          "name": "MARKDOWN_VAULT_MCP_LOG_FORMAT",
+          "description": "Log rendering. rich is one colour event key=value line per record, for a terminal; json is one JSON object per record, for a collector. Unset picks rich when stderr is a terminal and json everywhere else, so a container or journald gets JSON with no configuration.",
+          "choices": [
+            "rich",
+            "json"
+          ]
         },
         {
           "name": "OLLAMA_HOST",

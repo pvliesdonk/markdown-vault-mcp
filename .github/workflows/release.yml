@@ -350,7 +350,7 @@ jobs:
         run: gh release edit ${{ steps.release.outputs.tag }} --latest=false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.6"
 

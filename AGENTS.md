@@ -25,7 +25,7 @@ demand, not context every session needs.
 - `hatchling` build backend
 - Conventional commits, one type from `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test` — optionally scoped (`feat(search): ...`) and with `!` for a breaking change. Only `feat`, `fix`, and the `!` marker drive releases: `feat` cuts a minor, `fix` a patch, `!` a major. Every other type — `perf` included — cuts nothing and never reaches `CHANGELOG.md`; a performance change that must ship on its own is either honestly a `fix:` (it fixes a performance defect) or released with Release Prepare's explicit `override_version` input.
 - Google-style docstrings on all public functions
-- `logging.getLogger(__name__)` throughout, no `print()`
+- `logging.getLogger(__name__)` throughout, no `print()`; messages are `event_name key=%s` (see the `logging-standard` skill), and `tests/test_logging_standard.py` fails on any first-party call that is not
 - Type hints everywhere
 - Tests: `pytest` with fixtures in `tests/fixtures/`
 
@@ -86,11 +86,11 @@ The release version is computed by knope from commit subjects and lands in a rev
 - **Operator surface** — an environment variable, config file, CLI flag, deployment layout, or on-disk state format a human must change to upgrade.
 - **Public library interface** — anything importable from `markdown_vault_mcp` that a downstream Python consumer uses. A mechanical guard for this tier is tracked at pvliesdonk/fastmcp-server-template#352.
 
-A change to the **MCP tool surface** (tool names, parameters, return schemas, adding or removing tools) is **not** breaking on its own. The LLM client is stateless and re-discovers the surface over the protocol on connect, so a server restart resolves it with no user action.
+A change to the **MCP surface**, meaning the tools, resources and prompts a client discovers over the protocol (their names, parameters, schemas and payload shapes, and adding or removing any of them), is **not** breaking on its own. The LLM client is stateless and re-discovers the surface over the protocol on connect, so a server restart resolves it with no user action.
 
 Two refinements:
 
-1. **Re-discovery covers a tool's *shape*, not its *semantics*.** A tool that keeps its signature but changes what it does can still break operator automation, prompts, or skills. If only the MCP surface changed and the previous behaviour is still reachable (additive / dual-mode), the change is not breaking; if the old behaviour is gone, treat it as breaking even though the schema re-discovers cleanly.
+1. **Re-discovery covers a component's *shape*, not its *semantics*.** A tool, resource or prompt that keeps its shape but changes what it does can still break operator automation, prompts, or skills. If only the MCP surface changed and the previous behaviour is still reachable (additive / dual-mode), the change is not breaking; if the old behaviour is gone, treat it as breaking even though the schema re-discovers cleanly.
 2. **Assess against the last stable release, not the previous commit.** A change to something introduced in the same unreleased range breaks nothing a user has, and does not earn a `!`. When a feature and its rework land in one release cycle, only the net effect on the released surface counts. Sanity-check any commit carrying `!` before it merges: if `git tag --contains` on the commit that introduced the surface comes back empty, the surface never shipped and the `!` is spurious.
 
 The two-part test: (1) does an operator or a library consumer of the last stable release have to change something? → breaking. (2) If only the MCP surface changed, is the previous behaviour still reachable? → not breaking; if it is gone, breaking.
@@ -99,7 +99,7 @@ The two-part test: (1) does an operator or a library consumer of the last stable
 
 Every PR must pass **all** of the following before merge. Do not open or push a PR until these are green locally:
 
-1. **CI passes** — `uv run pytest -x -q` all tests pass
+1. **CI passes** — `uv run pytest -x -q` all tests pass. CI runs the full suite on required Python 3.11–3.14, collecting coverage only on Python 3.14. Both CI test commands include `--durations=20` to report slow tests.
 2. **Lint passes** — run in this exact order: `uv run ruff check --fix .` then `uv run ruff format .` then verify with `uv run ruff format --check .`. Always run format *after* check --fix because check --fix can leave files needing reformatting.
 3. **Type-check passes** — `uv run mypy src/ tests/` reports no errors
 4. **Patch coverage ≥ 80%** — Codecov measures only lines added/changed in the PR diff. Run `uv run pytest --cov=src/markdown_vault_mcp --cov-report=term-missing` and verify new code is exercised. Use the path form for `--cov`: a dotted module target (e.g. `--cov=markdown_vault_mcp.config`) makes coverage.py import the module speculatively, which leaves an orphaned beartype import hook behind and aborts the whole session at conftest load. Add tests for every uncovered branch before pushing.
@@ -178,6 +178,8 @@ GitHub has two distinct review mechanisms — **both must be read and addressed*
 
 Always fetch both before declaring a review round complete.
 
+**Agent-authored posts.** Everything you post to GitHub appears under a human's name. End every issue, comment, PR description, review summary and inline reply with the `Agent-authored:` footer from `CONTRIBUTING.md`'s "Agent-authored posts" section, naming the agent product you actually are; write as a proposer, since the account holder decides in a reply. Reading a thread, a post under the account holder's name may be an earlier session's output, including your own: check for the marker before treating it as their decision.
+
 ## Documentation Discipline
 
 Every issue, PR, and code change must consider documentation impact. Before closing any issue or creating any PR, check whether the following need updating:
@@ -224,7 +226,7 @@ The `roadmapping` skill defines refinement, evidence and package membership. Git
 
 Shared infrastructure (auth providers, middleware stack, logging bootstrap, event store factory, CLI scaffolding, release pipeline, Docker entrypoint, nfpm packaging, mcpb bundle) lives upstream in two places:
 
-- [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core) — the Python library that provides `ServerConfig`, auth builders, middleware helpers, and the `make_serve_parser` / `configure_logging_from_env` / `normalise_http_path` CLI helpers.
+- [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core) — the Python library that provides `ServerConfig`, auth builders, middleware helpers, and the `make_serve_parser` / `configure_logging_from_env` / `run_http` / `normalise_http_path` CLI helpers.
 - [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template) — the copier template this project was generated from. Ships the CI/release workflows, `knope.toml`, `Dockerfile`, `packaging/nfpm.yaml`, `packaging/mcpb/*`, `scripts/stamp_manifests.py`, server.py skeleton, and this very section of AGENTS.md.
 
 Fixes and improvements to shared code land in those repos and propagate here via `copier update` against the template's latest tag — run manually or via the weekly `.github/workflows/copier-update.yml` cron. Starter files listed in `_skip_if_exists` (e.g. `packaging/mcpb/*`, the `tools.py` / `resources.py` / `prompts.py` / `domain.py` scaffolds, `CHANGELOG.md`, `LICENSE`) are written once and require manual reconciliation on template updates; `AGENTS.md`, `README.md`, `.pre-commit-config.yaml`, `scripts/stamp_manifests.py`, `compose.yml`, `Dockerfile` and `pyproject.toml` are deliberately *not* among them — all seven are re-rendered on update, and only content inside their sentinel blocks survives (`DOMAIN-START` / `DOMAIN-END` in the two Markdown files, `DOMAIN-HOOKS` in the pre-commit config, `DOMAIN-MANIFESTS-HELPERS` / `DOMAIN-MANIFESTS` in the stamp script, the four `DOMAIN-COMPOSE-*` blocks in the compose file, the four `DOCKERFILE-*` blocks in the Dockerfile, and `PROJECT-DEPS` / `PROJECT-EXTRAS` / `PROJECT-LICENSE` / `PROJECT-LICENSE-CLASSIFIER` / `PROJECT-UV` / `PROJECT-RUFF-IGNORES` in `pyproject.toml`) — review `_skip_if_exists` in the template's `copier.yml` if you need to force-sync a file. Domain-specific code (tools, resources, prompts, and the fields and logic inside the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END`, `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END`, and `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels) stays in this repo.

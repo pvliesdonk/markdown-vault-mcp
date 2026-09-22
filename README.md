@@ -156,8 +156,8 @@ The most common environment variables, shared across all
 | Variable | Default | Description |
 |---|---|---|
 | `MARKDOWN_VAULT_MCP_KV_STORE_URL` | `file:///data/state` | Persistent-state backend URL shared by every pvl-core subsystem that needs state. `memory://` is in-process and lost on restart; `file:///path` persists on one server; `redis://`, `dynamodb://` and `mongodb://` each need their matching extra. When unset, defaults to `file:///data/state` (the volume family Docker images mount), or to `memory://` (with a warning) on a host where that directory is not usable. |
-| `FASTMCP_LOG_LEVEL` | `INFO` | Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. |
-| `FASTMCP_ENABLE_RICH_LOGGING` | `true` | Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback. |
+| `MARKDOWN_VAULT_MCP_LOG_LEVEL` | `INFO` | Log level for every logger in the process, FastMCP's included (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. The unprefixed FASTMCP_LOG_LEVEL still works for one major version and logs a deprecation warning. |
+| `MARKDOWN_VAULT_MCP_LOG_FORMAT` | (none) | Log rendering. rich is one colour event key=value line per record, for a terminal; json is one JSON object per record, for a collector. Unset picks rich when stderr is a terminal and json everywhere else, so a container or journald gets JSON with no configuration. |
 <!-- GENERATED-ENV-TABLE-CORE-END -->
 
 This table and the one under [Domain configuration](#domain-configuration)
@@ -186,7 +186,7 @@ CI workflows reference two required repository secrets and one optional Claude t
 
 | Secret | Used by | How to generate |
 |---|---|---|
-| `RELEASE_TOKEN` | `release-prepare.yml`, `release.yml`, `copier-update.yml`, `renovate.yml`, `bootstrap.yml` | Fine-grained PAT at <https://github.com/settings/personal-access-tokens/new> with `contents: write`, `pull_requests: write`, and `administration: write` (bootstrap applies the repository rulesets + auto-merge). Must belong to a repository admin: the shipped rulesets grant bypass to the admin role, and the release tag + GitHub release that knope creates after a release pull request merges rely on it (pull requests the token opens also need it so their CI runs). Scoped to this repo. |
+| `RELEASE_TOKEN` | `release-prepare.yml`, `release.yml`, `copier-update.yml`, `renovate.yml`, `bootstrap.yml` | Fine-grained PAT at <https://github.com/settings/personal-access-tokens/new> with `contents: write`, `pull_requests: write`, and `administration: write` (bootstrap applies the repository rulesets, auto-merge, and the security settings). Must belong to a repository admin: the shipped rulesets grant bypass to the admin role, and the release tag + GitHub release that knope creates after a release pull request merges rely on it (pull requests the token opens also need it so their CI runs). Scoped to this repo. |
 | `CODECOV_TOKEN` | `ci.yml` | <https://codecov.io>: sign in with GitHub and add the repo. The upload token is on its settings page. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `claude.yml` | Optional. Run `claude setup-token` locally and configure this only for `@claude` or opted-in automatic review. |
 
@@ -199,10 +199,11 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN
 
 > Dependency updates are handled by **Renovate** (`renovate.yml`), which reuses
 > `RELEASE_TOKEN`. It maintains `uv.lock` and auto-merges patch/minor bumps once
-> the `CI Success` check is green; `bootstrap.yml` enables auto-merge and applies
-> the repository rulesets (`.github/rulesets/`) on first push. See
+> the `CI Success` check is green; `bootstrap.yml` enables auto-merge, applies
+> the repository rulesets (`.github/rulesets/`), and turns on private
+> vulnerability reporting and Dependabot alerts on first push. See
 > [Repository Protection](docs/deployment/repository-protection.md) for the
-> per-branch posture and bypass model. GitHub Actions are updated in the copier
+> per-branch posture, bypass model, and security settings. GitHub Actions are updated in the copier
 > template and arrive via `copier update`, not per-repo.
 
 `GITHUB_TOKEN` is auto-provided; no action needed.
@@ -218,6 +219,11 @@ uv run mypy src/ tests/                              # type-check
 ```
 
 Pre-commit runs a subset of the gate on each commit; see `.pre-commit-config.yaml` for details, or [`AGENTS.md`](AGENTS.md) for the full Hard PR Acceptance Gates.
+
+CI requires tests to pass on Python 3.11 through 3.14. Python 3.14 also collects
+branch coverage and enforces the 80% total and patch coverage thresholds.
+To reproduce that test command, run
+`uv run --python 3.14 pytest --cov --cov-report=xml --durations=20`.
 
 ## Troubleshooting
 
@@ -254,6 +260,8 @@ them `code-review` (local self-review before a pull request),
 [docs/deployment/release-process.md](docs/deployment/release-process.md);
 the template update procedure in
 [docs/deployment/template-updates.md](docs/deployment/template-updates.md).
+`SECURITY.md` says how to report a vulnerability privately, and what to
+expect after.
 
 ## Links
 

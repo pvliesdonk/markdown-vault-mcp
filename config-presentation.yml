@@ -96,27 +96,32 @@ vars:
     tags: [container]
     wizard: {control: none}
 
-  - name: "FASTMCP_LOG_LEVEL"
-    provenance: external
+  # Read by pvl-core's configure_logging_from_env, outside ServerConfig, so
+  # core's surface does not list them — the same shape as {PREFIX}_DEBUG_PORT
+  # above.  Both replaced unprefixed FastMCP-native vars in pvl-core v8:
+  # FASTMCP_LOG_LEVEL still works for one major and logs a deprecation
+  # warning; FASTMCP_ENABLE_RICH_LOGGING is gone.
+  - name: "{PREFIX}_LOG_LEVEL"
+    provenance: template
     type_name: "str"
     default: "INFO"
-    help: "Log level for FastMCP internals and app loggers (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG."
+    help: "Log level for every logger in the process, FastMCP's included (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. The unprefixed FASTMCP_LOG_LEVEL still works for one major version and logs a deprecation warning."
     tags: [observability, readme]
     wizard: {group: Logging}
 
-  - name: "FASTMCP_ENABLE_RICH_LOGGING"
-    provenance: external
-    type_name: "bool"
-    default: true
-    help: "Rich color output for a terminal; false gives one plain or JSON line per record. Off in the container image and the systemd unit, since neither is a terminal and Rich wraps a structured record at its 80-column fallback."
+  - name: "{PREFIX}_LOG_FORMAT"
+    provenance: template
+    type_name: "str"
+    default: null
+    help: "Log rendering. rich is one colour event key=value line per record, for a terminal; json is one JSON object per record, for a collector. Unset picks rich when stderr is a terminal and json everywhere else, so a container or journald gets JSON with no configuration."
     tags: [observability, readme]
     wizard: {group: Logging}
 
   # Native fastmcp background-task (Docket) worker tunables.  Deliberately
   # NOT wrapped in `{PREFIX}_*` vars (pvl-core ADR 0002 §4.3): they are worker
   # tuning with sensible upstream defaults, not backend selection, so they
-  # stay on the acknowledged native `FASTMCP_*` axis alongside
-  # FASTMCP_LOG_LEVEL above.  Backend *selection* is `{PREFIX}_TASKS_URL`,
+  # stay on the acknowledged native `FASTMCP_*` axis (the logging vars above
+  # left it for `{PREFIX}_*` with pvl-core v8).  Backend *selection* is `{PREFIX}_TASKS_URL`,
   # which core's own surface documents (tagged persistence + tasks) — the two
   # native vars that would configure it a second time, FASTMCP_DOCKET_URL and
   # FASTMCP_DOCKET_NAME, are deliberately absent here: pvl-core's
@@ -246,14 +251,17 @@ required_vars:
 # fields cannot be enumerated by this template-owned map and are relevant
 # wherever that project runs, so they land in every package automatically.
 packaging:
-  FASTMCP_LOG_LEVEL: [pypi, oci]
-  FASTMCP_ENABLE_RICH_LOGGING: [pypi, oci]
+  "{PREFIX}_LOG_LEVEL": [pypi, oci]
+  "{PREFIX}_LOG_FORMAT": [pypi, oci]
   "{PREFIX}_SERVER_NAME": [pypi, oci]
   "{PREFIX}_INSTANCE_DESCRIPTION": [pypi, oci]
   "{PREFIX}_INSTRUCTIONS_EXTRA": [pypi, oci]
   "{PREFIX}_INSTRUCTIONS": [pypi, oci]
   "{PREFIX}_HTTP_PATH": [oci]
   "{PREFIX}_HEALTH_DETAIL": [oci]
+  # HTTP-only: the SIGTERM drain window run_http gives uvicorn. A stdio
+  # (pypi/uvx) install has no listener to drain, so nothing to set.
+  "{PREFIX}_SHUTDOWN_GRACE_S": [oci]
   # Not HTTP-specific: apply_tool_visibility runs in make_server regardless
   # of transport, so a stdio (pypi/uvx) install can trim its tool set too.
   "{PREFIX}_TOOLS_ALLOW": [pypi, oci]
@@ -332,12 +340,15 @@ documented_defaults:
   "{PREFIX}_KV_STORE_URL": "file:///data/state"
 
 # The schema is normative here: "If provided, the user must select one of
-# these values", so an omission blocks a valid configuration. This set is
-# fastmcp's own `Settings.log_level` Literal, verified against the pinned
-# runtime rather than copied from the previous hand-written manifest, which
-# omitted CRITICAL.
+# these values", so an omission blocks a valid configuration. The level set
+# is pvl-core's `_VALID_LEVELS`, the names `configure_logging_from_env`
+# accepts; an unrecognised name falls back to INFO at runtime, but the wizard
+# should not offer one.
 choices:
-  FASTMCP_LOG_LEVEL: [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+  "{PREFIX}_LOG_LEVEL": [DEBUG, INFO, WARNING, ERROR, CRITICAL]
+  # pvl-core's `_VALID_FORMATS`; unset means auto, which is not a value an
+  # operator writes, so it is not offered.
+  "{PREFIX}_LOG_FORMAT": [rich, json]
   # pvl-core's `_health._DETAIL_LEVELS`; an unrecognised value warns and
   # falls back to `standard` at runtime, but the wizard should not offer one.
   "{PREFIX}_HEALTH_DETAIL": [status, standard, full]
@@ -399,8 +410,8 @@ wizard_labels:
   "{PREFIX}_AUTHZ_GRANTS": "Authorization grants (JSON)"
   "{PREFIX}_TOOLS_ALLOW": "Tool allowlist (CSV)"
   "{PREFIX}_TOOLS_DENY": "Tool denylist (CSV)"
-  "FASTMCP_LOG_LEVEL": "Log level"
-  "FASTMCP_ENABLE_RICH_LOGGING": "Rich logging"
+  "{PREFIX}_LOG_LEVEL": "Log level"
+  "{PREFIX}_LOG_FORMAT": "Log format"
 
 # Wizard-question help-text overrides, keyed by full var name. `wizard.js`
 # renders `question.help` verbatim as `help.textContent` — core's env-file
@@ -686,6 +697,6 @@ files:
       "{PREFIX}_INSTANCE_DESCRIPTION":
         id: instance_description
         title: "Instance description"
-      FASTMCP_LOG_LEVEL:
+      "{PREFIX}_LOG_LEVEL":
         id: log_level
         title: "Log level"

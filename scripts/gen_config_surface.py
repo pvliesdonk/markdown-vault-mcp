@@ -56,7 +56,7 @@ if TYPE_CHECKING:
 class Var:
     """One config variable, from whichever provenance produced it."""
 
-    name: str  # full env var name, e.g. "SCHOLAR_MCP_BASE_URL" or "FASTMCP_LOG_LEVEL"
+    name: str  # full env var name, e.g. "SCHOLAR_MCP_BASE_URL" or "FASTMCP_DOCKET_CONCURRENCY"
     suffix: str | None  # part after "{PREFIX}_", or None for unprefixed vars
     provenance: str  # "core" | "template" | "external" | "domain"
     type_name: str
@@ -1819,6 +1819,80 @@ class PresentationContext:
         return self.presentation.get("documented_defaults", {}) or {}
 
 
+# `copier update` runs a real 3-way merge per file and, under its default
+# `--conflict=inline`, writes git's diff3-style markers where the project's
+# side and the freshly rendered template side both changed a region: the
+# project's text first (`<<<<<<< before updating`), then the last rendered
+# base (`||||||| last update`), then the template's (`>>>>>>> after
+# updating`). The update-time migration that runs this generator sees that
+# merged file, so a marker anywhere in `server.json` used to fail the whole
+# update as "not valid JSON" — even when every conflicted line sat inside an
+# array this generator was about to replace wholesale (#635).
+_CONFLICT_HUNK = re.compile(
+    r"^<<<<<<< [^\n]*\n(?P<ours>.*?)"
+    r"(?:^\|\|\|\|\|\|\| [^\n]*\n.*?)?"
+    r"^=======\n(?P<theirs>.*?)^>>>>>>> [^\n]*\n",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _parse_json_target(text: str, rel_path: str, side: str = "") -> Any:
+    """`json.loads` with the generator's standard failure message."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"ERROR: {rel_path}{side} is not valid JSON: {exc}.") from exc
+
+
+def _without_arrays(data: Any, paths: Sequence[Sequence[Any]], rel_path: str) -> Any:
+    """A deep copy of *data* with every declared array emptied.
+
+    Comparing two sides of a conflicted file through this view asks the one
+    question that decides whether the generator may resolve the conflict
+    itself: do the sides differ *only* inside the arrays it owns?
+    """
+    stripped = json.loads(json.dumps(data))
+    for path in paths:
+        container, last_key = _json_array_container(stripped, path, rel_path)
+        container[last_key] = []
+    return stripped
+
+
+def _load_json_splice_target(
+    raw: str, rel_path: str, paths: Sequence[Sequence[Any]]
+) -> Any:
+    """Parse a `kind: json-splice` target, resolving conflicts in owned arrays.
+
+    A file without conflict markers parses as is. One with markers is split
+    into its two complete sides; when they agree everywhere outside the
+    declared arrays, the conflict is entirely in text this generator is about
+    to regenerate, so the project's side is taken (keeping the keys
+    `stamp_manifests.py` owns — ``version`` and the OCI ``identifier`` — at
+    the project's released values rather than the template's fresh-scaffold
+    ones) and the run proceeds. When the sides also differ elsewhere, the
+    conflict is a human's to resolve, and the error says so instead of
+    reporting a JSON syntax error at the first marker.
+    """
+    if not _CONFLICT_HUNK.search(raw):
+        return _parse_json_target(raw, rel_path)
+    ours_text = _CONFLICT_HUNK.sub(lambda m: m.group("ours"), raw)
+    theirs_text = _CONFLICT_HUNK.sub(lambda m: m.group("theirs"), raw)
+    ours = _parse_json_target(ours_text, rel_path, " (its `before updating` side)")
+    theirs = _parse_json_target(theirs_text, rel_path, " (its `after updating` side)")
+    if _without_arrays(ours, paths, rel_path) != _without_arrays(
+        theirs, paths, rel_path
+    ):
+        raise SystemExit(
+            f"ERROR: {rel_path} carries `copier update` conflict markers outside "
+            "the generated environmentVariables arrays. This generator resolves "
+            "a conflict only inside the arrays it regenerates; resolve the rest "
+            "by hand (keep your side's `version` and OCI `identifier`, which "
+            "the release flow owns — see docs/design/config-migration.md), "
+            "then rerun the generator."
+        )
+    return ours
+
+
 def render_json_splice_file(
     project_root: Path,
     rel_path: str,
@@ -1842,6 +1916,12 @@ def render_json_splice_file(
     this generator owns one array per package and none of the surrounding
     manifest.
 
+    A target still carrying `copier update`'s inline conflict markers is
+    accepted when every conflicted line lies inside a declared array (see
+    `_load_json_splice_target`): the update-time migration runs against the
+    merged file, and a seed change in a region this generator overwrites
+    anyway must not fail every downstream's update.
+
     Serialisation is ``json.dump``-equivalent with ``indent=2``,
     ``ensure_ascii=False`` and exactly one trailing newline — byte-identical
     to `stamp_manifests.py`'s own write of this same file. A mismatch would
@@ -1860,11 +1940,12 @@ def render_json_splice_file(
             "must already exist; this generator only replaces the declared "
             "array(s) inside it, never the surrounding file."
         )
-    raw = target.read_text(encoding="utf-8")
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"ERROR: {rel_path} is not valid JSON: {exc}.") from exc
+    array_specs = file_spec.get("arrays", ())
+    data = _load_json_splice_target(
+        target.read_text(encoding="utf-8"),
+        rel_path,
+        [array_spec["path"] for array_spec in array_specs],
+    )
 
     sub = _name_substituter(ctx.answers)
     packaging: Mapping[str, Sequence[str]] = ctx.presentation.get("packaging") or {}
@@ -1872,7 +1953,7 @@ def render_json_splice_file(
     choices: Mapping[str, Sequence[str]] = ctx.presentation.get("choices") or {}
     documented_defaults = ctx.documented_defaults
 
-    for array_spec in file_spec.get("arrays", ()):
+    for array_spec in array_specs:
         packaging_id = array_spec["packaging"]
         if packaging_id not in _ALL_PACKAGING_IDS:
             raise SystemExit(

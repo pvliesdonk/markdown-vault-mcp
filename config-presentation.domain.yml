@@ -190,7 +190,7 @@ files:
       "{PREFIX}_INSTANCE_DESCRIPTION":
         id: instance_description
         title: "Instance description"
-      FASTMCP_LOG_LEVEL:
+      "{PREFIX}_LOG_LEVEL":
         id: log_level
         title: "Log level"
 

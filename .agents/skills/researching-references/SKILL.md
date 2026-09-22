@@ -64,9 +64,9 @@ contract, checked by `scripts/check_references.py` and by
 | `type`, `title`, `description` | OKF core. `type` is always `Reference`; `description` is the one-line subject. |
 | `subject_version` | Extension key: the version or line the claims were checked against. |
 | `valid_for` | Extension key: the expiry condition in the subject's own terms: "Obsidian 1.x", "CommonMark 0.31", "git 2.x". A major-version line is the usual choice; a moving target with no versions gets a date. |
-| `generated` | OKF trust: `{by, at}`. `by` is `process:researching-references` (never a model name); `at` is the research date. |
-| `stale_after` | OKF lifecycle, the machine-checkable half of expiry: six months for a moving target, twelve for a frozen spec. Stale on and after that date. |
-| `verified` | OKF trust, optional: a list of `{by, at}`. A `human:<id>` entry makes the page human-reviewed; a `process:` entry (the refute pass) makes it machine-confirmed; absent means unverified. |
+| `generated` | OKF trust: `{by, at}`. `by` is `process:researching-references` (never a model name); `at` is the research instant, an ISO 8601 datetime with an explicit UTC offset (every OKF timestamp is one since the v0.2 amendment of 2026-08-21; a bare date on an older page still passes the checker). |
+| `stale_after` | OKF lifecycle, the machine-checkable half of expiry: an instant in the same datetime form, six months on for a moving target, twelve for a frozen spec. Stale when now is at or past it; the checker compares at day granularity in UTC. |
+| `verified` | OKF trust, optional: a list of `{by, at}` (one such mapping reads as a one-element list). A `human:<id>` entry makes the page human-reviewed; a `process:` entry (the refute pass) makes it machine-confirmed; absent means unverified. |
 | `status` | OKF lifecycle: `stable` (default), `draft`, or `deprecated` (then the extension key `superseded_by` names the replacement under the same root). |
 | `sources` | OKF provenance: every primary source read, with an `id` used by the claim markers, its `resource` URI, a `title`, and the extension key `accessed`. |
 

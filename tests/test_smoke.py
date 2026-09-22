@@ -116,8 +116,10 @@ def test_instructions_env_override(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS", "Custom operator text.")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTANCE_DESCRIPTION", "Demo material.")
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA", "House rule: be brief.")
-    # Scope to core's logger: make_server() re-applies FASTMCP_LOG_LEVEL to the
-    # root logger, which would otherwise drop the record under a stricter env.
+    # Scope to core's logger: make_server() re-applies MARKDOWN_VAULT_MCP_LOG_LEVEL
+    # (or its deprecated FASTMCP_LOG_LEVEL fallback) to the root logger, which
+    # would otherwise drop the record under a stricter env.
+    monkeypatch.delenv("MARKDOWN_VAULT_MCP_LOG_LEVEL", raising=False)
     monkeypatch.delenv("FASTMCP_LOG_LEVEL", raising=False)
     with caplog.at_level("WARNING", logger="fastmcp_pvl_core"):
         server = make_server()
@@ -223,3 +225,74 @@ def test_register_apps_logs_configured_domain(
         r.name == "markdown_vault_mcp._server_apps" and r.args == ("example.com",)
         for r in caplog.records
     )
+
+
+def test_config_passed_to_make_server_reaches_registration(
+    monkeypatch: pytest.MonkeyPatch, vault_path: Path
+) -> None:
+    """``config_for(mcp)`` hands a registrar the very ``ProjectConfig`` object
+    ``make_server`` was given, so a subsystem built at registration time
+    cannot disagree with one ``make_server`` wires from ``config`` itself
+    (pvliesdonk/fastmcp-server-template#534).
+
+    Adapted from the template: ``ProjectConfig.from_env()`` requires
+    ``MARKDOWN_VAULT_MCP_SOURCE_DIR``, so ``vault_path`` supplies it.
+    """
+    from markdown_vault_mcp._server_deps import config_for
+    from markdown_vault_mcp.config import ProjectConfig
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
+    config = ProjectConfig.from_env()
+    server = make_server(config=config)
+    assert config_for(server) is config
+
+
+def test_config_for_refuses_an_unbound_server() -> None:
+    """A server not built through ``make_server`` has no bound config, and
+    the accessor says so instead of quietly reading the environment."""
+    import pytest
+    from fastmcp import FastMCP
+
+    from markdown_vault_mcp._server_deps import config_for
+
+    with pytest.raises(RuntimeError, match="make_server"):
+        config_for(FastMCP("unbound"))
+
+
+def test_get_config_resolves_in_a_handler(
+    monkeypatch: pytest.MonkeyPatch, vault_path: Path
+) -> None:
+    """``Depends(get_config)`` inside a handler resolves to the bound config.
+
+    The server is built synchronously, as ``make_server`` requires (its
+    instruction finalisation refuses to run inside an event loop), and only
+    the client round-trip runs under ``asyncio.run``.
+
+    Adapted from the template: ``ProjectConfig.from_env()`` requires
+    ``MARKDOWN_VAULT_MCP_SOURCE_DIR``, so ``vault_path`` supplies it.
+    """
+    from fastmcp.dependencies import Depends
+
+    from markdown_vault_mcp._server_deps import get_config
+    from markdown_vault_mcp.config import ProjectConfig
+
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
+    config = ProjectConfig.from_env()
+    server = make_server(config=config)
+
+    @server.tool
+    async def bound_server_name(
+        config: ProjectConfig = Depends(get_config),  # noqa: B008
+    ) -> str:
+        return config.server_name
+
+    async def _call() -> str:
+        async with Client(server) as smoke_client:
+            result = await smoke_client.call_tool("bound_server_name", {})
+        first = result.content[0]
+        assert hasattr(first, "text"), (
+            f"expected text tool content, got {type(first).__name__}"
+        )
+        return str(first.text)
+
+    assert asyncio.run(_call()) == config.server_name

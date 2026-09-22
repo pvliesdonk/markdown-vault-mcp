@@ -6,6 +6,16 @@
 - `commonmark-gfm.md`: three **markdown-it departures** recorded for #1531, found while widening the reference family's differential corpus and worth a page of their own because the corpora use markdown-it as their oracle, so a deviation there reads as a defect in the scanner. It abandons a link outright when only whitespace follows a `(` to the end of the inline block, where §6.3 falls back to a reference (`[a](` with `[a]` defined is a shortcut); it does not fall back on a whitespace-only second span, where §4.7's "at least one non-whitespace character" makes `[ ]` no label at all; and its label scan counts bracket nesting, where §4.7 forbids an unescaped bracket in a label outright, so it reads `[a[b]]` as a label. This scanner matches markdown-it on the third and the spec on the first two; `[unverified]` whether cmark agrees on the third, which is reported to stop at the first inner `[`. Each is pinned and excluded from the sweeps by name rather than silently. The reference-link accuracy block is rewritten for the same change: all four forms now, with inline precedence real rather than incidental, definition removal bounded by the destination, and the stale "shortcut not extracted" claim gone; "shortcut references" dropped from the not-covered list; the `iter_bracket_links` deactivation claim corrected to retire link openers only, an image opener staying live (Ex. 575).
 - Noted while adding the above: #1517, #1519, #1526 and #1528 each amended this page without a log entry. Not backfilled here — they are separate merged changes — but recorded so the gap is visible rather than inferred from silence.
 
+## 2026-09-18
+
+- Added [GitHub repository security settings](github-repository-security-settings.md),
+  checked against GitHub.com documentation and two read-only API probes.
+  Covered the private-vulnerability-reporting, vulnerability-alerts and
+  `security_and_analysis` endpoints, their visibility and licence limits, and
+  the security policy file's locations. Single pass, no refute pass and no
+  writes: the page is `draft` until a generated project's bootstrap run
+  confirms the calls. Next review: 2027-03-18.
+
 ## 2026-09-14
 
 - Added [Python Future completion and cancellation](python-futures.md) for #1483. Checked Python 3.14 documentation and pinned CPython v3.14.0 source; refuted callback-thread and result-completion assumptions against the implementation. Pinned the project guarantees to held-build and cancellation-callback regressions. Next review: 2027-03-14.

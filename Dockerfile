@@ -53,18 +53,14 @@ RUN if [ "$APP_UID" -eq 0 ] || [ "$APP_GID" -eq 0 ]; then \
     && chown -R appuser:appuser /app /data
 
 COPY --chmod=0755 docker-entrypoint.sh /usr/local/bin/
-# `FASTMCP_ENABLE_RICH_LOGGING=false` because a container has no terminal.
-# Rich then assumes 80 columns, and a structured request-log record is longer
-# than the room left beside its time, level and source columns, so every
-# record wraps across three space-padded lines that neither `docker logs` nor
-# a collector can read back.  Off, each record is one line: JSON from the
-# request-logging middleware, `LEVEL: message` from the rest of FastMCP's own
-# loggers.  Rich's time column goes with it, and Docker's log driver timestamps
-# every line it captures anyway (`docker logs -t`).  An image default rather
-# than a compose `environment:` entry, so a `.env` can still turn it back on.
+# No log-format default on purpose: pvl-core renders one JSON object per
+# record whenever stderr is not a terminal, which a container's never is, so
+# `docker logs` and a collector get parseable lines with nothing set here.
+# `MARKDOWN_VAULT_MCP_LOG_FORMAT=rich` in `.env` forces the colour renderer
+# back for a person reading the stream; pinning either value in the image
+# would take that choice away from the deployment.
 ENV PATH="/app/.venv/bin:$PATH" \
-    FASTMCP_HOME=/data/state/fastmcp \
-    FASTMCP_ENABLE_RICH_LOGGING=false
+    FASTMCP_HOME=/data/state/fastmcp
 
 EXPOSE 8000
 # Remote debugger: ``EXPOSE`` is metadata — nothing actually listens unless

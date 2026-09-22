@@ -3465,7 +3465,8 @@ class TestAuthModeSelection:
 
         assert isinstance(server.auth, MultiAuth)
         assert "using bearer token auth" not in caplog.text
-        assert "Auth enabled: mode=multi" in caplog.text
+        assert "auth_mode_resolved" in caplog.text
+        assert "mode=multi" in caplog.text
 
     def test_multi_auth_contains_both_verifiers(
         self,
@@ -3638,12 +3639,16 @@ class TestAuthModeSelection:
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """If build_auth returns None despite OIDC config, log ``mode=none``.
+        """If build_auth returns None despite OIDC config, the startup
+        summary reports ``auth=none``.
 
         Guards against the log drifting from reality when e.g. OIDC
-        discovery fails: core's ``resolve_auth_mode`` would still report
-        ``oidc-proxy`` from field presence, but the actual auth object
-        is ``None`` so the startup summary must say ``none``.
+        discovery fails: field presence alone would suggest ``oidc-proxy``,
+        but the actual auth object is ``None`` so ``server_configured`` must
+        say ``none``. ``build_auth`` is pvl-core's own function, so mocking
+        it out here also skips its ``auth_mode_resolved`` announcement —
+        the ``server_configured`` line is the one summary this test can
+        still observe.
         """
         from unittest.mock import patch
 
@@ -3658,10 +3663,8 @@ class TestAuthModeSelection:
             server = make_server()
 
         assert server.auth is None
-        assert "unauthenticated" in caplog.text
-        # Guard against the misleading "Auth enabled: mode=<flavor>" log
-        # that the stale auth_mode could otherwise produce.
-        assert "Auth enabled" not in caplog.text
+        assert "server_configured" in caplog.text
+        assert "auth=none" in caplog.text
 
 
 class TestStartupSummaryLogging:
@@ -3681,7 +3684,7 @@ class TestStartupSummaryLogging:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
         with caplog.at_level(logging.INFO):
             make_server()
-        assert "Server config:" in caplog.text
+        assert "server_configured" in caplog.text
         assert "version=" in caplog.text
         assert "auth=none" in caplog.text
         # READ_ONLY is unset, so the summary reports the default (#1113).
@@ -3722,28 +3725,47 @@ class TestMiddlewareStack:
 
     @pytest.mark.usefixtures("_mcp_env")
     def test_default_middleware_wired(self) -> None:
-        """make_server() installs one RequestLoggingMiddleware in rich mode by default."""
+        """make_server() installs exactly one RequestLoggingMiddleware.
+
+        pvl-core v8 moved the Rich-vs-JSON choice to the root handler
+        (``MARKDOWN_VAULT_MCP_LOG_FORMAT``), so the middleware itself no
+        longer carries a ``structured`` flag — only wiring and traceback
+        inclusion are its concern now. Rich-vs-JSON output shape is
+        exercised at the process level in test_container_logging.py.
+        """
         # Not re-exported at pvl-core's public root; private import is unavoidable.
         from fastmcp_pvl_core._middleware import RequestLoggingMiddleware
 
         server = make_server()
         mws = [m for m in server.middleware if isinstance(m, RequestLoggingMiddleware)]
         assert len(mws) == 1
-        assert mws[0].structured is False
+        assert mws[0].include_traceback is False
 
     @pytest.mark.usefixtures("_mcp_env")
-    def test_structured_logging_when_rich_disabled(
+    def test_middleware_includes_traceback_at_debug_level(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """FASTMCP_ENABLE_RICH_LOGGING=false selects structured (JSON) output."""
+        """``include_traceback`` follows the root logger, set before wiring.
+
+        ``wire_middleware_stack`` infers traceback inclusion from whether
+        the root logger is enabled for DEBUG at the moment it runs, so
+        ``-v`` (or ``MARKDOWN_VAULT_MCP_LOG_LEVEL=DEBUG``) must be applied
+        before ``make_server`` wires the middleware.
+        """
         # Not re-exported at pvl-core's public root; private import is unavoidable.
         from fastmcp_pvl_core._middleware import RequestLoggingMiddleware
 
-        monkeypatch.setenv("FASTMCP_ENABLE_RICH_LOGGING", "false")
-        server = make_server()
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_LOG_LEVEL", "DEBUG")
+        root = logging.getLogger()
+        saved_level = root.level
+        try:
+            root.setLevel(logging.DEBUG)
+            server = make_server()
+        finally:
+            root.setLevel(saved_level)
         mws = [m for m in server.middleware if isinstance(m, RequestLoggingMiddleware)]
         assert len(mws) == 1
-        assert mws[0].structured is True
+        assert mws[0].include_traceback is True
 
 
 # ---------------------------------------------------------------------------
