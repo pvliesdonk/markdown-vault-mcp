@@ -93,6 +93,30 @@ def serve(
             http_path or os.environ.get(f"{_ENV_PREFIX}_HTTP_PATH")
         )
         server = make_server(transport=transport, config=config, http_path=path)
+
+        if transport == "http":
+            # build_event_store is one of the ConfigurationError-raising
+            # builders too (a malformed MARKDOWN_VAULT_MCP_EVENT_STORE_URL),
+            # so it stays inside this try alongside make_server — one
+            # actionable stderr line for every operator-input mistake in
+            # this branch, not just the ones make_server surfaces.
+            event_store = build_event_store(_ENV_PREFIX, config.server)
+            # pvl-core runs uvicorn.  It pins ``lifespan="on"`` (FastMCP's
+            # startup/shutdown hooks run through the ASGI lifespan protocol),
+            # ``log_config=None`` (uvicorn must not reinstall its own handlers
+            # over the root chain ``_root`` set up) and the SIGTERM drain
+            # window from ``MARKDOWN_VAULT_MCP_SHUTDOWN_GRACE_S`` (default
+            # 3s, so containers stop cleanly).  ``None`` for host or port
+            # means "not given on the command line"; ``run_http`` then reads
+            # ``config.server``.
+            run_http(
+                server.http_app(path=path, event_store=event_store),
+                config=config.server,
+                host=host,
+                port=port,
+            )
+        else:
+            server.run(transport=transport)
     except ConfigurationError as exc:
         # A malformed or missing operator value is one actionable line on
         # stderr, not Typer's Rich traceback: the message already names the
@@ -100,24 +124,6 @@ def serve(
         # stdio transport.
         typer.echo(f"ERROR: configuration error: {exc}", err=True)
         raise typer.Exit(code=1) from exc
-
-    if transport == "http":
-        event_store = build_event_store(_ENV_PREFIX, config.server)
-        # pvl-core runs uvicorn.  It pins ``lifespan="on"`` (FastMCP's
-        # startup/shutdown hooks run through the ASGI lifespan protocol),
-        # ``log_config=None`` (uvicorn must not reinstall its own handlers
-        # over the root chain ``_root`` set up) and the SIGTERM drain window
-        # from ``MARKDOWN_VAULT_MCP_SHUTDOWN_GRACE_S`` (default 3s, so
-        # containers stop cleanly).  ``None`` for host or port means "not
-        # given on the command line"; ``run_http`` then reads ``config.server``.
-        run_http(
-            server.http_app(path=path, event_store=event_store),
-            config=config.server,
-            host=host,
-            port=port,
-        )
-    else:
-        server.run(transport=transport)
 
 
 # DOMAIN-COMMANDS-START — add domain @app.command()s (and their helpers) below; kept across copier update

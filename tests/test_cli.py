@@ -401,6 +401,54 @@ def test_serve_legacy_path_alias_accepted() -> None:
     assert result.exit_code == 0, result.output
 
 
+def test_serve_reports_a_configuration_error_in_one_line(
+    monkeypatch: pytest.MonkeyPatch, vault_path: Path
+) -> None:
+    """A malformed operator value is one ``ERROR:`` line and exit 1, no traceback.
+
+    ``ServerConfig.from_env`` raises ``ConfigurationError`` for a non-integer
+    port; before #616 that reached Typer, which rendered it as a multi-screen
+    Rich traceback.
+    """
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_path))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_PORT", "notanint")
+
+    result = runner.invoke(app, ["serve", "--transport", "http"])
+
+    assert result.exit_code == 1
+    assert "ERROR: configuration error:" in result.output
+    assert f"{_ENV_PREFIX}_PORT" in result.output
+    assert "Traceback" not in result.output
+    assert "│" not in result.output, "Rich traceback frame detected"
+
+
+def test_serve_http_reports_configuration_error_from_event_store() -> None:
+    """``build_event_store`` raising ``ConfigurationError`` gets the same
+    one-line treatment as a bad ``ProjectConfig``/``make_server`` value.
+
+    Regression test: this call used to sit outside the ``try``/``except
+    ConfigurationError`` block in ``serve()``, so this exact error class
+    reached Typer as an uncaught exception under ``--transport http``.
+    """
+    from fastmcp_pvl_core import ConfigurationError
+
+    fake_server = MagicMock()
+    fake_server.http_app.return_value = MagicMock()
+    with (
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+        patch(
+            "markdown_vault_mcp.cli.build_event_store",
+            side_effect=ConfigurationError("bad EVENT_STORE_URL"),
+        ),
+        patch("markdown_vault_mcp.cli.ProjectConfig") as mock_cfg_cls,
+    ):
+        mock_cfg_cls.from_env.return_value = _fake_config()
+        result = runner.invoke(app, ["serve", "--transport", "http"])
+    assert result.exit_code == 1
+    assert "ERROR: configuration error: bad EVENT_STORE_URL" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_build_vault_valueerror_exits_nonzero() -> None:
     """A command whose _build_vault raises ValueError exits non-zero (shell $? contract)."""
     with patch(
