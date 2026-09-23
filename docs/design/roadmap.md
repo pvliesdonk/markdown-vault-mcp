@@ -362,6 +362,23 @@ alongside its longer-term motivation. This extends the product's optional storag
 directions without changing current runtime design, the OKF exchange outcome,
 or the selected `010` / `020` order.
 
+### 23 September 2026 — re-cut `010` after the withdrawn 5.0.0
+
+`evidenced` — The 5.0.0 release run tagged and announced the cut, then failed
+before any artifact was published; [#1556][1556] records the failure and the
+withdrawal of the tag, GitHub release and `5.0` docs.
+
+`stated` — The owner chose to withdraw 5.0.0 and re-cut `010` as a
+`5.0.0-rc.1` from `main`, carrying the work merged since, rather than
+re-running the failed publish. The owner accepted committing [#1551][1551],
+[#1532][1532] and [#1544][1544] to `010`, landing before the rc, and moving
+[#1370][1370] to `015`.
+
+`derived` — `010` therefore keeps its milestone and major intent and now also
+carries link-fidelity repairs, large-vault indexing ([#1535][1535]) and the
+template v9 adoption. The remaining open bugs stay backlog with their existing
+resolution pointers; [#1383][1383] still waits on its compatibility decision.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1225]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1225
@@ -378,6 +395,7 @@ or the selected `010` / `020` order.
 [1313]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1313
 [1359]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1359
 [1368]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1368
+[1370]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1370
 [1377]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1377
 [1383]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1383
 [1390]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/1390
@@ -399,5 +417,10 @@ or the selected `010` / `020` order.
 [1474]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1474
 [1475]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1475
 [1476]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1476
+[1532]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1532
+[1535]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1535
+[1544]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1544
+[1551]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1551
+[1556]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1556
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
