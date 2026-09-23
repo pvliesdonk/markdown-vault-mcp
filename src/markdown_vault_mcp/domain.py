@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
@@ -26,9 +26,29 @@ from markdown_vault_mcp.config_sections._assembly import (
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
+    from concurrent.futures import Future
+
     from markdown_vault_mcp._file_watcher import VaultFileWatcher
 
 logger = logging.getLogger(__name__)
+
+
+def _mark_boot_reindex_reconciled(
+    vault: Vault, done: Future[Any], head: str | None
+) -> None:
+    """Record *head* as reconciled once the boot reindex completed (#1532).
+
+    A cancelled or failed boot reindex records nothing, so the next pull-loop
+    tick, webhook delivery or ``git_sync`` call reindexes instead.
+
+    Args:
+        vault: The vault whose reconciler is told.
+        done: The finished boot reindex.
+        head: The HEAD the boot reindex covered.
+    """
+    if done.cancelled() or done.exception() is not None:
+        return
+    vault.mark_index_reconciled(head)
 
 
 _vault_singleton: Vault | None = None
@@ -198,14 +218,24 @@ class Service:
         # This job is now conditional on config.boot_reindex (#1535);
         # index_stale consequently reports drained sooner without implying
         # the index agrees with disk.
+        # The HEAD the startup sync left behind is what the boot reindex
+        # covers; recording it lets later reconciles (#1532) skip a redundant
+        # full scan and reindex only once HEAD moves past it.
+        head_at_boot = await asyncio.to_thread(vault.git_head)
         if config.boot_reindex:
-            vault.index.reindex_async()
+            boot_reindex = vault.index.reindex_async()
+            boot_reindex.add_done_callback(
+                lambda done: _mark_boot_reindex_reconciled(vault, done, head_at_boot)
+            )
             logger.info("boot_reindex_job_submitted")
         else:
             # Offline changes (files added/modified/deleted while no server
             # was running) stay invisible to the index until an explicit
             # reindex runs — either the `reindex` tool or the
-            # `markdown-vault-mcp reindex` CLI command.
+            # `markdown-vault-mcp reindex` CLI command.  Accepting the index
+            # at the boot HEAD keeps that trade: later pulls that move HEAD
+            # still reindex.
+            vault.mark_index_reconciled(head_at_boot)
             logger.info("boot_reindex_disabled reason=config")
 
         if instances.embedding_provider is not None:

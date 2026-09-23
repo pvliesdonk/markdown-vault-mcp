@@ -226,6 +226,8 @@ class GitWriteStrategy:
         ) = None
         self._drain_writes: Callable[[], bool] | None = None
         self._on_pull: Callable[[], object] | None = None
+        self._on_tick: Callable[[], object] | None = None
+        self._commit_observer: Callable[[str, str], None] | None = None
         if repo_path is not None:
             if self._managed:
                 self._bootstrap.ensure_managed_repo(repo_path)
@@ -376,9 +378,10 @@ class GitWriteStrategy:
         effective_email = principal_email or self._commit_email
 
         try:
-            with self._lock:
+            git_root = self._git_root
+            with self._lock, self._observed_commit(git_root):
                 _stage_and_commit_batch(
-                    self._git_root,
+                    git_root,
                     items,
                     tool_name,
                     _CommitIdentity(
@@ -450,9 +453,10 @@ class GitWriteStrategy:
                 principal_name is not None,
                 principal_email is not None,
             )
-            with self._lock:
+            git_root = self._git_root
+            with self._lock, self._observed_commit(git_root):
                 _stage_and_commit(
-                    self._git_root,
+                    git_root,
                     path,
                     operation,
                     old_path=old_path,
@@ -1524,6 +1528,44 @@ class GitWriteStrategy:
 
         return result.applied and result.to_sha != result.from_sha
 
+    def set_commit_observer(self, observer: Callable[[str, str], None]) -> None:
+        """Wire a callable told about every commit of the server's own writes.
+
+        Called with ``(parent, new_head)`` from inside :attr:`_lock`, after a
+        write or batch commit moved HEAD, so no pull can land between the two
+        reads.  The owner uses it to know that the index already holds what
+        the commit records (#1532).  The observer must not call back into
+        this strategy: the lock is held.
+
+        Args:
+            observer: Receives the HEAD before and after the commit.
+        """
+        self._commit_observer = observer
+
+    @contextlib.contextmanager
+    def _observed_commit(self, git_root: Path) -> Iterator[None]:
+        """Report the HEAD move of the commit run inside this block.
+
+        The caller holds :attr:`_lock`.  A HEAD that cannot be read on either
+        side skips the report: the observer then treats the new HEAD as
+        unexplained, which costs a reindex rather than hiding a change.
+        """
+        observer = self._commit_observer
+        parent = self._try_head_sha(git_root) if observer is not None else None
+        yield
+        if observer is None or parent is None:
+            return
+        new_head = self._try_head_sha(git_root)
+        if new_head is not None and new_head != parent:
+            observer(parent, new_head)
+
+    def _try_head_sha(self, git_root: Path) -> str | None:
+        """Return HEAD, or ``None`` when git cannot read it (e.g. no commit)."""
+        try:
+            return self.head_sha(git_root)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return None
+
     def set_write_quiescer(
         self,
         pause_writes: Callable[[], contextlib.AbstractContextManager[None]],
@@ -1582,8 +1624,20 @@ class GitWriteStrategy:
         repo_path: Path,
         pull_interval_s: int,
         on_pull: Callable[[], object] | None = None,
+        on_tick: Callable[[], object] | None = None,
     ) -> None:
-        """Start a periodic fetch + ff-only update loop in a daemon thread."""
+        """Start a periodic fetch + ff-only update loop in a daemon thread.
+
+        Args:
+            repo_path: The vault directory; its git root is resolved once.
+            pull_interval_s: Seconds between ticks; non-positive disables the
+                loop.
+            on_pull: Called, with writes paused, after a tick whose pull
+                advanced HEAD.
+            on_tick: Called after every tick, whether or not HEAD moved and
+                without pausing writes, so the owner can retry work a failed
+                ``on_pull`` left undone (#1532).
+        """
         if self._closed or not self._enable_pull or pull_interval_s <= 0:
             return
 
@@ -1618,6 +1672,7 @@ class GitWriteStrategy:
             self._pull_repo_path = repo_path
             self._pull_interval_s = pull_interval_s
             self._on_pull = on_pull
+            self._on_tick = on_tick
             self._pull_stop.clear()
             self._pull_thread = threading.Thread(
                 target=self._pull_loop, name="GitPullLoop", daemon=True
@@ -1639,6 +1694,8 @@ class GitWriteStrategy:
                     else:
                         with pause():
                             self._on_pull()
+                if self._on_tick is not None:
+                    self._on_tick()
                 # Retry a pending push after the pull reconciled any
                 # non-fast-forward divergence via its rebase step (#957).
                 # PushScheduler.do_push's guard makes this a no-op when

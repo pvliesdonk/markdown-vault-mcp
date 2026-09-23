@@ -9,12 +9,12 @@ Failure modes covered:
 - Invalid / missing / malformed HMAC signature → 401
 - ping event → 200, no pull
 - Non-push events → 200 no-op
-- push + HEAD advances → force_pull + reindex
-- push + already up-to-date → no reindex
-- push + force_pull applied=False → 503 retry (hosts retry transient failures)
-- push + vault not queryable → 200, pull runs, reindex skipped
+- push + HEAD advances → force_pull + reconcile
+- push + already up-to-date → reconcile (it retries a lost reindex, #1532)
+- push + force_pull applied=False → reconcile, then 503 retry
+- push + vault not queryable → 200, pull runs, reconcile defers by itself
 - push + vault singleton not initialized → 503 retry
-- push + reindex raises → 200 (reindex failure is logged, not surfaced)
+- push + reconcile raises → 200 (failure is logged, not surfaced)
 - push + no git strategy → 200 graceful no-op
 - GitLab signing token: valid / tampered body / wrong id or timestamp /
   stale and future timestamps / multiple candidate signatures / missing headers
@@ -238,7 +238,7 @@ def test_webhook_ignores_non_push_events(event: str):
 
 
 def test_webhook_push_triggers_pull_and_reindex():
-    """Valid push with HEAD advancing calls force_pull then reindex."""
+    """Valid push with HEAD advancing calls force_pull, then reconciles the index."""
     col = _mock_vault(pull_result=_pull_result(from_sha="aaa", to_sha="bbb"))
     client = _make_client()
     body = _push_body()
@@ -255,11 +255,15 @@ def test_webhook_push_triggers_pull_and_reindex():
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     col.force_pull.assert_called_once()
-    col.index.reindex.assert_called_once()
+    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
 
 
-def test_webhook_push_skips_reindex_when_already_up_to_date():
-    """Remote already matches local HEAD — no reindex needed."""
+def test_webhook_push_reconciles_when_already_up_to_date():
+    """Nothing to pull still reconciles: a reindex an earlier pull lost is retried.
+
+    Whether a reindex runs is the reconciler's call (HEAD against the head the
+    index last reflected, #1532); the handler asks on every settled pull.
+    """
     col = _mock_vault(pull_result=_pull_result(from_sha="aaa", to_sha="aaa"))
     client = _make_client()
     body = _push_body()
@@ -275,11 +279,15 @@ def test_webhook_push_skips_reindex_when_already_up_to_date():
         )
     assert resp.status_code == 200
     col.force_pull.assert_called_once()
-    col.index.reindex.assert_not_called()
+    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
 
 
 def test_webhook_push_returns_503_when_pull_fails():
-    """force_pull applied=False → 503 so GitHub retries transient failures."""
+    """force_pull applied=False → 503 so GitHub retries transient failures.
+
+    The index is still reconciled: a rebase can advance HEAD and fail to
+    commit its conflict siblings, which reports applied=False (#1532).
+    """
     col = _mock_vault(
         pull_result=_pull_result(from_sha="aaa", to_sha="aaa", applied=False)
     )
@@ -297,11 +305,12 @@ def test_webhook_push_returns_503_when_pull_fails():
         )
     assert resp.status_code == 503
     assert "error" in resp.json()
-    col.index.reindex.assert_not_called()
+    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
 
 
-def test_webhook_push_runs_pull_but_skips_reindex_when_not_queryable():
-    """Cold start — force_pull runs (pure git, no FTS dependency) but reindex is skipped."""
+def test_webhook_push_runs_pull_and_reconciles_when_not_queryable():
+    """Cold start — force_pull runs (pure git, no FTS dependency); the reconcile
+    itself defers on an unbuilt index, so the handler no longer gates on it."""
     col = _mock_vault(
         queryable=False,
         pull_result=_pull_result(from_sha="aaa", to_sha="bbb"),
@@ -321,7 +330,7 @@ def test_webhook_push_runs_pull_but_skips_reindex_when_not_queryable():
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
     col.force_pull.assert_called_once()
-    col.index.reindex.assert_not_called()
+    col.reconcile_index_with_head.assert_called_once_with(source="github_webhook")
 
 
 def test_webhook_push_returns_503_when_singleton_not_initialized():
@@ -362,13 +371,13 @@ def test_webhook_push_no_git_strategy_returns_200():
             },
         )
     assert resp.status_code == 200
-    col.index.reindex.assert_not_called()
+    col.reconcile_index_with_head.assert_not_called()
 
 
 def test_webhook_push_reindex_failure_does_not_propagate_to_github():
-    """Reindex error is logged but webhook returns 200 so GitHub doesn't retry."""
+    """Reconcile error is logged but webhook returns 200 so GitHub doesn't retry."""
     col = _mock_vault(pull_result=_pull_result(from_sha="aaa", to_sha="bbb"))
-    col.index.reindex.side_effect = Exception("disk full")
+    col.reconcile_index_with_head.side_effect = Exception("disk full")
     client = _make_client()
     body = _push_body()
     with patch("markdown_vault_mcp._webhooks.get_vault_singleton", return_value=col):
@@ -546,7 +555,7 @@ def test_webhook_push_returns_200_when_pull_is_disabled() -> None:
 
     assert resp.status_code == 200
     assert resp.json()["message"] == "pull disabled"
-    col.index.reindex.assert_not_called()
+    col.reconcile_index_with_head.assert_not_called()
 
 
 def test_webhook_push_returns_503_when_force_pull_raises() -> None:
@@ -560,7 +569,7 @@ def test_webhook_push_returns_503_when_force_pull_raises() -> None:
         resp = _post_push(client)
 
     assert resp.status_code == 503
-    col.index.reindex.assert_not_called()
+    col.reconcile_index_with_head.assert_not_called()
 
 
 def test_webhook_still_returns_503_for_retryable_pull_failures() -> None:
@@ -836,7 +845,7 @@ def test_gitlab_push_hook_pulls_and_reindexes() -> None:
     assert response.status_code == 200
     assert response.json()["commits_pulled"] == 1
     col.force_pull.assert_called_once()
-    col.index.reindex.assert_called_once()
+    col.reconcile_index_with_head.assert_called_once_with(source="gitlab_webhook")
 
 
 def test_gitlab_non_push_event_is_ignored() -> None:

@@ -241,6 +241,7 @@ class Syncer(Protocol):
         repo_path: Path,
         pull_interval_s: int,
         on_pull: Callable[[], object] | None = None,
+        on_tick: Callable[[], object] | None = None,
     ) -> None:
         """Start the periodic background pull loop.
 
@@ -250,6 +251,9 @@ class Syncer(Protocol):
                 loop.
             on_pull: Called after a pull that advanced the head, so the owner
                 can reindex.
+            on_tick: Called after every loop tick, whether or not the head
+                moved, so the owner can retry work a lost ``on_pull`` left
+                undone.
         """
         ...
 
@@ -277,6 +281,14 @@ class Syncer(Protocol):
                 duration.
             drain_writes: Blocks until in-flight writes finish, returning
                 whether the queue drained.
+        """
+        ...
+
+    def set_commit_observer(self, observer: Callable[[str, str], None]) -> None:
+        """Wire a callable told about each commit of the owner's own writes.
+
+        Args:
+            observer: Receives the head before and after the commit.
         """
         ...
 

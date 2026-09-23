@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import subprocess
 import threading
 from typing import TYPE_CHECKING
 
@@ -34,6 +35,7 @@ from markdown_vault_mcp.facets import (
 )
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.indexing import IndexWriteCoordinator
+from markdown_vault_mcp.indexing.head_reconciler import IndexHeadReconciler
 from markdown_vault_mcp.okf import (
     OkfAuditReport,
     OkfDetector,
@@ -58,6 +60,7 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp._commit_scope import CommitScope
     from markdown_vault_mcp.git import PullResult, VersionedStore
+    from markdown_vault_mcp.indexing.head_reconciler import ReconcileOutcome
     from markdown_vault_mcp.interfaces import VectorStore
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.summarizer import Summarizer
@@ -531,6 +534,20 @@ class Vault:
         self._index_facet = IndexFacet(
             coordinator=self._coordinator, index_mgr=self._index_mgr
         )
+        # #1532: reindex until the index reflects the git HEAD, whatever moved
+        # it, and let the strategy report the commits of the server's own
+        # writes, which the index already holds.
+        self._head_reconciler: IndexHeadReconciler | None = None
+        if self._git_strategy is not None:
+            self._head_reconciler = IndexHeadReconciler(
+                read_head=self.git_head,
+                # Late-bound so the reindex seen is whatever the facet holds now.
+                reindex=lambda: self._index_facet.reindex(),
+                pause_writes=self.pause_writes,
+            )
+            self._git_strategy.set_commit_observer(
+                self._head_reconciler.note_own_commit
+            )
         # Summarize facet is present only when a backend was supplied (the
         # summarize tool is otherwise hidden at the server layer). Promotion
         # of slow calls to pollable background jobs is owned by the pvl-core
@@ -665,8 +682,8 @@ class Vault:
         short-circuits in O(1) on the existing FTS sentinel and scans
         nothing. In that case the boot reindex (gated by
         ``config.boot_reindex``, see #1535) is what actually indexes the tree
-        this pull just updated — with it disabled, the pulled content stays
-        unindexed until a later pull moves HEAD.
+        this pull just updated — with it disabled, the server accepts the
+        index at the resulting HEAD and only reindexes once HEAD moves on.
         """
         if self._git_strategy is None or self._git_pull_interval_s <= 0:
             return
@@ -675,19 +692,68 @@ class Vault:
     def start(self) -> None:
         """Start background tasks for this Vault (e.g. git pull loop).
 
-        Call :meth:`IndexFacet.build_index` **before** :meth:`start`. The git
-        pull loop wires :meth:`IndexFacet.reindex` (bucket 4) as its
-        ``on_pull`` callback, and ``reindex`` raises
-        :exc:`IndexUnavailableError` on an unbuilt index — so a pull event
-        firing before the initial build would crash the loop thread.
+        Call :meth:`IndexFacet.build_index` (or submit it) **before**
+        :meth:`start`. The git pull loop reconciles the index with HEAD after
+        every tick through :meth:`reconcile_index_with_head` (#1532); a tick
+        that finds the index still unbuilt defers to the next one.
         """
         if self._git_strategy is None or self._git_pull_interval_s <= 0:
             return
         self._git_strategy.start(
             repo_path=self._source_dir,
             pull_interval_s=self._git_pull_interval_s,
-            on_pull=self._index_facet.reindex,
+            on_tick=self._reconcile_on_tick,
         )
+
+    def _reconcile_on_tick(self) -> None:
+        """Pull-loop hook: reconcile the index with HEAD after every tick."""
+        self.reconcile_index_with_head(source="pull_loop")
+
+    def git_head(self) -> str | None:
+        """Return the working tree's current git HEAD.
+
+        Returns:
+            The HEAD revision, or ``None`` without a git strategy or when git
+            cannot read one.
+        """
+        if self._git_strategy is None:
+            return None
+        try:
+            return self._git_strategy.head_sha(self._source_dir)
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+            logger.debug("git_head_unreadable path=%s", self._source_dir, exc_info=True)
+            return None
+
+    def reconcile_index_with_head(self, *, source: str) -> ReconcileOutcome:
+        """Reindex when the index does not yet reflect the current git HEAD.
+
+        Level-triggered (#1532): a reindex lost after a pull (the index still
+        building, a writer error, a pull reported as not applied although
+        HEAD advanced) is retried by the next call instead of waiting for the
+        next pull that moves HEAD.  Called by the pull loop on every tick, by
+        webhook deliveries and by the ``git_sync`` tool.
+
+        Args:
+            source: Which caller asked, for the log line.
+
+        Returns:
+            What happened; ``"current"`` without a git strategy.
+        """
+        if self._head_reconciler is None:
+            return "current"
+        return self._head_reconciler.reconcile(source=source)
+
+    def mark_index_reconciled(self, head: str | None) -> None:
+        """Record that the index reflects *head* without reindexing.
+
+        Used by the server's startup once the boot reindex has covered the
+        tree at *head*, or when that reindex is disabled by configuration.
+
+        Args:
+            head: The HEAD the index reflects.
+        """
+        if self._head_reconciler is not None:
+            self._head_reconciler.mark_reconciled(head)
 
     def force_pull(self) -> PullResult | None:
         """Pull from the git remote synchronously.

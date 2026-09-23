@@ -788,8 +788,10 @@ before bucket-3 relational/FTS-backed queries (`get_backlinks`,
 `get_toc`) or the bucket-4 coordinators (`reindex`,
 `build_embeddings`); otherwise `IndexUnavailableError(reason="never_built")`
 is raised.
-`start()` must also be called after `build_index()` because its git
-pull loop wires `reindex` as the `on_pull` callback. Bucket-1 file
+`start()` is called after `build_index()` has been submitted; its git
+pull loop reconciles the index with HEAD on every tick (#1532), and a
+reconcile that finds the index unbuilt defers to a later tick rather
+than failing. Bucket-1 file
 operations (`read`, `write`, `edit`, `delete`, `rename`,
 `write_attachment`) and bucket-2 aggregate queries (`search`, `list`,
 `stats`, `list_folders`, `list_tags`, `get_recent`,
@@ -5112,6 +5114,41 @@ outside managed mode, and managed mode always has `enable_pull=True`. The
 handler's `pull_result is None` branch is likewise not dead code — a library
 consumer constructing `Vault(git_strategy=None)` reaches it, though a
 config-driven server never does.
+
+### The index follows HEAD, not pull events (#1532)
+
+Decision: whether the index needs a reindex after git activity is a
+*level* question — does HEAD differ from the revision the index was last
+reconciled against — not an *edge* question about whether this particular
+pull moved HEAD. `indexing/head_reconciler.py`'s `IndexHeadReconciler`
+records that revision and reindexes when HEAD differs. The record advances
+only when a reindex completes. Every place that can observe git activity
+asks it: the pull loop after every tick (`on_tick`), each webhook delivery
+whatever its pull outcome, and the `git_sync` pull leg.
+
+Why: the edge form fired one reindex per HEAD move. When that single
+reindex was lost (the index still building, a writer error, a pull reported
+as not applied although a rebase had advanced HEAD), nothing retried it.
+The next pull found HEAD equal to the remote and reported nothing, so the
+index served deleted and renamed notes until a manual reindex. That
+happened in production after a fast-forward that renamed and deleted
+several dozen notes (#1532). The level form also covers a commit that
+reaches the clone with no pull at all.
+
+Bounds:
+
+- The server's own write commits move HEAD but describe content the index
+  already holds. The strategy reports each one from inside its lock
+  (`set_commit_observer`), and the reconciler advances past it only when
+  its parent is the recorded revision, so a server commit stacked on an
+  unindexed external one never hides it.
+- The record is in memory. At startup the head left by the startup sync
+  is recorded once the boot reindex completes, or immediately when
+  `BOOT_REINDEX` is off, which keeps that switch's documented trade. A
+  process without a record reindexes on its first reconcile.
+- A reconcile whose index is unbuilt defers (`IndexUnavailableError`) and
+  logs at DEBUG; a failed reindex logs `index_head_reconcile_failed` at
+  ERROR. Both leave the record behind for the next caller.
 
 ### Push webhooks: one handler, two hosts (#1178)
 
