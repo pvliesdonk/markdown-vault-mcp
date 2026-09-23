@@ -1927,10 +1927,32 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#pulled-deletions-and-renames-reach-the-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pulled deletions and renames reach the index
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#mutations-see-completed-writes" class="md-nav__link">
     <span class="md-ellipsis">
       
         Mutations see completed writes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parallel-edits-and-linked-renames" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Parallel edits and linked renames
       
     </span>
   </a>
@@ -1980,7 +2002,7 @@
 
 
 <h1 id="50">5.0<a class="headerlink" href="#50" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: b40ad2683fb87c755a13b150511ef56aaf189f61 -->
+<!-- notes-range-end: 936571bcaa6451b373c43f66e857e11dfa6ede4b -->
 
 <!-- RELEASE-SUMMARY v5.0.0 START -->
 <p>This major release moves the server to FastMCP 4 and makes a fresh Compose
@@ -1990,16 +2012,19 @@ blind whole-file replacement by default, while Python consumers move
 configuration into <code>VaultSettings</code> and remove two deprecated Git identity
 arguments. Links the server writes stay valid in Obsidian, the link graph
 holds more of the links a reader follows, and large vaults no longer pay a
-full index scan for every changed note. OKF no longer treats a static bearer
-credential as proof that a person acted. Operators and library consumers need
-to follow the migration steps in <a href="#upgrading">Upgrading</a>.</p>
+full index scan for every changed note. Notes deleted or renamed in a pulled
+commit no longer linger in listings when the reindex after the pull fails.
+OKF no longer treats a static bearer credential as proof that a person
+acted. Operators and library consumers need to follow the migration steps in
+<a href="#upgrading">Upgrading</a>.</p>
 <!-- RELEASE-SUMMARY v5.0.0 END -->
 
 <h2 id="fastmcp-4-and-a-standalone-container-deployment">FastMCP 4 and a standalone container deployment<a class="headerlink" href="#fastmcp-4-and-a-standalone-container-deployment" title="Permanent link">&para;</a></h2>
 <p>The server moves from FastMCP 3.4.7 to 4.0.5, through
-<code>fastmcp-pvl-core</code> 9.0 and copier template 9.0
+<code>fastmcp-pvl-core</code> 9.0 and copier template 9.0.1
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>,
-<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>). Library environments that pin
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1570">#1570</a>). Library environments that pin
 FastMCP 3 must move to the FastMCP 4 dependency line. The application handles
 the protocol changes: background tasks register with each server instance, and
 <code>okf_verify</code> uses an input-required response on modern sessions while retaining
@@ -2066,7 +2091,11 @@ The <a href="../../configuration/#logging">logging section</a> describes both se
 <p>A configuration error now ends <code>serve</code> with a one-line
 <code>ERROR: configuration error: ...</code> message and exit status 1 instead of a
 traceback
-(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>). An
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>). Under
+<code>--transport http</code> this includes a malformed <code>MARKDOWN_VAULT_MCP_KV_STORE_URL</code>
+or <code>MARKDOWN_VAULT_MCP_EVENT_STORE_URL</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1551">#1551</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1570">#1570</a>). An
 explicit <code>MARKDOWN_VAULT_MCP_AUTH_MODE=remote</code> or <code>oidc-proxy</code> whose required
 variables are missing now refuses to start; before, the server started and
 served unauthenticated. Auto-detected modes are unaffected, and a server with
@@ -2132,6 +2161,11 @@ write, or bind it around a <code>Vault</code> write with
 <a href="../../api/git/#migrating-from-4x">Git API migration</a>
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1236">#1236</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1479">#1479</a>).</p>
+<p>A custom <code>git_strategy</code> object passed to <code>Vault</code> must now also provide
+<code>set_commit_observer</code>, and its <code>start()</code> receives an <code>on_tick</code> callback. Both
+are part of the <code>Syncer</code> protocol in <code>markdown_vault_mcp.git.interfaces</code>;
+<code>GitWriteStrategy</code> provides both
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1560">#1560</a>).</p>
 <h2 id="attribution-that-distinguishes-credentials-from-people">Attribution that distinguishes credentials from people<a class="headerlink" href="#attribution-that-distinguishes-credentials-from-people" title="Permanent link">&para;</a></h2>
 <p>In 4.2, a static bearer token could put <code>human:bearer-anon</code> or a mapped bearer
 subject into <code>generated.by</code>, and <code>trust-auth</code> could accept the same credential
@@ -2233,6 +2267,25 @@ does not report this, and neither does <code>get_index_status</code>
 the <code>true</code> family of values (<code>1</code>, <code>true</code>, <code>yes</code>, <code>on</code>) keeps the pass on;
 any other value turns it off. See the
 <a href="../../configuration/#indexing">indexing settings</a>.</p>
+<h2 id="pulled-deletions-and-renames-reach-the-index">Pulled deletions and renames reach the index<a class="headerlink" href="#pulled-deletions-and-renames-reach-the-index" title="Permanent link">&para;</a></h2>
+<p>In 4.2, the index was refreshed once after each pull that moved the vault's
+Git HEAD. When that single reindex failed, nothing retried it: later pulls
+found nothing new to fetch, so <code>list_documents</code>, <code>list_folders</code> and
+<code>get_broken_links</code> kept serving notes the working tree no longer held until a
+manual reindex. A deployment hit this after a commit from another clone
+renamed and deleted several dozen notes
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1532">#1532</a>).</p>
+<p>The server now records the revision the index last reflected, and reindexes
+whenever Git HEAD differs from it. The periodic pull checks after every tick,
+webhook deliveries and <code>git_sync</code> after every pull, so a failed reindex is
+retried on the next check. A commit that reaches the clone some other way is
+picked up too. The server's own write commits do not trigger another scan. A
+check that finds the index still building waits for it rather than scanning
+twice. Each catch-up logs <code>index_head_reconciled</code>, and a failed one logs
+<code>index_head_reconcile_failed</code> at ERROR
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1560">#1560</a>). The
+<a href="../../guides/git-integration/">Git integration guide</a> describes the periodic
+and webhook paths.</p>
 <h2 id="mutations-see-completed-writes">Mutations see completed writes<a class="headerlink" href="#mutations-see-completed-writes" title="Permanent link">&para;</a></h2>
 <p>A successful write could previously be followed immediately by
 <code>okf_convert_links</code> reporting its new target as unresolved because the index
@@ -2255,6 +2308,23 @@ updates when another note fails, and retrying reuses matching stored vectors for
 unchanged notes
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1483">#1483</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1482">#1482</a>).</p>
+<h2 id="parallel-edits-and-linked-renames">Parallel edits and linked renames<a class="headerlink" href="#parallel-edits-and-linked-renames" title="Permanent link">&para;</a></h2>
+<p>Every successful edit changes the note's etag, so several edits to one note
+sent together with the same <code>if_match</code> failed after the first. The <code>edit</code>
+description itself recommended <code>if_match</code> for line-range edits. The <code>if_match</code>
+descriptions of <code>edit</code> and <code>rename</code> now tell agents when to leave it out:</p>
+<ul>
+<li>edits that carry only <code>old_text</code> can go out together without it, because
+  each fails on its own if its text is gone;</li>
+<li>edits that carry line numbers still pass it, one edit per read, because an
+  earlier edit can shift the range;</li>
+<li>renames of several linked notes sent together leave it out, because
+  <code>update_links</code> rewrites the linking notes, which changes the etag of each.</li>
+</ul>
+<p>Server behaviour is unchanged; only the guidance agents see differs
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1493">#1493</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1572">#1572</a>). The
+<a href="../../tools/#edit"><code>edit</code> reference</a> explains the rule.</p>
 <h2 id="clearer-rebase-diagnostics">Clearer rebase diagnostics<a class="headerlink" href="#clearer-rebase-diagnostics" title="Permanent link">&para;</a></h2>
 <p>A rebase that stopped with no unresolved conflict paths used to emit the same
 final DEBUG message as a resolver that had failed through all 50 conflict
