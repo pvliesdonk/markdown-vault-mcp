@@ -3926,7 +3926,7 @@ to allow blind overwrites. See <a href="../configuration/#write-safety">Write sa
 <p>Make a targeted text replacement in an existing document. Supports three modes:</p>
 <ul>
 <li><strong>Exact match</strong> (<code>old_text</code> only): must appear exactly once in the document.</li>
-<li><strong>Line-range</strong> (<code>line_start</code> + <code>line_end</code>, no <code>old_text</code>): replaces the specified lines. Pass <code>if_match</code> for safety.</li>
+<li><strong>Line-range</strong> (<code>line_start</code> + <code>line_end</code>, no <code>old_text</code>): replaces the specified lines.</li>
 <li><strong>Scoped match</strong> (<code>old_text</code> + <code>line_start</code>/<code>line_end</code>): searches for <code>old_text</code> within the specified line range only.</li>
 </ul>
 <p><strong>Parameters:</strong></p>
@@ -3962,7 +3962,7 @@ to allow blind overwrites. See <a href="../configuration/#write-safety">Write sa
 <td><code>if_match</code></td>
 <td>string</td>
 <td>No</td>
-<td>Etag from <code>read</code> for optimistic concurrency</td>
+<td>Etag from <code>read</code>; the edit fails if the file changed since. Omit for several <code>old_text</code>-only edits to one file at once; pass it, one edit per read, when <code>line_start</code>/<code>line_end</code> are given</td>
 </tr>
 <tr>
 <td><code>line_start</code></td>
@@ -3978,6 +3978,13 @@ to allow blind overwrites. See <a href="../configuration/#write-safety">Write sa
 </tr>
 </tbody>
 </table>
+<p><strong>Several edits to one note.</strong> Every successful edit changes the note's etag,
+so edits sent together with the same <code>if_match</code> all fail after the first.
+Edits that carry only <code>old_text</code> do not need the etag: each one fails on its
+own if its text is gone, so they can go out together without <code>if_match</code>. Edits
+that carry <code>line_start</code>/<code>line_end</code> do need it, because an earlier edit that
+adds or removes lines shifts the range silently. Send those one at a time,
+reading the note again before each.</p>
 <p><strong>Returns:</strong> <code>{"path": "Journal/note.md", "replacements": 1, "match_type": "exact"}</code></p>
 <p><code>match_type</code> is <code>"exact"</code> when the text matched byte-for-byte, or <code>"normalized"</code> when it matched after Unicode/whitespace normalization. The response may also include a <code>conventions</code> list; see <a href="#write"><code>write</code></a>.</p>
 <div class="admonition tip">
@@ -4086,7 +4093,7 @@ to allow blind overwrites. See <a href="../configuration/#write-safety">Write sa
 <tr>
 <td><code>if_match</code></td>
 <td>string</td>
-<td>Optional etag from a previous <code>read</code>; the rename proceeds only if the file is unchanged since</td>
+<td>Optional etag from a previous <code>read</code> of <code>old_path</code>; the rename fails if the file changed since. Omit when renaming several linked notes together: <code>update_links</code> rewrites the notes that link to a renamed one, which changes the etag of each one</td>
 </tr>
 <tr>
 <td><code>update_links</code></td>

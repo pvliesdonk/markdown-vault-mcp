@@ -394,19 +394,21 @@ By default, a `write` to a path that already exists fails unless the call carrie
 Make a targeted text replacement in an existing document. Supports three modes:
 
 - **Exact match** (`old_text` only): must appear exactly once in the document.
-- **Line-range** (`line_start` + `line_end`, no `old_text`): replaces the specified lines. Pass `if_match` for safety.
+- **Line-range** (`line_start` + `line_end`, no `old_text`): replaces the specified lines.
 - **Scoped match** (`old_text` + `line_start`/`line_end`): searches for `old_text` within the specified line range only.
 
 **Parameters:**
 
-| Parameter    | Type    | Required    | Description                                                           |
-| ------------ | ------- | ----------- | --------------------------------------------------------------------- |
-| `path`       | string  | Yes         | Relative path to the document                                         |
-| `old_text`   | string  | Conditional | Text to replace. Required unless using line-range mode                |
-| `new_text`   | string  | Yes         | Replacement text                                                      |
-| `if_match`   | string  | No          | Etag from `read` for optimistic concurrency                           |
-| `line_start` | integer | Conditional | First line to replace (1-based, inclusive). Required with `line_end`  |
-| `line_end`   | integer | Conditional | Last line to replace (1-based, inclusive). Required with `line_start` |
+| Parameter    | Type    | Required    | Description                                                                                                                                                                                |
+| ------------ | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`       | string  | Yes         | Relative path to the document                                                                                                                                                              |
+| `old_text`   | string  | Conditional | Text to replace. Required unless using line-range mode                                                                                                                                     |
+| `new_text`   | string  | Yes         | Replacement text                                                                                                                                                                           |
+| `if_match`   | string  | No          | Etag from `read`; the edit fails if the file changed since. Omit for several `old_text`-only edits to one file at once; pass it, one edit per read, when `line_start`/`line_end` are given |
+| `line_start` | integer | Conditional | First line to replace (1-based, inclusive). Required with `line_end`                                                                                                                       |
+| `line_end`   | integer | Conditional | Last line to replace (1-based, inclusive). Required with `line_start`                                                                                                                      |
+
+**Several edits to one note.** Every successful edit changes the note's etag, so edits sent together with the same `if_match` all fail after the first. Edits that carry only `old_text` do not need the etag: each one fails on its own if its text is gone, so they can go out together without `if_match`. Edits that carry `line_start`/`line_end` do need it, because an earlier edit that adds or removes lines shifts the range silently. Send those one at a time, reading the note again before each.
 
 **Returns:** `{"path": "Journal/note.md", "replacements": 1, "match_type": "exact"}`
 
@@ -467,12 +469,12 @@ Rename a document or attachment, or move it to a different folder. Parent direct
 
 **Parameters:**
 
-| Parameter      | Type   | Description                                                                                                  |
-| -------------- | ------ | ------------------------------------------------------------------------------------------------------------ |
-| `old_path`     | string | Current relative path                                                                                        |
-| `new_path`     | string | Target relative path. Fails if `new_path` already exists                                                     |
-| `if_match`     | string | Optional etag from a previous `read`; the rename proceeds only if the file is unchanged since                |
-| `update_links` | bool   | Rewrite links in other notes that point to `old_path`. Pass `true` whenever renaming a note. Default `false` |
+| Parameter      | Type   | Description                                                                                                                                                                                                                                        |
+| -------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `old_path`     | string | Current relative path                                                                                                                                                                                                                              |
+| `new_path`     | string | Target relative path. Fails if `new_path` already exists                                                                                                                                                                                           |
+| `if_match`     | string | Optional etag from a previous `read` of `old_path`; the rename fails if the file changed since. Omit when renaming several linked notes together: `update_links` rewrites the notes that link to a renamed one, which changes the etag of each one |
+| `update_links` | bool   | Rewrite links in other notes that point to `old_path`. Pass `true` whenever renaming a note. Default `false`                                                                                                                                       |
 
 **Returns:**
 
