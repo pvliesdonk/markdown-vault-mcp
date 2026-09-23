@@ -6,7 +6,6 @@ import json
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from markdown_vault_mcp.cli import _ENV_PREFIX, _build_vault, app
@@ -14,6 +13,7 @@ from markdown_vault_mcp.cli import _ENV_PREFIX, _build_vault, app
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import pytest
     from typer.testing import Result
 
 runner = CliRunner()
@@ -422,23 +422,11 @@ def test_serve_reports_a_configuration_error_in_one_line(
     assert "│" not in result.output, "Rich traceback frame detected"
 
 
-@pytest.mark.xfail(
-    reason=(
-        "build_event_store() sits outside the try/except ConfigurationError "
-        "block in serve() — matches the pristine fastmcp-server-template "
-        "v9.0.0 cli.py.jinja skeleton exactly, so fixing it here forks the "
-        "file and fails test_template_conformance.py. Fix belongs upstream "
-        "in fastmcp-server-template; tracked locally as #1551."
-    ),
-    strict=True,
-)
 def test_serve_http_reports_configuration_error_from_event_store() -> None:
-    """``build_event_store`` raising ``ConfigurationError`` should get the
-    same one-line treatment as a bad ``ProjectConfig``/``make_server``
-    value, but does not yet (#1551) — this call sits outside the
-    ``try``/``except ConfigurationError`` block in ``serve()``, so this
-    exact error class reaches Typer as an uncaught exception under
-    ``--transport http``.
+    """``build_event_store`` raising ``ConfigurationError`` gets the same
+    one-line ``ERROR:`` exit as a bad ``ProjectConfig``/``make_server`` value
+    under ``--transport http`` (#1551, fixed upstream in
+    fastmcp-server-template v9.0.1).
     """
     from fastmcp_pvl_core import ConfigurationError
 
@@ -457,6 +445,32 @@ def test_serve_http_reports_configuration_error_from_event_store() -> None:
     assert result.exit_code == 1
     assert "ERROR: configuration error: bad EVENT_STORE_URL" in result.output
     assert "Traceback" not in result.output
+
+
+def test_serve_http_reports_an_event_store_configuration_error_in_one_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A malformed event-store URL under ``--transport http`` exits the same way.
+
+    ``build_event_store`` only runs for the http transport and, since
+    pvl-core 9, raises ``ConfigurationError`` for an unusable URL.  It runs
+    for real here (only ``make_server`` and ``run_http`` are patched) so the
+    test pins the call site, not a mock of it (#647).
+    """
+    monkeypatch.delenv(f"{_ENV_PREFIX}_KV_STORE_URL", raising=False)
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EVENT_STORE_URL", "bogus://nowhere")
+
+    fake_server = MagicMock()
+    with (
+        patch("markdown_vault_mcp.cli.run_http") as fake_run_http,
+        patch("markdown_vault_mcp.server.make_server", return_value=fake_server),
+    ):
+        result = CliRunner().invoke(app, ["serve", "--transport", "http"])
+
+    assert result.exit_code == 1, result.output
+    assert "ERROR: configuration error:" in result.output
+    assert "Traceback" not in result.output
+    fake_run_http.assert_not_called()
 
 
 def test_build_vault_valueerror_exits_nonzero() -> None:

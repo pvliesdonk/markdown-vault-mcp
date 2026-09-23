@@ -93,6 +93,15 @@ def serve(
             http_path or os.environ.get(f"{_ENV_PREFIX}_HTTP_PATH")
         )
         server = make_server(transport=transport, config=config, http_path=path)
+        # Inside the guard: since pvl-core 9 ``build_event_store`` raises
+        # ``ConfigurationError`` for a malformed ``MARKDOWN_VAULT_MCP_KV_STORE_URL``
+        # or legacy ``MARKDOWN_VAULT_MCP_EVENT_STORE_URL``, which must get the
+        # same one-line exit as every other operator value (#647).
+        event_store = (
+            build_event_store(_ENV_PREFIX, config.server)
+            if transport == "http"
+            else None
+        )
     except ConfigurationError as exc:
         # A malformed or missing operator value is one actionable line on
         # stderr, not Typer's Rich traceback: the message already names the
@@ -102,7 +111,6 @@ def serve(
         raise typer.Exit(code=1) from exc
 
     if transport == "http":
-        event_store = build_event_store(_ENV_PREFIX, config.server)
         # pvl-core runs uvicorn.  It pins ``lifespan="on"`` (FastMCP's
         # startup/shutdown hooks run through the ASGI lifespan protocol),
         # ``log_config=None`` (uvicorn must not reinstall its own handlers
