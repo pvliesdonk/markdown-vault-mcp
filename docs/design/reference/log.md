@@ -1,5 +1,9 @@
 # Log
 
+## 2026-09-23
+
+- Added [Git submodules seen from a superproject](git-submodules.md) for the submodule epics #1561 and #1562. Checked seventeen git-scm.com manual pages (gitsubmodules, git-submodule, gitmodules, clone, fetch, pull, merge, rebase, checkout, reset, config, ls-files, ls-tree, rev-parse, status, add, log); the pages leave the superproject-level `add` refusal, the `ls-files`/`log`/`show` answers for a path inside a submodule, and the abort on a dirty submodule undocumented, so those are `[observed]` against a throwaway superproject on git 2.55.0. Refute pass re-found every quoted phrase in its page and confirmed git-merge(1) and git-rebase(1) carry no `--recurse-submodules`. No claim is pinned yet: no test exercises a submodule; the epic's features pin what they depend on. Left uncovered: push recursion outcomes, nested submodules, cross-boundary rename staging, LFS inside a submodule. Next review: 2027-03-23.
+
 ## 2026-09-19
 
 - Added [SQLite FTS5 delete cost and shadow-table architecture](sqlite-fts5.md) for #1535. Checked sqlite.org/fts5.html (content-carrying default, the `'delete'` command's external-content/contentless restriction) and sqlite.org/vtab.html (`xBestIndex` as the mechanism that selects a virtual table's access path). The full-scan-on-ordinary-column-filter behaviour itself is not stated by either page — recorded as `[observed]`, pinned to the project's own `EXPLAIN QUERY PLAN` regression test rather than a documentation quote. Left `[unverified]`: the big-O of an FTS5 rowid lookup specifically. Next review: 2027-03-19.

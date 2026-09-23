@@ -4773,6 +4773,14 @@ framing, identity) is recorded with sources and dates in
 [`reference/git-history-queries.md`](reference/git-history-queries.md); this section records what the
 project does with it and why.
 
+A submodule inside the vault is not handled: the git root is discovered once
+from `SOURCE_DIR`, so a submodule's notes are scanned like any folder while
+every git command addresses the superproject, which refuses to stage them and
+reports no history for them. What git does there is recorded in
+[`reference/git-submodules.md`](reference/git-submodules.md); the intended
+behaviour is decided in epic #1561 (read-only: index, keep current, refuse
+writes) and epic #1562 (writes).
+
 Three git modes:
 
 1. **Managed mode** (`GIT_REPO_URL` set): server owns git lifecycle.

@@ -131,6 +131,29 @@ whether refusal can be useful without rejecting recoverable writes. General
 Git diagnostics, operational traceability and CLI hardening can ship independently
 of the optional-backend epic.
 
+### Vaults with git submodules
+
+`stated` — The owner chose the split (23 September 2026): read-only support for a
+submodule inside the vault first, and writes into a submodule later as an epic
+of its own. In the read-only slice a write into a submodule of a writable vault
+is rejected rather than silently accepted and lost.
+
+`evidenced` — Today a submodule inside the vault is scanned like any folder while
+every git command addresses the superproject: a write lands on disk and never
+reaches git ([#1564][1564]), a managed clone leaves the folder empty and a pull
+moves the pointer without the bytes ([#1565][1565]), and the history tools return
+nothing for its notes ([#1566][1566]). The git behaviour behind each is recorded
+with sources in [reference/git-submodules.md](reference/git-submodules.md).
+
+`derived` — [Epic #1561][1561] is the read-only slice. The refusal ([#1564][1564])
+comes first because it stops data loss on its own; content currency ([#1565][1565]) and the history answer
+([#1566][1566]) follow and can ship independently. [Epic #1562][1562] (writes)
+carries only its refinement task ([#1567][1567]), blocked by those three: a
+two-repository write path is shaped against a working read-only layout, and its
+detached-HEAD and credential questions stay unknowns until then. Neither epic
+is committed to a package; membership waits for the owner's selection against
+`015` and `020`.
+
 ### Versioned vaults without Git
 
 `stated` — The owner wants both database modes considered: ordinary Markdown
@@ -288,6 +311,8 @@ verified implementation findings.
 | Which creation mechanism meets the agreed boundary? | [#1245][1245] | Decide before committing the scaffold and walkthrough. |
 | Do attachment graph nodes require non-Markdown search admission? | Scope decision in [#1359][1359], with [#1234][1234] | Not knowing does not change the first cut or OKF foundation refinement; no speculative dependency is created. |
 | Is a deployed vault constrained enough to justify a new vector-storage strategy? | [#1377][1377], informed by [#1368][1368] | Not knowing does not change the first cut. Establish the need before committing a storage technology. |
+| Does keeping a submodule current on pull need an operator switch, and what happens when the submodule tree is dirty? | [#1565][1565], under [refinement #1563][1563] | Decide before committing the read-only slice to a cut; the refusal in [#1564][1564] does not depend on it. |
+| Which branch and credentials does a writable submodule use, given the detached HEAD `submodule update` leaves and a remote of its own? | [Refinement #1567][1567] | Not knowing does not change the read-only slice; do not shape the write path before it lands. |
 
 `derived` — The distribution and database-mode decisions change their respective
 delivery scopes, so each has a research issue with an explicit appetite. Other
@@ -379,6 +404,21 @@ carries link-fidelity repairs, large-vault indexing ([#1535][1535]) and the
 template v9 adoption. The remaining open bugs stay backlog with their existing
 resolution pointers; [#1383][1383] still waits on its compatibility decision.
 
+### 23 September 2026 — chart submodule support as two epics
+
+`stated` — The owner asked what it takes to support a vault where part of the
+vault is a git submodule, chose read-only support first with writes as a later
+epic, and added that the read-only slice must reject a write into a submodule
+instead of accepting and losing it.
+
+`evidenced` — The investigation reproduced every git command the server issues
+against a superproject holding one submodule (git 2.55.0); the findings are the
+[reference page](reference/git-submodules.md) and the issues under
+[#1561][1561] and [#1562][1562].
+
+`derived` — Neither epic joins a package yet; § Vaults with git submodules
+argues the order.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1225]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1225
@@ -422,5 +462,12 @@ resolution pointers; [#1383][1383] still waits on its compatibility decision.
 [1544]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1544
 [1551]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1551
 [1556]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1556
+[1561]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1561
+[1562]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1562
+[1563]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1563
+[1564]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1564
+[1565]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1565
+[1566]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1566
+[1567]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1567
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
