@@ -384,7 +384,7 @@ def register(mcp: FastMCP) -> None:
           old_text — must appear exactly once. Frontmatter can be edited.
         - **Line-range** (line_start + line_end, no old_text): replace the
           specified lines with new_text. Lines are 1-based (matching
-          'read' output). Recommended: pass if_match for safety.
+          'read' output).
         - **Scoped match** (old_text + line_start/line_end): search for
           old_text within the line range only — useful when old_text
           appears multiple times in the file.
@@ -403,9 +403,10 @@ def register(mcp: FastMCP) -> None:
                 document or line range. Get this via 'read'. Optional
                 when using line-range mode.
             new_text: Replacement text. May be longer or shorter.
-            if_match: Optional etag obtained from a previous 'read' call.
-                When provided, the edit only proceeds if the file has not
-                been modified since that read (optimistic concurrency).
+            if_match: Etag from 'read'; the edit fails if the file changed
+                since. Omit for several old_text-only edits to one file at
+                once; pass it, one edit per read, when line_start/line_end
+                are given.
             line_start: First line to replace (1-based, inclusive).
                 Must be provided together with line_end.
             line_end: Last line to replace (1-based, inclusive).
@@ -607,10 +608,9 @@ def register(mcp: FastMCP) -> None:
                 or "assets/old.png").
             new_path: Target relative path (e.g. "projects/idea.md"
                 or "assets/new.png"). Fails if new_path already exists.
-            if_match: Optional etag obtained from a previous 'read' call
-                for old_path. When provided, the rename only proceeds if
-                the file has not been modified since that read (optimistic
-                concurrency). Omit to rename unconditionally.
+            if_match: Etag from 'read' of old_path; the rename fails if the
+                file changed since. Omit when renaming several linked notes
+                together.
             update_links: When True, all .md documents that link to old_path
                 are also updated so their links point to new_path. Replacement
                 is best-effort — failures are logged but do not prevent the
