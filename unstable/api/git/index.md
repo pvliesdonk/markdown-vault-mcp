@@ -270,6 +270,18 @@ Parameters:
 | `repo_path`    | `Path` | The vault directory; its git root is resolved once.                                                                                                                                                           | *required* |
 | `timer_driven` | `bool` | True from the pull loop, whose tick repeats while a divergence stands, so the line quoting a stopped rebase logs at DEBUG rather than WARNING (#1362). The startup sync leaves it False: one attempt, caused. | `False`    |
 
+### `set_commit_observer(observer)`
+
+Wire a callable told about every commit of the server's own writes.
+
+Called with `(parent, new_head)` from inside :attr:`_lock`, after a write or batch commit moved HEAD, so no pull can land between the two reads. The owner uses it to know that the index already holds what the commit records (#1532). The observer must not call back into this strategy: the lock is held.
+
+Parameters:
+
+| Name       | Type                         | Description                                    | Default    |
+| ---------- | ---------------------------- | ---------------------------------------------- | ---------- |
+| `observer` | `Callable[[str, str], None]` | Receives the HEAD before and after the commit. | *required* |
+
 ### `set_write_quiescer(pause_writes, drain_writes)`
 
 Wire the write-quiescing callables used before a pull (#571).
@@ -283,9 +295,18 @@ Parameters:
 | `pause_writes` | `Callable[[], AbstractContextManager[None]]` | Context manager that blocks new file mutations while held (acquires the shared file-write lock).                                                                                                        | *required* |
 | `drain_writes` | `Callable[[], bool]`                         | Blocks until all already-queued write callbacks have been committed; returns True when the queue drained (or there was nothing to drain), False if it did not finish or the dispatcher worker has died. | *required* |
 
-### `start(*, repo_path, pull_interval_s, on_pull=None)`
+### `start(*, repo_path, pull_interval_s, on_pull=None, on_tick=None)`
 
 Start a periodic fetch + ff-only update loop in a daemon thread.
+
+Parameters:
+
+| Name              | Type                     | Description                                            | Default                                                                                                                                          |
+| ----------------- | ------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `repo_path`       | `Path`                   | The vault directory; its git root is resolved once.    | *required*                                                                                                                                       |
+| `pull_interval_s` | `int`                    | Seconds between ticks; non-positive disables the loop. | *required*                                                                                                                                       |
+| `on_pull`         | \`Callable\[[], object\] | None\`                                                 | Called, with writes paused, after a tick whose pull advanced HEAD.                                                                               |
+| `on_tick`         | \`Callable\[[], object\] | None\`                                                 | Called after every tick, whether or not HEAD moved and without pausing writes, so the owner can retry work a failed on_pull left undone (#1532). |
 
 ### `stop()`
 

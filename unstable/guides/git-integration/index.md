@@ -64,6 +64,7 @@ Behavior:
 The symptom is the same either way: writes succeed, `read` serves them back, and the commits accumulate in the clone without reaching the remote. See [When the clone stops reaching its remote](#when-the-clone-stops-reaching-its-remote) for what that looks like, and [Manual sync](#manual-sync-git_sync-tool) for the one call that returns the remote's actual refusal message.
 
 - Periodic pull uses fast-forward-only updates.
+- After every periodic tick, the index is brought up to the current HEAD when the two differ. A reindex that failed after an earlier pull is retried on the next tick, and a commit that reached the clone some other way is picked up too.
 
 Two mechanisms sit alongside the periodic loop, both described below: a push webhook that pulls the moment someone pushes, and the `git_sync` tool for pulling or pushing on demand from inside a conversation.
 
@@ -116,11 +117,11 @@ GitLab has no handshake event. Its **Test** button sends a real `Push Hook`, so 
 ### What both endpoints do
 
 - An invalid or missing credential returns 401 and no git operation runs.
-- A push event pulls first, then reindexes only when HEAD actually moved. A push to a branch the vault does not track leaves HEAD where it was, so it costs a fetch and nothing more.
+- A push event pulls first, then reindexes when HEAD differs from the revision the index last reflected. A push to a branch the vault does not track leaves HEAD where it was, so it costs a fetch and nothing more. A reindex that an earlier delivery or pull failed to complete is retried here rather than lost.
 - `ping`, GitHub's handshake delivery, answers `pong`; every other event returns 200 and does nothing.
 - A delivery whose pull did not apply returns 503, so the host retries it instead of marking it delivered. A pull that keeps failing, such as an unresolved conflict, exhausts the retries and waits for the next periodic tick. Divergent history is not a failure: it flows through the Syncthing-style sibling resolution described under [`git_sync`](#manual-sync-git_sync-tool) below.
 - A delivery to a server with no managed remote returns 200, not 503. No remote exists to pull from and a retry cannot change that, so the delivery is recorded rather than retried. Each one logs a warning naming the problem, and the server logs the same warning once at startup.
-- A delivery arriving while the initial index build is still running is handled, not dropped. The pull is a pure git operation and runs regardless of index state; only the reindex is skipped, and the boot reconciliation pass that follows the build picks the pulled changes up when `MARKDOWN_VAULT_MCP_BOOT_REINDEX` is left at its default. With it off, that delivery's changes wait for the next push that moves HEAD, or a manual reindex.
+- A delivery arriving while the initial index build is still running is handled, not dropped. The pull is a pure git operation and runs regardless of index state; only the reindex waits. The boot reconciliation pass that follows the build picks the pulled changes up when `MARKDOWN_VAULT_MCP_BOOT_REINDEX` is left at its default. With it off, the next periodic tick or delivery after the build reindexes them.
 
 Managed mode only
 

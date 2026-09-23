@@ -756,6 +756,7 @@ Behavior:
 The symptom is the same either way: writes succeed, `read` serves them back, and the commits accumulate in the clone without reaching the remote. See [When the clone stops reaching its remote](#when-the-clone-stops-reaching-its-remote) for what that looks like, and [Manual sync](#manual-sync-git_sync-tool) for the one call that returns the remote's actual refusal message.
 
 - Periodic pull uses fast-forward-only updates.
+- After every periodic tick, the index is brought up to the current HEAD when the two differ. A reindex that failed after an earlier pull is retried on the next tick, and a commit that reached the clone some other way is picked up too.
 
 Two mechanisms sit alongside the periodic loop, both described below: a push webhook that pulls the moment someone pushes, and the `git_sync` tool for pulling or pushing on demand from inside a conversation.
 
@@ -808,11 +809,11 @@ GitLab has no handshake event. Its **Test** button sends a real `Push Hook`, so 
 ### What both endpoints do
 
 - An invalid or missing credential returns 401 and no git operation runs.
-- A push event pulls first, then reindexes only when HEAD actually moved. A push to a branch the vault does not track leaves HEAD where it was, so it costs a fetch and nothing more.
+- A push event pulls first, then reindexes when HEAD differs from the revision the index last reflected. A push to a branch the vault does not track leaves HEAD where it was, so it costs a fetch and nothing more. A reindex that an earlier delivery or pull failed to complete is retried here rather than lost.
 - `ping`, GitHub's handshake delivery, answers `pong`; every other event returns 200 and does nothing.
 - A delivery whose pull did not apply returns 503, so the host retries it instead of marking it delivered. A pull that keeps failing, such as an unresolved conflict, exhausts the retries and waits for the next periodic tick. Divergent history is not a failure: it flows through the Syncthing-style sibling resolution described under [`git_sync`](#manual-sync-git_sync-tool) below.
 - A delivery to a server with no managed remote returns 200, not 503. No remote exists to pull from and a retry cannot change that, so the delivery is recorded rather than retried. Each one logs a warning naming the problem, and the server logs the same warning once at startup.
-- A delivery arriving while the initial index build is still running is handled, not dropped. The pull is a pure git operation and runs regardless of index state; only the reindex is skipped, and the boot reconciliation pass that follows the build picks the pulled changes up when `MARKDOWN_VAULT_MCP_BOOT_REINDEX` is left at its default. With it off, that delivery's changes wait for the next push that moves HEAD, or a manual reindex.
+- A delivery arriving while the initial index build is still running is handled, not dropped. The pull is a pure git operation and runs regardless of index state; only the reindex waits. The boot reconciliation pass that follows the build picks the pulled changes up when `MARKDOWN_VAULT_MCP_BOOT_REINDEX` is left at its default. With it off, the next periodic tick or delivery after the build reindexes them.
 
 Managed mode only
 
@@ -7926,13 +7927,67 @@ Holds the :attr:`_file_write_lock` so concurrent :class:`DocumentManager` docume
 
 One-time git fetch + ff-only update before build_index().
 
-Intended to run during server startup before the initial index build. No reindex is triggered here: on a cold start build_index() will scan the updated working tree, but on a warm restart build_index_async() short-circuits in O(1) on the existing FTS sentinel and scans nothing. In that case the boot reindex (gated by `config.boot_reindex`, see #1535) is what actually indexes the tree this pull just updated — with it disabled, the pulled content stays unindexed until a later pull moves HEAD.
+Intended to run during server startup before the initial index build. No reindex is triggered here: on a cold start build_index() will scan the updated working tree, but on a warm restart build_index_async() short-circuits in O(1) on the existing FTS sentinel and scans nothing. In that case the boot reindex (gated by `config.boot_reindex`, see #1535) is what actually indexes the tree this pull just updated — with it disabled, the server accepts the index at the resulting HEAD and only reindexes once HEAD moves on.
 
 ### `start()`
 
 Start background tasks for this Vault (e.g. git pull loop).
 
-Call :meth:`IndexFacet.build_index` **before** :meth:`start`. The git pull loop wires :meth:`IndexFacet.reindex` (bucket 4) as its `on_pull` callback, and `reindex` raises :exc:`IndexUnavailableError` on an unbuilt index — so a pull event firing before the initial build would crash the loop thread.
+Call :meth:`IndexFacet.build_index` (or submit it) **before** :meth:`start`. The git pull loop reconciles the index with HEAD after every tick through :meth:`reconcile_index_with_head` (#1532); a tick that finds the index still unbuilt defers to the next one.
+
+### `git_head()`
+
+Return the working tree's current git HEAD.
+
+Returns:
+
+| Type  | Description |
+| ----- | ----------- |
+| \`str | None\`      |
+| \`str | None\`      |
+
+### `reconcile_index_with_head(*, source)`
+
+Reindex when the index does not yet reflect the current git HEAD.
+
+Level-triggered (#1532): a reindex lost after a pull (the index still building, a writer error, a pull reported as not applied although HEAD advanced) is retried by the next call instead of waiting for the next pull that moves HEAD. Called by the pull loop on every tick, by webhook deliveries and by the `git_sync` tool.
+
+Parameters:
+
+| Name     | Type  | Description                           | Default    |
+| -------- | ----- | ------------------------------------- | ---------- |
+| `source` | `str` | Which caller asked, for the log line. | *required* |
+
+Returns:
+
+| Type               | Description                                      |
+| ------------------ | ------------------------------------------------ |
+| `ReconcileOutcome` | What happened; "current" without a git strategy. |
+
+### `adopt_boot_reindex(pending, head)`
+
+Count the submitted boot reindex as the reconcile of *head*.
+
+Reconciles defer until it finishes rather than pausing writes behind it and scanning twice; *head* is recorded once it succeeds.
+
+Parameters:
+
+| Name      | Type          | Description                                   | Default                                             |
+| --------- | ------------- | --------------------------------------------- | --------------------------------------------------- |
+| `pending` | `Future[Any]` | The boot reindex returned by reindex_async(). | *required*                                          |
+| `head`    | \`str         | None\`                                        | The HEAD left by the startup sync, which it covers. |
+
+### `mark_index_reconciled(head)`
+
+Record that the index reflects *head* without reindexing.
+
+Used by the server's startup once the boot reindex has covered the tree at *head*, or when that reindex is disabled by configuration.
+
+Parameters:
+
+| Name   | Type  | Description | Default                      |
+| ------ | ----- | ----------- | ---------------------------- |
+| `head` | \`str | None\`      | The HEAD the index reflects. |
 
 ### `force_pull()`
 
@@ -9311,6 +9366,18 @@ Parameters:
 | `repo_path`    | `Path` | The vault directory; its git root is resolved once.                                                                                                                                                           | *required* |
 | `timer_driven` | `bool` | True from the pull loop, whose tick repeats while a divergence stands, so the line quoting a stopped rebase logs at DEBUG rather than WARNING (#1362). The startup sync leaves it False: one attempt, caused. | `False`    |
 
+### `set_commit_observer(observer)`
+
+Wire a callable told about every commit of the server's own writes.
+
+Called with `(parent, new_head)` from inside :attr:`_lock`, after a write or batch commit moved HEAD, so no pull can land between the two reads. The owner uses it to know that the index already holds what the commit records (#1532). The observer must not call back into this strategy: the lock is held.
+
+Parameters:
+
+| Name       | Type                         | Description                                    | Default    |
+| ---------- | ---------------------------- | ---------------------------------------------- | ---------- |
+| `observer` | `Callable[[str, str], None]` | Receives the HEAD before and after the commit. | *required* |
+
 ### `set_write_quiescer(pause_writes, drain_writes)`
 
 Wire the write-quiescing callables used before a pull (#571).
@@ -9324,9 +9391,18 @@ Parameters:
 | `pause_writes` | `Callable[[], AbstractContextManager[None]]` | Context manager that blocks new file mutations while held (acquires the shared file-write lock).                                                                                                        | *required* |
 | `drain_writes` | `Callable[[], bool]`                         | Blocks until all already-queued write callbacks have been committed; returns True when the queue drained (or there was nothing to drain), False if it did not finish or the dispatcher worker has died. | *required* |
 
-### `start(*, repo_path, pull_interval_s, on_pull=None)`
+### `start(*, repo_path, pull_interval_s, on_pull=None, on_tick=None)`
 
 Start a periodic fetch + ff-only update loop in a daemon thread.
+
+Parameters:
+
+| Name              | Type                     | Description                                            | Default                                                                                                                                          |
+| ----------------- | ------------------------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `repo_path`       | `Path`                   | The vault directory; its git root is resolved once.    | *required*                                                                                                                                       |
+| `pull_interval_s` | `int`                    | Seconds between ticks; non-positive disables the loop. | *required*                                                                                                                                       |
+| `on_pull`         | \`Callable\[[], object\] | None\`                                                 | Called, with writes paused, after a tick whose pull advanced HEAD.                                                                               |
+| `on_tick`         | \`Callable\[[], object\] | None\`                                                 | Called after every tick, whether or not HEAD moved and without pausing writes, so the owner can retry work a failed on_pull left undone (#1532). |
 
 ### `stop()`
 

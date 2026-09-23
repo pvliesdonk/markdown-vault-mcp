@@ -265,13 +265,67 @@ Holds the :attr:`_file_write_lock` so concurrent :class:`DocumentManager` docume
 
 One-time git fetch + ff-only update before build_index().
 
-Intended to run during server startup before the initial index build. No reindex is triggered here: on a cold start build_index() will scan the updated working tree, but on a warm restart build_index_async() short-circuits in O(1) on the existing FTS sentinel and scans nothing. In that case the boot reindex (gated by `config.boot_reindex`, see #1535) is what actually indexes the tree this pull just updated — with it disabled, the pulled content stays unindexed until a later pull moves HEAD.
+Intended to run during server startup before the initial index build. No reindex is triggered here: on a cold start build_index() will scan the updated working tree, but on a warm restart build_index_async() short-circuits in O(1) on the existing FTS sentinel and scans nothing. In that case the boot reindex (gated by `config.boot_reindex`, see #1535) is what actually indexes the tree this pull just updated — with it disabled, the server accepts the index at the resulting HEAD and only reindexes once HEAD moves on.
 
 ### `start()`
 
 Start background tasks for this Vault (e.g. git pull loop).
 
-Call :meth:`IndexFacet.build_index` **before** :meth:`start`. The git pull loop wires :meth:`IndexFacet.reindex` (bucket 4) as its `on_pull` callback, and `reindex` raises :exc:`IndexUnavailableError` on an unbuilt index — so a pull event firing before the initial build would crash the loop thread.
+Call :meth:`IndexFacet.build_index` (or submit it) **before** :meth:`start`. The git pull loop reconciles the index with HEAD after every tick through :meth:`reconcile_index_with_head` (#1532); a tick that finds the index still unbuilt defers to the next one.
+
+### `git_head()`
+
+Return the working tree's current git HEAD.
+
+Returns:
+
+| Type  | Description |
+| ----- | ----------- |
+| \`str | None\`      |
+| \`str | None\`      |
+
+### `reconcile_index_with_head(*, source)`
+
+Reindex when the index does not yet reflect the current git HEAD.
+
+Level-triggered (#1532): a reindex lost after a pull (the index still building, a writer error, a pull reported as not applied although HEAD advanced) is retried by the next call instead of waiting for the next pull that moves HEAD. Called by the pull loop on every tick, by webhook deliveries and by the `git_sync` tool.
+
+Parameters:
+
+| Name     | Type  | Description                           | Default    |
+| -------- | ----- | ------------------------------------- | ---------- |
+| `source` | `str` | Which caller asked, for the log line. | *required* |
+
+Returns:
+
+| Type               | Description                                      |
+| ------------------ | ------------------------------------------------ |
+| `ReconcileOutcome` | What happened; "current" without a git strategy. |
+
+### `adopt_boot_reindex(pending, head)`
+
+Count the submitted boot reindex as the reconcile of *head*.
+
+Reconciles defer until it finishes rather than pausing writes behind it and scanning twice; *head* is recorded once it succeeds.
+
+Parameters:
+
+| Name      | Type          | Description                                   | Default                                             |
+| --------- | ------------- | --------------------------------------------- | --------------------------------------------------- |
+| `pending` | `Future[Any]` | The boot reindex returned by reindex_async(). | *required*                                          |
+| `head`    | \`str         | None\`                                        | The HEAD left by the startup sync, which it covers. |
+
+### `mark_index_reconciled(head)`
+
+Record that the index reflects *head* without reindexing.
+
+Used by the server's startup once the boot reindex has covered the tree at *head*, or when that reindex is disabled by configuration.
+
+Parameters:
+
+| Name   | Type  | Description | Default                      |
+| ------ | ----- | ----------- | ---------------------------- |
+| `head` | \`str | None\`      | The HEAD the index reflects. |
 
 ### `force_pull()`
 

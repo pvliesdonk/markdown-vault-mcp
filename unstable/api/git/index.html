@@ -1869,6 +1869,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteStrategy.set_commit_observer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        set_commit_observer
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.git.GitWriteStrategy.set_write_quiescer" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2324,6 +2335,17 @@
     <span class="md-ellipsis">
       
         sync_once
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.git.GitWriteStrategy.set_commit_observer" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        set_commit_observer
       
     </span>
   </a>
@@ -3634,6 +3656,60 @@ startup sync leaves it <code>False</code>: one attempt, caused.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="markdown_vault_mcp.git.GitWriteStrategy.set_commit_observer" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">set_commit_observer</span><span class="p">(</span><span class="n">observer</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.git.GitWriteStrategy.set_commit_observer" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Wire a callable told about every commit of the server's own writes.</p>
+<p>Called with <code>(parent, new_head)</code> from inside :attr:<code>_lock</code>, after a
+write or batch commit moved HEAD, so no pull can land between the two
+reads.  The owner uses it to know that the index already holds what
+the commit records (#1532).  The observer must not call back into
+this strategy: the lock is held.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>observer</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span>[[<span title="str">str</span>, <span title="str">str</span>], None]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Receives the HEAD before and after the commit.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="markdown_vault_mcp.git.GitWriteStrategy.set_write_quiescer" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">set_write_quiescer</span><span class="p">(</span><span class="n">pause_writes</span><span class="p">,</span> <span class="n">drain_writes</span><span class="p">)</span></code>
 
@@ -3709,7 +3785,7 @@ the dispatcher worker has died.</p>
 
 
 <h3 id="markdown_vault_mcp.git.GitWriteStrategy.start" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">start</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">repo_path</span><span class="p">,</span> <span class="n">pull_interval_s</span><span class="p">,</span> <span class="n">on_pull</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">start</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">repo_path</span><span class="p">,</span> <span class="n">pull_interval_s</span><span class="p">,</span> <span class="n">on_pull</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">on_tick</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.git.GitWriteStrategy.start" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -3717,6 +3793,89 @@ the dispatcher worker has died.</p>
     <div class="doc doc-contents ">
 
         <p>Start a periodic fetch + ff-only update loop in a daemon thread.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>repo_path</code>
+            </td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The vault directory; its git root is resolved once.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>pull_interval_s</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Seconds between ticks; non-positive disables the
+loop.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>on_pull</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span>[[], <span title="object">object</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Called, with writes paused, after a tick whose pull
+advanced HEAD.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>on_tick</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span>[[], <span title="object">object</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Called after every tick, whether or not HEAD moved and
+without pausing writes, so the owner can retry work a failed
+<code>on_pull</code> left undone (#1532).</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>

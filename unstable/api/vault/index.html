@@ -1918,6 +1918,50 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.git_head" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        git_head
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.reconcile_index_with_head" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reconcile_index_with_head
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.adopt_boot_reindex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        adopt_boot_reindex
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.mark_index_reconciled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mark_index_reconciled
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.vault.Vault.force_pull" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2468,6 +2512,50 @@
     <span class="md-ellipsis">
       
         start
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.git_head" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        git_head
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.reconcile_index_with_head" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        reconcile_index_with_head
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.adopt_boot_reindex" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        adopt_boot_reindex
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.mark_index_reconciled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        mark_index_reconciled
       
     </span>
   </a>
@@ -3938,8 +4026,8 @@ the updated working tree, but on a warm restart build_index_async()
 short-circuits in O(1) on the existing FTS sentinel and scans
 nothing. In that case the boot reindex (gated by
 <code>config.boot_reindex</code>, see #1535) is what actually indexes the tree
-this pull just updated — with it disabled, the pulled content stays
-unindexed until a later pull moves HEAD.</p>
+this pull just updated — with it disabled, the server accepts the
+index at the resulting HEAD and only reindexes once HEAD moves on.</p>
 
 
     </div>
@@ -3958,11 +4046,256 @@ unindexed until a later pull moves HEAD.</p>
     <div class="doc doc-contents ">
 
         <p>Start background tasks for this Vault (e.g. git pull loop).</p>
-<p>Call :meth:<code>IndexFacet.build_index</code> <strong>before</strong> :meth:<code>start</code>. The git
-pull loop wires :meth:<code>IndexFacet.reindex</code> (bucket 4) as its
-<code>on_pull</code> callback, and <code>reindex</code> raises
-:exc:<code>IndexUnavailableError</code> on an unbuilt index — so a pull event
-firing before the initial build would crash the loop thread.</p>
+<p>Call :meth:<code>IndexFacet.build_index</code> (or submit it) <strong>before</strong>
+:meth:<code>start</code>. The git pull loop reconciles the index with HEAD after
+every tick through :meth:<code>reconcile_index_with_head</code> (#1532); a tick
+that finds the index still unbuilt defers to the next one.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.vault.Vault.git_head" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">git_head</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.vault.Vault.git_head" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the working tree's current git HEAD.</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The HEAD revision, or <code>None</code> without a git strategy or when git</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>cannot read one.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.vault.Vault.reconcile_index_with_head" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">reconcile_index_with_head</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">source</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.vault.Vault.reconcile_index_with_head" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Reindex when the index does not yet reflect the current git HEAD.</p>
+<p>Level-triggered (#1532): a reindex lost after a pull (the index still
+building, a writer error, a pull reported as not applied although
+HEAD advanced) is retried by the next call instead of waiting for the
+next pull that moves HEAD.  Called by the pull loop on every tick, by
+webhook deliveries and by the <code>git_sync</code> tool.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>source</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Which caller asked, for the log line.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp.indexing.head_reconciler.ReconcileOutcome">ReconcileOutcome</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>What happened; <code>"current"</code> without a git strategy.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.vault.Vault.adopt_boot_reindex" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">adopt_boot_reindex</span><span class="p">(</span><span class="n">pending</span><span class="p">,</span> <span class="n">head</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.vault.Vault.adopt_boot_reindex" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Count the submitted boot reindex as the reconcile of <em>head</em>.</p>
+<p>Reconciles defer until it finishes rather than pausing writes behind
+it and scanning twice; <em>head</em> is recorded once it succeeds.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>pending</code>
+            </td>
+            <td>
+                  <code><span title="concurrent.futures.Future">Future</span>[<span title="typing.Any">Any</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The boot reindex returned by <code>reindex_async()</code>.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>head</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The HEAD left by the startup sync, which it covers.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.vault.Vault.mark_index_reconciled" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">mark_index_reconciled</span><span class="p">(</span><span class="n">head</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.vault.Vault.mark_index_reconciled" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Record that the index reflects <em>head</em> without reindexing.</p>
+<p>Used by the server's startup once the boot reindex has covered the
+tree at <em>head</em>, or when that reindex is disabled by configuration.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>head</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The HEAD the index reflects.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
