@@ -1839,6 +1839,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#structured-logs-json-off-a-terminal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structured logs, JSON off a terminal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-mistakes-fail-at-startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration mistakes fail at startup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#whole-file-replacement-requires-an-etag" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1865,6 +1887,39 @@
     <span class="md-ellipsis">
       
         Attribution that distinguishes credentials from people
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#links-the-server-writes-stay-valid" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Links the server writes stay valid
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-link-graph-holds-more-of-what-a-reader-follows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The link graph holds more of what a reader follows
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#large-vaults-no-longer-scan-the-whole-index-per-changed-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Large vaults no longer scan the whole index per changed note
       
     </span>
   </a>
@@ -1925,22 +1980,26 @@
 
 
 <h1 id="50">5.0<a class="headerlink" href="#50" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: fb0d56698c2dd5767f64557a9c0b90542e342c57 -->
+<!-- notes-range-end: b40ad2683fb87c755a13b150511ef56aaf189f61 -->
 
 <!-- RELEASE-SUMMARY v5.0.0 START -->
 <p>This major release moves the server to FastMCP 4 and makes a fresh Compose
-deployment work without a reverse proxy. Writable servers reject blind
-whole-file replacement by default, while Python consumers move configuration
-into <code>VaultSettings</code> and remove two deprecated Git identity arguments. OKF no
-longer treats a static bearer credential as proof that a person acted, and mutations
-that depend on the index catch up with completed writes before they inspect
-links or folders. Operators and library consumers need to follow the migration
-steps in <a href="#upgrading">Upgrading</a>.</p>
+deployment work without a reverse proxy. Logging settings change too: logs
+are structured and default to JSON off a terminal. Writable servers reject
+blind whole-file replacement by default, while Python consumers move
+configuration into <code>VaultSettings</code> and remove two deprecated Git identity
+arguments. Links the server writes stay valid in Obsidian, the link graph
+holds more of the links a reader follows, and large vaults no longer pay a
+full index scan for every changed note. OKF no longer treats a static bearer
+credential as proof that a person acted. Operators and library consumers need
+to follow the migration steps in <a href="#upgrading">Upgrading</a>.</p>
 <!-- RELEASE-SUMMARY v5.0.0 END -->
 
 <h2 id="fastmcp-4-and-a-standalone-container-deployment">FastMCP 4 and a standalone container deployment<a class="headerlink" href="#fastmcp-4-and-a-standalone-container-deployment" title="Permanent link">&para;</a></h2>
-<p>The server moves from FastMCP 3.4.7 to 4.0.3, through
-<code>fastmcp-pvl-core</code> 7.1 and copier template 8.2. Library environments that pin
+<p>The server moves from FastMCP 3.4.7 to 4.0.5, through
+<code>fastmcp-pvl-core</code> 9.0 and copier template 9.0
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>). Library environments that pin
 FastMCP 3 must move to the FastMCP 4 dependency line. The application handles
 the protocol changes: background tasks register with each server instance, and
 <code>okf_verify</code> uses an input-required response on modern sessions while retaining
@@ -1970,13 +2029,57 @@ detail, while <code>full</code> includes redacted failure reasons and belongs on
 network
 (<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/318">fastmcp-pvl-core#318</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>).</p>
-<p>Container and packaged systemd installations now disable Rich logging by
-default, so FastMCP records stay on one line in <code>docker logs</code> and
-<code>journalctl</code> instead of wrapping across three lines on non-terminal output.
-Set <code>FASTMCP_ENABLE_RICH_LOGGING=true</code> to restore Rich output; in a container,
-also set a suitable <code>COLUMNS</code> value
-(<a href="https://github.com/pvliesdonk/fastmcp-server-template/issues/608">template#608</a>,
-<a href="https://github.com/pvliesdonk/fastmcp-server-template/pull/609">template#609</a>).</p>
+<p><code>MARKDOWN_VAULT_MCP_SHUTDOWN_GRACE_S</code> (default <code>3</code>) now sets how long SIGTERM
+may spend draining in-flight HTTP requests. The default matches the previous
+fixed value
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>).</p>
+<h2 id="structured-logs-json-off-a-terminal">Structured logs, JSON off a terminal<a class="headerlink" href="#structured-logs-json-off-a-terminal" title="Permanent link">&para;</a></h2>
+<p>Logging is now owned by <code>fastmcp-pvl-core</code>, and one chain renders this
+server's lines, FastMCP's, and uvicorn's
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>,
+<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/332">fastmcp-pvl-core#332</a>).
+Two settings replace the old ones:</p>
+<ul>
+<li><code>MARKDOWN_VAULT_MCP_LOG_LEVEL</code> (default <code>INFO</code>) replaces <code>FASTMCP_LOG_LEVEL</code>.
+  The old name still works for this major version and logs
+  <code>log_level_env_deprecated</code> at startup.</li>
+<li><code>MARKDOWN_VAULT_MCP_LOG_FORMAT</code> picks <code>rich</code> or <code>json</code>. Unset, the server
+  writes Rich output when stderr is a terminal and JSON everywhere else, so
+  <code>docker logs</code> and <code>journalctl</code> show one JSON object per record with no
+  configuration. Set it to <code>rich</code> to read a container or unit log in colour;
+  no <code>COLUMNS</code> value is needed.</li>
+</ul>
+<p><code>FASTMCP_ENABLE_RICH_LOGGING</code> is removed and has no effect. The image and the
+packaged systemd unit no longer set it.</p>
+<p>Log messages follow an <code>event_name key=value</code> form, so a line that read
+<code>github: push processed commits_pulled=2 ...</code> is now
+<code>webhook_push_processed kind=github commits_pulled=2 ...</code>. Startup reports
+<code>server_configured</code> and <code>auth_mode_resolved</code> instead of the previous
+free-text lines. Alerts or queries that match old message text need updating.
+Access lines are filtered rather than levelled: below <code>DEBUG</code> only requests
+with status 400 or higher appear, and the query string and any credential in
+the path are redacted
+(<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/330">fastmcp-pvl-core#330</a>,
+<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/331">fastmcp-pvl-core#331</a>).
+The <a href="../../configuration/#logging">logging section</a> describes both settings.</p>
+<h2 id="configuration-mistakes-fail-at-startup">Configuration mistakes fail at startup<a class="headerlink" href="#configuration-mistakes-fail-at-startup" title="Permanent link">&para;</a></h2>
+<p>A configuration error now ends <code>serve</code> with a one-line
+<code>ERROR: configuration error: ...</code> message and exit status 1 instead of a
+traceback
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>). An
+explicit <code>MARKDOWN_VAULT_MCP_AUTH_MODE=remote</code> or <code>oidc-proxy</code> whose required
+variables are missing now refuses to start; before, the server started and
+served unauthenticated. Auto-detected modes are unaffected, and a server with
+no auth variables still starts without authentication
+(<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/issues/316">fastmcp-pvl-core#316</a>,
+<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/338">fastmcp-pvl-core#338</a>).</p>
+<p>Credentials embedded in an operator URL no longer leak. A <code>user:pass@</code> part of
+<code>MARKDOWN_VAULT_MCP_BASE_URL</code> is stripped before the URL becomes the MCP Apps
+content-security origin, and URL parse errors no longer echo passwords into
+logs
+(<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/344">fastmcp-pvl-core#344</a>).
+If a URL of yours carried credentials, treat them as exposed in any log sink
+that collected earlier output and rotate them.</p>
 <h2 id="whole-file-replacement-requires-an-etag">Whole-file replacement requires an etag<a class="headerlink" href="#whole-file-replacement-requires-an-etag" title="Permanent link">&para;</a></h2>
 <p>The guarded failure mode for an agent is calling <code>write</code> where it meant
 <code>edit</code>, so writable server deployments now default
@@ -2046,6 +2149,90 @@ claim retain their current attribution pending
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1480">#1480</a>. The
 <a href="../../guides/okf/#recording-a-human-review">OKF review guide</a> describes each
 authentication case.</p>
+<h2 id="links-the-server-writes-stay-valid">Links the server writes stay valid<a class="headerlink" href="#links-the-server-writes-stay-valid" title="Permanent link">&para;</a></h2>
+<p>An operator reported that an agent-written link to a note in a folder with a
+space in its name failed in Obsidian, and the server produced the same form
+itself
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1494">#1494</a>).
+Links written by <code>okf_generate_index</code>, <code>okf_convert_links</code>, and the link
+updates of <code>rename</code> and <code>move_folder</code> now percent-encode spaces, so
+<code>/Project Notes/x.md</code> becomes <code>/Project%20Notes/x.md</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1514">#1514</a>).</p>
+<p>Characters that would end a destination or its text early are escaped too. In
+4.2 a generated index entry or a rename into <code>notes/a)b.md</code> produced a link
+that resolved to <code>notes/a</code>, a different note or none. The destination now reads
+<code>/notes/a\)b.md</code>, and a title such as <code>Bra]cket</code> is written as <code>Bra\]cket</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1513">#1513</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1516">#1516</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1518">#1518</a>). A rename
+that rewrites a link with a space in its fragment repairs it:
+<code>[x](old.md#My Heading)</code> becomes <code>new.md#My%20Heading</code>. With OKF enabled, the
+server instructions ask agents for root-relative links with <code>%20</code> for spaces.
+Links already written with literal spaces are left as they are. The
+<a href="../../guides/okf/">OKF guide</a> describes the generated forms.</p>
+<p>After a rename, <code>updated_links</code> counts the files whose links were rewritten.
+In 4.2 it counted every file where a rewrite was attempted, including ones
+that matched nothing. Such a file now logs <code>link_rewrite_matched_nothing</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1521">#1521</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1527">#1527</a>).</p>
+<h2 id="the-link-graph-holds-more-of-what-a-reader-follows">The link graph holds more of what a reader follows<a class="headerlink" href="#the-link-graph-holds-more-of-what-a-reader-follows" title="Permanent link">&para;</a></h2>
+<p>The work above showed that the scanner, which feeds backlinks, outlinks and
+broken-link reports, missed Markdown links that CommonMark and Obsidian both
+follow. These now appear in the graph:</p>
+<ul>
+<li>link text with an escaped bracket, such as <code>[Bra\]cket](x.md)</code>, in inline
+  links, reference links and their definitions
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1517">#1517</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1520">#1520</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1519">#1519</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1522">#1522</a>);</li>
+<li>nested brackets such as <code>[a [b] c](x.md)</code>, where a <code>]</code> now closes the
+  nearest open <code>[</code>, and links inside an image's alt text
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1526">#1526</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1529">#1529</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1528">#1528</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1530">#1530</a>);</li>
+<li>shortcut reference links, a bare <code>[label]</code> with a matching <code>[label]: x.md</code>
+  definition, which no earlier version extracted
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1531">#1531</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1533">#1533</a>).</li>
+</ul>
+<p>One shape leaves the graph: an image reference such as <code>![alt][r]</code> is an
+image, so it no longer counts as a link when its definition points at a note.
+A file of unbalanced brackets, such as an unfenced log paste, no longer stalls
+indexing. In one measurement the time for 40,000 <code>[</code> characters dropped from
+"~29 s" to "40 ms"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1343">#1343</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1524">#1524</a>).</p>
+<p>The first start after upgrading rebuilds the index once to apply these rules,
+and logs <code>index_provenance_changed key=index_semantics_version</code> with
+<code>action=rebuild</code>. No action is needed.
+Wikilinks whose target contains a single <code>]</code> are still not recognized
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1384">#1384</a>).</p>
+<h2 id="large-vaults-no-longer-scan-the-whole-index-per-changed-note">Large vaults no longer scan the whole index per changed note<a class="headerlink" href="#large-vaults-no-longer-scan-the-whole-index-per-changed-note" title="Permanent link">&para;</a></h2>
+<p>A user running a 25,380-note vault reported that removing a changed note's
+search rows scanned the whole full-text table, so "a batch of N changed
+notes" cost that scan N times. A live incident "measured 1,526 GB read at up
+to 554 MB/s over 85 minutes"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1535">#1535</a>, reported by
+<a href="https://github.com/humblesuperintelligence">@humblesuperintelligence</a>). The
+rows are now found through a mapping table, which existing databases fill once
+on first open
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1539">#1539</a>).</p>
+<p>A reindex pass now saves its progress every 30 seconds, so a pass interrupted
+by a disconnect resumes where it stopped instead of starting over
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1540">#1540</a>).</p>
+<p><code>MARKDOWN_VAULT_MCP_BOOT_REINDEX</code> (default <code>true</code>) controls the reconciliation
+pass that runs after startup. Set it to <code>false</code> on a large vault that
+restarts often, such as a stdio server launched per client session. Changes
+made while no server was running then stay invisible until a reindex runs,
+through the <code>reindex</code> tool or <code>markdown-vault-mcp reindex</code>. <code>_meta.index_stale</code>
+does not report this, and neither does <code>get_index_status</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1543">#1543</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1542">#1542</a>). Only
+the <code>true</code> family of values (<code>1</code>, <code>true</code>, <code>yes</code>, <code>on</code>) keeps the pass on;
+any other value turns it off. See the
+<a href="../../configuration/#indexing">indexing settings</a>.</p>
 <h2 id="mutations-see-completed-writes">Mutations see completed writes<a class="headerlink" href="#mutations-see-completed-writes" title="Permanent link">&para;</a></h2>
 <p>A successful write could previously be followed immediately by
 <code>okf_convert_links</code> reporting its new target as unresolved because the index
@@ -2091,6 +2278,14 @@ behavior, saved conflicts, and log levels are unchanged
    <code>GitWriteStrategy</code>.</li>
 <li>If bearer-authenticated clients record human OKF reviews, use <code>elicit</code> with a
    client that shows the confirmation to a person.</li>
+<li>Replace <code>FASTMCP_LOG_LEVEL</code> with <code>MARKDOWN_VAULT_MCP_LOG_LEVEL</code> and remove
+   <code>FASTMCP_ENABLE_RICH_LOGGING</code>. Set <code>MARKDOWN_VAULT_MCP_LOG_FORMAT=rich</code> where
+   you want coloured output off a terminal, and update alerts or log queries
+   that match old message text.</li>
+<li>If <code>MARKDOWN_VAULT_MCP_AUTH_MODE</code> is set, check that its mode's required
+   variables are set too; the server no longer starts without them.</li>
+<li>Expect one full index rebuild on the first start. On a large vault that
+   restarts often, consider <code>MARKDOWN_VAULT_MCP_BOOT_REINDEX=false</code>.</li>
 </ol>
 <!-- PATCH-RELEASES-START -->
 <!-- PATCH-RELEASES-END -->
