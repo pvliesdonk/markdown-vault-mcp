@@ -22,21 +22,6 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
-## 5.0.0 (2026-09-14)
-
-### Breaking Changes
-
-- adopt template v8 and FastMCP 4 (#1465)
-- enable overwrite protection by default (#1477)
-- require VaultSettings for construction (#1478)
-- remove deprecated claim constructor arguments (#1479)
-- keep bearer credentials out of human attribution (#1481)
-
-### Bug Fixes
-
-- refresh queued writes before index-dependent mutations (#1482)
-- distinguish conflict resolver exit diagnostics (#1488)
-
 ## 5.0.0-rc.0 (2026-09-14)
 
 ### Breaking Changes
