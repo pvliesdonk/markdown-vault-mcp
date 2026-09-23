@@ -949,39 +949,37 @@ def test_foreground_write_during_background_scan_on_disk(tmp_path: Path) -> None
     col.close()
 
 
-def test_reindex_after_pull_handler_handles_not_ready(tmp_path: Path) -> None:
-    """_reindex_after_pull in _server_tools.git catches IndexUnavailableError
-    and sets reindex_failed=True on the pull payload — does NOT block."""
-    import time as time_mod
+def test_reconcile_after_pull_flags_a_failed_reindex() -> None:
+    """git_sync surfaces a reindex that raised on the pull payload, not blocking."""
+    from unittest.mock import MagicMock
 
-    from markdown_vault_mcp._server_tools.git import _reindex_after_pull
-    from markdown_vault_mcp.managers import index as index_mod
+    from markdown_vault_mcp._server_tools.git import _reconcile_after_pull
 
-    vault = _vault(tmp_path)
-    _seed(vault)
-    col = Vault(
-        source_dir=vault,
-        settings=VaultSettings(index_path=tmp_path / "fts.db", read_only=False),
-    )
+    vault = MagicMock()
+    vault.reconcile_index_with_head.return_value = "failed"
+    pull_dict: dict[str, Any] = {}
 
-    original = index_mod.IndexManager.build_index
+    asyncio.run(_reconcile_after_pull(vault, pull_dict))
 
-    def slow(self, *, force: bool = False):  # type: ignore[no-untyped-def]
-        time_mod.sleep(0.5)
-        return original(self, force=force)
+    vault.reconcile_index_with_head.assert_called_once_with(source="git_sync")
+    assert pull_dict.get("reindex_failed") is True
+    assert "reindex_hint" in pull_dict
 
-    monkeypatch = pytest.MonkeyPatch()
-    monkeypatch.setattr(index_mod.IndexManager, "build_index", slow)
-    try:
-        col.index.start_background_build_index()
-        pull_dict: dict[str, Any] = {}
-        asyncio.run(_reindex_after_pull(col, pull_dict))
-        assert pull_dict.get("reindex_failed") is True
-        assert "reindex_hint" in pull_dict
-    finally:
-        monkeypatch.undo()
-        col.index.wait_until_queryable(timeout=5.0)
-        col.close()
+
+@pytest.mark.parametrize("outcome", ["current", "deferred"])
+def test_reconcile_after_pull_leaves_a_covered_index_unflagged(outcome: str) -> None:
+    """``deferred`` is the index still building; that build covers the pull."""
+    from unittest.mock import MagicMock
+
+    from markdown_vault_mcp._server_tools.git import _reconcile_after_pull
+
+    vault = MagicMock()
+    vault.reconcile_index_with_head.return_value = outcome
+    pull_dict: dict[str, Any] = {}
+
+    asyncio.run(_reconcile_after_pull(vault, pull_dict))
+
+    assert "reindex_failed" not in pull_dict
 
 
 def test_synchronous_build_index_clears_prior_background_error(

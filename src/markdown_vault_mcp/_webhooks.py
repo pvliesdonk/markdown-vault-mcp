@@ -1,7 +1,7 @@
 """Push-event webhook handlers for GitHub (#530) and GitLab (#1178).
 
 Both hosts notify the same thing — "the remote moved" — and the response is
-identical: ``force_pull`` then a conditional ``reindex``. Only the envelope
+identical: ``force_pull`` then a reconcile of the index with HEAD (#1532). Only the envelope
 differs, so :class:`WebhookProvider` holds the per-host parts (how a delivery
 authenticates, which header names the event and the delivery id) and
 :func:`make_webhook_handler` holds the one shared body.
@@ -400,11 +400,14 @@ def gitlab_provider(
     )
 
 
-def _reindex_after_pull(vault: Any, provider_name: str) -> None:
-    """Pause writes and reindex after a successful pull.
+def _reconcile_after_pull(vault: Any, provider_name: str) -> None:
+    """Reindex when the index does not yet reflect the pulled HEAD (#1532).
 
     Runs synchronously — intended to be called inside
-    ``asyncio.to_thread`` from the async webhook handler.
+    ``asyncio.to_thread`` from the async webhook handler.  Level-triggered:
+    it compares HEAD with the head the index last reflected rather than
+    asking whether this pull moved it, so a reindex an earlier delivery or
+    pull-loop tick lost is retried here.
 
     Failure is logged at ERROR and not re-raised so callers can return
     a 200 to the host regardless (a non-200 response causes a retry,
@@ -415,10 +418,9 @@ def _reindex_after_pull(vault: Any, provider_name: str) -> None:
         provider_name: Log prefix identifying the host.
     """
     try:
-        with vault.pause_writes():
-            vault.index.reindex()
+        vault.reconcile_index_with_head(source=provider_name)
     except Exception:
-        # FTS index is stale until the next reindex or write tick.
+        # The next reconcile (pull-loop tick, delivery, git_sync) retries.
         logger.error(
             "reindex_after_pull_failed kind=%s",
             provider_name,
@@ -427,7 +429,7 @@ def _reindex_after_pull(vault: Any, provider_name: str) -> None:
 
 
 async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse:
-    """Pull, then reindex when HEAD moved, and map the outcome to a status.
+    """Pull, reconcile the index with HEAD, and map the outcome to a status.
 
     Split out of the handler so the request-shaped concerns (authenticate,
     classify the event) stay separate from the git-shaped ones, and so each
@@ -437,7 +439,11 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
     operation with no FTS or vector-index dependency, so blocking on a cold
     index would exhaust the host's retry budget (GitHub: ~5 s + ~25 s + ~90 s
     ≈ 2 min) before a large vault finishes its initial build, permanently
-    losing the delivery.
+    losing the delivery.  The reconcile that follows defers on an unbuilt
+    index; the boot reindex or a later reconcile covers the pulled tree.
+
+    Every settled pull reconciles, including one reported as not applied: a
+    rebase can advance HEAD and still fail to commit its conflict siblings.
 
     Args:
         vault: Live :class:`~markdown_vault_mcp.vault.Vault`.
@@ -479,6 +485,8 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
         )
         return JSONResponse({"ok": True, "message": "pull disabled"})
 
+    await asyncio.to_thread(_reconcile_after_pull, vault, name)
+
     if not pull_result.applied:
         # Transient failures (network, expired token) benefit from retry.
         # Permanent failures (no_remote, conflict) exhaust the retry budget
@@ -493,16 +501,6 @@ async def _process_push(vault: Any, name: str, delivery_id: str) -> JSONResponse
             {"error": "pull not applied", "reason": pull_result.reason},
             status_code=503,
         )
-
-    if pull_result.from_sha != pull_result.to_sha:
-        if vault.index.is_queryable():
-            await asyncio.to_thread(_reindex_after_pull, vault, name)
-        else:
-            logger.info(
-                "webhook_reindex_skipped_not_queryable kind=%s delivery_id=%s",
-                name,
-                delivery_id,
-            )
 
     logger.info(
         "webhook_push_processed kind=%s commits_pulled=%s delivery_id=%s",

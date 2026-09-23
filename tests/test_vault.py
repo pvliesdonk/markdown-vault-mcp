@@ -1831,6 +1831,9 @@ class TestConcurrentWrites:
                 self.stopped = False
                 self.closed = False
 
+            def set_commit_observer(self, observer: object) -> None:
+                self.commit_observer = observer
+
             def set_write_quiescer(
                 self, *, pause_writes: object, drain_writes: object
             ) -> None:
@@ -1845,12 +1848,12 @@ class TestConcurrentWrites:
                 *,
                 repo_path: Path,
                 pull_interval_s: int,
-                on_pull: object,
+                on_tick: object,
             ) -> None:
                 self.started = {
                     "repo_path": repo_path,
                     "pull_interval_s": pull_interval_s,
-                    "on_pull": on_pull,
+                    "on_tick": on_tick,
                 }
 
             def stop(self) -> None:
@@ -1892,6 +1895,9 @@ class TestConcurrentWrites:
         class DummyGitStrategy:
             def __init__(self) -> None:
                 self.calls: list[Path] = []
+
+            def set_commit_observer(self, observer: object) -> None:
+                self.commit_observer = observer
 
             def set_write_quiescer(
                 self, *, pause_writes: object, drain_writes: object

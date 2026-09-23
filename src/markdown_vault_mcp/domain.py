@@ -198,14 +198,21 @@ class Service:
         # This job is now conditional on config.boot_reindex (#1535);
         # index_stale consequently reports drained sooner without implying
         # the index agrees with disk.
+        # The HEAD the startup sync left behind is what the boot reindex
+        # covers; recording it lets later reconciles (#1532) skip a redundant
+        # full scan and reindex only once HEAD moves past it.
+        head_at_boot = await asyncio.to_thread(vault.git_head)
         if config.boot_reindex:
-            vault.index.reindex_async()
+            vault.adopt_boot_reindex(vault.index.reindex_async(), head_at_boot)
             logger.info("boot_reindex_job_submitted")
         else:
             # Offline changes (files added/modified/deleted while no server
             # was running) stay invisible to the index until an explicit
             # reindex runs — either the `reindex` tool or the
-            # `markdown-vault-mcp reindex` CLI command.
+            # `markdown-vault-mcp reindex` CLI command.  Accepting the index
+            # at the boot HEAD keeps that trade: later pulls that move HEAD
+            # still reindex.
+            vault.mark_index_reconciled(head_at_boot)
             logger.info("boot_reindex_disabled reason=config")
 
         if instances.embedding_provider is not None:

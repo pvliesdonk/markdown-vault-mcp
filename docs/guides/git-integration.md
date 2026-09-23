@@ -106,6 +106,10 @@ for what that looks like, and
 [Manual sync](#manual-sync-git_sync-tool) for the one call that returns the
 remote's actual refusal message.
 - Periodic pull uses fast-forward-only updates.
+- After every periodic tick, the index is brought up to the current HEAD when
+  the two differ. A reindex that failed after an earlier pull is retried on
+  the next tick, and a commit that reached the clone some other way is
+  picked up too.
 
 Two mechanisms sit alongside the periodic loop, both described below: a
 push webhook that pulls the moment someone pushes, and the `git_sync`
@@ -195,9 +199,11 @@ so a test delivery pulls exactly as a push does.
 ### What both endpoints do
 
 - An invalid or missing credential returns 401 and no git operation runs.
-- A push event pulls first, then reindexes only when HEAD actually moved.
-  A push to a branch the vault does not track leaves HEAD where it was, so
-  it costs a fetch and nothing more.
+- A push event pulls first, then reindexes when HEAD differs from the
+  revision the index last reflected. A push to a branch the vault does not
+  track leaves HEAD where it was, so it costs a fetch and nothing more. A
+  reindex that an earlier delivery or pull failed to complete is retried
+  here rather than lost.
 - `ping`, GitHub's handshake delivery, answers `pong`; every other event
   returns 200 and does nothing.
 - A delivery whose pull did not apply returns 503, so the host retries it
@@ -212,11 +218,10 @@ so a test delivery pulls exactly as a push does.
   problem, and the server logs the same warning once at startup.
 - A delivery arriving while the initial index build is still running is
   handled, not dropped. The pull is a pure git operation and runs
-  regardless of index state; only the reindex is skipped, and the boot
+  regardless of index state; only the reindex waits. The boot
   reconciliation pass that follows the build picks the pulled changes up
   when `MARKDOWN_VAULT_MCP_BOOT_REINDEX` is left at its default. With it
-  off, that delivery's changes wait for the next push that moves HEAD, or a
-  manual reindex.
+  off, the next periodic tick or delivery after the build reindexes them.
 
 !!! warning "Managed mode only"
     Set these only where the server owns the remote. Outside managed

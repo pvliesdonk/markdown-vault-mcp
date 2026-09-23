@@ -18,6 +18,18 @@ from markdown_vault_mcp import domain
 from tests.fixtures.git import _run_git
 from tests.server_factory import make_server
 
+
+async def _wait_for_boot_reconcile(vault: Any, timeout_s: float = 10.0) -> None:
+    """Wait until the boot reindex has recorded the HEAD it covered (#1532)."""
+    import asyncio
+
+    deadline = asyncio.get_running_loop().time() + timeout_s
+    while vault._head_reconciler.indexed_head is None:
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError("boot reindex never recorded its HEAD")
+        await asyncio.sleep(0.02)
+
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -319,25 +331,22 @@ class TestGitSync:
     ) -> None:
         """A pull that moves nothing must not trigger a reindex (#1292).
 
-        The reindex is keyed on ``from_sha != to_sha``; naming the remote
-        tip as ``to_sha`` on a clone that is only ahead made every such
-        pull pause writes and rebuild the index for no new content.
+        Naming the remote tip as ``to_sha`` on a clone that is only ahead
+        made every such pull pause writes and rebuild the index for no new
+        content.  The reconcile after the pull (#1532) compares HEAD with the
+        head the boot reindex recorded, so it must find nothing to do.
         """
-        from markdown_vault_mcp._server_tools import git as git_tools
-
-        calls: list[str] = []
-
-        async def _spy(_vault: Any, pull_dict: dict[str, Any]) -> None:
-            calls.append(pull_dict["to_sha"])
-
-        monkeypatch.setattr(git_tools, "_reindex_after_pull", _spy)
-
         (git_repo_pair.local_path / "unpushed.md").write_text("local\n")
         _run_git(git_repo_pair.local_path, "add", "unpushed.md")
         _run_git(git_repo_pair.local_path, "commit", "-m", "unpushed local commit")
 
         server = make_server()
         async with Client(server) as client:
+            vault = domain.get_vault_singleton()
+            await _wait_for_boot_reconcile(vault)
+            calls: list[str] = []
+            monkeypatch.setattr(vault.index, "reindex", lambda: calls.append("x"))
+
             result = await client.call_tool("git_sync", {"direction": "pull"})
 
         payload = _parse_tool_data(result)

@@ -788,8 +788,10 @@ before bucket-3 relational/FTS-backed queries (`get_backlinks`,
 `get_toc`) or the bucket-4 coordinators (`reindex`,
 `build_embeddings`); otherwise `IndexUnavailableError(reason="never_built")`
 is raised.
-`start()` must also be called after `build_index()` because its git
-pull loop wires `reindex` as the `on_pull` callback. Bucket-1 file
+`start()` is called after `build_index()` has been submitted; its git
+pull loop reconciles the index with HEAD on every tick (#1532), and a
+reconcile that finds the index unbuilt defers to a later tick rather
+than failing. Bucket-1 file
 operations (`read`, `write`, `edit`, `delete`, `rename`,
 `write_attachment`) and bucket-2 aggregate queries (`search`, `list`,
 `stats`, `list_folders`, `list_tags`, `get_recent`,
@@ -5045,8 +5047,10 @@ Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` for repos that do not use LFS, or when
 - Runs one `git fetch` + ff-only update **before** the initial `build_index()`
   so the index scans the freshest working tree.
 - Starts a daemon thread that repeats `fetch + ff-only update` every interval.
-- After a successful fast-forward that advanced `HEAD`, triggers
-  `IndexFacet.reindex()` to incrementally update the index.
+- After every tick, reconciles the index with `HEAD`: an incremental
+  `IndexFacet.reindex()` runs whenever `HEAD` differs from the revision the
+  index last reflected, so a reindex an earlier tick lost is retried (see
+  "The index follows HEAD, not pull events (#1532)").
 - Blocks write operations during the **reindex phase** of each pull tick
   (not during fetch/ff-only merge) by acquiring the Vault write lock.
   Read/search operations are not blocked at the Python level (SQLite WAL
@@ -5112,6 +5116,44 @@ outside managed mode, and managed mode always has `enable_pull=True`. The
 handler's `pull_result is None` branch is likewise not dead code — a library
 consumer constructing `Vault(git_strategy=None)` reaches it, though a
 config-driven server never does.
+
+### The index follows HEAD, not pull events (#1532)
+
+Decision: whether the index needs a reindex after git activity is a
+*level* question — does HEAD differ from the revision the index was last
+reconciled against — not an *edge* question about whether this particular
+pull moved HEAD. `indexing/head_reconciler.py`'s `IndexHeadReconciler`
+records that revision and reindexes when HEAD differs. The record advances
+only when a reindex completes. Every place that can observe git activity
+asks it: the pull loop after every tick (`on_tick`), each webhook delivery
+whatever its pull outcome, and the `git_sync` pull leg.
+
+Why: the edge form fired one reindex per HEAD move. When that single
+reindex was lost (the index still building, a writer error, a pull reported
+as not applied although a rebase had advanced HEAD), nothing retried it.
+The next pull found HEAD equal to the remote and reported nothing, so the
+index served deleted and renamed notes until a manual reindex. That
+happened in production after a fast-forward that renamed and deleted
+several dozen notes (#1532). The level form also covers a commit that
+reaches the clone with no pull at all.
+
+Bounds:
+
+- The server's own write commits move HEAD but describe content the index
+  already holds. The strategy reports each one from inside its lock
+  (`set_commit_observer`), and the reconciler advances past it only when
+  its parent is the recorded revision, so a server commit stacked on an
+  unindexed external one never hides it.
+- The record is in memory. At startup the boot reindex is adopted as the
+  reconcile of the head left by the startup sync: reconciles defer while it
+  runs (the pull loop's first tick fires right after submission, and would
+  otherwise pause writes behind it and scan a second time), and its success
+  records that head. With `BOOT_REINDEX` off the head is recorded at once,
+  which keeps that switch's documented trade. A process without a record
+  reindexes on its first reconcile.
+- A reconcile whose index is unbuilt defers (`IndexUnavailableError`) and
+  logs at DEBUG; a failed reindex logs `index_head_reconcile_failed` at
+  ERROR. Both leave the record behind for the next caller.
 
 ### Push webhooks: one handler, two hosts (#1178)
 

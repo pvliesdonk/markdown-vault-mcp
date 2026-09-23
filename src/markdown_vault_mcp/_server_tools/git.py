@@ -119,42 +119,41 @@ def _format_push_dict(result: PushResult) -> dict[str, Any]:
     return push_dict
 
 
-async def _reindex_after_pull(vault: Vault, pull_dict: dict[str, Any]) -> None:
-    """Refresh the FTS index after a pull that moved HEAD.
+async def _reconcile_after_pull(vault: Vault, pull_dict: dict[str, Any]) -> None:
+    """Reindex when the index does not yet reflect the pulled HEAD (#1532).
 
     ``force_pull`` only mutates the working tree; without this call,
     ``search`` / ``list_documents`` / ``get_context`` would serve stale
-    data until the next write.  Mirrors the ``on_pull`` callback the
-    store's own periodic pull loop fires — same ``pause_writes()`` +
-    ``reindex()`` pattern.
+    data.  Level-triggered through
+    :meth:`~markdown_vault_mcp.vault.Vault.reconcile_index_with_head`, the
+    same step the store's periodic pull loop runs on every tick: it compares
+    HEAD with the head the index last reflected, so it also retries a
+    reindex an earlier pull lost, and runs after a pull reported as not
+    applied that still moved HEAD.
 
-    On reindex failure: the pull side-effect already happened (HEAD
-    moved, files on disk), so failing the whole tool would hide the
-    successful pull from the caller.  Surfaces ``reindex_failed=True``
-    + ``reindex_hint`` on the pull payload instead so the agent knows
-    the index is stale and can decide whether to retry via the
-    ``reindex`` tool.
+    When the index could not be brought up to date the pull side-effect has
+    still happened, so failing the whole tool would hide it from the caller.
+    Surfaces ``reindex_failed=True`` + ``reindex_hint`` on the pull payload
+    instead so the agent knows the index is stale.
 
     Mutates ``pull_dict`` in place on failure.
     """
-
-    def _pause_and_reindex() -> None:
-        with vault.pause_writes():
-            vault.index.reindex()
-
     try:
-        await asyncio.to_thread(_pause_and_reindex)
+        outcome = await asyncio.to_thread(
+            vault.reconcile_index_with_head, source="git_sync"
+        )
     except Exception:
-        # FTS index is stale until the next reindex or write tick; the pull
-        # itself already succeeded, so this is surfaced on the response
-        # payload (reindex_failed / reindex_hint) rather than raised.
         logger.exception("reindex_after_pull_failed source=git_sync")
+        outcome = "failed"
+    # ``deferred`` means the index is still building: that build (and the
+    # boot reindex behind it) covers the pulled tree, so it is not stale.
+    if outcome == "failed":
         pull_dict["reindex_failed"] = True
         pull_dict["reindex_hint"] = (
-            "Pull succeeded but the FTS index could not be "
-            "refreshed.  search / list_documents / get_context "
-            "will serve stale data until the next call to the "
-            "reindex tool or the next write."
+            "The FTS index could not be refreshed after the pull.  "
+            "search / list_documents / get_context will serve stale data "
+            "until the next reconcile (the periodic pull, a webhook "
+            "delivery, another git_sync) or a call to the reindex tool."
         )
 
 
@@ -167,13 +166,12 @@ async def _run_pull_leg(
     """Run the pull leg of ``git_sync`` and return its response dict.
 
     Calls :meth:`~markdown_vault_mcp.git.Syncer.force_pull`, projects the result,
-    and triggers a reindex when HEAD actually moved (skipped on
-    dry-run and on failure).  The reindex's own failure is surfaced
-    on the returned dict, not raised.
+    and reconciles the index with HEAD (skipped on dry-run).  The
+    reconcile's own failure is surfaced on the returned dict, not raised.
 
     Args:
         strategy: Resolved managed-mode strategy.
-        vault: Vault used for the post-pull reindex.
+        vault: Vault whose index is reconciled after the pull.
         dry_run: Forwarded to ``force_pull`` and to
             :func:`_format_pull_dict`.
 
@@ -183,12 +181,8 @@ async def _run_pull_leg(
     """
     pull_result = await asyncio.to_thread(strategy.force_pull, dry_run=dry_run)
     pull_dict = _format_pull_dict(pull_result, dry_run)
-    if (
-        not dry_run
-        and pull_result.applied
-        and pull_result.from_sha != pull_result.to_sha
-    ):
-        await _reindex_after_pull(vault, pull_dict)
+    if not dry_run:
+        await _reconcile_after_pull(vault, pull_dict)
     return pull_dict
 
 
