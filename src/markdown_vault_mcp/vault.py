@@ -470,6 +470,24 @@ class Vault:
             okf_write_enrich=self._okf_write_enrich,
         )
 
+    def _build_head_reconciler(self) -> IndexHeadReconciler | None:
+        """Wire the reconciler that keeps the index at the git HEAD (#1532).
+
+        It reindexes until the index reflects HEAD, whatever moved it, and
+        the strategy reports the commits of the server's own writes, which
+        the index already holds.  ``None`` without a git strategy.
+        """
+        if self._git_strategy is None:
+            return None
+        reconciler = IndexHeadReconciler(
+            read_head=self.git_head,
+            # Late-bound so the reindex seen is whatever the facet holds now.
+            reindex=lambda: self._index_facet.reindex(),
+            pause_writes=self.pause_writes,
+        )
+        self._git_strategy.set_commit_observer(reconciler.note_own_commit)
+        return reconciler
+
     def _build_facets(self, settings: VaultSettings) -> None:
         """Construct the facet layer over the managers/coordinator (#604).
 
@@ -535,20 +553,7 @@ class Vault:
         self._index_facet = IndexFacet(
             coordinator=self._coordinator, index_mgr=self._index_mgr
         )
-        # #1532: reindex until the index reflects the git HEAD, whatever moved
-        # it, and let the strategy report the commits of the server's own
-        # writes, which the index already holds.
-        self._head_reconciler: IndexHeadReconciler | None = None
-        if self._git_strategy is not None:
-            self._head_reconciler = IndexHeadReconciler(
-                read_head=self.git_head,
-                # Late-bound so the reindex seen is whatever the facet holds now.
-                reindex=lambda: self._index_facet.reindex(),
-                pause_writes=self.pause_writes,
-            )
-            self._git_strategy.set_commit_observer(
-                self._head_reconciler.note_own_commit
-            )
+        self._head_reconciler = self._build_head_reconciler()
         # Summarize facet is present only when a backend was supplied (the
         # summarize tool is otherwise hidden at the server layer). Promotion
         # of slow calls to pollable background jobs is owned by the pvl-core

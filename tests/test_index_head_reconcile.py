@@ -163,3 +163,40 @@ def test_the_pull_loop_ticks_even_when_head_does_not_move(
         finally:
             strategy.close()
     assert pulled == []
+
+
+def test_a_vault_without_git_has_nothing_to_reconcile(tmp_path: Path) -> None:
+    from concurrent.futures import Future
+
+    (tmp_path / "state").mkdir()
+    v = Vault(
+        source_dir=tmp_path,
+        settings=VaultSettings(index_path=tmp_path / "state" / "fts.db"),
+    )
+    try:
+        boot: Future[object] = Future()
+        v.adopt_boot_reindex(boot, "abc")
+        v.mark_index_reconciled("abc")
+
+        assert v.git_head() is None
+        assert v.reconcile_index_with_head(source="test") == "current"
+    finally:
+        v.close()
+
+
+def test_an_unreadable_head_reads_as_none(tmp_path: Path) -> None:
+    """A strategy pointed at a directory git cannot read yields no HEAD."""
+    not_a_repo = tmp_path / "plain"
+    not_a_repo.mkdir()
+    (tmp_path / "state").mkdir()
+    strategy = GitWriteStrategy(token=None, git_lfs=False, enable_push=False)
+    v = Vault(
+        source_dir=not_a_repo,
+        settings=VaultSettings(index_path=tmp_path / "state" / "fts.db"),
+        git_strategy=strategy,
+    )
+    try:
+        assert v.git_head() is None
+        assert v.reconcile_index_with_head(source="test") == "current"
+    finally:
+        v.close()
