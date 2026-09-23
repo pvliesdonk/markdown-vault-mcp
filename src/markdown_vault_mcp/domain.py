@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from fastmcp.dependencies import CurrentContext
 from fastmcp.server.context import Context
@@ -26,29 +26,9 @@ from markdown_vault_mcp.config_sections._assembly import (
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
-    from concurrent.futures import Future
-
     from markdown_vault_mcp._file_watcher import VaultFileWatcher
 
 logger = logging.getLogger(__name__)
-
-
-def _mark_boot_reindex_reconciled(
-    vault: Vault, done: Future[Any], head: str | None
-) -> None:
-    """Record *head* as reconciled once the boot reindex completed (#1532).
-
-    A cancelled or failed boot reindex records nothing, so the next pull-loop
-    tick, webhook delivery or ``git_sync`` call reindexes instead.
-
-    Args:
-        vault: The vault whose reconciler is told.
-        done: The finished boot reindex.
-        head: The HEAD the boot reindex covered.
-    """
-    if done.cancelled() or done.exception() is not None:
-        return
-    vault.mark_index_reconciled(head)
 
 
 _vault_singleton: Vault | None = None
@@ -223,10 +203,7 @@ class Service:
         # full scan and reindex only once HEAD moves past it.
         head_at_boot = await asyncio.to_thread(vault.git_head)
         if config.boot_reindex:
-            boot_reindex = vault.index.reindex_async()
-            boot_reindex.add_done_callback(
-                lambda done: _mark_boot_reindex_reconciled(vault, done, head_at_boot)
-            )
+            vault.adopt_boot_reindex(vault.index.reindex_async(), head_at_boot)
             logger.info("boot_reindex_job_submitted")
         else:
             # Offline changes (files added/modified/deleted while no server

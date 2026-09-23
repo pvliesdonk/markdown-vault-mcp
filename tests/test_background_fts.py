@@ -949,20 +949,14 @@ def test_foreground_write_during_background_scan_on_disk(tmp_path: Path) -> None
     col.close()
 
 
-@pytest.mark.parametrize("outcome", ["deferred", "failed"])
-def test_reconcile_after_pull_flags_a_stale_index(outcome: str) -> None:
-    """git_sync's post-pull reconcile surfaces an index it could not refresh.
-
-    ``deferred`` is the not-ready case (the index still building, #1532's
-    reconciler defers on ``IndexUnavailableError``); ``failed`` is a raised
-    reindex.  Both set ``reindex_failed`` on the pull payload — no blocking.
-    """
+def test_reconcile_after_pull_flags_a_failed_reindex() -> None:
+    """git_sync surfaces a reindex that raised on the pull payload, not blocking."""
     from unittest.mock import MagicMock
 
     from markdown_vault_mcp._server_tools.git import _reconcile_after_pull
 
     vault = MagicMock()
-    vault.reconcile_index_with_head.return_value = outcome
+    vault.reconcile_index_with_head.return_value = "failed"
     pull_dict: dict[str, Any] = {}
 
     asyncio.run(_reconcile_after_pull(vault, pull_dict))
@@ -972,13 +966,15 @@ def test_reconcile_after_pull_flags_a_stale_index(outcome: str) -> None:
     assert "reindex_hint" in pull_dict
 
 
-def test_reconcile_after_pull_leaves_a_current_index_unflagged() -> None:
+@pytest.mark.parametrize("outcome", ["current", "deferred"])
+def test_reconcile_after_pull_leaves_a_covered_index_unflagged(outcome: str) -> None:
+    """``deferred`` is the index still building; that build covers the pull."""
     from unittest.mock import MagicMock
 
     from markdown_vault_mcp._server_tools.git import _reconcile_after_pull
 
     vault = MagicMock()
-    vault.reconcile_index_with_head.return_value = "current"
+    vault.reconcile_index_with_head.return_value = outcome
     pull_dict: dict[str, Any] = {}
 
     asyncio.run(_reconcile_after_pull(vault, pull_dict))

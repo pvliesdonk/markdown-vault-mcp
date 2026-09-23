@@ -10,7 +10,7 @@ import contextlib
 import logging
 import subprocess
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
 # state-path default historically lived in this module; domain.py still
@@ -56,6 +56,7 @@ from markdown_vault_mcp.write_callback import WriteCallbackDispatcher
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from concurrent.futures import Future
     from pathlib import Path
 
     from markdown_vault_mcp._commit_scope import CommitScope
@@ -742,6 +743,19 @@ class Vault:
         if self._head_reconciler is None:
             return "current"
         return self._head_reconciler.reconcile(source=source)
+
+    def adopt_boot_reindex(self, pending: Future[Any], head: str | None) -> None:
+        """Count the submitted boot reindex as the reconcile of *head*.
+
+        Reconciles defer until it finishes rather than pausing writes behind
+        it and scanning twice; *head* is recorded once it succeeds.
+
+        Args:
+            pending: The boot reindex returned by ``reindex_async()``.
+            head: The HEAD left by the startup sync, which it covers.
+        """
+        if self._head_reconciler is not None:
+            self._head_reconciler.adopt_pending_reindex(pending, head)
 
     def mark_index_reconciled(self, head: str | None) -> None:
         """Record that the index reflects *head* without reindexing.

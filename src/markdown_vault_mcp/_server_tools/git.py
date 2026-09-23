@@ -145,7 +145,9 @@ async def _reconcile_after_pull(vault: Vault, pull_dict: dict[str, Any]) -> None
     except Exception:
         logger.exception("reindex_after_pull_failed source=git_sync")
         outcome = "failed"
-    if outcome in ("failed", "deferred"):
+    # ``deferred`` means the index is still building: that build (and the
+    # boot reindex behind it) covers the pulled tree, so it is not stale.
+    if outcome == "failed":
         pull_dict["reindex_failed"] = True
         pull_dict["reindex_hint"] = (
             "The FTS index could not be refreshed after the pull.  "

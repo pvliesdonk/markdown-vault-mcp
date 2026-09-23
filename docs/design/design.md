@@ -5047,8 +5047,10 @@ Set `MARKDOWN_VAULT_MCP_GIT_LFS=false` for repos that do not use LFS, or when
 - Runs one `git fetch` + ff-only update **before** the initial `build_index()`
   so the index scans the freshest working tree.
 - Starts a daemon thread that repeats `fetch + ff-only update` every interval.
-- After a successful fast-forward that advanced `HEAD`, triggers
-  `IndexFacet.reindex()` to incrementally update the index.
+- After every tick, reconciles the index with `HEAD`: an incremental
+  `IndexFacet.reindex()` runs whenever `HEAD` differs from the revision the
+  index last reflected, so a reindex an earlier tick lost is retried (see
+  "The index follows HEAD, not pull events (#1532)").
 - Blocks write operations during the **reindex phase** of each pull tick
   (not during fetch/ff-only merge) by acquiring the Vault write lock.
   Read/search operations are not blocked at the Python level (SQLite WAL
@@ -5142,10 +5144,13 @@ Bounds:
   (`set_commit_observer`), and the reconciler advances past it only when
   its parent is the recorded revision, so a server commit stacked on an
   unindexed external one never hides it.
-- The record is in memory. At startup the head left by the startup sync
-  is recorded once the boot reindex completes, or immediately when
-  `BOOT_REINDEX` is off, which keeps that switch's documented trade. A
-  process without a record reindexes on its first reconcile.
+- The record is in memory. At startup the boot reindex is adopted as the
+  reconcile of the head left by the startup sync: reconciles defer while it
+  runs (the pull loop's first tick fires right after submission, and would
+  otherwise pause writes behind it and scan a second time), and its success
+  records that head. With `BOOT_REINDEX` off the head is recorded at once,
+  which keeps that switch's documented trade. A process without a record
+  reindexes on its first reconcile.
 - A reconcile whose index is unbuilt defers (`IndexUnavailableError`) and
   logs at DEBUG; a failed reindex logs `index_head_reconcile_failed` at
   ERROR. Both leave the record behind for the next caller.

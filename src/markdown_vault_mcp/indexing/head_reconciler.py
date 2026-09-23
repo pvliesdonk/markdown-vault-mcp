@@ -23,13 +23,14 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from markdown_vault_mcp.exceptions import IndexUnavailableError
 
 if TYPE_CHECKING:
     import contextlib
     from collections.abc import Callable
+    from concurrent.futures import Future
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ class IndexHeadReconciler:
         self._state_lock = threading.Lock()
         self._run_lock = threading.Lock()
         self._indexed_head: str | None = None
+        self._pending: Future[Any] | None = None
 
     @property
     def indexed_head(self) -> str | None:
@@ -91,6 +93,30 @@ class IndexHeadReconciler:
         """
         with self._state_lock:
             self._indexed_head = head
+
+    def adopt_pending_reindex(self, pending: Future[Any], head: str | None) -> None:
+        """Treat an already-submitted reindex as the reconcile of *head*.
+
+        Until *pending* finishes, :meth:`reconcile` defers instead of pausing
+        writes behind it and scanning a second time.  When it completes
+        successfully, *head* is recorded; a failed or cancelled one records
+        nothing, so the next reconcile reindexes.
+
+        Args:
+            pending: The submitted reindex (the server's boot reindex).
+            head: The HEAD that reindex covers.
+        """
+        with self._state_lock:
+            self._pending = pending
+
+        def _finished(done: Future[Any]) -> None:
+            with self._state_lock:
+                if self._pending is done:
+                    self._pending = None
+                if not done.cancelled() and done.exception() is None:
+                    self._indexed_head = head
+
+        pending.add_done_callback(_finished)
 
     def note_own_commit(self, parent: str, new_head: str) -> None:
         """Advance the record past a commit of the server's own writes.
@@ -112,6 +138,9 @@ class IndexHeadReconciler:
         Returns:
             The :data:`ReconcileOutcome`.
         """
+        pending = self._pending
+        if pending is not None and not pending.done():
+            return "deferred"
         head = self._read_head()
         if head is None or head == self._indexed_head:
             return "current"

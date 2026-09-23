@@ -1563,7 +1563,7 @@ class GitWriteStrategy:
         """Return HEAD, or ``None`` when git cannot read it (e.g. no commit)."""
         try:
             return self.head_sha(git_root)
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, OSError):
             return None
 
     def set_write_quiescer(

@@ -6,13 +6,13 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING
 
+import pytest
+
 from markdown_vault_mcp.exceptions import IndexUnavailableError
 from markdown_vault_mcp.indexing.head_reconciler import IndexHeadReconciler
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-
-    import pytest
 
 
 class _Repo:
@@ -167,3 +167,40 @@ def test_head_captured_before_the_reindex_is_what_gets_recorded() -> None:
     assert rec_moving.indexed_head == "b"
     assert rec_moving.reconcile(source="test") == "reindexed"
     assert rec_moving.indexed_head == "c"
+
+
+def test_a_pending_boot_reindex_defers_without_pausing_writes() -> None:
+    """A tick during the boot reindex must not queue a second scan behind it."""
+    from concurrent.futures import Future
+
+    repo = _Repo()
+    rec = _reconciler(repo)
+    boot: Future[object] = Future()
+    rec.adopt_pending_reindex(boot, "a")
+
+    assert rec.reconcile(source="test") == "deferred"
+    assert repo.paused == 0
+    assert repo.reindexes == 0
+
+    boot.set_result(None)
+    assert rec.indexed_head == "a"
+    assert rec.reconcile(source="test") == "current"
+    assert repo.reindexes == 0
+
+
+@pytest.mark.parametrize("how", ["error", "cancelled"])
+def test_a_boot_reindex_that_did_not_complete_records_nothing(how: str) -> None:
+    from concurrent.futures import Future
+
+    repo = _Repo()
+    rec = _reconciler(repo)
+    boot: Future[object] = Future()
+    rec.adopt_pending_reindex(boot, "a")
+
+    if how == "error":
+        boot.set_exception(RuntimeError("boot reindex failed"))
+    else:
+        boot.cancel()
+
+    assert rec.indexed_head is None
+    assert rec.reconcile(source="test") == "reindexed"

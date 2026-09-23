@@ -163,27 +163,3 @@ def test_the_pull_loop_ticks_even_when_head_does_not_move(
         finally:
             strategy.close()
     assert pulled == []
-
-
-@pytest.mark.parametrize("outcome", ["ok", "error", "cancelled"])
-def test_boot_reindex_records_its_head_only_when_it_completed(outcome: str) -> None:
-    from concurrent.futures import Future
-    from unittest.mock import MagicMock
-
-    from markdown_vault_mcp.domain import _mark_boot_reindex_reconciled
-
-    done: Future[object] = Future()
-    if outcome == "ok":
-        done.set_result(None)
-    elif outcome == "error":
-        done.set_exception(RuntimeError("boot reindex failed"))
-    else:
-        done.cancel()
-    vault = MagicMock()
-
-    _mark_boot_reindex_reconciled(vault, done, "abc")
-
-    if outcome == "ok":
-        vault.mark_index_reconciled.assert_called_once_with("abc")
-    else:
-        vault.mark_index_reconciled.assert_not_called()
