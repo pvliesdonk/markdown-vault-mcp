@@ -1447,6 +1447,16 @@ note = vault.reader.read("doc.md")
 vault.writer.write("doc.md", new_content, if_match=note.etag)
 ```
 
+Model-facing guidance (#1493): every successful mutation changes the etag,
+so calls dispatched together with one etag fail after the first. The `edit`
+and `rename` `if_match` descriptions therefore tell the model when to omit it
+rather than always recommending it: `old_text`-only edits are guarded by their
+anchor, and a rename moves the whole file, so losing the etag check costs
+nothing there. Only edits that carry line numbers stay one call per read,
+because a sibling edit shifts the range silently. The longer-term fixes are
+#1492 (accept conditional renames after provable server rewrites) and the
+surface audit #1571.
+
 ### Folder Conventions
 
 Not every folder in a vault should be treated the same by an LLM client: a
