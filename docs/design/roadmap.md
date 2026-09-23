@@ -150,9 +150,9 @@ comes first because it stops data loss on its own; content currency ([#1565][156
 ([#1566][1566]) follow and can ship independently. [Epic #1562][1562] (writes)
 carries only its refinement task ([#1567][1567]), blocked by those three: a
 two-repository write path is shaped against a working read-only layout, and its
-detached-HEAD and credential questions stay unknowns until then. Neither epic
-is committed to a package; membership waits for the owner's selection against
-`015` and `020`.
+detached-HEAD and credential questions stay unknowns until then. The read-only
+slice is committed to `025 submodules-read`; the write epic ships atomically in
+`060 submodules-write`, refined once `025` has landed.
 
 ### Versioned vaults without Git
 
@@ -244,6 +244,24 @@ remain compatible. Reclassify the package as major if the chosen transition brea
 the preceding stable operator or library contract. Do not promise either a split
 or a minor version before that assessment.
 
+`stated` — **[025 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)**
+carries the read-only slice of [epic #1561][1561]: the write refusal
+([#1564][1564]), content currency on bootstrap and pull ([#1565][1565]) and the
+history answer ([#1566][1566]), with [refinement #1563][1563] resolving the
+operator-switch question inside the cut (23 September 2026).
+
+`derived` — Minor intent: the refusal is a fix and the rest is additive; nothing
+an operator or library consumer of the last stable release must change.
+
+`stated` — **[060 submodules-write](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/16)**
+ships [epic #1562][1562] atomically, so the epic carries the milestone. The gap
+before it is deliberate: it is refined after `025` lands and after the
+follow-up slices below claim their ordinals.
+
+`derived` — Minor intent, provisional: whether a submodule's own credentials or
+tracking branch need new configuration is decided in [refinement #1567][1567];
+new configuration is additive and does not on its own make the cut a major.
+
 ### Follow-up slices after `020`
 
 `derived` — The following are candidate release boundaries for the owner's two
@@ -311,8 +329,8 @@ verified implementation findings.
 | Which creation mechanism meets the agreed boundary? | [#1245][1245] | Decide before committing the scaffold and walkthrough. |
 | Do attachment graph nodes require non-Markdown search admission? | Scope decision in [#1359][1359], with [#1234][1234] | Not knowing does not change the first cut or OKF foundation refinement; no speculative dependency is created. |
 | Is a deployed vault constrained enough to justify a new vector-storage strategy? | [#1377][1377], informed by [#1368][1368] | Not knowing does not change the first cut. Establish the need before committing a storage technology. |
-| Does keeping a submodule current on pull need an operator switch, and what happens when the submodule tree is dirty? | [#1565][1565], under [refinement #1563][1563] | Decide before committing the read-only slice to a cut; the refusal in [#1564][1564] does not depend on it. |
-| Which branch and credentials does a writable submodule use, given the detached HEAD `submodule update` leaves and a remote of its own? | [Refinement #1567][1567] | Not knowing does not change the read-only slice; do not shape the write path before it lands. |
+| Does keeping a submodule current on pull need an operator switch, and what happens when the submodule tree is dirty? | [#1565][1565], under [refinement #1563][1563] | Resolve inside `025`; the refusal in [#1564][1564] does not depend on it. |
+| Which branch and credentials does a writable submodule use, given the detached HEAD `submodule update` leaves and a remote of its own? | [Refinement #1567][1567] | Not knowing does not change `025`; do not shape the write path before it lands. |
 
 `derived` — The distribution and database-mode decisions change their respective
 delivery scopes, so each has a research issue with an explicit appetite. Other
@@ -416,8 +434,9 @@ against a superproject holding one submodule (git 2.55.0); the findings are the
 [reference page](reference/git-submodules.md) and the issues under
 [#1561][1561] and [#1562][1562].
 
-`derived` — Neither epic joins a package yet; § Vaults with git submodules
-argues the order.
+`stated` — The owner then committed the read-only slice to `025 submodules-read`
+and the write epic to a later `060 submodules-write`; § Vaults with git
+submodules argues the order.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
