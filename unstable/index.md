@@ -1,4 +1,12 @@
-# markdown-vault-mcp
+# Markdown Vault MCP
+
+Generic markdown vault MCP with hybrid search
+
+## Getting started
+
+- [Installation](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/installation/index.md)
+- [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md)
+- [Tools](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/index.md)
 
 A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
 

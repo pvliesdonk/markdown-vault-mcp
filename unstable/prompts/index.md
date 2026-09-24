@@ -1,4 +1,6 @@
-# MCP Prompts
+# Prompts
+
+MCP prompts are reusable prompt templates exposed to clients; the ones this server provides are listed below.
 
 Prompt templates guide the LLM through multi-step workflows using the vault tools. Write prompts (`research`, `discuss`, `create_from_template`) are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`; they are available by default.
 

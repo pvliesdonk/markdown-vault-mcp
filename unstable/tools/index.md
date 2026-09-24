@@ -1,6 +1,6 @@
-# MCP Tools
+# Tools
 
-markdown-vault-mcp exposes MCP tools across several categories. Write tools are available unless `MARKDOWN_VAULT_MCP_READ_ONLY=true`.
+The tools registered in this server are listed below.
 
 Index freshness on read tools (`wait_for_pending_writes` + `_meta.index_stale`)
 

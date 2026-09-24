@@ -574,6 +574,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#from-docker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From Docker
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From source
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-extras" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional extras
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#using-uv" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -585,21 +618,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#from-source" class="md-nav__link">
+  <a href="#docker-image" class="md-nav__link">
     <span class="md-ellipsis">
       
-        From Source
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#docker" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Docker
+        Docker image
       
     </span>
   </a>
@@ -1983,6 +2005,39 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#from-docker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From Docker
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#from-source" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From source
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#optional-extras" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Optional extras
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#using-uv" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1994,21 +2049,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#from-source" class="md-nav__link">
+  <a href="#docker-image" class="md-nav__link">
     <span class="md-ellipsis">
       
-        From Source
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#docker" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Docker
+        Docker image
       
     </span>
   </a>
@@ -2083,7 +2127,18 @@
 <h2 id="from-pypi">From PyPI<a class="headerlink" href="#from-pypi" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp
 </code></pre></div>
-<p>With optional dependencies:</p>
+<h2 id="from-docker">From Docker<a class="headerlink" href="#from-docker" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>pull<span class="w"> </span>ghcr.io/pvliesdonk/markdown-vault-mcp:latest
+</code></pre></div>
+<p>The <code>latest</code> tag is the newest stable release. The rolling <code>edge</code> tag tracks every merge to <code>main</code> and carries no version identity; see <a href="../deployment/docker/#image-tags">Image tags</a> for the full list.</p>
+<h2 id="from-source">From source<a class="headerlink" href="#from-source" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/pvliesdonk/markdown-vault-mcp
+<span class="nb">cd</span><span class="w"> </span>markdown-vault-mcp
+uv<span class="w"> </span>sync<span class="w"> </span>--all-extras<span class="w"> </span>--all-groups
+</code></pre></div>
+<!-- DOMAIN-INSTALL-EXTRA-START -->
+<h2 id="optional-extras">Optional extras<a class="headerlink" href="#optional-extras" title="Permanent link">&para;</a></h2>
+<p>The PyPI package installs the library alone. Pick the extras for how you run it:</p>
 <div class="tabbed-set tabbed-alternate" data-tabs="1:4"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><input id="__tabbed_1_4" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">MCP server</label><label for="__tabbed_1_2">API embeddings</label><label for="__tabbed_1_3">Local embeddings</label><label for="__tabbed_1_4">All (recommended)</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
@@ -2111,16 +2166,8 @@ MCP + FastEmbed + API embeddings.</p>
 <h2 id="using-uv">Using uv<a class="headerlink" href="#using-uv" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>markdown-vault-mcp<span class="o">[</span>all<span class="o">]</span>
 </code></pre></div>
-<h2 id="from-source">From Source<a class="headerlink" href="#from-source" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/pvliesdonk/markdown-vault-mcp.git
-<span class="nb">cd</span><span class="w"> </span>markdown-vault-mcp
-uv<span class="w"> </span>sync<span class="w"> </span>--all-extras<span class="w"> </span>--all-groups
-</code></pre></div>
-<h2 id="docker">Docker<a class="headerlink" href="#docker" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>pull<span class="w"> </span>ghcr.io/pvliesdonk/markdown-vault-mcp:latest
-</code></pre></div>
+<h2 id="docker-image">Docker image<a class="headerlink" href="#docker-image" title="Permanent link">&para;</a></h2>
 <p>The Docker image uses <code>[all]</code> (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI/Voyage when configured.</p>
-<p>The <code>latest</code> tag is the newest stable release. For early adopters who want to test unreleased changes, the rolling <code>edge</code> tag tracks every merge to <code>main</code> and carries no version identity; see <a href="../deployment/docker/#image-tags">Image tags</a> for the full list. The floating <code>:latest</code>, <code>:vN</code>, and <code>:vN.M</code> tags only move on stable releases.</p>
 <div class="highlight"><pre><span></span><code>docker<span class="w"> </span>pull<span class="w"> </span>ghcr.io/pvliesdonk/markdown-vault-mcp:edge
 </code></pre></div>
 <p>See <a href="../deployment/docker/">Docker deployment</a> for compose setup and volume configuration.</p>
@@ -2185,7 +2232,6 @@ markdown-vault-mcp<span class="w"> </span>--help
 <span class="nb">export</span><span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_SOURCE_DIR</span><span class="o">=</span>/path/to/your/markdown/files
 markdown-vault-mcp<span class="w"> </span>search<span class="w"> </span><span class="s2">"hello world"</span>
 </code></pre></div>
-<!-- DOMAIN-INSTALL-EXTRA-START -->
 <h2 id="upgrading-from-earlier-versions">Upgrading from earlier versions<a class="headerlink" href="#upgrading-from-earlier-versions" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Package root minimized (issue #903): import from submodules, not the package root.</strong>

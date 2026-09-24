@@ -6,7 +6,25 @@
 pip install markdown-vault-mcp
 ```
 
-With optional dependencies:
+## From Docker
+
+```
+docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
+```
+
+The `latest` tag is the newest stable release. The rolling `edge` tag tracks every merge to `main` and carries no version identity; see [Image tags](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/#image-tags) for the full list.
+
+## From source
+
+```
+git clone https://github.com/pvliesdonk/markdown-vault-mcp
+cd markdown-vault-mcp
+uv sync --all-extras --all-groups
+```
+
+## Optional extras
+
+The PyPI package installs the library alone. Pick the extras for how you run it:
 
 ```
 pip install markdown-vault-mcp[mcp]
@@ -38,23 +56,9 @@ MCP + FastEmbed + API embeddings.
 uv pip install markdown-vault-mcp[all]
 ```
 
-## From Source
-
-```
-git clone https://github.com/pvliesdonk/markdown-vault-mcp.git
-cd markdown-vault-mcp
-uv sync --all-extras --all-groups
-```
-
-## Docker
-
-```
-docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
-```
+## Docker image
 
 The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI/Voyage when configured.
-
-The `latest` tag is the newest stable release. For early adopters who want to test unreleased changes, the rolling `edge` tag tracks every merge to `main` and carries no version identity; see [Image tags](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/#image-tags) for the full list. The floating `:latest`, `:vN`, and `:vN.M` tags only move on stable releases.
 
 ```
 docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:edge
