@@ -107,6 +107,7 @@ src/markdown_vault_mcp/
   _server_deps.py      -- server_lifespan + LifespanState: Service lifecycle and vault DI for request handlers
   tools.py             -- register_tools: the template's seeded registrar, delegating to the per-facet groups (#578)
   _tools/
+    __init__.py        -- package marker; the groups below are registered by tools.py
     _common.py         -- shared tool plumbing: staleness-annotated results, drain waits
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
     writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
