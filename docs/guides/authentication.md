@@ -1,6 +1,6 @@
 # Authentication
 
-This guide covers how to protect your markdown-vault-mcp server with authentication. Choose the mode that fits your deployment.
+This guide covers how to protect your MCP server with authentication. Choose the mode that fits your deployment.
 
 !!! warning "Transport requirement"
     Authentication only works with HTTP transport (`--transport http` or `sse`). It has no effect with `--transport stdio`.
@@ -17,7 +17,7 @@ The server supports five authentication modes:
 | **OIDC (oidc-proxy)** | The same, where the server should run the OAuth flow itself and manage sessions | Set all four OIDC variables (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`) |
 | **No auth** | Local stdio usage, trusted networks | Default (nothing to configure) |
 
-When both bearer token and OIDC are configured, the server accepts **either** credential: a valid bearer token or a valid OIDC session. This is useful when different clients require different authentication flows against the same vault instance.
+When both bearer token and OIDC are configured, the server accepts **either** credential: a valid bearer token or a valid OIDC session. This is useful when different clients require different authentication flows against the same server instance.
 
 ---
 
@@ -60,11 +60,9 @@ Authorization: Bearer your-generated-token
 - Development and testing environments
 - Any scenario where full OIDC is overkill
 
-See also: [`examples/bearer-auth.env`](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/examples/bearer-auth.env) for a ready-to-use example.
-
 ### Mapped bearer tokens (multi-subject)
 
-The bearer-token mode above shares one subject across every authenticated caller (by default the library's `bearer-anon`, override with `MARKDOWN_VAULT_MCP_BEARER_DEFAULT_SUBJECT`). For audit logs and authorization that distinguish callers, switch to mapped-token mode by pointing `MARKDOWN_VAULT_MCP_BEARER_TOKENS_FILE` at a TOML file:
+The bearer-token mode above shares one subject across every authenticated caller. By default this is the library's `bearer-anon`; override with `MARKDOWN_VAULT_MCP_BEARER_DEFAULT_SUBJECT`. For audit logs and authorization that distinguish callers, switch to mapped-token mode by pointing `MARKDOWN_VAULT_MCP_BEARER_TOKENS_FILE` at a TOML file:
 
 ```toml
 # tokens.toml
@@ -73,7 +71,7 @@ The bearer-token mode above shares one subject across every authenticated caller
 "sk_ci_yyyyyyyy"     = "service:ci-bot"
 ```
 
-Each token resolves to a distinct subject string for downstream attribution. For OKF provenance these remain service credentials: writes use the server's tool actor, and confirmed reviews in `elicit` mode use `human:local`. `trust-auth` verification refuses them. Subject strings are opaque: the `<kind>:<id>` convention (`user:`, `service:`, `token:`) is documentation only. When `BEARER_TOKENS_FILE` is set it overrides `BEARER_TOKEN` (a `WARNING` is logged if both are present). A missing or malformed file aborts startup with `ConfigurationError` rather than silently denying every request.
+Each token resolves to a distinct subject string for downstream attribution. Subject strings are opaque: the `<kind>:<id>` convention (`user:`, `service:`, `token:`) is documentation only. When `BEARER_TOKENS_FILE` is set it overrides `BEARER_TOKEN` (a `WARNING` is logged if both are present). A missing or malformed file aborts startup with `ConfigurationError` rather than silently denying every request.
 
 ---
 
@@ -141,16 +139,7 @@ Client → markdown-vault-mcp → OIDC Provider
     ```
 
 !!! tip "Long-running sessions"
-    Current MCP clients do not reliably refresh tokens; see [Known Limitations](#known-limitations-mcp-oauth-token-refresh). Configure **all** token lifetimes (access, id, refresh) on your identity provider to cover a full workday (8&nbsp;h or more). For simpler deployments, bearer token auth is unaffected by these limitations.
-
-### Provider guides
-
-For step-by-step setup with specific providers:
-
-- [Authelia](oidc-providers.md#authelia)
-- [Keycloak](oidc-providers.md#keycloak)
-- [Google](oidc-providers.md#google)
-- [GitHub (via Keycloak broker)](oidc-providers.md#github)
+    Current MCP clients do not reliably refresh tokens; see [Known Limitations](#known-limitations-mcp-oauth-token-refresh). Configure **all** token lifetimes (access, id, refresh) on your identity provider to cover a full workday (8 hours or more). For simpler deployments, bearer token auth is unaffected by these limitations.
 
 For the full OIDC reference (env vars, Docker Compose, subpath deployments, architecture):
 
@@ -185,7 +174,7 @@ Authentication only works with HTTP transport. If you're using `--transport stdi
 ### OIDC redirect fails
 
 - Verify `BASE_URL` matches your public URL exactly (including any subpath prefix)
-- For subpath deployments, see the [subpath deployment guide](../deployment/oidc.md#subpath-deployments): `BASE_URL` must include the prefix, `HTTP_PATH` must not
+- For subpath deployments, see the [subpath deployment guide](../deployment/oidc.md#subpath-deployments); `BASE_URL` must include the prefix, `HTTP_PATH` must not
 - Check that `redirect_uris` in your provider config includes your callback URL (such as `https://mcp.example.com/auth/callback`)
 
 ### Session drops after token expiry
@@ -198,7 +187,7 @@ Authentication only works with HTTP transport. If you're using `--transport stdi
 
 2. **access_token lifetime**: If both `id_token` and `access_token` are set correctly but sessions still drop, check that the provider's `expires_in` response matches your configured lifetime.
 
-3. **No refresh token**: See [Known Limitations](#known-limitations-mcp-oauth-token-refresh) below. Current MCP clients cannot refresh tokens, so sessions are limited to the token lifetime.
+3. **No refresh token**: See [Known Limitations](#known-limitations-mcp-oauth-token-refresh) below; current MCP clients cannot refresh tokens, so sessions are limited to the token lifetime.
 
 **Workaround:** configure **all** token lifetimes on your identity provider to cover a full workday:
 
@@ -212,22 +201,20 @@ lifespans:
       refresh_token: '30d'
 ```
 
-See the [Authelia provider guide](oidc-providers.md#authelia) for the full configuration.
-
 ### Opaque access tokens (Authelia)
 
-Authelia issues opaque (non-JWT) access tokens. This is handled automatically: the server verifies the `id_token` instead. No extra configuration needed. See the [Authelia guide](oidc-providers.md#authelia) for details.
+Authelia issues opaque (non-JWT) access tokens. This is handled automatically: the server verifies the `id_token` instead. No extra configuration needed.
 
 ---
 
 ## Known Limitations: MCP OAuth token refresh
 
 !!! warning "Ecosystem-wide issue"
-    The limitations below affect **all** OAuth-protected MCP servers, not just markdown-vault-mcp. They are caused by issues in the MCP client implementations (Claude Code, Claude.ai, Claude Desktop) and the MCP Python SDK. Check the linked tracking issues for current status.
+    The limitations below affect **all** OAuth-protected MCP servers, not just this one. They are caused by issues in the MCP client implementations (Claude Code, Claude.ai, Claude Desktop) and the MCP Python SDK. Check the linked tracking issues for current status.
 
 ### The problem
 
-MCP clients cannot maintain sessions beyond the token lifetime because token refresh does not work. When tokens expire, the session drops and requires manual re-authentication. This affects every provider: Authelia, Keycloak, Google, Slack, Notion, Atlassian, and others.
+MCP clients cannot maintain sessions beyond the token lifetime because token refresh does not work. When tokens expire, the session drops and requires manual re-authentication. This affects every provider: Authelia, Keycloak, Google, and others.
 
 ### Why refresh doesn't work
 
@@ -243,11 +230,9 @@ The server-side refresh architecture (FastMCP's `OAuthProxy.exchange_refresh_tok
 
 ### What works today
 
-**Remote auth mode** (`AUTH_MODE=remote` or auto-detected) avoids the double-validation problem entirely. The server validates tokens locally via JWKS and never stores or re-validates upstream tokens. This is the recommended mode for new deployments.
-
 **Bearer token auth** is unaffected by all of the above. If your deployment allows it (such as Claude Code with env vars, or API clients), bearer tokens are the simplest and most reliable option.
 
-**Long token lifetimes** are the only viable workaround for OIDC in oidc-proxy mode. Set all three lifetimes (access, id, refresh) to cover your typical session duration:
+**Long token lifetimes** are the only viable workaround for OIDC. Set all three lifetimes (access, id, refresh) to cover your typical session duration:
 
 - `access_token: '8h'`: covers a workday
 - `id_token: '8h'`: **must match access_token** when using `verify_id_token` mode (critical for Authelia)
@@ -262,7 +247,8 @@ These upstream issues are actively tracked:
 - [anthropics/claude-code#7744](https://github.com/anthropics/claude-code/issues/7744): `offline_access` scope never requested
 - [modelcontextprotocol/python-sdk#1326](https://github.com/modelcontextprotocol/python-sdk/issues/1326): SSE refresh deadlock
 
-When these are resolved, OIDC sessions should persist indefinitely via automatic token refresh with no changes needed to markdown-vault-mcp.
+When these are resolved, OIDC sessions should persist indefinitely via automatic token refresh with no changes needed server-side.
+
 
 <!-- DOMAIN-AUTH-EXTRA-START -->
 ## Choosing an OIDC mode
@@ -273,4 +259,19 @@ Reach for oidc-proxy when the provider needs Dynamic Client Registration emulate
 
 !!! tip "Moving an existing deployment from oidc-proxy to remote"
     Remove `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` and `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` from the environment and the server auto-detects remote mode, or set `MARKDOWN_VAULT_MCP_AUTH_MODE=remote` to say so outright. The client credentials stay registered with the provider until you remove them there too.
+
+## Provider guides
+
+For step-by-step setup with specific providers, including the full Authelia configuration:
+
+- [Authelia](oidc-providers.md#authelia)
+- [Keycloak](oidc-providers.md#keycloak)
+- [Google](oidc-providers.md#google)
+- [GitHub (via Keycloak broker)](oidc-providers.md#github)
+
+A ready-to-use bearer-token environment is in [`examples/bearer-auth.env`](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/examples/bearer-auth.env).
+
+## Bearer subjects and OKF provenance
+
+Mapped bearer tokens resolve to subject strings, but for OKF provenance they remain service credentials: writes use the server's tool actor, and confirmed reviews in `elicit` mode use `human:local`. `trust-auth` verification refuses them. See the [OKF guide](okf.md) for the provenance model.
 <!-- DOMAIN-AUTH-EXTRA-END -->
