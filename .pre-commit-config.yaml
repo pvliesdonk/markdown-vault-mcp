@@ -1,3 +1,5 @@
+# `pre-commit install` wires both stages so the pre-push structural gate is
+# installed alongside the commit-time hooks.
 default_install_hook_types: [pre-commit, pre-push]
 
 repos:
@@ -45,20 +47,6 @@ repos:
         # the CI structure job's `HAS_PY` docs-only skip.
         types: [python]
         stages: [pre-push]
-
-      - id: build-spa-check
-        name: assembled SPA source up-to-date
-        language: system
-        entry: uv run python scripts/build_spa.py --check
-        files: ^src/markdown_vault_mcp/static/spa/
-        pass_filenames: false
-
-      - id: vendor-spa-check
-        name: vendored SPA HTML up-to-date
-        language: system
-        entry: uv run python scripts/vendor_spa.py --check
-        files: ^src/markdown_vault_mcp/static/app\.src\.html$
-        pass_filenames: false
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -126,8 +114,8 @@ repos:
         files: ^(docs/|\.vale\.ini$)
         # Align trigger scope with the `vale` lint hook below — no point
         # checking sync state on commits that only touch the excluded
-        # internal dev-doc subtrees.
-        exclude: ^docs/(superpowers|design|decisions)/
+        # working-specs subtree.
+        exclude: ^docs/superpowers/
 
   - repo: https://github.com/vale-cli/vale
     rev: v3.14.2
@@ -153,4 +141,19 @@ repos:
 # block is template-owned and re-rendered on update, which keeps the hook
 # pins and the structural-gate wiring above in lockstep with the re-rendered
 # tests that assert on them.
+  - repo: local
+    hooks:
+      - id: build-spa-check
+        name: assembled SPA source up-to-date
+        language: system
+        entry: uv run python scripts/build_spa.py --check
+        files: ^src/markdown_vault_mcp/static/spa/
+        pass_filenames: false
+
+      - id: vendor-spa-check
+        name: vendored SPA HTML up-to-date
+        language: system
+        entry: uv run python scripts/vendor_spa.py --check
+        files: ^src/markdown_vault_mcp/static/app\.src\.html$
+        pass_filenames: false
 # DOMAIN-HOOKS-END

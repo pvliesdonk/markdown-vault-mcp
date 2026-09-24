@@ -39,8 +39,8 @@ ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
 ReadWritePaths=/var/lib/markdown-vault-mcp
-# Add extra ReadWritePaths if your vault is outside /var/lib/markdown-vault-mcp:
-#ReadWritePaths=/home/user/vault
+# Add extra ReadWritePaths if your data directory is elsewhere:
+#ReadWritePaths=/home/user/data
 
 # Capabilities
 NoNewPrivileges=yes
@@ -78,7 +78,7 @@ MemoryDenyWriteExecute=no
 
 # Process
 # 0027 allows group-read so admins in the markdown-vault-mcp group can
-# inspect vault/index files directly. Owner retains full access.
+# inspect data/index files directly. Owner retains full access.
 UMask=0027
 
 [Install]
