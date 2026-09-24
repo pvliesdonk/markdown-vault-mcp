@@ -20,9 +20,11 @@ from fastmcp.server.context import Context
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections._assembly import (
+    source_dir_missing,
     to_vault_instances,
     to_vault_settings,
 )
+from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
@@ -129,14 +131,31 @@ class Service:
         self._transport = transport if transport is not None else _pending_transport
         self._vault: Vault | None = None
         self._file_watcher: VaultFileWatcher | None = None
+        # Why start() built no vault: the message every accessor raises with
+        # until the operator fixes the deployment and restarts.
+        self._startup_error: str | None = None
 
     @property
     def vault(self) -> Vault:
-        """The live :class:`Vault` (raises if :meth:`start` has not run)."""
+        """The live :class:`Vault`.
+
+        Raises:
+            ConfigurationError: If :meth:`start` ran but built no vault
+                because the directory does not exist; the message names the
+                variable to set.
+            RuntimeError: If :meth:`start` has not run.
+        """
         if self._vault is None:
+            if self._startup_error is not None:
+                raise ConfigurationError(self._startup_error)
             msg = "Service not started — call start() first"
             raise RuntimeError(msg)
         return self._vault
+
+    @property
+    def startup_error(self) -> str | None:
+        """Why :meth:`start` built no vault, or ``None`` when it did."""
+        return self._startup_error
 
     @property
     def config(self) -> ProjectConfig:
@@ -146,6 +165,22 @@ class Service:
     async def start(self) -> None:
         """Build the Vault and submit the boot jobs; start background tasks."""
         config = self._config
+        # No vault directory, no vault: the index writer and the file watcher
+        # cannot run over an absent path (a wrong path used to crash the
+        # lifespan here with a raw FileNotFoundError). The server still
+        # starts, so its tool listing and instructions are reachable, and
+        # every tool fails with the variable to set until the operator fixes
+        # the deployment and restarts.
+        if source_dir_missing(config):
+            self._startup_error = (
+                f"vault directory {config.source_dir} does not exist. "
+                "Set MARKDOWN_VAULT_MCP_SOURCE_DIR to the path of your markdown vault."
+            )
+            logger.error(
+                "vault_directory_missing path=%s var=MARKDOWN_VAULT_MCP_SOURCE_DIR",
+                config.source_dir,
+            )
+            return
         logger.info("vault_initialising source_dir=%s", config.source_dir)
 
         # Settings-first construction (#1158): the config-derived knobs

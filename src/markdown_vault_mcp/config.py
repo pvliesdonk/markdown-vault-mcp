@@ -38,19 +38,20 @@ from markdown_vault_mcp.config_sections import (
     SyncConfig,
 )
 from markdown_vault_mcp.config_sections._assembly import (
-    derive_max_chunk_chars as derive_max_chunk_chars,  # re-export: tests / scanner xref
-)
-from markdown_vault_mcp.config_sections._assembly import (
+    DEFAULT_SOURCE_DIR,
     normalize_templates_folder,
-    require_source_dir,
     resolve_attachment_extensions,
     resolve_conventions_file,
     resolve_git_repo_url,
     resolve_prompts_folder,
     resolve_searchable_fields,
+    resolve_source_dir,
     resolve_summarize_api_key,
     resolve_summarize_base_url,
     to_bool,
+)
+from markdown_vault_mcp.config_sections._assembly import (
+    derive_max_chunk_chars as derive_max_chunk_chars,  # re-export: tests / scanner xref
 )
 from markdown_vault_mcp.config_sections._helpers import (
     WeightMap,
@@ -107,12 +108,13 @@ class ProjectConfig:
     # matching literal env read in from_env. The section views the codebase
     # consumes (config.git, config.search, ...) are properties below.
     source_dir: Path = field(
-        default=Path("/data/vault"),
+        default=DEFAULT_SOURCE_DIR,
         metadata={
             "help": (
-                "Path to the markdown vault directory. Required — the server "
-                "refuses to start without it. Symbolic links inside the vault "
-                "are followed on Python 3.13+."
+                "Path to the markdown vault directory. When it does not exist "
+                "the server starts but every tool fails with a message naming "
+                "this variable until it does (managed git mode clones into it). "
+                "Symbolic links inside the vault are followed on Python 3.13+."
             ),
             "tags": ("vault", "readme"),
         },
@@ -1124,7 +1126,7 @@ class ProjectConfig:
             # OPENAI_API_KEY, and the OPENAI_BASE_URL /
             # OPENAI_EMBEDDING_MODEL fallbacks) are declared in
             # config-presentation.domain.yml instead.
-            source_dir=require_source_dir(env(_ENV_PREFIX, "SOURCE_DIR")),
+            source_dir=resolve_source_dir(env(_ENV_PREFIX, "SOURCE_DIR")),
             read_only=to_bool(env(_ENV_PREFIX, "READ_ONLY"), default=False),
             write_protect_existing=to_bool(
                 env(_ENV_PREFIX, "WRITE_PROTECT_EXISTING"), default=True

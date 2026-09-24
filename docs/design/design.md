@@ -4406,7 +4406,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` | Deployment-specific behavioral policy added to the composed instructions | (none) |
 | `MARKDOWN_VAULT_MCP_INSTRUCTIONS` | Deprecated: replaces the composed instructions entirely | composed text |
 | `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI` | Hide MCP-Apps UI tools (`browse_vault`, `show_context`) from the listing | `false` |
-| `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files | required |
+| `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files; when absent the server starts but every tool fails naming this variable (managed git clones into it) | `/data/vault` |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Hide the write tools | `false` |
 | `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied; set `false` to allow blind overwrites | `true` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |

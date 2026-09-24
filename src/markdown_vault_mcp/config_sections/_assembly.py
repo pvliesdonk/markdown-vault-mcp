@@ -48,6 +48,11 @@ logger = logging.getLogger(__name__)
 # Full env-var name for the required source dir, used in the missing-var message.
 _SOURCE_DIR_VAR = "MARKDOWN_VAULT_MCP_SOURCE_DIR"
 
+# The documented default for SOURCE_DIR: the image and the packaged unit
+# mount the vault there, so an unset variable means that layout, and the
+# operator surface (docs table, .env.example, wizard) already says so.
+DEFAULT_SOURCE_DIR = Path("/data/vault")
+
 # Heuristic ratio converting an embedding model's token context length into a
 # conservative character budget for the chunker. English prose averages ~4
 # chars/token; 2.8 leaves headroom for token-dense (CJK, code, tables) content
@@ -100,23 +105,29 @@ def derive_max_chunk_chars(*, context_length: int | None, override: int | None) 
     return _MAX_CHUNK_CHARS_CEILING
 
 
-def require_source_dir(raw: str | None) -> Path:
-    """Validate the required ``SOURCE_DIR`` env value into a :class:`Path`.
+def resolve_source_dir(raw: str | None) -> Path:
+    """Turn the ``SOURCE_DIR`` env value into a :class:`Path`, defaulting when unset.
 
     Takes the already-read env value (so ``config.from_env`` keeps a literal
-    ``env(..., "SOURCE_DIR")`` call the wizard drift gate can see) and raises
-    when it is unset or blank.
-
-    Raises:
-        ConfigurationError: If *raw* is ``None`` or whitespace-only.
+    ``env(..., "SOURCE_DIR")`` call the wizard drift gate can see). Unset or
+    blank means :data:`DEFAULT_SOURCE_DIR`; whether that directory exists is
+    reported at startup (:func:`source_dir_missing`), not here, so a
+    ``ProjectConfig`` constructs from an empty environment the way the
+    template's contract expects.
     """
     cleaned = (raw or "").strip()
-    if not cleaned:
-        raise ConfigurationError(
-            f"{_SOURCE_DIR_VAR} is required but not set. "
-            "Set it to the path of your markdown vault."
-        )
-    return Path(cleaned)
+    return Path(cleaned) if cleaned else DEFAULT_SOURCE_DIR
+
+
+def source_dir_missing(config: ProjectConfig) -> bool:
+    """Whether the configured vault directory does not exist yet.
+
+    Consulted by :meth:`Service.start`, which then builds no vault and lets
+    every accessor fail with the variable to set: the index writer and the
+    file watcher cannot run over an absent directory. Managed git mode is
+    exempt because its bootstrap clones into the directory itself.
+    """
+    return config.git.repo_url is None and not config.source_dir.is_dir()
 
 
 def to_bool(raw: str | None, *, default: bool) -> bool:
