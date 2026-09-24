@@ -348,6 +348,9 @@ def get_vault(ctx: Context = CurrentContext()) -> Vault:
 
     Raises:
         RuntimeError: If the server lifespan has not run.
+        ConfigurationError: If the lifespan ran but built no vault because
+            the configured directory does not exist (see
+            :attr:`Service.startup_error`).
     """
     service: Service | None = ctx.lifespan_context.get("service")
     if service is None:
