@@ -1530,6 +1530,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#what-an-update-is-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an update is for
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-the-pull-request-carries" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1563,10 +1574,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#when-the-update-is-not-wanted" class="md-nav__link">
+  <a href="#when-the-template-looks-wrong" class="md-nav__link">
     <span class="md-ellipsis">
       
-        When the update is not wanted
+        When the template looks wrong
       
     </span>
   </a>
@@ -1928,6 +1939,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#what-an-update-is-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an update is for
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#what-the-pull-request-carries" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1961,10 +1983,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#when-the-update-is-not-wanted" class="md-nav__link">
+  <a href="#when-the-template-looks-wrong" class="md-nav__link">
     <span class="md-ellipsis">
       
-        When the update is not wanted
+        When the template looks wrong
       
     </span>
   </a>
@@ -2003,6 +2025,19 @@ release. This page is the procedure for that pull request,
 whether you work through it yourself or hand it to a coding agent (the
 <code>applying-template-updates</code> skill under <code>.agents/skills/</code> is the same
 procedure in agent-invocable form).</p>
+<h2 id="what-an-update-is-for">What an update is for<a class="headerlink" href="#what-an-update-is-for" title="Permanent link">&para;</a></h2>
+<p>In most copier projects an update is a merge: you accept the template's
+changes and settle the conflicts. Here the template is authoritative.
+In every file <code>copier update</code> re-renders, each line outside a sentinel
+block belongs to the template, and the update brings this project back to
+the template at the target version.</p>
+<p>Conflict markers show only where a template change and a local change
+collide. Local content written into template-owned lines that the template
+did not change in this jump carries forward silently, so an update with no
+conflicts can still leave the project forked. That drift comes from this
+project's own earlier commits, not from the template. An update is done
+when every template-owned file either conforms or has a Decay issue in
+this project that says why it does not yet.</p>
 <h2 id="what-the-pull-request-carries">What the pull request carries<a class="headerlink" href="#what-the-pull-request-carries" title="Permanent link">&para;</a></h2>
 <ul>
 <li>The version delta (<code>vA.B.C</code> → <code>vX.Y.Z</code>) and a compare link on the
@@ -2012,6 +2047,9 @@ procedure in agent-invocable form).</p>
   link to the full file at the target ref. This is the template's record
   of the work <code>copier update</code> cannot do.</li>
 <li>The list of files that carry conflict markers, if any.</li>
+<li>The drift report, <code>.copier-template-drift.md</code>: every template-owned file
+  that differed from the template outside its sentinel blocks before this
+  update, with the diff and the commits that last touched those lines.</li>
 <li>The resolution policy: the template side wins everywhere outside the
   regions this project owns.</li>
 </ul>
@@ -2023,6 +2061,12 @@ procedure in agent-invocable form).</p>
    on the <code>copier/update</code> branch before touching anything else; a note
    that is skipped now is a failure later, on a run nobody connects to
    this update.</li>
+<li><strong>Read the drift report.</strong> <code>.copier-template-drift.md</code> is the list of
+   work; the conflict markers are the part of it the template also touched.
+   Where a drifted file carries a conflict marker, the report shows which
+   side of the hunk is local drift. If the report is missing or could not
+   be computed, run <code>python scripts/check_template_conformance.py --rev
+   origin/main --ref &lt;previous version&gt;</code> to produce it.</li>
 <li>
 <p><strong>Resolve conflict markers.</strong> <code>copier update</code> runs a three-way merge and
    leaves diff3-style markers where a template change and a local change
@@ -2046,8 +2090,15 @@ procedure in agent-invocable form).</p>
      <code>scripts/gen_config_surface.py</code>, which re-runs at the end of the update
      and rewrites them from your own config.</li>
 <li><strong>Outside every sentinel block the template side is correct by policy</strong>:
-     a local edit to a template-owned region is drift, and the fix is to move
-     that content into a sentinel block or upstream it.</li>
+     a local edit to a template-owned region is drift, and the displaced
+     content is handled as in the next step.</li>
+<li><strong>Conform every drifted file.</strong> For each file in the drift report,
+   restore the template's lines and move this project's content into the
+   sentinel block the file declares for it, or into a module or page the
+   template does not render. When that needs design work beyond the update,
+   keep the local lines in that file and open a Decay issue in this project
+   naming the file and the hunks; that issue is the only reason a file
+   stays drifted.</li>
 <li><strong>Check the seeded-once files.</strong> Copier's <code>_skip_if_exists</code> list names
    files that are written on the first <code>copier copy</code> and never touched
    again by <code>copier update</code>. They are absent from the diff even when the
@@ -2082,10 +2133,10 @@ procedure in agent-invocable form).</p>
    Treat a template change to a seeded file as a change to apply, never as
    noise to ignore: the template ships these files as complete starting
    points, and corrections to them reach this project only this way.
-4. <strong>Refresh the lock file.</strong> <code>uv lock</code> after any floor change (the
+6. <strong>Refresh the lock file.</strong> <code>uv lock</code> after any floor change (the
    upgrade notes say when), then <code>uv sync --all-extras --all-groups
    --locked</code>.
-5. <strong>Run the update gate.</strong> This is wider than the everyday gate, because
+7. <strong>Run the update gate.</strong> This is wider than the everyday gate, because
    an update can leave drift that only these checks see:</p>
 <div class="highlight"><pre><span></span><code>git<span class="w"> </span>diff<span class="w"> </span>--check
 git<span class="w"> </span>grep<span class="w"> </span>-nE<span class="w"> </span><span class="s1">'^(&lt;&lt;&lt;&lt;&lt;&lt;&lt;|=======|&gt;&gt;&gt;&gt;&gt;&gt;&gt;)'</span>
@@ -2098,25 +2149,43 @@ uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span
 uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-x<span class="w"> </span>-q
 uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
 uv<span class="w"> </span>run<span class="w"> </span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
+python<span class="w"> </span>scripts/check_template_conformance.py
 </code></pre></div>
 <p>An MCP Apps project also runs <code>uv run python scripts/vendor_spa.py
-   --check</code>. CI runs the same checks on the pull request.
-6. <strong>Merge.</strong> The branch is recreated on the next weekly run, so leave
+   --check</code>. The last command lists every template-owned file that still
+   differs from the template outside its sentinel blocks; each one must
+   have a Decay issue from step 4. CI runs the other checks on the pull
+   request.
+8. <strong>Merge.</strong> The branch is recreated on the next weekly run, so leave
    nothing uncommitted on it.</p>
 <h2 id="working-with-a-coding-agent">Working with a coding agent<a class="headerlink" href="#working-with-a-coding-agent" title="Permanent link">&para;</a></h2>
 <p>Give the agent the pull request number and ask it to invoke the
-<code>applying-template-updates</code> skill. The skill walks the six steps above and
+<code>applying-template-updates</code> skill. The skill walks the steps above and
 stops where a decision is yours: a conflict inside a sentinel block, an
 upgrade note it cannot perform (a secret to add, a repository setting),
 and any seeded-file change it is not certain applies to this project. It
-reports what it applied, what it skipped and why. Review that report
-against the pull request body before merging.</p>
-<h2 id="when-the-update-is-not-wanted">When the update is not wanted<a class="headerlink" href="#when-the-update-is-not-wanted" title="Permanent link">&para;</a></h2>
-<p>A template change can be wrong for this project. Do not resolve that by
-editing a template-owned region; the next update reverts it. Either move
-the divergence into a sentinel block the template preserves, or open an
-issue on the template repository so the change gains a switch or a
-sentinel. <code>FORKING.md</code> covers the last resort of detaching from the
+reports what it applied and what it skipped (with reasons), plus the
+outcome for every file in the drift report. Review that report against the pull request body
+before merging.</p>
+<h2 id="when-the-template-looks-wrong">When the template looks wrong<a class="headerlink" href="#when-the-template-looks-wrong" title="Permanent link">&para;</a></h2>
+<p>It sometimes is. Tell a template defect from this project's drift by
+reproducing without this project's content: render the target version
+with this project's answers and run the failing check there.</p>
+<div class="highlight"><pre><span></span><code>copier<span class="w"> </span>copy<span class="w"> </span>--trust<span class="w"> </span>--defaults<span class="w"> </span>--data-file<span class="w"> </span>.copier-answers.yml<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--vcs-ref<span class="w"> </span>&lt;target<span class="w"> </span>version&gt;<span class="w"> </span>&lt;template<span class="w"> </span>source&gt;<span class="w"> </span>/tmp/pristine
+</code></pre></div>
+<ul>
+<li><strong>The fault shows in that render</strong>: a template defect. Open an issue on
+  the template repository with the reproduction.</li>
+<li><strong>The fault shows only with this project's content in template-owned
+  lines</strong>: this project's debt. Conform the file, or open a Decay issue
+  here.</li>
+<li><strong>This project needs room the template does not give</strong>: a template
+  feature request. State the need, not the content it would let this
+  project keep, and file it once the update conforms.</li>
+</ul>
+<p>None of these resolves the update. The update does not wait for them
+either. <code>FORKING.md</code> covers the last resort of detaching from the
 template altogether.</p>
 
 

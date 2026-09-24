@@ -3025,7 +3025,7 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td><code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code></td>
 <td><code>/data/vault</code></td>
 <td>No</td>
-<td>Path to the markdown vault directory. Required; the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+.</td>
+<td>Path to the markdown vault directory. When it does not exist the server starts but every tool fails with a message naming this variable until it does (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_READ_ONLY</code></td>
