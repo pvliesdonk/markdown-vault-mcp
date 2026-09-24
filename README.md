@@ -253,7 +253,7 @@ fix belongs: `fastmcp-pvl-core` for library code, the template for
 template-owned files, this repository for anything inside its `DOMAIN-*` /
 `CONFIG-*` / `PROJECT-*` blocks. `AGENTS.md` carries the conventions and
 gates; the skills under `.agents/skills/` carry the task procedures, among
-them `code-review` (local self-review before a pull request),
+them `self-reviewing` (local self-review before a pull request),
 `writing-release-notes` (release notes),
 `applying-template-updates` (the weekly template update pull request) and
 `authoring-issues-prs` (filing). The release procedure is in
