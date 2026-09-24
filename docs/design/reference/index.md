@@ -20,6 +20,10 @@ follow OKF v0.2 (`generated`, `verified`, `stale_after`).
 - [Git submodules seen from a superproject](/git-submodules.md): gitlinks and `.gitmodules`, enumerating submodules, what superproject-level `add`/`ls-files`/`log`/`show` answer for a path inside one (`add` refuses it), how `clone`, `submodule update`, `fetch`, `merge --ff-only` and `pull` populate or leave a submodule, the detached HEAD `update` leaves, and the abort a dirty submodule causes. Read before touching `git/bootstrap.py`, the pull path in `git/strategy.py` or `git/query.py` for the submodule epics (#1561, #1562).
 - [GitHub planning objects](/github-planning-objects.md): milestones, issue relationships, and PR design material used by roadmapping and releases.
 - [GitHub repository security settings](/github-repository-security-settings.md): private vulnerability reporting, Dependabot alerts, push protection and the security policy file, as `bootstrap.yml` and `SECURITY.md` rely on them.
+- [MCP model-facing text](mcp-model-facing-text.md) — who reads each
+  description field, how clients cut and index it, how FastMCP builds it from
+  a docstring, and what the vendors say it should carry; the evidence behind
+  the `writing-model-facing-text` skill.
 - [FastMCP 4 protocol and server behaviour](/fastmcp-4.md): SDK field names, protocol-era elicitation, resource path screening, per-server tasks, and OAuth route mounting used by the v8 template migration (#1271).
 - [fastmcp-pvl-core transfer errors and retries](/fastmcp-transfer.md): sink-selected HTTP errors, release on failure, and successful-upload replay. Read before changing `_transfer_sink.py` error handling or transfer retry guidance.
 - [Authenticated subjects and human attribution](/authenticated-subjects.md): bearer client identifiers, token claims, and the limits of OAuth identity for OKF provenance. Read before changing `_identity.py`.

@@ -20,9 +20,11 @@ from fastmcp.server.context import Context
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections._assembly import (
+    source_dir_missing,
     to_vault_instances,
     to_vault_settings,
 )
+from markdown_vault_mcp.exceptions import ConfigurationError
 from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
@@ -32,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 
 _vault_singleton: Vault | None = None
+# Why there is no singleton although the lifespan ran: the message every
+# out-of-context accessor (transfer sink, webhook routes) raises with.
+_vault_unavailable: str | None = None
 
 # Config handoff: make_server sets the config it already loaded so the no-arg
 # ``Service()`` the template's server_lifespan constructs builds the vault from
@@ -71,7 +76,7 @@ def set_pending_transport(transport: str) -> None:
     _pending_transport = transport
 
 
-def set_vault_singleton(vault: Vault | None) -> None:
+def set_vault_singleton(vault: Vault | None, *, unavailable: str | None = None) -> None:
     """Set the module-level :class:`Vault` singleton.
 
     Set by :meth:`Service.start` with the live Vault, and cleared to ``None`` by
@@ -79,9 +84,14 @@ def set_vault_singleton(vault: Vault | None) -> None:
 
     Args:
         vault: The live :class:`Vault`, or ``None`` to clear.
+        unavailable: With ``vault=None``, why the lifespan built no vault;
+            :func:`get_vault_singleton` then raises
+            :class:`~markdown_vault_mcp.exceptions.ConfigurationError` with it
+            instead of the not-started ``RuntimeError``.
     """
-    global _vault_singleton
+    global _vault_singleton, _vault_unavailable
     _vault_singleton = vault
+    _vault_unavailable = unavailable if vault is None else None
 
 
 def get_vault_singleton() -> Vault:
@@ -95,9 +105,13 @@ def get_vault_singleton() -> Vault:
         The live :class:`Vault` set by :meth:`Service.start`.
 
     Raises:
+        ConfigurationError: If the lifespan ran but built no vault because
+            the configured directory does not exist.
         RuntimeError: If the singleton has not been set yet.
     """
     if _vault_singleton is None:
+        if _vault_unavailable is not None:
+            raise ConfigurationError(_vault_unavailable)
         msg = (
             "Vault not initialised — Service.start was never called.  In normal "
             "operation the server lifespan starts it; in tests, set explicitly "
@@ -129,14 +143,31 @@ class Service:
         self._transport = transport if transport is not None else _pending_transport
         self._vault: Vault | None = None
         self._file_watcher: VaultFileWatcher | None = None
+        # Why start() built no vault: the message every accessor raises with
+        # until the operator fixes the deployment and restarts.
+        self._startup_error: str | None = None
 
     @property
     def vault(self) -> Vault:
-        """The live :class:`Vault` (raises if :meth:`start` has not run)."""
+        """The live :class:`Vault`.
+
+        Raises:
+            ConfigurationError: If :meth:`start` ran but built no vault
+                because the directory does not exist; the message names the
+                variable to set.
+            RuntimeError: If :meth:`start` has not run.
+        """
         if self._vault is None:
+            if self._startup_error is not None:
+                raise ConfigurationError(self._startup_error)
             msg = "Service not started — call start() first"
             raise RuntimeError(msg)
         return self._vault
+
+    @property
+    def startup_error(self) -> str | None:
+        """Why :meth:`start` built no vault, or ``None`` when it did."""
+        return self._startup_error
 
     @property
     def config(self) -> ProjectConfig:
@@ -146,6 +177,23 @@ class Service:
     async def start(self) -> None:
         """Build the Vault and submit the boot jobs; start background tasks."""
         config = self._config
+        # No vault directory, no vault: the index writer and the file watcher
+        # cannot run over an absent path (a wrong path used to crash the
+        # lifespan here with a raw FileNotFoundError). The server still
+        # starts, so its tool listing and instructions are reachable, and
+        # every tool fails with the variable to set until the operator fixes
+        # the deployment and restarts.
+        if source_dir_missing(config):
+            self._startup_error = (
+                f"vault directory {config.source_dir} does not exist. "
+                "Set MARKDOWN_VAULT_MCP_SOURCE_DIR to the path of your markdown vault."
+            )
+            logger.error(
+                "vault_directory_missing path=%s var=MARKDOWN_VAULT_MCP_SOURCE_DIR",
+                config.source_dir,
+            )
+            set_vault_singleton(None, unavailable=self._startup_error)
+            return
         logger.info("vault_initialising source_dir=%s", config.source_dir)
 
         # Settings-first construction (#1158): the config-derived knobs
@@ -313,6 +361,9 @@ def get_vault(ctx: Context = CurrentContext()) -> Vault:
 
     Raises:
         RuntimeError: If the server lifespan has not run.
+        ConfigurationError: If the lifespan ran but built no vault because
+            the configured directory does not exist (see
+            :attr:`Service.startup_error`).
     """
     service: Service | None = ctx.lifespan_context.get("service")
     if service is None:

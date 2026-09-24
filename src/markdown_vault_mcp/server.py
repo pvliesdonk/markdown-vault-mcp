@@ -33,7 +33,10 @@ from fastmcp_pvl_core import (
 )
 
 from markdown_vault_mcp._server_apps import register_apps
-from markdown_vault_mcp._server_deps import bind_config, server_lifespan
+from markdown_vault_mcp._server_deps import (
+    bind_config,
+    server_lifespan,
+)
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.prompts import register_prompts
 from markdown_vault_mcp.resources import register_resources

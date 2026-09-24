@@ -33,7 +33,15 @@ keywords = [
     # PROJECT-KEYWORDS-END
 ]
 classifiers = [
+    # PROJECT-CLASSIFIERS-START — kept across copier update: this project's
+    # development status, and any audience/topic/framework classifiers.
     "Development Status :: 5 - Production/Stable",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    # PROJECT-CLASSIFIERS-END
+    # The Python versions are the ones ci.yml's matrix requires (its
+    # non-experimental entries); scripts/tests/test_python_classifiers.py in
+    # the template keeps the two equal.
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -43,8 +51,6 @@ classifiers = [
     # name is not the SPDX id (Apache-2.0 is "Apache Software License"), which
     # is one reason this is a separate edit rather than a derived one.
     "License :: OSI Approved :: MIT License",
-    "Topic :: Text Processing :: Markup :: Markdown",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
     # PROJECT-LICENSE-CLASSIFIER-END
 ]
 dependencies = [
@@ -323,6 +329,7 @@ ignore = ["E501"]
 "scripts/migrate_agent_instructions.py" = ["S603", "S607"]
 "scripts/check_pins.py" = ["S310"]  # urlopen on a validated api.github.com URL
 "scripts/report_seeded_changes.py" = ["S603", "S606", "S607"]
+"scripts/check_template_conformance.py" = ["S603", "S606", "S607"]
 
 # PROJECT-RUFF-IGNORES-START — replace, extend, or override the entries below
 # Phase 1 write stubs: method signatures define the public API but bodies are

@@ -195,7 +195,11 @@ class VaultTransferSink:
                 disallowed attachment extension, a bundle ref with OKF disabled,
                 a bundle scope naming a folder that does not exist, or an
                 existing upload destination when overwrite protection is enabled.
+            ConfigurationError: When the lifespan built no vault (the
+                configured directory does not exist): a link must not be
+                minted that can only fail when followed.
         """
+        self._vault()  # refuse to mint against a vault that is not there
         source_dir = self._config.source_dir
         exts = self._config.content.attachment_extensions
         if kind == "download":

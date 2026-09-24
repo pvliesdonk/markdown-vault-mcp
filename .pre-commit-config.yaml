@@ -1,7 +1,7 @@
-# `pre-commit install` wires both stages so the pre-push structural gate is
-# installed alongside the commit-time hooks.
+# `pre-commit install` wires both stages so the pre-push hooks (template
+# conformance, and the structural gate when enabled) are installed alongside
+# the commit-time hooks.
 default_install_hook_types: [pre-commit, pre-push]
-
 repos:
   - repo: local
     hooks:
@@ -27,6 +27,24 @@ repos:
         types: [python]
         pass_filenames: false
         args: [src/, tests/]
+
+      # >>> template-tracking: conformance hook (FORKING.md deletes this span)
+      # Template conformance: fails a push that adds content outside the
+      # template's sentinel blocks in a file `copier update` re-renders,
+      # compared with the branch's base (the structural gate's base rule;
+      # TEMPLATE_CONFORMANCE_BASE overrides), each commit judged against the
+      # template version it pinned.  Pre-push for the same reason as the
+      # structural gate, and because it renders the template (a clone, about
+      # 4 s).  Offline it warns and passes.  Deliberate drift tracked by a
+      # Decay issue: SKIP=template-conformance git push.
+      - id: template-conformance
+        name: template conformance (added drift vs derived base)
+        entry: python3 scripts/check_template_conformance.py --rev HEAD --since auto --hook
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+      # <<< template-tracking: conformance hook
 
 
       # Structural-health gate: strict ruff structural rules on CHANGED LINES

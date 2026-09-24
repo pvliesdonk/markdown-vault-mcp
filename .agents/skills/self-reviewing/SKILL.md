@@ -1,5 +1,5 @@
 ---
-name: code-review
+name: self-reviewing
 description: >-
   Use before opening a pull request, marking one ready for review, or
   pushing further commits to a branch with an open pull request — or when
@@ -10,7 +10,7 @@ description: >-
 
 <!-- ===== TEMPLATE-OWNED — re-rendered on template updates. ===== -->
 
-# Code review
+# Self-review
 
 This skill is the local self-review a change gets before its diff becomes
 someone else's problem: before a reviewer reads it, before a hosted bot
@@ -118,6 +118,31 @@ introduces. Don't flag: guidance clearly aimed at writing rather than
 reviewable invariants, style not covered by an explicit rule, anything a
 linter would catch.
 
+*Template-owned lines.* When `.copier-answers.yml` exists, this project
+tracks a template, and in every file `copier update` re-renders, each line
+outside a sentinel block (`NAME-START` … `NAME-END` comments) belongs to
+the template. Run:
+
+```bash
+python scripts/check_template_conformance.py --rev "$HEAD_SHA" --since "$BASE"
+```
+
+It reports only drift the range adds, each commit judged against the
+template version it pinned. Each file it lists is a `blocker`/`verified`
+finding: cite the hunk and say where the content belongs — the sentinel
+block the file declares for it, a file the template does not render, or
+nowhere. Exit 0 means the range added none. Exit 2 means it could not
+compare (offline, no `uv`): then read every hunk the diff adds to a file
+that carries sentinel blocks, check whether it sits between a `-START`
+and `-END` marker of that file at `HEAD`, and report the ones outside as
+`plausible`. The one accepted justification is a Decay issue in this
+project that names the file and the hunk; when the content needs room the
+template does not give, also cite a template feature request stating that
+need. A fault that reproduces on a pristine render made with this
+project's answers is a template defect, not a finding here: file it on the
+template, as the `applying-template-updates` skill's "When the template
+looks wrong" section describes.
+
 **2. The diff on its own terms.** Read the hunks alone: inverted
 conditions, wrong operators, off-by-one, missing None/empty handling on a
 value the diff dereferences, resources opened without closing, silently
@@ -172,9 +197,11 @@ For each candidate:
 - Re-read the cited lines with their full surrounding context.
 - Strike it if it matches the exclusion list: pre-existing on untouched
   lines; territory of a linter, type-checker, or CI job; an intentional
-  change serving the PR's stated goal; silenced in code with an
-  explanatory `# noqa` / `# type: ignore`; a general quality opinion no
-  written rule codifies; something a senior reviewer would not raise.
+  change serving the PR's stated goal (template-owned drift stays a
+  finding whatever the goal, until it moves or a Decay issue justifies
+  it); silenced in code with an explanatory `# noqa` / `# type: ignore`; a
+  general quality opinion no written rule codifies; something a senior
+  reviewer would not raise.
 - Where one command can settle it, run that one command and believe the
   result over your reasoning.
 

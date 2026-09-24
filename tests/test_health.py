@@ -53,7 +53,10 @@ def _kv_store_in_tmp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     is usable and ``memory://`` elsewhere — which would make the readiness
     verdict depend on the host running the tests.
     """
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_KV_STORE_URL", f"file://{tmp_path / 'kv'}")
+    monkeypatch.setenv(
+        "MARKDOWN_VAULT_MCP_KV_STORE_URL",
+        f"file://{tmp_path / 'kv'}",
+    )
 
 
 def test_liveness_answers_outside_the_mcp_mount() -> None:
@@ -88,10 +91,12 @@ def test_health_prefix_follows_the_mount_path() -> None:
     never collide on ``/health``.
     """
     mount = "/markdown-vault-mcp/mcp"
+    # Hoisted so the assert's length does not grow with ``project_name``: an
+    # inline literal pushed the line past ruff's 88 for names over 17
+    # characters, and ``ruff format`` rewrapped every such render (#649).
+    health = "/markdown-vault-mcp/health"
     server = make_server(transport="http", http_path=mount)
-    assert (
-        _get(server, "/markdown-vault-mcp/health", http_path=mount).status_code == 200
-    )
+    assert _get(server, health, http_path=mount).status_code == 200
     assert _get(server, "/health", http_path=mount).status_code == 404
 
 
@@ -103,10 +108,9 @@ def test_mount_path_env_var_is_the_fallback(monkeypatch: pytest.MonkeyPatch) -> 
     """
     mount = "/markdown-vault-mcp/mcp"
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_HTTP_PATH", mount)
+    health = "/markdown-vault-mcp/health"
     server = make_server(transport="http")
-    assert (
-        _get(server, "/markdown-vault-mcp/health", http_path=mount).status_code == 200
-    )
+    assert _get(server, health, http_path=mount).status_code == 200
 
 
 @pytest.mark.parametrize("transport", ["stdio", "sse"])

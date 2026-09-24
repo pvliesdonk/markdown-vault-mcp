@@ -32,6 +32,8 @@ rm -f .github/workflows/copier-update.yml \
 rm -f scripts/copier_update_notes.py
 rm -f scripts/migrate_agent_instructions.py
 rm -f scripts/report_seeded_changes.py .copier-seeded-changes.md
+rm -f scripts/check_template_conformance.py .copier-template-drift.md
+sed -i.bak '/# >>> template-tracking: conformance hook/,/# <<< template-tracking: conformance hook/d' .pre-commit-config.yaml && rm -f .pre-commit-config.yaml.bak
 rm -rf .agents/skills/applying-template-updates .claude/skills/applying-template-updates
 rm -f docs/deployment/template-updates.md
 # The page above is in the MkDocs nav; a dangling entry fails `mkdocs build --strict`.
@@ -52,6 +54,11 @@ What this removes and why:
 - `scripts/report_seeded_changes.py` and its output `.copier-seeded-changes.md`
   — the seeded-file report a `copier update` writes; nothing writes it after
   detaching.
+- `scripts/check_template_conformance.py` and its update-time output
+  `.copier-template-drift.md` — the comparison of template-owned files with
+  a pristine template render; a detached fork owns every line, so there is
+  nothing left to compare. The `sed` line removes the pre-push hook that
+  runs it from `.pre-commit-config.yaml`.
 - the `applying-template-updates` skill and `docs/deployment/template-updates.md`
   — the procedure for the weekly template update pull request, which a
   detached fork never receives. The `sed` line removes the page's nav
@@ -64,9 +71,10 @@ What this removes and why:
 secret; only its `copier-update` justification is gone.
 `release-notes-publish.yml` is deterministic — no Claude dependency — and
 still redeploys canonical `docs/releases/` pages on merge.) The remaining
-template-owned skills under `.agents/skills/` (`authoring-issues-prs`,
-`code-review`, `config-contract`, `logging-standard`, `releasing`,
-`repository-protection`, `researching-references`, `tool-registration`,
+template-owned skills under `.agents/skills/` (`applying-template-updates`,
+`authoring-issues-prs`, `config-contract`, `logging-standard`,
+`releasing`, `repository-protection`, `researching-references`,
+`roadmapping`, `self-reviewing`, `tool-registration`, `writing-model-facing-text`,
 `writing-release-notes`) and
 their `.claude/skills/<name>`
 symlinks are independent of Claude review wiring; retain or remove each
@@ -83,13 +91,15 @@ Code, for instance, has no reason to drop the symlinks even after detaching.
 # release-process page (its link to the template-update page): a detached
 # fork owns those files too, so the same scrub applies to each. The rule on
 # `applying-template-updates` drops the AGENTS.md Skills bullet for the
-# skill Step 2 removed.
+# skill Step 2 removed, and the rule on `Template conformance runs at push
+# time` drops the AGENTS.md bullet for the pre-push hook Step 2 removed.
 for f in AGENTS.md .agents/skills/releasing/SKILL.md .agents/skills/config-contract/SKILL.md .agents/skills/tool-registration/SKILL.md docs/deployment/release-process.md; do
   sed -i.bak \
     -e '/<!-- TEMPLATE-TRACKING-START -->/,/<!-- TEMPLATE-TRACKING-END -->/d' \
     -e '/<!-- ===== TEMPLATE-OWNED SECTIONS BELOW/d' \
     -e '/<!-- ===== TEMPLATE-OWNED SECTIONS END ===== -->/d' \
     -e '/^- `applying-template-updates` — /d' \
+    -e '/^- \*\*Template conformance runs at push time:\*\*/d' \
     -e 's/ Kept across copier update\.//' \
     -e 's/ on top of the shipped defaults survive `copier update`\./ on top of the shipped defaults are yours to maintain./' \
     -e 's/ are preserved across `copier update`\./ are domain-owned./' \

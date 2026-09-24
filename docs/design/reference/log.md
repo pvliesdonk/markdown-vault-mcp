@@ -2,6 +2,20 @@
 
 ## 2026-09-23
 
+- Added [MCP model-facing text](mcp-model-facing-text.md), checked against
+  the MCP 2026-07-28 and 2025-11-25 schemas, the Claude, OpenAI, Gemini,
+  VS Code and Cursor documentation, and FastMCP 4.0.5 by probe. Covered
+  who reads each description field, Claude Code's 2,048-unit cut and
+  tool-search deferral, FastMCP's docstring parsing (the issue 4952 leak
+  and the unparsed resource docstring), pvl-core's instruction roles,
+  the markdown-vault-mcp surface baseline, and SEP-2640 skills over MCP
+  with FastMCP's skills provider probed on the wire. Refute pass re-fetched the
+  claims the skill depends on; the Cursor tool cap and the Claude Desktop
+  resource UI stay unverified. The same pass found the scaffold's own
+  `ping`, `status` and `summarize` docstrings shipping developer
+  commentary and a framework link as their wire descriptions, and fixed
+  them. Next review: 2027-03-23.
+
 - Added [Git submodules seen from a superproject](git-submodules.md) for the submodule epics #1561 and #1562. Checked seventeen git-scm.com manual pages (gitsubmodules, git-submodule, gitmodules, clone, fetch, pull, merge, rebase, checkout, reset, config, ls-files, ls-tree, rev-parse, status, add, log); the pages leave the superproject-level `add` refusal, the `ls-files`/`log`/`show` answers for a path inside a submodule, and the abort on a dirty submodule undocumented, so those are `[observed]` against a throwaway superproject on git 2.55.0. Refute pass re-found every quoted phrase in its page and confirmed git-merge(1) and git-rebase(1) carry no `--recurse-submodules`. No claim is pinned yet: no test exercises a submodule; the epic's features pin what they depend on. Left uncovered: push recursion outcomes, nested submodules, cross-boundary rename staging, LFS inside a submodule. Next review: 2027-03-23.
 
 ## 2026-09-19

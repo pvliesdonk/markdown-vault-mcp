@@ -385,7 +385,7 @@ jobs:
           # drift, not house style.
           body+=$'\n\n'"### Resolution policy"
           body+=$'\n\n'"This project tracks the template: the template is the single upstream source that keeps every downstream repo aligned. Resolve the diff — and any conflict markers — by **taking the template side**, except in downstream-owned regions:"
-          body+=$'\n\n'"- content inside \`DOMAIN-*\` / \`PROJECT-*\` / \`CONFIG-*\` sentinel blocks;"
+          body+=$'\n\n'"- content inside \`DOMAIN-*\` / \`PROJECT-*\` / \`CONFIG-*\` / \`DOCKERFILE-*\` sentinel blocks;"
           body+=$'\n'"- files listed under \`_skip_if_exists\` in the template's \`copier.yml\`."
           # A skip-listed file is absent from this diff entirely, and the line
           # above tells the reviewer to leave it alone — correct for conflict
@@ -396,7 +396,10 @@ jobs:
           # branch above, so it may be unset at this point and would render an
           # empty link.
           body+=$'\n\n'"A \`_skip_if_exists\` file is not in this diff at all — Copier never re-renders one that already exists. That also means a template *correction* to one never arrives on its own. See \"Before every upgrade\" in the template's \`UPGRADING.md\` for which of them the template still authors content for, and how to diff them against the target."
-          body+=$'\n\n'"\"House style\", \"we already had this\", or \"otherwise something would be missing\" are not reasons to keep local drift. If the template's side seems wrong or incomplete, that is a template bug or a missing sentinel seam — file it upstream (see \`CONTRIBUTING.md\` routing) and fix it there, so the whole fleet gets the correction."
+          # Drift is the project's debt, never the template's: the only route
+          # upstream is a fault that reproduces with none of the project's
+          # content in the way (#653).
+          body+=$'\n\n'"\"House style\", \"we already had this\", or \"otherwise something would be missing\" are not reasons to keep local drift. Project content outside a sentinel block is this project's debt, whichever side of a marker it sits on: move it into a sentinel block, or open a Decay issue in this project. The template itself is wrong only when the fault shows in a pristine render made with this project's \`.copier-answers.yml\`; file that upstream (see \`CONTRIBUTING.md\` routing) with the reproduction. A seam this project wants is a feature request stated as the need, not as the content it would keep. Neither resolves this update."
 
           # Conflicts — list the files (not just a count), and call out that
           # the markers are *committed to the branch*, not sidecar .rej files.
@@ -407,6 +410,24 @@ jobs:
             while IFS= read -r f; do
               [ -n "${f}" ] && body+=$'\n'"- \`${f}\`"
             done <<< "${CONFLICT_FILES}"
+          fi
+
+          # Drift report — written by the same migration (#653): template-owned
+          # files that differed from the previous ref's render outside their
+          # sentinels before this update.  Most of it rides through the update
+          # without a conflict marker, so the list above never shows it.
+          # Bounded like the seeded report below; the committed file is the
+          # full record.
+          if [ -s .copier-template-drift.md ]; then
+            body+=$'\n\n'"### Template-owned files this project had forked"
+            body+=$'\n\n'"\`.copier-template-drift.md\` on this branch lists every template-owned file that differed from the template outside its sentinel blocks before this update, with the commits that last touched those lines. Conform each file or open a Decay issue for it; re-run \`python scripts/check_template_conformance.py\` once the markers are resolved."
+            body+=$'\n\n'"<details><summary>.copier-template-drift.md</summary>"
+            body+=$'\n\n'"$(head -c 8000 .copier-template-drift.md)"
+            if [ "$(wc -c < .copier-template-drift.md)" -gt 8000 ]; then
+              body+=$'\n''````'
+              body+=$'\n\n'"> **Truncated at 8000 characters** — read the committed file for the rest."
+            fi
+            body+=$'\n\n'"</details>"
           fi
 
           # Seeded-file change report — written by the template's

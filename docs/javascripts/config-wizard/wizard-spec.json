@@ -504,7 +504,7 @@
       "label": "Source Dir",
       "type": "text",
       "var": "MARKDOWN_VAULT_MCP_SOURCE_DIR",
-      "help": "Path to the markdown vault directory. Required — the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+."
+      "help": "Path to the markdown vault directory. When it does not exist the server starts but every tool fails with a message naming this variable until it does (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+."
     },
     {
       "id": "read_only",

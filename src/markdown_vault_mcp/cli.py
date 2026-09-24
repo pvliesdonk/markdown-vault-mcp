@@ -162,6 +162,7 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
     from pathlib import Path
 
     from markdown_vault_mcp.config_sections._assembly import (
+        source_dir_missing,
         to_vault_instances,
         to_vault_settings,
     )
@@ -172,6 +173,17 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
     if source_dir:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir
     config = ProjectConfig.from_env()
+    # A batch command over an absent directory would index nothing and exit
+    # 0; refuse with the variable named, the way ``serve`` reports a
+    # configuration error.
+    if source_dir_missing(config):
+        typer.echo(
+            f"ERROR: configuration error: vault directory {config.source_dir} "
+            "does not exist. Set MARKDOWN_VAULT_MCP_SOURCE_DIR to the path of "
+            "your markdown vault.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
     instances = to_vault_instances(config)
     settings = to_vault_settings(config, instances=instances)
     if index_path:
