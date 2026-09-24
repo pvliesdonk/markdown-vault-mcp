@@ -617,7 +617,10 @@ class VectorIndex:
         # never corrupt a previously persisted index (mirrors
         # tracker._save_state). np.save appends ".npy" unless the path already
         # ends in it, so the temp file uses a ".npy" suffix and we write
-        # through the open fd to avoid any suffix ambiguity.
+        # through the open fd to avoid any suffix ambiguity. The parent may not
+        # exist yet: a state volume mounted over the image's seeded directories
+        # arrives empty, and this is the first write into it.
+        npy_path.parent.mkdir(parents=True, exist_ok=True)
         npy_fd, npy_tmp = tempfile.mkstemp(dir=npy_path.parent, suffix=".npy")
         try:
             with os.fdopen(npy_fd, "wb") as fh:

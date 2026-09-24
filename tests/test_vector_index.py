@@ -465,6 +465,19 @@ class TestVectorIndexPersistence:
         assert (tmp_path / "idx.npy").exists()
         assert (tmp_path / "idx.json").exists()
 
+    def test_save_creates_missing_parent_directory(
+        self, mock_provider: MockEmbeddingProvider, tmp_path: Path
+    ) -> None:
+        """save() creates the parent directory when it does not exist yet."""
+        index = VectorIndex(mock_provider)
+        index.add(["hello"], [_make_meta("hello.md")])
+        base = tmp_path / "state" / "embeddings" / "idx"
+
+        index.save(base)
+
+        assert base.with_suffix(".npy").exists()
+        assert base.with_suffix(".json").exists()
+
     def test_load_missing_file_raises(
         self, mock_provider: MockEmbeddingProvider, tmp_path: Path
     ) -> None:
