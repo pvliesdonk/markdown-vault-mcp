@@ -879,8 +879,8 @@ class TestToolAnnotations:
         # full-registry sweep keeps asserting their metadata.
         from fastmcp_pvl_core import build_jobs, register_job_tools
 
-        from markdown_vault_mcp.tools import index as index_tools
-        from markdown_vault_mcp.tools import summarize as summarize_tools
+        from markdown_vault_mcp._tools import index as index_tools
+        from markdown_vault_mcp._tools import summarize as summarize_tools
 
         jobs = build_jobs(config.server, config.jobs)
         summarize_tools.register(mcp, jobs)
@@ -1944,7 +1944,7 @@ class TestFetchTool:
     hardened primitive.
     """
 
-    _FETCH_URL_SEAM = "markdown_vault_mcp.tools.writer.fetch_url"
+    _FETCH_URL_SEAM = "markdown_vault_mcp._tools.writer.fetch_url"
 
     # Mirrors writer._FETCH_UNCAPPED_BYTES — the sentinel the tool passes for
     # "uncapped" (markdown, or a configured cap that floors to 0 bytes).

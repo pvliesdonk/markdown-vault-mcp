@@ -673,7 +673,7 @@ class TestFetchThreadsActor:
         # write path is under test — so fetch_url (a black-box library
         # boundary, #1028) is stubbed with a canned result.
         monkeypatch.setattr(
-            "markdown_vault_mcp.tools.writer.fetch_url",
+            "markdown_vault_mcp._tools.writer.fetch_url",
             AsyncMock(
                 return_value=FetchResult(
                     body=b"# Fetched\n\nBody.\n",
@@ -745,7 +745,7 @@ class TestOkfVerifyTrustAuth:
         # matches, so the write is refused rather than clobbering the change.
         monkeypatch.setattr("fastmcp_pvl_core.get_subject", lambda: "peter")
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
-        import markdown_vault_mcp.tools.writer as writer_mod
+        import markdown_vault_mcp._tools.writer as writer_mod
 
         real_append = writer_mod.append_okf_verification
 

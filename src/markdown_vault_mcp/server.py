@@ -351,8 +351,8 @@ def make_server(
     # the generic get_job_result tool.
     from fastmcp_pvl_core import build_jobs, register_job_tools
 
-    from markdown_vault_mcp.tools import index as index_tools
-    from markdown_vault_mcp.tools import summarize as summarize_tools
+    from markdown_vault_mcp._tools import index as index_tools
+    from markdown_vault_mcp._tools import summarize as summarize_tools
 
     # With no KV backend configured, core's default (>=4.11.1) is
     # file:///data/state where that directory is usable (the Docker image)
