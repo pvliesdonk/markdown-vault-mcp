@@ -38,14 +38,15 @@ STUB = (
 TEMPLATE_SKILLS: tuple[str, ...] = (
     "applying-template-updates",
     "authoring-issues-prs",
-    "code-review",
     "config-contract",
     "logging-standard",
     "releasing",
     "repository-protection",
     "researching-references",
     "roadmapping",
+    "self-reviewing",
     "tool-registration",
+    "writing-model-facing-text",
     "writing-release-notes",
 )
 
@@ -102,8 +103,26 @@ def _fix_skill_links(root: Path, actions: list[str]) -> None:
         actions.append(f"linked .claude/skills/{name} -> {target}")
 
 
+def _prune_stale_skill_links(root: Path, actions: list[str]) -> None:
+    """Remove `.claude/skills/<name>` links into `.agents/skills/` whose skill
+    is gone.  `copier update` deletes a renamed or retired skill's files but
+    leaves its symlink dangling (#655); a project's own link to a skill that
+    still exists is never touched."""
+    claude_skills = root / ".claude" / "skills"
+    if not claude_skills.is_dir():
+        return
+    for link in sorted(claude_skills.iterdir()):
+        target = str(link.readlink()) if link.is_symlink() else ""
+        if target.startswith("../../.agents/skills/") and not link.exists():
+            link.unlink()
+            actions.append(
+                f"removed .claude/skills/{link.name}: its target {target} is gone"
+            )
+
+
 def migrate(root: Path, *, head_claude: str | None) -> list[str]:
     actions: list[str] = []
+    _prune_stale_skill_links(root, actions)
     agents = root / "AGENTS.md"
     if head_claude is None or not agents.is_file() or not DOMAIN_RE.search(head_claude):
         return actions

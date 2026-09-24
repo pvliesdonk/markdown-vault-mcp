@@ -190,7 +190,8 @@ def test_no_prefixed_env_var_is_interpolated(template_owned: str) -> None:
     ``.env`` alone; a value this file needs belongs in a name of its own.
     """
     found = re.findall(
-        r"\$\{?" + re.escape("MARKDOWN_VAULT_MCP") + r"_[A-Z0-9_]+", template_owned
+        r"\$\{?" + re.escape("MARKDOWN_VAULT_MCP") + r"_[A-Z0-9_]+",
+        template_owned,
     )
     assert not found, (
         f"compose.yml interpolates {sorted(set(found))} — server configuration "

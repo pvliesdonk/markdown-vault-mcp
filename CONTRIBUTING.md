@@ -173,8 +173,8 @@ State what the PR deliberately does **not** do, with each deferral's tracking
 issue. A change that says what it left out is easier to trust than one that
 appears to have found nothing.
 
-Run a local code-review pass on the cumulative diff before `gh pr create` —
-the `code-review` skill (`.agents/skills/code-review/SKILL.md`) is the
+Run a local self-review of the cumulative diff before `gh pr create` —
+the `self-reviewing` skill (`.agents/skills/self-reviewing/SKILL.md`) is the
 procedure, and it works with any coding agent. Code without matching docs is
 incomplete; check `README.md`, the `docs/` site, `docs/design/`, and inline
 docstrings.

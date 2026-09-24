@@ -43,7 +43,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          # Full history: the code-review skill computes a three-dot range via
+          # Full history: the review skill computes a three-dot range via
           # `git merge-base`, which does not exist in a depth-1 clone — the
           # reviewer then silently falls back to a two-dot diff that includes
           # base-branch drift (template#536). Full depth also serves the fix
@@ -68,7 +68,7 @@ jobs:
         with:
           sync-args: "--all-extras --all-groups --frozen"
 
-      # The /code-review skill fans out into parallel review agents. On Claude
+      # The review skill fans out into parallel review agents. On Claude
       # Code >= 2.1.198 those dispatch as background tasks that claude-code-action
       # drops before they finish — runClaudeWithSdk breaks the query() loop on the
       # first result (claude-code-action#1499), so the review completes green and
@@ -109,7 +109,7 @@ jobs:
           # divergence costs): the GitHub read/search/CI MCP tools, the
           # inline-comment tool, `gh api`, gh pr/run read commands, scoped
           # `uv run` for targeted verification, plus Skill (launch the
-          # /code-review skill on "@claude review") and Task (dispatch its
+          # review skill on "@claude review") and Task (dispatch its
           # review subagents — synchronous under the pinned 2.1.197; unpin and
           # re-evaluate when claude-code-action#1499 is fixed upstream).
           #
