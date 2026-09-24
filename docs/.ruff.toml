@@ -1,0 +1,6 @@
+# Project-owned: the template renders no ruff config under docs/.
+# Keeps ruff >=0.16's markdown code-fence formatter off the published and
+# design pages: it rewrites non-Python fences as Python (a YAML `[a-b]` list
+# becomes `[a - b]`) and flattens hand-aligned comment columns.
+extend = "../pyproject.toml"
+extend-exclude = ["*.md"]
