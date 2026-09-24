@@ -55,7 +55,7 @@ vars:
     tags: [embeddings]
     # No wizard question: the prefixed {PREFIX}_OPENAI_BASE_URL is the
     # offered control and the two would collide on one question id.
-    wizard: {control: none}
+    wizard: {control: none, group: Embeddings}
 
   - name: "OPENAI_EMBEDDING_MODEL"
     type_name: "str"
@@ -64,7 +64,7 @@ vars:
       Bare fallback for {PREFIX}_OPENAI_EMBEDDING_MODEL.
     tags: [embeddings]
     # No wizard question — same id-collision rationale as OPENAI_BASE_URL.
-    wizard: {control: none}
+    wizard: {control: none, group: Embeddings}
 
   # MCP-layer timeouts, read via os.environ in the server layer (outside
   # ProjectConfig.from_env), so the AST scan cannot see them.

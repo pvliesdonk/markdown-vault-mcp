@@ -27,7 +27,7 @@ from fastmcp_pvl_core import (
     env,
 )
 
-from markdown_vault_mcp._write_tools import gated_tool, write_tools_phrase
+from markdown_vault_mcp._write_tools import write_tools_phrase
 from markdown_vault_mcp.config_sections import (
     ContentConfig,
     EmbeddingsConfig,
@@ -124,9 +124,7 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Set to true to hide the write tools "
-                f"({write_tools_phrase()}) and serve a search-only vault. "
-                f"{gated_tool('git_sync')} also needs managed git mode; "
-                f"{gated_tool('create_upload_link')} needs an HTTP transport."
+                f"({write_tools_phrase()}) and serve a search-only vault."
             ),
             "tags": ("vault", "readme"),
         },
