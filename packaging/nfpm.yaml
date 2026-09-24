@@ -22,13 +22,13 @@ maintainer: "Peter van Liesdonk <pvliesdonk@users.noreply.github.com>"
 # unindented line, which is also why these markers sit outside it rather than
 # in it (a `#` inside a block scalar is literal text, not a comment).
 description: |
-  Generic markdown vault MCP with hybrid search
+  Generic markdown vault MCP with hybrid search.
 # DOMAIN-NFPM-DESCRIPTION-END
 homepage: "https://pvliesdonk.github.io/markdown-vault-mcp/"
 # PROJECT-LICENSE-START — the license you picked; replace the value below and
 # it is kept across copier update.  nfpm wants a short free-form name, which is
 # not necessarily the SPDX id used in pyproject.toml.  See LICENSE.
-license: "Proprietary"  # starter: TODO update when you pick a license (see LICENSE)
+license: "MIT"
 # PROJECT-LICENSE-END
 
 # --- Package contents ---
