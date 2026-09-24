@@ -105,12 +105,16 @@ def test_pending_build_never_authorizes_mutation(
 ) -> None:
     entered, release = threading.Event(), threading.Event()
     original = vault._coordinator.writer._runners["process_dirty_paths"]
+    original_sync = vault._doc_mgr._sync_index
 
     def held_refresh(job: object, ctx: object) -> None:
         entered.set()
         assert release.wait(5)
         original(job, ctx)
 
+    # The 20 ms budget exists to make the held refresh time out promptly; it
+    # is restored to the real one below before the final mutation, which has
+    # to wait on the refresh that build_index() queues (#1583).
     monkeypatch.setattr(
         vault._doc_mgr,
         "_sync_index",
@@ -130,6 +134,7 @@ def test_pending_build_never_authorizes_mutation(
         assert _files(vault) == before
         release.set()
         assert vault.index.wait_for_drain(timeout=5)
+        monkeypatch.setattr(vault._doc_mgr, "_sync_index", original_sync)
         if state == "cancelled":
             with pytest.raises(CancelledError):
                 build.result()
