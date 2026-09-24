@@ -20,8 +20,7 @@ from markdown_vault_mcp.config_sections import (
     SearchConfig,
 )
 from markdown_vault_mcp.config_sections._assembly import (
-    DEFAULT_SOURCE_DIR,
-    source_dir_missing,
+    ensure_source_dir,
     to_vault_instances,
     to_vault_settings,
 )
@@ -312,17 +311,150 @@ class TestWriteProtectExisting:
 
 
 class TestLoadConfig:
-    def test_unset_source_dir_takes_the_documented_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_missing_source_dir_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", raising=False)
-        assert ProjectConfig.from_env().source_dir == DEFAULT_SOURCE_DIR
+        with pytest.raises(ConfigurationError, match="MARKDOWN_VAULT_MCP_SOURCE_DIR"):
+            ProjectConfig.from_env()
 
-    def test_blank_source_dir_takes_the_documented_default(
+    def test_minimal_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        # Clear all optional vars
+        for var in (
+            "MARKDOWN_VAULT_MCP_READ_ONLY",
+            "MARKDOWN_VAULT_MCP_INDEX_PATH",
+            "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH",
+            "MARKDOWN_VAULT_MCP_STATE_PATH",
+            "MARKDOWN_VAULT_MCP_INDEXED_FIELDS",
+            "MARKDOWN_VAULT_MCP_REQUIRED_FIELDS",
+            "MARKDOWN_VAULT_MCP_EXCLUDE",
+            "MARKDOWN_VAULT_MCP_GIT_REPO_URL",
+            "MARKDOWN_VAULT_MCP_GIT_USERNAME",
+            "MARKDOWN_VAULT_MCP_GIT_TOKEN",
+            "MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S",
+        ):
+            monkeypatch.delenv(var, raising=False)
+
+        config = ProjectConfig.from_env()
+
+        assert config.source_dir == Path("/tmp/vault")
+        assert config.read_only is False  # default (#1113)
+        assert config.indexing.index_path is None
+        assert config.indexing.embeddings_path is None
+        assert config.indexing.state_path is None
+        assert config.indexing.indexed_frontmatter_fields is None
+        assert config.indexing.required_frontmatter is None
+        assert config.indexing.exclude_patterns is None
+        assert config.git.repo_url is None
+        assert config.git.username == "x-access-token"
+        assert config.git.token is None
+        assert config.git.pull_interval_s == 600
+        assert config.content.templates_folder == "_templates"
+
+    def test_full_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/data/vault")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_READ_ONLY", "false")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEX_PATH", "/data/index.db")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH", "/data/embeddings")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_STATE_PATH", "/data/state.json")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "cluster, topics")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_REQUIRED_FIELDS", "title,cluster")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EXCLUDE", ".obsidian/**, .trash/**")
+        monkeypatch.setenv(
+            "MARKDOWN_VAULT_MCP_GIT_REPO_URL", "https://github.com/acme/vault.git"
+        )
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_USERNAME", "oauth2")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_TOKEN", "ghp_test123")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "300")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "Templates")
+
+        config = ProjectConfig.from_env()
+
+        assert config.source_dir == Path("/data/vault")
+        assert config.read_only is False
+        assert config.indexing.index_path == Path("/data/index.db")
+        assert config.indexing.embeddings_path == Path("/data/embeddings")
+        assert config.indexing.state_path == Path("/data/state.json")
+        assert config.indexing.indexed_frontmatter_fields == ("cluster", "topics")
+        assert config.indexing.required_frontmatter == ("title", "cluster")
+        assert config.indexing.exclude_patterns == (".obsidian/**", ".trash/**")
+        assert config.git.repo_url == "https://github.com/acme/vault.git"
+        assert config.git.username == "oauth2"
+        assert config.git.token == "ghp_test123"
+        assert config.git.pull_interval_s == 300
+        assert config.content.templates_folder == "Templates"
+
+    def test_git_username_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_USERNAME", raising=False)
+        config = ProjectConfig.from_env()
+        assert config.git.username == "x-access-token"
+
+    def test_templates_folder_trailing_slash_normalized(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "   ")
-        assert ProjectConfig.from_env().source_dir == DEFAULT_SOURCE_DIR
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "Templates/")
+        config = ProjectConfig.from_env()
+        assert config.content.templates_folder == "Templates"
+
+    def test_templates_folder_backslashes_normalized(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "Templates\\Notes\\")
+        config = ProjectConfig.from_env()
+        assert config.content.templates_folder == "Templates/Notes"
+
+    def test_templates_folder_slash_only_falls_back_to_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER", "/")
+        config = ProjectConfig.from_env()
+        assert config.content.templates_folder == "_templates"
+
+    def test_token_without_repo_url_logs_deprecation(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_TOKEN", "ghp_legacy")
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_GIT_REPO_URL", raising=False)
+        _ = ProjectConfig.from_env()
+        assert "git_token_without_repo_url" in caplog.text
+
+    def test_invalid_pull_interval_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A non-numeric GIT_PULL_INTERVAL_S raises (no warn-and-default; #638)."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "nope")
+        with pytest.raises(ConfigurationError):
+            ProjectConfig.from_env()
+
+    def test_negative_pull_interval_raises(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A negative GIT_PULL_INTERVAL_S raises (no longer clamps to 0; #638)."""
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S", "-5")
+        with pytest.raises(ConfigurationError, match="pull_interval_s"):
+            ProjectConfig.from_env()
+
+    def test_comma_separated_strips_whitespace(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", " a , b , c ")
+        config = ProjectConfig.from_env()
+        assert config.indexing.indexed_frontmatter_fields == ("a", "b", "c")
+
+    def test_empty_comma_list_yields_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "")
+        config = ProjectConfig.from_env()
+        assert config.indexing.indexed_frontmatter_fields is None
 
 
 class TestVaultAssembly:
@@ -2297,16 +2429,18 @@ def test_boot_reindex_env_override_disables_it(
     assert ProjectConfig.from_env().boot_reindex is False
 
 
-class TestSourceDirMissing:
-    def test_absent_directory_is_reported(self, tmp_path: Path) -> None:
-        assert source_dir_missing(ProjectConfig(source_dir=tmp_path / "absent"))
+class TestEnsureSourceDir:
+    def test_missing_directory_raises_naming_the_variable(self, tmp_path: Path) -> None:
+        config = ProjectConfig(source_dir=tmp_path / "absent")
+        with pytest.raises(ConfigurationError, match="MARKDOWN_VAULT_MCP_SOURCE_DIR"):
+            ensure_source_dir(config)
 
-    def test_existing_directory_is_not(self, tmp_path: Path) -> None:
-        assert not source_dir_missing(ProjectConfig(source_dir=tmp_path))
+    def test_existing_directory_passes(self, tmp_path: Path) -> None:
+        assert ensure_source_dir(ProjectConfig(source_dir=tmp_path)) == tmp_path
 
     def test_managed_git_mode_is_exempt(self, tmp_path: Path) -> None:
         config = ProjectConfig(
             source_dir=tmp_path / "absent",
             git_repo_url="https://example.invalid/vault.git",
         )
-        assert not source_dir_missing(config)
+        assert ensure_source_dir(config) == tmp_path / "absent"

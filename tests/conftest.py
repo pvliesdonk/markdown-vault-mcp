@@ -23,8 +23,19 @@ from markdown_vault_mcp.vault import VaultSettings
 from tests.fixtures.git import git_repo_pair  # noqa: F401
 
 
+@pytest.fixture(scope="session")
+def _default_vault_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """An existing, empty directory that stands in for ``/data/vault`` in tests.
+
+    ``SOURCE_DIR`` is required and must exist where a vault is built, so an
+    env-less construction in the suite needs a real directory, not the image's
+    mount point.
+    """
+    return tmp_path_factory.mktemp("default-vault")
+
+
 @pytest.fixture(autouse=True)
-def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def _clear_env(monkeypatch: pytest.MonkeyPatch, _default_vault_dir: Path) -> None:
     """Strip all ``MARKDOWN_VAULT_MCP_*`` env vars before each test (isolation).
 
     Prevents an env var set by one test (or the ambient shell) from leaking
@@ -44,18 +55,33 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
+    # ProjectConfig.from_env hard-requires SOURCE_DIR (fail-fast startup
+    # contract) and the lifespan requires the directory to exist. Preset an
+    # existing session directory so env-less construction and startup work
+    # in tests. A test that asserts the missing-var error deletes it
+    # explicitly; a test-local setenv overrides it (fixtures run before the
+    # test body). The template-owned config-contract tests preset the same
+    # var through the ``config_contract_env`` seam below.
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(_default_vault_dir))
 
 
 @pytest.fixture
-def config_contract_env() -> dict[str, str]:
-    """Env vars the template's `test_config_contract.py` presets before it
-    constructs the config via an otherwise env-less ``ProjectConfig.from_env()``.
+def config_contract_env(_default_vault_dir: Path) -> dict[str, str]:
+    """Env vars the template-owned config-contract tests preset before ``from_env()``.
 
-    Empty: every field of ``ProjectConfig`` carries a default, so ``from_env``
-    constructs from an empty environment; an absent vault directory is a
-    startup condition (``source_dir_missing``), not a construction error.
+    The template's ``tests/test_config_contract.py`` resolves this fixture via
+    ``getfixturevalue`` and sets each entry before calling
+    ``ProjectConfig.from_env()``, so a domain whose ``from_env`` hard-requires
+    a var (here ``SOURCE_DIR``) can construct in an otherwise-empty
+    environment. This is the sanctioned seam for that integration
+    (fastmcp-server-template#293); the autouse ``_clear_env`` fixture already
+    presets the same var suite-wide, so this only makes the contract-test
+    contract explicit.
+
+    Returns:
+        A mapping of env var name to value to set before ``from_env()``.
     """
-    return {}
+    return {"MARKDOWN_VAULT_MCP_SOURCE_DIR": str(_default_vault_dir)}
 
 
 def _parse_tool_data(result: Any) -> Any:
