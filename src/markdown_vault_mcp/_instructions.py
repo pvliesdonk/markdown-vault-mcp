@@ -194,10 +194,11 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
             Snippet(
                 "If 'stats.okf' reports an OKF bundle ('okf_version' in root "
                 "'index.md'), discount deprecated, stale, or unverified notes by "
-                # Terse on purpose: the generated instructions run against a
-                # reviewed UTF-16 budget (#1253) with little headroom left,
-                # and an agent-authored literal space is exactly the defect
-                # #1494 fixed on the server's own output.
+                # Terse on purpose: the generated instructions stay under
+                # pvl-core's 1,536-unit generated target, which the maximal
+                # configuration nearly fills, and an agent-authored literal
+                # space is exactly the defect #1494 fixed on the server's
+                # own output.
                 f"trust tier. {upkeep} Use root-relative Markdown links, "
                 "%20 for spaces.",
                 InstructionRole.INSTANCE,
