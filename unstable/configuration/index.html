@@ -3010,18 +3010,6 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 </thead>
 <tbody>
 <tr>
-<td><code>OPENAI_BASE_URL</code></td>
-<td>(none)</td>
-<td>No</td>
-<td>Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_BASE_URL (embeddings). For the summarize tool it only routes traffic when an API key already enables the feature; it never enables summarize by itself.</td>
-</tr>
-<tr>
-<td><code>OPENAI_EMBEDDING_MODEL</code></td>
-<td>(none)</td>
-<td>No</td>
-<td>Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL.</td>
-</tr>
-<tr>
 <td><code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code></td>
 <td><code>/data/vault</code></td>
 <td>No</td>
@@ -3031,7 +3019,7 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td><code>MARKDOWN_VAULT_MCP_READ_ONLY</code></td>
 <td><code>false</code></td>
 <td>No</td>
-<td>Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport.</td>
+<td>Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING</code></td>
@@ -3069,6 +3057,18 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td>(none)</td>
 <td>No</td>
 <td>Voyage AI API key for the voyage embedding provider. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the OPENAI_API_KEY / OLLAMA_HOST convention. Setting it never auto-selects the provider; choose it explicitly with MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage.</td>
+</tr>
+<tr>
+<td><code>OPENAI_BASE_URL</code></td>
+<td>(none)</td>
+<td>No</td>
+<td>Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_BASE_URL (embeddings). For the summarize tool it only routes traffic when an API key already enables the feature; it never enables summarize by itself.</td>
+</tr>
+<tr>
+<td><code>OPENAI_EMBEDDING_MODEL</code></td>
+<td>(none)</td>
+<td>No</td>
+<td>Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL.</td>
 </tr>
 <tr>
 <td><code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code></td>
