@@ -6,7 +6,26 @@
 pip install markdown-vault-mcp
 ```
 
-With optional dependencies:
+## From Docker
+
+```bash
+docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
+```
+
+The `latest` tag is the newest stable release. The rolling `edge` tag tracks every merge to `main` and carries no version identity; see [Image tags](deployment/docker.md#image-tags) for the full list.
+
+## From source
+
+```bash
+git clone https://github.com/pvliesdonk/markdown-vault-mcp
+cd markdown-vault-mcp
+uv sync --all-extras --all-groups
+```
+
+<!-- DOMAIN-INSTALL-EXTRA-START -->
+## Optional extras
+
+The PyPI package installs the library alone. Pick the extras for how you run it:
 
 === "MCP server"
 
@@ -42,23 +61,9 @@ With optional dependencies:
 uv pip install markdown-vault-mcp[all]
 ```
 
-## From Source
-
-```bash
-git clone https://github.com/pvliesdonk/markdown-vault-mcp.git
-cd markdown-vault-mcp
-uv sync --all-extras --all-groups
-```
-
-## Docker
-
-```bash
-docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
-```
+## Docker image
 
 The Docker image uses `[all]` (MCP + FastEmbed + API embeddings). Semantic search is available by default with FastEmbed and can switch to Ollama/OpenAI/Voyage when configured.
-
-The `latest` tag is the newest stable release. For early adopters who want to test unreleased changes, the rolling `edge` tag tracks every merge to `main` and carries no version identity; see [Image tags](deployment/docker.md#image-tags) for the full list. The floating `:latest`, `:vN`, and `:vN.M` tags only move on stable releases.
 
 ```bash
 docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:edge
@@ -124,7 +129,6 @@ export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/your/markdown/files
 markdown-vault-mcp search "hello world"
 ```
 
-<!-- DOMAIN-INSTALL-EXTRA-START -->
 ## Upgrading from earlier versions
 
 - **Package root minimized (issue #903): import from submodules, not the package root.**

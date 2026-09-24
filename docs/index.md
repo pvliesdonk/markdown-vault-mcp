@@ -1,10 +1,18 @@
-# markdown-vault-mcp
+# Markdown Vault MCP
 
+Generic markdown vault MCP with hybrid search
+
+## Getting started
+
+- [Installation](installation.md)
+- [Configuration](configuration.md)
+- [Tools](tools/index.md)
+
+<!-- DOMAIN-INDEX-FEATURES-START -->
 A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
 
 Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault) and it exposes search, read, write, and edit tools over the [Model Context Protocol](https://modelcontextprotocol.io/).
 
-<!-- DOMAIN-INDEX-FEATURES-START -->
 ## Features
 
 - **Full-text search**: SQLite FTS5 with BM25 scoring, porter stemming
