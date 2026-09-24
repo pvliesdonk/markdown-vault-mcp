@@ -165,15 +165,14 @@ debug = ["fastmcp-pvl-core[debug]"]
 # so it never ships to PyPI consumers and never lands in the security-audit input.
 [dependency-groups]
 dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
-    "pytest-cov>=4.0",
-    "diff-cover>=9.0",
-    "ruff>=0.1",
-    "mypy>=1.0,<3",
-    "pre-commit>=3.0",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    "diff-cover>=9",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pre-commit>=3",
     "pip-audit>=2.7",
-    "watchdog>=4.0",
     "jsonschema>=4.18",
     "copier>=9.4",  # template-conformance gate renders the template pristinely (#899)
     # scripts/gen_config_surface.py imports yaml. It arrived transitively via
@@ -191,7 +190,6 @@ docs = [
     "mkdocs-material>=9.7.6",
     "mkdocstrings[python]>=0.28",
     "mkdocs-llmstxt>=0.5",
-    "mike>=2.1",
 ]
 browser = [
     "pytest-playwright>=0.5",
@@ -244,6 +242,22 @@ build-backend = "hatchling.build"
 # constraint in every re-lock, lockFileMaintenance included.  check_pins.py
 # fails CI the moment the `until:` issue closes, so the pin cannot outlive
 # the 3.12 floor raise that removes it.
+# [tool.mypy] python_version must stay in lockstep with `requires-python` (nothing
+# enforces it mechanically).  Raising `requires-python` without raising this
+# re-creates the trap #727 spent two rounds diagnosing:
+# a dependency that drops the old floor ships stubs in newer syntax, and mypy
+# aborts parsing them while still targeting the lower version.  numpy did
+# exactly that — 2.5.0 requires >=3.12 and its stubs use PEP 695 `type`
+# aliases, which mypy rejects at python_version=3.11 on every mypy version.
+# The `requires-python = ">=3.11"` floor alone does NOT keep numpy 2.5 out:
+# uv forks the resolution on `python_full_version` markers, so a plain
+# `uv lock --upgrade` locks 2.5.x for 3.12+ interpreters — the ones CI
+# type-checks on (#1214).  The `numpy<2.5` entry in [tool.uv]
+# constraint-dependencies is what holds the single 2.4.x resolution; lift
+# it when this moves to "3.12".
+# Beware when re-verifying: an incremental `uv lock` (no --upgrade) keeps the
+# already-locked 2.4.x and hides the fork — that masking is how #1168 judged
+# the previous cap redundant and removed it.  Test with --upgrade.
 constraint-dependencies = [
   "numpy<2.5", # until: https://github.com/pvliesdonk/fastmcp-server-template/issues/547
 ]
@@ -261,12 +275,6 @@ exclude = ["src/markdown_vault_mcp/static/app.src.html"]
 target-version = "py311"
 line-length = 88
 src = ["src", "tests"]
-# Keep ruff >=0.16's markdown code-fence formatter away from all markdown:
-# tests/fixtures/*.md is byte-exact test data (one file is deliberately
-# invalid UTF-8, which aborts the formatter), docs carry hand-aligned
-# comment columns and non-Python fences it mangles, and CI only format-
-# checks src/ and tests/ anyway.
-extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = [
@@ -360,7 +368,6 @@ ignore = ["E501"]
 "src/markdown_vault_mcp/resources.py" = ["B008", "TC001", "TC002", "PLR0913"]
 "src/markdown_vault_mcp/prompts.py" = ["B008", "TC002", "PLR0913"]
 "src/markdown_vault_mcp/_server_apps.py" = ["B008", "TC001", "TC002", "PLR0913"]
-"src/markdown_vault_mcp/_server_transfer.py" = ["B008", "TC001", "TC002", "PLR0913"]
 # IndexingConfig/ContentConfig need pathlib.Path and collections.abc.Sequence at
 # runtime so typing.get_type_hints() works on the public frozen dataclasses; keep
 # those imports top-level, not behind TYPE_CHECKING.
@@ -468,22 +475,6 @@ exclude_lines = [
 ]
 
 [tool.mypy]
-# Keep this in lockstep with the floor of `requires-python` above (nothing
-# enforces it mechanically).  Raising `requires-python` without raising this
-# re-creates the trap #727 spent two rounds diagnosing:
-# a dependency that drops the old floor ships stubs in newer syntax, and mypy
-# aborts parsing them while still targeting the lower version.  numpy did
-# exactly that — 2.5.0 requires >=3.12 and its stubs use PEP 695 `type`
-# aliases, which mypy rejects at python_version=3.11 on every mypy version.
-# The `requires-python = ">=3.11"` floor alone does NOT keep numpy 2.5 out:
-# uv forks the resolution on `python_full_version` markers, so a plain
-# `uv lock --upgrade` locks 2.5.x for 3.12+ interpreters — the ones CI
-# type-checks on (#1214).  The `numpy<2.5` entry in [tool.uv]
-# constraint-dependencies is what holds the single 2.4.x resolution; lift
-# it when this moves to "3.12".
-# Beware when re-verifying: an incremental `uv lock` (no --upgrade) keeps the
-# already-locked 2.4.x and hides the fork — that masking is how #1168 judged
-# the previous cap redundant and removed it.  Test with --upgrade.
 python_version = "3.11"
 strict = true
 warn_return_any = true
@@ -494,7 +485,7 @@ check_untyped_defs = true
 no_implicit_optional = true
 
 [[tool.mypy.overrides]]
-module = ["frontmatter", "frontmatter.*", "yaml", "yaml.*"]
+module = ["fastmcp_pvl_core", "fastmcp_pvl_core.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

@@ -1856,7 +1856,6 @@ dev = [
     { name = "pyyaml" },
     { name = "ruff" },
     { name = "types-pyyaml" },
-    { name = "watchdog" },
 ]
 docs = [
     { name = "mike" },
@@ -1894,22 +1893,20 @@ provides-extras = ["mcp", "embeddings-api", "embeddings", "file-watcher", "summa
 browser = [{ name = "pytest-playwright", specifier = ">=0.5" }]
 dev = [
     { name = "copier", specifier = ">=9.4" },
-    { name = "diff-cover", specifier = ">=9.0" },
+    { name = "diff-cover", specifier = ">=9" },
     { name = "jsonschema", specifier = ">=4.18" },
-    { name = "mypy", specifier = ">=1.0,<3" },
+    { name = "mypy", specifier = ">=1.11" },
     { name = "pip-audit", specifier = ">=2.7" },
-    { name = "pre-commit", specifier = ">=3.0" },
-    { name = "pytest", specifier = ">=7.0" },
-    { name = "pytest-asyncio", specifier = ">=0.21" },
-    { name = "pytest-cov", specifier = ">=4.0" },
+    { name = "pre-commit", specifier = ">=3" },
+    { name = "pytest", specifier = ">=8" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "pytest-cov", specifier = ">=5" },
     { name = "pyyaml", specifier = ">=6" },
-    { name = "ruff", specifier = ">=0.1" },
+    { name = "ruff", specifier = ">=0.6" },
     { name = "types-pyyaml", specifier = ">=6" },
-    { name = "watchdog", specifier = ">=4.0" },
 ]
 docs = [
     { name = "mike", specifier = ">=2" },
-    { name = "mike", specifier = ">=2.1" },
     { name = "mkdocs-llmstxt", specifier = ">=0.5" },
     { name = "mkdocs-material", specifier = ">=9.7.6" },
     { name = "mkdocstrings", extras = ["python"], specifier = ">=0.28" },

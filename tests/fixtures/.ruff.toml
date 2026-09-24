@@ -1,0 +1,5 @@
+# Project-owned: the template never renders tests/fixtures (copier `_exclude`).
+# Keeps ruff's markdown code-fence formatter away from the byte-exact fixture
+# notes here; invalid_utf8.md is deliberately not UTF-8 and aborts it.
+extend = "../../pyproject.toml"
+extend-exclude = ["*.md"]
