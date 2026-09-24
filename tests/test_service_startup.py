@@ -13,7 +13,11 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.config import ProjectConfig
-from markdown_vault_mcp.domain import Service, set_vault_singleton
+from markdown_vault_mcp.domain import (
+    Service,
+    get_vault_singleton,
+    set_vault_singleton,
+)
 from markdown_vault_mcp.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
@@ -51,3 +55,23 @@ async def test_existing_directory_builds_the_vault(tmp_path: Path) -> None:
         assert service.vault.source_dir == tmp_path
     finally:
         await service.stop()
+
+
+def test_vault_before_start_raises_runtime_error(tmp_path: Path) -> None:
+    service = Service(ProjectConfig(source_dir=tmp_path))
+    with pytest.raises(RuntimeError, match="call start"):
+        _ = service.vault
+
+
+async def test_missing_directory_marks_the_singleton_unavailable(
+    tmp_path: Path,
+) -> None:
+    service = Service(ProjectConfig(source_dir=tmp_path / "absent"))
+    await service.start()
+    try:
+        with pytest.raises(ConfigurationError, match="MARKDOWN_VAULT_MCP_SOURCE_DIR"):
+            get_vault_singleton()
+    finally:
+        await service.stop()
+    with pytest.raises(RuntimeError):
+        get_vault_singleton()

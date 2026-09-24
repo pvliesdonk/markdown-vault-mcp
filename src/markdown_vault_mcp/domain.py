@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 
 _vault_singleton: Vault | None = None
+# Why there is no singleton although the lifespan ran: the message every
+# out-of-context accessor (transfer sink, webhook routes) raises with.
+_vault_unavailable: str | None = None
 
 # Config handoff: make_server sets the config it already loaded so the no-arg
 # ``Service()`` the template's server_lifespan constructs builds the vault from
@@ -73,7 +76,7 @@ def set_pending_transport(transport: str) -> None:
     _pending_transport = transport
 
 
-def set_vault_singleton(vault: Vault | None) -> None:
+def set_vault_singleton(vault: Vault | None, *, unavailable: str | None = None) -> None:
     """Set the module-level :class:`Vault` singleton.
 
     Set by :meth:`Service.start` with the live Vault, and cleared to ``None`` by
@@ -81,9 +84,14 @@ def set_vault_singleton(vault: Vault | None) -> None:
 
     Args:
         vault: The live :class:`Vault`, or ``None`` to clear.
+        unavailable: With ``vault=None``, why the lifespan built no vault;
+            :func:`get_vault_singleton` then raises
+            :class:`~markdown_vault_mcp.exceptions.ConfigurationError` with it
+            instead of the not-started ``RuntimeError``.
     """
-    global _vault_singleton
+    global _vault_singleton, _vault_unavailable
     _vault_singleton = vault
+    _vault_unavailable = unavailable if vault is None else None
 
 
 def get_vault_singleton() -> Vault:
@@ -97,9 +105,13 @@ def get_vault_singleton() -> Vault:
         The live :class:`Vault` set by :meth:`Service.start`.
 
     Raises:
+        ConfigurationError: If the lifespan ran but built no vault because
+            the configured directory does not exist.
         RuntimeError: If the singleton has not been set yet.
     """
     if _vault_singleton is None:
+        if _vault_unavailable is not None:
+            raise ConfigurationError(_vault_unavailable)
         msg = (
             "Vault not initialised — Service.start was never called.  In normal "
             "operation the server lifespan starts it; in tests, set explicitly "
@@ -180,6 +192,7 @@ class Service:
                 "vault_directory_missing path=%s var=MARKDOWN_VAULT_MCP_SOURCE_DIR",
                 config.source_dir,
             )
+            set_vault_singleton(None, unavailable=self._startup_error)
             return
         logger.info("vault_initialising source_dir=%s", config.source_dir)
 

@@ -273,14 +273,16 @@ async def test_validate_bundle_traversal_raises(sink: VaultTransferSink) -> None
         await sink.validate("okf-bundle:../secret", "download")
 
 
-async def test_validate_bundle_rejected_when_okf_off(source_dir: Path) -> None:
+async def test_validate_bundle_rejected_when_okf_off(
+    source_dir: Path, vault: Vault
+) -> None:
     config = ProjectConfig(
         source_dir=source_dir,
         read_only=False,
         attachment_extensions=("png",),
         okf_mode="off",
     )
-    sink = VaultTransferSink(config)
+    sink = VaultTransferSink(config, vault_provider=lambda: vault)
     with pytest.raises(ValueError, match=r"disabled"):
         await sink.validate("okf-bundle", "download")
 
@@ -314,3 +316,18 @@ async def test_read_bundle_folder_scope(sink: VaultTransferSink, vault: Vault) -
     assert result.filename == "guides.zip"
     names = zipfile.ZipFile(io.BytesIO(result.body)).namelist()
     assert names == ["guides/g.md"]
+
+
+@pytest.mark.parametrize("kind", ["download", "upload"])
+async def test_validate_refuses_to_mint_without_a_vault(
+    config: ProjectConfig, kind: str
+) -> None:
+    """No vault, no link: the failure surfaces at mint time, not when followed."""
+    from markdown_vault_mcp.exceptions import ConfigurationError
+
+    def unavailable() -> Vault:
+        raise ConfigurationError("vault directory /absent does not exist")
+
+    sink = VaultTransferSink(config, vault_provider=unavailable)
+    with pytest.raises(ConfigurationError, match="does not exist"):
+        await sink.validate("notes/a.md", kind)  # type: ignore[arg-type]
