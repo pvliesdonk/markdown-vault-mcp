@@ -105,8 +105,9 @@ src/markdown_vault_mcp/
   _server_apps.py      -- template-owned MCP Apps scaffold; vault SPA + app-tools confined to DOMAIN-APP-TOOL-NAMES/DOMAIN-APP-RESOURCE/DOMAIN-APP-TOOLS sentinels (#905)
   _vault_apps.py       -- domain helpers backing _server_apps sentinels: Claude sandbox-domain compute + CDN CSP + GraphView→SPA wire serializer (#905)
   _server_deps.py      -- server_lifespan + LifespanState: Service lifecycle and vault DI for request handlers
-  _server_tools/
-    __init__.py        -- register_tools: single entry point delegating to the per-facet groups (#578)
+  tools.py             -- register_tools: the template's seeded registrar, delegating to the per-facet groups (#578)
+  _tools/
+    __init__.py        -- package marker; the groups below are registered by tools.py
     _common.py         -- shared tool plumbing: staleness-annotated results, drain waits
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
     writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
@@ -114,8 +115,8 @@ src/markdown_vault_mcp/
     index.py           -- index/reindex/embeddings-status tool registrations
     git.py             -- git sync/history/diff tool registrations
     summarize.py       -- dual-mode summarize job tool; registered from make_server's DOMAIN-WIRING (#1033)
-  _server_resources.py -- register_resources: MCP resource registrations
-  _server_prompts.py   -- register_prompts: MCP prompt registrations from static/prompts templates (#609)
+  resources.py         -- register_resources: MCP resource registrations
+  prompts.py           -- register_prompts: MCP prompt registrations from static/prompts templates (#609)
   _server_queryable.py -- needs_queryable decorator: MCP-layer wait/block on index readiness (#513)
   _transfer_sink.py    -- VaultTransferSink: domain sink + validator hooks for pvl-core's transfer routes (#979)
   _file_watcher.py     -- watchdog external-change watcher with debounce; used when git pull is off and no webhook can deliver on this transport (#558, #1263)

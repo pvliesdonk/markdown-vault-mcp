@@ -953,7 +953,7 @@ def test_reconcile_after_pull_flags_a_failed_reindex() -> None:
     """git_sync surfaces a reindex that raised on the pull payload, not blocking."""
     from unittest.mock import MagicMock
 
-    from markdown_vault_mcp._server_tools.git import _reconcile_after_pull
+    from markdown_vault_mcp._tools.git import _reconcile_after_pull
 
     vault = MagicMock()
     vault.reconcile_index_with_head.return_value = "failed"
@@ -971,7 +971,7 @@ def test_reconcile_after_pull_leaves_a_covered_index_unflagged(outcome: str) -> 
     """``deferred`` is the index still building; that build covers the pull."""
     from unittest.mock import MagicMock
 
-    from markdown_vault_mcp._server_tools.git import _reconcile_after_pull
+    from markdown_vault_mcp._tools.git import _reconcile_after_pull
 
     vault = MagicMock()
     vault.reconcile_index_with_head.return_value = outcome

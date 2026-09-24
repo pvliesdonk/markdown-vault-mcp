@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 import pytest
 from fastmcp import Client
 
-from markdown_vault_mcp._server_tools._common import attach_remote_health
+from markdown_vault_mcp._tools._common import attach_remote_health
 from markdown_vault_mcp._write_tools import WRITE_TOOL_NAMES
 from markdown_vault_mcp.git.types import (
     PUSH_REASON_NON_FAST_FORWARD,

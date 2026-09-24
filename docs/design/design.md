@@ -1329,7 +1329,7 @@ detect: a write that started and finished entirely between two snapshots.
 Each such tool accepts an optional `wait_for_pending_writes: bool = false`
 parameter (client-facing name; the internal primitive is still "drain").
 Its wire-schema description is owned once by the shared
-`_WaitForPendingWrites` `Annotated` alias in `_server_tools/_common.py`;
+`_WaitForPendingWrites` `Annotated` alias in `_tools/_common.py`;
 the longer per-tool `Args:` entries remain developer documentation. This
 prevents the same schema prose from being copied into every read tool while
 keeping the runtime signatures and Google-style docstrings explicit (#1010).
@@ -1353,13 +1353,13 @@ only. Each body is wrapped in an explicit `application/json`
 `ResourceResult` would default to `text/plain`.
 
 Implementation: the shared `_staleness_result()` helper (in
-`_server_tools.py`) wraps a tool's data in a `ToolResult` whose
+`_tools/_common.py`) wraps a tool's data in a `ToolResult` whose
 `structured_content` mirrors FastMCP's wrap-result convention (a
 list/primitive payload is nested under `{"result": ...}`) so the client
 still deserializes `result.data` to the bare shape advertised by the
 tool's data-typed return annotation. The annotation drives the output
 schema; the `ToolResult` is the runtime payload. The resource counterpart
-is `_stale_resource()` in `_server_resources.py`.
+is `_stale_resource()` in `resources.py`.
 
 The drift signal reflects writer-internal state only: paths in
 `dirty_paths`, paths in `dirty_embeddings`, the in-flight job
@@ -1536,7 +1536,7 @@ the spec itself says, dated and sourced, in
   vault-side declaration only ever enables *read* semantics — write
   behavior is a later, operator-gated phase.
 - **Annotations** (`okf.py::derive_annotation`, attached in
-  `_server_tools/_common.py` mirroring `attach_conventions`): when active,
+  `_tools/_common.py` mirroring `attach_conventions`): when active,
   `search` hits, whole-document `read`s, and `get_context` carry an `okf`
   key — `type` (when declared), `status` (absent ⇒ `stable` per spec),
   `stale` (a bare `stale_after` date: the server-local day has reached it;
@@ -3484,7 +3484,7 @@ properties of the caller. `resolve_mcp_principal()` performs the single
 request-context read (`fastmcp_pvl_core.get_subject()` + `get_claims()`,
 applying the claim keys registered at startup via
 `configure_identity_claims()`), and the write tools bind the result on a
-contextvar (`write_identity_scope()` in `_server_tools/writer.py`) around
+contextvar (`write_identity_scope()` in `_tools/writer.py`) around
 their `asyncio.to_thread` call, together with the OKF write intent whose
 actor derives from the **same** Principal. OKF uses the subject classification;
 Git independently uses the configured name/email claims or static fallback.
@@ -4298,7 +4298,7 @@ still apply; confirmation does not bypass the etag check. A failed replacement
 is reported without a blind retry or a dependent delete/rename.
 
 Prompt registration is split by config-dependency (#901), both entry points
-living in ``_server_prompts.py``. The template-owned ``make_server`` body calls
+living in ``prompts.py``. The template-owned ``make_server`` body calls
 ``register_prompts(mcp)``, which registers the six config-independent built-ins
 above (every one except ``create_from_template`` and ``summarize-subtree``).
 The config-dependent prompts — ``create_from_template`` (needs the templates

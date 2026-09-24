@@ -67,7 +67,7 @@ does not attempt to catalogue the rest of FastMCP's API.
 - Does not cover: FastMCP middleware, transforms, client authentication, or
   task execution semantics beyond backend registration.
 - Depended on by: `src/markdown_vault_mcp/server.py`,
-  `_server_tools/writer.py`, `_server_resources.py`, and `_server_apps.py`;
+  `_tools/writer.py`, `resources.py`, and `_server_apps.py`;
   the server section of `docs/design/design.md`; and the operator guidance in
   `docs/guides/okf.md` and `docs/deployment/oidc.md`.
 

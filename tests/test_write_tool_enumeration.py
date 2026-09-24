@@ -57,9 +57,9 @@ class TestRegistryLockstep:
         from fastmcp_pvl_core import register_transfer_routes
 
         from markdown_vault_mcp._server_apps import register_apps
-        from markdown_vault_mcp._server_tools import register_tools
         from markdown_vault_mcp._transfer_sink import VaultTransferSink
         from markdown_vault_mcp.config import ProjectConfig
+        from markdown_vault_mcp.tools import register_tools
 
         mcp = FastMCP("write-tag-lockstep")
         register_tools(mcp)

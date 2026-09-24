@@ -34,10 +34,10 @@ from fastmcp_pvl_core import (
 
 from markdown_vault_mcp._server_apps import register_apps
 from markdown_vault_mcp._server_deps import bind_config, server_lifespan
-from markdown_vault_mcp._server_prompts import register_prompts
-from markdown_vault_mcp._server_resources import register_resources
-from markdown_vault_mcp._server_tools import register_tools
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.prompts import register_prompts
+from markdown_vault_mcp.resources import register_resources
+from markdown_vault_mcp.tools import register_tools
 
 logger = logging.getLogger(__name__)
 
@@ -215,8 +215,8 @@ def make_server(
         GuidanceConfig,
         contribute_instructions,
     )
-    from markdown_vault_mcp._server_prompts import register_domain_prompts
     from markdown_vault_mcp.domain import set_pending_config, set_pending_transport
+    from markdown_vault_mcp.prompts import register_domain_prompts
 
     is_read_only = config.read_only
 
@@ -351,8 +351,8 @@ def make_server(
     # the generic get_job_result tool.
     from fastmcp_pvl_core import build_jobs, register_job_tools
 
-    from markdown_vault_mcp._server_tools import index as index_tools
-    from markdown_vault_mcp._server_tools import summarize as summarize_tools
+    from markdown_vault_mcp._tools import index as index_tools
+    from markdown_vault_mcp._tools import summarize as summarize_tools
 
     # With no KV backend configured, core's default (>=4.11.1) is
     # file:///data/state where that directory is usable (the Docker image)
