@@ -1,13 +1,13 @@
 # yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
 #
 # nfpm configuration for markdown-vault-mcp .deb and .rpm packages.
-# Build: VERSION=1.13.3 nfpm package --packager deb --target dist/
-#        VERSION=1.13.3 nfpm package --packager rpm --target dist/
+# Build: VERSION=1.0.0 nfpm package --packager deb --target dist/
+#        VERSION=1.0.0 nfpm package --packager rpm --target dist/
 
 name: markdown-vault-mcp
 arch: "${ARCH:-amd64}"
 platform: linux
-# VERSION env var is required (e.g. VERSION=1.14.0 nfpm package ...)
+# VERSION env var is required (e.g. VERSION=1.0.0 nfpm package ...)
 # Note: nfpm does not support bash :? guards — use simple ${VAR} only.
 version: "${VERSION}"
 version_schema: semver
@@ -22,13 +22,13 @@ maintainer: "Peter van Liesdonk <pvliesdonk@users.noreply.github.com>"
 # unindented line, which is also why these markers sit outside it rather than
 # in it (a `#` inside a block scalar is literal text, not a comment).
 description: |
-  Generic markdown vault MCP with hybrid search.
+  Generic markdown vault MCP with hybrid search
 # DOMAIN-NFPM-DESCRIPTION-END
 homepage: "https://pvliesdonk.github.io/markdown-vault-mcp/"
 # PROJECT-LICENSE-START — the license you picked; replace the value below and
 # it is kept across copier update.  nfpm wants a short free-form name, which is
 # not necessarily the SPDX id used in pyproject.toml.  See LICENSE.
-license: "MIT"
+license: "Proprietary"  # starter: TODO update when you pick a license (see LICENSE)
 # PROJECT-LICENSE-END
 
 # --- Package contents ---

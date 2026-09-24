@@ -5,8 +5,8 @@ variables carry the ``MARKDOWN_VAULT_MCP_`` prefix; a few third-party variables
 (`FASTMCP_*`, `PUID`/`PGID`) keep their upstream names.
 
 This page is the complete reference: every variable the server reads appears
-in exactly one table below. One source generates these tables, `.env.example`
-and the packaged env files, alongside the
+in exactly one table below. The tables come from the same source as
+`.env.example`, the packaged env files, and the
 [configuration generator](configuration-generator.md), so the four cannot
 disagree. The README carries a hand-picked subset of these variables as its
 quick entry point.

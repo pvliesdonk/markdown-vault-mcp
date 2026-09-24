@@ -25,7 +25,7 @@ if [ "$(id -u)" = '0' ]; then
     # Ensure state subdirectories exist inside the volume.
     # Dockerfile seeds these on first use, but externally-created or
     # pre-existing volumes may be empty.
-    mkdir -p /data/state/embeddings /data/state/fastembed /data/state/fastmcp
+    mkdir -p /data/state/fastmcp
     # Always fix ownership of state subdirs — mkdir creates as root,
     # but the conditional chown loop below may skip /data/state if it
     # was already owned by appuser from a previous run.
@@ -33,7 +33,7 @@ if [ "$(id -u)" = '0' ]; then
 
     # Fix ownership — named volumes may arrive root-owned.
     # Only recurse into directories still owned by root, to avoid
-    # touching bind-mounted vault files on every restart.
+    # touching bind-mounted service files on every restart.
     chown appuser:appuser /data
     for _dir in /data/*; do
         if [ -d "$_dir" ] && [ "$(stat -c '%u' "$_dir")" = '0' ]; then

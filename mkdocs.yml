@@ -44,25 +44,27 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
-
 extra:
   version:
     provider: mike
     default: latest
+
+extra_javascript:
+  - path: javascripts/config-wizard/wizard.js
+    type: module
+
+extra_css:
+  - stylesheets/config-wizard.css
 
 plugins:
   - search
   # Generates llms.txt + llms-full.txt for the README badge.
   # Sections mirror `nav:` below — keep them aligned when customising
   # (both blocks are sentinel-protected so customise both as a unit).
+  # `guides/*.md` and `deployment/*.md` use globs deliberately so new pages
+  # in those directories are auto-indexed without a sections-list update.
   - llmstxt:
       full_output: llms-full.txt
-      markdown_description: >
-        markdown-vault-mcp is a generic markdown vault MCP server with
-        FTS5 full-text search, semantic search via embeddings, frontmatter-aware
-        indexing, and incremental reindexing. It exposes 31 LLM-visible tools
-        (plus 6 app-only tools), 9 resources, and 6 prompts over the Model
-        Context Protocol.
       sections:
         # PROJECT-LLMSTXT-SECTIONS-START — keep aligned with `nav:` below;
         # kept across copier update.
@@ -144,13 +146,6 @@ markdown_extensions:
       permalink: true
   - attr_list
   - md_in_html
-
-extra_javascript:
-  - path: javascripts/config-wizard/wizard.js
-    type: module
-
-extra_css:
-  - stylesheets/config-wizard.css
 
 nav:
   # PROJECT-NAV-START — replace with your real navigation; kept across copier

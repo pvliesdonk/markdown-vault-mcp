@@ -17,7 +17,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastmcp_pvl_core import JobsConfig, ServerConfig, TransferConfig
+from fastmcp_pvl_core import (
+    JobsConfig,
+    ServerConfig,
+    TransferConfig,
+    # Used by `_default_server_name` below, and re-exported so CONFIG-FROM-ENV
+    # additions don't need a new import.  No `noqa: F401` — that factory makes
+    # the import genuinely used, and a redundant directive fails RUF100.
+    env,
+)
 
 from markdown_vault_mcp._write_tools import gated_tool, write_tools_phrase
 from markdown_vault_mcp.config_sections import (
@@ -46,7 +54,6 @@ from markdown_vault_mcp.config_sections._assembly import (
 )
 from markdown_vault_mcp.config_sections._helpers import (
     WeightMap,
-    env,
     env_float,
     env_int,
     opt_list,
