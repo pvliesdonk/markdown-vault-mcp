@@ -23,8 +23,19 @@ from markdown_vault_mcp.vault import VaultSettings
 from tests.fixtures.git import git_repo_pair  # noqa: F401
 
 
+@pytest.fixture(scope="session")
+def _default_vault_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """An existing, empty directory that stands in for ``/data/vault`` in tests.
+
+    ``SOURCE_DIR`` is required and must exist where a vault is built, so an
+    env-less construction in the suite needs a real directory, not the image's
+    mount point.
+    """
+    return tmp_path_factory.mktemp("default-vault")
+
+
 @pytest.fixture(autouse=True)
-def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def _clear_env(monkeypatch: pytest.MonkeyPatch, _default_vault_dir: Path) -> None:
     """Strip all ``MARKDOWN_VAULT_MCP_*`` env vars before each test (isolation).
 
     Prevents an env var set by one test (or the ambient shell) from leaking
@@ -45,16 +56,17 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
     # ProjectConfig.from_env hard-requires SOURCE_DIR (fail-fast startup
-    # contract). Preset a stable default so env-less from_env construction
-    # works in tests. A test that asserts the missing-var error deletes it
+    # contract) and the lifespan requires the directory to exist. Preset an
+    # existing session directory so env-less construction and startup work
+    # in tests. A test that asserts the missing-var error deletes it
     # explicitly; a test-local setenv overrides it (fixtures run before the
     # test body). The template-owned config-contract tests preset the same
     # var through the ``config_contract_env`` seam below.
-    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/data/vault")
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(_default_vault_dir))
 
 
 @pytest.fixture
-def config_contract_env() -> dict[str, str]:
+def config_contract_env(_default_vault_dir: Path) -> dict[str, str]:
     """Env vars the template-owned config-contract tests preset before ``from_env()``.
 
     The template's ``tests/test_config_contract.py`` resolves this fixture via
@@ -69,7 +81,7 @@ def config_contract_env() -> dict[str, str]:
     Returns:
         A mapping of env var name to value to set before ``from_env()``.
     """
-    return {"MARKDOWN_VAULT_MCP_SOURCE_DIR": "/data/vault"}
+    return {"MARKDOWN_VAULT_MCP_SOURCE_DIR": str(_default_vault_dir)}
 
 
 def _parse_tool_data(result: Any) -> Any:

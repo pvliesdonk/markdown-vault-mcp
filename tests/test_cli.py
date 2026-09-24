@@ -1069,3 +1069,21 @@ def test_root_handler_added_when_none_exist(monkeypatch: pytest.MonkeyPatch) -> 
         assert len(root.handlers) >= 1
     finally:
         root.handlers[:] = original_handlers
+
+
+def test_index_refuses_an_absent_source_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A batch command over a missing directory exits 1 naming the variable."""
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(tmp_path / "absent"))
+    result = runner.invoke(app, ["index"])
+    assert result.exit_code == 1
+    assert "MARKDOWN_VAULT_MCP_SOURCE_DIR" in result.output
+
+
+def test_index_refuses_an_unset_source_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The variable is required: unset exits 1 with the same shape as serve."""
+    monkeypatch.delenv(f"{_ENV_PREFIX}_SOURCE_DIR", raising=False)
+    result = runner.invoke(app, ["index"])
+    assert result.exit_code == 1
+    assert "MARKDOWN_VAULT_MCP_SOURCE_DIR is required" in result.output

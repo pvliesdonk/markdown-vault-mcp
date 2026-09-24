@@ -20,6 +20,7 @@ from markdown_vault_mcp.config_sections import (
     SearchConfig,
 )
 from markdown_vault_mcp.config_sections._assembly import (
+    ensure_source_dir,
     to_vault_instances,
     to_vault_settings,
 )
@@ -2426,3 +2427,20 @@ def test_boot_reindex_env_override_disables_it(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_BOOT_REINDEX", "false")
 
     assert ProjectConfig.from_env().boot_reindex is False
+
+
+class TestEnsureSourceDir:
+    def test_missing_directory_raises_naming_the_variable(self, tmp_path: Path) -> None:
+        config = ProjectConfig(source_dir=tmp_path / "absent")
+        with pytest.raises(ConfigurationError, match="MARKDOWN_VAULT_MCP_SOURCE_DIR"):
+            ensure_source_dir(config)
+
+    def test_existing_directory_passes(self, tmp_path: Path) -> None:
+        assert ensure_source_dir(ProjectConfig(source_dir=tmp_path)) == tmp_path
+
+    def test_managed_git_mode_is_exempt(self, tmp_path: Path) -> None:
+        config = ProjectConfig(
+            source_dir=tmp_path / "absent",
+            git_repo_url="https://example.invalid/vault.git",
+        )
+        assert ensure_source_dir(config) == tmp_path / "absent"

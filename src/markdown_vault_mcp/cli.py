@@ -162,6 +162,7 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
     from pathlib import Path
 
     from markdown_vault_mcp.config_sections._assembly import (
+        ensure_source_dir,
         to_vault_instances,
         to_vault_settings,
     )
@@ -171,7 +172,13 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
     # Deliberate process-env mutation — safe for a single-shot, single-threaded CLI.
     if source_dir:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir
-    config = ProjectConfig.from_env()
+    try:
+        config = ProjectConfig.from_env()
+        ensure_source_dir(config)
+    except ConfigurationError as exc:
+        # Same shape as ``serve``: one line, the variable named, exit 1.
+        typer.echo(f"ERROR: configuration error: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
     instances = to_vault_instances(config)
     settings = to_vault_settings(config, instances=instances)
     if index_path:

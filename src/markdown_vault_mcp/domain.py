@@ -20,6 +20,7 @@ from fastmcp.server.context import Context
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections._assembly import (
+    ensure_source_dir,
     to_vault_instances,
     to_vault_settings,
 )
@@ -146,6 +147,7 @@ class Service:
     async def start(self) -> None:
         """Build the Vault and submit the boot jobs; start background tasks."""
         config = self._config
+        ensure_source_dir(config)
         logger.info("vault_initialising source_dir=%s", config.source_dir)
 
         # Settings-first construction (#1158): the config-derived knobs

@@ -27,7 +27,7 @@ from fastmcp_pvl_core import (
     env,
 )
 
-from markdown_vault_mcp._write_tools import gated_tool, write_tools_phrase
+from markdown_vault_mcp._write_tools import write_tools_phrase
 from markdown_vault_mcp.config_sections import (
     ContentConfig,
     EmbeddingsConfig,
@@ -110,9 +110,10 @@ class ProjectConfig:
         default=Path("/data/vault"),
         metadata={
             "help": (
-                "Path to the markdown vault directory. Required — the server "
-                "refuses to start without it. Symbolic links inside the vault "
-                "are followed on Python 3.13+."
+                "Path to the markdown vault directory. Required: the server "
+                "refuses to start when it is unset or the directory does not "
+                "exist (managed git mode clones into it). Symbolic links "
+                "inside the vault are followed on Python 3.13+."
             ),
             "tags": ("vault", "readme"),
         },
@@ -122,9 +123,7 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Set to true to hide the write tools "
-                f"({write_tools_phrase()}) and serve a search-only vault. "
-                f"{gated_tool('git_sync')} also needs managed git mode; "
-                f"{gated_tool('create_upload_link')} needs an HTTP transport."
+                f"({write_tools_phrase()}) and serve a search-only vault."
             ),
             "tags": ("vault", "readme"),
         },

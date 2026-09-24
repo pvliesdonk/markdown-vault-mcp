@@ -19,13 +19,13 @@
     "source_dir": {
       "type": "directory",
       "title": "Vault directory",
-      "description": "Path to the markdown vault directory. Required — the server refuses to start without it. Symbolic links inside the vault are followed on Python 3.13+.",
+      "description": "Path to the markdown vault directory. Required: the server refuses to start when it is unset or the directory does not exist (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+.",
       "required": true
     },
     "read_only": {
       "type": "boolean",
       "title": "Read-only mode",
-      "description": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault. git_sync also needs managed git mode; create_upload_link needs an HTTP transport.",
+      "description": "Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf_* tools, create_upload_link) and serve a search-only vault.",
       "required": false,
       "default": false
     },

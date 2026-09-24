@@ -119,6 +119,30 @@ def require_source_dir(raw: str | None) -> Path:
     return Path(cleaned)
 
 
+def ensure_source_dir(config: ProjectConfig) -> Path:
+    """Fail fast on a vault directory that does not exist, before it is used.
+
+    Called on the two paths that build a :class:`~markdown_vault_mcp.vault.Vault`
+    (the server lifespan and the CLI), so a misconfigured deployment stops at
+    startup with the variable named rather than in the file watcher with a
+    raw ``FileNotFoundError`` (#1590). It runs there and not in ``from_env``
+    because tests and library callers construct configs over paths that need
+    not exist. Managed git mode is exempt: its bootstrap clones into an absent
+    ``SOURCE_DIR`` itself.
+
+    Raises:
+        ConfigurationError: If ``config.source_dir`` is not an existing
+            directory and no managed-git remote is configured.
+    """
+    path = config.source_dir
+    if config.git.repo_url is None and not path.is_dir():
+        raise ConfigurationError(
+            f"vault directory {path} does not exist. "
+            f"Set {_SOURCE_DIR_VAR} to the path of your markdown vault."
+        )
+    return path
+
+
 def to_bool(raw: str | None, *, default: bool) -> bool:
     """Parse a boolean env value, falling back to *default* when unset."""
     return _parse_bool(raw) if raw is not None else default
