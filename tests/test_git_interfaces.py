@@ -64,7 +64,7 @@ class TestProtocolConformance:
 
 
 class TestPromotedPublicSurface:
-    """The members ``_server_tools/git.py`` used to reach for privately."""
+    """The members ``tools/git.py`` used to reach for privately."""
 
     def test_is_managed_reflects_construction(self) -> None:
         """``is_managed`` replaces the private ``_managed`` read."""
@@ -136,7 +136,7 @@ class TestManagedGateAcceptsAnySyncer:
         Before #1229 this raised, because the gate ran an ``isinstance``
         against the concrete class.
         """
-        from markdown_vault_mcp._server_tools.git import _resolve_managed_strategy
+        from markdown_vault_mcp.tools.git import _resolve_managed_strategy
 
         fake = _FakeSyncer(is_managed=True)
         vault = type("_V", (), {"_git_strategy": fake})()
@@ -145,7 +145,7 @@ class TestManagedGateAcceptsAnySyncer:
 
     def test_unmanaged_syncer_still_rejected(self) -> None:
         """Widening the type did not widen what counts as managed."""
-        from markdown_vault_mcp._server_tools.git import _resolve_managed_strategy
+        from markdown_vault_mcp.tools.git import _resolve_managed_strategy
 
         vault = type("_V", (), {"_git_strategy": _FakeSyncer(is_managed=False)})()
 
@@ -154,7 +154,7 @@ class TestManagedGateAcceptsAnySyncer:
 
     def test_absent_strategy_still_rejected(self) -> None:
         """A vault with no git store at all keeps failing the same way."""
-        from markdown_vault_mcp._server_tools.git import _resolve_managed_strategy
+        from markdown_vault_mcp.tools.git import _resolve_managed_strategy
 
         vault = type("_V", (), {"_git_strategy": None})()
 

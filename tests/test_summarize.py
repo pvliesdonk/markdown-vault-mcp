@@ -972,7 +972,7 @@ def test_apply_summarize_limits_tolerates_missing_description() -> None:
     # the substitution must skip it rather than crash on None.replace().
     from fastmcp import FastMCP
 
-    from markdown_vault_mcp._server_tools.summarize import apply_summarize_limits
+    from markdown_vault_mcp.tools.summarize import apply_summarize_limits
 
     mcp = FastMCP(name="test")
 

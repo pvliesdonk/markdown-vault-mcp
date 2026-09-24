@@ -59,7 +59,7 @@ months, not twelve.
 - Depended on by: `src/markdown_vault_mcp/okf.py` (detection, annotations,
   filters, ranking weights, the audit, index/log builders, write stamps),
   `_okf_write.py` and `_okf_convention.py` (write-side stamping and log
-  maintenance), `okf_bundle.py` (export), `_server_tools/reader.py` and
+  maintenance), `okf_bundle.py` (export), `tools/reader.py` and
   `writer.py` (the `okf_*` tools); `docs/design/okf.md` decides what this
   project does with these rules.
 

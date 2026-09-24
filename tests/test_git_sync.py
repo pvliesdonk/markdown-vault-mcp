@@ -489,7 +489,7 @@ class TestGitSync:
 
         This exercises the ``direction == 'both' and not pull_result.applied
         and not dry_run`` short-circuit in the ``git_sync`` tool
-        (``markdown_vault_mcp._server_tools.git``).
+        (``markdown_vault_mcp.tools.git``).
         """
         from markdown_vault_mcp.git import PullResult
 

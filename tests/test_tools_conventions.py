@@ -204,7 +204,7 @@ class TestConfigSurface:
 class TestConventionsPayloadHelper:
     def test_invalid_path_yields_empty_not_raise(self, tmp_path: Path) -> None:
         """A traversal path degrades to [] so the calling tool never breaks."""
-        from markdown_vault_mcp._server_tools._common import conventions_payload
+        from markdown_vault_mcp.tools._common import conventions_payload
         from markdown_vault_mcp.vault import Vault
 
         vault_dir = tmp_path / "vault"

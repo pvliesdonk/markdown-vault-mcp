@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from fastmcp import Client
 
-from markdown_vault_mcp._server_prompts import (
+from markdown_vault_mcp.prompts import (
     _load_builtin_prompt,
     _load_user_prompt_defs,
 )
@@ -44,9 +44,7 @@ class TestLoadUserPromptDefs:
         missing = tmp_path / "no_such_folder"
         import logging
 
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             _load_user_prompt_defs(str(missing))
         assert "prompts_folder_invalid" in caplog.text
 
@@ -121,9 +119,7 @@ class TestLoadUserPromptDefs:
         )
         import logging
 
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             result = _load_user_prompt_defs(str(tmp_path))
         assert "broken" not in result
         assert "user_prompt_parse_failed" in caplog.text
@@ -177,12 +173,12 @@ class TestLoadBuiltinPrompt:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """The built-in prompt loader's hand-rolled utf-8-sig read strips a BOM (#673)."""
-        from markdown_vault_mcp import _server_prompts
+        from markdown_vault_mcp import prompts
 
         (tmp_path / "demo.md").write_bytes(
             b"\xef\xbb\xbf---\ndescription: Demo\n---\n\nbody\n"
         )
-        monkeypatch.setattr(_server_prompts, "_BUILTIN_PROMPTS_DIR", tmp_path)
+        monkeypatch.setattr(prompts, "_BUILTIN_PROMPTS_DIR", tmp_path)
         result = _load_builtin_prompt("demo")
         assert result is not None
         assert result["description"] == "Demo"  # frontmatter parsed past the BOM
@@ -198,12 +194,12 @@ class TestLoadBuiltinPrompt:
         yields []. ``arguments`` gains the same guard the user loader already had;
         an int pins it (``for arg in 5`` raises TypeError without the guard).
         """
-        from markdown_vault_mcp import _server_prompts
+        from markdown_vault_mcp import prompts
 
         (tmp_path / "demo.md").write_text(
             "---\narguments: 5\ntags: write\n---\nbody", encoding="utf-8"
         )
-        monkeypatch.setattr(_server_prompts, "_BUILTIN_PROMPTS_DIR", tmp_path)
+        monkeypatch.setattr(prompts, "_BUILTIN_PROMPTS_DIR", tmp_path)
         result = _load_builtin_prompt("demo")
         assert result is not None
         assert result["arguments"] == []
@@ -221,7 +217,7 @@ class TestRegisterOneUserPromptArgValidation:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp._server_prompts import _register_one_user_prompt
+        from markdown_vault_mcp.prompts import _register_one_user_prompt
 
         mcp = FastMCP("test")
         defn: dict = {
@@ -230,9 +226,7 @@ class TestRegisterOneUserPromptArgValidation:
             "tags": [],
             "content": "Hello $class",
         }
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             _register_one_user_prompt(mcp, "bad_prompt", defn)
         assert "reason=reserved_keyword" in caplog.text
 
@@ -244,7 +238,7 @@ class TestRegisterOneUserPromptArgValidation:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp._server_prompts import _register_one_user_prompt
+        from markdown_vault_mcp.prompts import _register_one_user_prompt
 
         mcp = FastMCP("test")
         defn: dict = {
@@ -253,9 +247,7 @@ class TestRegisterOneUserPromptArgValidation:
             "tags": [],
             "content": "Hello",
         }
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             _register_one_user_prompt(mcp, "bad_prompt2", defn)
         assert "reason=invalid_identifier" in caplog.text
 
@@ -268,7 +260,7 @@ class TestRegisterOneUserPromptArgValidation:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp._server_prompts import _register_one_user_prompt
+        from markdown_vault_mcp.prompts import _register_one_user_prompt
 
         mcp = FastMCP("test")
         defn: dict = {
@@ -277,9 +269,7 @@ class TestRegisterOneUserPromptArgValidation:
             "tags": [],
             "content": "Hello $tmpl",
         }
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             _register_one_user_prompt(mcp, "ok_name", defn)
         assert "prompt_arg_invalid" not in caplog.text
 
@@ -292,7 +282,7 @@ class TestRegisterOneUserPromptArgValidation:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp._server_prompts import _register_one_builtin_prompt
+        from markdown_vault_mcp.prompts import _register_one_builtin_prompt
 
         mcp = FastMCP("test")
         defn: dict = {
@@ -302,16 +292,14 @@ class TestRegisterOneUserPromptArgValidation:
             "icons": "",
             "content": "Hi $x",
         }
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             _register_one_builtin_prompt(mcp, "bad_builtin", defn)
         assert "reason=invalid_identifier" in caplog.text
 
     def test_module_has_no_exec(self) -> None:
         """The prompt-registration module compiles no source and calls no exec
         (the S102 sink removed in #788)."""
-        import markdown_vault_mcp._server_prompts as mod
+        import markdown_vault_mcp.prompts as mod
 
         source = Path(mod.__file__).read_text(encoding="utf-8")
         assert "exec(" not in source
@@ -325,7 +313,7 @@ class TestRegisterOneUserPromptArgValidation:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp._server_prompts import _register_one_user_prompt
+        from markdown_vault_mcp.prompts import _register_one_user_prompt
 
         mcp = FastMCP("test")
         defn: dict = {
@@ -337,9 +325,7 @@ class TestRegisterOneUserPromptArgValidation:
             "tags": [],
             "content": "$opt $req",
         }
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             _register_one_user_prompt(mcp, "bad_order", defn)
         assert "user_prompt_signature_invalid" in caplog.text
 
@@ -352,7 +338,7 @@ class TestRegisterOneUserPromptArgValidation:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp._server_prompts import _register_one_builtin_prompt
+        from markdown_vault_mcp.prompts import _register_one_builtin_prompt
 
         mcp = FastMCP("test")
         defn: dict = {
@@ -365,9 +351,7 @@ class TestRegisterOneUserPromptArgValidation:
             "icons": "",
             "content": "$opt $req",
         }
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             _register_one_builtin_prompt(mcp, "bad_order_builtin", defn)
         assert "builtin_prompt_signature_invalid" in caplog.text
 
@@ -551,7 +535,7 @@ def test_research_derive_slugifies_topic() -> None:
     """_research_derive turns $topic into a filesystem-safe ${topic_slug}
     (lowercased; each non-word/dash char → '-'; leading/trailing '-' trimmed) —
     the one behaviour beyond plain substitution moved out of the exec (#788)."""
-    from markdown_vault_mcp._server_prompts import _research_derive
+    from markdown_vault_mcp.prompts import _research_derive
 
     values: dict = {"topic": "Horror Fiction!"}
     _research_derive(values)
@@ -682,13 +666,13 @@ class TestUserPromptOverride:
         backstop-caught error), remove_prompt raises KeyError. The prune is guarded
         so server construction still succeeds — the user prompt registers fresh.
         """
-        from markdown_vault_mcp import _server_prompts
+        from markdown_vault_mcp import prompts
 
         # "summarize" never registers (loader returns None), yet the operator
         # ships a summarize.md — the prune would KeyError without the guard.
-        original = _server_prompts._load_builtin_prompt
+        original = prompts._load_builtin_prompt
         monkeypatch.setattr(
-            _server_prompts,
+            prompts,
             "_load_builtin_prompt",
             lambda name: None if name == "summarize" else original(name),
         )
@@ -947,19 +931,17 @@ class TestSummarizeSubtree:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp import _server_prompts
+        from markdown_vault_mcp import prompts
 
         monkeypatch.setattr(
-            _server_prompts,
+            prompts,
             "_load_builtin_prompt",
             # Missing "description" -> _register_one_builtin_prompt raises.
             lambda _name: {"arguments": [], "tags": [], "icons": "", "content": "x"},
         )
         mcp = FastMCP("test")
-        with caplog.at_level(
-            logging.ERROR, logger="markdown_vault_mcp._server_prompts"
-        ):
-            _server_prompts._register_summarize_subtree(mcp, tool_available=False)
+        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.prompts"):
+            prompts._register_summarize_subtree(mcp, tool_available=False)
         assert "builtin_prompt_register_failed" in caplog.text
         assert "summarize-subtree" in caplog.text
 
@@ -1009,11 +991,11 @@ class TestRegisterPromptsPerPromptGuard:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp import _server_prompts
-        from markdown_vault_mcp._server_prompts import register_domain_prompts
+        from markdown_vault_mcp import prompts
+        from markdown_vault_mcp.prompts import register_domain_prompts
 
         monkeypatch.setattr(
-            _server_prompts,
+            prompts,
             "_load_user_prompt_defs",
             lambda _folder: {
                 # Missing "content" -> _register_one_user_prompt raises KeyError.
@@ -1027,9 +1009,7 @@ class TestRegisterPromptsPerPromptGuard:
             },
         )
         mcp = FastMCP("test")
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             register_domain_prompts(
                 mcp, templates_folder=None, prompts_folder="/whatever"
             )
@@ -1051,10 +1031,10 @@ class TestRegisterPromptsPerPromptGuard:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp import _server_prompts
-        from markdown_vault_mcp._server_prompts import register_prompts
+        from markdown_vault_mcp import prompts
+        from markdown_vault_mcp.prompts import register_prompts
 
-        original = _server_prompts._load_builtin_prompt
+        original = prompts._load_builtin_prompt
 
         def _fake_load(name: str) -> dict[str, object] | None:
             if name == "summarize":
@@ -1062,11 +1042,9 @@ class TestRegisterPromptsPerPromptGuard:
                 return {"arguments": [], "tags": [], "icons": "", "content": "x"}
             return original(name)
 
-        monkeypatch.setattr(_server_prompts, "_load_builtin_prompt", _fake_load)
+        monkeypatch.setattr(prompts, "_load_builtin_prompt", _fake_load)
         mcp = FastMCP("test")
-        with caplog.at_level(
-            logging.ERROR, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.prompts"):
             register_prompts(mcp)
 
         assert "builtin_prompt_register_failed" in caplog.text
@@ -1087,11 +1065,11 @@ class TestRegisterPromptsPerPromptGuard:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp import _server_prompts
-        from markdown_vault_mcp._server_prompts import register_domain_prompts
+        from markdown_vault_mcp import prompts
+        from markdown_vault_mcp.prompts import register_domain_prompts
 
         monkeypatch.setattr(
-            _server_prompts,
+            prompts,
             "_load_user_prompt_defs",
             lambda _folder: {
                 # Duplicate arg name -> _build_prompt_fn raises ValueError, caught
@@ -1114,9 +1092,7 @@ class TestRegisterPromptsPerPromptGuard:
             },
         )
         mcp = FastMCP("test")
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             register_domain_prompts(
                 mcp, templates_folder=None, prompts_folder="/whatever"
             )
@@ -1138,10 +1114,10 @@ class TestRegisterPromptsPerPromptGuard:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp import _server_prompts
-        from markdown_vault_mcp._server_prompts import register_domain_prompts
+        from markdown_vault_mcp import prompts
+        from markdown_vault_mcp.prompts import register_domain_prompts
 
-        original_build = _server_prompts._build_prompt_fn
+        original_build = prompts._build_prompt_fn
 
         def _reject_marked(
             template: str, arg_defs: list, derive: object = None
@@ -1156,11 +1132,11 @@ class TestRegisterPromptsPerPromptGuard:
                 return _bad
             return original_build(template, arg_defs, derive)
 
-        monkeypatch.setattr(_server_prompts, "_build_prompt_fn", _reject_marked)
+        monkeypatch.setattr(prompts, "_build_prompt_fn", _reject_marked)
         # Kill Pass-2 built-in noise so only the user prompts are exercised.
-        monkeypatch.setattr(_server_prompts, "_load_builtin_prompt", lambda _name: None)
+        monkeypatch.setattr(prompts, "_load_builtin_prompt", lambda _name: None)
         monkeypatch.setattr(
-            _server_prompts,
+            prompts,
             "_load_user_prompt_defs",
             lambda _folder: {
                 "bad": {
@@ -1178,9 +1154,7 @@ class TestRegisterPromptsPerPromptGuard:
             },
         )
         mcp = FastMCP("test")
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.prompts"):
             register_domain_prompts(
                 mcp, templates_folder=None, prompts_folder="/whatever"
             )
@@ -1202,11 +1176,11 @@ class TestRegisterPromptsPerPromptGuard:
 
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp import _server_prompts
-        from markdown_vault_mcp._server_prompts import register_prompts
+        from markdown_vault_mcp import prompts
+        from markdown_vault_mcp.prompts import register_prompts
 
-        original_build = _server_prompts._build_prompt_fn
-        original_load = _server_prompts._load_builtin_prompt
+        original_build = prompts._build_prompt_fn
+        original_load = prompts._load_builtin_prompt
 
         def _reject_marked(
             template: str, arg_defs: list, derive: object = None
@@ -1230,14 +1204,10 @@ class TestRegisterPromptsPerPromptGuard:
                 }
             return original_load(name)
 
-        monkeypatch.setattr(_server_prompts, "_build_prompt_fn", _reject_marked)
-        monkeypatch.setattr(
-            _server_prompts, "_load_builtin_prompt", _load_with_bad_summarize
-        )
+        monkeypatch.setattr(prompts, "_build_prompt_fn", _reject_marked)
+        monkeypatch.setattr(prompts, "_load_builtin_prompt", _load_with_bad_summarize)
         mcp = FastMCP("test")
-        with caplog.at_level(
-            logging.ERROR, logger="markdown_vault_mcp._server_prompts"
-        ):
+        with caplog.at_level(logging.ERROR, logger="markdown_vault_mcp.prompts"):
             register_prompts(mcp)
 
         assert "builtin_prompt_register_failed" in caplog.text

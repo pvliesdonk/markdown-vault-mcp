@@ -710,7 +710,7 @@ class TestGitLabWebhookWiring:
 class TestToolManifest:
     """Pin the exact set of tools register_tools() registers.
 
-    Safety net for the _server_tools package decomposition (#578): builds a
+    Safety net for the tools package decomposition (#578): builds a
     bare FastMCP, calls register_tools, and asserts the full tool set — so a
     tool accidentally dropped or renamed during the refactor fails loudly.
     Uses register_tools directly (not make_server) to bypass the tag-based
@@ -721,7 +721,7 @@ class TestToolManifest:
     async def test_register_tools_registers_exact_manifest(self) -> None:
         from fastmcp import FastMCP
 
-        from markdown_vault_mcp._server_tools import register_tools
+        from markdown_vault_mcp.tools import register_tools
 
         mcp = FastMCP("manifest-test")
         register_tools(mcp)
@@ -849,9 +849,9 @@ class TestToolAnnotations:
         from fastmcp_pvl_core import register_transfer_routes
 
         from markdown_vault_mcp._server_apps import register_apps
-        from markdown_vault_mcp._server_tools import register_tools
         from markdown_vault_mcp._transfer_sink import VaultTransferSink
         from markdown_vault_mcp.config import ProjectConfig
+        from markdown_vault_mcp.tools import register_tools
 
         mcp = FastMCP("title-test")
         register_tools(mcp)
@@ -879,8 +879,8 @@ class TestToolAnnotations:
         # full-registry sweep keeps asserting their metadata.
         from fastmcp_pvl_core import build_jobs, register_job_tools
 
-        from markdown_vault_mcp._server_tools import index as index_tools
-        from markdown_vault_mcp._server_tools import summarize as summarize_tools
+        from markdown_vault_mcp.tools import index as index_tools
+        from markdown_vault_mcp.tools import summarize as summarize_tools
 
         jobs = build_jobs(config.server, config.jobs)
         summarize_tools.register(mcp, jobs)
@@ -1944,7 +1944,7 @@ class TestFetchTool:
     hardened primitive.
     """
 
-    _FETCH_URL_SEAM = "markdown_vault_mcp._server_tools.writer.fetch_url"
+    _FETCH_URL_SEAM = "markdown_vault_mcp.tools.writer.fetch_url"
 
     # Mirrors writer._FETCH_UNCAPPED_BYTES — the sentinel the tool passes for
     # "uncapped" (markdown, or a configured cap that floors to 0 bytes).
