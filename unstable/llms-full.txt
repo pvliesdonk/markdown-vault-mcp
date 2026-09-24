@@ -2,9 +2,6 @@
 
 > Generic markdown vault MCP with hybrid search
 
-markdown-vault-mcp is a generic markdown vault MCP server with FTS5 full-text search, semantic search via embeddings, frontmatter-aware indexing, and incremental reindexing. It exposes 31 LLM-visible tools (plus 6 app-only tools), 9 resources, and 6 prompts over the Model Context Protocol.
-
-
 # Getting Started
 
 # markdown-vault-mcp
@@ -258,7 +255,7 @@ Types such as `GroupedResult` come from `markdown_vault_mcp.types`. Only `__vers
 
 Markdown Vault MCP reads all configuration from environment variables. Domain variables carry the `MARKDOWN_VAULT_MCP_` prefix; a few third-party variables (`FASTMCP_*`, `PUID`/`PGID`) keep their upstream names.
 
-This page is the complete reference: every variable the server reads appears in exactly one table below. One source generates these tables, `.env.example` and the packaged env files, alongside the [configuration generator](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration-generator/index.md), so the four cannot disagree. The README carries a hand-picked subset of these variables as its quick entry point.
+This page is the complete reference: every variable the server reads appears in exactly one table below. The tables come from the same source as `.env.example`, the packaged env files, and the [configuration generator](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration-generator/index.md), so the four cannot disagree. The README carries a hand-picked subset of these variables as its quick entry point.
 
 ## Server
 
@@ -7368,7 +7365,7 @@ The `mcp-wellknown` router above is the fix. In Traefik it also wins by default:
 
 One document still collides: `oauth-authorization-server`
 
-In proxy mode the server serves authorization-server metadata at `/.well-known/oauth-authorization-server`, at the **host root**, whatever prefix `BASE_URL` carries. FastMCP does contain an RFC 8414 path-aware override, `OAuthProvider.get_well_known_routes()`, which would serve it at `/.well-known/oauth-authorization-server/myservice`. Nothing reaches it: the HTTP app mounts `get_routes()` instead, leaving the path-aware form unreachable. (Verified again against FastMCP 4.0.3; see the internal FastMCP 4 reference.)
+In proxy mode the server serves authorization-server metadata at `/.well-known/oauth-authorization-server`, at the **host root**, whatever prefix `BASE_URL` carries. FastMCP does contain an RFC 8414 path-aware override, `OAuthProvider.get_well_known_routes()`, which would serve it at `/.well-known/oauth-authorization-server/myservice`. Nothing reaches it: the HTTP app mounts `get_routes()` instead, leaving the path-aware form unreachable. (Verified against FastMCP 3.4.7.)
 
 Only this one document collides. Protected-resource metadata is path-namespaced, so several servers can share a hostname without contending for it.
 
