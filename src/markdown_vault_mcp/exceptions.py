@@ -79,14 +79,20 @@ class EditConflictError(MarkdownMCPError):
         self.found_snippet = found_snippet
 
 
-class EmbeddingsNotConfiguredError(ValueError):
+class EmbeddingsNotConfiguredError(InvalidRequestError):
     """Raised when an embeddings operation runs without a provider/path configured.
 
-    Subclasses :class:`ValueError` so callers that catch ``ValueError`` (the
-    historical "embeddings not configured" contract) still catch it, while
-    callers that want *only* this case — such as the ``index``/``reindex`` CLI
-    commands — can narrow to it and let genuine internal ``ValueError``s from a
-    corrupt vector index surface (#774).
+    Embeddings are opt-in and off by default, so a vault without them is a
+    choice the operator made, not a broken configuration: the caller must
+    change the request (keyword search instead of semantic), hence an
+    :class:`InvalidRequestError` (#1608).
+
+    Still a :class:`ValueError` (through :class:`InvalidRequestError`), so
+    callers that catch ``ValueError`` (the historical "embeddings not
+    configured" contract) still catch it, while callers that want *only* this
+    case, such as the ``index``/``reindex`` CLI commands, can narrow to it and
+    let genuine internal ``ValueError``s from a corrupt vector index surface
+    (#774).
     """
 
 

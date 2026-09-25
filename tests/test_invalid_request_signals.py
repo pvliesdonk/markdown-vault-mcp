@@ -15,6 +15,7 @@ import pytest
 
 from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
+    EmbeddingsNotConfiguredError,
     InvalidRequestError,
     MarkdownMCPError,
 )
@@ -40,6 +41,11 @@ def test_invalid_request_is_a_library_error_and_a_value_error() -> None:
 
 def test_document_not_found_is_an_invalid_request() -> None:
     assert issubclass(DocumentNotFoundError, InvalidRequestError)
+
+
+def test_embeddings_not_configured_is_an_invalid_request() -> None:
+    """An opt-in feature left off is the operator's choice, not a fault (#1608)."""
+    assert issubclass(EmbeddingsNotConfiguredError, InvalidRequestError)
 
 
 @pytest.fixture

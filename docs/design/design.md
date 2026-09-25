@@ -1029,7 +1029,7 @@ Two-layer model:
 
 | Library signal | Outcome |
 |-|-|
-| `InvalidRequestError`, and its subclass `DocumentNotFoundError` | Change the request |
+| `InvalidRequestError`, and its subclasses `DocumentNotFoundError` and `EmbeddingsNotConfiguredError` | Change the request |
 | `EditConflictError` | Change the request |
 | `DocumentExistsError` | Change the request |
 | `ReadOnlyError` | Change the request |
@@ -1037,6 +1037,11 @@ Two-layer model:
 | `ConcurrentModificationError` | Refresh, then retry |
 | `DocumentUnreadableError` | The server failed |
 | `IndexUnavailableError` | The server failed |
+
+Configuration an operator is required to supply and did not is broken, so a
+fault. A feature that is opt-in and left off is not: the model works within
+the deployment it has, as with `ReadOnlyError`. Hence `EmbeddingsNotConfiguredError`
+is a change of request.
 
 **Exception types**:
 
@@ -1048,7 +1053,7 @@ Two-layer model:
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match |
-| `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` or `embeddings_path` configured (a `ValueError` subclass, so `except ValueError` still catches it) |
+| `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` or `embeddings_path` configured. A subclass of `InvalidRequestError`, so still a `ValueError` |
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
 | `DocumentUnreadableError` | `read()` | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. The cause is chained (#1608) |
 | `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
