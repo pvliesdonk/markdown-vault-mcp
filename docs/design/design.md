@@ -1824,6 +1824,9 @@ upload, the fully-read (size-capped) body.
   `ProjectConfig.write_protect_existing` is true. Both reject path traversal.
   Setting `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` explicitly allows
   existing destinations at link creation and blind replacement during upload.
+  A rejection is a `ToolError` at INFO that tells the model what to pass
+  instead. Failing to check a ref (a failed `stat`, no vault) is a server
+  fault, not a rejection (#1623).
 
 The sink maps expected error states to pvl-core's `TransferSinkError` contract so
 the route returns a semantically correct status instead of a generic 500

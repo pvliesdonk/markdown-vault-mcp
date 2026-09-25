@@ -32,6 +32,11 @@
   on which wire slot carries not-found. Refute pass re-read the OpenTelemetry,
   RFC 9110, gRPC, SRE, graphql.org, Rust and Python quotes. Next review:
   2027-09-25.
+- Extended [fastmcp-pvl-core transfer errors and retries](fastmcp-transfer.md)
+  with the validate hook's rejection contract, read from `register.py` at
+  pvl-core 9.0.1 and 10.0.0 and `sink.py`'s `TransferValidator` at 10.0.0:
+  through 9.x any exception rejects, and from 10.0.0 only a `ToolError` at INFO
+  does. Pinned by the sink tests for #1623. Next review unchanged: 2027-03-13.
 
 ## 2026-09-23
 
