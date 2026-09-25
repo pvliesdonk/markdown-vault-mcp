@@ -1878,9 +1878,12 @@ class GitWriteStrategy:
             The content and the path the note carried at that revision.
 
         Raises:
-            ValueError: If the vault is not git-backed, the revision is not an
-                ancestor of HEAD, the note's identity cannot be traced to it,
-                or the content is unreadable as a note.
+            InvalidRequestError: If the vault is not git-backed, the revision
+                is not a commit or not an ancestor of HEAD, the note's identity
+                cannot be traced to it, or the content is over the read cap.
+            DocumentUnreadableError: If the content there is not valid UTF-8,
+                or is a Git LFS pointer.
+            ValueError: If git itself fails.
         """
         return query.get_file_at_ref(
             self._ensure_git_root(query_.repo_path),

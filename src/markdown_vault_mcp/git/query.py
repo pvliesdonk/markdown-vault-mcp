@@ -27,7 +27,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
-from markdown_vault_mcp.exceptions import InvalidRequestError
+from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.git._run import cleanup_git_env, git_env, literal_pathspec
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
 
@@ -248,7 +248,8 @@ def _require_commit(git_root: Path, ref: str, env: dict[str, str] | None) -> str
     if result.returncode == 1:
         raise InvalidRequestError(
             f"{ref!r} is not a commit in this repository: unknown, not a "
-            "unique commit prefix, or another kind of object"
+            "unique commit prefix, or another kind of object. Pass a SHA "
+            "from 'get_history'."
         )
     raise ValueError(f"git rev-parse failed for {ref!r}: {result.stderr.strip()}")
 
@@ -1806,14 +1807,14 @@ def _path_at_ref(raw: str, cur_rel: str, ref: str) -> str:
       unrecognised record is not evidence of continuity.
 
     Raises:
-        ValueError: When the records do not connect the note to *ref*.
+        InvalidRequestError: When the records do not connect the note to *ref*.
     """
     tracked = cur_rel
     for status, paths in _iter_name_status(raw):
         if status.startswith("R") and paths[-1] == tracked:
             tracked = paths[0]
         elif status.startswith("A") and paths[0] == tracked:
-            raise ValueError(
+            raise InvalidRequestError(
                 f"{tracked!r} was created after revision {ref!r}, so the note now "
                 "at that path did not exist at that revision. Anything stored "
                 "under that name then belongs to a different note; use "
@@ -1828,7 +1829,7 @@ def _path_at_ref(raw: str, cur_rel: str, ref: str) -> str:
             # to write it back, so this branch points at 'get_history' the
             # way the 'A' branch above does. The source is still named,
             # because it is what git said and it explains the refusal.
-            raise ValueError(
+            raise InvalidRequestError(
                 f"{tracked!r} appears as a copy of {paths[0]!r} rather than as a "
                 "continuation of it, so the note now at that path did not exist "
                 "at that revision. The copy source is git's similarity match, "
@@ -1836,7 +1837,7 @@ def _path_at_ref(raw: str, cur_rel: str, ref: str) -> str:
                 "'get_history' to find a revision this note actually has."
             )
         elif status[0] not in ("D", "M", "T") or paths[0] != tracked:
-            raise ValueError(
+            raise InvalidRequestError(
                 f"Cannot follow {cur_rel!r} back to revision {ref!r}: git reports "
                 f"{status!r} for {paths[0]!r}, which does not establish that the "
                 "note is the same one. Use 'get_history' and 'get_diff' to inspect "
@@ -1845,27 +1846,46 @@ def _path_at_ref(raw: str, cur_rel: str, ref: str) -> str:
     return tracked
 
 
-def _require_ancestor(git_root: Path, ref: str, env: dict[str, str] | None) -> None:
-    """Refuse a revision that is not an ancestor of HEAD.
+def _require_ancestor(git_root: Path, ref: str, env: dict[str, str] | None) -> str:
+    """Resolve *ref* to a full commit id, refusing one that is not HEAD's ancestor.
 
     ``ref..HEAD`` enumerates what is reachable from HEAD but not from *ref*.
     When *ref* sits on a discarded branch — after a rebase, a reset, or a SHA
     copied from elsewhere — that set is not "the commits since *ref*", and the
-    walk's reasoning about creations and renames does not hold.
+    walk's reasoning about creations and renames does not hold.  The commit is
+    resolved first, so ``merge-base`` sees a full id: its exit 1 then means
+    "not an ancestor", and any other failure is the repository's.
+
+    Returns:
+        The full commit id.
+
+    Raises:
+        InvalidRequestError: If *ref* names no commit, or one HEAD does not
+            descend from, including an unborn HEAD that has no history (#1608).
+        ValueError: If git fails for another reason.
     """
+    commit = _require_commit(git_root, ref, env)
+    if not _has_commits(git_root, env):
+        raise InvalidRequestError(
+            f"The current branch has no commits yet, so revision {ref!r} is not "
+            "on its history."
+        )
     result = subprocess.run(
-        ["git", "-C", str(git_root), "merge-base", "--is-ancestor", ref, "HEAD"],
+        ["git", "-C", str(git_root), "merge-base", "--is-ancestor", commit, "HEAD"],
         capture_output=True,
         text=True,
         check=False,
         env=env,
     )
-    if result.returncode != 0:
-        raise ValueError(
+    if result.returncode == 1:
+        raise InvalidRequestError(
             f"Revision {ref!r} is not an ancestor of the current HEAD (it may be "
-            "unknown, or on history that was rebased away), so this note's path "
-            "at that revision cannot be established."
+            "on history that was rebased away), so this note's path at that "
+            "revision cannot be established."
         )
+    if result.returncode != 0:
+        raise ValueError(f"git merge-base failed for {ref!r}: {result.stderr.strip()}")
+    return commit
 
 
 def _require_tracked(
@@ -1878,6 +1898,10 @@ def _require_tracked(
     because git never saw it. Without this check the walk would return the
     deleted note's content under the new note's name.  A path absent from disk
     is the recover-a-deleted-note case and is left to the walk.
+
+    Raises:
+        InvalidRequestError: If the note on disk is not tracked (#1608).
+        ValueError: If ``git ls-files`` fails.
     """
     if not path.exists():
         return
@@ -1888,8 +1912,10 @@ def _require_tracked(
         check=False,
         env=env,
     )
+    if result.returncode != 0:
+        raise ValueError(f"git ls-files failed: {result.stderr.strip()}")
     if not result.stdout.strip():
-        raise ValueError(
+        raise InvalidRequestError(
             f"{cur_rel!r} is not tracked by git, so it has no history: content "
             "stored under that name at an earlier revision belongs to a "
             "different file."
@@ -1909,10 +1935,10 @@ def _require_inside_vault(historical: str, prefix: str, ref: str) -> None:
     it.
 
     Raises:
-        ValueError: If *historical* is not beneath *prefix*.
+        InvalidRequestError: If *historical* is not beneath *prefix*.
     """
     if prefix and not historical.startswith(prefix):
-        raise ValueError(
+        raise InvalidRequestError(
             f"At revision {ref!r} this note lived at {historical!r}, outside the "
             "vault. Its content there is not the vault's to return; use git "
             "directly if you need history from outside the vault root."
@@ -1920,9 +1946,12 @@ def _require_inside_vault(historical: str, prefix: str, ref: str) -> None:
 
 
 def _tree_entry(
-    git_root: Path, ref: str, repo_rel: str, env: dict[str, str] | None
+    git_root: Path, ref: str, repo_rel: str, env: dict[str, str] | None, shown: str
 ) -> tuple[str, int]:
     """Return ``(blob_sha, size)`` for *repo_rel* at *ref*.
+
+    *ref* is the resolved commit id git is asked about; messages name the
+    revision as the caller gave it, *shown*.
 
     Deliberately not ``git cat-file <ref>:<path>``.  That syntax is not a
     pathspec but a revision expression, and git resolves an unmatched one to
@@ -1935,9 +1964,10 @@ def _tree_entry(
     then fetched by its own hash.
 
     Raises:
-        ValueError: If nothing is recorded at that path, or the entry is not a
-            regular file (a symlink's blob holds its target path, not note
-            content; a directory has no content to return).
+        InvalidRequestError: If nothing is recorded at that path, or the entry
+            is not a regular file (a symlink's blob holds its target path, not
+            note content; a directory has no content to return).
+        ValueError: If ``git ls-tree`` fails or prints what cannot be parsed.
     """
     result = subprocess.run(
         [
@@ -1956,12 +1986,13 @@ def _tree_entry(
         check=False,
         env=env,
     )
-    entry = result.stdout.split("\0")[0].strip() if result.returncode == 0 else ""
-    if not entry:
+    if result.returncode != 0:
         raise ValueError(
-            f"{repo_rel!r} is not present at revision {ref!r}"
-            f"{': ' + (result.stderr or '').strip() if result.stderr.strip() else '.'}"
+            f"git ls-tree failed for {repo_rel!r} at {ref!r}: {result.stderr.strip()}"
         )
+    entry = result.stdout.split("\0")[0].strip()
+    if not entry:
+        raise InvalidRequestError(f"{repo_rel!r} is not present at revision {shown!r}.")
     # ``<mode> SP <type> SP <sha> SP* <size> TAB <path>`` — the path may hold
     # anything, so split off the metadata by the single tab and no further.
     meta = entry.split("\t", 1)[0].split()
@@ -1969,38 +2000,36 @@ def _tree_entry(
         raise ValueError(f"Could not read {repo_rel!r} at revision {ref!r}.")
     mode, kind, sha, size = meta
     if mode == _SYMLINK_MODE:
-        raise ValueError(
+        raise InvalidRequestError(
             f"{repo_rel!r} was a symlink at that revision; git stores its target "
             "path rather than note content, so there is nothing to return."
         )
     if kind != "blob":
-        raise ValueError(
-            f"{repo_rel!r} was not a file at revision {ref!r} (git records a "
+        raise InvalidRequestError(
+            f"{repo_rel!r} was not a file at revision {shown!r} (git records a "
             f"{kind}), so it has no content to return."
         )
     return sha, int(size)
 
 
-def _blob_text(
+def _blob_bytes(
     git_root: Path, sha: str, max_bytes: int, size: int, env: dict[str, str] | None
-) -> str:
-    """Return the text of blob *sha*, refusing it if *size* is over the cap.
+) -> bytes:
+    """Return the bytes of blob *sha*, refusing it if *size* is over the cap.
 
     The size comes from the tree entry, so an oversized historical note is
     refused before it is materialised — the revision analogue of the
-    ``stat()`` :meth:`DocumentManager.read` does.  The blob is read as bytes
-    and decoded explicitly: a note that is not valid UTF-8 at that revision is
-    a caller-visible ``ValueError``, not a decode error escaping the
-    subprocess layer.
+    ``stat()`` :meth:`DocumentManager.read` does.
 
     Raises:
-        ValueError: If the blob exceeds *max_bytes*, cannot be read, or does
-            not decode as UTF-8.
+        InvalidRequestError: If the blob exceeds *max_bytes*; a section read
+            is exempt from the cap (#1608).
+        ValueError: If ``git cat-file`` fails.
     """
     if 0 < max_bytes < size:
-        raise ValueError(
-            f"Note is {size} bytes at that revision, over the "
-            f"{max_bytes}-byte MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES limit."
+        raise InvalidRequestError(
+            f"Note is {size} bytes at that revision, over the {max_bytes}-byte "
+            "read limit. Pass section= to read one section of it."
         )
     blob = subprocess.run(
         ["git", "-C", str(git_root), "cat-file", "blob", sha],
@@ -2009,20 +2038,40 @@ def _blob_text(
         env=env,
     )
     if blob.returncode != 0:
-        raise ValueError(f"Could not read object {sha} from git history.")
-    try:
-        text = blob.stdout.decode()
-    except UnicodeDecodeError as exc:
         raise ValueError(
-            "Content at that revision is not valid UTF-8, so it cannot be "
-            "returned as a note."
+            f"Could not read object {sha} from git history: "
+            f"{blob.stderr.decode(errors='replace').strip()}"
+        )
+    return blob.stdout
+
+
+def _note_text(blob: bytes, path: str, where: str) -> str:
+    """Decode a historical note's bytes, refusing what is not note text.
+
+    *path* is the note's name today, which the caller asked about; *where*
+    names the path it had and the revision, for the reason.
+
+    The blob is decoded explicitly, so a note that is not valid UTF-8 at that
+    revision is reported as unreadable rather than a decode error escaping.
+    Both refusals mirror an on-disk :meth:`DocumentManager.read`: the note
+    exists at that revision but its text cannot be returned (#1608).
+
+    Raises:
+        DocumentUnreadableError: If the bytes are not valid UTF-8, or are a
+            Git LFS pointer rather than the note.
+    """
+    try:
+        text = blob.decode()
+    except UnicodeDecodeError as exc:
+        raise DocumentUnreadableError(
+            path, f"its content as {where} is not valid UTF-8"
         ) from exc
     if text.startswith(_LFS_POINTER_PREFIX):
-        raise ValueError(
-            "That revision stores this note in Git LFS, so git holds a pointer "
-            "rather than the note's text. Restoring what git has here would "
-            "write the pointer over the note. Fetch the LFS object and read it "
-            "directly."
+        raise DocumentUnreadableError(
+            path,
+            f"{where} is stored in Git LFS, so git holds a pointer "
+            "rather than the note's text, and restoring that pointer would "
+            "overwrite the note. The LFS object must be fetched to read it.",
         )
     return text
 
@@ -2056,11 +2105,15 @@ def get_file_at_ref(
         content and the vault-relative path the note had at that revision.
 
     Raises:
-        ValueError: When the vault is not git-backed, the revision is unusable,
-            or the note's identity cannot be traced to it.
+        InvalidRequestError: When the vault is not git-backed, the revision is
+            unusable, the note's identity cannot be traced to it, or its
+            content there is over the read cap.
+        DocumentUnreadableError: When the note's content at that revision is
+            not valid UTF-8, or is a Git LFS pointer.
+        ValueError: When git itself fails.
     """
     if git_root is None:
-        raise ValueError(
+        raise InvalidRequestError(
             "Reading a note at a revision requires a git-backed vault; this "
             "vault's source directory is not inside a git repository."
         )
@@ -2068,16 +2121,21 @@ def get_file_at_ref(
     prefix = _vault_prefix(git_root, query.repo_path)
     env = git_env(token, username)
     try:
-        _require_ancestor(git_root, query.ref, env)
+        commit = _require_ancestor(git_root, query.ref, env)
         _require_tracked(git_root, query.path, cur_rel, env)
         historical = _path_at_ref(
-            _revision_walk_output(git_root, query.ref, cur_rel, env),
+            _revision_walk_output(git_root, commit, cur_rel, env),
             cur_rel,
             query.ref,
         )
         _require_inside_vault(historical, prefix, query.ref)
-        sha, size = _tree_entry(git_root, query.ref, historical, env)
-        content = _blob_text(git_root, sha, query.max_bytes, size, env)
+        sha, size = _tree_entry(git_root, commit, historical, env, query.ref)
+        blob = _blob_bytes(git_root, sha, query.max_bytes, size, env)
+        content = _note_text(
+            blob,
+            _strip_prefix(cur_rel, prefix),
+            f"{_strip_prefix(historical, prefix)!r} at revision {query.ref!r}",
+        )
     finally:
         cleanup_git_env(env)
 
@@ -2181,12 +2239,12 @@ def _repo_relative(git_root: Path, path: Path) -> str:
     reports the target's history rather than a second, divergent answer.
 
     Raises:
-        ValueError: If *path* resolves outside the repository.
+        InvalidRequestError: If *path* resolves outside the repository.
     """
     try:
         return path.resolve().relative_to(git_root).as_posix()
     except ValueError as exc:
-        raise ValueError(
+        raise InvalidRequestError(
             f"{path.name!r} resolves outside the git repository, so it has no "
             "history there."
         ) from exc

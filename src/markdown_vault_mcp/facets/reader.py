@@ -184,9 +184,13 @@ class ReaderFacet:
             would assert a read the caller never made.
 
         Raises:
-            ValueError: If the vault is not git-backed, *revision* is unusable,
-                *path* is not a note, the note's identity cannot be traced to
-                that revision, or the content there is unreadable.
+            InvalidRequestError: If the vault is not git-backed, *revision* is
+                unusable, *path* is not a note, the note's identity cannot be
+                traced to that revision, the content is over the read cap, or
+                *section* is empty or not found there.
+            DocumentUnreadableError: If the content there is not valid UTF-8,
+                or is a Git LFS pointer.
+            ValueError: If git itself fails.
         """
         return self._git_query_mgr.read_at_revision(path, revision, section=section)
 

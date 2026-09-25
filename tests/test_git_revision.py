@@ -14,7 +14,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.exceptions import ReadOnlyError
+from markdown_vault_mcp.exceptions import (
+    DocumentUnreadableError,
+    InvalidRequestError,
+    ReadOnlyError,
+)
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.git.types import RevisionQuery
 from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -291,7 +295,9 @@ class TestRefusesRatherThanGuess:
         _write(tmp_path, "a.md", "NEW - a different note that reuses the name\n")
         _commit(tmp_path, "reuse the name")
 
-        with pytest.raises(ValueError, match="was created after revision") as exc:
+        with pytest.raises(
+            InvalidRequestError, match="was created after revision"
+        ) as exc:
             _read_at(tmp_path, "a.md", first)
         assert "ORIGINAL" not in str(exc.value)
 
@@ -330,7 +336,9 @@ class TestRefusesRatherThanGuess:
         _write(tmp_path, "alpha.md", "# Alpha\n\nA different note.\n")
         _commit(tmp_path, "reuse the name")
 
-        with pytest.raises(ValueError, match="did not exist at that revision") as exc:
+        with pytest.raises(
+            InvalidRequestError, match="did not exist at that revision"
+        ) as exc:
             _read_at(tmp_path, "alpha.md", first)
         assert "Version 1" not in str(exc.value)
 
@@ -344,7 +352,7 @@ class TestRefusesRatherThanGuess:
         _write(tmp_path, "a.md", "SECOND\n")
         _commit(tmp_path, "recreate")
 
-        with pytest.raises(ValueError, match="was created after revision"):
+        with pytest.raises(InvalidRequestError, match="was created after revision"):
             _read_at(tmp_path, "a.md", first)
 
     def test_untracked_note_at_a_reused_path(self, tmp_path: Path) -> None:
@@ -361,7 +369,7 @@ class TestRefusesRatherThanGuess:
         _commit(tmp_path, "delete")
         _write(tmp_path, "a.md", "NEW untracked note\n")
 
-        with pytest.raises(ValueError, match="not tracked by git") as exc:
+        with pytest.raises(InvalidRequestError, match="not tracked by git") as exc:
             _read_at(tmp_path, "a.md", first)
         assert "OLD note" not in str(exc.value)
 
@@ -389,7 +397,7 @@ class TestRefusesRatherThanGuess:
         assert _git(tmp_path, "ls-files").split() == ["n!te.md"]
         _write(tmp_path, "n*te.md", "A NEW, untracked note reusing the name\n")
 
-        with pytest.raises(ValueError, match="not tracked by git") as exc:
+        with pytest.raises(InvalidRequestError, match="not tracked by git") as exc:
             _read_at(tmp_path, "n*te.md", first)
         assert "THE ORIGINAL" not in str(exc.value)
 
@@ -402,7 +410,7 @@ class TestRefusesRatherThanGuess:
         _write(tmp_path, "new.md", "# Unrelated\n" + "different\n" * 40)
         _commit(tmp_path, "rename and rewrite entirely")
 
-        with pytest.raises(ValueError, match="was created after revision"):
+        with pytest.raises(InvalidRequestError, match="was created after revision"):
             _read_at(tmp_path, "new.md", first)
 
     def test_note_absent_at_that_revision(self, tmp_path: Path) -> None:
@@ -413,7 +421,7 @@ class TestRefusesRatherThanGuess:
         _write(tmp_path, "second.md", "# Two\n")
         _commit(tmp_path, "add another")
 
-        with pytest.raises(ValueError, match="was created after revision"):
+        with pytest.raises(InvalidRequestError, match="was created after revision"):
             _read_at(tmp_path, "second.md", first)
 
     def test_revision_that_is_not_an_ancestor(self, tmp_path: Path) -> None:
@@ -426,7 +434,7 @@ class TestRefusesRatherThanGuess:
         stranded = _commit(tmp_path, "side edit")
         _git(tmp_path, "checkout", "-q", "-")
 
-        with pytest.raises(ValueError, match="not an ancestor"):
+        with pytest.raises(InvalidRequestError, match="not an ancestor"):
             _read_at(tmp_path, "note.md", stranded)
 
     def test_unknown_revision(self, tmp_path: Path) -> None:
@@ -435,7 +443,7 @@ class TestRefusesRatherThanGuess:
         _write(tmp_path, "note.md", "# v1\n")
         _commit(tmp_path, "add")
 
-        with pytest.raises(ValueError, match="not an ancestor"):
+        with pytest.raises(InvalidRequestError, match="not a commit"):
             _read_at(tmp_path, "note.md", "0" * 40)
 
     def test_note_that_was_a_symlink_at_that_revision(self, tmp_path: Path) -> None:
@@ -452,7 +460,7 @@ class TestRefusesRatherThanGuess:
         _write(tmp_path, "note.md", "# A real note now\n")
         _commit(tmp_path, "replace the link with a file")
 
-        with pytest.raises(ValueError, match="was a symlink"):
+        with pytest.raises(InvalidRequestError, match="was a symlink"):
             _read_at(tmp_path, "note.md", first)
 
     def test_symlinked_note_today_follows_the_link(self, tmp_path: Path) -> None:
@@ -474,7 +482,7 @@ class TestRefusesRatherThanGuess:
         (tmp_path / "note.md").write_bytes(b"\xff\xfe not text \x00\x01")
         first = _commit(tmp_path, "add")
 
-        with pytest.raises(ValueError, match="not valid UTF-8"):
+        with pytest.raises(DocumentUnreadableError, match="not valid UTF-8"):
             _read_at(tmp_path, "note.md", first)
 
     def test_content_over_the_read_cap(self, tmp_path: Path) -> None:
@@ -483,7 +491,7 @@ class TestRefusesRatherThanGuess:
         _write(tmp_path, "big.md", "x" * 5000)
         first = _commit(tmp_path, "add")
 
-        with pytest.raises(ValueError, match="MAX_NOTE_READ_BYTES"):
+        with pytest.raises(InvalidRequestError, match="section="):
             _read_at(tmp_path, "big.md", first, cap=1000)
 
     def test_uncapped_read_returns_everything(self, tmp_path: Path) -> None:
@@ -496,7 +504,7 @@ class TestRefusesRatherThanGuess:
 
     def test_vault_without_git(self, tmp_path: Path) -> None:
         """No git means raise: an empty string would read as an empty note."""
-        with pytest.raises(ValueError, match="requires a git-backed vault"):
+        with pytest.raises(InvalidRequestError, match="requires a git-backed vault"):
             GitWriteStrategy().get_file_at_ref(
                 RevisionQuery(
                     repo_path=tmp_path,
@@ -526,7 +534,7 @@ class TestReviewFindings:
         _git(tmp_path, "mv", "outside-secret.md", "vault/note.md")
         _commit(tmp_path, "rename into the vault")
 
-        with pytest.raises(ValueError, match="outside the vault") as exc:
+        with pytest.raises(InvalidRequestError, match="outside the vault") as exc:
             _read_at(tmp_path, "note.md", first, vault=vault)
         assert "SECRET" not in str(exc.value)
 
@@ -566,7 +574,7 @@ class TestReviewFindings:
             assert at_revision.content.strip() == on_disk.content.strip()
 
             # The whole note at that revision is still over the cap.
-            with pytest.raises(ValueError, match="MAX_NOTE_READ_BYTES"):
+            with pytest.raises(InvalidRequestError, match="section="):
                 vault.reader.read_revision("note.md", first)
         finally:
             vault.close()
@@ -587,7 +595,7 @@ class TestReviewFindings:
         )
         first = _commit(tmp_path, "commit an LFS pointer")
 
-        with pytest.raises(ValueError, match="Git LFS"):
+        with pytest.raises(DocumentUnreadableError, match="Git LFS"):
             _read_at(tmp_path, "note.md", first)
 
     def test_breadcrumb_and_write_share_the_lock(self, git_vault: Vault) -> None:
@@ -776,14 +784,14 @@ class TestRecoveryThroughTheVault:
         overwrite = git_vault.writer.write("note.md", "# Clobbered\n")
         assert overwrite.previous_revision is not None
 
-        with pytest.raises(ValueError, match="Headings there: 'Head'"):
+        with pytest.raises(InvalidRequestError, match="Headings there: 'Head'"):
             git_vault.reader.read_revision(
                 "note.md", overwrite.previous_revision, section="Absent"
             )
 
     def test_attachment_paths_are_refused(self, git_vault: Vault) -> None:
         """Attachment content at a revision is binary; the tool returns text."""
-        with pytest.raises(ValueError, match="markdown notes"):
+        with pytest.raises(InvalidRequestError, match="markdown notes"):
             git_vault.reader.read_revision("assets/x.png", "a" * 40)
 
     @pytest.mark.parametrize("revision", ["HEAD~1", "--all", "ABCDEF", "abc", "main"])
@@ -791,7 +799,7 @@ class TestRecoveryThroughTheVault:
         self, git_vault: Vault, revision: str
     ) -> None:
         """Caller text never reaches the git argv as a revision expression."""
-        with pytest.raises(ValueError, match="Invalid revision"):
+        with pytest.raises(InvalidRequestError, match="Invalid revision"):
             git_vault.reader.read_revision("note.md", revision)
 
     def test_maintenance_writes_do_not_probe_git(self, git_vault: Vault) -> None:
@@ -825,7 +833,9 @@ class TestWithoutGit:
         vault = Vault(source_dir=tmp_path, settings=VaultSettings(read_only=False))
         vault.index.build_index()
         try:
-            with pytest.raises(ValueError, match="requires a git-backed vault"):
+            with pytest.raises(
+                InvalidRequestError, match="requires a git-backed vault"
+            ):
                 vault.reader.read_revision("note.md", "a" * 40)
         finally:
             vault.close()
@@ -853,7 +863,7 @@ class TestWalkRules:
         from markdown_vault_mcp.git.query import _path_at_ref
 
         stream = "\x1eSHA\0\nU\0note.md\0"
-        with pytest.raises(ValueError, match="does not establish"):
+        with pytest.raises(InvalidRequestError, match="does not establish"):
             _path_at_ref(stream, "note.md", "abc123")
 
     def test_record_for_another_path_refuses(self) -> None:
@@ -861,7 +871,7 @@ class TestWalkRules:
         from markdown_vault_mcp.git.query import _path_at_ref
 
         stream = "\x1eSHA\0\nM\0other.md\0"
-        with pytest.raises(ValueError, match="does not establish"):
+        with pytest.raises(InvalidRequestError, match="does not establish"):
             _path_at_ref(stream, "note.md", "abc123")
 
     def test_truncated_record_ends_the_walk(self) -> None:
@@ -881,7 +891,7 @@ class TestWalkRules:
         from markdown_vault_mcp.git.query import _path_at_ref
 
         stream = "\x1eSHA\0\nC85\0unrelated.md\0note.md\0"
-        with pytest.raises(ValueError) as exc:
+        with pytest.raises(InvalidRequestError) as exc:
             _path_at_ref(stream, "note.md", "abc123")
 
         message = str(exc.value)
@@ -923,7 +933,7 @@ class TestHistoricalSections:
         overwrite = git_vault.writer.write("note.md", "# Clobbered\n")
         assert overwrite.previous_revision is not None
 
-        with pytest.raises(ValueError, match="non-empty heading"):
+        with pytest.raises(InvalidRequestError, match="non-empty heading"):
             git_vault.reader.read_revision(
                 "note.md", overwrite.previous_revision, section="   "
             )
@@ -950,7 +960,7 @@ class TestHistoricalSections:
         )
         vault.index.build_index()
         try:
-            with pytest.raises(ValueError, match="malformed frontmatter"):
+            with pytest.raises(InvalidRequestError, match="malformed frontmatter"):
                 vault.reader.read_revision("note.md", broken, section="Head")
             # The whole note at that revision is still readable.
             assert "unclosed" in vault.reader.read_revision("note.md", broken).content

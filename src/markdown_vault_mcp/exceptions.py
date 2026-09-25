@@ -38,7 +38,9 @@ class DocumentUnreadableError(MarkdownMCPError):
 
     The file is there, so this is not "not found": the bytes are not valid
     UTF-8, the frontmatter block does not parse, or the file system refused a
-    stat or a read. The cause is chained as ``__cause__`` (#1608).
+    stat or a read. A revision read raises it too, when the note's content at
+    that revision is not valid UTF-8 or is a Git LFS pointer. Not a
+    ``ValueError``. The cause is chained as ``__cause__`` (#1608).
 
     Attributes:
         path: The vault-relative path that could not be read.

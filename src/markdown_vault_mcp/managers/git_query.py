@@ -253,11 +253,12 @@ class GitQueryManager:
         caller about to restore content must not have to guess which it got.
 
         Raises:
-            ValueError: When the vault has no git backing, or its store cannot
-                serve revision reads.
+            InvalidRequestError: When the vault has no git backing, or its
+                store cannot serve revision reads: an operator's choice, not a
+                fault (#1608).
         """
         if not isinstance(self._git_strategy, RevisionReader):
-            raise ValueError(
+            raise InvalidRequestError(
                 "Reading a note at a revision requires a git-backed vault; this "
                 "vault's source directory is not inside a git repository."
             )
@@ -289,20 +290,24 @@ class GitQueryManager:
             A :class:`~markdown_vault_mcp.types.RevisionContent`.
 
         Raises:
-            ValueError: If the vault is not git-backed, *revision* is not a
-                SHA or is not an ancestor of HEAD, *path* is not a ``.md``
-                note or escapes the vault, the note's identity cannot be
-                traced to that revision, or its content there is unreadable.
+            InvalidRequestError: If the vault is not git-backed, *revision* is
+                not a SHA or is not an ancestor of HEAD, *path* is not a
+                ``.md`` note or escapes the vault, the note's identity cannot
+                be traced to that revision, the content is over the read cap,
+                or *section* is empty or not found there.
+            DocumentUnreadableError: If the content at that revision is not
+                valid UTF-8, or is a Git LFS pointer.
+            ValueError: If git itself fails.
         """
         reader = self._revision_reader()
         if not is_note(path):
-            raise ValueError(
+            raise InvalidRequestError(
                 f"Revision reads are for markdown notes; {path!r} is an "
                 "attachment, whose content at a revision is binary. Use "
                 "'get_history' and 'get_diff' to inspect its history."
             )
         if not re.fullmatch(_SHA_RE, revision):
-            raise ValueError(
+            raise InvalidRequestError(
                 f"Invalid revision {revision!r}: must be 4-64 lowercase hex "
                 "digits. Pass a SHA from 'get_history' or from a write "
                 "result's 'previous_revision'."
@@ -366,26 +371,27 @@ def _section_of(content: RevisionContent, section: str) -> str:
 
     Frontmatter is parsed to find the body, so a revision whose frontmatter
     was malformed surfaces as a caller-visible error rather than a YAML
-    exception escaping the read.
+    exception escaping the read.  Unlike the on-disk read, that is the
+    caller's to change: the whole note at that revision is still readable.
 
     Raises:
-        ValueError: If *section* is empty, the historical frontmatter cannot be
-            parsed, or no heading matches.
+        InvalidRequestError: If *section* is empty, the historical frontmatter
+            cannot be parsed, or no heading matches (#1608).
     """
     if not section.strip():
-        raise ValueError("section must be a non-empty heading")
+        raise InvalidRequestError("section must be a non-empty heading")
     try:
         body = extract_section(content.content, section.strip())
         headings = list_section_headings(content.content)
     except yaml.YAMLError as exc:
-        raise ValueError(
+        raise InvalidRequestError(
             f"{content.historical_path!r} had malformed frontmatter at revision "
             f"{content.revision!r}, so its sections cannot be resolved. Read the "
             "whole note at that revision instead."
         ) from exc
     if body is None:
         suggestions = ", ".join(repr(h) for h in headings[:10]) or "none"
-        raise ValueError(
+        raise InvalidRequestError(
             f"Section {section!r} not found at revision {content.revision!r}. "
             f"Headings there: {suggestions}"
         )
