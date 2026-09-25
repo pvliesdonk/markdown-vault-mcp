@@ -1,5 +1,38 @@
 # Log
 
+## 2026-09-25
+
+- Revised [MCP model-facing text](mcp-model-facing-text.md): markdown-vault-mcp
+  removed `tests/test_client_surface_budget.py` and its aggregate ceilings
+  (markdown-vault-mcp#1600, #1601). The 2026-09 baseline now cites the last
+  commit that carried the test and the design text, and a new claim records
+  that no source derives an aggregate ceiling; only the per-item client
+  limits stay. Next review unchanged: 2027-03-23.
+- Added [MCP tool outcomes and errors](mcp-tool-outcomes-and-errors.md),
+  checked against the MCP 2026-07-28, 2025-11-25 and 2025-06-18 schema and
+  tools pages at commit ab3a39c1, FastMCP 4.0.9, the MCP Python SDK 2.2.0 and
+  fastmcp-pvl-core 9.0.1 source plus an in-memory probe, the Anthropic, OpenAI
+  and Gemini tool-result docs, and the reference, GitHub, Sentry and Notion
+  servers' source. Found that the spec never says whether "not found" or
+  "permission denied" sets `isError`, that the Python SDK logs an anticipated
+  `ToolError` at INFO while FastMCP defaults it to ERROR, and that pvl-core's
+  middleware logs every raised `ToolError` as `tool_call_failed` at ERROR.
+  Refute pass re-read the schema, the issue 199 ruling, the SDK and FastMCP
+  docstrings, Anthropic's `is_error` wording and the Sentry and filesystem
+  sources; host-side handling of `isError` stays unverified. Next review:
+  2027-03-25.
+- Added [Negative outcomes and faults outside MCP](negative-outcomes-and-faults.md),
+  widening the same question beyond MCP: RFC 9110 and 9457, gRPC status codes,
+  google.rpc.Code, AIP-193/194, the SRE Workbook, OpenTelemetry semconv v1.44.0
+  (HTTP, gRPC, recording errors) and the Trace API, GraphQL September2025 with
+  graphql.org, Apollo and Shopify, JSON-RPC 2.0, and the Rust, Go, Python,
+  .NET, Java and Swift error-handling docs. Found broad agreement that a
+  valid negative outcome is not a fault (OpenTelemetry leaves server-side 4xx
+  and NOT_FOUND unset; only 5xx burns the SRE example SLO), and disagreement
+  on which wire slot carries not-found. Refute pass re-read the OpenTelemetry,
+  RFC 9110, gRPC, SRE, graphql.org, Rust and Python quotes. Next review:
+  2027-09-25.
+
 ## 2026-09-23
 
 - Added [MCP model-facing text](mcp-model-facing-text.md), checked against

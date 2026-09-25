@@ -86,9 +86,11 @@ test calls `configure_logging_from_env`, or — better — asserts on
 ### Exception Handling
 
 - All exceptions must be caught and handled. No bare `except:`. Always specify the exception type.
-- Expected errors (HTTP 4xx, missing data): catch, log, return user-facing error string.
-- Optional enrichment failures: catch, log at `DEBUG` with `exc_info=True`, continue.
-- Primary result errors: catch, log at `WARNING` or `ERROR`, return error string.
+- Optional enrichment failures: catch, log at `DEBUG` with `exc_info=True`, continue. This holds inside a tool too: a failed optional extra is not an outcome of the call.
+- **Inside an MCP tool, follow the `designing-tool-outcomes` skill instead of the two bullets below.** A tool never returns an error string or an error-shaped value. It raises `ToolError`: at INFO when only the model has to act (not found, invalid input, a stale version), and at WARNING or ERROR for a server fault. The tool's boundary logs an unexpected exception once, with the traceback.
+- Outside a tool (startup, CLI, background jobs):
+  - Expected errors (HTTP 4xx, missing data): catch, log, return user-facing error string.
+  - Primary result errors: catch, log at `WARNING` or `ERROR`, return error string.
 - `ErrorHandlingMiddleware` is a safety net. If it catches something, that's a bug to fix.
 
 ### Message Format

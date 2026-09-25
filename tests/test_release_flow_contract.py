@@ -981,6 +981,27 @@ def test_rc_release_body_reads_the_stable_summary_marker() -> None:
     )
 
 
+def test_rc_release_body_links_the_live_unstable_docs() -> None:
+    """An rc's release page links docs that exist when it is published.
+
+    rcs deploy no versioned docs, so the only live pages for unreleased
+    code are the rolling ``unstable`` version docs.yml deploys on every
+    push to main (template#668).  The site root would be the previous
+    stable's ``latest``.
+    """
+    release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    prerelease_branch = release.split("# rcs deploy no versioned docs", 1)[1]
+    prerelease_branch = prerelease_branch.split("            else\n", 1)[0]
+    unstable_link = r"Documentation.*\.github\.io/[^/\s]+/unstable/"
+    assert re.search(unstable_link, prerelease_branch), (
+        "the rc body's Documentation line must link the rolling unstable docs"
+    )
+    docs = DOCS_WORKFLOW.read_text(encoding="utf-8")
+    assert "mike deploy --push unstable" in docs, (
+        "the rc body links /unstable/, so docs.yml must keep deploying it"
+    )
+
+
 PORT = REPO_ROOT / "scripts" / "port_bookkeeping.sh"
 
 
