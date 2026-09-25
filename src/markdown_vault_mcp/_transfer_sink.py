@@ -15,6 +15,8 @@ The sink is byte-oriented (pvl-core materialises the whole body, bounded by the
 per-upload cap); it never interprets the ``/transfer`` route or the token store.
 Path validation runs at link-creation time in :meth:`VaultTransferSink.validate`
 (the ``TransferValidator``), so a bad ref is rejected before a token is minted.
+A rejection is a ``ToolError`` at INFO telling the model what to pass instead;
+anything else the hook raises is a server fault (#1623).
 The upstream error and retry contract is recorded in
 ``docs/design/reference/fastmcp-transfer.md``.
 """
@@ -24,9 +26,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
+import stat
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from fastmcp.exceptions import ToolError
 from fastmcp_pvl_core import (
     TransferReadResult,
     TransferResourceGoneError,
@@ -68,6 +72,56 @@ _ZIP_MEDIA_TYPE = "application/zip"
 _OKF_BUNDLE_REF = "okf-bundle"
 
 
+def _reject(message: str) -> ToolError:
+    """Build a rejection of a link ref that the model acts on (#1623).
+
+    pvl-core's validate-hook contract: a ref is rejected with a ``ToolError``
+    at INFO, whose message the model reads; any other exception is a server
+    fault.
+    """
+    return ToolError(message, log_level=logging.INFO)
+
+
+_VAULT_PATH_HINT = "Pass a path relative to the vault root."
+_BUNDLE_FOLDER_HINT = (
+    "Pass a folder that list_folders returns, or okf-bundle for the whole vault."
+)
+
+
+def _inside(
+    path: str, source_dir: Path, *, note: bool, hint: str = _VAULT_PATH_HINT
+) -> Path:
+    """Resolve *path* inside the vault, rejecting an escape as the caller's to fix."""
+    try:
+        if note:
+            return validate_path(path, source_dir)
+        return resolve_inside(path, source_dir)
+    except ValueError as exc:
+        raise _reject(f"{exc}. {hint}") from None
+
+
+def _exists(path: Path, *, directory: bool = False) -> bool:
+    """Report whether *path* is a regular file (or a directory).
+
+    Only an absent path is ``False``. Any other ``OSError`` from the stat
+    propagates as the server fault it is. ``Path.is_file()`` cannot be used:
+    on Python 3.14 it returns ``False`` for an unreadable path (#1623).
+    """
+    try:
+        mode = path.stat().st_mode
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    return stat.S_ISDIR(mode) if directory else stat.S_ISREG(mode)
+
+
+def _extension_rejected(ext: str) -> ToolError:
+    """Reject an attachment extension the vault does not allow."""
+    return _reject(
+        f"Attachment extension not allowed: .{ext}. Use a note (.md) or an "
+        "extension listed in stats' attachment_extensions."
+    )
+
+
 def _bundle_scope(ref: str) -> str | None:
     """Return the folder scope if *ref* is an OKF-bundle ref, else ``None``.
 
@@ -98,15 +152,16 @@ def _validate_destination(
         The validated absolute destination path.
 
     Raises:
-        ValueError: On path traversal or a disallowed attachment extension.
+        ToolError: At INFO, on path traversal or a disallowed attachment
+            extension.
     """
     if is_note(path):
-        return validate_path(path, source_dir)
-    resolved = resolve_inside(path, source_dir)
+        return _inside(path, source_dir, note=True)
+    resolved = _inside(path, source_dir, note=False)
     exts = effective_attachment_extensions(attachment_extensions)
     ext = artifact_suffix(resolved)
     if not is_allowed_artifact_suffix(ext, exts):
-        raise ValueError(f"Attachment extension not allowed: .{ext}")
+        raise _extension_rejected(ext)
     return resolved
 
 
@@ -126,26 +181,24 @@ def _validate_source(
         attachment_extensions: Configured allowlist (``None`` = defaults).
 
     Raises:
-        ValueError: On path traversal, a missing file, or a disallowed
-            attachment extension.
+        ToolError: At INFO, on path traversal, a missing file, or a
+            disallowed attachment extension.
+        OSError: When the file cannot be checked. That is the server's
+            fault, not the ref's, so it is not a rejection.
     """
     is_artifact = not is_note(path)
-    if not is_artifact:
-        resolved = validate_path(path, source_dir)
-    else:
-        resolved = resolve_inside(path, source_dir)
-    try:
-        exists = resolved.is_file()
-    except OSError as exc:  # pragma: no cover - defensive: stat fault on is_file()
-        raise ValueError(f"File not accessible: {path}") from exc
-    if not exists:
+    resolved = _inside(path, source_dir, note=not is_artifact)
+    if not _exists(resolved):
         kind = "Attachment" if is_artifact else "Note"
-        raise ValueError(f"{kind} not found: {path}")
+        raise _reject(
+            f"{kind} not found: {path}. Look the path up with search or "
+            "list_documents first."
+        )
     if is_artifact:
         exts = effective_attachment_extensions(attachment_extensions)
         ext = artifact_suffix(resolved)
         if not is_allowed_artifact_suffix(ext, exts):
-            raise ValueError(f"Attachment extension not allowed: .{ext}")
+            raise _extension_rejected(ext)
 
 
 class VaultTransferSink:
@@ -191,10 +244,11 @@ class VaultTransferSink:
             as the sink handle.
 
         Raises:
-            ValueError: On path traversal, a missing download source, a
-                disallowed attachment extension, a bundle ref with OKF disabled,
-                a bundle scope naming a folder that does not exist, or an
-                existing upload destination when overwrite protection is enabled.
+            ToolError: At INFO, rejecting the ref: path traversal, a missing
+                download source, a disallowed attachment extension, a bundle
+                ref with OKF disabled, a bundle scope naming a folder that does
+                not exist, or an existing upload destination when overwrite
+                protection is enabled.
             ConfigurationError: When the lifespan built no vault (the
                 configured directory does not exist): a link must not be
                 minted that can only fail when followed.
@@ -210,8 +264,8 @@ class VaultTransferSink:
             _validate_source(ref, source_dir, exts)
         else:
             destination = _validate_destination(ref, source_dir, exts)
-            if self._config.write_protect_existing and destination.is_file():
-                raise ValueError(
+            if self._config.write_protect_existing and _exists(destination):
+                raise _reject(
                     f"{ref} exists; upload links require a new path while write "
                     "protection is enabled. Choose a new path, or ask the operator "
                     "to set MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false "
@@ -226,17 +280,21 @@ class VaultTransferSink:
             scope: ``""`` for the whole vault, else a folder subtree.
 
         Raises:
-            ValueError: If OKF is disabled (``OKF_MODE=off``), the scope escapes
-                the vault, or names a folder that does not exist.
+            ToolError: At INFO, if OKF is disabled (``OKF_MODE=off``), the
+                scope escapes the vault, or names a folder that does not exist.
         """
         if self._config.content.okf_mode == "off":
-            raise ValueError("OKF bundle export is disabled (OKF_MODE=off)")
+            raise _reject(
+                "OKF bundle export is disabled on this server (OKF_MODE=off). "
+                "Download individual notes instead."
+            )
         if not scope:
             return
-        source_dir = self._config.source_dir
-        folder = resolve_inside(scope, source_dir)
-        if not folder.is_dir():
-            raise ValueError(f"Bundle folder not found: {scope}")
+        folder = _inside(
+            scope, self._config.source_dir, note=False, hint=_BUNDLE_FOLDER_HINT
+        )
+        if not _exists(folder, directory=True):
+            raise _reject(f"Bundle folder not found: {scope}. {_BUNDLE_FOLDER_HINT}")
 
     def _resolve_vault(self) -> Vault:
         """Resolve the live vault, or signal a retryable 503 if it is torn down.

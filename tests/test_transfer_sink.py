@@ -9,10 +9,14 @@ old in-memory subsystem's tests covered.
 
 from __future__ import annotations
 
+import contextlib
+import logging
+import os
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import pytest
+from fastmcp.exceptions import ToolError
 from fastmcp_pvl_core import (
     TransferResourceGoneError,
     TransferSinkError,
@@ -69,6 +73,14 @@ def sink(config: ProjectConfig, vault: Vault) -> VaultTransferSink:
 # --- validate -------------------------------------------------------------
 
 
+@contextlib.contextmanager
+def _rejected(match: str) -> Iterator[None]:
+    """Expect a rejection the model acts on: a ToolError logged at INFO (#1623)."""
+    with pytest.raises(ToolError, match=match) as exc:
+        yield
+    assert exc.value.log_level == logging.INFO
+
+
 async def test_validate_download_note(sink: VaultTransferSink) -> None:
     assert await sink.validate("note.md", "download") == "note.md"
 
@@ -78,12 +90,12 @@ async def test_validate_download_attachment(sink: VaultTransferSink) -> None:
 
 
 async def test_validate_download_missing_note_raises(sink: VaultTransferSink) -> None:
-    with pytest.raises(ValueError, match="not found"):
+    with _rejected("not found"):
         await sink.validate("ghost.md", "download")
 
 
 async def test_validate_download_traversal_raises(sink: VaultTransferSink) -> None:
-    with pytest.raises(ValueError, match=r"traversal|escape|outside|Invalid"):
+    with _rejected(r"traversal|escape|outside|Invalid"):
         await sink.validate("../secret.png", "download")
 
 
@@ -91,7 +103,7 @@ async def test_validate_download_missing_attachment_raises(
     sink: VaultTransferSink,
 ) -> None:
     # A non-.md path that does not exist is rejected as not found.
-    with pytest.raises(ValueError, match=r"not found"):
+    with _rejected(r"not found"):
         await sink.validate("evil.exe", "download")
 
 
@@ -101,7 +113,7 @@ async def test_validate_download_existing_bad_extension_raises(
     # An existing non-.md file whose extension is not allowed is rejected on the
     # extension check (a path distinct from the missing-file rejection).
     (source_dir / "data.bin").write_bytes(b"x")
-    with pytest.raises(ValueError, match=r"extension"):
+    with _rejected(r"extension"):
         await sink.validate("data.bin", "download")
 
 
@@ -118,7 +130,7 @@ async def test_validate_upload_existing_rejected(
     sink: VaultTransferSink, source_dir: Path, path: str
 ) -> None:
     original = (source_dir / path).read_bytes()
-    with pytest.raises(ValueError, match="upload links require a new path"):
+    with _rejected("upload links require a new path"):
         await sink.validate(path, "upload")
     assert (source_dir / path).read_bytes() == original
 
@@ -154,12 +166,12 @@ async def test_upload_overwrites_with_operator_opt_out(
 
 
 async def test_validate_upload_traversal_raises(sink: VaultTransferSink) -> None:
-    with pytest.raises(ValueError, match=r"traversal|escape|outside|Invalid"):
+    with _rejected(r"traversal|escape|outside|Invalid"):
         await sink.validate("../evil.png", "upload")
 
 
 async def test_validate_upload_bad_extension_raises(sink: VaultTransferSink) -> None:
-    with pytest.raises(ValueError, match="extension"):
+    with _rejected("extension"):
         await sink.validate("report.pdf", "upload")
 
 
@@ -264,12 +276,12 @@ async def test_validate_bundle_ref_folder(
 
 
 async def test_validate_bundle_missing_folder_raises(sink: VaultTransferSink) -> None:
-    with pytest.raises(ValueError, match=r"not found"):
+    with _rejected(r"not found"):
         await sink.validate("okf-bundle:nope", "download")
 
 
 async def test_validate_bundle_traversal_raises(sink: VaultTransferSink) -> None:
-    with pytest.raises(ValueError, match=r"traversal"):
+    with _rejected(r"traversal"):
         await sink.validate("okf-bundle:../secret", "download")
 
 
@@ -283,7 +295,7 @@ async def test_validate_bundle_rejected_when_okf_off(
         okf_mode="off",
     )
     sink = VaultTransferSink(config, vault_provider=lambda: vault)
-    with pytest.raises(ValueError, match=r"disabled"):
+    with _rejected(r"disabled"):
         await sink.validate("okf-bundle", "download")
 
 
@@ -331,3 +343,55 @@ async def test_validate_refuses_to_mint_without_a_vault(
     sink = VaultTransferSink(config, vault_provider=unavailable)
     with pytest.raises(ConfigurationError, match="does not exist"):
         await sink.validate("notes/a.md", kind)  # type: ignore[arg-type]
+
+
+async def test_validate_rejection_says_what_to_do_next(sink: VaultTransferSink) -> None:
+    with _rejected(r"search"):
+        await sink.validate("ghost.md", "download")
+
+
+needs_permissions = pytest.mark.skipif(
+    os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="needs POSIX permissions enforced for the current user",
+)
+
+
+@contextlib.contextmanager
+def _unreadable(folder: Path) -> Iterator[None]:
+    """Make *folder* unsearchable, so a stat of anything inside it fails."""
+    folder.chmod(0)
+    try:
+        yield
+    finally:
+        folder.chmod(0o700)
+
+
+@needs_permissions
+@pytest.mark.parametrize(
+    ("ref", "kind"),
+    [
+        ("locked/n.md", "download"),
+        ("locked/n.md", "upload"),
+        ("okf-bundle:locked/sub", "download"),
+    ],
+)
+async def test_validate_stat_failure_is_a_server_fault(
+    sink: VaultTransferSink, source_dir: Path, ref: str, kind: str
+) -> None:
+    """A failed stat is the server's problem, not a rejection of the ref (#1623).
+
+    Python 3.14's ``Path.is_file()`` returns ``False`` for an unreadable path
+    instead of raising, which would report it as "not found".
+    """
+    locked = source_dir / "locked"
+    (locked / "sub").mkdir(parents=True)
+    (locked / "n.md").write_text("x", encoding="utf-8")
+    with _unreadable(locked), pytest.raises(PermissionError):
+        await sink.validate(ref, kind)  # type: ignore[arg-type]
+
+
+async def test_validate_bundle_traversal_says_to_pass_a_folder(
+    sink: VaultTransferSink,
+) -> None:
+    with _rejected(r"list_folders"):
+        await sink.validate("okf-bundle:../secret", "download")
