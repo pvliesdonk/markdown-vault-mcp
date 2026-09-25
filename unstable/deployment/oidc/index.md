@@ -267,7 +267,7 @@ The `mcp-wellknown` router above is the fix. In Traefik it also wins by default:
 
 One document still collides: `oauth-authorization-server`
 
-In proxy mode the server serves authorization-server metadata at `/.well-known/oauth-authorization-server`, at the **host root**, whatever prefix `BASE_URL` carries. FastMCP does contain an RFC 8414 path-aware override, `OAuthProvider.get_well_known_routes()`, which would serve it at `/.well-known/oauth-authorization-server/myservice`. Nothing reaches it: the HTTP app mounts `get_routes()` instead, leaving the path-aware form unreachable. (Verified against FastMCP 3.4.7.)
+In proxy mode the server serves authorization-server metadata at `/.well-known/oauth-authorization-server`, at the **host root**, whatever prefix `BASE_URL` carries. FastMCP does contain an RFC 8414 path-aware override, `OAuthProvider.get_well_known_routes()`, which would serve it at `/.well-known/oauth-authorization-server/myservice`. Nothing reaches it: the HTTP app mounts `get_routes()` instead, leaving the path-aware form unreachable. (Verified against FastMCP 4.0.9; the project's `tests/test_oidc_discovery_routes.py` fails if a FastMCP upgrade changes this.)
 
 Only this one document collides. Protected-resource metadata is path-namespaced, so several servers can share a hostname without contending for it.
 

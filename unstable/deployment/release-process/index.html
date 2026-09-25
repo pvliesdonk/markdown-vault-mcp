@@ -2353,7 +2353,9 @@ events; the weekly template update pull request is covered in
 <ul>
 <li><strong>The GitHub release body</strong> carries the release's notes summary, its
   machine-written changelog section, and pointers: the versioned docs,
-  the compare view, and a deep link to the notes page.</li>
+  the compare view, and a deep link to the notes page. A pre-release
+  deploys no versioned docs, so its body points at the rolling
+  <code>unstable</code> version, which follows <code>main</code> rather than the tag.</li>
 <li><strong>The release notes pages on this docs site</strong> are the canonical
   human-facing narrative of what changed and why it matters.</li>
 <li><strong><code>CHANGELOG.md</code></strong> in the repository is the machine-written audit
