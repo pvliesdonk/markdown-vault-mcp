@@ -21,9 +21,17 @@ Over stdio there is no network listener and no authentication. The MCP client st
 An authenticated caller has every tool the instance exposes. Each tool runs with the server's own privileges: its filesystem and network access, and any credential in its configuration. `MARKDOWN_VAULT_MCP_TOOLS_ALLOW` and `MARKDOWN_VAULT_MCP_TOOLS_DENY` trim that set for an instance; see [Configuration](../configuration.md).
 
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-START — what THIS server's tools reach; kept across copier update -->
-<!-- Replace with what this server's tools can do with the server's privileges:
-     which data they read and change, which outbound requests they make, and
-     which credentials they use on the caller's behalf. -->
+Every tool operates on the vault directory the server is configured to serve. Read tools (`search`, `read`, `list`, `toc`, `similar`, `context`, `stats`, git history) only read it. Write tools (`write`, `edit`, `delete`, `rename`, move, attachment writes) create, change, and remove files inside that directory; path-traversal validation confines every path to the vault root regardless of what the caller passes.
+
+Three tools reach outside the vault directory:
+
+- **`fetch`** downloads a caller-supplied `http://` or `https://` URL and saves the response into the vault. It is SSRF-hardened: the resolved IP must be publicly routable (private, loopback, link-local, CGNAT, and other reserved ranges are refused), the connection is pinned to the validated address, ambient proxy and `.netrc` settings are ignored, and every redirect hop is re-validated the same way.
+- **Semantic search and embeddings** (`search`, `build_index`/`reindex`, embeddings status), when an embedding provider is configured, send note text to that provider's endpoint (Ollama, an OpenAI-compatible API, or Voyage) to compute vectors.
+- **`summarize`**, when a summarization backend is configured, sends note text to that backend's OpenAI-compatible chat-completions endpoint.
+
+In git-managed mode, the git tools (sync, history, diff) push to and pull from the configured remote over the configured protocol; the GitHub/GitLab webhook routes accept pushes from that same remote and trigger a pull and reindex, originating no outbound request beyond it.
+
+Credentials the tools use on the caller's behalf — never supplied per call, always read from the server's own environment — are the git remote's token or SSH key, the embedding provider's API key, and the summarization backend's API key.
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->
 
 ## What answers without a credential
