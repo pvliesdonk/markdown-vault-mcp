@@ -23,6 +23,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.exceptions import DocumentUnreadableError
 from markdown_vault_mcp.types import (
     SubtreeToc,
     SummaryResult,
@@ -271,15 +272,20 @@ class SummarizeManager:
         return notes, clipped
 
     def _read_note(self, path: str) -> NoteContent | None:
-        """Read a note, skipping missing/oversized/unparseable ones.
+        """Read a note, skipping missing, oversized and unreadable ones.
 
-        Two skip paths converge on ``None``: ``read`` returns ``None`` for a
-        missing or unparseable file, and raises ``ValueError`` only for an
-        oversized note (``MAX_NOTE_READ_BYTES``), which we catch here so one
-        large note does not abort a whole subtree summary.
+        ``read`` returns ``None`` for a missing file, raises ``ValueError`` for
+        an oversized note (``MAX_NOTE_READ_BYTES``) and
+        ``DocumentUnreadableError`` for one that exists but cannot be read.
+        All three are skipped so one note does not abort a whole subtree
+        summary. An unreadable note is logged at WARNING, because the file
+        itself needs attention.
         """
         try:
             return self._doc_mgr.read(path)
+        except DocumentUnreadableError as exc:
+            logger.warning("summarize_skip_unreadable path=%s reason=%s", path, exc)
+            return None
         except ValueError as exc:
             logger.debug("summarize_skip_note path=%s reason=%s", path, exc)
             return None

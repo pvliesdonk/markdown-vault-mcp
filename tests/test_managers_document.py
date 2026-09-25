@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import os
 import threading
 from typing import TYPE_CHECKING
 
@@ -17,6 +17,7 @@ from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentExistsError,
     DocumentNotFoundError,
+    DocumentUnreadableError,
     EditConflictError,
     ReadOnlyError,
 )
@@ -166,69 +167,79 @@ class TestRead:
         assert result is not None
         assert result.folder == ""
 
-    @staticmethod
-    def _assert_degrade_warning(caplog: pytest.LogCaptureFixture, path: str) -> None:
-        """Assert read() logged the documented degrade-to-None warning for *path*."""
-        assert any(
-            record.levelno == logging.WARNING
-            and "read_parse_failed" in record.getMessage()
-            and path in record.getMessage()
-            for record in caplog.records
-        ), f"expected a degrade-to-None warning for {path!r}; got {caplog.records!r}"
-
-    def test_read_degrades_to_none_on_malformed_json_frontmatter(
-        self,
-        doc_mgr: DocumentManager,
-        doc_vault: Path,
-        caplog: pytest.LogCaptureFixture,
+    def test_read_malformed_json_frontmatter_raises_unreadable(
+        self, doc_mgr: DocumentManager, doc_vault: Path
     ) -> None:
-        """A `{` block the JSON handler rejects degrades like malformed YAML.
+        """A `{` block the JSON handler rejects is unreadable, like bad YAML (#1408).
 
-        The guard names ``yaml.YAMLError``, but ``python-frontmatter`` picks
-        its handler by the opening delimiter, so this file raised
-        ``json.JSONDecodeError`` straight through ``read`` (#1408).
+        ``python-frontmatter`` picks its handler by the opening delimiter, so
+        this is a ``json.JSONDecodeError``, not a ``yaml.YAMLError``.
         """
         (doc_vault / "badjson.md").write_text(
             "{\n  not json,\n}\n# body\n", encoding="utf-8"
         )
-        with caplog.at_level(logging.WARNING):
-            assert doc_mgr.read("badjson.md") is None
-        self._assert_degrade_warning(caplog, "badjson.md")
+        with pytest.raises(DocumentUnreadableError, match=r"badjson\.md"):
+            doc_mgr.read("badjson.md")
 
-    def test_read_degrades_to_none_if_content_read_fails(
-        self,
-        doc_mgr: DocumentManager,
-        monkeypatch: pytest.MonkeyPatch,
-        caplog: pytest.LogCaptureFixture,
+    def test_read_malformed_yaml_frontmatter_raises_unreadable(
+        self, doc_mgr: DocumentManager, doc_vault: Path
     ) -> None:
-        """If the post-parse content read fails (e.g. the file is removed or
-        truncated between parse_note and the content read), read() degrades to
-        None and logs a warning rather than leaking the raw
-        OSError/UnicodeDecodeError (#745, #746)."""
-
-        def _boom(_path: Path) -> str:
-            raise OSError("file vanished between reads")
-
-        monkeypatch.setattr(doc_mod, "_read_text_utf8", _boom)
-        with caplog.at_level(logging.WARNING, logger=doc_mod.logger.name):
-            assert doc_mgr.read("alpha.md") is None
-        self._assert_degrade_warning(caplog, "alpha.md")
-
-    def test_read_malformed_frontmatter_returns_none(
-        self,
-        doc_mgr: DocumentManager,
-        doc_vault: Path,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """A whole-document read of a file with a malformed YAML frontmatter
-        block degrades to None and logs a warning, rather than leaking a
-        yaml.YAMLError into the caller (#742, #746)."""
+        """A note that exists but cannot be parsed is the server's problem (#1608)."""
         (doc_vault / "bad_fm.md").write_text(
             "---\ntitle: [unclosed\n---\n# Body\ntext\n", encoding="utf-8"
         )
-        with caplog.at_level(logging.WARNING, logger=doc_mod.logger.name):
-            assert doc_mgr.read("bad_fm.md") is None
-        self._assert_degrade_warning(caplog, "bad_fm.md")
+        with pytest.raises(DocumentUnreadableError, match=r"bad_fm\.md"):
+            doc_mgr.read("bad_fm.md")
+
+    def test_read_invalid_utf8_raises_unreadable(
+        self, doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        (doc_vault / "latin1.md").write_bytes(b"# caf\xe9\n")
+        with pytest.raises(DocumentUnreadableError, match=r"latin1\.md"):
+            doc_mgr.read("latin1.md")
+
+    def test_read_io_error_raises_unreadable(
+        self, doc_mgr: DocumentManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def _boom(_path: Path) -> str:
+            raise OSError(5, "Input/output error")
+
+        monkeypatch.setattr(doc_mod, "_read_text_utf8", _boom)
+        with pytest.raises(DocumentUnreadableError, match=r"alpha\.md"):
+            doc_mgr.read("alpha.md")
+
+    def test_read_file_removed_mid_read_is_none(
+        self, doc_mgr: DocumentManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A note removed between the checks and the read is simply absent (#745)."""
+
+        def _gone(path: Path) -> str:
+            raise FileNotFoundError(2, "No such file or directory", str(path))
+
+        monkeypatch.setattr(doc_mod, "_read_text_utf8", _gone)
+        assert doc_mgr.read("alpha.md") is None
+
+    def test_read_directory_is_none(self, doc_mgr: DocumentManager) -> None:
+        assert doc_mgr.read("sub") is None
+
+    @pytest.mark.skipif(
+        os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+        reason="needs POSIX permissions enforced for the current user",
+    )
+    def test_read_unstatable_raises_unreadable(
+        self, doc_mgr: DocumentManager, doc_vault: Path
+    ) -> None:
+        """A path the server cannot stat is not "not found" (#1608, #1625).
+
+        Python 3.14's ``Path.is_file()`` returns ``False`` for it.
+        """
+        (doc_vault / "sub" / "gamma.md").stat()  # exists before locking
+        (doc_vault / "sub").chmod(0)
+        try:
+            with pytest.raises(DocumentUnreadableError, match=r"gamma\.md"):
+                doc_mgr.read("sub/gamma.md")
+        finally:
+            (doc_vault / "sub").chmod(0o700)
 
 
 # ---------------------------------------------------------------------------
@@ -1063,10 +1074,10 @@ class TestReadNoteSizeGuard:
         assert "section=" in msg
 
     def test_read_stat_oserror_returns_none(self, tmp_path: Path) -> None:
-        """If stat() races with file deletion between is_file() and the
-        size-guard's stat, the method returns None (matching the
-        surrounding parse_note OSError handling) rather than propagating
-        an unhandled exception.
+        """If the file is deleted before read()'s stat, the note is absent: the
+        method returns None rather than propagating the FileNotFoundError.
+        (Any other stat failure is DocumentUnreadableError; see
+        ``test_read_unstatable_raises_unreadable``.)
 
         Implementation note: claude-review and gemini both flagged the
         missing test; their suggested ``after_is_file`` flag pattern
@@ -1091,7 +1102,7 @@ class TestReadNoteSizeGuard:
                 frame = inspect.currentframe().f_back  # type: ignore[union-attr]
                 if frame and "managers/document.py" in frame.f_code.co_filename:
                     triggered[0] = True
-                    raise OSError("simulated TOCTOU race")
+                    raise FileNotFoundError(2, "simulated TOCTOU race")
             return real_stat(self, *args, **kwargs)
 
         mgr = DocumentManager(

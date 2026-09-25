@@ -147,7 +147,11 @@ class ReaderFacet:
 
         Returns:
             A :class:`~markdown_vault_mcp.types.NoteContent` instance, or ``None``
-            if the file does not exist.
+            if there is no file at *path*.
+
+        Raises:
+            DocumentUnreadableError: If the file exists but cannot be read or
+                parsed (#1608).
         """
         return self._doc_mgr.read(path, section=section)
 

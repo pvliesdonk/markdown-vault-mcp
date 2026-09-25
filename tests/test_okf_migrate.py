@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.exceptions import ReadOnlyError
+from markdown_vault_mcp.exceptions import DocumentUnreadableError, ReadOnlyError
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
 
@@ -527,3 +527,28 @@ class TestReservedFilesUnderRequiredFrontmatter:
             "- [archive/](/archive/index.md)"
             in gated_vault.reader.read("index.md").content
         )
+
+
+_UNREADABLE = b"# caf\xe9 log\n"  # not UTF-8: exists, but cannot be read
+
+
+class TestUnreadableReservedFiles:
+    """An unreadable reserved file is never taken for an absent one (#1608)."""
+
+    def test_seed_log_refuses_an_unreadable_log(
+        self, vault: Vault, source_dir: Path
+    ) -> None:
+        (source_dir / "guides").mkdir()
+        (source_dir / "guides" / "log.md").write_bytes(_UNREADABLE)
+        with pytest.raises(DocumentUnreadableError):
+            vault.writer.okf_seed_log(folder="guides")
+        assert (source_dir / "guides" / "log.md").read_bytes() == _UNREADABLE
+
+    def test_generate_index_refuses_an_unreadable_index(
+        self, vault: Vault, source_dir: Path
+    ) -> None:
+        (source_dir / "guides").mkdir()
+        (source_dir / "guides" / "index.md").write_bytes(_UNREADABLE)
+        with pytest.raises(DocumentUnreadableError):
+            vault.writer.okf_generate_index(folder="guides")
+        assert (source_dir / "guides" / "index.md").read_bytes() == _UNREADABLE

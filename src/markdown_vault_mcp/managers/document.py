@@ -11,6 +11,7 @@ import contextlib
 import logging
 import shutil
 import sqlite3
+import stat
 from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
@@ -22,6 +23,7 @@ import yaml
 from markdown_vault_mcp.exceptions import (
     DocumentExistsError,
     DocumentNotFoundError,
+    DocumentUnreadableError,
     EditConflictError,
     ReadOnlyError,
 )
@@ -315,15 +317,17 @@ class DocumentManager:
 
         Returns:
             A :class:`~markdown_vault_mcp.types.NoteContent`, or ``None`` in
-            whole-document mode if the file does not exist or exists but cannot
-            be parsed (invalid UTF-8, an I/O error, or malformed YAML
-            frontmatter — a warning is logged in those cases). When ``section``
+            whole-document mode if there is no file at *path*: it does not
+            exist, is not a regular file, or lies outside the vault. When ``section``
             is provided, the returned ``NoteContent.frontmatter`` is an empty
             dict ``{}`` because section reads do not synthesise per-section
             frontmatter. Call ``read(path)`` without ``section=`` to get the
             full document's frontmatter.
 
         Raises:
+            DocumentUnreadableError: When the file exists but cannot be read:
+                a failed stat or read, invalid UTF-8, or frontmatter that does
+                not parse (#1608). Section mode raises it too.
             ValueError: When *section* is provided and is empty / whitespace,
                 or when the document does not contain a section with that
                 heading. (Path-not-found also raises in section mode rather
@@ -338,22 +342,23 @@ class DocumentManager:
         abs_path = (self._source_dir / path).resolve()
         if not abs_path.is_relative_to(self._source_dir.resolve()):
             return None
-        if not abs_path.is_file():
+        # stat() rather than is_file(): on Python 3.14 is_file() answers False
+        # for a path it cannot stat, which would report a fault as absence.
+        try:
+            file_stat = abs_path.stat()
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        except OSError as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
+        if not stat.S_ISREG(file_stat.st_mode):
             return None
 
         # Enforce MAX_NOTE_READ_BYTES (.md whole-document reads only — section=
         # reads short-circuit with an early return above; non-.md paths fall
-        # through to parse_note() and return None on UnicodeDecodeError, same
-        # as historical behaviour, so the cap stays scoped to its env-var name).
+        # through to parse_note(), so the cap stays scoped to its env-var name).
         is_md = path.lower().endswith(".md")
         if is_md and self._max_note_read_bytes > 0:
-            try:
-                size_bytes = abs_path.stat().st_size
-            except OSError:
-                # File deleted/inaccessible between is_file() and stat() —
-                # match the surrounding parse_note OSError handling at the
-                # bottom of this method (return None, don't raise).
-                return None
+            size_bytes = file_stat.st_size
             if size_bytes > self._max_note_read_bytes:
                 raise ValueError(
                     f"Document {path!r} is {size_bytes} bytes "
@@ -368,10 +373,11 @@ class DocumentManager:
                 )
 
         # Guard both on-disk reads (parse_note's, and the content read below)
-        # in one try: a file removed/truncated/made-unparseable on disk between
-        # the size check and here — or between the two reads — degrades to None
-        # rather than leaking the raw exception (#742, #745). yaml.YAMLError
-        # covers frontmatter that became malformed after indexing.
+        # in one try. A file removed between the stat and here, or between the
+        # two reads, is absent (#745). Anything else, a file that cannot be read
+        # or whose frontmatter does not parse, raises DocumentUnreadableError
+        # instead of leaking the raw exception (#742, #1608). parse_frontmatter
+        # raises yaml.YAMLError for a JSON block too (#1408).
         # (parse_note decodes without universal-newline translation; the content
         # is read separately via _read_text_utf8, which applies it, so the two
         # reads are intentionally not collapsed — see #745.)
@@ -383,9 +389,10 @@ class DocumentManager:
                 title_field=self._title_field,
             )
             raw_content = _read_text_utf8(abs_path)
-        except (UnicodeDecodeError, OSError, yaml.YAMLError) as exc:
-            logger.warning("read_parse_failed path=%s err=%s", path, exc)
+        except (FileNotFoundError, NotADirectoryError):
             return None
+        except (UnicodeDecodeError, OSError, yaml.YAMLError) as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
 
         etag = note.content_hash
         folder = str(Path(path).parent)
@@ -426,9 +433,10 @@ class DocumentManager:
             frontmatter.
 
         Raises:
-            ValueError: If the document is not indexed, its file cannot be
-                read or decoded, its frontmatter cannot be parsed, or the
-                heading is not found.
+            ValueError: If the document is not indexed, its file no longer
+                exists, or the heading is not found.
+            DocumentUnreadableError: If the file exists but cannot be read,
+                decoded or parsed (#1608).
         """
         doc_row = self._fts.get_note(path)
         if doc_row is None:
@@ -439,25 +447,23 @@ class DocumentManager:
 
         abs_path = self._validate_path(path)
         # The file decoded and parsed cleanly when it was indexed, but it may
-        # have changed on disk since (the stale-index window). Map read failures
-        # (UnicodeDecodeError/OSError) and malformed-frontmatter failures
-        # (yaml.YAMLError) to a user-facing ValueError instead of leaking the
-        # raw exception into the MCP error middleware.
+        # have changed on disk since (the stale-index window). A file removed
+        # since is absent, as in whole-document mode; one that no longer reads
+        # or parses is DocumentUnreadableError, never "section not found" (#1608).
         try:
             text = _read_text_utf8(abs_path)
-        except (UnicodeDecodeError, OSError) as exc:
+        except (FileNotFoundError, NotADirectoryError) as exc:
             raise ValueError(
                 f"Section '{heading}' not found in document {path}: "
-                "document file is not readable"
+                "the document no longer exists"
             ) from exc
+        except (UnicodeDecodeError, OSError) as exc:
+            raise DocumentUnreadableError(path, str(exc)) from exc
 
         try:
             content = extract_section(text, heading)
         except yaml.YAMLError as exc:
-            raise ValueError(
-                f"Section '{heading}' not found in document {path}: "
-                "document frontmatter is not parseable"
-            ) from exc
+            raise DocumentUnreadableError(path, str(exc)) from exc
 
         if content is None:
             # extract_section already parsed the frontmatter successfully above,

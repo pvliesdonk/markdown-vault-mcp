@@ -1033,7 +1033,9 @@ Two-layer model:
 | `EditConflictError` | Change the request |
 | `DocumentExistsError` | Change the request |
 | `ReadOnlyError` | Change the request |
+| `read()` returns `None` | Change the request |
 | `ConcurrentModificationError` | Refresh, then retry |
+| `DocumentUnreadableError` | The server failed |
 | `IndexUnavailableError` | The server failed |
 
 **Exception types**:
@@ -1046,7 +1048,9 @@ Two-layer model:
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match |
 | `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` or `embeddings_path` configured (a `ValueError` subclass, so `except ValueError` still catches it) |
-| `None` return | `read()` | Path escapes `source_dir` (traversal attempt) or file does not exist on disk |
+| `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
+| `DocumentUnreadableError` | `read()` | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. The cause is chained (#1608) |
+| `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
 | `ValueError` | `edit()` | `old_text` is empty string |
 
 `build_embeddings()` processes chunks in bounded batches (configurable via
