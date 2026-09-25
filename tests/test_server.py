@@ -4051,6 +4051,16 @@ class TestGetDiffTool:
         # Newest-first ordering: the two most recent commit messages.
         assert [c["message"] for c in commits] == ["edit v4", "edit v3"]
 
+    async def test_unknown_sha_is_a_refusal(self) -> None:
+        """An unknown SHA is the caller's to fix, not a server fault (#1608)."""
+        server = make_server()
+        async with Client(server) as client:
+            result = await client.call_tool_mcp(
+                "get_diff", {"path": "alpha.md", "since_sha": "deadbeef"}
+            )
+        assert result.is_error
+        assert "not a commit" in result.content[0].text  # type: ignore[union-attr]
+
     async def test_get_diff_envelope_wire_shape_per_commit_true(
         self, git_vault: Path
     ) -> None:

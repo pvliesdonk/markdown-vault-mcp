@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 import yaml
 
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git import RevisionQuery, RevisionReader
 from markdown_vault_mcp.scanner import extract_section, list_section_headings
 from markdown_vault_mcp.utils import (
@@ -208,17 +209,18 @@ class GitQueryManager:
             notes' content (#1285).
 
         Raises:
-            ValueError: If exactly one of *since_sha* / *since_timestamp* is
-                not supplied, *since_sha* contains invalid characters, the
-                resolved ref is not found in history, or *path* has an
+            InvalidRequestError: If not exactly one of *since_sha* /
+                *since_timestamp* is supplied, *since_sha* is not 4-64
+                lowercase hex digits or names no commit, or *path* has an
                 extension that is neither ``.md`` nor a configured attachment
                 type.
+            ValueError: If a git subprocess fails for any other reason.
         """
         if self._git_strategy is None:
             return [] if per_commit else ""
 
         if (since_sha is None) == (since_timestamp is None):
-            raise ValueError(
+            raise InvalidRequestError(
                 "Exactly one of 'since_sha' or 'since_timestamp' must be provided"
             )
 
@@ -227,7 +229,7 @@ class GitQueryManager:
         )
 
         if since_sha is not None and not re.fullmatch(_SHA_RE, since_sha):
-            raise ValueError(
+            raise InvalidRequestError(
                 f"Invalid SHA {since_sha!r}: must be 4-64 lowercase hex digits"
             )
 

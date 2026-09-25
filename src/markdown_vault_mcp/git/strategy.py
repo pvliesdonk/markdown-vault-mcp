@@ -1780,8 +1780,9 @@ class GitWriteStrategy:
             List of :class:`HistoryEntry` ordered from newest to oldest.
 
         Raises:
-            ValueError: If ``git log`` exits non-zero (e.g. an invalid
-                ``since`` / ``until`` expression).
+            ValueError: If ``git log`` exits non-zero; git accepts any
+                ``since`` / ``until`` text without complaint, so a bad date
+                never causes it.
         """
         return query.get_file_history(
             self._ensure_git_root(repo_path),
@@ -1847,8 +1848,9 @@ class GitWriteStrategy:
             :class:`CommitDiff` when *per_commit* is ``True``.
 
         Raises:
-            ValueError: If *ref* is not found in history, *since_timestamp*
-                cannot be resolved, or a git subprocess exits non-zero.
+            InvalidRequestError: If *ref* names no commit in this repository.
+            ValueError: If a git subprocess exits non-zero for any other
+                reason.
         """
         return query.get_file_diff(
             self._ensure_git_root(repo_path),

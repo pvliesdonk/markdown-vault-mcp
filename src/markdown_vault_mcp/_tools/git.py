@@ -10,6 +10,7 @@ from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
 from fastmcp.exceptions import ToolError
 
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git import PullResult, PushResult, Syncer
 from markdown_vault_mcp.vault import Vault
 
@@ -20,6 +21,25 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_FAULT = (
+    "{tool} failed because of a server-side error; the request was fine. "
+    "Retry later, and tell the user if it keeps failing."
+)
+
+
+def _refusal_or_fault(tool: str, exc: ValueError) -> ToolError:
+    """Turn a library ``ValueError`` into the tool's outcome (#1608).
+
+    An :class:`InvalidRequestError` is the caller's to fix, so its message
+    reaches the model at INFO. Anything else is the server's failure: it is
+    logged here with its traceback, and the model gets a fixed message rather
+    than git's stderr, which can name server paths.
+    """
+    if isinstance(exc, InvalidRequestError):
+        return ToolError(str(exc), log_level=logging.INFO)
+    logger.error("tool_failed tool=%s", tool, exc_info=exc)
+    return ToolError(_FAULT.format(tool=tool))
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +286,7 @@ def register(mcp: FastMCP) -> None:
                 limit=limit,
             )
         except ValueError as exc:
-            raise ToolError(str(exc)) from exc
+            raise _refusal_or_fault("get_history", exc) from exc
         commits = [asdict(r) for r in results]
         return {"commits": commits, "total": len(commits)}
 
@@ -353,7 +373,7 @@ def register(mcp: FastMCP) -> None:
                 limit=limit,
             )
         except ValueError as exc:
-            raise ToolError(str(exc)) from exc
+            raise _refusal_or_fault("get_diff", exc) from exc
         if isinstance(result, list):
             commits = [asdict(r) for r in result]
             return {"commits": commits, "total": len(commits)}

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git.strategy import GitWriteStrategy
 from markdown_vault_mcp.managers.git_query import GitQueryManager
 
@@ -81,17 +82,17 @@ class TestNoGitStrategy:
 class TestGetDiffValidation:
     def test_neither_reference_raises(self, tmp_path: Path) -> None:
         mgr = GitQueryManager(_RecordingStrategy(), tmp_path)  # type: ignore[arg-type]
-        with pytest.raises(ValueError, match="Exactly one"):
+        with pytest.raises(InvalidRequestError, match="Exactly one"):
             mgr.get_diff("note.md")
 
     def test_both_references_raise(self, tmp_path: Path) -> None:
         mgr = GitQueryManager(_RecordingStrategy(), tmp_path)  # type: ignore[arg-type]
-        with pytest.raises(ValueError, match="Exactly one"):
+        with pytest.raises(InvalidRequestError, match="Exactly one"):
             mgr.get_diff("note.md", since_sha="abcd", since_timestamp="2026-01-01")
 
     def test_malformed_sha_raises(self, tmp_path: Path) -> None:
         mgr = GitQueryManager(_RecordingStrategy(), tmp_path)  # type: ignore[arg-type]
-        with pytest.raises(ValueError, match="Invalid SHA"):
+        with pytest.raises(InvalidRequestError, match="Invalid SHA"):
             mgr.get_diff("note.md", since_sha="XYZ!")
 
     def test_sha256_length_sha_is_accepted(self, tmp_path: Path) -> None:
@@ -105,7 +106,7 @@ class TestGetDiffValidation:
     def test_sha_longer_than_any_object_id_raises(self, tmp_path: Path) -> None:
         """65 hex digits is not an object ID in either hash algorithm."""
         mgr = GitQueryManager(_RecordingStrategy(), tmp_path)  # type: ignore[arg-type]
-        with pytest.raises(ValueError, match="Invalid SHA"):
+        with pytest.raises(InvalidRequestError, match="Invalid SHA"):
             mgr.get_diff("note.md", since_sha="a" * 65)
 
     @pytest.mark.parametrize(
@@ -123,7 +124,7 @@ class TestGetDiffValidation:
         """
         strat = _RecordingStrategy()
         mgr = GitQueryManager(strat, tmp_path)  # type: ignore[arg-type]
-        with pytest.raises(ValueError, match="Invalid SHA"):
+        with pytest.raises(InvalidRequestError, match="Invalid SHA"):
             mgr.get_diff("note.md", since_sha=since_sha)
         assert strat.diff_calls == []
 
