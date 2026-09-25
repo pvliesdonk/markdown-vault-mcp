@@ -25,8 +25,12 @@ services:
     env_file:
       - path: .env
         required: false
+    # Published on the host's loopback interface only, so this file as written
+    # reaches no other machine.  Authentication, not the bind address, is what
+    # protects the server: set a bearer token or OIDC in `.env` first, then
+    # publish wider from `compose.override.yml` (`docs/deployment/docker.md`).
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     # Named volume permissions are fixed automatically by the entrypoint.
     # For bind-mount UID/GID mismatch, set PUID/PGID in your .env file:
     #   PUID=1001

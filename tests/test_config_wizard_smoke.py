@@ -390,8 +390,9 @@ def test_docker_targets_omit_the_pinned_listener_vars(page: Page) -> None:
         assert "DEMO_PORT" not in result[target], result[target]
         # Everything else still flows through.
         assert "DEMO_OTHER" in result[target]
-    assert "8000:8000" in result["docker"]
-    assert "8000:8000" in result["compose"]
+    # Both targets publish on loopback only, like the shipped compose.yml.
+    assert "-p 127.0.0.1:8000:8000" in result["docker"], result["docker"]
+    assert '"127.0.0.1:8000:8000"' in result["compose"], result["compose"]
     # The wizard's compose frame mirrors the shipped compose.yml, liveness
     # probe included; tests/test_compose.py pins the same URL on that file.
     assert "127.0.0.1:8000/health" in result["compose"], result["compose"]

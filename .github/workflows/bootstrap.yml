@@ -21,12 +21,17 @@ name: Bootstrap repo
 #      repositories only), Dependabot alerts, and secret scanning push
 #      protection where the plan allows it. See
 #      docs/design/reference/github-repository-security-settings.md.
+#   4. The "About" block: description, website and topics, taken from
+#      pyproject.toml by scripts/repo_about.py — `[project] description`,
+#      `[project.urls] Documentation`, and `[project] keywords` (add domain
+#      terms in its PROJECT-KEYWORDS seam; they become topics here).
 #
 # Idempotent: label create is `--force`; the settings call is a PATCH and the
 # ruleset apply upserts by name (PUT onto the existing id, POST otherwise), so
 # every run converges to the checked-in state. The first push to the default
-# branch applies everything; a push touching this workflow or a ruleset file
-# re-applies; `workflow_dispatch` re-applies on demand.
+# branch applies everything; a push touching this workflow, a ruleset file,
+# renovate.json, pyproject.toml or scripts/repo_about.py re-applies;
+# `workflow_dispatch` re-applies on demand.
 #
 # Auth: the settings, ruleset and security calls need `administration:write`,
 # which the default GITHUB_TOKEN lacks — they use RELEASE_TOKEN.
@@ -38,6 +43,8 @@ on:
       - .github/workflows/bootstrap.yml
       - .github/rulesets/**
       - renovate.json
+      - pyproject.toml
+      - scripts/repo_about.py
   workflow_dispatch:
 
 permissions:
@@ -96,7 +103,7 @@ jobs:
             --force
 
   settings:
-    name: Enable auto-merge + repository rulesets
+    name: Enable auto-merge + repository rulesets + About block
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -108,6 +115,22 @@ jobs:
         run: |
           # Enable repository-level auto-merge.
           gh api -X PATCH "repos/${REPO}" -F allow_auto_merge=true
+
+      - name: Set description, website and topics
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Bootstrap OWNS the About block, like the rulesets: the topics PUT
+          # replaces the whole set, and description and website are
+          # overwritten. Edits made in the GitHub UI are reset on the next
+          # run; change pyproject.toml instead.
+          about=$(python3 scripts/repo_about.py)
+          echo "About: ${about}"
+          jq '{description, homepage} | with_entries(select(.value != null))' \
+            <<<"$about" | gh api -X PATCH "repos/${REPO}" --input - >/dev/null
+          jq '{names}' <<<"$about" \
+            | gh api -X PUT "repos/${REPO}/topics" --input - >/dev/null
 
       - name: Apply repository rulesets
         env:

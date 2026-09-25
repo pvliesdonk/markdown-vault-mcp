@@ -188,7 +188,7 @@ export function generateDockerRun(spec, answers, map) {
   const env = dockerEnvMap(spec, answers, map);
   const lines = [
     `docker run -d --name ${spec.meta.projectName}`,
-    "  -p 8000:8000",
+    "  -p 127.0.0.1:8000:8000",
     `  -v ${SERVICE_VOLUME}`,
     `  -v ${STATE_VOLUME}`,
   ];
@@ -217,7 +217,7 @@ export function generateCompose(spec, answers, map) {
     `    image: ${spec.meta.dockerImage}`,
     "    restart: unless-stopped",
     "    ports:",
-    '      - "8000:8000"',
+    '      - "127.0.0.1:8000:8000"',
     "    volumes:",
     ...volLines,
     "    environment:",

@@ -14,6 +14,7 @@ authors = [{ name = "Peter van Liesdonk", email = "pvliesdonk@users.noreply.gith
 # The template knows the terms that are true of every server it generates and
 # the project's own names; it cannot know the domain terms, which go in the
 # seam.  An empty list was not a decision, just nobody's job (#583).
+# bootstrap.yml also sets these as the GitHub repository's topics.
 keywords = [
     "mcp",
     "model-context-protocol",

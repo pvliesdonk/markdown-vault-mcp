@@ -81,6 +81,7 @@ plugins:
           - guides/docker.md: Docker deployment (basic, git write, bearer token, OIDC)
           - guides/embeddings.md: Embedding providers (Ollama, sentence-transformers, OpenAI)
           - guides/authentication.md: Authentication modes — bearer token, OIDC, and troubleshooting
+          - guides/security-model.md: The shared security model — data access, outbound requests, and credentials
           - guides/oidc-providers.md: OIDC provider setup (Authelia, Keycloak, Google, GitHub via broker)
           - guides/obsidian-everywhere.md: Reference architecture for desktop + mobile + Claude on one vault
           - guides/research-workflows.md: Research workflows (seed → ground → absorb → interconnect → produce, with optional scholar-mcp integration)
@@ -164,6 +165,7 @@ nav:
       - Docker: guides/docker.md
       - Embeddings: guides/embeddings.md
       - Authentication: guides/authentication.md
+      - Security Model: guides/security-model.md
       - OIDC Providers: guides/oidc-providers.md
       - Obsidian Everywhere: guides/obsidian-everywhere.md
       - Research Workflows: guides/research-workflows.md

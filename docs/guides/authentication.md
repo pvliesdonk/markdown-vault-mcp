@@ -15,7 +15,7 @@ The server supports five authentication modes:
 | **Bearer token** | Simple deployments behind a VPN, Docker compose stacks, development | Set `MARKDOWN_VAULT_MCP_BEARER_TOKEN` only |
 | **OIDC (remote)** | Production with user identity, SSO, multi-user access; local JWKS validation, no confidential client to register | Set `MARKDOWN_VAULT_MCP_BASE_URL` + `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` only |
 | **OIDC (oidc-proxy)** | The same, where the server should run the OAuth flow itself and manage sessions | Set all four OIDC variables (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`) |
-| **No auth** | Local stdio usage, trusted networks | Default (nothing to configure) |
+| **No auth** | Local stdio usage, trusted networks; see [Security model](security-model.md) | Default (nothing to configure) |
 
 When both bearer token and OIDC are configured, the server accepts **either** credential: a valid bearer token or a valid OIDC session. This is useful when different clients require different authentication flows against the same server instance.
 

@@ -11,6 +11,9 @@ vulnerability** on this repository, or go straight to
 <https://github.com/pvliesdonk/markdown-vault-mcp/security/advisories/new>.
 That opens a draft security advisory only you and the maintainers can read.
 
+Before reporting, read `docs/guides/security-model.md`. It states what the
+server protects and what it leaves to the operator.
+
 Do not open a public issue, pull request or discussion for a suspected
 vulnerability. If the reporting form is unavailable, open an issue titled
 "Security contact request" that says nothing about the finding itself, and a

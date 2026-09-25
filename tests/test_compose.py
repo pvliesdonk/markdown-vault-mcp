@@ -104,6 +104,16 @@ def test_publishes_the_port_the_image_serves(service: dict[str, Any]) -> None:
     )
 
 
+def test_publishes_on_loopback_only(service: dict[str, Any]) -> None:
+    """The short syntax without a host address binds every host interface,
+    and `.env.example` ships with authentication off."""
+    published = [str(entry) for entry in service.get("ports", [])]
+    assert published, "expected at least one published port"
+    assert all(entry.startswith("127.0.0.1:") for entry in published), (
+        f"expected every mapping to bind 127.0.0.1, found {published!r}"
+    )
+
+
 def test_env_file_is_optional(service: dict[str, Any]) -> None:
     """A named ``env_file`` that does not exist is a hard error, not a skipped
     entry — so without ``required: false`` a freshly cloned project (which has
