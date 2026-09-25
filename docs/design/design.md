@@ -1013,8 +1013,25 @@ Two-layer model:
 
 - **Library layer** (`Vault`, `FTSIndex`, `VectorIndex`, etc.): raises
   specific exceptions. Callers catch and handle.
-- **MCP tool layer**: catches exceptions, returns structured error responses
-  per FastMCP conventions.
+- **MCP tool layer**: every tool call ends in one of the four outcomes
+  defined by the template's `designing-tool-outcomes` skill
+  (fastmcp-server-template#676), and the skill's rules apply unchanged.
+  The skill's evidence is in the `mcp-tool-outcomes-and-errors` and
+  `negative-outcomes-and-faults` references. The table below is the one
+  MVM-specific part: which library signal is which outcome. A signal in it
+  means that one outcome at every site that raises it. Any other exception,
+  apart from a `ToolError` a tool raises itself, is a server fault by
+  definition. A refusal the caller caused therefore needs a signal of its
+  own before a tool can report it as one (#1608).
+
+| Library signal | Outcome |
+|-|-|
+| `DocumentNotFoundError` | Change the request |
+| `EditConflictError` | Change the request |
+| `DocumentExistsError` | Change the request |
+| `ReadOnlyError` | Change the request |
+| `ConcurrentModificationError` | Refresh, then retry |
+| `IndexUnavailableError` | The server failed |
 
 **Exception types**:
 
@@ -5554,7 +5571,7 @@ Decisions made during design review (2026-03-07):
 | 10 | FastMCP | Pin `>=3.0,<4`; lifespan hooks; follow conventions | Proper init/teardown; forward-compatible |
 | 11 | Write support | Separate frontmatter param; generic `on_write` callback | Git strategy as built-in; extensible for future strategies |
 | 12 | Docker/CI | Bring early (Phase 2); adapt from ifcraftcorpus | Proven infrastructure, minimal changes needed |
-| 13.1 | Error handling | Library raises; MCP catches and returns structured | Clean separation of concerns |
+| 13.1 | Error handling | Library raises typed exceptions; each tool maps them to the `designing-tool-outcomes` skill's four outcomes | The model always gets a next step, and only server faults reach ERROR |
 | 13.2 | Logging | Follow FastMCP conventions; `logging.getLogger(__name__)` | Standardized, no `print()` |
 | 13.3 | Concurrency | Library sync; `asyncio.to_thread()` in MCP layer | Appropriate for single-user; async provider as future work |
 | 13.4 | FTS5 schema | `path`, `title`, `folder`, `heading`, `content` | Generic; domain filtering via `document_tags` |
