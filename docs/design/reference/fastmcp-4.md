@@ -78,7 +78,7 @@ does not attempt to catalogue the rest of FastMCP's API.
 - FastMCP 4 uses snake_case Python attributes for MCP SDK models while their
   JSON wire aliases remain camelCase; FastMCP's camelCase read bridge warns
   and is scheduled for removal. [source: upgrade]
-  [pins: tests/test_client_surface_budget.py::test_maximal_client_surface_stays_within_reviewed_budgets]
+  [pins: tests/test_summarize.py::test_summarize_description_carries_live_note_limit]
 - A default `fastmcp.Client` uses `mode="auto"` and negotiates the modern
   MCP 2026-07-28 era when the server supports it; `mode="legacy"` selects a
   handshake-era connection. [source: upgrade]

@@ -4156,21 +4156,22 @@ claiming that every repeated workflow sentence is safely removable: whether a
 tool-searching client needs a larger discovery seed remains unverified, and no
 evidence establishes where the floor is.
 
-**Client-facing surface budget**: `tests/test_client_surface_budget.py`
-constructs the maximal discoverable HTTP surface (read-write, summarization,
-OKF enforced writes, managed Git, transfer, jobs, prompts, resources, and
-resource templates), enumerates real MCP protocol objects, and measures UTF-16
-units after FastMCP has parsed docstrings and built schemas. Schemas use compact,
-sorted JSON so formatting cannot move the baseline. This is a prose/schema
-budget, not the byte size of complete serialized list responses: names, icons,
-annotations, and other protocol metadata are deliberately outside it. The
-initial post-reduction measurement is 57,240 units: 1,507 instructions, 22,853
-tool descriptions,
-27,259 input schemas, 3,353 output schemas, 842 prompt descriptions, 101 prompt
-argument descriptions, 613 resource descriptions, and 712 resource-template
-descriptions. Reviewed category ceilings plus a 58,000-unit total ceiling make
-future growth visible without turning the exact measurement into a golden
-snapshot.
+**No aggregate client-surface budget** (#1600, superseding the reviewed
+category and total ceilings #1253 and #1258 introduced). The only client
+limits with a documented source are per item: Claude Code's 2,048-unit cut on
+each tool description and on the instructions, pinned by the template-owned
+`tests/test_model_facing_text.py`, and pvl-core's 1,536-unit target for the
+generated instructions above. No source derives an aggregate ceiling; the
+category caps were measurements of the day plus one percent, and they
+penalised the move the `writing-model-facing-text` skill prescribes (a fact
+leaving a tool description for the parameter that needs it), which is how a
+pvl-core release that only filled empty parameter descriptions tripped one.
+The size of the surface is bounded by writing every description against that
+skill, not by a number. The aggregate cost of an eager client receiving every
+description and schema is pvl-core's problem to solve with a catalog mode
+(pvliesdonk/fastmcp-pvl-core#300); if that study yields a measured threshold,
+a budget derived from it is stated in tokens, per client class, with its
+derivation beside the number.
 
 Parameterless tools always pass an explicit concise `description=` at
 registration. Otherwise FastMCP falls back to the complete raw docstring when
