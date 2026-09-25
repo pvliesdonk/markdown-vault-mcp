@@ -22,6 +22,43 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 5.0.0-rc.2 (2026-09-25)
+
+### Breaking Changes
+
+- adopt template v8 and FastMCP 4 (#1465)
+- enable overwrite protection by default (#1477)
+- require VaultSettings for construction (#1478)
+- remove deprecated claim constructor arguments (#1479)
+- keep bearer credentials out of human attribution (#1481)
+- update to v9.0.0 (#1550)
+
+### Features
+
+- resolve shortcut reference links (#1533)
+- add a switch to skip the boot reindex (#1543)
+- say when to omit if_match on parallel edits and linked renames (#1572)
+
+### Bug Fixes
+
+- refresh queued writes before index-dependent mutations (#1482)
+- distinguish conflict resolver exit diagnostics (#1488)
+- percent-encode spaces in destinations the server writes (#1514)
+- escape what would re-point a generated or rewritten link (#1518)
+- read an inline link's text with escapes honoured (#1520)
+- read a reference label with escapes honoured (#1522)
+- rewrite the links the index actually holds (#1527)
+- close a link at the nearest unmatched bracket (#1529)
+- open a reference link at the nearest unmatched bracket (#1530)
+- delete notes_fts rows by rowid instead of scanning the content table (#1539)
+- checkpoint tracker state during a reindex pass (#1540)
+- reconcile the index with git HEAD instead of reindexing once per pull (#1560)
+- report event-store configuration errors in one line (#1570)
+- restore the real index-read budget before the trailing mutation (#1584)
+- make the conformance gate clone the template instead of guessing a sibling checkout (#1593)
+- describe READ_ONLY by what it does; group the external embeddings variables (#1597)
+- adopt fastmcp-pvl-core 9.0.1 and retire the client-surface budget gate (#1601)
+
 ## 5.0.0-rc.1 (2026-09-23)
 
 ### Breaking Changes

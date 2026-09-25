@@ -1,6 +1,6 @@
 [project]
 name = "markdown-vault-mcp"
-version = "5.0.0-rc.1"
+version = "5.0.0-rc.2"
 description = "Generic markdown vault MCP with hybrid search"
 readme = "README.md"
 # PROJECT-LICENSE-START — the license you picked; replace the value below and

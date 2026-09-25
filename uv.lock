@@ -1798,7 +1798,7 @@ wheels = [
 
 [[package]]
 name = "markdown-vault-mcp"
-version = "5.0.0rc1"
+version = "5.0.0rc2"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
