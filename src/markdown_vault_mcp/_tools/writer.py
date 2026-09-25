@@ -402,7 +402,8 @@ def register(mcp: FastMCP) -> None:
             old_text: Text to replace. Must appear exactly once in the
                 document or line range. Get this via 'read'. Optional
                 when using line-range mode.
-            new_text: Replacement text. May be longer or shorter.
+            new_text: Replacement text; empty deletes the matched text or
+                the whole line range.
             if_match: Etag from 'read'; the edit fails if the file changed
                 since. Omit for several old_text-only edits to one file at
                 once; pass it, one edit per read, when line_start/line_end

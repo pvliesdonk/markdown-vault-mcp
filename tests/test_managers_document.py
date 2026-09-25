@@ -443,6 +443,22 @@ class TestEdit:
         assert note is not None
         assert "Replaced line." in note.content
 
+    def test_edit_line_range_empty_new_text_removes_lines(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        doc_mgr.edit("alpha.md", line_start=5, line_end=6)
+        note = doc_mgr.read("alpha.md")
+        assert note is not None
+        assert note.content == "---\ntitle: Alpha\n---\n# Alpha\n"
+
+    def test_edit_line_range_empty_new_text_removes_middle_line(
+        self, doc_mgr: DocumentManager
+    ) -> None:
+        doc_mgr.edit("alpha.md", new_text="", line_start=5, line_end=5)
+        note = doc_mgr.read("alpha.md")
+        assert note is not None
+        assert note.content == "---\ntitle: Alpha\n---\n# Alpha\nHello world.\n"
+
     def test_edit_empty_old_text_raises(self, doc_mgr: DocumentManager) -> None:
         with pytest.raises(ValueError, match="old_text must not be empty"):
             doc_mgr.edit("alpha.md", old_text="", new_text="x")
