@@ -109,6 +109,12 @@ Returns:
 | `A`  | \`NoteContent | None\`      |
 |      | \`NoteContent | None\`      |
 
+Raises:
+
+| Type                      | Description                                              |
+| ------------------------- | -------------------------------------------------------- |
+| `DocumentUnreadableError` | If the file exists but cannot be read or parsed (#1608). |
+
 ### `read_revision(path, revision, *, section=None)`
 
 Read a document's content as it stood at a git revision (#1137).

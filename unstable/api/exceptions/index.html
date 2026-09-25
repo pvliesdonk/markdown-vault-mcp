@@ -1887,6 +1887,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.DocumentUnreadableError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DocumentUnreadableError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#markdown_vault_mcp.exceptions.DocumentExistsError" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2066,6 +2077,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.DocumentUnreadableError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DocumentUnreadableError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#markdown_vault_mcp.exceptions.DocumentExistsError" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2221,6 +2243,80 @@
 
 
 
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.exceptions.DocumentUnreadableError" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">DocumentUnreadableError</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">reason</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.exceptions.DocumentUnreadableError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="MarkdownMCPError (markdown_vault_mcp.exceptions.MarkdownMCPError)" href="#markdown_vault_mcp.exceptions.MarkdownMCPError">MarkdownMCPError</a></code></p>
+
+
+
+        <p>Raised when a document exists but the server cannot read or parse it.</p>
+<p>The file is there, so this is not "not found": the bytes are not valid
+UTF-8, the frontmatter block does not parse, or the file system refused a
+stat or a read. The cause is chained as <code>__cause__</code> (#1608).</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.exceptions.DocumentUnreadableError.path">path</span></code></td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The vault-relative path that could not be read.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
 
     </div>
 

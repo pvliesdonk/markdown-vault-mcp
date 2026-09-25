@@ -3860,7 +3860,31 @@ a <code>search</code> result unchanged for guaranteed match. <code>None</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>if the file does not exist.</p>
+                <p>if there is no file at <em>path</em>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="DocumentUnreadableError">DocumentUnreadableError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the file exists but cannot be read or
+parsed (#1608).</p>
               </div>
             </td>
           </tr>

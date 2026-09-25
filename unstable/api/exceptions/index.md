@@ -24,6 +24,20 @@ Bases: `MarkdownMCPError`
 
 Raised when the requested document path does not exist on disk.
 
+## `DocumentUnreadableError(path, reason)`
+
+Bases: `MarkdownMCPError`
+
+Raised when a document exists but the server cannot read or parse it.
+
+The file is there, so this is not "not found": the bytes are not valid UTF-8, the frontmatter block does not parse, or the file system refused a stat or a read. The cause is chained as `__cause__` (#1608).
+
+Attributes:
+
+| Name   | Type | Description                                     |
+| ------ | ---- | ----------------------------------------------- |
+| `path` |      | The vault-relative path that could not be read. |
+
 ## `DocumentExistsError`
 
 Bases: `MarkdownMCPError`
