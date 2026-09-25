@@ -477,3 +477,13 @@ class TestUpkeepUnderRequiredFrontmatter:
             assert text.startswith("---\ntitle: Log\n---\n\n# Log\n")
         finally:
             col.close()
+
+
+def test_unreadable_folder_log_is_not_overwritten(enforced_vault: Vault) -> None:
+    """Log upkeep never takes an unreadable log.md for an absent one (#1608)."""
+    log = enforced_vault.source_dir / "guides" / "log.md"
+    unreadable = b"# caf\xe9 log\n"
+    log.write_bytes(unreadable)
+    enforced_vault.writer.write("guides/playbook.md", "# Playbook\n\nSteps.\n")
+    wait_for_writer_drain(enforced_vault)
+    assert log.read_bytes() == unreadable

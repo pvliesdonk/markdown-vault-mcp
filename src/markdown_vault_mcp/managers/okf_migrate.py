@@ -112,6 +112,8 @@ class OkfMigrationManager:
 
         Raises:
             ReadOnlyError: If the vault is read-only.
+            DocumentUnreadableError: If a note it rewrites exists but cannot be
+                read (#1608). Notes converted before it keep their changes.
             IndexUnavailableError: If the index is not built.
             TimeoutError: If the queued index refresh exceeds its wait budget.
         """
@@ -174,6 +176,8 @@ class OkfMigrationManager:
 
         Raises:
             ReadOnlyError: If the vault is read-only.
+            DocumentUnreadableError: If the folder's ``index.md`` exists but
+                cannot be read; it is left untouched (#1608).
             IndexUnavailableError: If the index is not built.
             TimeoutError: If the queued index refresh exceeds its wait budget.
         """
@@ -255,6 +259,8 @@ class OkfMigrationManager:
 
         Raises:
             ReadOnlyError: If the vault is read-only.
+            DocumentUnreadableError: If ``log.md`` exists but cannot be read;
+                it is left untouched (#1608).
             FileExistsError: If ``log.md`` already exists in *folder*.
         """
         self._doc_mgr.ensure_writable()

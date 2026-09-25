@@ -19,6 +19,8 @@ Most exceptions inherit from `MarkdownMCPError`, so callers can catch the base c
 <!-- vale off -->
 ::: markdown_vault_mcp.exceptions.DocumentNotFoundError
 
+::: markdown_vault_mcp.exceptions.DocumentUnreadableError
+
 ::: markdown_vault_mcp.exceptions.DocumentExistsError
 
 ::: markdown_vault_mcp.exceptions.EditConflictError

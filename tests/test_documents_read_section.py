@@ -10,6 +10,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
+from markdown_vault_mcp.exceptions import DocumentUnreadableError
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.managers.document import DocumentManager
 from markdown_vault_mcp.scanner import HeadingChunker, scan_directory
@@ -350,8 +351,8 @@ def test_read_section_ignores_frontmatter(tmp_path):
 
 
 def test_read_section_raises_when_indexed_file_missing_on_disk(tmp_path):
-    """If the index still has the doc but its file is gone, section read raises
-    a ValueError rather than leaking the underlying OSError (#741)."""
+    """If the index still has the doc but its file is gone, the document is
+    absent: a ValueError, not a leaked FileNotFoundError (#741, #1608)."""
     body = (
         "# A\n"
         + "\n".join(["preamble"] * 12)
@@ -362,7 +363,7 @@ def test_read_section_raises_when_indexed_file_missing_on_disk(tmp_path):
     # Remove the file from disk without reindexing — get_note still hits.
     (tmp_path / "a.md").unlink()
 
-    with pytest.raises(ValueError, match="not readable"):
+    with pytest.raises(ValueError, match="no longer exists"):
         mgr.read("a.md", section="Section One")
 
 
@@ -402,13 +403,9 @@ def test_read_unknown_section_suggestion_dedupes_headings(tmp_path):
 
 
 def test_read_section_raises_on_non_utf8_file(tmp_path):
-    """A file that decodes cleanly at index time but is later overwritten with
-    invalid UTF-8 yields a ValueError, not a leaked UnicodeDecodeError (#741).
-
-    ``UnicodeDecodeError`` subclasses ``ValueError`` but does not subclass
-    ``OSError``; matching on the message pins the friendly error rather than the
-    raw decode failure.
-    """
+    """A file that decoded at index time but is later overwritten with invalid
+    UTF-8 exists but cannot be read: DocumentUnreadableError, as in whole-document
+    mode, not a "section not found" ValueError (#741, #1608)."""
     body = (
         "# A\n"
         + "\n".join(["preamble"] * 12)
@@ -419,14 +416,14 @@ def test_read_section_raises_on_non_utf8_file(tmp_path):
     # Corrupt the file with invalid UTF-8 bytes after indexing.
     (tmp_path / "a.md").write_bytes(b"\xff\xfe invalid \x80\x81 bytes")
 
-    with pytest.raises(ValueError, match="not readable"):
+    with pytest.raises(DocumentUnreadableError, match=r"a\.md"):
         mgr.read("a.md", section="Section One")
 
 
 def test_read_section_raises_on_malformed_frontmatter(tmp_path):
     """A file with valid frontmatter at index time, later overwritten with a
-    malformed YAML block, yields a ValueError rather than a leaked
-    yaml.YAMLError (#741)."""
+    malformed YAML block, cannot be read: DocumentUnreadableError, as in
+    whole-document mode (#741, #1608)."""
     body = (
         "---\n"
         "title: A\n"
@@ -442,7 +439,7 @@ def test_read_section_raises_on_malformed_frontmatter(tmp_path):
         "---\ntitle: [unclosed\n---\n## Section One\nbody\n", encoding="utf-8"
     )
 
-    with pytest.raises(ValueError, match="not parseable"):
+    with pytest.raises(DocumentUnreadableError, match=r"a\.md"):
         mgr.read("a.md", section="Section One")
 
 

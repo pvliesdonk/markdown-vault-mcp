@@ -19,6 +19,22 @@ class DocumentNotFoundError(MarkdownMCPError):
     """Raised when the requested document path does not exist on disk."""
 
 
+class DocumentUnreadableError(MarkdownMCPError):
+    """Raised when a document exists but the server cannot read or parse it.
+
+    The file is there, so this is not "not found": the bytes are not valid
+    UTF-8, the frontmatter block does not parse, or the file system refused a
+    stat or a read. The cause is chained as ``__cause__`` (#1608).
+
+    Attributes:
+        path: The vault-relative path that could not be read.
+    """
+
+    def __init__(self, path: str, reason: str) -> None:
+        super().__init__(f"{path} exists but cannot be read: {reason}")
+        self.path = path
+
+
 class ReadOnlyError(MarkdownMCPError):
     """Raised when a write operation is attempted on a read-only vault."""
 

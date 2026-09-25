@@ -8,6 +8,7 @@ end-to-end MCP tool gating. Uses a deterministic fake Summarizer and a fake
 
 from __future__ import annotations
 
+import logging
 import sys
 import types
 from collections.abc import Callable, Iterator
@@ -545,6 +546,21 @@ class TestSummarizeFacet:
         _system, user = fake.calls[0]
         assert "alpha.md" in user
         assert "cats" in user
+
+    def test_unreadable_note_is_skipped(
+        self, make_vault: VaultFactory, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """One unreadable note does not abort the summary, and is logged (#1608)."""
+        vault = make_vault(summarizer=FakeSummarizer("S"))
+        (vault.source_dir / "bad.md").write_bytes(b"# caf\xe9\n")
+        with caplog.at_level(logging.WARNING):
+            result = vault.summarizer.summarize(["alpha.md", "bad.md"])
+        assert [s.path for s in result.sources] == ["alpha.md"]
+        assert any(
+            r.levelno == logging.WARNING
+            and r.msg.startswith("summarize_skip_unreadable")
+            for r in caplog.records
+        )
 
     def test_multi_note_synthesis(self, make_vault: VaultFactory) -> None:
         fake = FakeSummarizer()
