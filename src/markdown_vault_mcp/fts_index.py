@@ -2441,8 +2441,8 @@ class FTSIndex:
             *max_depth* hops.
 
         Raises:
-            ValueError: If *source_path* or *target_path* is not found in
-                the documents table.
+            DocumentNotFoundError: If *source_path* or *target_path* is not
+                found in the documents table.
         """
         max_depth = max(1, min(10, max_depth))
 

@@ -407,7 +407,7 @@ def parse_stale_filter(value: str) -> bool:
         The requested staleness.
 
     Raises:
-        ValueError: If *value* is not a recognized true/false spelling.
+        InvalidRequestError: If *value* is not a recognized true/false spelling.
     """
     normalized = value.strip().lower()
     if normalized in _STALE_TRUE:
@@ -441,7 +441,7 @@ def matches_okf_filters(
         ``True`` when every given dimension matches.
 
     Raises:
-        ValueError: If a ``stale`` value is not a true/false spelling.
+        InvalidRequestError: If a ``stale`` value is not a true/false spelling.
     """
     annotation = derive_annotation(metadata, now=now)
     for key, value in okf_filters.items():

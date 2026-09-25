@@ -254,7 +254,7 @@ class DocumentManager:
             The resolved absolute path.
 
         Raises:
-            ValueError: If the path escapes the source directory or does
+            InvalidRequestError: If the path escapes the source directory or does
                 not end with ``.md``.
         """
         return validate_path(path, self._source_dir)
@@ -272,8 +272,9 @@ class DocumentManager:
             The resolved absolute path.
 
         Raises:
-            ValueError: If the path escapes the source directory, ends with
-                ``.md``, or has an extension not in the attachment allowlist.
+            InvalidRequestError: If the path escapes the source directory.
+            ValueError: If the path ends with ``.md`` or has an extension not
+                in the attachment allowlist.
         """
         return self._artifacts.validate_path(path)
 
@@ -291,7 +292,8 @@ class DocumentManager:
             The resolved absolute path.
 
         Raises:
-            ValueError: If the path is empty or escapes the source directory.
+            InvalidRequestError: If the path is empty, the vault root, or escapes
+                the source directory.
         """
         if not path or path in (".", "/"):
             raise InvalidRequestError(f"Invalid folder path: {path!r}")
@@ -331,11 +333,11 @@ class DocumentManager:
             DocumentUnreadableError: When the file exists but cannot be read:
                 a failed stat or read, invalid UTF-8, or frontmatter that does
                 not parse (#1608). Section mode raises it too.
-            ValueError: When *section* is provided and is empty / whitespace,
-                or when the document does not contain a section with that
-                heading. (Path-not-found also raises in section mode rather
-                than returning ``None``, since "no document" implies "no
-                section".)
+            InvalidRequestError: When *section* is provided and is empty /
+                whitespace, or when the document does not contain a section with
+                that heading.
+            DocumentNotFoundError: In section mode, when there is no such
+                document ("no document" implies "no section").
         """
         if section is not None:
             if not section.strip():
@@ -436,8 +438,9 @@ class DocumentManager:
             frontmatter.
 
         Raises:
-            ValueError: If the document is not indexed, its file no longer
-                exists, or the heading is not found.
+            DocumentNotFoundError: If the document is not indexed or its file no
+                longer exists.
+            InvalidRequestError: If the heading is not found.
             DocumentUnreadableError: If the file exists but cannot be read,
                 decoded or parsed (#1608).
         """
@@ -507,8 +510,9 @@ class DocumentManager:
             The file size in bytes (from ``stat``).
 
         Raises:
-            ValueError: If the path escapes the source directory, has an
-                extension not in the allowlist, or the file does not exist.
+            InvalidRequestError: If the path escapes the source directory.
+            ValueError: If the path has an extension not in the allowlist, or
+                the file does not exist.
         """
         return self._artifacts.size(path)
 
@@ -523,8 +527,9 @@ class DocumentManager:
             base64-encoded content and MIME type.
 
         Raises:
-            ValueError: If the path escapes the source directory, has an
-                extension not in the allowlist, or the file does not exist.
+            InvalidRequestError: If the path escapes the source directory.
+            ValueError: If the path has an extension not in the allowlist, or
+                the file does not exist.
         """
         return self._artifacts.read(path)
 
@@ -555,10 +560,10 @@ class DocumentManager:
             Note mode: ``list[TocEntry]``. Folder mode: :class:`~markdown_vault_mcp.types.SubtreeToc`.
 
         Raises:
-            ValueError: If ``max_notes < 1`` or ``max_level < 1``; note mode, if
-                no document exists at *path* or if the path escapes the vault;
-                folder mode, if *path* is empty, the vault root
-                (```.```/```/```), or escaping the vault.
+            InvalidRequestError: If ``max_notes < 1`` or ``max_level < 1``; if
+                the path escapes the vault; folder mode, if *path* is empty or
+                the vault root (``.``/``/``).
+            DocumentNotFoundError: Note mode, if no document exists at *path*.
         """
         if max_notes < 1:
             raise InvalidRequestError(f"max_notes must be >= 1, got {max_notes!r}")
@@ -674,7 +679,7 @@ class DocumentManager:
                 not match the current file hash (or the file does not exist).
             DocumentExistsError: If ``write_protect_existing`` is enabled and
                 *path* already exists while no *if_match* is supplied.
-            ValueError: If *path* escapes the source directory.
+            InvalidRequestError: If *path* escapes the source directory.
         """
         self._check_writable()
         with self._file_write_lock:
@@ -719,8 +724,10 @@ class DocumentManager:
                 write callback.
 
         Raises:
-            ValueError: The enforced-write layer is on and *content* opens
-                with a frontmatter block it cannot parse.
+            InvalidRequestError: The enforced-write layer is on and a *write*'s
+                content opens with a frontmatter block it cannot parse.
+            ValueError: The same for an edit or append, whose block may be the
+                stored note's (a fault, #1608).
         """
         if self._okf_write_enrich is not None:
             try:
@@ -785,8 +792,8 @@ class DocumentManager:
                 *create_if_missing* is ``False``.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash (or the file is missing).
-            ValueError: If *content* is empty or *path* escapes the source
-                directory.
+            InvalidRequestError: If *content* is empty or *path* escapes the
+                source directory.
         """
         self._check_writable()
         if not content:
@@ -841,8 +848,8 @@ class DocumentManager:
                 for a file that does not yet exist.
             DocumentExistsError: If ``write_protect_existing`` is enabled and
                 *path* already exists while no *if_match* is supplied.
-            ValueError: If the path escapes the source directory or has an
-                extension not in the allowlist.
+            InvalidRequestError: If the path escapes the source directory.
+            ValueError: If the path has an extension not in the allowlist.
         """
         return self._artifacts.write(path, content, if_match)
 
@@ -898,7 +905,7 @@ class DocumentManager:
                 not match the current file hash.
             EditConflictError: If *old_text* is not found or appears
                 more than once.
-            ValueError: If parameter combination is invalid, or line
+            InvalidRequestError: If parameter combination is invalid, or line
                 numbers are out of range.
         """
         self._check_writable()
@@ -1083,8 +1090,8 @@ class DocumentManager:
             DocumentNotFoundError: If the file does not exist.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash.
-            ValueError: If the path escapes the source directory, or (for
-                non-.md paths) has an extension not in the attachment
+            InvalidRequestError: If the path escapes the source directory.
+            ValueError: If a non-.md path has an extension not in the attachment
                 allowlist.
         """
         self._check_writable()
@@ -1149,8 +1156,8 @@ class DocumentManager:
             DocumentExistsError: If *new_path* already exists.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current hash of *old_path*.
-            ValueError: If either path escapes the source directory, or (for
-                non-.md paths) has an extension not in the attachment
+            InvalidRequestError: If either path escapes the source directory.
+            ValueError: If a non-.md path has an extension not in the attachment
                 allowlist.
         """
         self._check_writable()
@@ -1525,8 +1532,8 @@ class DocumentManager:
             DocumentNotFoundError: If *old_dir* is missing, not a directory,
                 or empty.
             DocumentExistsError: If any destination file already exists.
-            ValueError: If either path escapes the vault, is the vault root,
-                or one path is nested inside the other.
+            InvalidRequestError: If either path escapes the vault, is the vault
+                root, or one path is nested inside the other.
             OSError: If the OS raises during the move phase (e.g. a permission
                 error, full disk, or concurrent file removal). The pre-move
                 collision gate prevents destination clashes, but an OS error

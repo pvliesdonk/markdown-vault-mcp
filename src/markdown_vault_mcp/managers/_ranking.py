@@ -243,7 +243,7 @@ def group_by_path(
         List of groups; outer order = file rank (best file first).
 
     Raises:
-        ValueError: If ``chunks_per_file`` < 1.
+        InvalidRequestError: If ``chunks_per_file`` < 1.
     """
     if chunks_per_file < 1:
         raise InvalidRequestError(

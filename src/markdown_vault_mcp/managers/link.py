@@ -58,7 +58,7 @@ class LinkManager:
             path: Relative vault path to validate.
 
         Raises:
-            ValueError: If the path does not end with ``.md`` or escapes
+            InvalidRequestError: If the path does not end with ``.md`` or escapes
                 the source directory.
         """
         validate_path(path, self._source_dir)
@@ -70,7 +70,8 @@ class LinkManager:
             path: Relative vault path.
 
         Raises:
-            ValueError: If validation fails or the document is not indexed.
+            InvalidRequestError: If validation fails.
+            DocumentNotFoundError: If the document is not indexed.
         """
         self._validate_path(path)
         if self._fts.get_note(path) is None:
@@ -96,7 +97,7 @@ class LinkManager:
             for each document that contains a link pointing to ``path``.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         self._require_note(path)
         rows = self._fts.get_backlinks(path, limit=limit)
@@ -130,7 +131,7 @@ class LinkManager:
             each link originating from ``path``.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         self._require_note(path)
         rows = self._fts.get_outlinks(path, limit=limit)

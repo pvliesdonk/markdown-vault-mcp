@@ -142,7 +142,7 @@ class WriterFacet:
                 for a file that does not yet exist.
             DocumentExistsError: If write protection is enabled and *path*
                 already exists while no *if_match* is supplied.
-            ValueError: If *path* escapes the source directory.
+            InvalidRequestError: If *path* escapes the source directory.
         """
         # Read before writing: the auto-commit is asynchronous, so afterwards
         # the note's newest commit may already be this write's own.  Both steps
@@ -214,7 +214,7 @@ class WriterFacet:
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
             DocumentNotFoundError: If the file does not exist.
-            ValueError: If *path* escapes the source directory.
+            InvalidRequestError: If *path* escapes the source directory.
         """
         result = self._doc_mgr.edit(
             path,
@@ -258,8 +258,8 @@ class WriterFacet:
                 *create_if_missing* is ``False``.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match.
-            ValueError: If *content* is empty or *path* escapes the source
-                directory.
+            InvalidRequestError: If *content* is empty or *path* escapes the
+                source directory.
         """
         result = self._doc_mgr.append(
             path,
@@ -326,7 +326,7 @@ class WriterFacet:
                 not match.
             DocumentNotFoundError: If *old_path* does not exist.
             DocumentExistsError: If *new_path* already exists.
-            ValueError: If *old_path* or *new_path* escapes the source
+            InvalidRequestError: If *old_path* or *new_path* escapes the source
                 directory.
         """
         return self._doc_mgr.rename(
@@ -359,8 +359,8 @@ class WriterFacet:
             DocumentNotFoundError: If *old_dir* is missing, not a directory,
                 or empty.
             DocumentExistsError: If any destination file already exists.
-            ValueError: If either path escapes the vault or the two paths are
-                nested.
+            InvalidRequestError: If either path escapes the vault or the two
+                paths are nested.
             OSError: If the OS raises during the move phase (e.g. a permission
                 error or full disk). The collision gate prevents pre-existing
                 destination clashes, but a mid-move OS error leaves the subtree
@@ -388,7 +388,7 @@ class WriterFacet:
                 for a file that does not yet exist.
             DocumentExistsError: If write protection is enabled and *path*
                 already exists while no *if_match* is supplied.
-            ValueError: If the path escapes the source directory or has an
-                extension not in the allowlist.
+            InvalidRequestError: If the path escapes the source directory.
+            ValueError: If the path has an extension not in the allowlist.
         """
         return self._doc_mgr.write_attachment(path, content, if_match=if_match)
