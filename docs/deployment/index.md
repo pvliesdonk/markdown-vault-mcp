@@ -32,9 +32,15 @@ The MCP server supports three transport modes:
 # Default (stdio) — for Claude Desktop
 markdown-vault-mcp serve
 
-# HTTP — for Docker/reverse proxy/OIDC
-markdown-vault-mcp serve --transport http --host 0.0.0.0 --port 8000
+# HTTP on this machine only (--host defaults to 127.0.0.1)
+markdown-vault-mcp serve --transport http --port 8000
+
+# HTTP for other machines: configure authentication first
+MARKDOWN_VAULT_MCP_BEARER_TOKEN="$(openssl rand -hex 32)" \
+  markdown-vault-mcp serve --transport http --host 0.0.0.0 --port 8000
 ```
+
+Binding to `127.0.0.1` limits which machines can connect; authentication is what protects the server. See the [security model](../guides/security-model.md) and [Authentication](../guides/authentication.md).
 
 ## Example .env Files
 
