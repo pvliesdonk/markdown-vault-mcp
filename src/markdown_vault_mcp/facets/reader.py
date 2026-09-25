@@ -484,11 +484,12 @@ class ReaderFacet:
             file renders as an add).
 
         Raises:
-            ValueError: If exactly one of *since_sha* / *since_timestamp* is
-                not supplied, *since_sha* contains invalid characters, the
-                resolved ref is not found in history, or *path* has an
+            InvalidRequestError: If not exactly one of *since_sha* /
+                *since_timestamp* is supplied, *since_sha* is not 4-64
+                lowercase hex digits or names no commit, or *path* has an
                 extension that is neither ``.md`` nor a configured attachment
                 type.
+            ValueError: If a git subprocess fails for any other reason.
         """
         return self._git_query_mgr.get_diff(
             path,

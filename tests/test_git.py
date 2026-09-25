@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import subprocess
 import time
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.config_sections._assembly import to_vault_instances
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.vault import VaultSettings
 
 if TYPE_CHECKING:
@@ -3468,12 +3470,94 @@ class TestGetFileDiff:
         )
         assert result == ""
 
-    def test_invalid_ref_raises_value_error(self, tmp_path: Path) -> None:
-        """get_file_diff raises ValueError for an unknown ref."""
+    @pytest.mark.parametrize("per_commit", [False, True])
+    def test_unknown_ref_is_an_invalid_request(
+        self, tmp_path: Path, per_commit: bool
+    ) -> None:
+        """A SHA that names no commit is the caller's to fix (#1608)."""
         repo, _ = self._make_repo_with_commits(tmp_path)
         strategy = GitWriteStrategy()
-        with pytest.raises(ValueError, match="Could not compute diff against"):
-            strategy.get_file_diff(repo, repo / "note.md", "deadbeef", per_commit=False)
+        with pytest.raises(InvalidRequestError, match="deadbeef"):
+            strategy.get_file_diff(
+                repo, repo / "note.md", "deadbeef", per_commit=per_commit
+            )
+
+    def test_ref_naming_a_tree_is_an_invalid_request(self, tmp_path: Path) -> None:
+        repo, _ = self._make_repo_with_commits(tmp_path)
+        tree = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD^{tree}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        with pytest.raises(InvalidRequestError):
+            GitWriteStrategy().get_file_diff(
+                repo, repo / "note.md", tree, per_commit=False
+            )
+
+    def test_prefix_a_commit_shares_with_a_blob_resolves(self, tmp_path: Path) -> None:
+        """A prefix a commit shares with a blob is a commit, not a refusal (#1608)."""
+        repo, _ = self._make_repo_with_commits(tmp_path)
+        git = ["git", "-C", str(repo)]
+        lines = "".join(f"line {i}\n" for i in range(10))
+        (repo / "note.md").write_text(lines)
+        subprocess.run([*git, "commit", "-qam", "grow"], check=True)
+        head = subprocess.run(
+            [*git, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        prefix = head[:4]
+        n = 0
+        while True:
+            body = f"collide {n}\n".encode()
+            header = f"blob {len(body)}\0".encode()
+            # git's own object id, not a security use.
+            blob_id = hashlib.sha1(header + body, usedforsecurity=False).hexdigest()
+            if blob_id.startswith(prefix):
+                break
+            n += 1
+        subprocess.run(
+            [*git, "hash-object", "-w", "--stdin"],
+            input=body,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run([*git, "mv", "note.md", "moved.md"], check=True)
+        (repo / "moved.md").write_text(lines + "line 10\n")
+        subprocess.run([*git, "commit", "-qam", "rename"], check=True)
+        diff = GitWriteStrategy().get_file_diff(
+            repo, repo / "moved.md", prefix, per_commit=False
+        )
+        # The rename is paired, not reported as a new file.
+        assert isinstance(diff, str)
+        assert "a/note.md b/moved.md" in diff
+        assert GitWriteStrategy().get_file_diff(
+            repo, repo / "moved.md", prefix, per_commit=True
+        )
+
+    def test_git_failure_after_a_valid_ref_is_a_fault(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Once the ref is known good, a failing git diff is not the caller's."""
+        repo, _ = self._make_repo_with_commits(tmp_path)
+        head = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        real_run = subprocess.run
+
+        def failing_diff(cmd: list[str], *args: object, **kwargs: object) -> object:
+            if "diff" in cmd and "rev-parse" not in cmd:
+                raise subprocess.CalledProcessError(128, cmd, stderr="fatal: boom")
+            return real_run(cmd, *args, **kwargs)  # type: ignore[call-overload]
+
+        monkeypatch.setattr(subprocess, "run", failing_diff)
+        with pytest.raises(ValueError, match="boom") as exc:
+            GitWriteStrategy().get_file_diff(
+                repo, repo / "note.md", head, per_commit=False
+            )
+        assert not isinstance(exc.value, InvalidRequestError)
 
     def test_since_timestamp_single_diff(self, tmp_path: Path) -> None:
         """since_timestamp resolves to a commit SHA and returns a diff string."""
@@ -4191,12 +4275,10 @@ class TestGetFileDiff:
     def test_get_file_diff_summarize_binary_invalid_ref_raises(
         self, tmp_path: Path
     ) -> None:
-        """summarize_binary=True with a bad ref still raises ValueError (the
-        _diff_is_binary check=False swallow is re-surfaced downstream).
-        """
+        """summarize_binary=True with an unknown ref is an invalid request too."""
         repo, _ = self._make_repo_with_attachments(tmp_path)
         strategy = GitWriteStrategy()
-        with pytest.raises(ValueError):
+        with pytest.raises(InvalidRequestError):
             strategy.get_file_diff(
                 repo,
                 repo / "assets" / "x.png",
@@ -4360,7 +4442,7 @@ class TestGetFileDiff:
         strategy._ensure_git_root(repo)
 
         err = subprocess.CalledProcessError(
-            128, ["git", "log"], stderr="fatal: bad date"
+            128, ["git", "log"], stderr="fatal: not a git repository"
         )
         with (
             mock.patch.object(subprocess, "run", side_effect=err),

@@ -27,6 +27,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git._run import cleanup_git_env, git_env, literal_pathspec
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
 
@@ -168,11 +169,55 @@ def _resolve_since_timestamp(
             env=env,
         )
     except subprocess.CalledProcessError as exc:
+        # git parses any date text without complaint, so a failure here is the
+        # repository's (no HEAD yet, a broken repo), never the timestamp's.
         raise ValueError(
-            f"Could not resolve timestamp {since_timestamp!r}: "
+            f"git rev-list failed while resolving timestamp {since_timestamp!r}: "
             f"{(exc.stderr or '').strip()}"
         ) from exc
     return rev_result.stdout.strip() or None
+
+
+def _require_commit(git_root: Path, ref: str, env: dict[str, str] | None) -> str:
+    """Resolve a caller's *ref* to the full id of the commit it names.
+
+    ``rev-parse --verify --quiet <ref>^{commit}`` exits 1, silently, for an
+    unknown ref, a prefix no commit uniquely matches, or one naming another
+    kind of object. Any other exit is the repository's failure. A prefix a
+    commit shares with a blob passes here but fails the bare ``git diff <ref>
+    HEAD`` that rename resolution runs, so callers use the returned id.
+
+    Returns:
+        The full commit id.
+
+    Raises:
+        InvalidRequestError: If *ref* names no commit (#1608).
+        ValueError: If ``git rev-parse`` fails for another reason.
+    """
+    result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(git_root),
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            f"{ref}^{{commit}}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    if result.returncode == 1:
+        raise InvalidRequestError(
+            f"{ref!r} is not a commit in this repository: unknown, not a "
+            "unique commit prefix, or another kind of object"
+        )
+    raise ValueError(f"git rev-parse failed for {ref!r}: {result.stderr.strip()}")
 
 
 def _repo_rel(git_root: Path, path: Path) -> str | None:
@@ -721,8 +766,9 @@ def _history_log_output(cmd: list[str], env: dict[str, str] | None) -> str:
     """Run the assembled ``git log`` command and return its raw stdout.
 
     Raises:
-        ValueError: If ``git log`` exits non-zero (e.g. an invalid
-            ``--since`` / ``--until`` expression).
+        ValueError: If ``git log`` exits non-zero. That is the repository's
+            failure: git accepts any ``--since`` / ``--until`` text without
+            complaint, so a bad date never gets here.
     """
     try:
         result = subprocess.run(
@@ -1019,8 +1065,8 @@ def get_file_history(
         List of :class:`HistoryEntry` ordered from newest to oldest.
 
     Raises:
-        ValueError: If ``git log`` exits non-zero (e.g. an invalid
-            ``since`` / ``until`` expression).
+        ValueError: If ``git log`` exits non-zero; git accepts any ``since`` /
+            ``until`` text without complaint, so a bad date never causes it.
     """
     if git_root is None:
         return []
@@ -1175,8 +1221,8 @@ def get_file_diff(
         :class:`CommitDiff` when *per_commit* is ``True``.
 
     Raises:
-        ValueError: If *ref* is not found in history, *since_timestamp*
-            cannot be resolved, or a git subprocess exits non-zero.
+        InvalidRequestError: If *ref* names no commit in this repository.
+        ValueError: If a git subprocess exits non-zero for any other reason.
     """
     if git_root is None:
         return [] if per_commit else ""
@@ -1190,6 +1236,10 @@ def get_file_diff(
 
         if ref is None:
             raise ValueError("Either 'ref' or 'since_timestamp' must be provided")
+        if since_timestamp is None:
+            # A ref git resolved from the timestamp is known good; the caller's
+            # is checked once here, so every later git failure is a fault.
+            ref = _require_commit(git_root, ref, env)
 
         if not per_commit:
             return _range_diff(
@@ -1217,8 +1267,9 @@ def _range_diff(
     is the interesting case only because the name may have been someone
     else's then (#1285) — the diff is taken against the empty tree, so it
     reads as the creation it is instead of pairing two notes' content.
-    Raises :exc:`ValueError` on an invalid ref or a path not present at that
-    revision.
+    Raises :exc:`ValueError` if ``git diff`` fails. The caller's ref is
+    already verified, and git does not fail on a path absent at either end,
+    so that is the repository's failure.
     """
     path_str = str(path)
     # Both branches below settle the diff's endpoints once, so binary
@@ -1268,8 +1319,8 @@ def _range_diff(
             )
         except subprocess.CalledProcessError as exc:
             raise ValueError(
-                f"Could not compute diff summary against {ref!r}: invalid ref "
-                "or path not present at that revision"
+                f"Could not compute diff summary against {ref!r}: "
+                f"{(exc.stderr or '').strip()}"
             ) from exc
         return stat.stdout
 
@@ -1284,8 +1335,7 @@ def _range_diff(
         )
     except subprocess.CalledProcessError as exc:
         raise ValueError(
-            f"Could not compute diff against {ref!r}: invalid ref or "
-            f"path not present at that revision"
+            f"Could not compute diff against {ref!r}: {(exc.stderr or '').strip()}"
         ) from exc
     return _truncate_diff(result.stdout)
 
@@ -1329,7 +1379,9 @@ def _root_commit_diff(
             env=env,
         )
     except subprocess.CalledProcessError as exc:
-        raise ValueError(f"Could not retrieve diff for commit {sha!r}") from exc
+        raise ValueError(
+            f"Could not retrieve diff for commit {sha!r}: {(exc.stderr or '').strip()}"
+        ) from exc
     return show_result.stdout
 
 
@@ -1502,7 +1554,10 @@ def _per_commit_rows(
             env=env,
         )
     except subprocess.CalledProcessError as exc:
-        raise ValueError(f"Commit {ref!r} not found in history") from exc
+        raise ValueError(
+            f"git log failed listing commits since {ref!r}: "
+            f"{(exc.stderr or '').strip()}"
+        ) from exc
 
     # Repo-relative posix path — the correct fallback when a --name-only
     # block carries no path (git returns posix-relative paths, so the
@@ -1595,7 +1650,10 @@ def _per_commit_diffs(
                 == 0
             )
             if parent_exists:
-                raise ValueError(f"Could not retrieve diff for commit {sha!r}") from exc
+                raise ValueError(
+                    f"Could not retrieve diff for commit {sha!r}: "
+                    f"{(exc.stderr or '').strip()}"
+                ) from exc
             commit_diff_raw = _root_commit_diff(
                 git_root, sha, commit_path, env, summarize_binary=summarize_binary
             )
