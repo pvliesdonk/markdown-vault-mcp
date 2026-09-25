@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.exceptions import DocumentNotFoundError
 from markdown_vault_mcp.types import (
     BacklinkInfo,
     BrokenLinkInfo,
@@ -73,7 +74,7 @@ class LinkManager:
         """
         self._validate_path(path)
         if self._fts.get_note(path) is None:
-            raise ValueError(f"Document not found: {path}")
+            raise DocumentNotFoundError(f"Document not found: {path}")
 
     # ------------------------------------------------------------------
     # Public API
@@ -215,10 +216,11 @@ class LinkManager:
             (inclusive), or ``None`` if unreachable within *max_depth* hops.
 
         Raises:
-            ValueError: If *source* or *target* is not found in the index.
+            DocumentNotFoundError: If *source* or *target* is not found in the
+                index.
         """
         # Note: we use _validate_path (not _require_note) here because
-        # FTSIndex.get_connection_path already raises ValueError for
+        # FTSIndex.get_connection_path already raises DocumentNotFoundError for
         # nonexistent source/target paths, and handles the trivial
         # source == target case by returning [source].
         self._validate_path(source)

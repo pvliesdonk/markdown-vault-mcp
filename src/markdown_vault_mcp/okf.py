@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 import frontmatter as fm
 import yaml
 
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 from markdown_vault_mcp.utils.text import read_text_utf8
@@ -413,7 +414,7 @@ def parse_stale_filter(value: str) -> bool:
         return True
     if normalized in _STALE_FALSE:
         return False
-    raise ValueError(f"stale filter must be true or false, got {value!r}")
+    raise InvalidRequestError(f"stale filter must be true or false, got {value!r}")
 
 
 def matches_okf_filters(

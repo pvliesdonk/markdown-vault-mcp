@@ -14,6 +14,17 @@ Most exceptions inherit from `MarkdownMCPError`, so callers can catch the base c
 ::: markdown_vault_mcp.exceptions.MarkdownMCPError
 <!-- vale on -->
 
+## Request Errors
+
+`InvalidRequestError` marks a request the caller must change, such as a path
+outside the vault or a heading the document does not have. It is also a
+`ValueError`, so an `except ValueError` handler still catches it.
+`DocumentNotFoundError` is its subclass.
+
+<!-- vale off -->
+::: markdown_vault_mcp.exceptions.InvalidRequestError
+<!-- vale on -->
+
 ## Document Errors
 
 <!-- vale off -->

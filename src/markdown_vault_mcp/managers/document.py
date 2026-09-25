@@ -25,6 +25,7 @@ from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
     DocumentUnreadableError,
     EditConflictError,
+    InvalidRequestError,
     ReadOnlyError,
 )
 from markdown_vault_mcp.managers._write_kernel import atomic_write, check_if_match
@@ -293,11 +294,13 @@ class DocumentManager:
             ValueError: If the path is empty or escapes the source directory.
         """
         if not path or path in (".", "/"):
-            raise ValueError(f"Invalid folder path: {path!r}")
+            raise InvalidRequestError(f"Invalid folder path: {path!r}")
         abs_path = resolve_inside(path, self._source_dir)
         if abs_path == self._source_dir.resolve():
             # A folder scope must be a strict subtree, never the vault root.
-            raise ValueError(f"Path traversal detected: {path}")
+            raise InvalidRequestError(
+                f"{path!r} is the vault root; a folder scope must name a subfolder"
+            )
         return abs_path
 
     # ------------------------------------------------------------------
@@ -336,7 +339,7 @@ class DocumentManager:
         """
         if section is not None:
             if not section.strip():
-                raise ValueError("section must be a non-empty heading or None")
+                raise InvalidRequestError("section must be a non-empty heading or None")
             return self._read_section(path, section.strip())
 
         abs_path = (self._source_dir / path).resolve()
@@ -360,7 +363,7 @@ class DocumentManager:
         if is_md and self._max_note_read_bytes > 0:
             size_bytes = file_stat.st_size
             if size_bytes > self._max_note_read_bytes:
-                raise ValueError(
+                raise InvalidRequestError(
                     f"Document {path!r} is {size_bytes} bytes "
                     f"({size_bytes / 1024:.1f} KB), exceeds "
                     f"MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES "
@@ -440,7 +443,7 @@ class DocumentManager:
         """
         doc_row = self._fts.get_note(path)
         if doc_row is None:
-            raise ValueError(
+            raise DocumentNotFoundError(
                 f"Section '{heading}' not found in document {path}: "
                 "document is not indexed or does not exist"
             )
@@ -453,7 +456,7 @@ class DocumentManager:
         try:
             text = _read_text_utf8(abs_path)
         except (FileNotFoundError, NotADirectoryError) as exc:
-            raise ValueError(
+            raise DocumentNotFoundError(
                 f"Section '{heading}' not found in document {path}: "
                 "the document no longer exists"
             ) from exc
@@ -476,7 +479,7 @@ class DocumentManager:
                 )
             else:
                 suggestion = " (document has no headings)"
-            raise ValueError(
+            raise InvalidRequestError(
                 f"Section '{heading}' not found in document {path}{suggestion}"
             )
 
@@ -558,9 +561,9 @@ class DocumentManager:
                 (```.```/```/```), or escaping the vault.
         """
         if max_notes < 1:
-            raise ValueError(f"max_notes must be >= 1, got {max_notes!r}")
+            raise InvalidRequestError(f"max_notes must be >= 1, got {max_notes!r}")
         if max_level is not None and max_level < 1:
-            raise ValueError(f"max_level must be >= 1, got {max_level!r}")
+            raise InvalidRequestError(f"max_level must be >= 1, got {max_level!r}")
         if is_note(path):
             return self._note_toc(path, max_level=max_level)
         return self._subtree_toc(path, max_level=max_level, max_notes=max_notes)
@@ -577,7 +580,7 @@ class DocumentManager:
         self._validate_path(path)
         row = self._fts.get_note(path)
         if row is None:
-            raise ValueError(f"Document not found: {path}")
+            raise DocumentNotFoundError(f"Document not found: {path}")
         title: str = row["title"]
         headings = self._fts.get_toc(path, max_level=max_level)
         return self._prepend_title_h1(title, headings)
@@ -728,7 +731,11 @@ class DocumentManager:
                 # nothing to stamp and the write is refused. The parser's own
                 # exception named no path and reached the client looking like a
                 # server fault, so it is restated as the refusal it is (#1454).
-                raise ValueError(
+                # A write's frontmatter is the caller's own content; for an
+                # edit or append it may be the stored note's, so that stays a
+                # fault until the edit path can tell which (#1608).
+                error = InvalidRequestError if operation == "write" else ValueError
+                raise error(
                     f"Cannot {operation} {path}: its frontmatter block is not "
                     f"parseable, so the OKF enforced-write layer cannot stamp "
                     f"provenance on it — {exc}"
@@ -783,7 +790,7 @@ class DocumentManager:
         """
         self._check_writable()
         if not content:
-            raise ValueError("content must not be empty")
+            raise InvalidRequestError("content must not be empty")
 
         with self._file_write_lock:
             abs_path = self._validate_path(path)
@@ -898,17 +905,21 @@ class DocumentManager:
 
         # --- Parameter validation ---
         if old_text is not None and not old_text:
-            raise ValueError("old_text must not be empty")
+            raise InvalidRequestError("old_text must not be empty")
         has_lines = line_start is not None or line_end is not None
         if old_text is None and not has_lines:
-            raise ValueError("Must provide old_text, line_start/line_end, or both")
+            raise InvalidRequestError(
+                "Must provide old_text, line_start/line_end, or both"
+            )
         if (line_start is None) != (line_end is None):
-            raise ValueError("Must provide both line_start and line_end, not just one")
+            raise InvalidRequestError(
+                "Must provide both line_start and line_end, not just one"
+            )
         if line_start is not None and line_end is not None:
             if line_start < 1:
-                raise ValueError("line_start must be >= 1 (lines are 1-based)")
+                raise InvalidRequestError("line_start must be >= 1 (lines are 1-based)")
             if line_start > line_end:
-                raise ValueError(
+                raise InvalidRequestError(
                     f"line_start ({line_start}) must be <= line_end ({line_end})"
                 )
 
@@ -958,7 +969,7 @@ class DocumentManager:
         lines = file_content.split("\n")
         total_lines = len(lines) - 1 if lines and lines[-1] == "" else len(lines)
         if line_end > total_lines:
-            raise ValueError(
+            raise InvalidRequestError(
                 f"line_end ({line_end}) out of range (file has {total_lines} lines)"
             )
 
@@ -1535,9 +1546,11 @@ class DocumentManager:
 
             # Reject nesting in either direction (would corrupt the prefix map).
             if old_abs == new_abs:
-                raise ValueError("old_dir and new_dir are the same folder")
+                raise InvalidRequestError("old_dir and new_dir are the same folder")
             if new_abs.is_relative_to(old_abs) or old_abs.is_relative_to(new_abs):
-                raise ValueError("move_folder: old_dir and new_dir must not be nested")
+                raise InvalidRequestError(
+                    "move_folder: old_dir and new_dir must not be nested"
+                )
 
             # 1+2. Enumerate the subtree, build the old->new path map, and
             #      gate on destination collisions before moving anything.
