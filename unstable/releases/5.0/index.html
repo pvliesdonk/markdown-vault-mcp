@@ -2002,7 +2002,7 @@
 
 
 <h1 id="50">5.0<a class="headerlink" href="#50" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: 936571bcaa6451b373c43f66e857e11dfa6ede4b -->
+<!-- notes-range-end: 1dec6bb0de327e39f99e5e0202545939857c8001 -->
 
 <!-- RELEASE-SUMMARY v5.0.0 START -->
 <p>This major release moves the server to FastMCP 4 and makes a fresh Compose
@@ -2015,16 +2015,20 @@ holds more of the links a reader follows, and large vaults no longer pay a
 full index scan for every changed note. Notes deleted or renamed in a pulled
 commit no longer linger in listings when the reindex after the pull fails.
 OKF no longer treats a static bearer credential as proof that a person
-acted. Operators and library consumers need to follow the migration steps in
+acted. A vault directory that does not exist no longer crashes the server;
+it starts, and every tool names the variable to set. Operators and library
+consumers need to follow the migration steps in
 <a href="#upgrading">Upgrading</a>.</p>
 <!-- RELEASE-SUMMARY v5.0.0 END -->
 
 <h2 id="fastmcp-4-and-a-standalone-container-deployment">FastMCP 4 and a standalone container deployment<a class="headerlink" href="#fastmcp-4-and-a-standalone-container-deployment" title="Permanent link">&para;</a></h2>
-<p>The server moves from FastMCP 3.4.7 to 4.0.5, through
-<code>fastmcp-pvl-core</code> 9.0 and copier template 9.0.1
+<p>The server moves from FastMCP 3.4.7 to 4.0.8, through
+<code>fastmcp-pvl-core</code> 9.0.1 and copier template 9.2.0
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>,
-<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1570">#1570</a>). Library environments that pin
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1570">#1570</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1591">#1591</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1601">#1601</a>). Library environments that pin
 FastMCP 3 must move to the FastMCP 4 dependency line. The application handles
 the protocol changes: background tasks register with each server instance, and
 <code>okf_verify</code> uses an input-required response on modern sessions while retaining
@@ -2058,6 +2062,14 @@ network
 may spend draining in-flight HTTP requests. The default matches the previous
 fixed value
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>).</p>
+<p>The four tools <code>fastmcp-pvl-core</code> registers on every server carry rewritten
+text for the model that reads it: <code>create_download_link</code> and
+<code>create_upload_link</code> now describe their <code>ref</code> and <code>ttl_s</code> parameters, which
+had no description before, <code>get_job_result</code> describes <code>job_id</code>, and
+<code>get_server_info</code> says when to call it. Names, schemas and behaviour are
+unchanged
+(<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/issues/358">fastmcp-pvl-core#358</a>,
+<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/360">fastmcp-pvl-core#360</a>).</p>
 <h2 id="structured-logs-json-off-a-terminal">Structured logs, JSON off a terminal<a class="headerlink" href="#structured-logs-json-off-a-terminal" title="Permanent link">&para;</a></h2>
 <p>Logging is now owned by <code>fastmcp-pvl-core</code>, and one chain renders this
 server's lines, FastMCP's, and uvicorn's
@@ -2109,6 +2121,24 @@ logs
 (<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/344">fastmcp-pvl-core#344</a>).
 If a URL of yours carried credentials, treat them as exposed in any log sink
 that collected earlier output and rotate them.</p>
+<p>A vault directory that does not exist is reported by name rather than as a
+crash. In 4.2 the server refused to start when <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code>
+was unset, and a value naming a missing directory passed validation, then
+"crashed in its lifespan with a raw <code>FileNotFoundError</code>" from the file
+watcher
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1590">#1590</a>). An
+unset variable now means the container's mount point <code>/data/vault</code>. When the
+directory does not exist, the server still starts, so its tool listing and
+instructions are reachable, logs <code>vault_directory_missing</code> at ERROR, and
+every tool and link-minting call fails with
+<code>vault directory &lt;path&gt; does not exist. Set MARKDOWN_VAULT_MCP_SOURCE_DIR to
+the path of your markdown vault.</code> until the deployment is fixed and
+restarted. The <code>index</code>, <code>search</code> and <code>reindex</code> commands report the same
+message and exit 1. Managed Git mode is exempt because its bootstrap clones
+into the directory
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1591">#1591</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1581">#1581</a>). The
+<a href="../../configuration/">configuration reference</a> describes the variable.</p>
 <h2 id="whole-file-replacement-requires-an-etag">Whole-file replacement requires an etag<a class="headerlink" href="#whole-file-replacement-requires-an-etag" title="Permanent link">&para;</a></h2>
 <p>The guarded failure mode for an agent is calling <code>write</code> where it meant
 <code>edit</code>, so writable server deployments now default
@@ -2356,6 +2386,10 @@ behavior, saved conflicts, and log levels are unchanged
    variables are set too; the server no longer starts without them.</li>
 <li>Expect one full index rebuild on the first start. On a large vault that
    restarts often, consider <code>MARKDOWN_VAULT_MCP_BOOT_REINDEX=false</code>.</li>
+<li>If a deployment relied on the server refusing to start when
+   <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> was unset, note that it now starts against
+   <code>/data/vault</code> and reports a missing directory through
+   <code>vault_directory_missing</code> in the log and through every tool call.</li>
 </ol>
 <!-- PATCH-RELEASES-START -->
 <!-- PATCH-RELEASES-END -->
