@@ -1022,7 +1022,10 @@ Two-layer model:
   means that one outcome at every site that raises it. Any other exception,
   apart from a `ToolError` a tool raises itself, is a server fault by
   definition. A refusal the caller caused therefore needs a signal of its
-  own before a tool can report it as one (#1608).
+  own before a tool can report it as one (#1608). "Refresh, then retry" is
+  for a caller whose view of the vault is stale and must be read again. A
+  request that can simply be repeated unchanged later, such as one that met
+  a busy or still-building index, is the server failing and healing itself.
 
 | Library signal | Outcome |
 |-|-|
