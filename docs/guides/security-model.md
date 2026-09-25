@@ -21,17 +21,16 @@ Over stdio there is no network listener and no authentication. The MCP client st
 An authenticated caller has every tool the instance exposes. Each tool runs with the server's own privileges: its filesystem and network access, and any credential in its configuration. `MARKDOWN_VAULT_MCP_TOOLS_ALLOW` and `MARKDOWN_VAULT_MCP_TOOLS_DENY` trim that set for an instance; see [Configuration](../configuration.md).
 
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-START — what THIS server's tools reach; kept across copier update -->
-Every tool operates on the vault directory the server is configured to serve. Read tools (`search`, `read`, `list`, `toc`, `similar`, `context`, `stats`, git history) only read it. Write tools (`write`, `edit`, `delete`, `rename`, move, attachment writes) create, change, and remove files inside that directory; path-traversal validation confines every path to the vault root regardless of what the caller passes.
+Every tool works inside the vault directory the server serves, and a path that resolves outside it is refused. Read tools such as `search`, `read` and `get_history` only read the vault. Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch` and the OKF write tools) change files in it. `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write tool. `reindex` and `build_embeddings` stay available in that mode, since they rebuild the index and leave notes untouched.
 
-Three tools reach outside the vault directory:
+Some tools send data beyond the vault:
 
-- **`fetch`** downloads a caller-supplied `http://` or `https://` URL and saves the response into the vault. It is SSRF-hardened: the resolved IP must be publicly routable (private, loopback, link-local, CGNAT, and other reserved ranges are refused), the connection is pinned to the validated address, ambient proxy and `.netrc` settings are ignored, and every redirect hop is re-validated the same way.
-- **Semantic search and embeddings** (`search`, `build_index`/`reindex`, embeddings status), when an embedding provider is configured, send note text to that provider's endpoint (Ollama, an OpenAI-compatible API, or Voyage) to compute vectors.
-- **`summarize`**, when a summarization backend is configured, sends note text to that backend's OpenAI-compatible chat-completions endpoint.
+- **`fetch`** downloads an `http` or `https` URL the caller names and saves the response in the vault. Only publicly routable addresses are allowed, on the first request and on every redirect, and proxy settings from the environment don't apply.
+- **Embeddings.** With a remote embedding provider (OpenAI-compatible, Voyage, or Ollama on another host), indexing sends note text to that provider, and `search` sends the query text. The local fastembed provider sends nothing.
+- **`summarize`** sends the notes it summarizes to the OpenAI-compatible endpoint set in `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL`. Without a configured endpoint the tool is hidden.
+- **Git.** With a remote configured, the server pushes to it after writes and pulls from it on a timer, and `git_sync` lets a caller start either direction.
 
-In git-managed mode, the git tools (sync, history, diff) push to and pull from the configured remote over the configured protocol; the GitHub/GitLab webhook routes accept pushes from that same remote and trigger a pull and reindex, originating no outbound request beyond it.
-
-Credentials the tools use on the caller's behalf — never supplied per call, always read from the server's own environment — are the git remote's token or SSH key, the embedding provider's API key, and the summarization backend's API key.
+Callers never pass credentials to these tools. The server uses its own: `MARKDOWN_VAULT_MCP_GIT_TOKEN` for an HTTPS remote, or the host's SSH setup for an SSH remote, and the API keys of the embedding provider and the summarize endpoint.
 <!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->
 
 ## What answers without a credential
@@ -57,5 +56,10 @@ FastMCP can refuse requests whose `Host` or `Origin` header does not name the se
 Read this page before reporting. A finding that depends on authentication being off describes the configuration above rather than a flaw in the server. `SECURITY.md` covers the reporting channel, scope and response targets.
 
 <!-- DOMAIN-SECURITY-MODEL-EXTRA-START -->
-<!-- Project-specific security notes go here; kept across copier update. -->
+## Routes that carry their own credential
+
+Two more kinds of route answer without an MCP credential. Each checks a credential of its own instead.
+
+- **Transfer links.** `create_upload_link` and `create_download_link` return a `/transfer/...` URL whose token is the credential: whoever holds the URL can use it. A link stops working after its first successful use, or when it expires. `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` sets the lifetime (one hour by default), and `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` caps what a caller may ask for. The links exist only over HTTP with `MARKDOWN_VAULT_MCP_BASE_URL` set; see [Transfer links](transfer-links.md).
+- **Git webhooks.** `/github-webhook` and `/gitlab-webhook` exist only when a webhook secret is set. A request must carry a valid signature or token for that secret, and a valid push event makes the server pull and reindex; see [Webhooks](git-integration.md#push-triggered-pull-webhooks).
 <!-- DOMAIN-SECURITY-MODEL-EXTRA-END -->
