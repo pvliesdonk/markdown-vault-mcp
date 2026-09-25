@@ -87,9 +87,9 @@ Returns:
 
 Raises:
 
-| Type         | Description                                                                                   |
-| ------------ | --------------------------------------------------------------------------------------------- |
-| `ValueError` | If mode is "semantic" or "hybrid" but no embedding provider or embeddings path is configured. |
+| Type                           | Description                                                                                   |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
+| `EmbeddingsNotConfiguredError` | If mode is "semantic" or "hybrid" but no embedding provider or embeddings path is configured. |
 
 ### `read(path, *, section=None)`
 
@@ -242,7 +242,8 @@ Raises:
 | Type                    | Description                                          |
 | ----------------------- | ---------------------------------------------------- |
 | `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
-| `ValueError`            | Note path with no document; invalid folder path.     |
+| `DocumentNotFoundError` | Note path with no document.                          |
+| `InvalidRequestError`   | Invalid folder path or argument.                     |
 
 ### `get_recent(*, limit=20, folder=None)`
 
@@ -319,7 +320,7 @@ Raises:
 | Type                    | Description                                          |
 | ----------------------- | ---------------------------------------------------- |
 | `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
-| `ValueError`            | If no document exists at the given path.             |
+| `DocumentNotFoundError` | If no document exists at the given path.             |
 
 ### `get_history(path=None, since=None, until=None, limit=20)`
 
@@ -352,9 +353,9 @@ Returns:
 
 Raises:
 
-| Type         | Description                                                                              |
-| ------------ | ---------------------------------------------------------------------------------------- |
-| `ValueError` | If path is provided but fails path validation (unsupported extension or path traversal). |
+| Type                  | Description                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `InvalidRequestError` | If path is provided but fails path validation (unsupported extension or path traversal). |
 
 ### `get_diff(path, since_sha=None, since_timestamp=None, per_commit=False, limit=None)`
 
@@ -529,7 +530,7 @@ Raises:
 | `ReadOnlyError`               | If the vault is read-only.                                                                                                    |
 | `ConcurrentModificationError` | If if_match is provided and does not match the current file hash, or if_match is supplied for a file that does not yet exist. |
 | `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
-| `ValueError`                  | If path escapes the source directory.                                                                                         |
+| `InvalidRequestError`         | If path escapes the source directory.                                                                                         |
 
 ### `edit(path, old_text=None, new_text='', if_match=None, line_start=None, line_end=None)`
 
@@ -562,7 +563,7 @@ Raises:
 | `ReadOnlyError`               | If the vault is read-only.                          |
 | `ConcurrentModificationError` | If if_match is provided and does not match.         |
 | `DocumentNotFoundError`       | If the file does not exist.                         |
-| `ValueError`                  | If path escapes the source directory.               |
+| `InvalidRequestError`         | If path escapes the source directory.               |
 
 ### `append(path, content, if_match=None, *, create_if_missing=False)`
 
@@ -592,7 +593,7 @@ Raises:
 | `ReadOnlyError`               | If the vault is read-only.                                 |
 | `DocumentNotFoundError`       | If the file does not exist and create_if_missing is False. |
 | `ConcurrentModificationError` | If if_match is provided and does not match.                |
-| `ValueError`                  | If content is empty or path escapes the source directory.  |
+| `InvalidRequestError`         | If content is empty or path escapes the source directory.  |
 
 ### `delete(path, if_match=None)`
 
@@ -650,7 +651,7 @@ Raises:
 | `ConcurrentModificationError` | If if_match is provided and does not match.           |
 | `DocumentNotFoundError`       | If old_path does not exist.                           |
 | `DocumentExistsError`         | If new_path already exists.                           |
-| `ValueError`                  | If old_path or new_path escapes the source directory. |
+| `InvalidRequestError`         | If old_path or new_path escapes the source directory. |
 
 ### `move_folder(old_dir, new_dir)`
 
@@ -680,7 +681,7 @@ Raises:
 | `ReadOnlyError`         | If the vault is read-only.                                                                                                                                                                                                                          |
 | `DocumentNotFoundError` | If old_dir is missing, not a directory, or empty.                                                                                                                                                                                                   |
 | `DocumentExistsError`   | If any destination file already exists.                                                                                                                                                                                                             |
-| `ValueError`            | If either path escapes the vault or the two paths are nested.                                                                                                                                                                                       |
+| `InvalidRequestError`   | If either path escapes the vault or the two paths are nested.                                                                                                                                                                                       |
 | `OSError`               | If the OS raises during the move phase (e.g. a permission error or full disk). The collision gate prevents pre-existing destination clashes, but a mid-move OS error leaves the subtree partially moved with the index unchanged; reindex recovers. |
 
 ### `write_attachment(path, content, if_match=None)`
@@ -702,7 +703,8 @@ Raises:
 | `ReadOnlyError`               | If the vault is read-only.                                                                                                    |
 | `ConcurrentModificationError` | If if_match is provided and does not match the current file hash, or if_match is supplied for a file that does not yet exist. |
 | `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
-| `ValueError`                  | If the path escapes the source directory or has an extension not in the allowlist.                                            |
+| `InvalidRequestError`         | If the path escapes the source directory.                                                                                     |
+| `ValueError`                  | If the path has an extension not in the allowlist.                                                                            |
 
 ## GraphFacet
 
@@ -746,7 +748,7 @@ Raises:
 | Type                    | Description                                          |
 | ----------------------- | ---------------------------------------------------- |
 | `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
-| `ValueError`            | If no document exists at the given path.             |
+| `DocumentNotFoundError` | If no document exists at the given path.             |
 
 ### `get_outlinks(path, *, limit=None)`
 
@@ -773,7 +775,7 @@ Raises:
 | Type                    | Description                                          |
 | ----------------------- | ---------------------------------------------------- |
 | `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
-| `ValueError`            | If no document exists at the given path.             |
+| `DocumentNotFoundError` | If no document exists at the given path.             |
 
 ### `get_broken_links(*, folder=None)`
 
@@ -847,7 +849,7 @@ Raises:
 | Type                    | Description                                          |
 | ----------------------- | ---------------------------------------------------- |
 | `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
-| `ValueError`            | If source or target is not found in the index.       |
+| `DocumentNotFoundError` | If source or target is not found in the index.       |
 
 ### `get_neighborhood(path, *, depth=1, include_semantic=False, max_nodes=200)`
 

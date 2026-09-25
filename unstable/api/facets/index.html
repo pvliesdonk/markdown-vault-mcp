@@ -3744,12 +3744,13 @@ the full chunk.  <code>None</code> uses the server default.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="EmbeddingsNotConfiguredError">EmbeddingsNotConfiguredError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <em>mode</em> is <code>"semantic"</code> or <code>"hybrid"</code> but no
-embedding provider or embeddings path is configured.</p>
+                <p>If <em>mode</em> is <code>"semantic"</code> or
+<code>"hybrid"</code> but no embedding provider or embeddings path is
+configured.</p>
               </div>
             </td>
           </tr>
@@ -4589,11 +4590,21 @@ first (bucket 3).</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="DocumentNotFoundError">DocumentNotFoundError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Note path with no document; invalid folder path.</p>
+                <p>Note path with no document.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Invalid folder path or argument.</p>
               </div>
             </td>
           </tr>
@@ -5065,7 +5076,7 @@ multiple round trips.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="DocumentNotFoundError">DocumentNotFoundError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -5337,7 +5348,7 @@ in the result.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -6381,7 +6392,7 @@ already exists while no <em>if_match</em> is supplied.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -6607,7 +6618,7 @@ not match.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -6790,12 +6801,12 @@ not match.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <em>content</em> is empty or <em>path</em> escapes the source
-directory.</p>
+                <p>If <em>content</em> is empty or <em>path</em> escapes the
+source directory.</p>
               </div>
             </td>
           </tr>
@@ -7125,7 +7136,7 @@ not match.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -7274,12 +7285,12 @@ or empty.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If either path escapes the vault or the two paths are
-nested.</p>
+                <p>If either path escapes the vault or the two
+paths are nested.</p>
               </div>
             </td>
           </tr>
@@ -7390,12 +7401,21 @@ already exists while no <em>if_match</em> is supplied.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the path escapes the source directory.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
                   <code><span title="ValueError">ValueError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the path escapes the source directory or has an
-extension not in the allowlist.</p>
+                <p>If the path has an extension not in the allowlist.</p>
               </div>
             </td>
           </tr>
@@ -7670,7 +7690,7 @@ means unlimited.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="DocumentNotFoundError">DocumentNotFoundError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -7813,7 +7833,7 @@ means unlimited.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="DocumentNotFoundError">DocumentNotFoundError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
@@ -8191,11 +8211,12 @@ Defaults to <code>10</code>.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="ValueError">ValueError</span></code>
+                  <code><span title="DocumentNotFoundError">DocumentNotFoundError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <em>source</em> or <em>target</em> is not found in the index.</p>
+                <p>If <em>source</em> or <em>target</em> is not found in the
+index.</p>
               </div>
             </td>
           </tr>

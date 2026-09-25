@@ -16,13 +16,27 @@ Bases: `Exception`
 
 Base exception for all markdown-vault-mcp errors.
 
+## Request Errors
+
+`InvalidRequestError` marks a request the caller must change, such as a path outside the vault or a heading the document does not have. It is also a `ValueError`, so an `except ValueError` handler still catches it. `DocumentNotFoundError` is its subclass.
+
+## `InvalidRequestError`
+
+Bases: `MarkdownMCPError`, `ValueError`
+
+Raised when the caller's request cannot be served as sent.
+
+The caller must send a different request: an argument out of range, a path outside the vault, a wrong file type, a heading or document that does not exist. It is also a `ValueError`, so an `except ValueError` handler written before this type existed still catches it (#1608).
+
 ## Document Errors
 
 ## `DocumentNotFoundError`
 
-Bases: `MarkdownMCPError`
+Bases: `InvalidRequestError`
 
 Raised when the requested document path does not exist on disk.
+
+A caller's request naming a document that is not there, so an :class:`InvalidRequestError`, and through it a `ValueError` (#1608).
 
 ## `DocumentUnreadableError(path, reason)`
 
