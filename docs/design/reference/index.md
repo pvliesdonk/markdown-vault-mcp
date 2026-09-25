@@ -24,6 +24,13 @@ follow OKF v0.2 (`generated`, `verified`, `stale_after`).
   description field, how clients cut and index it, how FastMCP builds it from
   a docstring, and what the vendors say it should carry; the evidence behind
   the `writing-model-facing-text` skill.
+- [MCP tool outcomes and errors](mcp-tool-outcomes-and-errors.md) — what the
+  spec, FastMCP, the Python SDK, pvl-core, model vendors and published servers
+  say and do about a tool's negative outcome versus a tool error, on the wire
+  (`isError`) and in the logs.
+- [Negative outcomes and faults outside MCP](negative-outcomes-and-faults.md) —
+  how HTTP, gRPC, OpenTelemetry, GraphQL, JSON-RPC and five language error
+  models separate a valid "no" from a fault; the companion to the MCP page.
 - [FastMCP 4 protocol and server behaviour](/fastmcp-4.md): SDK field names, protocol-era elicitation, resource path screening, per-server tasks, and OAuth route mounting used by the v8 template migration (#1271).
 - [fastmcp-pvl-core transfer errors and retries](/fastmcp-transfer.md): sink-selected HTTP errors, release on failure, and successful-upload replay. Read before changing `_transfer_sink.py` error handling or transfer retry guidance.
 - [Authenticated subjects and human attribution](/authenticated-subjects.md): bearer client identifiers, token claims, and the limits of OAuth identity for OKF provenance. Read before changing `_identity.py`.

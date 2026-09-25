@@ -72,7 +72,7 @@ secret; only its `copier-update` justification is gone.
 `release-notes-publish.yml` is deterministic — no Claude dependency — and
 still redeploys canonical `docs/releases/` pages on merge.) The remaining
 template-owned skills under `.agents/skills/` (`applying-template-updates`,
-`authoring-issues-prs`, `config-contract`, `logging-standard`,
+`authoring-issues-prs`, `config-contract`, `designing-tool-outcomes`, `logging-standard`,
 `releasing`, `repository-protection`, `researching-references`,
 `roadmapping`, `self-reviewing`, `tool-registration`, `writing-model-facing-text`,
 `writing-release-notes`) and

@@ -195,8 +195,13 @@ async with Client(mcp) as c:
 `tests/test_model_facing_text.py` (template-owned) fails on a leaked
 docstring section in any description, a tool with no description, a `str`
 prompt argument carrying the JSON-schema sentence, and a tool description
-or the instructions over 2,048 units. A project with many tools adds a budget
-test like markdown-vault-mcp's `tests/test_client_surface_budget.py`.
+or the instructions over 2,048 units. Those per-item limits are the only ones
+with a client-derived source. Add a ceiling on the whole surface only once a
+source derives one, stated per client class with its derivation beside the
+number; none does yet, and fastmcp-pvl-core#300 is where one would be
+measured. A total set from today's measurement penalises moving a fact out of
+a tool description into the parameter that needs it. Until then, keep the
+total down by writing each description to this skill.
 
 ## Review checklist
 

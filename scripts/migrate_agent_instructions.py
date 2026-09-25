@@ -39,6 +39,7 @@ TEMPLATE_SKILLS: tuple[str, ...] = (
     "applying-template-updates",
     "authoring-issues-prs",
     "config-contract",
+    "designing-tool-outcomes",
     "logging-standard",
     "releasing",
     "repository-protection",

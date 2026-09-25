@@ -146,9 +146,9 @@ sources:
     resource: https://github.com/pvliesdonk/fastmcp-pvl-core/blob/main/src/fastmcp_pvl_core/_instructions.py
     accessed: 2026-09-23
   - id: mvm-budget
-    title: markdown-vault-mcp, tests/test_client_surface_budget.py
-    resource: https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/tests/test_client_surface_budget.py
-    accessed: 2026-09-23
+    title: markdown-vault-mcp, tests/test_client_surface_budget.py (removed by markdown-vault-mcp#1601; pinned to the last commit that carried it)
+    resource: https://github.com/pvliesdonk/markdown-vault-mcp/blob/a92b98f7511b5e09d38cc5a5deac92234c0bbd79/tests/test_client_surface_budget.py
+    accessed: 2026-09-25
   - id: sep-2640
     title: SEP-2640, Skills Extension (Final, Extensions Track)
     resource: https://modelcontextprotocol.io/seps/2640-skills-extension
@@ -157,10 +157,14 @@ sources:
     title: FastMCP docs, Skills provider
     resource: https://gofastmcp.com/servers/providers/skills
     accessed: 2026-09-23
+  - id: mvm-design-baseline
+    title: markdown-vault-mcp, docs/design/design.md (client-facing surface budget, before markdown-vault-mcp#1601)
+    resource: https://github.com/pvliesdonk/markdown-vault-mcp/blob/a92b98f7511b5e09d38cc5a5deac92234c0bbd79/docs/design/design.md
+    accessed: 2026-09-25
   - id: mvm-design
-    title: markdown-vault-mcp, docs/design/design.md (client-facing surface budget)
+    title: markdown-vault-mcp, docs/design/design.md (No aggregate client-surface budget)
     resource: https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/docs/design/design.md
-    accessed: 2026-09-23
+    accessed: 2026-09-25
 ---
 
 # MCP model-facing text
@@ -485,12 +489,21 @@ skill turns these facts into a recipe; this page holds the evidence.
   warning when generated instructions cross their 1,536-unit target and
   another when the final text crosses 2,048; the design notes that "the
   MCP protocol does not define this limit". [source: pvl-core-instructions]
-- markdown-vault-mcp measures its whole model-visible surface with a FastMCP
+- markdown-vault-mcp measured its whole model-visible surface with a FastMCP
   client after parsing: at the 2026-09 baseline, 1,507 units of
   instructions, 22,853 of tool descriptions and 27,259 of input schemas,
-  against a 58,500-unit ceiling; parameterless tools there pass an explicit
-  `description=` because of the 4952 leak. [source: mvm-design]
+  against a 58,500-unit ceiling. [source: mvm-design-baseline]
   [source: mvm-budget]
+- It then retired every aggregate ceiling (markdown-vault-mcp#1600): no
+  source derives one, the category caps were the day's measurement plus
+  one percent, and they penalised moving a fact from a tool description to
+  the parameter that needs it. The client limits it keeps are per item:
+  Claude Code's 2,048-unit cut on each tool description and on the
+  instructions, and pvl-core's 1,536-unit instructions target. The cost of
+  an eager client receiving every description and schema is left to a
+  pvl-core catalog mode (fastmcp-pvl-core#300). Parameterless tools there
+  still pass an explicit `description=` because of the 4952 leak.
+  [source: mvm-design]
 
 ## Where this project departs from the subject
 

@@ -219,7 +219,9 @@ Each release is described in three places with distinct jobs:
 
 - **The GitHub release body** carries the release's notes summary, its
   machine-written changelog section, and pointers: the versioned docs,
-  the compare view, and a deep link to the notes page.
+  the compare view, and a deep link to the notes page. A pre-release
+  deploys no versioned docs, so its body points at the rolling
+  `unstable` version, which follows `main` rather than the tag.
 - **The release notes pages on this docs site** are the canonical
   human-facing narrative of what changed and why it matters.
 - **`CHANGELOG.md`** in the repository is the machine-written audit

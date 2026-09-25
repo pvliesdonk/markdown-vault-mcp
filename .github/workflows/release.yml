@@ -317,10 +317,13 @@ jobs:
             echo
             if [ "$IS_PRERELEASE" = "true" ]; then
               # rcs deploy no versioned docs; the page travels in the tag.
+              # The rolling `unstable` docs version (docs.yml, every push to
+              # main) is the live docs a reader can open now — it follows
+              # main, not this tag, so say so.
               if [ -f "$page" ]; then
                 echo "- Release notes (draft, in-tag): https://github.com/${REPO}/blob/${TAG}/${page}"
               fi
-              echo "- Documentation: https://pvliesdonk.github.io/markdown-vault-mcp/ (the v${minor} pages publish when the stable ships)"
+              echo "- Documentation (rolling \`unstable\`, built from \`main\` rather than this tag): https://pvliesdonk.github.io/markdown-vault-mcp/unstable/ — the v${minor} pages publish when the stable ships"
             else
               if [ -f "$page" ]; then
                 echo "- Release notes: https://pvliesdonk.github.io/markdown-vault-mcp/${minor}/releases/${minor}/"
@@ -350,7 +353,7 @@ jobs:
         run: gh release edit ${{ steps.release.outputs.tag }} --latest=false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "0.6"
 
