@@ -23,12 +23,16 @@ promised thing is an error, however ordinary it is.
 | # | Outcome | Examples | Code | The message tells the model | Log |
 |---|---|---|---|---|---|
 | 1 | Contract met | the note's text; an empty list from a search that ran to completion | `return` the value | nothing extra | the middleware's completion line |
-| 2 | Change the request | no note at that path; invalid input; path outside the store; write refused until `if_match` is passed | `raise ToolError(msg, log_level=logging.INFO)` | what was wrong and what to call or pass instead; repeating the same call will not help | INFO |
+| 2 | Change the request | no note at that path; invalid input; path outside the store; write refused until `if_match` is passed; a feature this deployment leaves off (a read-only vault, an opt-in feature not enabled) | `raise ToolError(msg, log_level=logging.INFO)` | what was wrong and what to call or pass instead; repeating the same call will not help | INFO |
 | 3 | Refresh, then retry | stale version or etag; conflicting concurrent change | `raise ToolError(msg, log_level=logging.INFO)` | read again, reapply the change, retry with the new token | INFO |
-| 4 | The server failed | I/O error; permissions on the server's own files; a stored file the server cannot parse; index or dependency unavailable; missing configuration; a bug | let it reach the boundary, or `raise ToolError(msg)` after logging | the request was fine; retry later (transient) or tell the user (needs an operator); do not change strategy | WARNING if it heals itself, else ERROR with the traceback |
+| 4 | The server failed | I/O error; permissions on the server's own files; a stored file the server cannot parse; index or dependency unavailable; required configuration left out; a bug | let it reach the boundary, or `raise ToolError(msg)` after logging | the request was fine; retry later (transient) or tell the user (needs an operator); do not change strategy | WARNING if it heals itself, else ERROR with the traceback |
 
 The log level answers one question: who has to act? Only the model (2, 3):
 INFO. Nobody, because it heals itself: WARNING. An operator: ERROR.
+
+Configuration the server needs and did not get is broken: outcome 4. A
+feature the operator left off is a choice, and opt-in features are off by
+default: the model works within the deployment it has, so it is outcome 2.
 
 `ToolError`'s default `log_level` is ERROR. Leaving it off an outcome 2 or 3
 makes every mistyped path an operator alert.
