@@ -6,7 +6,7 @@ import hashlib
 import logging
 import subprocess
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -4444,8 +4444,15 @@ class TestGetFileDiff:
         err = subprocess.CalledProcessError(
             128, ["git", "log"], stderr="fatal: not a git repository"
         )
+        real_run = subprocess.run
+
+        def fail_log(cmd: list[str], *args: Any, **kwargs: Any) -> Any:
+            if "log" in cmd:
+                raise err
+            return real_run(cmd, *args, **kwargs)
+
         with (
-            mock.patch.object(subprocess, "run", side_effect=err),
+            mock.patch.object(subprocess, "run", side_effect=fail_log),
             pytest.raises(ValueError, match="git log failed"),
         ):
             strategy.get_file_history(repo, path=None, since=None, limit=20)

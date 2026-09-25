@@ -169,13 +169,46 @@ def _resolve_since_timestamp(
             env=env,
         )
     except subprocess.CalledProcessError as exc:
-        # git parses any date text without complaint, so a failure here is the
-        # repository's (no HEAD yet, a broken repo), never the timestamp's.
+        # git parses any date text without complaint and the caller checked
+        # HEAD exists, so a failure here is the repository's, never the
+        # timestamp's.
         raise ValueError(
             f"git rev-list failed while resolving timestamp {since_timestamp!r}: "
             f"{(exc.stderr or '').strip()}"
         ) from exc
     return rev_result.stdout.strip() or None
+
+
+def _has_commits(git_root: Path, env: dict[str, str] | None) -> bool:
+    """True once the repository has a commit; False while HEAD is unborn.
+
+    A vault whose repository has no commit yet has an empty history, not a
+    broken one (#1608). ``rev-parse --verify --quiet HEAD`` exits 1 both for
+    an unborn HEAD and for an unreadable branch ref, so an exit 1 counts as
+    unborn only when ``symbolic-ref -q HEAD`` still names a branch.
+
+    Raises:
+        ValueError: If HEAD cannot be read for any other reason.
+    """
+
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "-C", str(git_root), *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+
+    head = git("rev-parse", "--verify", "--quiet", "HEAD")
+    if head.returncode == 0:
+        return True
+    if head.returncode == 1:
+        branch = git("symbolic-ref", "-q", "HEAD")
+        if branch.returncode == 0:
+            return False
+        head = branch
+    raise ValueError(f"git could not read HEAD: {head.stderr.strip()}")
 
 
 def _require_commit(git_root: Path, ref: str, env: dict[str, str] | None) -> str:
@@ -1031,6 +1064,8 @@ def get_file_history(
 ) -> list[HistoryEntry]:
     """Return commits that touched *path* (or the whole vault).
 
+    A repository with no commit yet has an empty history (#1608).
+
     Args:
         git_root: Pre-resolved git repository root, or ``None`` if the vault
             is not inside a git repository (returns ``[]`` immediately).
@@ -1083,6 +1118,8 @@ def get_file_history(
     collect_paths = path is None or is_dir
     env = git_env(token, username)
     try:
+        if not _has_commits(git_root, env):
+            return []
         raw = _history_log_output(cmd, env)
         # Single-file queries only: establish which commits belong to the note
         # now at this path, so a name that was reused does not hand the caller
@@ -1188,7 +1225,8 @@ def get_file_diff(
     *since_timestamp* is given, it is resolved via
     ``git rev-list --before=<ts> -1 HEAD`` to the most recent commit at
     or before that instant.  Boundary is **inclusive**: a commit whose
-    committer date equals *since_timestamp* IS the resolved ref.
+    committer date equals *since_timestamp* IS the resolved ref. In a
+    repository with no commit yet, a *since_timestamp* diff is empty (#1608).
 
     Args:
         git_root: Pre-resolved git repository root, or ``None`` if the vault
@@ -1230,6 +1268,8 @@ def get_file_diff(
     env = git_env(token, username)
     try:
         if since_timestamp is not None:
+            if not _has_commits(git_root, env):
+                return [] if per_commit else ""
             ref = _resolve_since_timestamp(git_root, since_timestamp, env)
             if ref is None:
                 return [] if per_commit else ""
