@@ -120,8 +120,9 @@ class ReaderFacet:
             wraps one document with up to ``chunks_per_file`` sections.
 
         Raises:
-            ValueError: If *mode* is ``"semantic"`` or ``"hybrid"`` but no
-                embedding provider or embeddings path is configured.
+            EmbeddingsNotConfiguredError: If *mode* is ``"semantic"`` or
+                ``"hybrid"`` but no embedding provider or embeddings path is
+                configured.
         """
         return self._search_mgr.search(
             query,
@@ -291,7 +292,8 @@ class ReaderFacet:
 
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
-            ValueError: Note path with no document; invalid folder path.
+            DocumentNotFoundError: Note path with no document.
+            InvalidRequestError: Invalid folder path or argument.
         """
         self._require_built()
         return self._doc_mgr.get_toc(path, max_level=max_level, max_notes=max_notes)
@@ -379,7 +381,7 @@ class ReaderFacet:
 
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         self._require_built()
         return self._search_mgr.get_context(
@@ -427,7 +429,7 @@ class ReaderFacet:
             echoed back.
 
         Raises:
-            ValueError: If *path* is provided but fails path validation
+            InvalidRequestError: If *path* is provided but fails path validation
                 (unsupported extension or path traversal).
         """
         return self._git_query_mgr.get_history(

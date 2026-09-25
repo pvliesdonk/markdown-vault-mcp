@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.exceptions import DocumentNotFoundError
 from markdown_vault_mcp.types import (
     BacklinkInfo,
     BrokenLinkInfo,
@@ -57,7 +58,7 @@ class LinkManager:
             path: Relative vault path to validate.
 
         Raises:
-            ValueError: If the path does not end with ``.md`` or escapes
+            InvalidRequestError: If the path does not end with ``.md`` or escapes
                 the source directory.
         """
         validate_path(path, self._source_dir)
@@ -69,11 +70,12 @@ class LinkManager:
             path: Relative vault path.
 
         Raises:
-            ValueError: If validation fails or the document is not indexed.
+            InvalidRequestError: If validation fails.
+            DocumentNotFoundError: If the document is not indexed.
         """
         self._validate_path(path)
         if self._fts.get_note(path) is None:
-            raise ValueError(f"Document not found: {path}")
+            raise DocumentNotFoundError(f"Document not found: {path}")
 
     # ------------------------------------------------------------------
     # Public API
@@ -95,7 +97,7 @@ class LinkManager:
             for each document that contains a link pointing to ``path``.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         self._require_note(path)
         rows = self._fts.get_backlinks(path, limit=limit)
@@ -129,7 +131,7 @@ class LinkManager:
             each link originating from ``path``.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         self._require_note(path)
         rows = self._fts.get_outlinks(path, limit=limit)
@@ -215,10 +217,11 @@ class LinkManager:
             (inclusive), or ``None`` if unreachable within *max_depth* hops.
 
         Raises:
-            ValueError: If *source* or *target* is not found in the index.
+            DocumentNotFoundError: If *source* or *target* is not found in the
+                index.
         """
         # Note: we use _validate_path (not _require_note) here because
-        # FTSIndex.get_connection_path already raises ValueError for
+        # FTSIndex.get_connection_path already raises DocumentNotFoundError for
         # nonexistent source/target paths, and handles the trivial
         # source == target case by returning [source].
         self._validate_path(source)

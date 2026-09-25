@@ -15,8 +15,22 @@ class MarkdownMCPError(Exception):
     """Base exception for all markdown-vault-mcp errors."""
 
 
-class DocumentNotFoundError(MarkdownMCPError):
-    """Raised when the requested document path does not exist on disk."""
+class InvalidRequestError(MarkdownMCPError, ValueError):
+    """Raised when the caller's request cannot be served as sent.
+
+    The caller must send a different request: an argument out of range, a
+    path outside the vault, a wrong file type, a heading or document that does
+    not exist. It is also a ``ValueError``, so an ``except ValueError`` handler
+    written before this type existed still catches it (#1608).
+    """
+
+
+class DocumentNotFoundError(InvalidRequestError):
+    """Raised when the requested document path does not exist on disk.
+
+    A caller's request naming a document that is not there, so an
+    :class:`InvalidRequestError`, and through it a ``ValueError`` (#1608).
+    """
 
 
 class DocumentUnreadableError(MarkdownMCPError):
@@ -65,14 +79,20 @@ class EditConflictError(MarkdownMCPError):
         self.found_snippet = found_snippet
 
 
-class EmbeddingsNotConfiguredError(ValueError):
+class EmbeddingsNotConfiguredError(InvalidRequestError):
     """Raised when an embeddings operation runs without a provider/path configured.
 
-    Subclasses :class:`ValueError` so callers that catch ``ValueError`` (the
-    historical "embeddings not configured" contract) still catch it, while
-    callers that want *only* this case — such as the ``index``/``reindex`` CLI
-    commands — can narrow to it and let genuine internal ``ValueError``s from a
-    corrupt vector index surface (#774).
+    Embeddings are opt-in and off by default, so a vault without them is a
+    choice the operator made, not a broken configuration: the caller must
+    change the request (keyword search instead of semantic), hence an
+    :class:`InvalidRequestError` (#1608).
+
+    Still a :class:`ValueError` (through :class:`InvalidRequestError`), so
+    callers that catch ``ValueError`` (the historical "embeddings not
+    configured" contract) still catch it, while callers that want *only* this
+    case, such as the ``index``/``reindex`` CLI commands, can narrow to it and
+    let genuine internal ``ValueError``s from a corrupt vector index surface
+    (#774).
     """
 
 

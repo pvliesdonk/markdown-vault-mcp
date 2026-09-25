@@ -84,7 +84,7 @@ class GraphFacet:
 
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         self._require_built()
         return self._link_mgr.get_backlinks(path, limit=limit)
@@ -107,7 +107,7 @@ class GraphFacet:
 
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         self._require_built()
         return self._link_mgr.get_outlinks(path, limit=limit)
@@ -168,7 +168,8 @@ class GraphFacet:
 
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
-            ValueError: If *source* or *target* is not found in the index.
+            DocumentNotFoundError: If *source* or *target* is not found in the
+                index.
         """
         self._require_built()
         return self._link_mgr.get_connection_path(source, target, max_depth=max_depth)

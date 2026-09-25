@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.utils.content_kind import (
     artifact_suffix,
     canonical_attachment_extensions,
@@ -119,11 +120,11 @@ def resolve_inside(path: str, base: Path, *, original: str | None = None) -> Pat
         The resolved absolute path.
 
     Raises:
-        ValueError: If the resolved path escapes *base*.
+        InvalidRequestError: If the resolved path escapes *base*.
     """
     abs_path = (base / path).resolve()
     if not abs_path.is_relative_to(base.resolve()):
-        raise ValueError(
+        raise InvalidRequestError(
             f"Path traversal detected: {path if original is None else original}"
         )
     return abs_path
@@ -140,11 +141,11 @@ def validate_path(path: str, source_dir: Path) -> Path:
         The resolved absolute path.
 
     Raises:
-        ValueError: If the path escapes the source directory or does
-            not end with ``.md``.
+        InvalidRequestError: If the path escapes the source directory or
+            does not end with ``.md``.
     """
     if not is_note(path):
-        raise ValueError(f"Path must end with '.md': {path}")
+        raise InvalidRequestError(f"Path must end with '.md': {path}")
     return resolve_inside(path, source_dir)
 
 
@@ -171,11 +172,11 @@ def validate_history_path(
         The resolved absolute path.
 
     Raises:
-        ValueError: *path* is neither ``.md`` nor an allowed attachment
+        InvalidRequestError: *path* is neither ``.md`` nor an allowed attachment
             extension, or it escapes *source_dir*.
     """
     if not (is_note(path) or is_allowed_artifact(path, attachment_extensions)):
-        raise ValueError(
+        raise InvalidRequestError(
             f"Path must be a .md note or a configured attachment type: {path}"
         )
     return resolve_inside(path, source_dir)
@@ -200,10 +201,10 @@ def validate_history_dir(path: str, source_dir: Path) -> Path:
         The resolved absolute directory path.
 
     Raises:
-        ValueError: *path* is empty or escapes *source_dir*.
+        InvalidRequestError: *path* is empty or escapes *source_dir*.
     """
     if not path.strip("/"):
-        raise ValueError(
+        raise InvalidRequestError(
             "A directory history scope must name a folder; pass None for "
             "whole-vault history."
         )

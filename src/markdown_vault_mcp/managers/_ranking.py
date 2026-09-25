@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from dataclasses import replace as _dc_replace
 from typing import TYPE_CHECKING, Protocol, TypeVar
 
+from markdown_vault_mcp.exceptions import InvalidRequestError
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -241,10 +243,12 @@ def group_by_path(
         List of groups; outer order = file rank (best file first).
 
     Raises:
-        ValueError: If ``chunks_per_file`` < 1.
+        InvalidRequestError: If ``chunks_per_file`` < 1.
     """
     if chunks_per_file < 1:
-        raise ValueError(f"chunks_per_file must be >= 1, got {chunks_per_file}")
+        raise InvalidRequestError(
+            f"chunks_per_file must be >= 1, got {chunks_per_file}"
+        )
 
     groups: dict[str, list[_GroupableT]] = {}
     order: list[str] = []

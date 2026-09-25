@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 from markdown_vault_mcp.embed_text import is_embeddable
 from markdown_vault_mcp.exceptions import (
     ConfigurationError,
+    DocumentNotFoundError,
     EmbeddingsNotConfiguredError,
 )
 from markdown_vault_mcp.managers._ranking import (
@@ -252,7 +253,7 @@ class SearchManager:
             path: Relative vault path to validate.
 
         Raises:
-            ValueError: If the path does not end with ``.md`` or escapes
+            InvalidRequestError: If the path does not end with ``.md`` or escapes
                 the source directory.
         """
         validate_path(path, self._source_dir)
@@ -481,7 +482,7 @@ class SearchManager:
             empty when OKF semantics do not apply.
 
         Raises:
-            ValueError: If an active ``stale`` filter value is not a
+            InvalidRequestError: If an active ``stale`` filter value is not a
                 true/false spelling.
         """
         if not filters or self._okf is None:
@@ -1256,7 +1257,7 @@ class SearchManager:
             objects.
 
         Raises:
-            ValueError: If an active OKF ``stale`` filter value is not a
+            InvalidRequestError: If an active OKF ``stale`` filter value is not a
                 true/false spelling.
         """
         folder = normalize_folder(folder)
@@ -1573,12 +1574,12 @@ class SearchManager:
             stored vectors.
 
         Raises:
-            ValueError: If no document exists at the given path, or
-                ``chunks_per_file`` < 1.
+            DocumentNotFoundError: If no document exists at the given path.
+            InvalidRequestError: If ``chunks_per_file`` < 1.
         """
         self._validate_path(path)
         if self._fts.get_note(path) is None:
-            raise ValueError(f"Document not found: {path}")
+            raise DocumentNotFoundError(f"Document not found: {path}")
         folder = normalize_folder(folder)
 
         if self._embedding_provider is None or self._embeddings_path is None:
@@ -1723,12 +1724,12 @@ class SearchManager:
             A :class:`~markdown_vault_mcp.types.NoteContext` object.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
         """
         self._validate_path(path)
         row = self._fts.get_note(path)
         if row is None:
-            raise ValueError(f"Document not found: {path}")
+            raise DocumentNotFoundError(f"Document not found: {path}")
 
         frontmatter = self._get_frontmatter(path)
 

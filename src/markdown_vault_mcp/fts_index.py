@@ -46,6 +46,7 @@ from markdown_vault_mcp._fts_connection import (
     retry_on_sqlite_locked as _retry_on_sqlite_locked,
 )
 from markdown_vault_mcp.embed_text import fields_text as _fields_text
+from markdown_vault_mcp.exceptions import DocumentNotFoundError
 from markdown_vault_mcp.types import (
     FTSResult,
     ParsedNote,
@@ -2440,8 +2441,8 @@ class FTSIndex:
             *max_depth* hops.
 
         Raises:
-            ValueError: If *source_path* or *target_path* is not found in
-                the documents table.
+            DocumentNotFoundError: If *source_path* or *target_path* is not
+                found in the documents table.
         """
         max_depth = max(1, min(10, max_depth))
 
@@ -2453,7 +2454,7 @@ class FTSIndex:
                 .fetchone()
             )
             if row is None:
-                raise ValueError(f"Path not found in index: {path!r}")
+                raise DocumentNotFoundError(f"Path not found in index: {path!r}")
 
         # Trivial case.
         if source_path == target_path:

@@ -1029,7 +1029,7 @@ Two-layer model:
 
 | Library signal | Outcome |
 |-|-|
-| `DocumentNotFoundError` | Change the request |
+| `InvalidRequestError`, and its subclasses `DocumentNotFoundError` and `EmbeddingsNotConfiguredError` | Change the request |
 | `EditConflictError` | Change the request |
 | `DocumentExistsError` | Change the request |
 | `ReadOnlyError` | Change the request |
@@ -1038,20 +1038,25 @@ Two-layer model:
 | `DocumentUnreadableError` | The server failed |
 | `IndexUnavailableError` | The server failed |
 
+Configuration an operator is required to supply and did not is broken, so a
+fault. A feature that is opt-in and left off is not: the model works within
+the deployment it has, as with `ReadOnlyError`. Hence `EmbeddingsNotConfiguredError`
+is a change of request.
+
 **Exception types**:
 
 | Exception | Raised by | When |
 |-|-|-|
-| `DocumentNotFoundError` | `edit()`, `delete()`, `rename()` | Document path does not exist on disk |
+| `InvalidRequestError` | The path helpers; `read()`, `get_toc()`, `edit()`, `append()`, `write()` and `move_folder()` arguments; search's `chunks_per_file`; the OKF `stale` filter | The caller's request cannot be served as sent: an argument out of range or missing, a path outside the vault or of the wrong type, a heading that does not exist. A `ValueError` subclass, so `except ValueError` still catches it (#1608) |
+| `DocumentNotFoundError` | `edit()`, `append()`, `delete()`, `rename()`, `move_folder()`, attachment `delete()`/`rename()`, section `read()`, `get_toc()`, the graph and context lookups | The document or folder is not on disk or, for lookups that read the index, not in the index. A subclass of `InvalidRequestError` |
 | `ReadOnlyError` | `write()`, `edit()`, `delete()`, `rename()` | `read_only=True` |
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match |
-| `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` or `embeddings_path` configured (a `ValueError` subclass, so `except ValueError` still catches it) |
+| `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` or `embeddings_path` configured. A subclass of `InvalidRequestError`, so still a `ValueError` |
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
 | `DocumentUnreadableError` | `read()` | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. The cause is chained (#1608) |
 | `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
-| `ValueError` | `edit()` | `old_text` is empty string |
 
 `build_embeddings()` processes chunks in bounded batches (configurable via
 `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE`, default 4) to avoid pathological

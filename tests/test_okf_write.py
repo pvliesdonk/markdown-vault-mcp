@@ -35,6 +35,7 @@ from markdown_vault_mcp._okf_write import (
     resolve_human_subject,
     tool_actor,
 )
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.okf import (
     OkfDetector,
     append_okf_verification,
@@ -467,7 +468,9 @@ class TestUnparseableFrontmatterRefusal:
         # The stamp cannot be applied to a block that does not parse, so the
         # write is refused — but it used to surface the parser's own exception,
         # naming no path and reading like a server fault.
-        with pytest.raises(ValueError, match=r"bad\.md") as excinfo:
+        # The frontmatter is the caller's own content, so the caller must
+        # change the request (#1608).
+        with pytest.raises(InvalidRequestError, match=r"bad\.md") as excinfo:
             enforced_vault.writer.write("bad.md", self.MALFORMED_JSON)
         assert "frontmatter" in str(excinfo.value)
 
@@ -480,7 +483,7 @@ class TestUnparseableFrontmatterRefusal:
         self, enforced_vault: Vault
     ) -> None:
         # The dialect is not what the refusal is about (#1408).
-        with pytest.raises(ValueError, match=r"bad\.md"):
+        with pytest.raises(InvalidRequestError, match=r"bad\.md"):
             enforced_vault.writer.write("bad.md", "---\ntitle: [unclosed\n---\n# b\n")
 
     def test_editing_an_already_malformed_note_names_the_operation(
@@ -491,8 +494,11 @@ class TestUnparseableFrontmatterRefusal:
         (enforced_vault.source_dir / "bad.md").write_text(
             self.MALFORMED_JSON, encoding="utf-8"
         )
-        with pytest.raises(ValueError, match=r"Cannot edit bad\.md"):
+        # The stored note's block is at fault here, not the caller's edit, so
+        # this stays a plain ValueError: a server fault by the design (#1608).
+        with pytest.raises(ValueError, match=r"Cannot edit bad\.md") as excinfo:
             enforced_vault.writer.edit("bad.md", old_text="# body", new_text="# other")
+        assert not isinstance(excinfo.value, InvalidRequestError)
 
     def test_a_parseable_note_still_stamps(self, enforced_vault: Vault) -> None:
         enforced_vault.writer.write("ok.md", '{\n"title": "T"\n}\n# T\n')

@@ -19,6 +19,7 @@ from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
     DocumentUnreadableError,
     EditConflictError,
+    InvalidRequestError,
     ReadOnlyError,
 )
 from markdown_vault_mcp.fts_index import FTSIndex
@@ -772,8 +773,12 @@ class TestValidation:
     def test_get_toc_folder_resolving_to_root_raises(
         self, doc_mgr: DocumentManager
     ) -> None:
-        """A folder path that resolves to the vault root itself is rejected."""
-        with pytest.raises(ValueError, match="Path traversal"):
+        """A folder path that resolves to the vault root itself is rejected.
+
+        The root is inside the vault, so the message names the rule it breaks
+        rather than calling it a traversal (#1608).
+        """
+        with pytest.raises(InvalidRequestError, match="vault root"):
             doc_mgr.get_toc("sub/..")
 
     def test_is_path_excluded(self, doc_vault: Path) -> None:
