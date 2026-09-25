@@ -3233,7 +3233,8 @@ lock on the files themselves, and `allow_overwrite` is not reachable from the
 
 **`edit()` behavior**: supports three modes: (1) exact match: reads file,
 verifies `old_text` exists exactly once, replaces with `new_text`; (2) line-range:
-replaces lines `line_start..line_end` (1-based, inclusive) with `new_text`;
+replaces lines `line_start..line_end` (1-based, inclusive) with `new_text`,
+and an empty `new_text` removes the lines rather than leaving a blank one (#1607);
 (3) scoped match: searches for `old_text` within the specified line range only.
 
 When exact match fails (count == 0), a normalized comparison is attempted:

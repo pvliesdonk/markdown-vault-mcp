@@ -864,12 +864,8 @@ class DocumentManager:
             old_text: Text to replace. Required for exact-match and
                 scoped-match modes.  Must appear exactly once (in the
                 file or in the line range).
-            new_text: Replacement text. When using line-range mode with an
-                empty string (``""``), the selected lines are replaced with a
-                single blank line. To delete lines entirely, pass the literal
-                content of those lines as *old_text* (scoped-match mode) and
-                supply an empty *new_text*, which removes that text span
-                without inserting a blank line.
+            new_text: Replacement text. In line-range mode an empty string
+                (``""``) removes the selected lines entirely (#1607).
             if_match: Optional etag from a previous :meth:`read` call.
                 When provided, the edit is only performed if the current
                 file hash matches this value, preventing edits based on
@@ -972,7 +968,8 @@ class DocumentManager:
             lines[start_idx:end_idx] = new_scope.split("\n")
         else:
             match_type = "exact"
-            replacement_lines = new_text.rstrip("\n").split("\n") if new_text else [""]
+            # Empty new_text removes the range rather than blanking it (#1607).
+            replacement_lines = new_text.rstrip("\n").split("\n") if new_text else []
             lines[start_idx:end_idx] = replacement_lines
 
         return "\n".join(lines), match_type
