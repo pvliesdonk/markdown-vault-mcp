@@ -1988,6 +1988,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#line-range-edits-can-delete-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Line-range edits can delete lines
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#clearer-rebase-diagnostics" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2030,11 +2041,11 @@
 
 
 <h1 id="50">5.0<a class="headerlink" href="#50" title="Permanent link">&para;</a></h1>
-<!-- notes-range-end: 1dec6bb0de327e39f99e5e0202545939857c8001 -->
+<!-- notes-range-end: 9952cc1227c51cbbd8212350fdd7b7c4dcf57851 -->
 
 <!-- RELEASE-SUMMARY v5.0.0 START -->
 <p>This major release moves the server to FastMCP 4 and makes a fresh Compose
-deployment work without a reverse proxy. Logging settings change too: logs
+deployment work on its host without a reverse proxy. Logging settings change too: logs
 are structured and default to JSON off a terminal. Writable servers reject
 blind whole-file replacement by default, while Python consumers move
 configuration into <code>VaultSettings</code> and remove two deprecated Git identity
@@ -2050,13 +2061,15 @@ consumers need to follow the migration steps in
 <!-- RELEASE-SUMMARY v5.0.0 END -->
 
 <h2 id="fastmcp-4-and-a-standalone-container-deployment">FastMCP 4 and a standalone container deployment<a class="headerlink" href="#fastmcp-4-and-a-standalone-container-deployment" title="Permanent link">&para;</a></h2>
-<p>The server moves from FastMCP 3.4.7 to 4.0.8, through
-<code>fastmcp-pvl-core</code> 9.0.1 and copier template 9.2.0
+<p>The server moves from FastMCP 3.4.7 to 4.0.9, through
+<code>fastmcp-pvl-core</code> 9.0.1 and copier template 9.3.0
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1570">#1570</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1591">#1591</a>,
-<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1601">#1601</a>). Library environments that pin
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1601">#1601</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1587">#1587</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1614">#1614</a>). Library environments that pin
 FastMCP 3 must move to the FastMCP 4 dependency line. The application handles
 the protocol changes: background tasks register with each server instance, and
 <code>okf_verify</code> uses an input-required response on modern sessions while retaining
@@ -2064,8 +2077,13 @@ server-initiated confirmation for older clients
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1271">#1271</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>).</p>
 <p>Compose no longer assumes Traefik or an existing proxy network. It pulls the
-published image, exposes <code>8000:8000</code>, and starts the server with its state and
-vault volumes. Before starting it, set <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> in
+published image, publishes the server on <code>127.0.0.1:8000</code>, and starts it with
+its state and vault volumes. Only the Docker host can connect, because the
+quick start runs without authentication. To serve other machines, first set a
+bearer token or OIDC in <code>.env</code>, then publish on every interface from
+<code>compose.override.yml</code> with <code>ports: !override</code> and the mapping <code>"8000:8000"</code>
+(<a href="https://github.com/pvliesdonk/fastmcp-server-template/pull/673">template#673</a>).
+Before starting it, set <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> in
 <code>.env</code> to the host directory containing the vault. An existing proxy deployment
 should move its labels and shared network into <code>compose.override.yml</code>; remove
 the published port there with <code>ports: !reset []</code>. The override syntax needs
@@ -2075,6 +2093,13 @@ when a proxy or OIDC is in use. The
 overlay and explains how to select a locally built image
 (<a href="https://github.com/pvliesdonk/fastmcp-server-template/pull/577">template#577</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>).</p>
+<p>The new <a href="../../guides/security-model/">security model</a> page states what the
+server protects and what it leaves to the operator. Authentication is the
+access boundary, and the bind address only limits which machines can connect.
+The page also lists what the tools reach with the server's own privileges, and
+which routes answer without an MCP credential
+(<a href="https://github.com/pvliesdonk/fastmcp-server-template/pull/674">template#674</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1614">#1614</a>).</p>
 <p>HTTP deployments also get unauthenticated health routes. <code>/health</code> returns 200
 while the process serves and is the image and Compose liveness probe.
 <code>/health/ready</code> tests the shared key-value store and returns 503 when that check
@@ -2383,6 +2408,11 @@ descriptions of <code>edit</code> and <code>rename</code> now tell agents when t
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1493">#1493</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1572">#1572</a>). The
 <a href="../../tools/#edit"><code>edit</code> reference</a> explains the rule.</p>
+<h2 id="line-range-edits-can-delete-lines">Line-range edits can delete lines<a class="headerlink" href="#line-range-edits-can-delete-lines" title="Permanent link">&para;</a></h2>
+<p>A line-range <code>edit</code> with an empty <code>new_text</code> now deletes the lines. It used to
+leave one blank line in their place, and no edit mode could remove whole lines
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1607">#1607</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1613">#1613</a>).</p>
 <h2 id="clearer-rebase-diagnostics">Clearer rebase diagnostics<a class="headerlink" href="#clearer-rebase-diagnostics" title="Permanent link">&para;</a></h2>
 <p>A rebase that stopped with no unresolved conflict paths used to emit the same
 final DEBUG message as a resolver that had failed through all 50 conflict
@@ -2395,7 +2425,9 @@ behavior, saved conflicts, and log levels are unchanged
 <p>Before moving a 4.2 deployment or library integration to this release:</p>
 <ol>
 <li>If you use Compose, set <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> in <code>.env</code>. Move proxy
-   labels and networks to an override, or accept the new published port. If the
+   labels and networks to an override. Without a proxy, the server is published
+   on <code>127.0.0.1:8000</code>; to reach it from other machines, configure
+   authentication and publish on every interface from the override. If the
    MCP mount path changes, update the health check path too.</li>
 <li>Move Python environments from FastMCP 3 to FastMCP 4.</li>
 <li>Decide whether server writes should keep allowing blind replacement. The
