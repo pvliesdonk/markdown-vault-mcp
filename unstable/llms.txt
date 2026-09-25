@@ -18,6 +18,7 @@
 - [Docker](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/docker/index.md): Docker deployment (basic, git write, bearer token, OIDC)
 - [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/embeddings/index.md): Embedding providers (Ollama, sentence-transformers, OpenAI)
 - [Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/index.md): Authentication modes — bearer token, OIDC, and troubleshooting
+- [Security Model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/security-model/index.md): The shared security model — data access, outbound requests, and credentials
 - [OIDC Providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/oidc-providers/index.md): OIDC provider setup (Authelia, Keycloak, Google, GitHub via broker)
 - [Obsidian Everywhere](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/obsidian-everywhere/index.md): Reference architecture for desktop + mobile + Claude on one vault
 - [Research Workflows](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/research-workflows/index.md): Research workflows (seed → ground → absorb → interconnect → produce, with optional scholar-mcp integration)

@@ -2005,13 +2005,13 @@ Authentication only works with HTTP transport (`--transport http` or `sse`). It 
 
 The server supports five authentication modes:
 
-| Mode                  | When to use                                                                                                      | Configuration                                                                                       |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| **Multi-auth**        | Mixed clients, such as Claude web (OIDC) + Claude Code (bearer token) on the same server                         | Set both `MARKDOWN_VAULT_MCP_BEARER_TOKEN` and the OIDC variables                                   |
-| **Bearer token**      | Simple deployments behind a VPN, Docker compose stacks, development                                              | Set `MARKDOWN_VAULT_MCP_BEARER_TOKEN` only                                                          |
-| **OIDC (remote)**     | Production with user identity, SSO, multi-user access; local JWKS validation, no confidential client to register | Set `MARKDOWN_VAULT_MCP_BASE_URL` + `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` only                       |
-| **OIDC (oidc-proxy)** | The same, where the server should run the OAuth flow itself and manage sessions                                  | Set all four OIDC variables (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`) |
-| **No auth**           | Local stdio usage, trusted networks                                                                              | Default (nothing to configure)                                                                      |
+| Mode                  | When to use                                                                                                                                        | Configuration                                                                                       |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Multi-auth**        | Mixed clients, such as Claude web (OIDC) + Claude Code (bearer token) on the same server                                                           | Set both `MARKDOWN_VAULT_MCP_BEARER_TOKEN` and the OIDC variables                                   |
+| **Bearer token**      | Simple deployments behind a VPN, Docker compose stacks, development                                                                                | Set `MARKDOWN_VAULT_MCP_BEARER_TOKEN` only                                                          |
+| **OIDC (remote)**     | Production with user identity, SSO, multi-user access; local JWKS validation, no confidential client to register                                   | Set `MARKDOWN_VAULT_MCP_BASE_URL` + `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` only                       |
+| **OIDC (oidc-proxy)** | The same, where the server should run the OAuth flow itself and manage sessions                                                                    | Set all four OIDC variables (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`) |
+| **No auth**           | Local stdio usage, trusted networks; see [Security model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/security-model/index.md) | Default (nothing to configure)                                                                      |
 
 When both bearer token and OIDC are configured, the server accepts **either** credential: a valid bearer token or a valid OIDC session. This is useful when different clients require different authentication flows against the same server instance.
 
@@ -2266,6 +2266,68 @@ A ready-to-use bearer-token environment is in [`examples/bearer-auth.env`](https
 ## Bearer subjects and OKF provenance
 
 Mapped bearer tokens resolve to subject strings, but for OKF provenance they remain service credentials: writes use the server's tool actor, and confirmed reviews in `elicit` mode use `human:local`. `trust-auth` verification refuses them. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/index.md) for the provenance model.
+
+# Security model
+
+This page states what markdown-vault-mcp protects and what it leaves to the operator. [Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/index.md) covers how to configure each mode, and `SECURITY.md` in the repository covers how to report a vulnerability.
+
+## Authentication is the boundary
+
+Over HTTP, authentication is the only access control: a bearer token, a mapped bearer token file, or OIDC. A request without a valid credential is refused before it reaches a tool. It is the same model as any other MCP server reached over HTTP.
+
+## Running without authentication
+
+With no authentication variables set, the server starts in mode `none` and logs `auth_mode_resolved` at warning level with `mode=none`. Every client that can open a connection to the port then has the full tool surface. Turning authentication off is a decision to trust everything that can reach the port.
+
+The bind address decides which machines reach the port, and nothing more. Binding to `127.0.0.1` keeps other machines out. It does not keep out other processes on the host, nor a web page in a browser on the host that uses DNS rebinding. Without authentication, run the server only where everything that reaches the port is trusted, such as a single-user workstation or a private network you control.
+
+## stdio
+
+Over stdio there is no network listener and no authentication. The MCP client starts the server as a child process, and the server trusts that client. Authentication variables have no effect there, and the server logs `auth_configured_but_stdio_skips_enforcement` when they are set.
+
+## What an authenticated caller can reach
+
+An authenticated caller has every tool the instance exposes. Each tool runs with the server's own privileges: its filesystem and network access, and any credential in its configuration. `MARKDOWN_VAULT_MCP_TOOLS_ALLOW` and `MARKDOWN_VAULT_MCP_TOOLS_DENY` trim that set for an instance; see [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md).
+
+Every tool works inside the vault directory the server serves, and a path that resolves outside it is refused. Read tools such as `search`, `read` and `get_history` only read the vault. Write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch` and the OKF write tools) change files in it. `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides every write tool. `reindex` and `build_embeddings` stay available in that mode, since they rebuild the index and leave notes untouched.
+
+Some tools send data beyond the vault:
+
+- **`fetch`** downloads an `http` or `https` URL the caller names and saves the response in the vault. Only publicly routable addresses are allowed, on the first request and on every redirect, and proxy settings from the environment don't apply.
+- **Embeddings.** With a remote embedding provider (OpenAI-compatible, Voyage, or Ollama on another host), indexing sends note text to that provider, and `search` sends the query text. The local fastembed provider sends nothing.
+- **`summarize`** sends the notes it summarizes to the OpenAI-compatible endpoint set in `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL`. Without a configured endpoint the tool is hidden.
+- **Git.** With a remote configured, the server pushes to it after writes and pulls from it on a timer, and `git_sync` lets a caller start either direction.
+
+Callers never pass credentials to these tools. The server uses its own: `MARKDOWN_VAULT_MCP_GIT_TOKEN` for an HTTPS remote, or the host's SSH setup for an SSH remote, and the API keys of the embedding provider and the summarize endpoint.
+
+## What answers without a credential
+
+Some routes answer anyone who can reach the port, with authentication on or off:
+
+- `/health` and `/health/ready`. `MARKDOWN_VAULT_MCP_HEALTH_DETAIL` decides how much they say; see [Health](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/#health).
+- In the OIDC modes, the OAuth metadata and sign-in routes a client uses before it holds a token.
+
+## What the operator is responsible for
+
+- **TLS.** The server speaks plain HTTP. Terminate TLS at a reverse proxy in front of it.
+- **Exposure.** Which interfaces and networks can reach the port. [Ports](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/#ports) covers the published port of the Docker deployment.
+- **Secrets.** Bearer tokens, OIDC client secrets and the credentials the tools use live in the environment or in files you control. Anyone who can read them can act as the server.
+- **The debugger port.** A debug build's debugger port grants code execution to anyone who reaches it; see [Remote debugging](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/#remote-debugging).
+
+## Host and Origin validation
+
+FastMCP can refuse requests whose `Host` or `Origin` header does not name the server, which blocks DNS rebinding against a server running without authentication. It is off by default, and the model above does not depend on it. To turn it on, set `FASTMCP_HTTP_HOST_ORIGIN_PROTECTION` to `auto`, which checks requests that reach the server on a local address, or to `true`, which checks every request against `FASTMCP_HTTP_ALLOWED_HOSTS` (a JSON list of host names). Behind a reverse proxy, test it before relying on it: a request whose headers do not match is refused.
+
+## Reporting a vulnerability
+
+Read this page before reporting. A finding that depends on authentication being off describes the configuration above rather than a flaw in the server. `SECURITY.md` covers the reporting channel, scope and response targets.
+
+## Routes that carry their own credential
+
+Two more kinds of route answer without an MCP credential. Each checks a credential of its own instead.
+
+- **Transfer links.** `create_upload_link` and `create_download_link` return a `/transfer/...` URL whose token is the credential: whoever holds the URL can use it. A link stops working after its first successful use, or when it expires. `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` sets the lifetime (one hour by default), and `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` caps what a caller may ask for. The links exist only over HTTP with `MARKDOWN_VAULT_MCP_BASE_URL` set; see [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/transfer-links/index.md).
+- **Git webhooks.** `/github-webhook` and `/gitlab-webhook` exist only when a webhook secret is set. A request must carry a valid signature or token for that secret, and a valid push event makes the server pull and reindex; see [Webhooks](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/git-integration/#push-triggered-pull-webhooks).
 
 # OIDC Providers
 
@@ -6442,7 +6504,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The server listens on port 8000 with HTTP transport, published on the host as `8000:8000`. No reverse proxy, TLS terminator, or external network is assumed.
+The server listens on port 8000 with HTTP transport, published on the host as `127.0.0.1:8000:8000`, so only the host itself can connect. No reverse proxy, TLS terminator, or external network is assumed. Authentication is off, since every auth variable in `.env.example` is commented out; [Ports](#ports) covers serving other machines.
 
 Copying `.env.example` first is the step to keep. Every variable in it arrives commented out, so the server starts on its defaults and the copy changes no behaviour by itself. It is the file you edit next, and `compose.yml` names it.
 
@@ -6463,7 +6525,18 @@ The `env_file:` entry is marked `required: false`, so a checkout with no `.env` 
 
 ### Ports
 
-The image pins its own listener: `CMD` passes `--host 0.0.0.0 --port 8000`, so `MARKDOWN_VAULT_MCP_HOST` and `MARKDOWN_VAULT_MCP_PORT` in a `.env` do not move it. To serve on a different host port, change the left-hand side of the mapping (`"9000:8000"`) rather than the server's port.
+The image pins its own listener: `CMD` passes `--host 0.0.0.0 --port 8000`, so `MARKDOWN_VAULT_MCP_HOST` and `MARKDOWN_VAULT_MCP_PORT` in a `.env` do not move it. To serve on a different host port, change the host port in the mapping (`"127.0.0.1:9000:8000"`) rather than the server's port.
+
+`compose.yml` publishes on `127.0.0.1` because the quick start runs without authentication. The bind address limits which machines can connect; it does not replace authentication. To serve other machines, first configure a bearer token or OIDC ([Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/index.md)), then either put a reverse proxy in front ([Behind a reverse proxy](#behind-a-reverse-proxy)) or publish on every interface from `compose.override.yml`:
+
+```
+services:
+  markdown-vault-mcp:
+    ports: !override
+      - "8000:8000"
+```
+
+`!override` replaces the mapping instead of appending to it. The override file leaves `compose.yml` unedited, so a template update does not conflict with the change.
 
 ### Domain content and `copier update`
 
@@ -6627,7 +6700,7 @@ Production images ship without `debugpy` to keep the image lean. To attach a rem
      -e MARKDOWN_VAULT_MCP_DEBUG_PORT=5678 \
      -e MARKDOWN_VAULT_MCP_DEBUG_WAIT=true \
      -p 127.0.0.1:5678:5678 \
-     -p 8000:8000 \
+     -p 127.0.0.1:8000:8000 \
      markdown-vault-mcp:debug
    ```
 

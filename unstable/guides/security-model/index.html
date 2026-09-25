@@ -10,13 +10,13 @@
       
       
       
-        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/exceptions/">
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/security-model/">
       
       
-        <link rel="prev" href="../types/">
+        <link rel="prev" href="../authentication/">
       
       
-        <link rel="next" href="../../releases/">
+        <link rel="next" href="../oidc-providers/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Exceptions - markdown-vault-mcp</title>
+        <title>Security Model - markdown-vault-mcp</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#exceptions" class="md-skip">
+        <a href="#security-model" class="md-skip">
           Skip to content
         </a>
       
@@ -120,7 +120,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Exceptions
+              Security Model
             
           </span>
         </div>
@@ -270,11 +270,13 @@
   
   
   
+    
+  
   
     
     
-      <li class="md-tabs__item">
-        <a href="../../guides/" class="md-tabs__link">
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
           
   
   
@@ -330,13 +332,11 @@
   
   
   
-    
-  
   
     
     
-      <li class="md-tabs__item md-tabs__item--active">
-        <a href="../vault/" class="md-tabs__link">
+      <li class="md-tabs__item">
+        <a href="../../api/vault/" class="md-tabs__link">
           
   
   
@@ -616,28 +616,31 @@
       
   
   
+    
   
   
+  
     
     
     
     
+      
+        
+        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-        
-        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
-        
-          
-          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
             
   
   
@@ -655,7 +658,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -673,7 +676,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/" class="md-nav__link">
+      <a href="../" class="md-nav__link">
         
   
   
@@ -701,7 +704,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/git-integration/" class="md-nav__link">
+      <a href="../git-integration/" class="md-nav__link">
         
   
   
@@ -729,7 +732,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/claude-desktop/" class="md-nav__link">
+      <a href="../claude-desktop/" class="md-nav__link">
         
   
   
@@ -757,7 +760,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/docker/" class="md-nav__link">
+      <a href="../docker/" class="md-nav__link">
         
   
   
@@ -785,7 +788,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/embeddings/" class="md-nav__link">
+      <a href="../embeddings/" class="md-nav__link">
         
   
   
@@ -813,7 +816,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/authentication/" class="md-nav__link">
+      <a href="../authentication/" class="md-nav__link">
         
   
   
@@ -838,10 +841,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../../guides/security-model/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security Model
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -857,6 +887,125 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#authentication-is-the-boundary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Authentication is the boundary
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-without-authentication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running without authentication
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stdio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stdio
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-an-authenticated-caller-can-reach" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What an authenticated caller can reach
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-answers-without-a-credential" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What answers without a credential
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-operator-is-responsible-for" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the operator is responsible for
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#host-and-origin-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Host and Origin validation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reporting-a-vulnerability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reporting a vulnerability
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#routes-that-carry-their-own-credential" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Routes that carry their own credential
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -869,7 +1018,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/oidc-providers/" class="md-nav__link">
+      <a href="../oidc-providers/" class="md-nav__link">
         
   
   
@@ -897,7 +1046,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/obsidian-everywhere/" class="md-nav__link">
+      <a href="../obsidian-everywhere/" class="md-nav__link">
         
   
   
@@ -925,7 +1074,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/research-workflows/" class="md-nav__link">
+      <a href="../research-workflows/" class="md-nav__link">
         
   
   
@@ -953,7 +1102,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/zettelkasten/" class="md-nav__link">
+      <a href="../zettelkasten/" class="md-nav__link">
         
   
   
@@ -981,7 +1130,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/para/" class="md-nav__link">
+      <a href="../para/" class="md-nav__link">
         
   
   
@@ -1009,7 +1158,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/okf/" class="md-nav__link">
+      <a href="../okf/" class="md-nav__link">
         
   
   
@@ -1037,7 +1186,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/mcp-apps/" class="md-nav__link">
+      <a href="../mcp-apps/" class="md-nav__link">
         
   
   
@@ -1065,7 +1214,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/transfer-links/" class="md-nav__link">
+      <a href="../transfer-links/" class="md-nav__link">
         
   
   
@@ -1093,7 +1242,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../guides/claude-code-plugin/" class="md-nav__link">
+      <a href="../claude-code-plugin/" class="md-nav__link">
         
   
   
@@ -1555,31 +1704,28 @@
       
   
   
-    
   
   
-  
     
     
     
     
-      
-        
-        
       
       
         
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
         
-        
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
-          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   
@@ -1597,7 +1743,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -1615,7 +1761,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../vault/" class="md-nav__link">
+      <a href="../../api/vault/" class="md-nav__link">
         
   
   
@@ -1643,7 +1789,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../facets/" class="md-nav__link">
+      <a href="../../api/facets/" class="md-nav__link">
         
   
   
@@ -1671,7 +1817,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../git/" class="md-nav__link">
+      <a href="../../api/git/" class="md-nav__link">
         
   
   
@@ -1699,7 +1845,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../config/" class="md-nav__link">
+      <a href="../../api/config/" class="md-nav__link">
         
   
   
@@ -1727,7 +1873,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../providers/" class="md-nav__link">
+      <a href="../../api/providers/" class="md-nav__link">
         
   
   
@@ -1755,7 +1901,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../types/" class="md-nav__link">
+      <a href="../../api/types/" class="md-nav__link">
         
   
   
@@ -1780,37 +1926,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Exceptions
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../../api/exceptions/" class="md-nav__link">
         
   
   
@@ -1826,136 +1945,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#base-exception" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Base Exception
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.MarkdownMCPError" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        MarkdownMCPError
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#document-errors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Document Errors
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        DocumentNotFoundError
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.DocumentExistsError" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        DocumentExistsError
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.EditConflictError" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        EditConflictError
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.ConcurrentModificationError" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ConcurrentModificationError
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#access-errors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Access Errors
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.ReadOnlyError" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ReadOnlyError
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration-errors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration Errors
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -2022,10 +2011,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#base-exception" class="md-nav__link">
+  <a href="#authentication-is-the-boundary" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Base Exception
+        Authentication is the boundary
       
     </span>
   </a>
@@ -2033,10 +2022,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.MarkdownMCPError" class="md-nav__link">
+  <a href="#running-without-authentication" class="md-nav__link">
     <span class="md-ellipsis">
       
-        MarkdownMCPError
+        Running without authentication
       
     </span>
   </a>
@@ -2044,10 +2033,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#document-errors" class="md-nav__link">
+  <a href="#stdio" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Document Errors
+        stdio
       
     </span>
   </a>
@@ -2055,10 +2044,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError" class="md-nav__link">
+  <a href="#what-an-authenticated-caller-can-reach" class="md-nav__link">
     <span class="md-ellipsis">
       
-        DocumentNotFoundError
+        What an authenticated caller can reach
       
     </span>
   </a>
@@ -2066,10 +2055,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.DocumentExistsError" class="md-nav__link">
+  <a href="#what-answers-without-a-credential" class="md-nav__link">
     <span class="md-ellipsis">
       
-        DocumentExistsError
+        What answers without a credential
       
     </span>
   </a>
@@ -2077,10 +2066,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.EditConflictError" class="md-nav__link">
+  <a href="#what-the-operator-is-responsible-for" class="md-nav__link">
     <span class="md-ellipsis">
       
-        EditConflictError
+        What the operator is responsible for
       
     </span>
   </a>
@@ -2088,10 +2077,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.ConcurrentModificationError" class="md-nav__link">
+  <a href="#host-and-origin-validation" class="md-nav__link">
     <span class="md-ellipsis">
       
-        ConcurrentModificationError
+        Host and Origin validation
       
     </span>
   </a>
@@ -2099,10 +2088,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#access-errors" class="md-nav__link">
+  <a href="#reporting-a-vulnerability" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Access Errors
+        Reporting a vulnerability
       
     </span>
   </a>
@@ -2110,21 +2099,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.exceptions.ReadOnlyError" class="md-nav__link">
+  <a href="#routes-that-carry-their-own-credential" class="md-nav__link">
     <span class="md-ellipsis">
       
-        ReadOnlyError
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#configuration-errors" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Configuration Errors
+        Routes that carry their own credential
       
     </span>
   </a>
@@ -2151,347 +2129,54 @@
   
 
 
-<h1 id="exceptions">Exceptions<a class="headerlink" href="#exceptions" title="Permanent link">&para;</a></h1>
-<p>All exceptions are importable from the <code>markdown_vault_mcp.exceptions</code> module.</p>
-<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">DocumentNotFoundError</span><span class="p">,</span> <span class="n">ReadOnlyError</span>
-</code></pre></div>
-<p>Most exceptions inherit from <code>MarkdownMCPError</code>, so callers can catch the base class to handle any library error. The one exception is <code>ConfigurationError</code>, which is re-exported from <code>fastmcp-pvl-core</code> and is not a <code>MarkdownMCPError</code> subclass (see <a href="#configuration-errors">Configuration Errors</a>). Startup config failures are meant to fail hard rather than be caught by a library-error handler.</p>
-<h2 id="base-exception">Base Exception<a class="headerlink" href="#base-exception" title="Permanent link">&para;</a></h2>
-<!-- vale off -->
-
-
-<div class="doc doc-object doc-class">
-
-
-
-<h2 id="markdown_vault_mcp.exceptions.MarkdownMCPError" class="doc doc-heading">
-            <code>MarkdownMCPError</code>
-
-
-<a href="#markdown_vault_mcp.exceptions.MarkdownMCPError" class="headerlink" title="Permanent link">&para;</a></h2>
-
-
-    <div class="doc doc-contents first">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="Exception">Exception</span></code></p>
-
-
-
-        <p>Base exception for all markdown-vault-mcp errors.</p>
-
-
-
-
-
-
-
-
-
-    </div>
-
-</div><!-- vale on -->
-
-<h2 id="document-errors">Document Errors<a class="headerlink" href="#document-errors" title="Permanent link">&para;</a></h2>
-<!-- vale off -->
-
-
-<div class="doc doc-object doc-class">
-
-
-
-<h2 id="markdown_vault_mcp.exceptions.DocumentNotFoundError" class="doc doc-heading">
-            <code>DocumentNotFoundError</code>
-
-
-<a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError" class="headerlink" title="Permanent link">&para;</a></h2>
-
-
-    <div class="doc doc-contents first">
-            <p class="doc doc-class-bases">
-              Bases: <code><a class="autorefs autorefs-internal" title="MarkdownMCPError (markdown_vault_mcp.exceptions.MarkdownMCPError)" href="#markdown_vault_mcp.exceptions.MarkdownMCPError">MarkdownMCPError</a></code></p>
-
-
-
-        <p>Raised when the requested document path does not exist on disk.</p>
-
-
-
-
-
-
-
-
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h2 id="markdown_vault_mcp.exceptions.DocumentExistsError" class="doc doc-heading">
-            <code>DocumentExistsError</code>
-
-
-<a href="#markdown_vault_mcp.exceptions.DocumentExistsError" class="headerlink" title="Permanent link">&para;</a></h2>
-
-
-    <div class="doc doc-contents first">
-            <p class="doc doc-class-bases">
-              Bases: <code><a class="autorefs autorefs-internal" title="MarkdownMCPError (markdown_vault_mcp.exceptions.MarkdownMCPError)" href="#markdown_vault_mcp.exceptions.MarkdownMCPError">MarkdownMCPError</a></code></p>
-
-
-
-        <p>Raised when the target path already exists (e.g. rename destination).</p>
-
-
-
-
-
-
-
-
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h2 id="markdown_vault_mcp.exceptions.EditConflictError" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">EditConflictError</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">closest_match_line</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">first_diff_char</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">expected_snippet</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">found_snippet</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
-
-<a href="#markdown_vault_mcp.exceptions.EditConflictError" class="headerlink" title="Permanent link">&para;</a></h2>
-
-
-    <div class="doc doc-contents first">
-            <p class="doc doc-class-bases">
-              Bases: <code><a class="autorefs autorefs-internal" title="MarkdownMCPError (markdown_vault_mcp.exceptions.MarkdownMCPError)" href="#markdown_vault_mcp.exceptions.MarkdownMCPError">MarkdownMCPError</a></code></p>
-
-
-
-        <p>Raised when <code>old_text</code> is not found or appears more than once in a document.</p>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.exceptions.EditConflictError.closest_match_line">closest_match_line</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>1-based file line where <code>old_text</code> first diverges.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.exceptions.EditConflictError.first_diff_char">first_diff_char</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Character offset of the divergence within that line.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.exceptions.EditConflictError.expected_snippet">expected_snippet</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>The divergent <code>old_text</code> line (truncated).</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.exceptions.EditConflictError.found_snippet">found_snippet</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>The corresponding file line (truncated, empty past EOF).</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h2 id="markdown_vault_mcp.exceptions.ConcurrentModificationError" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ConcurrentModificationError</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">expected</span><span class="p">,</span> <span class="n">actual</span><span class="p">)</span></code>
-
-<a href="#markdown_vault_mcp.exceptions.ConcurrentModificationError" class="headerlink" title="Permanent link">&para;</a></h2>
-
-
-    <div class="doc doc-contents first">
-            <p class="doc doc-class-bases">
-              Bases: <code><a class="autorefs autorefs-internal" title="MarkdownMCPError (markdown_vault_mcp.exceptions.MarkdownMCPError)" href="#markdown_vault_mcp.exceptions.MarkdownMCPError">MarkdownMCPError</a></code></p>
-
-
-
-        <p>Raised when an <code>if_match</code> etag does not match the current file state.</p>
-
-
-<p><span class="doc-section-title">Attributes:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.exceptions.ConcurrentModificationError.path">path</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Relative path of the document that was modified concurrently.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.exceptions.ConcurrentModificationError.expected">expected</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>The etag value the caller provided.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td><code><span title="markdown_vault_mcp.exceptions.ConcurrentModificationError.actual">actual</span></code></td>
-            <td>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>The etag value found on disk.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div><!-- vale on -->
-
-<h2 id="access-errors">Access Errors<a class="headerlink" href="#access-errors" title="Permanent link">&para;</a></h2>
-<!-- vale off -->
-
-
-<div class="doc doc-object doc-class">
-
-
-
-<h2 id="markdown_vault_mcp.exceptions.ReadOnlyError" class="doc doc-heading">
-            <code>ReadOnlyError</code>
-
-
-<a href="#markdown_vault_mcp.exceptions.ReadOnlyError" class="headerlink" title="Permanent link">&para;</a></h2>
-
-
-    <div class="doc doc-contents first">
-            <p class="doc doc-class-bases">
-              Bases: <code><a class="autorefs autorefs-internal" title="MarkdownMCPError (markdown_vault_mcp.exceptions.MarkdownMCPError)" href="#markdown_vault_mcp.exceptions.MarkdownMCPError">MarkdownMCPError</a></code></p>
-
-
-
-        <p>Raised when a write operation is attempted on a read-only vault.</p>
-
-
-
-
-
-
-
-
-
-    </div>
-
-</div><!-- vale on -->
-
-<h2 id="configuration-errors">Configuration Errors<a class="headerlink" href="#configuration-errors" title="Permanent link">&para;</a></h2>
-<p><code>markdown_vault_mcp.exceptions.ConfigurationError</code> is re-exported from
-<a href="https://github.com/pvliesdonk/fastmcp-pvl-core"><code>fastmcp-pvl-core</code></a>, the shared
-base library across the <code>*-mcp</code> server series, so the whole ecosystem raises one
-canonical config error. It is raised for invalid or out-of-range configuration at
-startup (such as a non-numeric env var, a value outside its documented range, or a
-missing required variable). Unlike the other exceptions on this page it is not
-a subclass of <code>MarkdownMCPError</code>.</p>
+<h1 id="security-model">Security model<a class="headerlink" href="#security-model" title="Permanent link">&para;</a></h1>
+<p>This page states what markdown-vault-mcp protects and what it leaves to the operator. <a href="../authentication/">Authentication</a> covers how to configure each mode, and <code>SECURITY.md</code> in the repository covers how to report a vulnerability.</p>
+<h2 id="authentication-is-the-boundary">Authentication is the boundary<a class="headerlink" href="#authentication-is-the-boundary" title="Permanent link">&para;</a></h2>
+<p>Over HTTP, authentication is the only access control: a bearer token, a mapped bearer token file, or OIDC. A request without a valid credential is refused before it reaches a tool. It is the same model as any other MCP server reached over HTTP.</p>
+<h2 id="running-without-authentication">Running without authentication<a class="headerlink" href="#running-without-authentication" title="Permanent link">&para;</a></h2>
+<p>With no authentication variables set, the server starts in mode <code>none</code> and logs <code>auth_mode_resolved</code> at warning level with <code>mode=none</code>. Every client that can open a connection to the port then has the full tool surface. Turning authentication off is a decision to trust everything that can reach the port.</p>
+<p>The bind address decides which machines reach the port, and nothing more. Binding to <code>127.0.0.1</code> keeps other machines out. It does not keep out other processes on the host, nor a web page in a browser on the host that uses DNS rebinding. Without authentication, run the server only where everything that reaches the port is trusted, such as a single-user workstation or a private network you control.</p>
+<h2 id="stdio">stdio<a class="headerlink" href="#stdio" title="Permanent link">&para;</a></h2>
+<p>Over stdio there is no network listener and no authentication. The MCP client starts the server as a child process, and the server trusts that client. Authentication variables have no effect there, and the server logs <code>auth_configured_but_stdio_skips_enforcement</code> when they are set.</p>
+<h2 id="what-an-authenticated-caller-can-reach">What an authenticated caller can reach<a class="headerlink" href="#what-an-authenticated-caller-can-reach" title="Permanent link">&para;</a></h2>
+<p>An authenticated caller has every tool the instance exposes. Each tool runs with the server's own privileges: its filesystem and network access, and any credential in its configuration. <code>MARKDOWN_VAULT_MCP_TOOLS_ALLOW</code> and <code>MARKDOWN_VAULT_MCP_TOOLS_DENY</code> trim that set for an instance; see <a href="../../configuration/">Configuration</a>.</p>
+<!-- DOMAIN-SECURITY-MODEL-SURFACE-START — what THIS server's tools reach; kept across copier update -->
+<p>Every tool works inside the vault directory the server serves, and a path that resolves outside it is refused. Read tools such as <code>search</code>, <code>read</code> and <code>get_history</code> only read the vault. Write tools (<code>write</code>, <code>edit</code>, <code>append</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, <code>fetch</code> and the OKF write tools) change files in it. <code>MARKDOWN_VAULT_MCP_READ_ONLY=true</code> hides every write tool. <code>reindex</code> and <code>build_embeddings</code> stay available in that mode, since they rebuild the index and leave notes untouched.</p>
+<p>Some tools send data beyond the vault:</p>
+<ul>
+<li><strong><code>fetch</code></strong> downloads an <code>http</code> or <code>https</code> URL the caller names and saves the response in the vault. Only publicly routable addresses are allowed, on the first request and on every redirect, and proxy settings from the environment don't apply.</li>
+<li><strong>Embeddings.</strong> With a remote embedding provider (OpenAI-compatible, Voyage, or Ollama on another host), indexing sends note text to that provider, and <code>search</code> sends the query text. The local fastembed provider sends nothing.</li>
+<li><strong><code>summarize</code></strong> sends the notes it summarizes to the OpenAI-compatible endpoint set in <code>MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL</code>. Without a configured endpoint the tool is hidden.</li>
+<li><strong>Git.</strong> With a remote configured, the server pushes to it after writes and pulls from it on a timer, and <code>git_sync</code> lets a caller start either direction.</li>
+</ul>
+<p>Callers never pass credentials to these tools. The server uses its own: <code>MARKDOWN_VAULT_MCP_GIT_TOKEN</code> for an HTTPS remote, or the host's SSH setup for an SSH remote, and the API keys of the embedding provider and the summarize endpoint.</p>
+<!-- DOMAIN-SECURITY-MODEL-SURFACE-END -->
+
+<h2 id="what-answers-without-a-credential">What answers without a credential<a class="headerlink" href="#what-answers-without-a-credential" title="Permanent link">&para;</a></h2>
+<p>Some routes answer anyone who can reach the port, with authentication on or off:</p>
+<ul>
+<li><code>/health</code> and <code>/health/ready</code>. <code>MARKDOWN_VAULT_MCP_HEALTH_DETAIL</code> decides how much they say; see <a href="../../deployment/docker/#health">Health</a>.</li>
+<li>In the OIDC modes, the OAuth metadata and sign-in routes a client uses before it holds a token.</li>
+</ul>
+<h2 id="what-the-operator-is-responsible-for">What the operator is responsible for<a class="headerlink" href="#what-the-operator-is-responsible-for" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>TLS.</strong> The server speaks plain HTTP. Terminate TLS at a reverse proxy in front of it.</li>
+<li><strong>Exposure.</strong> Which interfaces and networks can reach the port. <a href="../../deployment/docker/#ports">Ports</a> covers the published port of the Docker deployment.</li>
+<li><strong>Secrets.</strong> Bearer tokens, OIDC client secrets and the credentials the tools use live in the environment or in files you control. Anyone who can read them can act as the server.</li>
+<li><strong>The debugger port.</strong> A debug build's debugger port grants code execution to anyone who reaches it; see <a href="../../deployment/docker/#remote-debugging">Remote debugging</a>.</li>
+</ul>
+<h2 id="host-and-origin-validation">Host and Origin validation<a class="headerlink" href="#host-and-origin-validation" title="Permanent link">&para;</a></h2>
+<p>FastMCP can refuse requests whose <code>Host</code> or <code>Origin</code> header does not name the server, which blocks DNS rebinding against a server running without authentication. It is off by default, and the model above does not depend on it. To turn it on, set <code>FASTMCP_HTTP_HOST_ORIGIN_PROTECTION</code> to <code>auto</code>, which checks requests that reach the server on a local address, or to <code>true</code>, which checks every request against <code>FASTMCP_HTTP_ALLOWED_HOSTS</code> (a JSON list of host names). Behind a reverse proxy, test it before relying on it: a request whose headers do not match is refused.</p>
+<h2 id="reporting-a-vulnerability">Reporting a vulnerability<a class="headerlink" href="#reporting-a-vulnerability" title="Permanent link">&para;</a></h2>
+<p>Read this page before reporting. A finding that depends on authentication being off describes the configuration above rather than a flaw in the server. <code>SECURITY.md</code> covers the reporting channel, scope and response targets.</p>
+<!-- DOMAIN-SECURITY-MODEL-EXTRA-START -->
+<h2 id="routes-that-carry-their-own-credential">Routes that carry their own credential<a class="headerlink" href="#routes-that-carry-their-own-credential" title="Permanent link">&para;</a></h2>
+<p>Two more kinds of route answer without an MCP credential. Each checks a credential of its own instead.</p>
+<ul>
+<li><strong>Transfer links.</strong> <code>create_upload_link</code> and <code>create_download_link</code> return a <code>/transfer/...</code> URL whose token is the credential: whoever holds the URL can use it. A link stops working after its first successful use, or when it expires. <code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S</code> sets the lifetime (one hour by default), and <code>MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S</code> caps what a caller may ask for. The links exist only over HTTP with <code>MARKDOWN_VAULT_MCP_BASE_URL</code> set; see <a href="../transfer-links/">Transfer links</a>.</li>
+<li><strong>Git webhooks.</strong> <code>/github-webhook</code> and <code>/gitlab-webhook</code> exist only when a webhook secret is set. A request must carry a valid signature or token for that secret, and a valid push event makes the server pull and reindex; see <a href="../git-integration/#push-triggered-pull-webhooks">Webhooks</a>.</li>
+</ul>
+<!-- DOMAIN-SECURITY-MODEL-EXTRA-END -->
 
 
 

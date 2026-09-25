@@ -841,6 +841,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../guides/security-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../guides/oidc-providers/" class="md-nav__link">
         
   
@@ -2228,7 +2256,7 @@
 <div class="highlight"><pre><span></span><code>cp<span class="w"> </span>.env.example<span class="w"> </span>.env
 docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> </span>-d
 </code></pre></div>
-<p>The server listens on port 8000 with HTTP transport, published on the host as <code>8000:8000</code>. No reverse proxy, TLS terminator, or external network is assumed.</p>
+<p>The server listens on port 8000 with HTTP transport, published on the host as <code>127.0.0.1:8000:8000</code>, so only the host itself can connect. No reverse proxy, TLS terminator, or external network is assumed. Authentication is off, since every auth variable in <code>.env.example</code> is commented out; <a href="#ports">Ports</a> covers serving other machines.</p>
 <p>Copying <code>.env.example</code> first is the step to keep. Every variable in it arrives commented out, so the server starts on its defaults and the copy changes no behaviour by itself. It is the file you edit next, and <code>compose.yml</code> names it.</p>
 <p>Apply a later edit with <code>docker compose up -d</code>, which recreates the container with the new values. <code>docker compose restart</code> does not pick them up: an env file is read when a container is created, so a restarted container keeps the values it was created with and the edit is ignored without any message.</p>
 <h2 id="docker-compose">Docker Compose<a class="headerlink" href="#docker-compose" title="Permanent link">&para;</a></h2>
@@ -2241,7 +2269,14 @@ docker<span class="w"> </span>compose<span class="w"> </span>up<span class="w"> 
 </ul>
 <p>The <code>env_file:</code> entry is marked <code>required: false</code>, so a checkout with no <code>.env</code> still starts on defaults. That form needs Compose 2.24.0 or newer; on an older engine, either upgrade or replace the entry with plain <code>env_file: .env</code> and make sure the file exists.</p>
 <h3 id="ports">Ports<a class="headerlink" href="#ports" title="Permanent link">&para;</a></h3>
-<p>The image pins its own listener: <code>CMD</code> passes <code>--host 0.0.0.0 --port 8000</code>, so <code>MARKDOWN_VAULT_MCP_HOST</code> and <code>MARKDOWN_VAULT_MCP_PORT</code> in a <code>.env</code> do not move it. To serve on a different host port, change the left-hand side of the mapping (<code>"9000:8000"</code>) rather than the server's port.</p>
+<p>The image pins its own listener: <code>CMD</code> passes <code>--host 0.0.0.0 --port 8000</code>, so <code>MARKDOWN_VAULT_MCP_HOST</code> and <code>MARKDOWN_VAULT_MCP_PORT</code> in a <code>.env</code> do not move it. To serve on a different host port, change the host port in the mapping (<code>"127.0.0.1:9000:8000"</code>) rather than the server's port.</p>
+<p><code>compose.yml</code> publishes on <code>127.0.0.1</code> because the quick start runs without authentication. The bind address limits which machines can connect; it does not replace authentication. To serve other machines, first configure a bearer token or OIDC (<a href="../../guides/authentication/">Authentication</a>), then either put a reverse proxy in front (<a href="#behind-a-reverse-proxy">Behind a reverse proxy</a>) or publish on every interface from <code>compose.override.yml</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">markdown-vault-mcp</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span><span class="w"> </span><span class="kt">!override</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"8000:8000"</span>
+</code></pre></div>
+<p><code>!override</code> replaces the mapping instead of appending to it. The override file leaves <code>compose.yml</code> unedited, so a template update does not conflict with the change.</p>
 <h3 id="domain-content-and-copier-update">Domain content and <code>copier update</code><a class="headerlink" href="#domain-content-and-copier-update" title="Permanent link">&para;</a></h3>
 <p>Four sentinel blocks mark the parts of <code>compose.yml</code> a project owns. Content inside them survives a template update; content outside them does not, and will conflict.</p>
 <table>
@@ -2481,7 +2516,7 @@ directories (default 1000/1000).</p>
 <span class="w">  </span>-e<span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_DEBUG_PORT</span><span class="o">=</span><span class="m">5678</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-e<span class="w"> </span><span class="nv">MARKDOWN_VAULT_MCP_DEBUG_WAIT</span><span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-p<span class="w"> </span><span class="m">127</span>.0.0.1:5678:5678<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-p<span class="w"> </span><span class="m">8000</span>:8000<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-p<span class="w"> </span><span class="m">127</span>.0.0.1:8000:8000<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>markdown-vault-mcp:debug
 </code></pre></div>
 <table>

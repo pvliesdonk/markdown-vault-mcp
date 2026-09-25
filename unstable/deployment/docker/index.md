@@ -7,7 +7,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The server listens on port 8000 with HTTP transport, published on the host as `8000:8000`. No reverse proxy, TLS terminator, or external network is assumed.
+The server listens on port 8000 with HTTP transport, published on the host as `127.0.0.1:8000:8000`, so only the host itself can connect. No reverse proxy, TLS terminator, or external network is assumed. Authentication is off, since every auth variable in `.env.example` is commented out; [Ports](#ports) covers serving other machines.
 
 Copying `.env.example` first is the step to keep. Every variable in it arrives commented out, so the server starts on its defaults and the copy changes no behaviour by itself. It is the file you edit next, and `compose.yml` names it.
 
@@ -28,7 +28,18 @@ The `env_file:` entry is marked `required: false`, so a checkout with no `.env` 
 
 ### Ports
 
-The image pins its own listener: `CMD` passes `--host 0.0.0.0 --port 8000`, so `MARKDOWN_VAULT_MCP_HOST` and `MARKDOWN_VAULT_MCP_PORT` in a `.env` do not move it. To serve on a different host port, change the left-hand side of the mapping (`"9000:8000"`) rather than the server's port.
+The image pins its own listener: `CMD` passes `--host 0.0.0.0 --port 8000`, so `MARKDOWN_VAULT_MCP_HOST` and `MARKDOWN_VAULT_MCP_PORT` in a `.env` do not move it. To serve on a different host port, change the host port in the mapping (`"127.0.0.1:9000:8000"`) rather than the server's port.
+
+`compose.yml` publishes on `127.0.0.1` because the quick start runs without authentication. The bind address limits which machines can connect; it does not replace authentication. To serve other machines, first configure a bearer token or OIDC ([Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/index.md)), then either put a reverse proxy in front ([Behind a reverse proxy](#behind-a-reverse-proxy)) or publish on every interface from `compose.override.yml`:
+
+```
+services:
+  markdown-vault-mcp:
+    ports: !override
+      - "8000:8000"
+```
+
+`!override` replaces the mapping instead of appending to it. The override file leaves `compose.yml` unedited, so a template update does not conflict with the change.
 
 ### Domain content and `copier update`
 
@@ -192,7 +203,7 @@ Production images ship without `debugpy` to keep the image lean. To attach a rem
      -e MARKDOWN_VAULT_MCP_DEBUG_PORT=5678 \
      -e MARKDOWN_VAULT_MCP_DEBUG_WAIT=true \
      -p 127.0.0.1:5678:5678 \
-     -p 8000:8000 \
+     -p 127.0.0.1:8000:8000 \
      markdown-vault-mcp:debug
    ```
 
