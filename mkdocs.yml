@@ -164,6 +164,7 @@ nav:
       - Docker: guides/docker.md
       - Embeddings: guides/embeddings.md
       - Authentication: guides/authentication.md
+<<<<<<< before updating
       - OIDC Providers: guides/oidc-providers.md
       - Obsidian Everywhere: guides/obsidian-everywhere.md
       - Research Workflows: guides/research-workflows.md
@@ -173,6 +174,9 @@ nav:
       - MCP Apps: guides/mcp-apps.md
       - Transfer Links: guides/transfer-links.md
       - Claude Code Plugin: guides/claude-code-plugin.md
+=======
+      - Security Model: guides/security-model.md
+>>>>>>> after updating
   - MCP Interface:
       - Tools: tools/index.md
       - Resources: resources.md

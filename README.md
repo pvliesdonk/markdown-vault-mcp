@@ -186,7 +186,7 @@ CI workflows reference two required repository secrets and one optional Claude t
 
 | Secret | Used by | How to generate |
 |---|---|---|
-| `RELEASE_TOKEN` | `release-prepare.yml`, `release.yml`, `copier-update.yml`, `renovate.yml`, `bootstrap.yml` | Fine-grained PAT at <https://github.com/settings/personal-access-tokens/new> with `contents: write`, `pull_requests: write`, and `administration: write` (bootstrap applies the repository rulesets, auto-merge, and the security settings). Must belong to a repository admin: the shipped rulesets grant bypass to the admin role, and the release tag + GitHub release that knope creates after a release pull request merges rely on it (pull requests the token opens also need it so their CI runs). Scoped to this repo. |
+| `RELEASE_TOKEN` | `release-prepare.yml`, `release.yml`, `copier-update.yml`, `renovate.yml`, `bootstrap.yml` | Fine-grained PAT at <https://github.com/settings/personal-access-tokens/new> with `contents: write`, `pull_requests: write`, and `administration: write` (bootstrap applies the repository rulesets, auto-merge, the security settings, and the About block). Must belong to a repository admin: the shipped rulesets grant bypass to the admin role, and the release tag + GitHub release that knope creates after a release pull request merges rely on it (pull requests the token opens also need it so their CI runs). Scoped to this repo. |
 | `CODECOV_TOKEN` | `ci.yml` | <https://codecov.io>: sign in with GitHub and add the repo. The upload token is on its settings page. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `claude.yml` | Optional. Run `claude setup-token` locally and configure this only for `@claude` or opted-in automatic review. |
 
@@ -200,8 +200,10 @@ gh secret set CLAUDE_CODE_OAUTH_TOKEN
 > Dependency updates are handled by **Renovate** (`renovate.yml`), which reuses
 > `RELEASE_TOKEN`. It maintains `uv.lock` and auto-merges patch/minor bumps once
 > the `CI Success` check is green; `bootstrap.yml` enables auto-merge, applies
-> the repository rulesets (`.github/rulesets/`), and turns on private
-> vulnerability reporting and Dependabot alerts on first push. See
+> the repository rulesets (`.github/rulesets/`), turns on private
+> vulnerability reporting and Dependabot alerts, and fills the repository's
+> About block (description, website, topics) from `pyproject.toml` on first
+> push. See
 > [Repository Protection](docs/deployment/repository-protection.md) for the
 > per-branch posture, bypass model, and security settings. GitHub Actions are updated in the copier
 > template and arrive via `copier update`, not per-repo.
