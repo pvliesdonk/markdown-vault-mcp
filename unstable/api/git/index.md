@@ -347,9 +347,9 @@ Returns:
 
 Raises:
 
-| Type         | Description                                                           |
-| ------------ | --------------------------------------------------------------------- |
-| `ValueError` | If git log exits non-zero (e.g. an invalid since / until expression). |
+| Type         | Description                                                                                                     |
+| ------------ | --------------------------------------------------------------------------------------------------------------- |
+| `ValueError` | If git log exits non-zero; git accepts any since / until text without complaint, so a bad date never causes it. |
 
 ### `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None, *, summarize_binary=False)`
 
@@ -378,9 +378,10 @@ Returns:
 
 Raises:
 
-| Type         | Description                                                                                             |
-| ------------ | ------------------------------------------------------------------------------------------------------- |
-| `ValueError` | If ref is not found in history, since_timestamp cannot be resolved, or a git subprocess exits non-zero. |
+| Type                  | Description                                              |
+| --------------------- | -------------------------------------------------------- |
+| `InvalidRequestError` | If ref names no commit in this repository.               |
+| `ValueError`          | If a git subprocess exits non-zero for any other reason. |
 
 ### `get_file_at_ref(query_)`
 

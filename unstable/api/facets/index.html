@@ -5655,15 +5655,25 @@ range).  Silently ignored when <em>per_commit</em> is <code>False</code>.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If not exactly one of <em>since_sha</em> /
+<em>since_timestamp</em> is supplied, <em>since_sha</em> is not 4-64
+lowercase hex digits or names no commit, or <em>path</em> has an
+extension that is neither <code>.md</code> nor a configured attachment
+type.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
                   <code><span title="ValueError">ValueError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If exactly one of <em>since_sha</em> / <em>since_timestamp</em> is
-not supplied, <em>since_sha</em> contains invalid characters, the
-resolved ref is not found in history, or <em>path</em> has an
-extension that is neither <code>.md</code> nor a configured attachment
-type.</p>
+                <p>If a git subprocess fails for any other reason.</p>
               </div>
             </td>
           </tr>

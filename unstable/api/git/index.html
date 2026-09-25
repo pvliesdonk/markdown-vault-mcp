@@ -4147,8 +4147,9 @@ boundary is included).</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <code>git log</code> exits non-zero (e.g. an invalid
-<code>since</code> / <code>until</code> expression).</p>
+                <p>If <code>git log</code> exits non-zero; git accepts any
+<code>since</code> / <code>until</code> text without complaint, so a bad date
+never causes it.</p>
               </div>
             </td>
           </tr>
@@ -4367,12 +4368,22 @@ walked to the <em>limit</em> most recent ones (clamped to
       <tbody>
           <tr class="doc-section-item">
             <td>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <em>ref</em> names no commit in this repository.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
                   <code><span title="ValueError">ValueError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <em>ref</em> is not found in history, <em>since_timestamp</em>
-cannot be resolved, or a git subprocess exits non-zero.</p>
+                <p>If a git subprocess exits non-zero for any other
+reason.</p>
               </div>
             </td>
           </tr>
