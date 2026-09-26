@@ -206,6 +206,22 @@ async def test_read_missing_attachment_raises_gone(sink: VaultTransferSink) -> N
     assert exc.value.status_code == 410
 
 
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root ignores permission bits",
+)
+async def test_read_unreadable_attachment_is_not_gone(
+    sink: VaultTransferSink, source_dir: Path
+) -> None:
+    """A refused read is the server's failure, never a 410 Gone (#1608)."""
+    (source_dir / "pic.png").chmod(0)
+    try:
+        with pytest.raises(ValueError, match="cannot be read"):
+            await sink.read("pic.png")
+    finally:
+        (source_dir / "pic.png").chmod(0o644)
+
+
 async def test_read_vault_unavailable_raises_503(config: ProjectConfig) -> None:
     # The vault is torn down (ref-counted lifespan) while the route stays
     # mounted: a link followed then gets a retryable 503, not a 500.

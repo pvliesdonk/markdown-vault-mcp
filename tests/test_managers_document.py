@@ -907,19 +907,17 @@ class TestAttachmentSize:
     def test_stat_oserror_becomes_valueerror(
         self, doc_vault: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """An OSError during stat (a race) surfaces as the documented ValueError."""
+        """A refused stat is a fault, not absence (#1608)."""
         mgr = self._mgr(doc_vault)
 
-        class _Racy:
-            def is_file(self) -> bool:
-                return True
-
+        class _Refused:
             def stat(self) -> object:
-                raise OSError("vanished mid-stat")
+                raise OSError("refused")
 
-        monkeypatch.setattr(mgr._artifacts, "validate_path", lambda _p: _Racy())
-        with pytest.raises(ValueError, match="Attachment not found"):
+        monkeypatch.setattr(mgr._artifacts, "validate_path", lambda _p: _Refused())
+        with pytest.raises(ValueError, match="exists but cannot be read") as exc:
             mgr.attachment_size("gone.bin")
+        assert not isinstance(exc.value, InvalidRequestError)
 
 
 # ---------------------------------------------------------------------------

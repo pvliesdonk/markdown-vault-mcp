@@ -510,9 +510,10 @@ class DocumentManager:
             The file size in bytes (from ``stat``).
 
         Raises:
-            InvalidRequestError: If the path escapes the source directory.
-            ValueError: If the path has an extension not in the allowlist, or
-                the file does not exist.
+            InvalidRequestError: If the path escapes the source directory, ends
+                with ``.md``, or has an extension not in the allowlist.
+            DocumentNotFoundError: If no regular file is at the path.
+            ValueError: If the file system refuses the ``stat`` or read.
         """
         return self._artifacts.size(path)
 
@@ -527,9 +528,10 @@ class DocumentManager:
             base64-encoded content and MIME type.
 
         Raises:
-            InvalidRequestError: If the path escapes the source directory.
-            ValueError: If the path has an extension not in the allowlist, or
-                the file does not exist.
+            InvalidRequestError: If the path escapes the source directory, ends
+                with ``.md``, or has an extension not in the allowlist.
+            DocumentNotFoundError: If no regular file is at the path.
+            ValueError: If the file system refuses the ``stat`` or read.
         """
         return self._artifacts.read(path)
 

@@ -30,11 +30,13 @@ import base64
 import dataclasses
 import mimetypes
 import shutil
+import stat as stat_module
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.exceptions import (
     DocumentExistsError,
     DocumentNotFoundError,
+    InvalidRequestError,
     ReadOnlyError,
 )
 from markdown_vault_mcp.hashing import compute_etag
@@ -49,6 +51,7 @@ from markdown_vault_mcp.utils import (
 )
 
 if TYPE_CHECKING:
+    import os
     import threading
     from collections.abc import Sequence
     from pathlib import Path
@@ -158,11 +161,11 @@ class ArtifactStore:
             The resolved absolute path.
 
         Raises:
-            ValueError: If the path escapes the source directory, ends with
-                ``.md``, or has an extension not in the allowlist.
+            InvalidRequestError: If the path escapes the source directory, ends
+                with ``.md``, or has an extension not in the allowlist.
         """
         if is_note(path):
-            raise ValueError(
+            raise InvalidRequestError(
                 f"Path ends with '.md' — use the note read/write methods "
                 f"instead: {path}"
             )
@@ -170,11 +173,11 @@ class ArtifactStore:
         suffix = artifact_suffix(path)
         if not is_allowed_artifact_suffix(suffix, exts):
             allowed_str = ", ".join(f".{e}" for e in sorted(exts))
-            raise ValueError(
-                f"Extension '.{suffix}' is not in the attachment allowlist. "
-                f"Allowed: {allowed_str}. "
-                "Set MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS=* to allow "
-                "all non-.md files."
+            raise InvalidRequestError(
+                f"Extension '.{suffix}' is not in the attachment allowlist, so "
+                f"this server does not serve it. Allowed: {allowed_str}. "
+                "(The allowlist is set by the operator: "
+                "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS.)"
             )
         return resolve_inside(path, self._source_dir)
 
@@ -191,15 +194,34 @@ class ArtifactStore:
             The file size in bytes.
 
         Raises:
-            ValueError: If the path is invalid or the file does not exist.
+            InvalidRequestError: If the path is invalid.
+            DocumentNotFoundError: If no regular file is at the path.
+            ValueError: If the file system refuses the ``stat`` (#1608).
         """
-        abs_path = self.validate_path(path)
+        return self._stat(path, self.validate_path(path)).st_size
+
+    @staticmethod
+    def _stat(path: str, abs_path: Path) -> os.stat_result:
+        """Stat an attachment, telling absence apart from a refused stat.
+
+        ``Path.is_file()`` returns ``False`` for a path it cannot stat, so a
+        permission error would read as "not found" (#1625).
+
+        Raises:
+            DocumentNotFoundError: If nothing, or no regular file, is there.
+            ValueError: If the file system refuses the ``stat``.
+        """
         try:
-            if not abs_path.is_file():
-                raise ValueError(f"Attachment not found: {path}")
-            return abs_path.stat().st_size
+            st = abs_path.stat()
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            raise DocumentNotFoundError(f"Attachment not found: {path}") from exc
         except OSError as exc:
-            raise ValueError(f"Attachment not found: {path}") from exc
+            raise ValueError(
+                f"Attachment {path} exists but cannot be read: {exc}"
+            ) from exc
+        if not stat_module.S_ISREG(st.st_mode):
+            raise DocumentNotFoundError(f"Attachment not found: {path}")
+        return st
 
     def read(self, path: str) -> AttachmentContent:
         """Read an artifact's bytes, base64-encoded, with its metadata.
@@ -211,14 +233,24 @@ class ArtifactStore:
             The artifact content and metadata.
 
         Raises:
-            ValueError: If the path is invalid or the file does not exist.
+            InvalidRequestError: If the path is invalid.
+            DocumentNotFoundError: If no regular file is at the path.
+            ValueError: If the file system refuses the ``stat`` or the read
+                (#1608).
         """
         abs_path = self.validate_path(path)
-        if not abs_path.is_file():
-            raise ValueError(f"Attachment not found: {path}")
-        stat = abs_path.stat()
+        stat = self._stat(path, abs_path)
         mime_type, _ = mimetypes.guess_type(path)
-        raw = abs_path.read_bytes()
+        try:
+            raw = abs_path.read_bytes()
+        except (FileNotFoundError, NotADirectoryError) as exc:
+            # Removed between the stat and the read: absent, as in
+            # DocumentManager.read (#745).
+            raise DocumentNotFoundError(f"Attachment not found: {path}") from exc
+        except OSError as exc:
+            raise ValueError(
+                f"Attachment {path} exists but cannot be read: {exc}"
+            ) from exc
         return AttachmentContent(
             path=path,
             mime_type=mime_type,
@@ -245,7 +277,7 @@ class ArtifactStore:
             ReadOnlyError: If the vault is read-only.
             ConcurrentModificationError: If *if_match* does not match.
             DocumentExistsError: If write protection refuses a blind overwrite.
-            ValueError: If the path is invalid.
+            InvalidRequestError: If the path is invalid.
         """
         self._check_writable()
         with self._file_write_lock:
@@ -281,7 +313,7 @@ class ArtifactStore:
             ReadOnlyError: If the vault is read-only.
             DocumentNotFoundError: If the artifact does not exist.
             ConcurrentModificationError: If *if_match* does not match.
-            ValueError: If the path is invalid.
+            InvalidRequestError: If the path is invalid.
         """
         self._check_writable()
         with self._file_write_lock:
@@ -313,7 +345,7 @@ class ArtifactStore:
             DocumentNotFoundError: If *old_path* does not exist.
             DocumentExistsError: If *new_path* already exists.
             ConcurrentModificationError: If *if_match* does not match.
-            ValueError: If either path is invalid.
+            InvalidRequestError: If either path is invalid.
         """
         self._check_writable()
         with self._file_write_lock:

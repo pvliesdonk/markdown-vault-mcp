@@ -39,7 +39,7 @@ from fastmcp_pvl_core import (
 )
 
 from markdown_vault_mcp.domain import get_vault_singleton
-from markdown_vault_mcp.exceptions import DocumentExistsError
+from markdown_vault_mcp.exceptions import DocumentExistsError, DocumentNotFoundError
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
 from markdown_vault_mcp.utils import (
     artifact_suffix,
@@ -350,10 +350,10 @@ class VaultTransferSink:
             return TransferReadResult(body, _MARKDOWN_MEDIA_TYPE, filename)
         try:
             att = await asyncio.to_thread(vault.reader.read_attachment, handle)
-        except ValueError as exc:
-            # read_attachment raises ValueError("Attachment not found: ...") once
-            # the file is gone; validate confirmed it at mint time, so this is a
-            # 410 Gone, not a 500.
+        except DocumentNotFoundError as exc:
+            # The file is gone; validate confirmed it at mint time, so this is a
+            # 410 Gone, not a 500. A refused read is a plain ValueError and
+            # propagates as the server's failure, never as absence (#1608).
             logger.warning("transfer_download_attachment_gone path=%s", handle)
             raise TransferResourceGoneError(
                 f"attachment no longer available: {handle}"
