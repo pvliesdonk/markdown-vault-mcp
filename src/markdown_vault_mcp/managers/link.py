@@ -75,7 +75,7 @@ class LinkManager:
         """
         self._validate_path(path)
         if self._fts.get_note(path) is None:
-            raise DocumentNotFoundError(f"Document not found: {path}")
+            raise DocumentNotFoundError.note(path)
 
     # ------------------------------------------------------------------
     # Public API

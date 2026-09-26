@@ -1163,9 +1163,7 @@ def register(mcp: FastMCP) -> None:
         subject = subject_or_request
         note = await asyncio.to_thread(vault.reader.read, path)
         if note is None:
-            raise DocumentNotFoundError(
-                f"No note at {path!r}. Find the path with search or list_documents."
-            )
+            raise DocumentNotFoundError.note(path)
         verified_count = len(verified_entries(note.frontmatter)) + 1
         new_text = append_okf_verification(
             note.content, subject=subject, now=datetime.now(UTC)

@@ -183,7 +183,10 @@ class SummarizeManager:
         )
         resolved, matched = self._resolve_paths(paths, limit)
         if not resolved:
-            raise InvalidRequestError("No notes found for the given paths.")
+            raise InvalidRequestError(
+                "No notes found for the given paths. Check them with "
+                "list_folders or list_documents."
+            )
 
         notes, note_clipped, unreadable = self._gather_notes(resolved)
         if not notes:

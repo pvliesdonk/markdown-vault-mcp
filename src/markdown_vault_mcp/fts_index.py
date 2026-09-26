@@ -2454,7 +2454,7 @@ class FTSIndex:
                 .fetchone()
             )
             if row is None:
-                raise DocumentNotFoundError(f"Path not found in index: {path!r}")
+                raise DocumentNotFoundError.note(path)
 
         # Trivial case.
         if source_path == target_path:

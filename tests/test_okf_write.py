@@ -739,7 +739,7 @@ class TestOkfVerifyTrustAuth:
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            with pytest.raises(ToolError, match="No note at"):
+            with pytest.raises(ToolError, match="Document not found"):
                 await client.call_tool("okf_verify", {"path": "nope.md"})
 
     async def test_aborts_on_concurrent_modification(

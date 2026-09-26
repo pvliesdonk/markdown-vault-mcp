@@ -312,8 +312,8 @@ class SearchManager:
         """Raise :class:`EmbeddingsNotConfiguredError` if semantic search is unconfigured."""
         if not self._vectors_available():
             raise EmbeddingsNotConfiguredError(
-                "Semantic search requires both 'embedding_provider' and "
-                "'embeddings_path' to be configured."
+                "Semantic search is not enabled on this server; search with "
+                "mode='keyword' instead."
             )
 
     def _load_vectors(self) -> VectorStore:
@@ -1579,7 +1579,7 @@ class SearchManager:
         """
         self._validate_path(path)
         if self._fts.get_note(path) is None:
-            raise DocumentNotFoundError(f"Document not found: {path}")
+            raise DocumentNotFoundError.note(path)
         folder = normalize_folder(folder)
 
         if self._embedding_provider is None or self._embeddings_path is None:
@@ -1729,7 +1729,7 @@ class SearchManager:
         self._validate_path(path)
         row = self._fts.get_note(path)
         if row is None:
-            raise DocumentNotFoundError(f"Document not found: {path}")
+            raise DocumentNotFoundError.note(path)
 
         frontmatter = self._get_frontmatter(path)
 
