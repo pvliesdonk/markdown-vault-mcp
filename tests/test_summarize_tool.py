@@ -133,14 +133,14 @@ class TestSummarizeDualMode:
             assert res.data["status"] == "working"
             final = await _poll_job(client, res.data["job_id"])
         assert final["status"] == "failed"
-        assert "backend exploded" in final["error"]
+        assert "request itself was fine" in final["error"]
 
     async def test_fast_failure_raises_inline(self, summarize_server) -> None:
         server = summarize_server(
             _FakeSummarizer(error="backend exploded"), soft_deadline=10.0
         )
         async with Client(server) as client:
-            with pytest.raises(ToolError, match="backend exploded"):
+            with pytest.raises(ToolError, match="request itself was fine"):
                 await client.call_tool("summarize", {"paths": ["simple.md"]})
 
     async def test_get_job_result_unknown_job_raises(self, summarize_server) -> None:

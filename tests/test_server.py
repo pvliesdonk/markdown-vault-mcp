@@ -1711,7 +1711,7 @@ class TestMCPWriteAttachment:
                 await client.call_tool("write", args)
             assert path.read_bytes() == original
             read_result = await client.call_tool("read", {"path": "assets/report.pdf"})
-            with pytest.raises(ToolError, match="Concurrent modification"):
+            with pytest.raises(ToolError, match="changed since etag"):
                 await client.call_tool("write", {**args, "if_match": "stale"})
             assert path.read_bytes() == original
             result = await client.call_tool(
@@ -1818,9 +1818,7 @@ class TestAttachmentSizeCap:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0.001")
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises(
-                ToolError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
-            ):
+            with pytest.raises(ToolError, match="byte limit"):
                 await client.call_tool("read", {"path": "assets/large.pdf"})
 
     async def test_read_allows_attachment_when_cap_zero(
@@ -1846,9 +1844,7 @@ class TestAttachmentSizeCap:
         big_b64 = base64.b64encode(b"x" * 2048).decode("ascii")
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises(
-                ToolError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
-            ):
+            with pytest.raises(ToolError, match="byte limit"):
                 await client.call_tool(
                     "write",
                     {"path": "assets/big.pdf", "content_base64": big_b64},
@@ -1890,9 +1886,7 @@ class TestAttachmentSizeCap:
         monkeypatch.setattr(DocumentManager, "read_attachment", spy)
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises(
-                ToolError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
-            ):
+            with pytest.raises(ToolError, match="byte limit"):
                 await client.call_tool("read", {"path": "assets/large.pdf"})
         assert seen == []
 
@@ -1914,9 +1908,7 @@ class TestAttachmentSizeCap:
                 },
             )
             assert ok.data["path"] == "assets/exact.pdf"
-            with pytest.raises(
-                ToolError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
-            ):
+            with pytest.raises(ToolError, match="byte limit"):
                 await client.call_tool(
                     "write",
                     {
@@ -2056,8 +2048,8 @@ class TestFetchTool:
     async def test_fetch_size_limit(
         self, _mcp_env_writable_with_attachments: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """fetch_url's documented size-cap refusal is translated into the
-        operator-facing message naming MAX_ATTACHMENT_SIZE_MB."""
+        """fetch_url's documented size-cap refusal is restated as the vault's
+        attachment byte limit."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0.001")
 
         async def _over_cap(url: str, *, max_bytes: int, **_kwargs: object) -> None:
@@ -2070,7 +2062,7 @@ class TestFetchTool:
         with patch(self._FETCH_URL_SEAM, _over_cap):
             server = make_server()
             async with Client(server) as client:
-                with pytest.raises(ToolError, match="MAX_ATTACHMENT_SIZE_MB"):
+                with pytest.raises(ToolError, match="byte limit"):
                     await client.call_tool(
                         "fetch",
                         {
@@ -2226,6 +2218,70 @@ class TestFetchTool:
                             "path": "missing.md",
                         },
                     )
+
+    @pytest.mark.parametrize(
+        ("status", "level", "phrase"),
+        [
+            (404, logging.INFO, "Check the URL"),
+            (503, logging.WARNING, "Retry later"),
+            (429, logging.WARNING, "retry later"),
+        ],
+    )
+    async def test_fetch_remote_status_outcome_and_no_secret(
+        self,
+        _mcp_env_writable_with_attachments: Path,
+        caplog: pytest.LogCaptureFixture,
+        status: int,
+        level: int,
+        phrase: str,
+    ) -> None:
+        """The remote site's status picks the outcome; the raw URL is logged nowhere (#1608)."""
+        import httpx
+
+        secret = "https://user:hunter2@example.com/x.md?sig=SECRET"
+
+        async def _http_error(url: str, **_kwargs: object) -> None:
+            # fetch_url's own message is the redacted one.
+            raise httpx.HTTPStatusError(
+                f"HTTP {status} response from https://example.com/x.md",
+                request=httpx.Request("GET", url),
+                response=httpx.Response(status),
+            )
+
+        with patch(self._FETCH_URL_SEAM, _http_error):
+            server = make_server()
+            with caplog.at_level(logging.DEBUG):
+                async with Client(server) as client:
+                    result = await client.call_tool_mcp(
+                        "fetch", {"url": secret, "path": "x.md"}
+                    )
+        text = result.content[0].text  # type: ignore[union-attr]
+        assert result.is_error
+        assert phrase in text
+        # INFO and up, the default level: the middleware's DEBUG
+        # tool_call_started line carries the arguments by design.
+        logged = "\n".join(
+            r.getMessage() for r in caplog.records if r.levelno >= logging.INFO
+        )
+        assert "hunter2" not in text + logged
+        assert "SECRET" not in text + logged
+        failed = [
+            r for r in caplog.records if r.getMessage().startswith("tool_call_failed")
+        ]
+        assert failed and failed[-1].levelno == level
+
+    def test_remote_rate_limit_passes_through_unchained(self) -> None:
+        """A 429 goes to tool_boundary as raised, not chained to itself."""
+        import httpx
+
+        from markdown_vault_mcp._tools.writer import _remote_status_error
+
+        exc = httpx.HTTPStatusError(
+            "HTTP 429 response from https://example.com/x.md",
+            request=httpx.Request("GET", "https://example.com/x.md"),
+            response=httpx.Response(429),
+        )
+        assert _remote_status_error(exc) is None
 
     async def test_fetch_timeout(
         self, _mcp_env_writable_with_attachments: Path

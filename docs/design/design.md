@@ -78,7 +78,7 @@ markdown-vault-mcp (new package)
 +-- config_sections/  -- domain-grouped sub-config VIEWS (git/indexing/embeddings/search/sync/content), assembled by ProjectConfig properties; no from_env of their own (#952)
 |   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (#1225), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
 |   +-- vault_settings.py -- VaultSettings: frozen config-derived Vault construction settings + pure effective_* derivations (#1158)
-+-- server.py         -- template-owned skeleton; domain wiring in DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
++-- server.py         -- template-owned skeleton; DOMAIN-WIRING calls _server_wiring.wire_domain (#901)
 +-- _instructions.py  -- contribute_instructions: domain snippets for pvl-core's instructions builder (#901)
 +-- domain.py         -- Service: owns Vault lifecycle + get_vault/set_pending_config singleton (#902)
 +-- _server_apps.py   -- template-owned MCP Apps scaffold; domain apps in DOMAIN-APP-* sentinels (#905)
@@ -1029,7 +1029,7 @@ Two-layer model:
 
 | Library signal | Outcome |
 |-|-|
-| `InvalidRequestError`, and its subclasses `DocumentNotFoundError` and `EmbeddingsNotConfiguredError` | Change the request |
+| `InvalidRequestError`, and its subclasses `DocumentNotFoundError`, `EmbeddingsNotConfiguredError` and `SummarizeTimeoutError` | Change the request |
 | `EditConflictError` | Change the request |
 | `DocumentExistsError` | Change the request |
 | `ReadOnlyError` | Change the request |
@@ -1050,6 +1050,20 @@ fault. A feature that is opt-in and left off is not: the model works within
 the deployment it has, as with `ReadOnlyError`. Hence `EmbeddingsNotConfiguredError`
 is a change of request.
 
+The table is applied in one place. Every tool is `@mcp.tool` over
+pvl-core's `@tool_boundary` over `@library_outcomes`
+(`_tools/_outcomes.py`); a long-running tool's coroutine takes
+`@library_outcomes` under `register_long_running_tool`, which carries the
+boundary itself. `library_outcomes` raises each "change the request" and
+"refresh, then retry" signal as a `ToolError` at INFO, and an
+`IndexUnavailableError` whose reason heals itself (`busy`, `timeout`) as a
+"retry shortly" `ToolError` at WARNING. Everything else reaches the boundary,
+which logs it once as `tool_failed` at ERROR with the traceback and tells the
+model the request was fine. A tool that refuses on its own raises a library
+signal (`read`'s missing note is `DocumentNotFoundError`) or an INFO
+`ToolError`, never a bare `ValueError`, which the boundary would report as a
+fault (#1608).
+
 **Exception types**:
 
 | Exception | Raised by | When |
@@ -1061,6 +1075,7 @@ is a change of request.
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match |
 | `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` or `embeddings_path` configured. A subclass of `InvalidRequestError`, so still a `ValueError` |
+| `SummarizeTimeoutError` | `summarize()` | The summarization backend outran its per-request budget; the caller can ask for less. A subclass of `InvalidRequestError` and of `RuntimeError`, the type a timeout had before (#1608) |
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
 | `DocumentUnreadableError` | `read()`, revision reads | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. At a revision: invalid UTF-8, or a Git LFS pointer in place of the note. The cause is chained (#1608) |
 | `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
@@ -1787,8 +1802,8 @@ in-memory subsystem in this repo (`transfer/`); #979 retired that and adopted
 the shared framework. markdown-vault-mcp now supplies only the domain hook: a
 `VaultTransferSink` (`_transfer_sink.py`) implementing the core `TransferSink`
 protocol (`read` / `write`) plus a validator that maps a caller `ref` to a
-vault-relative path. Wiring lives in `server.py`'s DOMAIN-WIRING block, which
-calls `register_transfer_routes(mcp, config.server, config.transfer, sink=…,
+vault-relative path. Wiring lives in `_server_wiring.py`, which `server.py`'s
+DOMAIN-WIRING block calls; it calls `register_transfer_routes(mcp, config.server, config.transfer, sink=…,
 validate=…)` and passes the two optional `download_note` / `upload_note`
 strings that add vault-specific context to the generic tool descriptions.
 
@@ -4024,7 +4039,7 @@ summarize subfolders in separate calls — guidance placed in the result is
 acted on far more reliably than schema documentation. The live configured
 limit is also substituted into the tool description at startup (a
 ``{max_notes}`` placeholder in the docstring, rewritten by
-``apply_summarize_limits`` from the DOMAIN-WIRING block, which owns the
+``apply_summarize_limits`` from ``_server_wiring`` (the DOMAIN-WIRING block), which owns the
 loaded config) and surfaced in the server instructions via
 ``contribute_instructions(summarize_note_limit=...)``, so a calling
 model can plan folder splits before its first call rather than reacting
@@ -4081,11 +4096,13 @@ contain this, both operator-tunable:
 - **Per-request timeout** — ``OpenAISummarizer`` constructs its client with
   ``timeout=SUMMARIZE_TIMEOUT`` (default 120 s, mirroring the embeddings
   transport's configurable timeout (``MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S``,
-  default 30 s). An ``openai.APITimeoutError`` is mapped to a
-  specific, actionable ``RuntimeError`` — naming the budget and the ways to
-  fit under it (fewer paths, a smaller ``max_notes``, a tighter ``focus``,
-  ``per_note`` mode, or a higher ``SUMMARIZE_TIMEOUT``) — so the caller sees
-  guidance rather than a bare timeout.
+  default 30 s). An ``openai.APITimeoutError`` is mapped to
+  ``SummarizeTimeoutError`` — an ``InvalidRequestError`` that is also a
+  ``RuntimeError`` — naming the budget and the ways to fit under it (fewer
+  paths, a smaller ``max_notes``, a tighter ``focus``, ``per_note`` mode), so
+  the model sees guidance to change its request rather than a bare timeout.
+  The operator's lever, a higher ``SUMMARIZE_TIMEOUT``, goes in the
+  ``summarize_timeout`` WARNING log line, not the model's text (#1608).
 - **Dual-mode execution with background promotion (#1033)** — ``summarize``
   is registered through ``fastmcp_pvl_core.register_long_running_tool``
   rather than a bare ``@mcp.tool``, replacing the earlier hand-rolled
@@ -4109,7 +4126,7 @@ contain this, both operator-tunable:
   durable execution is the native task path's job, with a ``redis://``
   tasks backend). Because the ``Jobs`` mechanics are built from the loaded
   config, the summarize group and the index-maintenance jobs
-  (``register_index_jobs``) are registered from the DOMAIN-WIRING block
+  (``register_index_jobs``) are registered from ``_server_wiring`` (the DOMAIN-WIRING block)
   (the ``register_domain_prompts`` pattern) rather than the config-free
   ``register_tools()`` layer. The backend gate hides only ``summarize``;
   ``get_job_result`` is always registered, because ``reindex`` and
@@ -4142,7 +4159,7 @@ an event loop; finalization resolves FastMCP's effective tool visibility.
 The domain half lives in `_instructions.py` (kept out of the template-owned
 `server.py`, #901): `_domain_snippets()` selects the fragments that apply to
 a configuration and `contribute_instructions()` hands them to the builder
-from the `DOMAIN-WIRING` block. The guidance still varies with `read_only`
+from `_server_wiring` (the `DOMAIN-WIRING` block). The guidance still varies with `read_only`
 mode — when `read_only=True` the text states this is a read-only instance,
 otherwise it describes write tool semantics — which signals capability
 status to clients and reduces irrelevant prompting.
@@ -4346,8 +4363,8 @@ The config-dependent prompts — ``create_from_template`` (needs the templates
 folder), ``summarize-subtree`` (adapts to the summarize backend, #1035), and
 user-defined prompts (need the prompts folder) — are registered by
 ``register_domain_prompts(mcp, templates_folder, prompts_folder,
-summarize_tool_available=...)``, called from ``make_server``'s
-``DOMAIN-WIRING`` block with the already-resolved config values (no
+summarize_tool_available=...)``, called from ``_server_wiring``
+(``make_server``'s ``DOMAIN-WIRING`` block) with the already-resolved config values (no
 second environment read; a caller-supplied config is honored — #609).
 
 **User-defined prompts**: when ``MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`` is set,
@@ -4743,7 +4760,7 @@ a load failure degrades to system fonts with no loss of function.
 
 **Source layout and build**: the SPA is authored as partials under `src/markdown_vault_mcp/static/spa/` (`shell.html`, `styles.css`, `core.js`, and one `views/*.js` per view). `scripts/build_spa.py` assembles them into `static/app.src.html` via recursive `/*@@FILE:path@@*/` include markers, then `scripts/vendor_spa.py` embeds the vendored libraries into the served `static/app.html`. Both `app.src.html` and `app.html` are generated, committed artifacts; edit the partials, not the generated files. Each script has a `--check` mode enforced in pre-commit and gating merges in CI, so a stale artifact fails fast: `vendor_spa.py --check` runs in the template-owned ci.yml `lint` job (part of the required `CI Success` aggregate), while `build_spa.py --check` runs in the domain-owned `spa-source-check.yml` workflow (#942), whose "SPA source up-to-date" check the branch rulesets require via the `extra_required_checks` copier answer (template v5.4.0's domain seam).
 
-**Module layout**: `_server_apps.py` is the template-owned MCP Apps scaffold — the SPA shell resource and app-tools live inside its `DOMAIN-APP-TOOL-NAMES` / `DOMAIN-APP-RESOURCE` / `DOMAIN-APP-TOOLS` sentinel blocks, so everything outside them stays byte-identical to the template skeleton. The domain helpers that cannot live in the template-owned body — `_compute_claude_app_domain`, `_CDN_RESOURCE_DOMAINS`, and the `GraphView`→SPA `_graph_view_payload` serializer — live in `_vault_apps.py` (#905).
+**Module layout**: `_server_apps.py` is the template-owned MCP Apps scaffold. Its `DOMAIN-APP-TOOL-NAMES` / `DOMAIN-APP-RESOURCE` / `DOMAIN-APP-TOOLS` sentinel blocks keep the template's own text, list the vault's app-only tool names, and call into the vault's modules, so everything outside them stays byte-identical to the template skeleton. `_vault_apps.py` builds the app-shell `AppConfig` (`vault_app_resource_config`: `_compute_claude_app_domain` and `_CDN_RESOURCE_DOMAINS`) and holds the `GraphView`→SPA `_graph_view_payload` serializer; `_vault_app_tools.py` registers the vault's tools in place of the template's placeholders, with the template's `_app_tool_meta` for the app-only ones (#905).
 
 **Domain configuration**: MCP Apps iframes are sandboxed to a specific Claude app domain. The server computes it from `MARKDOWN_VAULT_MCP_BASE_URL` via `_compute_claude_app_domain()` (in `_vault_apps.py`). Override with `MARKDOWN_VAULT_MCP_APP_DOMAIN` when `BASE_URL` does not reflect the actual hostname visible to the Claude client (such as behind a proxy, or on a custom domain).
 
@@ -5303,7 +5320,7 @@ Safety branch mode for push failures is tracked separately (see #119).
 date semantics in [`reference/git-history-queries.md`](reference/git-history-queries.md) § History queries): `GitWriteStrategy` exposes read-only methods for querying the git commit log and reading historical content, none of which modify repository state:
 
 - `get_file_history(repo_path, path, since, limit, until=None, *, is_dir=False)`: runs `git log` with a sentinel-delimited format string to enumerate commits touching a note, a folder subtree, or the entire vault. A repository with no commit yet (unborn HEAD, where `git log` exits 128) has an empty history rather than a failure, and a `since_timestamp` diff there is empty too: `rev-parse --verify --quiet HEAD` is checked first, and its exit 1 counts as unborn only while `symbolic-ref -q HEAD` still names a branch, so an unreadable branch ref stays a fault (#1608). Uses ASCII Record Separator (`\x1e`) as a block delimiter so commit records can be parsed reliably regardless of commit message content. A single-file query uses `--follow` (rename-tracking) pinned to `--find-renames=30` with `-c diff.renameLimit`, returns no per-commit paths, is filtered to the note's own lineage (see the lineage boundary below, #1285), and is supplemented with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306); a directory query (`is_dir=True`, dispatched by `GitQueryManager.get_history` when `path` resolves to a real directory) drops `--follow` and scopes to `git log --name-only -- <dir>`, and vault-wide queries append `--name-only` — both populate each commit's changed file paths (git scopes the `--name-only` output to the directory pathspec, so no sibling files leak in). Both `since` and `until` are passed through verbatim to `git log` and are inclusive at the boundary. The log runs under `-z` (#1282), which NUL-frames both the header fields and the `--name-only` paths: git's default `core.quotePath` otherwise renders a non-ASCII name octal-escaped inside double quotes, and `paths_changed` would carry paths no other tool accepts. `-z` is preferred over `-c core.quotePath=false` because it also covers the names git quotes unconditionally — a double quote, tab, or newline in the path — and it is what the `get_file_at_ref` walk already uses. One byte class still does not survive: the reply is decoded through `subprocess`'s text mode, whose universal-newline translation rewrites a lone `\r` and collapses a `\r\n` pair, so a path carrying either comes back altered even under `-z` (#1290) — a property this reader shares with every other `-z` reader in the module.
-- `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)`: runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,64}` — the upper bound admits the 64-hex commit IDs a `--object-format=sha256` repository yields, #1284), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant, meaning a commit whose committer date equals the timestamp is the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked, useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. A caller's SHA is checked first with `rev-parse --verify --quiet <sha>^{commit}`, and one that names no commit is an `InvalidRequestError`; the full id it prints replaces the caller's prefix, which a blob may share. A later git failure that stops the diff is then the repository's, raised as a plain `ValueError` carrying git's stderr (#1608; the git facts are in `reference/git-history-queries.md`). The `get_diff` and `get_history` tools pass an `InvalidRequestError` to the model at INFO and log any other `ValueError` as `tool_failed` with its traceback, answering with a fixed server-error message so git's stderr, which can name server paths, never reaches the model. The `per_commit=True` walk (`_per_commit_rows`) enumerates commits with `git log -z --follow --name-only --find-renames=30`, filters them to the note's own lineage (the boundary below, #1285), supplements them with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306), and reuses each block's path as the pathspec for that commit's diff, so the same `-z` framing is what keeps a non-ASCII note's per-commit diff from coming back empty (#1282). The patch and `--stat` payloads are a separate half of that fix: they name files in their own body, nothing parses them, and they are handed to the caller as text — so `_range_diff`, `_root_commit_diff`, and the per-commit `git diff` render them under `-c core.quotePath=false` rather than under `-z`. Rendering and framing are different problems and take different tools: `-z` is not available for a patch body, and the config override cannot be trusted where output is parsed, because it leaves the unconditionally-quoted names quoted.
+- `get_file_diff(repo_path, path, ref, per_commit, since_timestamp=None, limit=None)`: runs `git diff` or `git show` to produce unified diffs. When `since_sha` is provided (validated as `[0-9a-f]{4,64}` — the upper bound admits the 64-hex commit IDs a `--object-format=sha256` repository yields, #1284), it is used directly as the ref. When `since_timestamp` is provided, `git rev-list --before=<ts> -1 HEAD` resolves it to a SHA (boundary **inclusive**: `--before` returns the most recent commit at or before that instant, meaning a commit whose committer date equals the timestamp is the resolved ref). When `per_commit=True` and `limit` is set, the inner `git log` adds `-n{clamped_limit}` (clamped to `[1, 100]`) to cap the number of commits walked, useful for keeping per-commit responses within LLM context budgets. Output exceeding 50 KB is truncated with a `[diff truncated: N bytes omitted]` note. A caller's SHA is checked first with `rev-parse --verify --quiet <sha>^{commit}`, and one that names no commit is an `InvalidRequestError`; the full id it prints replaces the caller's prefix, which a blob may share. A later git failure that stops the diff is then the repository's, raised as a plain `ValueError` carrying git's stderr (#1608; the git facts are in `reference/git-history-queries.md`). Through the tool layer (Error Handling), an `InvalidRequestError` reaches the model at INFO and any other `ValueError` is a fault the boundary logs with its traceback, answering with a fixed message so git's stderr, which can name server paths, never reaches the model. The `per_commit=True` walk (`_per_commit_rows`) enumerates commits with `git log -z --follow --name-only --find-renames=30`, filters them to the note's own lineage (the boundary below, #1285), supplements them with the commits under the names `--follow` could not reach (`_name_segments`, below, #1306), and reuses each block's path as the pathspec for that commit's diff, so the same `-z` framing is what keeps a non-ASCII note's per-commit diff from coming back empty (#1282). The patch and `--stat` payloads are a separate half of that fix: they name files in their own body, nothing parses them, and they are handed to the caller as text — so `_range_diff`, `_root_commit_diff`, and the per-commit `git diff` render them under `-c core.quotePath=false` rather than under `-z`. Rendering and framing are different problems and take different tools: `-z` is not available for a patch body, and the config override cannot be trusted where output is parsed, because it leaves the unconditionally-quoted names quoted.
 
 - `_lineage(git_root, path, cur_rel, env, *, rev_range=None)` (#1285): the boundary both single-note readers above are filtered by. `git log --follow` does not stop at the commit that created the file it follows: where a name was freed by a rename or a delete and later reused, it walks past that boundary and reports the *previous* occupant's commits under today's note. So the boundary is established from git's own records — `git -c diff.renameLimit=2000 log -z --follow --name-status --find-renames=30 [<range>] -- <path>` walked newest-first carrying a tracked path, exactly as the `get_file_at_ref` walk does, stopping at the `A` (or `C`) record that creates the tracked note. It returns the lineage's commit SHAs and whether that creation was reached. Three properties are load-bearing. It is **its own invocation** rather than a reading of the caller's stream, because `--since` / `--until` and the `-n` cap trim what the caller's `git log` returns and a window that excludes the note's creation would leave no birth record to stop at. It pins **`--find-renames=30`** (#338) because at git's 50% default a commit that renames and substantially rewrites a note reports as a plain `A`, indistinguishable from a reuse. Its callers pin the same threshold (#1297): while they left it to git, this walk followed *further* than the stream it was filtering, and the extra commits it knew about were ones the caller had never listed — a revision `read` served but `get_history` did not report. One threshold across every rename-crossing query is what makes the filter a filter. And a failed invocation returns **unknown rather than empty** (`shas=None`), so a caller falls back to its previous behaviour instead of discarding every commit. Records that do not name the tracked path are ignored rather than treated as a break in identity: a range-bounded walk can hide the rename that would have retargeted it, and dropping the note's own commits on that evidence is worse than following a name one commit too far. The single-range `get_file_diff` uses the same walk over `<ref>..HEAD`: when it reports the note was created inside that range, the diff is taken against the empty tree instead of `<ref>`, so the note reads as the creation it is rather than pairing one note's content against another's. One shape this cannot see, because git does not record it either: a commit that renames a note away **and** creates a new one under the freed name in the same commit reports as a plain `M` on that path, which is also what defeats `get_file_at_ref`'s walk.
 

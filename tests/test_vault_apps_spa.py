@@ -87,16 +87,20 @@ def test_declared_csp_origins_reach_the_app_resource() -> None:
     """The constant is what register_apps actually hands to the host.
 
     The test above compares the SPA against ``_vault_apps``; this one pins the
-    re-export ``_server_apps`` actually passes to ``AppConfig``, so importing
-    or shadowing a different constant there cannot pass unnoticed.
+    ``AppConfig`` that ``register_apps``' resource block takes from
+    ``vault_app_resource_config``, so building the CSP from a different
+    constant cannot pass unnoticed.
 
     Asserted as whole-list equality rather than membership: an
     ``"https://…" in <list>`` check is exact in Python, but it is
     indistinguishable from URL substring matching to a static analyzer, and
     equality pins every entry instead of one.
     """
-    assert apps._CDN_RESOURCE_DOMAINS is vault_apps._CDN_RESOURCE_DOMAINS
-    assert sorted(apps._CDN_RESOURCE_DOMAINS) == [
+    config = vault_apps.vault_app_resource_config()
+    assert config.csp is not None
+    domains = config.csp.resource_domains
+    assert domains == vault_apps._CDN_RESOURCE_DOMAINS
+    assert sorted(domains) == [
         "https://fonts.googleapis.com",
         "https://fonts.gstatic.com",
     ]

@@ -18,10 +18,7 @@ from markdown_vault_mcp._server_apps import (
     _hashed,
     _rewrite_spa_app_tool_calls,
 )
-from markdown_vault_mcp._vault_apps import (
-    _compute_claude_app_domain,
-    _fastmcp4_app_tool_meta,
-)
+from markdown_vault_mcp._vault_apps import _compute_claude_app_domain
 from tests.conftest import _CLEAR_VARS, wait_for_mcp_writer_drain
 from tests.server_factory import make_server
 
@@ -949,6 +946,6 @@ class TestSPARewriteValidation:
     def test_app_tool_meta_uses_public_hash_key(self) -> None:
         """FastMCP 4 strips the old private ``_tool_hash`` metadata key."""
         name = "vault_list"
-        fastmcp_meta = _fastmcp4_app_tool_meta("markdown_vault_mcp", name)["fastmcp"]
+        fastmcp_meta = _app_tool_meta(name)["fastmcp"]
         assert fastmcp_meta["tool_hash"] == _hashed(name).split("_", 1)[0]
         assert "_tool_hash" not in fastmcp_meta

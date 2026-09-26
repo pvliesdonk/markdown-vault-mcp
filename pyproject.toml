@@ -55,8 +55,19 @@ classifiers = [
     # PROJECT-LICENSE-CLASSIFIER-END
 ]
 dependencies = [
-    # >=9.0.0 for the operator-input contract and the reworded config help.
-    # Every config-driven builder (build_kv_store / build_event_store,
+    # >=10.0.0 for tool_boundary and is_tool_boundary (pvl-core ADR 0005):
+    # tools.py wraps every tool in the boundary instead of copying it, and
+    # tests/test_tool_outcomes.py fails a registered tool that is not
+    # wrapped (#678).  The request-logging middleware now logs
+    # tool_call_failed at the ToolError's log_level, so an INFO outcome no
+    # longer produces an ERROR line (pvl-core #363).  The major is for two
+    # contract changes in pvl-core's own tools: a transfer validate hook
+    # rejects only with ToolError, and a register_long_running_tool
+    # coroutine that raises anything else ends as a server fault (pvl-core
+    # #375, #376).
+    #
+    # 9.0.0 was the previous floor, for the operator-input contract and the
+    # reworded config help.  Every config-driven builder (build_kv_store / build_event_store,
     # build_jobs, register_health_routes, register_transfer_routes /
     # build_transfer_links) raises ConfigurationError where 8.x raised
     # ValueError or ImportError, so a malformed
@@ -134,7 +145,7 @@ dependencies = [
     # this whole constraint rather than the floor alone (#335), but a floor
     # naming a release nobody can install is still a trap for anyone pinning
     # to it.
-    "fastmcp-pvl-core>=9.0.0,<10",
+    "fastmcp-pvl-core>=10.0.0,<11",
     "typer>=0.12",
 
     # fastmcp.apps and fastmcp.server.providers.addressing are imported
@@ -142,6 +153,8 @@ dependencies = [
     # fastmcp-pvl-core>=8 already guarantees fastmcp>=4 transitively.
     "fastmcp>=4",
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
+    # fetch tells the remote site's HTTP errors apart from a server fault (#1608).
+    "httpx>=0.25",
     "python-frontmatter>=1.0",
     "requests>=2.33.0",
     # PROJECT-DEPS-END
@@ -375,7 +388,10 @@ ignore = ["E501"]
 "src/markdown_vault_mcp/_tools/*.py" = ["B008", "TC001", "TC002", "PLR0913"]
 "src/markdown_vault_mcp/resources.py" = ["B008", "TC001", "TC002", "PLR0913"]
 "src/markdown_vault_mcp/prompts.py" = ["B008", "TC002", "PLR0913"]
-"src/markdown_vault_mcp/_server_apps.py" = ["B008", "TC001", "TC002", "PLR0913"]
+# The template renders tool_boundary for its placeholder app tools; the vault
+# replaces them (DOMAIN-APP-TOOLS), so the template's import goes unused here.
+"src/markdown_vault_mcp/_server_apps.py" = ["B008", "TC001", "TC002", "PLR0913", "F401"]
+"src/markdown_vault_mcp/_vault_app_tools.py" = ["B008", "TC001", "TC002", "PLR0913"]
 # IndexingConfig/ContentConfig need pathlib.Path and collections.abc.Sequence at
 # runtime so typing.get_type_hints() works on the public frozen dataclasses; keep
 # those imports top-level, not behind TYPE_CHECKING.

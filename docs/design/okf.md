@@ -211,7 +211,7 @@ frontmatter blob; not persisted):
    section reconciles with the `okf_validate` audit rather than
    contradicting it on a conformant bundle.
 3. Default server instructions gain an OKF paragraph (composed in
-   `_instructions.py`, wired through the existing DOMAIN-WIRING seam):
+   `_instructions.py`, wired through `_server_wiring`, which the DOMAIN-WIRING seam calls):
    what the tiers mean, that `log.md`/`index.md` conventions apply, and —
    advisory write guidance — "maintain `log.md`, keep `index.md` current,
    prefer bundle-root-absolute links." Same caveat as conventions: an

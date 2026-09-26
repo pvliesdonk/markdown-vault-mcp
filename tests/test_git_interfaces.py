@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git import (
     GitWriteStrategy,
     HistorySource,
@@ -149,7 +150,7 @@ class TestManagedGateAcceptsAnySyncer:
 
         vault = type("_V", (), {"_git_strategy": _FakeSyncer(is_managed=False)})()
 
-        with pytest.raises(ValueError, match="managed git deployment"):
+        with pytest.raises(InvalidRequestError, match="not synced with a remote"):
             _resolve_managed_strategy(vault)  # type: ignore[arg-type]
 
     def test_absent_strategy_still_rejected(self) -> None:
@@ -158,7 +159,7 @@ class TestManagedGateAcceptsAnySyncer:
 
         vault = type("_V", (), {"_git_strategy": None})()
 
-        with pytest.raises(ValueError, match="managed git deployment"):
+        with pytest.raises(InvalidRequestError, match="not synced with a remote"):
             _resolve_managed_strategy(vault)  # type: ignore[arg-type]
 
 

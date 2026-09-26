@@ -7,9 +7,9 @@ template expects to find here.
 ``register_tools(mcp)`` is the single entry point ``server.py`` imports; it
 delegates to each group module's ``register(mcp)``.  The ``summarize`` group
 is the one exception: its registration needs the server's ``Jobs`` mechanics
-(built from the loaded config), so it is registered from ``make_server``'s
-DOMAIN-WIRING block instead (#1033) — the same already-loaded-config pattern
-as ``register_domain_prompts`` (#609).
+(built from the loaded config), so it is registered from ``_server_wiring``,
+which ``make_server``'s DOMAIN-WIRING block calls, instead (#1033) — the same
+already-loaded-config pattern as ``register_domain_prompts`` (#609).
 """
 
 from __future__ import annotations

@@ -7,8 +7,8 @@ standard); these HTTP-client deps are domain-owned, so MVM quiets them itself.
 
 Kept out of the template-owned ``cli.py`` ``_root`` callback and ``server.py``
 ``make_server`` scaffold (both must stay byte-identical to the template skeleton);
-called instead from the MVM-owned command bodies and the ``make_server``
-``DOMAIN-WIRING`` sentinel — every path that may construct an embedding provider.
+called instead from the MVM-owned command bodies and ``_server_wiring``, which
+the ``make_server`` ``DOMAIN-WIRING`` sentinel calls — every path that may construct an embedding provider.
 """
 
 from __future__ import annotations

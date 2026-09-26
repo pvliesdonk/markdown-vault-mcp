@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
-from fastmcp_pvl_core import register_long_running_tool
+from fastmcp_pvl_core import register_long_running_tool, tool_boundary
 
+from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
@@ -23,7 +24,7 @@ def register(mcp: FastMCP) -> None:
 
     The call-initiated maintenance tools (``reindex``, ``build_embeddings``)
     are registered separately by :func:`register_index_jobs` from
-    ``make_server``'s DOMAIN-WIRING block: they are dual-mode long-running
+    ``_server_wiring`` (called from ``make_server``'s DOMAIN-WIRING): they are dual-mode long-running
     tools (#1033) and need the config-built ``Jobs`` mechanics. The status
     tools below stay here on purpose — they also report work no client call
     initiated (boot-time builds, file-watcher reindexes), so they remain
@@ -40,6 +41,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def embeddings_status(
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
@@ -72,6 +75,8 @@ def register(mcp: FastMCP) -> None:
         },
         icons=_TOOL_ICONS["get_index_status"],
     )
+    @tool_boundary
+    @library_outcomes
     async def get_index_status(
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
@@ -124,8 +129,8 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
     writer thread and await the submission's own ``Future``, so a fast run
     returns its real result inline; a run still going at the jobs soft
     deadline is promoted to a background job polled via ``get_job_result``.
-    Registered from ``make_server``'s DOMAIN-WIRING block (the same pattern
-    as the summarize group) because the ``Jobs`` mechanics are built from
+    Registered from ``_server_wiring`` (``make_server``'s DOMAIN-WIRING; the
+    same pattern as the summarize group) because the ``Jobs`` mechanics are built from
     the loaded config.
 
     Args:
@@ -144,6 +149,7 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
             "idempotent_hint": True,
         },
     )
+    @library_outcomes
     @needs_queryable()
     async def reindex(
         force: bool = False,
@@ -241,6 +247,7 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
             "idempotent_hint": True,
         },
     )
+    @library_outcomes
     @needs_queryable()
     async def build_embeddings(
         force: bool = False,

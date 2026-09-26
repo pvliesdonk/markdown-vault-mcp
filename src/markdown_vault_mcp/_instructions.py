@@ -10,8 +10,8 @@ after tool visibility is resolved.
 This module holds the markdown-vault half of that:
 :func:`_domain_snippets` selects the guidance that applies to a
 configuration, and :func:`contribute_instructions` — called by
-:func:`~markdown_vault_mcp.server.make_server` from its ``DOMAIN-WIRING``
-block — hands it to the builder. Living outside the template-owned
+:func:`~markdown_vault_mcp._server_wiring.wire_domain`, which ``make_server``'s
+``DOMAIN-WIRING`` block calls — hands it to the builder. Living outside the template-owned
 ``server.py`` keeps the domain prose from re-conflicting on a
 ``copier update``.
 """

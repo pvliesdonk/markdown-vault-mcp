@@ -9,23 +9,25 @@ template skeleton (only its sentinel blocks and imports diverge):
   in the ``DOMAIN-APP-RESOURCE`` block.
 - :func:`_graph_view_payload` serializes a :class:`GraphView` into the SPA
   graph-tool wire shape for the ``DOMAIN-APP-TOOLS`` graph app-tools.
-- :func:`_fastmcp4_app_tool_meta` supplies FastMCP 4's public hash identity to
-  the app-only registrations; the external contract is pinned in
-  ``docs/design/reference/fastmcp-4.md``.
+- :func:`vault_app_resource_config` builds that ``AppConfig`` and logs the
+  resolved domain.
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from typing import TYPE_CHECKING, Any
 
-from fastmcp.server.providers.addressing import hash_tool
+from fastmcp.apps import AppConfig, ResourceCSP
 
 from markdown_vault_mcp.config import _ENV_PREFIX
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.types import GraphView
+
+logger = logging.getLogger(__name__)
 
 #: Origins the served SPA loads sub-resources from, declared so a host that
 #: builds its iframe CSP from ``resourceDomains`` permits them (#1181). Every
@@ -39,24 +41,6 @@ _CDN_RESOURCE_DOMAINS: list[str] = [
     "https://fonts.googleapis.com",
     "https://fonts.gstatic.com",
 ]
-
-
-def _fastmcp4_app_tool_meta(app_name: str, tool_name: str) -> dict[str, Any]:
-    """Build public FastMCP 4 identity metadata for an app backend tool.
-
-    Args:
-        app_name: Stable application identity shared by its backend tools.
-        tool_name: The backend tool's registered local name.
-
-    Returns:
-        Metadata carrying the app name and deterministic public tool hash.
-    """
-    return {
-        "fastmcp": {
-            "app": app_name,
-            "tool_hash": hash_tool(app_name, tool_name),
-        }
-    }
 
 
 def _compute_claude_app_domain() -> str | None:
@@ -80,6 +64,32 @@ def _compute_claude_app_domain() -> str | None:
     mcp_url = f"{base_url}{http_path}"
     hash_prefix = hashlib.sha256(mcp_url.encode()).hexdigest()[:32]
     return f"{hash_prefix}.claudemcpcontent.com"
+
+
+def vault_app_resource_config() -> AppConfig:
+    """Build the app-shell resource's ``AppConfig``: sandbox domain and CSP.
+
+    The domain is ``APP_DOMAIN`` when set, else computed from ``BASE_URL``
+    (see :func:`_compute_claude_app_domain`); it is logged so it is visible
+    at boot.
+
+    Returns:
+        The ``AppConfig`` for the ``DOMAIN-APP-RESOURCE`` block.
+    """
+    app_domain: str | None = (
+        os.environ.get(f"{_ENV_PREFIX}_APP_DOMAIN", "").strip()
+        or _compute_claude_app_domain()
+    )
+    if app_domain:
+        logger.info("apps_domain_resolved domain=%s", app_domain)
+    else:
+        # No sandbox iframe domain: either running under stdio (no HTTP
+        # server to derive it from) or BASE_URL/APP_DOMAIN is unset.
+        logger.debug("apps_domain_unconfigured reason=stdio_or_no_base_url")
+    return AppConfig(
+        domain=app_domain,
+        csp=ResourceCSP(resource_domains=_CDN_RESOURCE_DOMAINS),
+    )
 
 
 def _graph_view_payload(view: GraphView, *, include_truncated: bool) -> dict[str, Any]:

@@ -708,7 +708,7 @@ class TestOkfVerifyTrustAuth:
     async def test_refuses_without_auth(self) -> None:
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            with pytest.raises(ToolError, match="authenticated identity"):
+            with pytest.raises(ToolError, match="no human identity"):
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
 
     async def test_appends_verification_when_authed(
@@ -739,7 +739,7 @@ class TestOkfVerifyTrustAuth:
         monkeypatch.setattr("fastmcp_pvl_core.get_claims", lambda: {"sub": "peter"})
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            with pytest.raises(ToolError, match="not found"):
+            with pytest.raises(ToolError, match="No note at"):
                 await client.call_tool("okf_verify", {"path": "nope.md"})
 
     async def test_aborts_on_concurrent_modification(
@@ -764,7 +764,7 @@ class TestOkfVerifyTrustAuth:
         monkeypatch.setattr(writer_mod, "append_okf_verification", racing_append)
         async with Client(make_server()) as client:
             await wait_for_mcp_writer_drain(client)
-            with pytest.raises(ToolError, match="changed since it was read"):
+            with pytest.raises(ToolError, match="changed while it was being verified"):
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
 
     async def test_counts_a_bare_mapping_as_one(
@@ -943,7 +943,7 @@ class TestServiceTokenOkf:
         path = enforced_env / "guides" / "playbook.md"
         before = path.read_bytes()
         async with Client(make_server()) as client:
-            with pytest.raises(ToolError, match="Service credentials"):
+            with pytest.raises(ToolError, match="no human identity"):
                 await client.call_tool("okf_verify", {"path": "guides/playbook.md"})
             await wait_for_mcp_writer_drain(client)
         assert path.read_bytes() == before

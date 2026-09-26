@@ -10,8 +10,8 @@ former hand-rolled ``SummaryJobStore`` + ``get_summary`` pair (#937).
 
 Unlike the other tool groups, registration needs the server's ``Jobs``
 mechanics, which are built from the loaded config — so ``register`` is
-called from ``make_server``'s DOMAIN-WIRING block (the same already-loaded-
-config pattern as ``register_domain_prompts``, #609), not from the
+called from ``_server_wiring``, which ``make_server``'s DOMAIN-WIRING block
+calls (the same already-loaded-config pattern as ``register_domain_prompts``, #609), not from the
 config-free ``register_tools`` entry point.
 """
 
@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from fastmcp.dependencies import Depends
 from fastmcp_pvl_core import register_long_running_tool
 
+from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
@@ -61,6 +62,7 @@ def register(mcp: FastMCP, jobs: Jobs) -> None:
             "idempotent_hint": False,
         },
     )
+    @library_outcomes
     @needs_queryable()
     async def summarize(
         paths: list[str],
@@ -170,7 +172,8 @@ def apply_summarize_limits(mcp: FastMCP, *, max_notes: int) -> None:
     FastMCP splits the docstring at decoration time: the free text becomes
     ``Tool.description`` while each ``Args:`` entry lands in the JSON
     schema's per-parameter ``description`` — so both must be patched.
-    Called from ``make_server``'s DOMAIN-WIRING block, where the loaded
+    Called from ``_server_wiring``, which ``make_server``'s DOMAIN-WIRING
+    block calls, where the loaded
     config is available (registration itself is config-free by template
     contract). Uses the same ``local_provider._components`` access as
     ``fastmcp_pvl_core.register_tool_icons``, with the same guard.

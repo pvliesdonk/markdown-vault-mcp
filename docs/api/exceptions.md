@@ -23,6 +23,8 @@ outside the vault or a heading the document does not have. It is also a
 
 <!-- vale off -->
 ::: markdown_vault_mcp.exceptions.InvalidRequestError
+
+::: markdown_vault_mcp.exceptions.SummarizeTimeoutError
 <!-- vale on -->
 
 ## Document Errors

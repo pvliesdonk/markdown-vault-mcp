@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
-from fastmcp.exceptions import ToolError
+from fastmcp_pvl_core import tool_boundary
 
+from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git import PullResult, PushResult, Syncer
 from markdown_vault_mcp.vault import Vault
@@ -21,26 +22,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-_FAULT = (
-    "{tool} failed because of a server-side error; the request was fine. "
-    "Retry later, and tell the user if it keeps failing."
-)
-
-
-def _refusal_or_fault(tool: str, exc: ValueError) -> ToolError:
-    """Turn a library ``ValueError`` into the tool's outcome (#1608).
-
-    An :class:`InvalidRequestError` is the caller's to fix, so its message
-    reaches the model at INFO. Anything else is the server's failure: it is
-    logged here with its traceback, and the model gets a fixed message rather
-    than git's stderr, which can name server paths.
-    """
-    if isinstance(exc, InvalidRequestError):
-        return ToolError(str(exc), log_level=logging.INFO)
-    logger.error("tool_failed tool=%s", tool, exc_info=exc)
-    return ToolError(_FAULT.format(tool=tool))
-
 
 # ---------------------------------------------------------------------------
 # git_sync helpers
@@ -58,16 +39,16 @@ def _resolve_managed_strategy(vault: Vault) -> Syncer:
         The Vault's syncer if it is in managed mode.
 
     Raises:
-        ValueError: If the deployment isn't wired with a managed git
-            strategy (no ``MARKDOWN_VAULT_MCP_GIT_REPO_URL`` env var).
+        InvalidRequestError: If the deployment isn't wired with a managed git
+            strategy (no ``MARKDOWN_VAULT_MCP_GIT_REPO_URL`` env var): an
+            opt-in left off, so a change of request, not a fault (#1608).
     """
     # The MCP layer is a trusted consumer of Vault internals — adding
     # a public accessor for this single tool would be scope creep.
     strategy = vault._git_strategy
     if not isinstance(strategy, Syncer) or not strategy.is_managed:
-        raise ValueError(
-            "git_sync requires a managed git deployment.  Set "
-            "MARKDOWN_VAULT_MCP_GIT_REPO_URL to enable it."
+        raise InvalidRequestError(
+            "This vault is not synced with a remote, so git_sync has nothing to do."
         )
     return strategy
 
@@ -224,6 +205,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def get_history(
         path: str | None = None,
         since: str | None = None,
@@ -277,16 +260,13 @@ def register(mcp: FastMCP) -> None:
         Raises:
             ToolError: If the path is invalid or uses an unsupported extension.
         """
-        try:
-            results = await asyncio.to_thread(
-                vault.reader.get_history,
-                path,
-                since=since,
-                until=until,
-                limit=limit,
-            )
-        except ValueError as exc:
-            raise _refusal_or_fault("get_history", exc) from exc
+        results = await asyncio.to_thread(
+            vault.reader.get_history,
+            path,
+            since=since,
+            until=until,
+            limit=limit,
+        )
         commits = [asdict(r) for r in results]
         return {"commits": commits, "total": len(commits)}
 
@@ -299,6 +279,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def get_diff(
         path: str,
         since_sha: str | None = None,
@@ -363,17 +345,14 @@ def register(mcp: FastMCP) -> None:
                 the SHA is invalid, the reference commit is not found, or the
                 path uses an unsupported extension.
         """
-        try:
-            result = await asyncio.to_thread(
-                vault.reader.get_diff,
-                path,
-                since_sha=since_sha,
-                since_timestamp=since_timestamp,
-                per_commit=per_commit,
-                limit=limit,
-            )
-        except ValueError as exc:
-            raise _refusal_or_fault("get_diff", exc) from exc
+        result = await asyncio.to_thread(
+            vault.reader.get_diff,
+            path,
+            since_sha=since_sha,
+            since_timestamp=since_timestamp,
+            per_commit=per_commit,
+            limit=limit,
+        )
         if isinstance(result, list):
             commits = [asdict(r) for r in result]
             return {"commits": commits, "total": len(commits)}
@@ -389,6 +368,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": False,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def git_sync(
         direction: Literal["pull", "push", "both"] = "both",
         dry_run: bool = False,
