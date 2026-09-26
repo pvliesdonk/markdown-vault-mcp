@@ -614,7 +614,8 @@ def _rel_dir(filename: object, source_dir: Path) -> str:
     since nothing narrower is known.
     """
     try:
-        return Path(os.fsdecode(filename)).relative_to(source_dir).as_posix()  # type: ignore[arg-type]
+        raw = os.fsdecode(filename)  # type: ignore[arg-type]
+        return Path(raw).relative_to(source_dir).as_posix()
     except (TypeError, ValueError):
         return ""
 
