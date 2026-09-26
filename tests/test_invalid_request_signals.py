@@ -184,3 +184,19 @@ def test_path_with_a_nul_byte_is_an_invalid_request(
 ) -> None:
     with pytest.raises(InvalidRequestError, match="NUL"):
         call(vault)
+
+
+@pytest.mark.parametrize("path", ["x\x00", "x\x00.txt"])
+def test_nul_is_named_before_the_extension(tmp_path: Path, path: str) -> None:
+    """The model learns about the NUL, not a wrong extension it then fixes."""
+    with pytest.raises(InvalidRequestError, match="NUL"):
+        validate_path(path, tmp_path)
+    with pytest.raises(InvalidRequestError, match="NUL"):
+        validate_history_path(path, tmp_path, frozenset({"png"}))
+
+
+def test_nul_message_ends_without_a_period(tmp_path: Path) -> None:
+    """Callers such as the transfer sink append their own sentence."""
+    with pytest.raises(InvalidRequestError) as exc:
+        resolve_inside("a\x00.md", tmp_path)
+    assert not str(exc.value).endswith(".")

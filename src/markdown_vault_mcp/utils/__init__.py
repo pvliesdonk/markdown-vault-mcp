@@ -111,8 +111,10 @@ def reject_nul(path: str) -> None:
         InvalidRequestError: If *path* contains ``"\\x00"``.
     """
     if "\x00" in path:
+        # No trailing period: callers such as the transfer sink append a hint.
         raise InvalidRequestError(
-            f"Path {path!r} contains a NUL byte, which no file name can hold."
+            f"Path {path!r} contains a NUL byte, which no file name can hold; "
+            "pass the path as search or list_documents returns it"
         )
 
 
@@ -162,6 +164,7 @@ def validate_path(path: str, source_dir: Path) -> Path:
         InvalidRequestError: If the path escapes the source directory or
             does not end with ``.md``.
     """
+    reject_nul(path)
     if not is_note(path):
         raise InvalidRequestError(f"Path must end with '.md': {path}")
     return resolve_inside(path, source_dir)
@@ -193,6 +196,7 @@ def validate_history_path(
         InvalidRequestError: *path* is neither ``.md`` nor an allowed attachment
             extension, or it escapes *source_dir*.
     """
+    reject_nul(path)
     if not (is_note(path) or is_allowed_artifact(path, attachment_extensions)):
         raise InvalidRequestError(
             f"Path must be a .md note or a configured attachment type: {path}"
