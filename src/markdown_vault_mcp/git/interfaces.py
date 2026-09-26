@@ -141,8 +141,12 @@ class RevisionReader(Protocol):
             The content and the path the note carried at that revision.
 
         Raises:
-            ValueError: When the store cannot establish that the note the
-                caller named existed at that revision.
+            InvalidRequestError: When the store cannot establish that the note
+                the caller named existed at that revision, or the request is
+                otherwise one the caller must change (#1608).
+            DocumentUnreadableError: When the note's content there exists but
+                cannot be returned as text.
+            ValueError: When the store itself fails.
         """
         ...
 

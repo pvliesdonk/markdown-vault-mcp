@@ -9,7 +9,8 @@
   else (exit 1), a prefix a commit shares with a blob passes it and the range
   and `<ref>:<path>` forms but not a bare `diff` or `merge-base`, `diff`
   never fails on an absent path, and an unborn HEAD fails `log` but only
-  exits 1 from `rev-parse --verify --quiet HEAD`. Observed on git 2.55.0, the `rev-parse`
+  exits 1 from `rev-parse --verify --quiet HEAD`, and `merge-base
+  --is-ancestor` exits 1 only for "not an ancestor" (128 for an unknown id). Observed on git 2.55.0, the `rev-parse`
   options re-read in the manual. Next review unchanged: 2027-03-06.
 - Revised [MCP model-facing text](mcp-model-facing-text.md): markdown-vault-mcp
   removed `tests/test_client_surface_budget.py` and its aggregate ceilings
