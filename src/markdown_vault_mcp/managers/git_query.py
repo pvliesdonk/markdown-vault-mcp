@@ -47,6 +47,21 @@ logger = logging.getLogger(__name__)
 _SHA_RE = r"[0-9a-f]{4,64}"
 
 
+def _reject_nul_date(name: str, value: str | None) -> None:
+    """Refuse a date argument holding a NUL byte before it reaches git's argv.
+
+    A NUL in a subprocess argument raises a plain ``ValueError``, which the
+    tool layer would report as a server fault (#1636).
+
+    Raises:
+        InvalidRequestError: If *value* contains ``"\\x00"``.
+    """
+    if value is not None and "\x00" in value:
+        raise InvalidRequestError(
+            f"{name} {value!r} contains a NUL byte; pass the date without it."
+        )
+
+
 class GitQueryManager:
     """Read-only git history, diff, and revision queries.
 
@@ -136,11 +151,14 @@ class GitQueryManager:
             echoed back.
 
         Raises:
-            ValueError: If *path* is provided but fails path validation
-                (a file with an unknown extension, or path traversal).
+            InvalidRequestError: If *path* is provided but fails path
+                validation (a file with an unknown extension, path traversal,
+                a NUL byte), or *since* / *until* holds a NUL byte.
         """
         if self._git_strategy is None:
             return []
+        _reject_nul_date("since", since)
+        _reject_nul_date("until", until)
         abs_path: Path | None = None
         is_dir = False
         if path is not None:
@@ -213,7 +231,7 @@ class GitQueryManager:
                 *since_timestamp* is supplied, *since_sha* is not 4-64
                 lowercase hex digits or names no commit, or *path* has an
                 extension that is neither ``.md`` nor a configured attachment
-                type.
+                type, or *since_timestamp* holds a NUL byte.
             ValueError: If a git subprocess fails for any other reason.
         """
         if self._git_strategy is None:
@@ -223,6 +241,7 @@ class GitQueryManager:
             raise InvalidRequestError(
                 "Exactly one of 'since_sha' or 'since_timestamp' must be provided"
             )
+        _reject_nul_date("since_timestamp", since_timestamp)
 
         abs_path = validate_history_path(
             path, self._source_dir, self._attachment_extensions

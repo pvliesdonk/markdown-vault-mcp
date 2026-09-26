@@ -135,3 +135,12 @@ def test_attachment_removed_before_its_read_is_not_found(
     monkeypatch.setattr(type(tmp_path), "read_bytes", vanished)
     with pytest.raises(DocumentNotFoundError):
         store.read("a.png")
+
+
+def test_summarize_skips_a_path_with_a_nul_byte(
+    make_vault: VaultFactory,  # noqa: F811
+) -> None:
+    """One malformed path is skipped, not a fault that drops the good note (#1636)."""
+    vault = make_vault(summarizer=FakeSummarizer(), notes={"a.md": "# A\n\nx"})
+    result = vault.summarizer.summarize(["a.md", "b\x00.md"])
+    assert [s.path for s in result.sources] == ["a.md"]

@@ -55,6 +55,7 @@ from markdown_vault_mcp.types import (
 from markdown_vault_mcp.utils import (
     is_note,
     is_path_excluded,
+    reject_nul,
     resolve_inside,
     validate_path,
 )
@@ -333,12 +334,13 @@ class DocumentManager:
             DocumentUnreadableError: When the file exists but cannot be read:
                 a failed stat or read, invalid UTF-8, or frontmatter that does
                 not parse (#1608). Section mode raises it too.
-            InvalidRequestError: When *section* is provided and is empty /
-                whitespace, or when the document does not contain a section with
-                that heading.
+            InvalidRequestError: When *path* holds a NUL byte (#1636), or
+                *section* is provided and is empty / whitespace, or the
+                document does not contain a section with that heading.
             DocumentNotFoundError: In section mode, when there is no such
                 document ("no document" implies "no section").
         """
+        reject_nul(path)
         if section is not None:
             if not section.strip():
                 raise InvalidRequestError("section must be a non-empty heading or None")

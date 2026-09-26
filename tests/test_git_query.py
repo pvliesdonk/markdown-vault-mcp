@@ -504,3 +504,29 @@ class TestSha256Repository:
         assert isinstance(diff, str)
         assert "-# v1" in diff
         assert "+# v2" in diff
+
+
+@pytest.mark.parametrize(
+    ("call", "arg"),
+    [
+        (lambda m: m.get_history(None, since="2020\x00"), "since"),
+        (lambda m: m.get_history(None, until="x\x00"), "until"),
+        (
+            lambda m: m.get_diff("note.md", since_timestamp="2020\x00"),
+            "since_timestamp",
+        ),
+    ],
+    ids=["since", "until", "since_timestamp"],
+)
+def test_nul_in_a_date_argument_is_an_invalid_request(
+    call: Any, arg: str, tmp_path: Path
+) -> None:
+    """A NUL reaches git's argv and fails as a fault unless refused first (#1636)."""
+    from unittest.mock import MagicMock
+
+    from markdown_vault_mcp.exceptions import InvalidRequestError
+    from markdown_vault_mcp.managers.git_query import GitQueryManager
+
+    mgr = GitQueryManager(MagicMock(), tmp_path)
+    with pytest.raises(InvalidRequestError, match=arg):
+        call(mgr)

@@ -100,6 +100,24 @@ def folder_matches(row_folder: str, folder: str) -> bool:
     return row_folder == folder or row_folder.startswith(folder + "/")
 
 
+def reject_nul(path: str) -> None:
+    """Refuse a path holding a NUL byte, which no file name can contain.
+
+    ``Path.resolve()`` and every file-system call raise a plain ``ValueError``
+    for one, which the tool layer would report as a server fault; the caller
+    sent a path that cannot exist (#1636).
+
+    Raises:
+        InvalidRequestError: If *path* contains ``"\\x00"``.
+    """
+    if "\x00" in path:
+        # No trailing period: callers such as the transfer sink append a hint.
+        raise InvalidRequestError(
+            f"Path {path!r} contains a NUL byte, which no file name can hold; "
+            "pass the path as search or list_documents returns it"
+        )
+
+
 def resolve_inside(path: str, base: Path, *, original: str | None = None) -> Path:
     """Resolve *path* against *base* and verify the result stays inside it.
 
@@ -120,8 +138,10 @@ def resolve_inside(path: str, base: Path, *, original: str | None = None) -> Pat
         The resolved absolute path.
 
     Raises:
-        InvalidRequestError: If the resolved path escapes *base*.
+        InvalidRequestError: If *path* holds a NUL byte, or the resolved path
+            escapes *base*.
     """
+    reject_nul(path)
     abs_path = (base / path).resolve()
     if not abs_path.is_relative_to(base.resolve()):
         raise InvalidRequestError(
@@ -144,6 +164,7 @@ def validate_path(path: str, source_dir: Path) -> Path:
         InvalidRequestError: If the path escapes the source directory or
             does not end with ``.md``.
     """
+    reject_nul(path)
     if not is_note(path):
         raise InvalidRequestError(f"Path must end with '.md': {path}")
     return resolve_inside(path, source_dir)
@@ -175,6 +196,7 @@ def validate_history_path(
         InvalidRequestError: *path* is neither ``.md`` nor an allowed attachment
             extension, or it escapes *source_dir*.
     """
+    reject_nul(path)
     if not (is_note(path) or is_allowed_artifact(path, attachment_extensions)):
         raise InvalidRequestError(
             f"Path must be a .md note or a configured attachment type: {path}"
