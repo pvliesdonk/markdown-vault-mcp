@@ -384,7 +384,7 @@ class VaultTransferSink:
                 rather than serving an empty archive.
         """
         vault = self._resolve_vault()
-        if scope and not (self._config.source_dir / scope).resolve().is_dir():
+        if scope and not is_directory((self._config.source_dir / scope).resolve()):
             logger.warning("transfer_download_bundle_folder_gone scope=%s", scope)
             raise TransferResourceGoneError(
                 f"bundle folder no longer available: {scope}"

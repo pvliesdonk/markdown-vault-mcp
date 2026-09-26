@@ -2,13 +2,16 @@
 
 Existence is decided with ``stat()``, never ``Path.is_file()``, ``is_dir()``
 or ``exists()``: on Python 3.14 those return ``False`` for a path the process
-cannot stat, so a permission problem would read as "not there" (#1625). Only
-``FileNotFoundError`` and ``NotADirectoryError`` mean absent here; any other
-``OSError`` propagates as the fault it is.
+cannot stat, so a permission problem would read as "not there" (#1625). What
+pathlib itself counts as absent on every version stays absent here: no entry
+(``ENOENT``), a non-directory in the path (``ENOTDIR``), a bad descriptor
+(``EBADF``) and a symlink loop (``ELOOP``). Any other ``OSError``, such as a
+refused permission, propagates as the fault it is.
 """
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
 import stat
@@ -24,6 +27,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# pathlib's own "not there" set, so only a refused stat changes meaning (#1625).
+_ABSENT_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP})
+
+
 def _mode(path: Path) -> int | None:
     """Return *path*'s ``st_mode``, or ``None`` when nothing is there.
 
@@ -32,8 +39,10 @@ def _mode(path: Path) -> int | None:
     """
     try:
         return path.stat().st_mode
-    except (FileNotFoundError, NotADirectoryError):
-        return None
+    except OSError as exc:
+        if exc.errno in _ABSENT_ERRNOS:
+            return None
+        raise
 
 
 def is_regular_file(path: Path) -> bool:

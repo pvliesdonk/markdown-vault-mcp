@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from markdown_vault_mcp.exceptions import DocumentNotFoundError
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.utils.fs import (
     could_be_regular_file,
     is_directory,
@@ -81,9 +81,8 @@ def test_unreadable_note_is_a_fault_not_absence(
     vault: Vault, locked: Path, call: Callable[[Vault], Any]
 ) -> None:
     (locked / "locked").chmod(0)
-    with pytest.raises(PermissionError) as exc:
+    with pytest.raises(PermissionError):
         call(vault)
-    assert not isinstance(exc.value, DocumentNotFoundError)
 
 
 def test_unreadable_note_survives_a_reindex(vault: Vault, locked: Path) -> None:
@@ -91,4 +90,66 @@ def test_unreadable_note_survives_a_reindex(vault: Vault, locked: Path) -> None:
     assert vault.reader.get_metadata("locked/n.md") is not None
     (locked / "locked").chmod(0)
     vault.index.reindex()
+    assert vault.reader.get_metadata("locked/n.md") is not None
+
+
+def test_symlink_loop_reads_as_absent_like_pathlib(tmp_path: Path) -> None:
+    """Only a refused stat changes meaning; a looping link stays "not there"."""
+    loop = tmp_path / "loop.md"
+    loop.symlink_to(loop)
+    assert not is_regular_file(loop)
+    assert not path_exists(loop)
+    assert not could_be_regular_file(loop)
+
+
+def test_move_folder_skips_a_looping_symlink(vault: Vault, locked: Path) -> None:
+    (locked / "f").mkdir()
+    (locked / "f" / "n.md").write_text("# N\n", encoding="utf-8")
+    (locked / "f" / "loop.png").symlink_to(locked / "f" / "loop.png")
+    vault.writer.move_folder("f", "g")
+    assert (locked / "g" / "n.md").is_file()
+
+
+@pytest.mark.parametrize("path", ["a\x00.md", "../../../outside.md"])
+def test_history_validates_the_path_before_it_stats_it(
+    tmp_path: Path, path: str
+) -> None:
+    from unittest.mock import MagicMock
+
+    from markdown_vault_mcp.managers.git_query import GitQueryManager
+
+    mgr = GitQueryManager(MagicMock(), tmp_path)
+    with pytest.raises(InvalidRequestError):
+        mgr.get_history(path)
+
+
+def test_nested_unreadable_dir_keeps_only_what_is_under_it(tmp_path: Path) -> None:
+    """a/locked is kept; a deleted a/open.md and a/lockedx/m.md are reported."""
+    from markdown_vault_mcp.scanner import parse_note
+    from markdown_vault_mcp.tracker import ChangeTracker
+
+    root = tmp_path / "vault"
+    rels = ("a/locked/n.md", "a/open.md", "a/lockedx/m.md")
+    for rel in rels:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("# X\n", encoding="utf-8")
+    tracker = ChangeTracker(tmp_path / "state.json")
+    tracker.detect_changes(root)
+    tracker.update_state([parse_note(root / rel, root) for rel in rels])
+    (root / "a/open.md").unlink()
+    (root / "a/lockedx/m.md").unlink()
+    (root / "a/locked").chmod(0)
+    try:
+        changes = tracker.detect_changes(root)
+    finally:
+        (root / "a/locked").chmod(0o755)
+    assert sorted(changes.deleted) == ["a/lockedx/m.md", "a/open.md"]
+
+
+def test_dirty_path_refused_stat_keeps_the_row(vault: Vault, locked: Path) -> None:
+    """The job fails for a retry; the note's row is not deleted as vanished."""
+    (locked / "locked").chmod(0)
+    with pytest.raises(OSError):
+        vault._index_mgr.process_dirty_paths({"locked/n.md"})
+    (locked / "locked").chmod(0o755)
     assert vault.reader.get_metadata("locked/n.md") is not None

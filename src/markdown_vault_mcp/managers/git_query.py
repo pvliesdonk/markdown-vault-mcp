@@ -24,6 +24,7 @@ from markdown_vault_mcp.scanner import extract_section, list_section_headings
 from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
     is_note,
+    resolve_inside,
     validate_history_dir,
     validate_history_path,
 )
@@ -165,7 +166,9 @@ class GitQueryManager:
         if path is not None:
             # A path pointing at a real directory scopes to that subtree; only
             # non-directories are held to the note/attachment extension rule.
-            if is_directory(self._source_dir / path):
+            # Validate (NUL, containment) before the stat, which would
+            # otherwise fail on such a path as a fault (#1636, #1625).
+            if is_directory(resolve_inside(path, self._source_dir)):
                 abs_path = validate_history_dir(path, self._source_dir)
                 is_dir = True
             else:

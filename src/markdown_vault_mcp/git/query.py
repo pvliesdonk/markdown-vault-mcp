@@ -1903,6 +1903,7 @@ def _require_tracked(
     Raises:
         InvalidRequestError: If the note on disk is not tracked (#1608).
         ValueError: If ``git ls-files`` fails.
+        OSError: If the note's stat is refused (#1625).
     """
     if not path_exists(path):
         return
