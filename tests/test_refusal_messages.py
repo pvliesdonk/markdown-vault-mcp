@@ -38,6 +38,7 @@ def vault(tmp_path: Path) -> Iterator[Vault]:
     (root / "from").mkdir()
     (root / "from" / "x.md").write_text("# X\n", encoding="utf-8")
     (root / "to").mkdir()
+    (root / "empty").mkdir()
     (root / "to" / "x.md").write_text("# X\n", encoding="utf-8")
     col = Vault(
         source_dir=root,
@@ -114,6 +115,14 @@ _REFUSALS: dict[str, tuple[Callable[[Vault], Any], str]] = {
     "semantic search with embeddings off": (
         lambda v: v.reader.search("x", mode="semantic"),
         "mode='keyword'",
+    ),
+    "move an empty folder": (
+        lambda v: v.writer.move_folder("empty", "elsewhere"),
+        "list_folders",
+    ),
+    "already exists, quoted": (
+        lambda v: v.writer.rename("note.md", "sub/a.md"),
+        "'sub/a.md'",
     ),
     "old_text found twice": (
         lambda v: v.writer.edit("twice.md", old_text="same", new_text="x"),

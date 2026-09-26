@@ -1198,7 +1198,7 @@ class DocumentManager:
                     raise DocumentNotFoundError.note(old_path)
                 if new_abs.is_file():
                     raise DocumentExistsError(
-                        f"Target already exists: {new_path}. Pass a new_path "
+                        f"Target already exists: {new_path!r}. Pass a new_path "
                         "that is free; list_documents shows what exists."
                     )
                 check_if_match(old_abs, old_path, if_match)
@@ -1484,7 +1484,8 @@ class DocumentManager:
 
         if not moves:
             raise DocumentNotFoundError(
-                f"Folder is empty: {old_dir}; there is nothing to move."
+                f"Folder is empty: {old_dir!r}, so there is nothing to move. "
+                "Pick a folder with notes in it; list_folders shows them."
             )
 
         # Atomic collision gate — fail before moving anything.
@@ -1492,7 +1493,7 @@ class DocumentManager:
             if dst_abs.exists():
                 rel = dst_abs.relative_to(self._source_dir.resolve()).as_posix()
                 raise DocumentExistsError(
-                    f"Target already exists: {rel}. Pass a new_dir where "
+                    f"Target already exists: {rel!r}. Pass a new_dir where "
                     "nothing is in the way."
                 )
 

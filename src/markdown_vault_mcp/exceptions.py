@@ -37,7 +37,7 @@ class DocumentNotFoundError(InvalidRequestError):
     A caller's request naming a document that is not there, so an
     :class:`InvalidRequestError`, and through it a ``ValueError`` (#1608).
     The constructors below give each kind of target the same message: a
-    ``"<Kind> not found: <path>"`` prefix callers match on, then the tool
+    ``"<Kind> not found: '<path>'"`` prefix callers match on, then the tool
     that finds the right path (#1639).
     """
 

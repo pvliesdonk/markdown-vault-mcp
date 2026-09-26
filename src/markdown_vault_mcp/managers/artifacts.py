@@ -366,7 +366,7 @@ class ArtifactStore:
                 raise DocumentNotFoundError.attachment(old_path)
             if new_abs.is_file():
                 raise DocumentExistsError(
-                    f"Target already exists: {new_path}. Pass a new_path that "
+                    f"Target already exists: {new_path!r}. Pass a new_path that "
                     "is free; list_documents(include_attachments=True) shows "
                     "what exists."
                 )
