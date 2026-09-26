@@ -23,10 +23,15 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
+from markdown_vault_mcp.exceptions import (
+    DocumentUnreadableError,
+    InvalidRequestError,
+    NoteTooLargeError,
+)
 from markdown_vault_mcp.types import (
     SubtreeToc,
     SummaryResult,
+    SummarySkip,
     SummarySource,
 )
 from markdown_vault_mcp.utils import is_note
@@ -188,8 +193,9 @@ class SummarizeManager:
                 "list_folders or list_documents."
             )
 
-        notes, note_clipped, unreadable = self._gather_notes(resolved)
+        notes, note_clipped, skipped = self._gather_notes(resolved)
         if not notes:
+            unreadable = sum(1 for s in skipped if s.reason == "unreadable")
             raise self._nothing_readable(len(resolved), unreadable)
 
         batches = self._pack_batches(notes)
@@ -197,31 +203,17 @@ class SummarizeManager:
             batches, focus=focus, mode=mode
         )
 
-        omitted = matched - len(notes)
+        omitted = matched - len(resolved)
         return SummaryResult(
             summary=summary,
             sources=[SummarySource(path=p, title=t) for p, t, _ in notes],
             mode=mode,
-            truncated=omitted > 0 or note_clipped or reduce_clipped,
+            truncated=bool(omitted or skipped) or note_clipped or reduce_clipped,
             notes_included=len(notes),
             notes_omitted=omitted,
             notes_limit=limit,
-            hint=self._coverage_hint(len(notes), matched, limit),
-        )
-
-    @staticmethod
-    def _coverage_hint(included: int, matched: int, limit: int) -> str | None:
-        """Build the caller-facing recovery hint when notes were omitted.
-
-        Guidance placed in the result reaches the calling model at the
-        moment it matters; schema docs alone are often ignored (#925).
-        """
-        if matched <= included:
-            return None
-        return (
-            f"Only {included} of {matched} matched notes were summarized "
-            f"(note limit {limit}). For full coverage, summarize subfolders "
-            "or smaller sets of paths in separate calls."
+            hint=_coverage_hint(matched, omitted, limit, skipped),
+            skipped=skipped,
         )
 
     def _resolve_paths(self, paths: list[str], limit: int) -> tuple[list[str], int]:
@@ -275,25 +267,20 @@ class SummarizeManager:
 
     def _gather_notes(
         self, resolved: list[str]
-    ) -> tuple[list[tuple[str, str, str]], bool, int]:
+    ) -> tuple[list[tuple[str, str, str]], bool, list[SummarySkip]]:
         """Read note bodies, clipping any single body to one request budget.
 
         Returns ``(path, title, body)`` triples in order, whether any body
-        was cut, and how many notes were skipped as unreadable. Missing,
-        oversized and unreadable notes are skipped. There is no aggregate cap
-        here: oversize totals are handled by batching (#922).
+        was cut, and the notes skipped with their reasons (#1637). There is
+        no aggregate cap here: oversize totals are handled by batching (#922).
         """
         notes: list[tuple[str, str, str]] = []
         clipped = False
-        unreadable = 0
+        skipped: list[SummarySkip] = []
         for path in resolved:
-            try:
-                note = self._read_note(path)
-            except DocumentUnreadableError as exc:
-                logger.warning("summarize_skip_unreadable path=%s reason=%s", path, exc)
-                unreadable += 1
-                continue
-            if note is None:
+            note = self._read_note(path)
+            if isinstance(note, SummarySkip):
+                skipped.append(note)
                 continue
             body = note.content
             # A block must fit one request on its own; leave room for the
@@ -304,26 +291,32 @@ class SummarizeManager:
                 body = body[:budget]
                 clipped = True
             notes.append((path, note.title, body))
-        return notes, clipped, unreadable
+        return notes, clipped, skipped
 
-    def _read_note(self, path: str) -> NoteContent | None:
-        """Read a note, skipping a missing or refused one.
+    def _read_note(self, path: str) -> NoteContent | SummarySkip:
+        """Read a note, or say why it is skipped.
 
-        ``read`` returns ``None`` for a missing file and raises
-        ``InvalidRequestError`` for one it refuses, such as an oversized note
-        (``MAX_NOTE_READ_BYTES``); both are skipped so one note does not abort
-        a whole subtree summary. ``DocumentUnreadableError`` propagates to
-        :meth:`_gather_notes`, which skips and counts it. Any other error is
-        a fault and is not mistaken for a bad note (#1608).
-
-        Raises:
-            DocumentUnreadableError: If the note exists but cannot be read.
+        ``read`` returns ``None`` for a missing file, raises
+        ``NoteTooLargeError`` over the read limit and ``InvalidRequestError``
+        for a path it refuses, and ``DocumentUnreadableError`` for a file it
+        cannot read. Each is a skip, so one note does not abort a whole
+        subtree summary; an unreadable one is logged at WARNING, because the
+        file needs attention. Any other error is a fault and propagates
+        (#1608, #1637).
         """
         try:
-            return self._doc_mgr.read(path)
+            note = self._doc_mgr.read(path)
+        except DocumentUnreadableError as exc:
+            logger.warning("summarize_skip_unreadable path=%s reason=%s", path, exc)
+            return SummarySkip(path=path, reason="unreadable")
+        except NoteTooLargeError:
+            return SummarySkip(path=path, reason="over_read_limit")
         except InvalidRequestError as exc:
             logger.debug("summarize_skip_note path=%s reason=%s", path, exc)
-            return None
+            return SummarySkip(path=path, reason="invalid_path")
+        if note is None:
+            return SummarySkip(path=path, reason="not_found")
+        return note
 
     @staticmethod
     def _format_block(path: str, title: str, body: str) -> str:
@@ -453,3 +446,39 @@ class SummarizeManager:
         if current:
             groups.append("\n\n".join(current))
         return groups, any_clipped
+
+
+_SKIP_STEPS: dict[str, str] = {
+    "not_found": "Not found, so skipped: {paths}. Check them with list_documents.",
+    "invalid_path": "Not valid note paths, so skipped: {paths}.",
+    "over_read_limit": (
+        "Too large to read whole, so skipped: {paths}. Read them a section at "
+        "a time with read(path, section=...)."
+    ),
+    "unreadable": (
+        "The server could not read {paths}, so they were skipped; tell the user."
+    ),
+}
+
+
+def _coverage_hint(
+    matched: int, omitted: int, limit: int, skipped: list[SummarySkip]
+) -> str | None:
+    """Build the recovery hint: one step per cause a note was left out.
+
+    Guidance placed in the result reaches the calling model at the moment it
+    matters; schema docs alone are often ignored (#925). Each cause gets its
+    own step, so a skipped note is never blamed on the note limit (#1637).
+    """
+    parts: list[str] = []
+    if omitted:
+        parts.append(
+            f"The note limit ({limit}) left out {omitted} of {matched} matched "
+            "notes. For full coverage, summarize subfolders or smaller sets of "
+            "paths in separate calls."
+        )
+    for reason, step in _SKIP_STEPS.items():
+        paths = [s.path for s in skipped if s.reason == reason]
+        if paths:
+            parts.append(step.format(paths=", ".join(paths)))
+    return " ".join(parts) or None

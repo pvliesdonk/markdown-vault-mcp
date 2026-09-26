@@ -1029,7 +1029,7 @@ Two-layer model:
 
 | Library signal | Outcome |
 |-|-|
-| `InvalidRequestError`, and its subclasses `DocumentNotFoundError`, `EmbeddingsNotConfiguredError` and `SummarizeTimeoutError` | Change the request |
+| `InvalidRequestError`, and its subclasses `DocumentNotFoundError`, `EmbeddingsNotConfiguredError`, `NoteTooLargeError` and `SummarizeTimeoutError` | Change the request |
 | `EditConflictError` | Change the request |
 | `DocumentExistsError` | Change the request |
 | `ReadOnlyError` | Change the request |
@@ -1089,6 +1089,7 @@ operator learns why the note was left out.
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match |
 | `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` or `embeddings_path` configured. A subclass of `InvalidRequestError`, so still a `ValueError` |
 | `SummarizeTimeoutError` | `summarize()` | The summarization backend outran its per-request budget; the caller can ask for less. A subclass of `InvalidRequestError` and of `RuntimeError`, the type a timeout had before (#1608) |
+| `NoteTooLargeError` | `read()` | A whole-note read is over `max_note_read_bytes`; the caller can read by section. A subclass of `InvalidRequestError`, with its own type so `summarize()` can report the skip's reason (#1637) |
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
 | `DocumentUnreadableError` | `read()`, revision reads | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. At a revision: invalid UTF-8, or a Git LFS pointer in place of the note. The cause is chained (#1608) |
 | `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
@@ -4049,6 +4050,11 @@ concatenates batch outputs in order (no reduce). Coverage is capped by
 ``SUMMARIZE_MAX_NOTES`` alone; the result carries ``notes_included`` /
 ``notes_omitted`` so callers can tell exactly how much of the selection the
 summary covers, rather than inferring from a bare ``truncated`` flag.
+``notes_omitted`` counts only the note limit: a matched note skipped for
+another reason is listed in ``skipped`` with its reason (``not_found``,
+``invalid_path``, ``over_read_limit`` from ``NoteTooLargeError``,
+``unreadable``), and the ``hint`` gives one step per cause, so a skip is never
+blamed on the limit (#1637).
 The tool also accepts a per-call ``max_notes`` argument, clamped to the
 configured cap so the operator keeps the per-call cost and latency ceiling
 (#925). The result reports the effective limit as ``notes_limit`` and, when

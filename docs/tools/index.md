@@ -1088,11 +1088,12 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 - `summary` (string): the generated summary text.
 - `sources` (list of `{path, title}`): the notes that were summarised, always populated so individual notes are attributable even when the prose does not name every one.
 - `mode` (string): the mode used.
-- `truncated` (bool): `true` when content was lost to a cap. This covers the server's note limit and the per-request character budget, which can cut a single note as well as a partial summary during the combine step.
+- `truncated` (bool): `true` when content was lost. This covers the server's note limit, notes that were skipped, and the per-request character budget, which can cut a single note as well as a partial summary during the combine step.
 - `notes_included` (int): notes whose content reached the model.
 - `notes_omitted` (int): matched notes dropped by the note limit. When non-zero, the summary does not cover the whole selection.
 - `notes_limit` (int): the note limit in effect for this call.
-- `hint` (string or null): recovery guidance when notes were omitted; `null` when the selection was fully covered.
+- `hint` (string or null): recovery guidance when notes were omitted or skipped, with the step for each cause; `null` when the selection was fully covered.
+- `skipped` (list of `{path, reason}`): matched notes left out for a reason other than the note limit. `reason` is `not_found`, `invalid_path`, `over_read_limit` (too large to read whole; read it by section), or `unreadable` (the file exists but the server can't read it).
 
 When the work is promoted to a background job, a dict with `"status": "working"`, a `job_id` string, a `poll_with` field naming the polling tool, a `retry_after_s` hint, and a `message`. Call [`get_job_result`](#get_job_result) with the `job_id` to fetch the result.
 

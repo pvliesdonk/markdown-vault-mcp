@@ -60,6 +60,15 @@ class DocumentNotFoundError(InvalidRequestError):
         return cls(f"Folder not found: {path!r}. Find the path with list_folders.")
 
 
+class NoteTooLargeError(InvalidRequestError):
+    """Raised when a whole-note read is over the server's read limit.
+
+    The caller can read the note one section at a time instead, so it is an
+    :class:`InvalidRequestError`. Its own type lets a caller that skips such
+    notes, such as ``summarize``, say why (#1637).
+    """
+
+
 class DocumentUnreadableError(MarkdownMCPError):
     """Raised when a document exists but the server cannot read or parse it.
 

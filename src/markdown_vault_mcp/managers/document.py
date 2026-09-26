@@ -27,6 +27,7 @@ from markdown_vault_mcp.exceptions import (
     DocumentUnreadableError,
     EditConflictError,
     InvalidRequestError,
+    NoteTooLargeError,
     ReadOnlyError,
 )
 from markdown_vault_mcp.managers._write_kernel import atomic_write, check_if_match
@@ -384,7 +385,7 @@ class DocumentManager:
                     self._max_note_read_bytes,
                     "MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES",
                 )
-                raise InvalidRequestError(
+                raise NoteTooLargeError(
                     f"Document {path!r} is {size_bytes:,} bytes, over the "
                     f"{self._max_note_read_bytes:,}-byte limit this server "
                     "returns in one read. Read it a section at a time with "
