@@ -146,6 +146,9 @@ class ConventionsResolver:
             Sorted vault-relative folder paths (``""`` for the vault root).
             Empty when disabled or the vault directory does not exist yet
             (e.g. before a managed-git clone completes).
+
+        Raises:
+            OSError: If the vault directory cannot be statted (#1625).
         """
         if self._filename is None or not is_directory(self._source_dir):
             return []

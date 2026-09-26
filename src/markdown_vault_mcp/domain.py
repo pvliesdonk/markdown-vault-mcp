@@ -192,7 +192,11 @@ class Service:
                     config.source_dir,
                 )
             else:
-                logger.error("vault_directory_unreadable path=%s", config.source_dir)
+                logger.error(
+                    "vault_directory_unreadable path=%s problem=%s",
+                    config.source_dir,
+                    self._startup_error,
+                )
             set_vault_singleton(None, unavailable=self._startup_error)
             return
         logger.info("vault_initialising source_dir=%s", config.source_dir)

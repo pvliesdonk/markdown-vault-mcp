@@ -384,6 +384,9 @@ class ChangeTracker:
         """Delete the state file so the next scan treats all files as added.
 
         If the state file does not exist, this is a no-op.
+
+        Raises:
+            OSError: If the state file cannot be statted or removed (#1625).
         """
         self._skipped_carry = {}
         self._skip_reasons_carry = {}

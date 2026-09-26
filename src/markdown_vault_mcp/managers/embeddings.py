@@ -988,6 +988,9 @@ class EmbeddingsManager:
         Returns:
             Dict with keys ``provider``, ``chunk_count``, ``path``,
             ``available``.
+
+        Raises:
+            OSError: If a sidecar file cannot be statted (#1625).
         """
         if self._embedding_provider is None or self._embeddings_path is None:
             return {

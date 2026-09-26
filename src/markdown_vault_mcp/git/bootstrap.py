@@ -126,6 +126,8 @@ class RepoBootstrap:
                 is not a directory, the clone fails, the result is not a git
                 repository, ``origin`` is missing, or the remote URL does
                 not match ``repo_url``.
+            OSError: If *repo_path* cannot be statted, rather than cloning
+                over a directory the server cannot see into (#1625).
         """
         if self._repo_url is None:
             raise ConfigurationError("Managed git mode requires a repo_url.")

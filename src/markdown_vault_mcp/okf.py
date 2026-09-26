@@ -673,6 +673,9 @@ def audit_bundle(
     Returns:
         The audit report. Empty or missing vault directories yield an
         all-zero report rather than an error.
+
+    Raises:
+        OSError: If the vault directory cannot be statted (#1625).
     """
     from markdown_vault_mcp.utils import is_path_excluded
     from markdown_vault_mcp.utils.fs import iter_markdown_files

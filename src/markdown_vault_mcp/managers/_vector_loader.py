@@ -76,6 +76,8 @@ def load_or_self_heal(
         ValueError: If a self-heal rebuild completes but leaves the slot empty.
         Exception: Any exception raised by the ``rebuild`` callback is logged
             at ERROR and re-raised unchanged.
+        OSError: If the sidecar cannot be statted; read as "no store", it
+            would be cold-built and later overwrite the real one (#1625).
     """
     cached = get_vectors()
     if cached is not None:
