@@ -2262,6 +2262,46 @@ class TestGitSyncOnce:
         assert len(written) == 1
         assert reads["n"] == 1, f"original file read {reads['n']} times, expected 1"
 
+    def test_write_conflict_files_skips_original_whose_stat_is_refused(
+        self,
+        git_repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A refused stat is not "absent": the original goes to the read, whose
+        handler skips it with a WARNING; the sibling is still written (#1625)."""
+        from pathlib import Path
+
+        from markdown_vault_mcp.git import conflict as conflict_mod
+
+        (git_repo / "note.md").write_text("# original body\n")
+        saved = [("note.md", "# mcp body\n")]
+        real_path_exists = conflict_mod.path_exists
+        real_read_text = Path.read_text
+
+        def refused_stat(path: Path) -> bool:
+            if path.name == "note.md":
+                raise PermissionError("refused")
+            return real_path_exists(path)
+
+        def refused_read(self_path: Path, *a: object, **k: object) -> str:
+            if self_path.name == "note.md":
+                raise PermissionError("refused")
+            return real_read_text(self_path, *a, **k)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(conflict_mod, "path_exists", refused_stat)
+        monkeypatch.setattr(Path, "read_text", refused_read)
+
+        with caplog.at_level(logging.WARNING, logger="markdown_vault_mcp.git"):
+            written = _write_conflict_files(git_repo, saved)
+
+        assert written is not None
+        assert len(written) == 1
+        assert any(
+            "note.md" in r.message and "skip" in r.message.lower()
+            for r in caplog.records
+        )
+
     def test_write_conflict_files_skips_original_on_read_error(
         self,
         git_repo: Path,
@@ -2269,7 +2309,7 @@ class TestGitSyncOnce:
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """If the original file becomes unreadable (TOCTOU delete / permission)
-        after the exists() check, the update is skipped with a WARNING rather
+        after the existence check, the update is skipped with a WARNING rather
         than crashing, and the conflict sibling is still written (#662)."""
         from pathlib import Path
 

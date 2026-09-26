@@ -173,9 +173,9 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
     if source_dir:
         os.environ[f"{_ENV_PREFIX}_SOURCE_DIR"] = source_dir
     config = ProjectConfig.from_env()
-    # A batch command over an absent directory would index nothing and exit
-    # 0; refuse with the variable named, the way ``serve`` reports a
-    # configuration error.
+    # A batch command over an absent or inaccessible directory would index
+    # nothing and exit 0; refuse with the reason, the way ``serve`` reports a
+    # configuration error (a missing directory names the variable to set).
     problem = source_dir_problem(config)
     if problem is not None:
         typer.echo(f"ERROR: configuration error: {problem[1]}", err=True)
