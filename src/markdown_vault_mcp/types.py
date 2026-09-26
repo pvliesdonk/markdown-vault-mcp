@@ -845,6 +845,27 @@ class SummarySource:
     title: str
 
 
+SummarySkipReason = Literal[
+    "not_found", "invalid_path", "over_read_limit", "unreadable"
+]
+
+
+@dataclass
+class SummarySkip:
+    """A note ``summarize`` matched but could not include (#1637).
+
+    Attributes:
+        path: Relative note path.
+        reason: ``"not_found"`` (no note there), ``"invalid_path"`` (the path
+            itself is refused), ``"over_read_limit"`` (too large to read
+            whole; read it by section), or ``"unreadable"`` (the file exists
+            but the server cannot read it).
+    """
+
+    path: str
+    reason: SummarySkipReason
+
+
 @dataclass
 class SummaryResult:
     """Result of the ``summarize`` tool.
@@ -858,20 +879,26 @@ class SummaryResult:
             the model — always populated so individual notes are attributable
             even when the prose does not name every one.
         mode: ``"synthesis"`` or ``"per_note"``.
-        truncated: True when content was lost to a cap — more notes matched
-            than ``max_notes``, a single note body exceeded the per-request
-            character budget (``max_input_chars``) and was cut, or a partial
-            summary was clipped during the reduce phase.
+        truncated: True when content was lost — more notes matched than
+            ``max_notes``, a matched note was skipped (see *skipped*), a
+            single note body exceeded the per-request character budget
+            (``max_input_chars``) and was cut, or a partial summary was
+            clipped during the reduce phase.
         notes_included: Number of notes whose content reached the model.
         notes_omitted: Number of matched notes that were dropped by the
-            note limit (or skipped as unreadable). Callers should surface a
-            warning when this is non-zero (#922).
+            note limit. Callers should surface a warning when this is
+            non-zero (#922). Notes skipped for another reason are in
+            *skipped*, not here (#1637).
         notes_limit: The note limit in effect for this call: the per-call
             ``max_notes`` argument clamped to the server's configured cap
             (#925).
-        hint: Recovery guidance for the caller, set when notes were omitted;
-            ``None`` when the selection was fully covered. Guidance in the
-            result is acted on more reliably than schema docs (#925).
+        hint: Recovery guidance for the caller, set when notes were omitted
+            or skipped, with the step for each cause; ``None`` when the
+            selection was fully covered. Guidance in the result is acted on
+            more reliably than schema docs (#925).
+        skipped: The matched notes left out for a reason other than the note
+            limit, each with its reason, in the order they were matched
+            (#1637).
     """
 
     summary: str
@@ -882,6 +909,7 @@ class SummaryResult:
     notes_omitted: int = 0
     notes_limit: int = 0
     hint: str | None = None
+    skipped: list[SummarySkip] = field(default_factory=list)
 
 
 WriteOperation = Literal["write", "edit", "delete", "rename"]

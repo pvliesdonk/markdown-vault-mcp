@@ -128,16 +128,21 @@ def register(mcp: FastMCP, jobs: Jobs) -> None:
               ``path`` and ``title`` — always populated so individual notes are
               attributable even when the prose does not name every one.
             - mode (str): The mode used ("synthesis" or "per_note").
-            - truncated (bool): True when content was lost to a cap (notes
-              omitted at the note limit, or content cut to fit a request
+            - truncated (bool): True when content was lost (notes omitted at
+              the note limit, notes skipped, or content cut to fit a request
               budget).
             - notes_included (int): Notes whose content reached the model.
             - notes_omitted (int): Matched notes dropped by the note limit.
               When non-zero, the summary does not cover the whole selection —
               surface that to the reader.
             - notes_limit (int): The note limit in effect for this call.
-            - hint (str | None): Recovery guidance when notes were omitted;
-              follow it for full coverage. None when fully covered.
+            - hint (str | None): Recovery guidance when notes were omitted
+              or skipped, one step per cause; follow it for full coverage.
+              None when fully covered.
+            - skipped (list[dict]): Matched notes left out for a reason other
+              than the note limit, each with ``path`` and ``reason``
+              (``not_found``, ``invalid_path``, ``over_read_limit``,
+              ``unreadable``).
 
             When the work is promoted to a background job, a dict with
             ``"status": "working"``, a ``"job_id"`` string, and a

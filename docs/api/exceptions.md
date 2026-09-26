@@ -25,6 +25,8 @@ outside the vault or a heading the document does not have. It is also a
 ::: markdown_vault_mcp.exceptions.InvalidRequestError
 
 ::: markdown_vault_mcp.exceptions.SummarizeTimeoutError
+
+::: markdown_vault_mcp.exceptions.NoteTooLargeError
 <!-- vale on -->
 
 ## Document Errors
