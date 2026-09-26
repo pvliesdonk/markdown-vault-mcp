@@ -1,19 +1,115 @@
-"""Filesystem traversal helpers."""
+"""Filesystem traversal and existence helpers.
+
+Existence is decided with ``stat()``, never ``Path.is_file()``, ``is_dir()``
+or ``exists()``: on Python 3.14 those return ``False`` for a path the process
+cannot stat, so a permission problem would read as "not there" (#1625). What
+pathlib itself counts as absent on every version stays absent here: no entry
+(``ENOENT``), a non-directory in the path (``ENOTDIR``), a bad descriptor
+(``EBADF``) and a symlink loop (``ELOOP``). Any other ``OSError``, such as a
+refused permission, propagates as the fault it is.
+"""
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
+import stat
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.utils.content_kind import is_note
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
-    from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+# pathlib's own "not there" set, so only a refused stat changes meaning (#1625).
+_ABSENT_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP})
+
+
+def _mode(path: Path) -> int | None:
+    """Return *path*'s ``st_mode``, or ``None`` when nothing is there.
+
+    Raises:
+        OSError: If the stat is refused for another reason.
+    """
+    try:
+        return path.stat().st_mode
+    except OSError as exc:
+        if exc.errno in _ABSENT_ERRNOS:
+            return None
+        raise
+
+
+def is_regular_file(path: Path) -> bool:
+    """True if *path* is a regular file; False if nothing, or something else, is.
+
+    Raises:
+        OSError: If the stat is refused, e.g. a parent without search
+            permission (#1625).
+    """
+    mode = _mode(path)
+    return mode is not None and stat.S_ISREG(mode)
+
+
+def is_directory(path: Path) -> bool:
+    """True if *path* is a directory; False if nothing, or something else, is.
+
+    Raises:
+        OSError: If the stat is refused (#1625).
+    """
+    mode = _mode(path)
+    return mode is not None and stat.S_ISDIR(mode)
+
+
+def path_exists(path: Path) -> bool:
+    """True if anything is at *path*.
+
+    Raises:
+        OSError: If the stat is refused (#1625).
+    """
+    return _mode(path) is not None
+
+
+def could_be_regular_file(path: Path) -> bool:
+    """False only when *path* is known not to be a regular file.
+
+    For scans that must not mistake an unreadable file for a deleted one: a
+    refused stat answers ``True``, so the file goes on to the read, whose own
+    error handling keeps what the index already holds (#1625).
+    """
+    try:
+        return is_regular_file(path)
+    except OSError:
+        return True
+
+
+def walk_files_strict(root: Path) -> list[Path]:
+    """Return every file below *root*, sorted, refusing an unreadable directory.
+
+    ``Path.rglob()`` skips a directory it cannot enter, so a folder behind a
+    permission problem would read as empty. This walk re-raises the error
+    instead: a caller moving or changing every file below *root* must not act
+    on part of them (#1625). Symlinked directories are not followed, as with
+    ``rglob()``.
+
+    Raises:
+        OSError: If *root* or a directory below it cannot be listed.
+    """
+
+    def _raise(exc: OSError) -> None:
+        raise exc
+
+    return sorted(
+        Path(dirpath) / name
+        for dirpath, _dirnames, filenames in os.walk(root, onerror=_raise)
+        for name in filenames
+    )
+
 
 # pathlib's Path.glob / Path.rglob do not recurse into symlinked
 # subdirectories by default — the behavior was unspecified pre-3.13 and an

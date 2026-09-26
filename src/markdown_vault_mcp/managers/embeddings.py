@@ -27,6 +27,7 @@ from markdown_vault_mcp.fts_index import _derive_folder
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.scanner import parse_note
 from markdown_vault_mcp.utils import is_note
+from markdown_vault_mcp.utils.fs import could_be_regular_file
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1111,7 +1112,7 @@ class EmbeddingsManager:
             abs_path = self._source_dir / path
             if (
                 self._is_path_excluded(path)
-                or not abs_path.is_file()
+                or not could_be_regular_file(abs_path)
                 or not is_note(path)
             ):
                 # Excluded or removed paths lose any stale vectors.

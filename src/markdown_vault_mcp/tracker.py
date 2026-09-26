@@ -14,7 +14,11 @@ from typing import TYPE_CHECKING
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.types import ChangeSet, ParsedNote
 from markdown_vault_mcp.utils import is_path_excluded
-from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
+from markdown_vault_mcp.utils.fs import (
+    GLOB_SYMLINK_KWARGS,
+    could_be_regular_file,
+    iter_markdown_files,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -130,15 +134,20 @@ class ChangeTracker:
         # For the default pattern, walk with directory pruning so excluded
         # subtrees (node_modules, .venv, …) are never descended; a non-default
         # glob_pattern falls back to the raw glob to preserve its semantics.
+        unreadable_dirs: list[str] = []
         if glob_pattern == "**/*.md":
             discovered: Iterable[Path] = iter_markdown_files(
-                source_dir, exclude_patterns
+                source_dir,
+                exclude_patterns,
+                on_error=lambda exc: unreadable_dirs.append(
+                    _rel_dir(exc.filename, source_dir)
+                ),
             )
         else:
             discovered = source_dir.glob(glob_pattern, **GLOB_SYMLINK_KWARGS)
         disk_state: dict[str, str] = {}
         for abs_path in sorted(discovered):
-            if not abs_path.is_file():
+            if not could_be_regular_file(abs_path):
                 continue
             try:
                 rel_str = abs_path.relative_to(source_dir).as_posix()
@@ -186,6 +195,10 @@ class ChangeTracker:
                     logger.warning("cannot_read_file path=%s error=%s", abs_path, exc)
                 continue
             disk_state[rel_str] = content_hash
+        # A walk that could not enter a directory saw nothing under it, which
+        # is not the same as nothing being there: keep what was indexed there
+        # (#1625), exactly as a failed re-hash keeps its prior entry (#831).
+        _keep_unwalked(indexed_state, disk_state, unreadable_dirs)
 
         added: list[str] = []
         modified: list[str] = []
@@ -591,3 +604,37 @@ class ChangeTracker:
             OSError: If the file cannot be opened or read.
         """
         return compute_file_hash(path)
+
+
+def _rel_dir(filename: object, source_dir: Path) -> str:
+    """Return the vault-relative POSIX form of an unreadable directory.
+
+    ``""`` stands for the vault root, which covers every path; a directory the
+    walk reports outside *source_dir* (or none at all) is treated the same,
+    since nothing narrower is known.
+    """
+    try:
+        raw = os.fsdecode(filename)  # type: ignore[arg-type]
+        return Path(raw).relative_to(source_dir).as_posix()
+    except (TypeError, ValueError):
+        return ""
+
+
+def _keep_unwalked(
+    indexed_state: dict[str, str],
+    disk_state: dict[str, str],
+    unreadable_dirs: list[str],
+) -> None:
+    """Carry indexed entries under an unreadable directory into *disk_state*.
+
+    Mutates *disk_state* so those paths read as unchanged rather than deleted
+    (#1625).
+    """
+    if not unreadable_dirs:
+        return
+    prefixes = ["" if d in ("", ".") else d + "/" for d in unreadable_dirs]
+    for rel_path, prior in indexed_state.items():
+        if rel_path not in disk_state and any(
+            rel_path.startswith(prefix) for prefix in prefixes
+        ):
+            disk_state[rel_path] = prior

@@ -24,9 +24,11 @@ from markdown_vault_mcp.scanner import extract_section, list_section_headings
 from markdown_vault_mcp.utils import (
     effective_attachment_extensions,
     is_note,
+    resolve_inside,
     validate_history_dir,
     validate_history_path,
 )
+from markdown_vault_mcp.utils.fs import is_directory, is_regular_file
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -164,7 +166,9 @@ class GitQueryManager:
         if path is not None:
             # A path pointing at a real directory scopes to that subtree; only
             # non-directories are held to the note/attachment extension rule.
-            if (self._source_dir / path).is_dir():
+            # Validate (NUL, containment) before the stat, which would
+            # otherwise fail on such a path as a fault (#1636, #1625).
+            if is_directory(resolve_inside(path, self._source_dir)):
                 abs_path = validate_history_dir(path, self._source_dir)
                 is_dir = True
             else:
@@ -377,7 +381,7 @@ class GitQueryManager:
             # A note not on disk is being created, not overwritten: nothing is
             # replaced, and probing would walk the whole history to learn that
             # a never-seen path has no commit.
-            if not abs_path.is_file():
+            if not is_regular_file(abs_path):
                 return None
             return self._git_strategy.committed_revision(self._source_dir, abs_path)
         except (ValueError, OSError, subprocess.SubprocessError):

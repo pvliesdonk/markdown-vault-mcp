@@ -533,7 +533,7 @@ class TestUnreadableFiles:
 
         tracker = ChangeTracker(tmp_path / "state.json")
 
-        def fake_discover(source_dir, exclude_patterns):  # noqa: ARG001
+        def fake_discover(source_dir, exclude_patterns, on_error=None):  # noqa: ARG001
             return iter([outside])
 
         with (

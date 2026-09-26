@@ -26,7 +26,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-import stat
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -49,6 +48,7 @@ from markdown_vault_mcp.utils import (
     resolve_inside,
     validate_path,
 )
+from markdown_vault_mcp.utils.fs import is_directory, is_regular_file
 from markdown_vault_mcp.utils.text import decode_utf8
 
 logger = logging.getLogger(__name__)
@@ -98,20 +98,6 @@ def _inside(
         return resolve_inside(path, source_dir)
     except ValueError as exc:
         raise _reject(f"{exc}. {hint}") from None
-
-
-def _exists(path: Path, *, directory: bool = False) -> bool:
-    """Report whether *path* is a regular file (or a directory).
-
-    Only an absent path is ``False``. Any other ``OSError`` from the stat
-    propagates as the server fault it is. ``Path.is_file()`` cannot be used:
-    on Python 3.14 it returns ``False`` for an unreadable path (#1623).
-    """
-    try:
-        mode = path.stat().st_mode
-    except (FileNotFoundError, NotADirectoryError):
-        return False
-    return stat.S_ISDIR(mode) if directory else stat.S_ISREG(mode)
 
 
 def _extension_rejected(ext: str) -> ToolError:
@@ -194,7 +180,7 @@ def _validate_source(
     """
     is_artifact = not is_note(path)
     resolved = _inside(path, source_dir, note=not is_artifact)
-    if not _exists(resolved):
+    if not is_regular_file(resolved):
         listing = (
             "list_documents(include_attachments=True)"
             if is_artifact
@@ -272,7 +258,7 @@ class VaultTransferSink:
             _validate_source(ref, source_dir, exts)
         else:
             destination = _validate_destination(ref, source_dir, exts)
-            if self._config.write_protect_existing and _exists(destination):
+            if self._config.write_protect_existing and is_regular_file(destination):
                 logger.info(
                     "transfer_upload_refused_protected ref=%s setting=%s",
                     ref,
@@ -309,7 +295,7 @@ class VaultTransferSink:
         folder = _inside(
             scope, self._config.source_dir, note=False, hint=_BUNDLE_FOLDER_HINT
         )
-        if not _exists(folder, directory=True):
+        if not is_directory(folder):
             raise _reject(f"Bundle folder not found: {scope}. {_BUNDLE_FOLDER_HINT}")
 
     def _resolve_vault(self) -> Vault:
@@ -398,7 +384,7 @@ class VaultTransferSink:
                 rather than serving an empty archive.
         """
         vault = self._resolve_vault()
-        if scope and not (self._config.source_dir / scope).resolve().is_dir():
+        if scope and not is_directory((self._config.source_dir / scope).resolve()):
             logger.warning("transfer_download_bundle_folder_gone scope=%s", scope)
             raise TransferResourceGoneError(
                 f"bundle folder no longer available: {scope}"

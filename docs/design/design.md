@@ -1769,6 +1769,23 @@ resolved path escapes `source_dir`, it returns `None` instead of raising. A
 NUL byte is refused there too, as `InvalidRequestError`, before either mode
 touches the index or the disk.
 
+Existence is decided with `stat()`, through `utils.fs` (`is_regular_file`,
+`is_directory`, `path_exists`), never with `Path.is_file()`, `is_dir()` or
+`exists()`: on Python 3.14 those answer `False` for a path the process cannot
+stat, so a permission problem would read as "not found" (#1625). What pathlib
+counts as absent on every version stays absent (`ENOENT`, `ENOTDIR`, `EBADF`,
+a symlink loop's `ELOOP`); any other `OSError`, such as a refused permission,
+propagates as a fault. Code that acts on every file below a folder
+(`move_folder`) walks with `walk_files_strict`, which refuses an unreadable
+subfolder instead of skipping it the way `rglob()` does. The index scans take
+the opposite default, because one bad file must not abort a reindex: a path
+whose stat is refused is "can't tell" (`could_be_regular_file`), so it goes on
+to the read and keeps its indexed row when the read fails (#831), and, for
+the default `**/*.md` discovery, a directory the walk cannot enter keeps what
+was indexed under it rather than reporting it deleted. A custom glob pattern
+still skips such a directory silently, and a forced full rebuild starts from
+an empty index by design.
+
 ### Lifecycle: Vault.close()
 
 `Vault.close()` must be called on shutdown to release resources:

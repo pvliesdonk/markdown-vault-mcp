@@ -50,6 +50,7 @@ from markdown_vault_mcp.utils import (
     is_note,
     resolve_inside,
 )
+from markdown_vault_mcp.utils.fs import is_regular_file
 
 if TYPE_CHECKING:
     import os
@@ -141,7 +142,7 @@ class ArtifactStore:
         """
         if not self._policy.write_protect_existing or if_match is not None:
             return
-        if abs_path.is_file():
+        if is_regular_file(abs_path):
             # The operator's setting goes in the log, not the model's text (#1639).
             logger.info(
                 "write_refused_protected path=%s setting=%s",
@@ -295,7 +296,7 @@ class ArtifactStore:
             abs_path = self.validate_path(path)
             self._check_no_clobber(abs_path, path, if_match)
             check_if_match(abs_path, path, if_match)
-            created = not abs_path.is_file()
+            created = not is_regular_file(abs_path)
             abs_path.parent.mkdir(parents=True, exist_ok=True)
             atomic_write(abs_path, content)
             result = WriteResult(path=path, created=created)
@@ -329,7 +330,7 @@ class ArtifactStore:
         self._check_writable()
         with self._file_write_lock:
             abs_path = self.validate_path(path)
-            if not abs_path.is_file():
+            if not is_regular_file(abs_path):
                 raise DocumentNotFoundError.attachment(path)
             check_if_match(abs_path, path, if_match)
             abs_path.unlink()
@@ -362,9 +363,9 @@ class ArtifactStore:
         with self._file_write_lock:
             old_abs = self.validate_path(old_path)
             new_abs = self.validate_path(new_path)
-            if not old_abs.is_file():
+            if not is_regular_file(old_abs):
                 raise DocumentNotFoundError.attachment(old_path)
-            if new_abs.is_file():
+            if is_regular_file(new_abs):
                 raise DocumentExistsError(
                     f"Target already exists: {new_path!r}. Pass a new_path that "
                     "is free; list_documents(include_attachments=True) shows "

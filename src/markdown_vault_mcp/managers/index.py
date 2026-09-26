@@ -41,7 +41,11 @@ from markdown_vault_mcp.utils import (
     is_note,
     is_path_excluded,
 )
-from markdown_vault_mcp.utils.fs import iter_markdown_files
+from markdown_vault_mcp.utils.fs import (
+    could_be_regular_file,
+    is_regular_file,
+    iter_markdown_files,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -205,7 +209,8 @@ class IndexManager:
         still needs the per-file check. Excluded files are therefore invisible
         everywhere — neither skip-counted nor recorded in ``skipped_state``
         (#257/#832) — matching ``detect_changes``. Non-files (such as broken
-        symlinks) are dropped.
+        symlinks) are dropped; a path whose stat is refused is kept as a
+        candidate, so its read decides rather than a silent drop (#1625).
 
         Returns:
             ``(absolute_path, relative_posix_path)`` pairs for non-excluded
@@ -217,7 +222,7 @@ class IndexManager:
             self._exclude_patterns,
             on_error=on_walk_error,
         ):
-            if not abs_path.is_file():
+            if not could_be_regular_file(abs_path):
                 continue
             # iter_markdown_files yields paths built as source_dir / rel, so
             # relative_to always succeeds (no outside-source_dir guard needed).
@@ -981,9 +986,11 @@ class IndexManager:
         is tombstoned rather than deleted, so FTS absence keeps meaning
         "not a candidate" (#1129).
         When the parse failure stems from the file disappearing between
-        the ``is_file()`` check and ``parse_note()``, the stale FTS row
+        the existence check and ``parse_note()``, the stale FTS row
         is deleted so keyword/hybrid search results stay consistent with
         what :meth:`flush_dirty_embeddings` will do to the vector index.
+        A file whose stat is refused has not disappeared, so its row stays
+        and the job fails for a retry (#1625).
         Other exceptions — notably ``sqlite3.OperationalError``
         (classified by PR #555's ``IndexUnavailableReason`` discriminator
         at the caller boundary), ``sqlite3.DatabaseError``, ``MemoryError``,
@@ -1040,7 +1047,7 @@ class IndexManager:
                 # before the exclusion existed.
                 self._fts.delete_by_path(path)
                 return
-            if abs_path.is_file() and is_note(path):
+            if is_regular_file(abs_path) and is_note(path):
                 note = parse_note(
                     abs_path,
                     self._source_dir,
@@ -1080,8 +1087,13 @@ class IndexManager:
                 exc,
             )
             # A vanished file is a successful deletion. A still-existing
-            # unreadable file retains its old row, so fail and retry the job.
-            if not abs_path.is_file():
+            # unreadable file retains its old row, so fail and retry the job;
+            # a refused stat is "still there", never "vanished" (#1625).
+            try:
+                vanished = not is_regular_file(abs_path)
+            except OSError:
+                vanished = False
+            if vanished:
                 self._fts.delete_by_path(path)
                 return
             raise
