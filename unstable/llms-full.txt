@@ -8279,9 +8279,11 @@ Returns:
 
 Raises:
 
-| Type         | Description                                                                                                                                                          |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ValueError` | If the vault is not git-backed, revision is unusable, path is not a note, the note's identity cannot be traced to that revision, or the content there is unreadable. |
+| Type                      | Description                                                                                                                                                                                                |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `InvalidRequestError`     | If the vault is not git-backed, revision is unusable, path is not a note, the note's identity cannot be traced to that revision, the content is over the read cap, or section is empty or not found there. |
+| `DocumentUnreadableError` | If the content there is not valid UTF-8, or is a Git LFS pointer.                                                                                                                                          |
+| `ValueError`              | If git itself fails.                                                                                                                                                                                       |
 
 ### `get_metadata(path)`
 
@@ -9615,9 +9617,11 @@ Returns:
 
 Raises:
 
-| Type         | Description                                                                                                                                                  |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ValueError` | If the vault is not git-backed, the revision is not an ancestor of HEAD, the note's identity cannot be traced to it, or the content is unreadable as a note. |
+| Type                      | Description                                                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `InvalidRequestError`     | If the vault is not git-backed, the revision is not a commit or not an ancestor of HEAD, the note's identity cannot be traced to it, or the content is over the read cap. |
+| `DocumentUnreadableError` | If the content there is not valid UTF-8, or is a Git LFS pointer.                                                                                                         |
+| `ValueError`              | If git itself fails.                                                                                                                                                      |
 
 ### `committed_revision(repo_path, path)`
 
@@ -10716,7 +10720,7 @@ Bases: `MarkdownMCPError`
 
 Raised when a document exists but the server cannot read or parse it.
 
-The file is there, so this is not "not found": the bytes are not valid UTF-8, the frontmatter block does not parse, or the file system refused a stat or a read. The cause is chained as `__cause__` (#1608).
+The file is there, so this is not "not found": the bytes are not valid UTF-8, the frontmatter block does not parse, or the file system refused a stat or a read. A revision read raises it too, when the note's content at that revision is not valid UTF-8 or is a Git LFS pointer. Not a `ValueError`. The cause is chained as `__cause__` (#1608).
 
 Attributes:
 

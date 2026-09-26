@@ -4063,13 +4063,35 @@ content, matched as :meth:<code>read</code> matches it on disk.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the vault is not git-backed, <em>revision</em> is
+unusable, <em>path</em> is not a note, the note's identity cannot be
+traced to that revision, the content is over the read cap, or
+<em>section</em> is empty or not found there.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="DocumentUnreadableError">DocumentUnreadableError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the content there is not valid UTF-8,
+or is a Git LFS pointer.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
                   <code><span title="ValueError">ValueError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the vault is not git-backed, <em>revision</em> is unusable,
-<em>path</em> is not a note, the note's identity cannot be traced to
-that revision, or the content there is unreadable.</p>
+                <p>If git itself fails.</p>
               </div>
             </td>
           </tr>

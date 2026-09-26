@@ -403,9 +403,11 @@ Returns:
 
 Raises:
 
-| Type         | Description                                                                                                                                                  |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ValueError` | If the vault is not git-backed, the revision is not an ancestor of HEAD, the note's identity cannot be traced to it, or the content is unreadable as a note. |
+| Type                      | Description                                                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `InvalidRequestError`     | If the vault is not git-backed, the revision is not a commit or not an ancestor of HEAD, the note's identity cannot be traced to it, or the content is over the read cap. |
+| `DocumentUnreadableError` | If the content there is not valid UTF-8, or is a Git LFS pointer.                                                                                                         |
+| `ValueError`              | If git itself fails.                                                                                                                                                      |
 
 ### `committed_revision(repo_path, path)`
 

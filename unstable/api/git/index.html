@@ -4481,13 +4481,34 @@ raises rather than returning another note's content.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the vault is not git-backed, the revision
+is not a commit or not an ancestor of HEAD, the note's identity
+cannot be traced to it, or the content is over the read cap.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="DocumentUnreadableError">DocumentUnreadableError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the content there is not valid UTF-8,
+or is a Git LFS pointer.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
                   <code><span title="ValueError">ValueError</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the vault is not git-backed, the revision is not an
-ancestor of HEAD, the note's identity cannot be traced to it,
-or the content is unreadable as a note.</p>
+                <p>If git itself fails.</p>
               </div>
             </td>
           </tr>

@@ -2356,7 +2356,9 @@ written before this type existed still catches it (#1608).</p>
         <p>Raised when a document exists but the server cannot read or parse it.</p>
 <p>The file is there, so this is not "not found": the bytes are not valid
 UTF-8, the frontmatter block does not parse, or the file system refused a
-stat or a read. The cause is chained as <code>__cause__</code> (#1608).</p>
+stat or a read. A revision read raises it too, when the note's content at
+that revision is not valid UTF-8 or is a Git LFS pointer. Not a
+<code>ValueError</code>. The cause is chained as <code>__cause__</code> (#1608).</p>
 
 
 <p><span class="doc-section-title">Attributes:</span></p>
