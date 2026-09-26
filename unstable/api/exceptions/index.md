@@ -28,6 +28,14 @@ Raised when the caller's request cannot be served as sent.
 
 The caller must send a different request: an argument out of range, a path outside the vault, a wrong file type, a heading or document that does not exist. It is also a `ValueError`, so an `except ValueError` handler written before this type existed still catches it (#1608).
 
+## `SummarizeTimeoutError`
+
+Bases: `InvalidRequestError`, `RuntimeError`
+
+Raised when a summarization request outruns its per-request budget.
+
+The caller can fit under the budget by asking for less (fewer paths, a smaller `max_notes`, a narrower `focus`, `per_note` mode), so it is an :class:`InvalidRequestError`. It is also a `RuntimeError`, the type summarization raised for a timeout before (#937), so a handler written against that contract still catches it (#1608).
+
 ## Document Errors
 
 ## `DocumentNotFoundError`
