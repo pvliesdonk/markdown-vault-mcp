@@ -1000,7 +1000,7 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 
 When the work is promoted to a background job, a dict with `"status": "working"`, a `job_id` string, a `poll_with` field naming the polling tool, a `retry_after_s` hint, and a `message`. Call [`get_job_result`](#get_job_result) with the `job_id` to fetch the result.
 
-**Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails within the soft deadline. A backend failure after promotion is reported through `get_job_result` instead.
+**Errors:** raises if `paths` is empty, `mode` is invalid, the paths hold no note that exists within the read limit, every note found exists but can't be read (a server-side failure), or the backend call fails within the soft deadline. A backend failure after promotion is reported through `get_job_result` instead.
 
 Note content goes to the configured backend
 

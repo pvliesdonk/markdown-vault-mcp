@@ -5185,7 +5185,7 @@ front.</p>
 <li><code>hint</code> (string or null): recovery guidance when notes were omitted; <code>null</code> when the selection was fully covered.</li>
 </ul>
 <p>When the work is promoted to a background job, a dict with <code>"status": "working"</code>, a <code>job_id</code> string, a <code>poll_with</code> field naming the polling tool, a <code>retry_after_s</code> hint, and a <code>message</code>. Call <a href="#get_job_result"><code>get_job_result</code></a> with the <code>job_id</code> to fetch the result.</p>
-<p><strong>Errors:</strong> raises if <code>paths</code> is empty, <code>mode</code> is invalid, no readable notes were found, or the backend call fails within the soft deadline. A backend failure after promotion is reported through <code>get_job_result</code> instead.</p>
+<p><strong>Errors:</strong> raises if <code>paths</code> is empty, <code>mode</code> is invalid, the paths hold no note that exists within the read limit, every note found exists but can't be read (a server-side failure), or the backend call fails within the soft deadline. A backend failure after promotion is reported through <code>get_job_result</code> instead.</p>
 <div class="admonition warning">
 <p class="admonition-title">Note content goes to the configured backend</p>
 <p>The referenced notes are sent to the summarization backend the operator configured, which may be a remote provider or a local endpoint. Do not summarize notes whose content must not be shared with that backend. The <a href="../prompts/#summarize-subtree"><code>summarize-subtree</code> prompt</a> is the client-side alternative that summarizes with the client's own model; see its docs for how the two routes relate.</p>
