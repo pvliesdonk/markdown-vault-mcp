@@ -26,6 +26,7 @@ from markdown_vault_mcp.scanner import parse_frontmatter
 from markdown_vault_mcp.utils import (
     is_note,
     is_path_excluded,
+    reject_nul,
     resolve_inside,
 )
 from markdown_vault_mcp.utils.fs import iter_markdown_files
@@ -117,7 +118,8 @@ class ConventionsResolver:
             folder, root-first. Empty when disabled or no files exist.
 
         Raises:
-            ValueError: If *path* escapes the vault root.
+            InvalidRequestError: If *path* holds a NUL byte or escapes the
+                vault root.
         """
         if self._filename is None:
             return []
@@ -170,8 +172,11 @@ class ConventionsResolver:
             Normalized vault-relative folder string (``""`` for root).
 
         Raises:
-            ValueError: If the path escapes the vault root.
+            InvalidRequestError: If the path holds a NUL byte or escapes the
+                vault root. The NUL is checked before a note path is folded to
+                its folder, which would otherwise drop the file name (#1636).
         """
+        reject_nul(path)
         cleaned = path.replace("\\", "/").strip("/")
         if is_note(cleaned):
             cleaned = cleaned.rsplit("/", 1)[0] if "/" in cleaned else ""

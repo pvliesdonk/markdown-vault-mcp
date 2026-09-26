@@ -175,6 +175,7 @@ _NUL_PATHS: dict[str, Callable[[Vault], Any]] = {
     "rename target": lambda v: v.writer.rename("note.md", _NUL),
     "move folder": lambda v: v.writer.move_folder("sub", "d\x00"),
     "write attachment": lambda v: v.writer.write_attachment("a\x00.png", b"x"),
+    "conventions": lambda v: v.conventions.for_path(_NUL),
 }
 
 
