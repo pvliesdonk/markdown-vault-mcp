@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
-from fastmcp_pvl_core import register_long_running_tool
+from fastmcp_pvl_core import register_long_running_tool, tool_boundary
 
+from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
@@ -40,6 +41,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def embeddings_status(
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
@@ -72,6 +75,8 @@ def register(mcp: FastMCP) -> None:
         },
         icons=_TOOL_ICONS["get_index_status"],
     )
+    @tool_boundary
+    @library_outcomes
     async def get_index_status(
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
@@ -144,6 +149,7 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
             "idempotent_hint": True,
         },
     )
+    @library_outcomes
     @needs_queryable()
     async def reindex(
         force: bool = False,
@@ -241,6 +247,7 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
             "idempotent_hint": True,
         },
     )
+    @library_outcomes
     @needs_queryable()
     async def build_embeddings(
         force: bool = False,

@@ -16,8 +16,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from fastmcp.apps import AppConfig
 from fastmcp.dependencies import Depends
+from fastmcp_pvl_core import tool_boundary
 
 from markdown_vault_mcp._icons import _TOOL_ICONS
+from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp._vault_apps import _graph_view_payload
 from markdown_vault_mcp.domain import get_vault
 from markdown_vault_mcp.vault import Vault
@@ -57,6 +59,8 @@ def _register_browse(mcp: FastMCP, app_uri: str) -> None:
         },
         app=AppConfig(resource_uri=app_uri),
     )
+    @tool_boundary
+    @library_outcomes
     async def browse_vault(
         path: str | None = None,
         view: Literal["context", "graph", "browse", "note"] | None = None,
@@ -130,6 +134,8 @@ def _register_context(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         meta=tool_meta("vault_context"),
         app=AppConfig(resource_uri=app_uri, visibility=["app"]),
     )
+    @tool_boundary
+    @library_outcomes
     async def vault_context(
         path: str,
         vault: Vault = Depends(get_vault),
@@ -164,6 +170,8 @@ def _register_context(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         },
         app=AppConfig(resource_uri=app_uri),
     )
+    @tool_boundary
+    @library_outcomes
     async def show_context(
         path: str,
         vault: Vault = Depends(get_vault),
@@ -228,6 +236,8 @@ def _register_graph(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         meta=tool_meta("vault_graph_neighborhood"),
         app=AppConfig(resource_uri=app_uri, visibility=["app"]),
     )
+    @tool_boundary
+    @library_outcomes
     async def vault_graph_neighborhood(
         path: str,
         depth: int = 1,
@@ -294,6 +304,8 @@ def _register_graph(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         meta=tool_meta("vault_graph_hubs"),
         app=AppConfig(resource_uri=app_uri, visibility=["app"]),
     )
+    @tool_boundary
+    @library_outcomes
     async def vault_graph_hubs(
         limit: int = 20,
         vault: Vault = Depends(get_vault),
@@ -345,6 +357,8 @@ def _register_browser(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         meta=tool_meta("vault_list"),
         app=AppConfig(resource_uri=app_uri, visibility=["app"]),
     )
+    @tool_boundary
+    @library_outcomes
     async def vault_list(
         folder: str | None = None,
         vault: Vault = Depends(get_vault),
@@ -412,6 +426,8 @@ def _register_browser(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         meta=tool_meta("vault_read"),
         app=AppConfig(resource_uri=app_uri, visibility=["app"]),
     )
+    @tool_boundary
+    @library_outcomes
     async def vault_read(
         path: str,
         vault: Vault = Depends(get_vault),
@@ -452,6 +468,8 @@ def _register_browser(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         meta=tool_meta("vault_search"),
         app=AppConfig(resource_uri=app_uri, visibility=["app"]),
     )
+    @tool_boundary
+    @library_outcomes
     async def vault_search(
         query: str,
         mode: Literal["keyword", "semantic", "hybrid"] = "hybrid",

@@ -19,11 +19,12 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.types import WriteResult
 
+import httpx
 from fastmcp import Context, FastMCP
 from fastmcp.dependencies import CurrentContext, Depends
 from fastmcp.exceptions import ToolError
 from fastmcp.server.elicitation import AcceptedElicitation
-from fastmcp_pvl_core import fetch_url
+from fastmcp_pvl_core import fetch_url, tool_boundary
 from mcp.shared.exceptions import MCPError
 from mcp.types import (
     ElicitRequest,
@@ -33,10 +34,13 @@ from mcp.types import (
 )
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 
+from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
+    DocumentNotFoundError,
     EditConflictError,
+    InvalidRequestError,
 )
 from markdown_vault_mcp.okf import (
     _HUMAN_ACTOR_PREFIX,
@@ -149,7 +153,10 @@ def _require_modern_review(ctx: Context, path: str) -> InputRequiredResult | Non
         and answer.content.get("value") is True
     ):
         return None
-    raise ToolError("Human review was not confirmed, so no verification was written.")
+    raise ToolError(
+        "Human review was not confirmed, so no verification was written.",
+        log_level=logging.INFO,
+    )
 
 
 async def _require_review_elicitation(ctx: Context, path: str) -> None:
@@ -172,16 +179,19 @@ async def _require_review_elicitation(ctx: Context, path: str) -> None:
         # reply deconstructs back to True.
         result = await ctx.elicit(_review_message(path), response_type=bool)
     except MCPError as exc:
+        logger.info("okf_verify_elicitation_unsupported path=%s", path)
         raise ToolError(
-            "okf_verify is in 'elicit' mode but this client does not support "
-            "elicitation, so a human review cannot be confirmed and nothing was "
-            "written. Use an elicitation-capable client, or set "
-            "MARKDOWN_VAULT_MCP_OKF_VERIFY=trust-auth (attribute to the "
-            "authenticated caller) or off (hide the tool)."
+            "okf_verify needs a human to confirm the review, and this client "
+            "cannot ask one, so nothing was written. Tell the user the review "
+            "needs a client that supports elicitation.",
+            log_level=logging.INFO,
         ) from exc
     if isinstance(result, AcceptedElicitation) and result.data:
         return
-    raise ToolError("Human review was not confirmed, so no verification was written.")
+    raise ToolError(
+        "Human review was not confirmed, so no verification was written.",
+        log_level=logging.INFO,
+    )
 
 
 async def _resolve_verify_mode_subject(
@@ -201,10 +211,10 @@ async def _resolve_verify_mode_subject(
         subject = resolve_human_subject()
         if subject is None:
             raise ToolError(
-                "okf_verify (trust-auth mode) requires an authenticated "
-                "identity with a human subject; no such identity is available. "
-                "Service credentials cannot attest a human review without "
-                "confirmation. Use elicit mode to confirm through the client UI."
+                "okf_verify attributes a review to the authenticated person, and "
+                "this connection has no human identity, so nothing was written. "
+                "Tell the user the review needs a signed-in person.",
+                log_level=logging.INFO,
             )
         return subject
     request_context = ctx.request_context
@@ -249,6 +259,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def write(
         path: str,
         content: str = "",
@@ -318,21 +330,22 @@ def register(mcp: FastMCP) -> None:
         """
         if not is_note(path):
             if not content_base64:
-                raise ValueError(
+                raise InvalidRequestError(
                     f"content_base64 is required for non-.md attachments: {path}"
                 )
             try:
                 raw_bytes = base64.b64decode(content_base64)
             except Exception as exc:
-                raise ValueError(f"Invalid base64 in content_base64: {exc}") from exc
+                raise InvalidRequestError(
+                    f"Invalid base64 in content_base64: {exc}"
+                ) from exc
             cap_mb = vault.max_attachment_size_mb
             if cap_mb > 0 and len(raw_bytes) > int(cap_mb * 1024 * 1024):
-                raise ValueError(
-                    f"Attachment {path!r} is {len(raw_bytes)} bytes "
-                    f"({len(raw_bytes) / 1024 / 1024:.1f} MB), exceeds "
-                    f"MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB ({cap_mb} MB). "
-                    f"Increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB if "
-                    f"you need the bytes in context."
+                raise InvalidRequestError(
+                    f"Attachment {path!r} is {len(raw_bytes):,} bytes, over the "
+                    f"{int(cap_mb * 1024 * 1024):,}-byte limit this server "
+                    "accepts in a write. Upload it with create_upload_link if "
+                    "that tool is available."
                 )
             # Attachments carry no OKF frontmatter; bind only the principal
             # so the git commit is attributed to the caller (#1218).
@@ -368,6 +381,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": False,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def edit(
         path: str,
         old_text: str | None = None,
@@ -455,7 +470,7 @@ def register(mcp: FastMCP) -> None:
                 parts.append(f"expected: {exc.expected_snippet!r}")
             if exc.found_snippet is not None:
                 parts.append(f"found: {exc.found_snippet!r}")
-            raise ToolError("\n".join(parts)) from exc
+            raise ToolError("\n".join(parts), log_level=logging.INFO) from exc
 
     @mcp.tool(
         tags={"write"},
@@ -467,6 +482,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": False,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def append(
         path: str,
         content: str,
@@ -539,6 +556,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def delete(
         path: str,
         if_match: str | None = None,
@@ -587,6 +606,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": False,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def rename(
         old_path: str,
         new_path: str,
@@ -661,6 +682,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": False,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def move_folder(
         old_dir: str,
         new_dir: str,
@@ -720,6 +743,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def fetch(
         url: str,
         path: str,
@@ -832,24 +857,30 @@ def register(mcp: FastMCP) -> None:
         try:
             fetched = await fetch_url(url, max_bytes=max_bytes, timeout_s=timeout_s)
         except ValueError as exc:
-            # Translate the size-cap refusal into the vault's operator-facing
-            # terms (which env var raises the limit). Matches fetch_url's full
-            # terminal suffix — not a substring. The size-cap message embeds
-            # the (redacted) URL, which is caller-supplied, so a substring test
-            # could be spoofed by a URL crafted to contain the phrase; the
-            # suffix is fetch_url's own text and cannot be. Couples to that
-            # text, but fails safe: on a reword the original error propagates.
+            # Every ValueError fetch_url raises is the URL's: a scheme, host or
+            # address it refuses, a name that does not resolve, or a body over
+            # the cap (#1608). The size-cap one is restated in the vault's
+            # terms. Matches fetch_url's full terminal suffix — not a
+            # substring: the message embeds the (redacted) URL, which is
+            # caller-supplied, so a substring test could be spoofed by a URL
+            # crafted to contain the phrase; the suffix is fetch_url's own text
+            # and cannot be. On a reword, the original message is passed on.
             if capped and str(exc).endswith(
                 f"exceeded the size cap of {max_bytes} bytes."
             ):
-                raise ValueError(
-                    f"Download exceeded the attachment size limit "
-                    f"of {vault.max_attachment_size_mb} MB "
-                    f"({max_bytes} bytes). Raise "
-                    "MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB or "
-                    "set it to 0 to disable the limit."
+                raise InvalidRequestError(
+                    f"The download is over the {max_bytes:,}-byte limit this "
+                    "server accepts for an attachment, so nothing was saved."
                 ) from exc
-            raise
+            raise InvalidRequestError(str(exc)) from exc
+        except (httpx.HTTPStatusError, httpx.TooManyRedirects) as exc:
+            # The remote site's answer, not this server's failure: the caller
+            # has to check the URL (#1608).
+            raise ToolError(
+                f"Fetching {url!r} failed ({exc}), so nothing was saved. Check "
+                "the URL.",
+                log_level=logging.INFO,
+            ) from exc
 
         raw_bytes = fetched.body
         content_type = fetched.content_type
@@ -868,9 +899,10 @@ def register(mcp: FastMCP) -> None:
                 text = decode_utf8(raw_bytes)  # strips a leading BOM (#681)
             except UnicodeDecodeError as exc:
                 ct = content_type or "unknown"
-                raise ValueError(
+                raise InvalidRequestError(
                     f"Response body is not valid UTF-8 (content-type: {ct}). "
-                    "Only UTF-8 encoded responses can be saved as .md notes."
+                    "Only UTF-8 encoded responses can be saved as .md notes; "
+                    "save it under a non-.md path as an attachment instead."
                 ) from exc
             # Bind the caller's Principal + OKF provenance actor (#964,
             # #1160): fetch writes .md notes through the same
@@ -921,6 +953,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def okf_convert_links(
         folder: str | None = None,
         vault: Vault = Depends(get_vault),
@@ -962,6 +996,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def okf_generate_index(
         folder: str = "",
         vault: Vault = Depends(get_vault),
@@ -996,6 +1032,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": False,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def okf_seed_log(
         folder: str = "",
         vault: Vault = Depends(get_vault),
@@ -1023,7 +1061,7 @@ def register(mcp: FastMCP) -> None:
         try:
             result = await asyncio.to_thread(vault.writer.okf_seed_log, folder=folder)
         except FileExistsError as exc:
-            raise ToolError(str(exc)) from exc
+            raise ToolError(str(exc), log_level=logging.INFO) from exc
         return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
@@ -1036,6 +1074,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": False,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def okf_verify(
         path: str,
         ctx: Context = CurrentContext(),
@@ -1091,7 +1131,9 @@ def register(mcp: FastMCP) -> None:
         subject = subject_or_request
         note = await asyncio.to_thread(vault.reader.read, path)
         if note is None:
-            raise ToolError(f"Note not found: {path}")
+            raise DocumentNotFoundError(
+                f"No note at {path!r}. Find the path with search or list_documents."
+            )
         verified_count = len(verified_entries(note.frontmatter)) + 1
         new_text = append_okf_verification(
             note.content, subject=subject, now=datetime.now(UTC)
@@ -1108,8 +1150,9 @@ def register(mcp: FastMCP) -> None:
                 )
         except ConcurrentModificationError as exc:
             raise ToolError(
-                f"Note {path!r} changed since it was read; verification "
-                "aborted to avoid attesting stale content. Re-read and retry."
+                f"Note {path!r} changed while it was being verified, so nothing "
+                "was written. Call okf_verify again to attest the current text.",
+                log_level=logging.INFO,
             ) from exc
         return attach_remote_health(
             vault,

@@ -153,6 +153,8 @@ dependencies = [
     # fastmcp-pvl-core>=8 already guarantees fastmcp>=4 transitively.
     "fastmcp>=4",
     # PROJECT-DEPS-START — add domain dependencies below; kept across copier update
+    # fetch tells the remote site's HTTP errors apart from a server fault (#1608).
+    "httpx>=0.25",
     "python-frontmatter>=1.0",
     "requests>=2.33.0",
     # PROJECT-DEPS-END

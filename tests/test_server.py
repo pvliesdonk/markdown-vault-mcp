@@ -1711,7 +1711,7 @@ class TestMCPWriteAttachment:
                 await client.call_tool("write", args)
             assert path.read_bytes() == original
             read_result = await client.call_tool("read", {"path": "assets/report.pdf"})
-            with pytest.raises(ToolError, match="Concurrent modification"):
+            with pytest.raises(ToolError, match="changed since etag"):
                 await client.call_tool("write", {**args, "if_match": "stale"})
             assert path.read_bytes() == original
             result = await client.call_tool(
@@ -1818,9 +1818,7 @@ class TestAttachmentSizeCap:
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0.001")
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises(
-                ToolError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
-            ):
+            with pytest.raises(ToolError, match="byte limit"):
                 await client.call_tool("read", {"path": "assets/large.pdf"})
 
     async def test_read_allows_attachment_when_cap_zero(
@@ -1846,9 +1844,7 @@ class TestAttachmentSizeCap:
         big_b64 = base64.b64encode(b"x" * 2048).decode("ascii")
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises(
-                ToolError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
-            ):
+            with pytest.raises(ToolError, match="byte limit"):
                 await client.call_tool(
                     "write",
                     {"path": "assets/big.pdf", "content_base64": big_b64},
@@ -1890,9 +1886,7 @@ class TestAttachmentSizeCap:
         monkeypatch.setattr(DocumentManager, "read_attachment", spy)
         server = make_server()
         async with Client(server) as client:
-            with pytest.raises(
-                ToolError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
-            ):
+            with pytest.raises(ToolError, match="byte limit"):
                 await client.call_tool("read", {"path": "assets/large.pdf"})
         assert seen == []
 
@@ -1914,9 +1908,7 @@ class TestAttachmentSizeCap:
                 },
             )
             assert ok.data["path"] == "assets/exact.pdf"
-            with pytest.raises(
-                ToolError, match="MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB"
-            ):
+            with pytest.raises(ToolError, match="byte limit"):
                 await client.call_tool(
                     "write",
                     {
@@ -2056,8 +2048,8 @@ class TestFetchTool:
     async def test_fetch_size_limit(
         self, _mcp_env_writable_with_attachments: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """fetch_url's documented size-cap refusal is translated into the
-        operator-facing message naming MAX_ATTACHMENT_SIZE_MB."""
+        """fetch_url's documented size-cap refusal is restated as the vault's
+        attachment byte limit."""
         monkeypatch.setenv("MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB", "0.001")
 
         async def _over_cap(url: str, *, max_bytes: int, **_kwargs: object) -> None:
@@ -2070,7 +2062,7 @@ class TestFetchTool:
         with patch(self._FETCH_URL_SEAM, _over_cap):
             server = make_server()
             async with Client(server) as client:
-                with pytest.raises(ToolError, match="MAX_ATTACHMENT_SIZE_MB"):
+                with pytest.raises(ToolError, match="byte limit"):
                     await client.call_tool(
                         "fetch",
                         {

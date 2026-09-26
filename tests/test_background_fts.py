@@ -807,7 +807,7 @@ def test_decorator_respects_env_timeout_override(
             except Exception as exc:
                 elapsed = time_mod.perf_counter() - start
                 # Transport and traceback rendering add time outside the wait.
-                assert "timed out after 0.1s" in str(exc)
+                assert "still building" in str(exc)
                 assert elapsed < 5.0, f"timeout not honored: elapsed {elapsed:.2f}s"
                 return exc
             finally:

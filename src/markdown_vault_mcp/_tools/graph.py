@@ -6,7 +6,9 @@ from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
+from fastmcp_pvl_core import tool_boundary
 
+from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
@@ -31,6 +33,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     @needs_queryable()
     async def get_backlinks(
         path: str,
@@ -113,6 +117,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     @needs_queryable()
     async def get_outlinks(
         path: str,
@@ -193,6 +199,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def get_broken_links(
         folder: str | None = None,
         wait_for_pending_writes: _WaitForPendingWrites = False,
@@ -262,6 +270,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def get_orphan_notes(
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
@@ -326,6 +336,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def get_most_linked(
         limit: int = 10,
         wait_for_pending_writes: _WaitForPendingWrites = False,
@@ -383,6 +395,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     @needs_queryable()
     async def get_connection_path(
         source: str,

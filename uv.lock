@@ -1803,6 +1803,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
     { name = "fastmcp-pvl-core" },
+    { name = "httpx" },
     { name = "python-frontmatter" },
     { name = "requests" },
     { name = "typer" },
@@ -1873,6 +1874,7 @@ requires-dist = [
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=4,<5" },
     { name = "fastmcp-pvl-core", specifier = ">=10.0.0,<11" },
     { name = "fastmcp-pvl-core", extras = ["debug"], marker = "extra == 'debug'" },
+    { name = "httpx", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },
     { name = "numpy", marker = "extra == 'all'" },

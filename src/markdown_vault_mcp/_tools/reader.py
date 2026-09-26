@@ -6,7 +6,10 @@ from typing import Any, Literal
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import Depends
+from fastmcp_pvl_core import tool_boundary
 
+from markdown_vault_mcp._tools._outcomes import library_outcomes
+from markdown_vault_mcp.exceptions import DocumentNotFoundError, InvalidRequestError
 from markdown_vault_mcp.utils import is_note
 from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
@@ -36,6 +39,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def search(
         query: str,
         limit: int = 10,
@@ -173,6 +178,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def read(
         path: str,
         section: str | None = None,
@@ -267,18 +274,18 @@ def register(mcp: FastMCP) -> None:
                 size = await asyncio.to_thread(vault.reader.attachment_size, path)
                 limit = int(cap_mb * 1024 * 1024)
                 if size > limit:
-                    raise ValueError(
-                        f"Attachment {path!r} is {size} bytes "
-                        f"({size / 1024 / 1024:.1f} MB), exceeds "
-                        f"MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB ({cap_mb} MB). "
-                        f"Increase MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB if "
-                        f"you need the bytes in context."
+                    raise InvalidRequestError(
+                        f"Attachment {path!r} is {size:,} bytes, over the "
+                        f"{limit:,}-byte limit this server returns in a read. Fetch "
+                        "it with create_download_link if that tool is available."
                     )
             attachment = await asyncio.to_thread(vault.reader.read_attachment, path)
             return asdict(attachment)
         note = await asyncio.to_thread(vault.reader.read, path, section=section)
         if note is None:
-            raise ValueError(f"Document not found: {path}")
+            raise DocumentNotFoundError(
+                f"No note at {path!r}. Find the path with search or list_documents."
+            )
         data = asdict(note)
         if section is None:
             # Section reads carry no frontmatter (see the docstring caveat),
@@ -295,6 +302,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def list_documents(
         folder: str | None = None,
         pattern: str | None = None,
@@ -380,6 +389,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def list_folders(
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
@@ -432,6 +443,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def list_tags(
         field: str = "tags",
         wait_for_pending_writes: _WaitForPendingWrites = False,
@@ -489,6 +502,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def stats(
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
@@ -564,6 +579,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     @needs_queryable()
     async def get_similar(
         path: str,
@@ -675,6 +692,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     @needs_queryable()
     async def get_toc(
         path: str,
@@ -742,6 +761,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def get_recent(
         limit: int = 20,
         folder: str | None = None,
@@ -805,6 +826,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     @needs_queryable()
     async def get_context(
         path: str,
@@ -942,6 +965,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def get_conventions(
         path: str = "",
         vault: Vault = Depends(get_vault),
@@ -1006,6 +1031,8 @@ def register(mcp: FastMCP) -> None:
             "idempotent_hint": True,
         },
     )
+    @tool_boundary
+    @library_outcomes
     async def okf_validate(vault: Vault = Depends(get_vault)) -> dict[str, Any]:
         """Audit the vault's OKF (Open Knowledge Format) conformance.
 

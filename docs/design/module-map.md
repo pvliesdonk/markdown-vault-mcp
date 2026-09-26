@@ -111,6 +111,7 @@ src/markdown_vault_mcp/
   _tools/
     __init__.py        -- package marker; the groups below are registered by tools.py
     _common.py         -- shared tool plumbing: staleness-annotated results, drain waits
+    _outcomes.py       -- library_outcomes: the library's deliberate outcomes raised as INFO/WARNING ToolError under tool_boundary (#1608)
     reader.py          -- read-side tool registrations (search/read/list/toc/context/...)
     writer.py          -- write-side tool registrations (write/edit/delete/rename/attachments)
     graph.py           -- link-graph tool registrations

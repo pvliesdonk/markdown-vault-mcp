@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from fastmcp.dependencies import Depends
 from fastmcp_pvl_core import register_long_running_tool
 
+from markdown_vault_mcp._tools._outcomes import library_outcomes
 from markdown_vault_mcp.vault import Vault
 
 from .._icons import _TOOL_ICONS
@@ -61,6 +62,7 @@ def register(mcp: FastMCP, jobs: Jobs) -> None:
             "idempotent_hint": False,
         },
     )
+    @library_outcomes
     @needs_queryable()
     async def summarize(
         paths: list[str],
