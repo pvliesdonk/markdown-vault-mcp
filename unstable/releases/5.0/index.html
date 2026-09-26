@@ -2187,7 +2187,12 @@ every tool and link-minting call fails with
 <code>vault directory &lt;path&gt; does not exist. Set MARKDOWN_VAULT_MCP_SOURCE_DIR to
 the path of your markdown vault.</code> until the deployment is fixed and
 restarted. The <code>index</code>, <code>search</code> and <code>reindex</code> commands report the same
-message and exit 1. Managed Git mode is exempt because its bootstrap clones
+message and exit 1. A directory the server can't access, such as one behind a
+permission it lacks, is reported apart from a missing one: the log says
+<code>vault_directory_unreadable</code>, and the message says the directory can't be
+accessed and to check its permissions
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1625">#1625</a>).
+Managed Git mode is exempt because its bootstrap clones
 into the directory
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1591">#1591</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1581">#1581</a>). The
