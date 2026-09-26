@@ -44,7 +44,19 @@ Bases: `InvalidRequestError`
 
 Raised when the requested document path does not exist on disk.
 
-A caller's request naming a document that is not there, so an :class:`InvalidRequestError`, and through it a `ValueError` (#1608).
+A caller's request naming a document that is not there, so an :class:`InvalidRequestError`, and through it a `ValueError` (#1608). The constructors below give each kind of target the same message: a `"<Kind> not found: '<path>'"` prefix callers match on, then the tool that finds the right path (#1639).
+
+### `note(path)`
+
+A note that is not there.
+
+### `attachment(path)`
+
+An attachment that is not there.
+
+### `folder(path)`
+
+A folder that is not there.
 
 ## `DocumentUnreadableError(path, reason)`
 

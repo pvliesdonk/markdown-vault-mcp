@@ -1917,6 +1917,45 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="DocumentNotFoundError">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError.note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        note
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError.attachment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        attachment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError.folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        folder
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2139,6 +2178,45 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="DocumentNotFoundError">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError.note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        note
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError.attachment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        attachment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError.folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        folder
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -2381,7 +2459,10 @@ against that contract still catches it (#1608).</p>
 
         <p>Raised when the requested document path does not exist on disk.</p>
 <p>A caller's request naming a document that is not there, so an
-:class:<code>InvalidRequestError</code>, and through it a <code>ValueError</code> (#1608).</p>
+:class:<code>InvalidRequestError</code>, and through it a <code>ValueError</code> (#1608).
+The constructors below give each kind of target the same message: a
+<code>"&lt;Kind&gt; not found: '&lt;path&gt;'"</code> prefix callers match on, then the tool
+that finds the right path (#1639).</p>
 
 
 
@@ -2390,6 +2471,89 @@ against that contract still catches it (#1608).</p>
 
 
 
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.exceptions.DocumentNotFoundError.note" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">note</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError.note" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>A note that is not there.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.exceptions.DocumentNotFoundError.attachment" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">attachment</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError.attachment" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>An attachment that is not there.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.exceptions.DocumentNotFoundError.folder" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">folder</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.exceptions.DocumentNotFoundError.folder" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>A folder that is not there.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
 
     </div>
 
