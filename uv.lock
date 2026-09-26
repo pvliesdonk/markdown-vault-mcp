@@ -1021,7 +1021,7 @@ tasks = [
 
 [[package]]
 name = "fastmcp-pvl-core"
-version = "9.0.1"
+version = "10.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastmcp", extra = ["tasks"] },
@@ -1029,9 +1029,9 @@ dependencies = [
     { name = "httpx2" },
     { name = "opentelemetry-api" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bd/e7/5f58c37ecbf3624918c21eb1bb58223bdc8ee1b842577778f7870690bbe3/fastmcp_pvl_core-9.0.1.tar.gz", hash = "sha256:d3cc55103752b126851995f645fdcdd36baedc407da2062688381f314805b5c1", size = 769090, upload-time = "2026-09-24T04:58:58.511Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/dd/1e49056d75f18f9057fd21126fb9cefe6798f564fe808c9c352c6db65143/fastmcp_pvl_core-10.0.0.tar.gz", hash = "sha256:6a2e722ee06c6fbdfa80bf37b88e8efde88e32edffabb39d190e7e9d98b828ab", size = 801366, upload-time = "2026-09-25T14:34:13.566Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8c/1f/88f11a9d23d4315c5bcd8126374c0b24119b061b264a6f616be48cfb63b7/fastmcp_pvl_core-9.0.1-py3-none-any.whl", hash = "sha256:2341079db6e991863836e4985be1a271a50ad471392529dc6651587db3eeb34f", size = 189205, upload-time = "2026-09-24T04:58:56.928Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/8f/32dc683972655c31d2ebe4c78301a3261224d894025379ec69c32fd8449f/fastmcp_pvl_core-10.0.0-py3-none-any.whl", hash = "sha256:8f46823f73e5bd82a83ee981c38a8192ee05280703f80993bf1062e79ab745d6", size = 195101, upload-time = "2026-09-25T14:34:11.688Z" },
 ]
 
 [package.optional-dependencies]
@@ -1871,7 +1871,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=4" },
     { name = "fastmcp", marker = "extra == 'all'", specifier = ">=4,<5" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=4,<5" },
-    { name = "fastmcp-pvl-core", specifier = ">=9.0.0,<10" },
+    { name = "fastmcp-pvl-core", specifier = ">=10,<11" },
     { name = "fastmcp-pvl-core", extras = ["debug"], marker = "extra == 'debug'" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'embeddings-api'", specifier = ">=0.25" },
