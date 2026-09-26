@@ -143,9 +143,10 @@ def register(mcp: FastMCP, jobs: Jobs) -> None:
             fetch the result.
 
         Raises:
-            ValueError: If ``paths`` is empty, ``mode`` is invalid,
-                ``max_notes`` is below 1, or no readable notes were found for
-                the given paths.
+            InvalidRequestError: If ``paths`` is empty, ``mode`` is invalid,
+                ``max_notes`` is below 1, or the paths hold no note that exists
+                and is within the read limit.
+            ValueError: If every note found exists but cannot be read.
             RuntimeError: If the summarization backend call fails within the
                 soft deadline. A backend failure that happens after promotion
                 is reported through ``get_job_result`` instead.

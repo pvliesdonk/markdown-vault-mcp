@@ -59,7 +59,9 @@ class SummarizeFacet:
             A :class:`~markdown_vault_mcp.types.SummaryResult`.
 
         Raises:
-            ValueError: On invalid input or when no readable notes were found.
+            InvalidRequestError: On invalid input, or when the paths hold no
+                note that exists and is within the read limit.
+            ValueError: When every note found exists but cannot be read.
             RuntimeError: If the summarization backend call fails.
         """
         self._require_built()

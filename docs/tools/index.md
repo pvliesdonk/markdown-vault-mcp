@@ -1096,7 +1096,7 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 
 When the work is promoted to a background job, a dict with `"status": "working"`, a `job_id` string, a `poll_with` field naming the polling tool, a `retry_after_s` hint, and a `message`. Call [`get_job_result`](#get_job_result) with the `job_id` to fetch the result.
 
-**Errors:** raises if `paths` is empty, `mode` is invalid, no readable notes were found, or the backend call fails within the soft deadline. A backend failure after promotion is reported through `get_job_result` instead.
+**Errors:** raises if `paths` is empty, `mode` is invalid, the paths hold no note that exists within the read limit, every note found exists but can't be read (a server-side failure), or the backend call fails within the soft deadline. A backend failure after promotion is reported through `get_job_result` instead.
 
 !!! warning "Note content goes to the configured backend"
     The referenced notes are sent to the summarization backend the operator configured, which may be a remote provider or a local endpoint. Do not summarize notes whose content must not be shared with that backend. The [`summarize-subtree` prompt](../prompts.md#summarize-subtree) is the client-side alternative that summarizes with the client's own model; see its docs for how the two routes relate.

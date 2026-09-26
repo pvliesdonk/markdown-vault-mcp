@@ -128,18 +128,15 @@ class TestSize:
     def test_stat_race_surfaces_as_value_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A file vanishing between is_file() and stat() is not an OSError leak."""
+        """A file vanishing before its stat is absence, not an OSError leak."""
         store, _ = _store(tmp_path)
 
         class _Racy:
-            def is_file(self) -> bool:
-                return True
-
             def stat(self) -> object:
-                raise OSError("vanished mid-stat")
+                raise FileNotFoundError("vanished mid-stat")
 
         monkeypatch.setattr(store, "validate_path", lambda _p: _Racy())
-        with pytest.raises(ValueError, match="Attachment not found"):
+        with pytest.raises(DocumentNotFoundError, match="Attachment not found"):
             store.size("gone.png")
 
 

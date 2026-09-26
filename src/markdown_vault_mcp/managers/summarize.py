@@ -23,7 +23,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
-from markdown_vault_mcp.exceptions import DocumentUnreadableError
+from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.types import (
     SubtreeToc,
     SummaryResult,
@@ -159,17 +159,22 @@ class SummarizeManager:
             A :class:`~markdown_vault_mcp.types.SummaryResult`.
 
         Raises:
-            ValueError: If *mode* is invalid, *paths* is empty, *max_notes*
-                is below 1, or no readable notes were found for the given
-                paths.
+            InvalidRequestError: If *mode* is invalid, *paths* is empty,
+                *max_notes* is below 1, or the paths hold no note that exists
+                and is within the read limit (#1608).
+            ValueError: If every note found exists but cannot be read.
             RuntimeError: If a summarization backend call fails.
         """
         if mode not in _VALID_MODES:
-            raise ValueError(f"mode must be one of {_VALID_MODES}, got {mode!r}")
+            raise InvalidRequestError(
+                f"mode must be one of {_VALID_MODES}, got {mode!r}"
+            )
         if not paths:
-            raise ValueError("paths must contain at least one note or folder path.")
+            raise InvalidRequestError(
+                "paths must contain at least one note or folder path."
+            )
         if max_notes is not None and max_notes < 1:
-            raise ValueError(f"max_notes must be >= 1, got {max_notes!r}")
+            raise InvalidRequestError(f"max_notes must be >= 1, got {max_notes!r}")
 
         limit = (
             min(max_notes, self._max_notes)
@@ -178,11 +183,11 @@ class SummarizeManager:
         )
         resolved, matched = self._resolve_paths(paths, limit)
         if not resolved:
-            raise ValueError("No notes found for the given paths.")
+            raise InvalidRequestError("No notes found for the given paths.")
 
-        notes, note_clipped = self._gather_notes(resolved)
+        notes, note_clipped, unreadable = self._gather_notes(resolved)
         if not notes:
-            raise ValueError("No readable notes found for the given paths.")
+            raise self._nothing_readable(len(resolved), unreadable)
 
         batches = self._pack_batches(notes)
         summary, reduce_clipped = self._summarize_batches(
@@ -245,19 +250,46 @@ class SummarizeManager:
             return [note.path for note in toc.notes]
         return []
 
+    @staticmethod
+    def _nothing_readable(found: int, unreadable: int) -> ValueError:
+        """Explain why none of the *found* notes could be summarized.
+
+        A note that exists but cannot be read is the server's failure; one
+        that is missing or over the read limit is the caller's to change
+        (#1608).
+        """
+        if unreadable:
+            return ValueError(
+                f"No note could be summarized: notes found {found}, of which "
+                f"{unreadable} exist but the server cannot read them. The "
+                "request was fine; tell the user if it keeps failing."
+            )
+        return InvalidRequestError(
+            f"No readable notes found for the given paths: notes found {found}, "
+            "none of which exists or is within the read limit. Check the paths, "
+            "or read an oversized note by section."
+        )
+
     def _gather_notes(
         self, resolved: list[str]
-    ) -> tuple[list[tuple[str, str, str]], bool]:
+    ) -> tuple[list[tuple[str, str, str]], bool, int]:
         """Read note bodies, clipping any single body to one request budget.
 
-        Returns ``(path, title, body)`` triples in order and whether any body
-        was cut. Missing or unreadable notes are skipped. There is no
-        aggregate cap here: oversize totals are handled by batching (#922).
+        Returns ``(path, title, body)`` triples in order, whether any body
+        was cut, and how many notes were skipped as unreadable. Missing,
+        oversized and unreadable notes are skipped. There is no aggregate cap
+        here: oversize totals are handled by batching (#922).
         """
         notes: list[tuple[str, str, str]] = []
         clipped = False
+        unreadable = 0
         for path in resolved:
-            note = self._read_note(path)
+            try:
+                note = self._read_note(path)
+            except DocumentUnreadableError as exc:
+                logger.warning("summarize_skip_unreadable path=%s reason=%s", path, exc)
+                unreadable += 1
+                continue
             if note is None:
                 continue
             body = note.content
@@ -269,24 +301,24 @@ class SummarizeManager:
                 body = body[:budget]
                 clipped = True
             notes.append((path, note.title, body))
-        return notes, clipped
+        return notes, clipped, unreadable
 
     def _read_note(self, path: str) -> NoteContent | None:
-        """Read a note, skipping missing, oversized and unreadable ones.
+        """Read a note, skipping a missing or refused one.
 
-        ``read`` returns ``None`` for a missing file, raises ``ValueError`` for
-        an oversized note (``MAX_NOTE_READ_BYTES``) and
-        ``DocumentUnreadableError`` for one that exists but cannot be read.
-        All three are skipped so one note does not abort a whole subtree
-        summary. An unreadable note is logged at WARNING, because the file
-        itself needs attention.
+        ``read`` returns ``None`` for a missing file and raises
+        ``InvalidRequestError`` for one it refuses, such as an oversized note
+        (``MAX_NOTE_READ_BYTES``); both are skipped so one note does not abort
+        a whole subtree summary. ``DocumentUnreadableError`` propagates to
+        :meth:`_gather_notes`, which skips and counts it. Any other error is
+        a fault and is not mistaken for a bad note (#1608).
+
+        Raises:
+            DocumentUnreadableError: If the note exists but cannot be read.
         """
         try:
             return self._doc_mgr.read(path)
-        except DocumentUnreadableError as exc:
-            logger.warning("summarize_skip_unreadable path=%s reason=%s", path, exc)
-            return None
-        except ValueError as exc:
+        except InvalidRequestError as exc:
             logger.debug("summarize_skip_note path=%s reason=%s", path, exc)
             return None
 

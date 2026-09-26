@@ -388,7 +388,7 @@ class WriterFacet:
                 for a file that does not yet exist.
             DocumentExistsError: If write protection is enabled and *path*
                 already exists while no *if_match* is supplied.
-            InvalidRequestError: If the path escapes the source directory.
-            ValueError: If the path has an extension not in the allowlist.
+            InvalidRequestError: If the path escapes the source directory or
+                has an extension not in the allowlist.
         """
         return self._doc_mgr.write_attachment(path, content, if_match=if_match)

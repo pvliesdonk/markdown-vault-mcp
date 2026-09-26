@@ -1038,6 +1038,13 @@ Two-layer model:
 | `DocumentUnreadableError` | The server failed |
 | `IndexUnavailableError` | The server failed |
 
+For `read_attachment()` and `attachment_size()`, an attachment whose `stat` or
+read the file system refuses is a plain `ValueError`, never "not found": absence is judged from `stat()`, not
+`Path.is_file()`, which reports a refused stat as absence (#1625). `summarize()`
+skips missing, oversized and unreadable notes one by one; when none is left, the
+error is a fault if any note exists but cannot be read, and a change of request
+otherwise (#1608).
+
 Configuration an operator is required to supply and did not is broken, so a
 fault. A feature that is opt-in and left off is not: the model works within
 the deployment it has, as with `ReadOnlyError`. Hence `EmbeddingsNotConfiguredError`
@@ -1047,8 +1054,8 @@ is a change of request.
 
 | Exception | Raised by | When |
 |-|-|-|
-| `InvalidRequestError` | The path helpers; `read()`, `get_toc()`, `edit()`, `append()`, `write()` and `move_folder()` arguments; search's `chunks_per_file`; the OKF `stale` filter; `get_diff()`'s ref; revision reads | The caller's request cannot be served as sent: an argument out of range or missing, a path outside the vault or of the wrong type, a heading that does not exist. A `ValueError` subclass, so `except ValueError` still catches it (#1608) |
-| `DocumentNotFoundError` | `edit()`, `append()`, `delete()`, `rename()`, `move_folder()`, attachment `delete()`/`rename()`, section `read()`, `get_toc()`, the graph and context lookups | The document or folder is not on disk or, for lookups that read the index, not in the index. A subclass of `InvalidRequestError` |
+| `InvalidRequestError` | The path helpers; `read()`, `get_toc()`, `edit()`, `append()`, `write()` and `move_folder()` arguments; search's `chunks_per_file`; the OKF `stale` filter; `get_diff()`'s ref; revision reads; attachment paths (a `.md` path, an extension off the allowlist); `summarize()` arguments, and paths that hold no note that exists within the read limit | The caller's request cannot be served as sent: an argument out of range or missing, a path outside the vault or of the wrong type, a heading that does not exist. A `ValueError` subclass, so `except ValueError` still catches it (#1608) |
+| `DocumentNotFoundError` | `edit()`, `append()`, `delete()`, `rename()`, `move_folder()`, attachment `delete()`/`rename()`/`read_attachment()`/`attachment_size()`, section `read()`, `get_toc()`, the graph and context lookups | The document or folder is not on disk or, for lookups that read the index, not in the index. A subclass of `InvalidRequestError` |
 | `ReadOnlyError` | `write()`, `edit()`, `delete()`, `rename()` | `read_only=True` |
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
