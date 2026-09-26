@@ -152,3 +152,35 @@ def test_path_helpers_raise_invalid_request(tmp_path: Path) -> None:
 def test_stale_filter_value_is_an_invalid_request() -> None:
     with pytest.raises(InvalidRequestError):
         parse_stale_filter("maybe")
+
+
+_NUL = "sub/a\x00.md"
+
+# Every facade entry point that takes a caller's path (#1636).
+_NUL_PATHS: dict[str, Callable[[Vault], Any]] = {
+    "read": lambda v: v.reader.read(_NUL),
+    "read section": lambda v: v.reader.read(_NUL, section="Part"),
+    "toc": lambda v: v.reader.get_toc(_NUL),
+    "context": lambda v: v.reader.get_context(_NUL),
+    "similar": lambda v: v.reader.get_similar(_NUL),
+    "read attachment": lambda v: v.reader.read_attachment("a\x00.png"),
+    "attachment size": lambda v: v.reader.attachment_size("a\x00.png"),
+    "backlinks": lambda v: v.graph.get_backlinks(_NUL),
+    "outlinks": lambda v: v.graph.get_outlinks(_NUL),
+    "write": lambda v: v.writer.write(_NUL, "# X\n"),
+    "edit": lambda v: v.writer.edit(_NUL, old_text="a", new_text="b"),
+    "append": lambda v: v.writer.append(_NUL, "x"),
+    "delete": lambda v: v.writer.delete(_NUL),
+    "rename source": lambda v: v.writer.rename(_NUL, "b.md"),
+    "rename target": lambda v: v.writer.rename("note.md", _NUL),
+    "move folder": lambda v: v.writer.move_folder("sub", "d\x00"),
+    "write attachment": lambda v: v.writer.write_attachment("a\x00.png", b"x"),
+}
+
+
+@pytest.mark.parametrize("call", _NUL_PATHS.values(), ids=_NUL_PATHS.keys())
+def test_path_with_a_nul_byte_is_an_invalid_request(
+    vault: Vault, call: Callable[[Vault], Any]
+) -> None:
+    with pytest.raises(InvalidRequestError, match="NUL"):
+        call(vault)

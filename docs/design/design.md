@@ -1730,9 +1730,12 @@ the spec itself says, dated and sourced, in
 All public **write** methods accepting a `path` parameter call
 `Vault._validate_path()` before any disk I/O. This method:
 
-1. Resolves the path to an absolute path via `Path.resolve()`.
-2. Checks the resolved path is within `source_dir` via `is_relative_to()`.
-3. Raises `ValueError("Path traversal detected: ...")` if it escapes.
+1. Refuses a path holding a NUL byte (`utils.reject_nul`), which
+   `Path.resolve()` would otherwise reject with a plain `ValueError` that
+   reads as a server fault (#1636).
+2. Resolves the path to an absolute path via `Path.resolve()`.
+3. Checks the resolved path is within `source_dir` via `is_relative_to()`.
+4. Raises `InvalidRequestError("Path traversal detected: ...")` if it escapes.
 
 This applies to `write()`, `edit()`, `delete()`, `rename()`, and all
 attachment write operations.
@@ -1748,7 +1751,9 @@ containment to it. Site-specific policy stays local: extension allowlists,
 that return `None` instead of raising.
 
 `read()` validates the path inline rather than via `_validate_path()`: if the
-resolved path escapes `source_dir`, it returns `None` instead of raising.
+resolved path escapes `source_dir`, it returns `None` instead of raising. A
+NUL byte is refused there too, as `InvalidRequestError`, before either mode
+touches the index or the disk.
 
 ### Lifecycle: Vault.close()
 

@@ -100,6 +100,22 @@ def folder_matches(row_folder: str, folder: str) -> bool:
     return row_folder == folder or row_folder.startswith(folder + "/")
 
 
+def reject_nul(path: str) -> None:
+    """Refuse a path holding a NUL byte, which no file name can contain.
+
+    ``Path.resolve()`` and every file-system call raise a plain ``ValueError``
+    for one, which the tool layer would report as a server fault; the caller
+    sent a path that cannot exist (#1636).
+
+    Raises:
+        InvalidRequestError: If *path* contains ``"\\x00"``.
+    """
+    if "\x00" in path:
+        raise InvalidRequestError(
+            f"Path {path!r} contains a NUL byte, which no file name can hold."
+        )
+
+
 def resolve_inside(path: str, base: Path, *, original: str | None = None) -> Path:
     """Resolve *path* against *base* and verify the result stays inside it.
 
@@ -120,8 +136,10 @@ def resolve_inside(path: str, base: Path, *, original: str | None = None) -> Pat
         The resolved absolute path.
 
     Raises:
-        InvalidRequestError: If the resolved path escapes *base*.
+        InvalidRequestError: If *path* holds a NUL byte, or the resolved path
+            escapes *base*.
     """
+    reject_nul(path)
     abs_path = (base / path).resolve()
     if not abs_path.is_relative_to(base.resolve()):
         raise InvalidRequestError(
