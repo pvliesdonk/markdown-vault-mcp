@@ -987,9 +987,10 @@ class IndexManager:
         "not a candidate" (#1129).
         When the parse failure stems from the file disappearing between
         the existence check and ``parse_note()``, the stale FTS row
-        is deleted; a file whose stat is refused has not disappeared, so
-        its row stays and the job fails for a retry (#1625) so keyword/hybrid search results stay consistent with
+        is deleted so keyword/hybrid search results stay consistent with
         what :meth:`flush_dirty_embeddings` will do to the vector index.
+        A file whose stat is refused has not disappeared, so its row stays
+        and the job fails for a retry (#1625).
         Other exceptions — notably ``sqlite3.OperationalError``
         (classified by PR #555's ``IndexUnavailableReason`` discriminator
         at the caller boundary), ``sqlite3.DatabaseError``, ``MemoryError``,
