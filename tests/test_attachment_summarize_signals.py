@@ -33,9 +33,8 @@ def test_disallowed_extension_is_an_invalid_request(tmp_path: Path) -> None:
     store, _ = _store(tmp_path, extensions=["png"])
     with pytest.raises(InvalidRequestError) as exc:
         store.validate_path("a.xyz")
-    # Operator configuration is named as the operator's, never as a step.
-    assert "operator: MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in str(exc.value)
-    assert "Set " not in str(exc.value)
+    # The operator's setting goes in the log, never in the model's text (#1639).
+    assert "MARKDOWN_VAULT_MCP" not in str(exc.value)
 
 
 @pytest.mark.parametrize("call", ["size", "read"])

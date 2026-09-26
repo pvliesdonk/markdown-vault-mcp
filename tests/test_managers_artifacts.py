@@ -14,6 +14,7 @@ store would double-fire or move it outside the lock.
 
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -86,15 +87,23 @@ class TestValidatePath:
         with pytest.raises(ValueError, match="traversal"):
             store.validate_path("../outside.png")
 
-    def test_rejects_disallowed_extension_naming_the_env_var(
-        self, tmp_path: Path
+    def test_rejects_disallowed_extension_logging_the_env_var(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """The operator-facing hint is the contract, not an implementation detail."""
+        """The operator-facing hint is the contract, not an implementation detail.
+
+        It goes in the log, where the operator reads it; the model's text says
+        what is allowed and names no setting it cannot reach (#1639).
+        """
         store, _ = _store(tmp_path, extensions=["png"])
-        with pytest.raises(ValueError) as exc:
+        with caplog.at_level(logging.INFO), pytest.raises(ValueError) as exc:
             store.validate_path("a.xyz")
         assert "not in the attachment allowlist" in str(exc.value)
-        assert "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in str(exc.value)
+        assert "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" not in str(exc.value)
+        assert any(
+            "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in r.getMessage()
+            for r in caplog.records
+        )
 
     @pytest.mark.parametrize("configured", ["pdf", "PDF", ".pdf"])
     def test_allowlist_spelling_does_not_change_what_it_matches(

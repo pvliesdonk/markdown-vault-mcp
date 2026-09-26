@@ -265,11 +265,15 @@ class VaultTransferSink:
         else:
             destination = _validate_destination(ref, source_dir, exts)
             if self._config.write_protect_existing and _exists(destination):
+                logger.info(
+                    "transfer_upload_refused_protected ref=%s setting=%s",
+                    ref,
+                    "MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING",
+                )
                 raise _reject(
-                    f"{ref} exists; upload links require a new path while write "
-                    "protection is enabled. Choose a new path, or ask the operator "
-                    "to set MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false "
-                    "to allow blind overwrites."
+                    f"{ref} exists; upload links require a new path while this "
+                    "vault protects existing files from blind overwrites. "
+                    "Choose a new path."
                 )
         return ref
 

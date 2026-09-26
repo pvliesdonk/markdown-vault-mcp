@@ -1000,7 +1000,7 @@ class TestReadNoteSizeGuard:
             chunk_strategy=HeadingChunker(),
             max_note_read_bytes=512,
         )
-        with pytest.raises(ValueError, match="MAX_NOTE_READ_BYTES"):
+        with pytest.raises(ValueError, match="byte limit"):
             mgr.read("big.md")
 
     def test_read_zero_disables_limit(self, tmp_path: Path) -> None:
@@ -1051,7 +1051,7 @@ class TestReadNoteSizeGuard:
             max_note_read_bytes=512,
         )
         # Whole-document read MUST raise — proves the cap is in effect.
-        with pytest.raises(ValueError, match="MAX_NOTE_READ_BYTES"):
+        with pytest.raises(ValueError, match="byte limit"):
             mgr.read("big.md")
 
         # Section read MUST succeed — proves section= bypasses the cap.
@@ -1059,7 +1059,7 @@ class TestReadNoteSizeGuard:
         assert result is not None
         assert "short B" in result.content
 
-    def test_error_mentions_section_and_env_var(self, tmp_path: Path) -> None:
+    def test_error_mentions_section_not_the_env_var(self, tmp_path: Path) -> None:
         big = tmp_path / "big.md"
         big.write_text("# Big\n\n" + "x" * 2048)
 
@@ -1073,7 +1073,8 @@ class TestReadNoteSizeGuard:
         with pytest.raises(ValueError) as exc_info:
             mgr.read("big.md")
         msg = str(exc_info.value)
-        assert "MAX_NOTE_READ_BYTES" in msg
+        # The setting is the operator's, so it is logged, not told (#1639).
+        assert "MAX_NOTE_READ_BYTES" not in msg
         assert "section=" in msg
 
     def test_read_stat_oserror_returns_none(self, tmp_path: Path) -> None:

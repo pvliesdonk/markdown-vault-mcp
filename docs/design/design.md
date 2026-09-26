@@ -1064,6 +1064,15 @@ signal (`read`'s missing note is `DocumentNotFoundError`) or an INFO
 `ToolError`, never a bare `ValueError`, which the boundary would report as a
 fault (#1608).
 
+A refusal's message reaches the model word for word, so it is written to the
+model: what was wrong, then the next step by tool name. A missing note,
+attachment or folder is built by `DocumentNotFoundError.note()`,
+`.attachment()` or `.folder()`, which keep the `"<Kind> not found: <path>"`
+prefix and add the lookup tool. A server setting the model cannot reach
+(`MAX_NOTE_READ_BYTES`, `WRITE_PROTECT_EXISTING`, `ATTACHMENT_EXTENSIONS`) is
+never named in the text; the refusing code logs it at INFO instead, as a
+`setting=` field on the refusal's own event (#1639).
+
 **Exception types**:
 
 | Exception | Raised by | When |

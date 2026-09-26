@@ -21,6 +21,7 @@ import frontmatter as fm
 import yaml
 
 from markdown_vault_mcp.exceptions import (
+    FIND_NOTE,
     DocumentExistsError,
     DocumentNotFoundError,
     DocumentUnreadableError,
@@ -367,16 +368,20 @@ class DocumentManager:
         if is_md and self._max_note_read_bytes > 0:
             size_bytes = file_stat.st_size
             if size_bytes > self._max_note_read_bytes:
+                logger.info(
+                    "read_refused_oversized path=%s size_bytes=%d limit_bytes=%d "
+                    "setting=%s",
+                    path,
+                    size_bytes,
+                    self._max_note_read_bytes,
+                    "MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES",
+                )
                 raise InvalidRequestError(
-                    f"Document {path!r} is {size_bytes} bytes "
-                    f"({size_bytes / 1024:.1f} KB), exceeds "
-                    f"MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES "
-                    f"({self._max_note_read_bytes} bytes / "
-                    f"{self._max_note_read_bytes / 1024:.0f} KB). "
-                    f"Use read({path!r}, section=...) for partial reads "
-                    f"(see search() output's heading field), or increase "
-                    f"MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES if you need the "
-                    f"full document in context."
+                    f"Document {path!r} is {size_bytes:,} bytes, over the "
+                    f"{self._max_note_read_bytes:,}-byte limit this server "
+                    "returns in one read. Read it a section at a time with "
+                    f"read({path!r}, section=...); get_toc or a search result's "
+                    "heading field names the sections."
                 )
 
         # Guard both on-disk reads (parse_note's, and the content read below)
@@ -450,7 +455,7 @@ class DocumentManager:
         if doc_row is None:
             raise DocumentNotFoundError(
                 f"Section '{heading}' not found in document {path}: "
-                "document is not indexed or does not exist"
+                f"document is not indexed or does not exist. {FIND_NOTE}"
             )
 
         abs_path = self._validate_path(path)
@@ -463,7 +468,7 @@ class DocumentManager:
         except (FileNotFoundError, NotADirectoryError) as exc:
             raise DocumentNotFoundError(
                 f"Section '{heading}' not found in document {path}: "
-                "the document no longer exists"
+                f"the document no longer exists. {FIND_NOTE}"
             ) from exc
         except (UnicodeDecodeError, OSError) as exc:
             raise DocumentUnreadableError(path, str(exc)) from exc
@@ -589,7 +594,7 @@ class DocumentManager:
         self._validate_path(path)
         row = self._fts.get_note(path)
         if row is None:
-            raise DocumentNotFoundError(f"Document not found: {path}")
+            raise DocumentNotFoundError.note(path)
         title: str = row["title"]
         headings = self._fts.get_toc(path, max_level=max_level)
         return self._prepend_title_h1(title, headings)
@@ -636,13 +641,19 @@ class DocumentManager:
         if not self._write_protect_existing or if_match is not None:
             return
         if abs_path.is_file():
+            # The operator's setting goes in the log, not the model's text (#1639).
+            logger.info(
+                "write_refused_protected path=%s setting=%s",
+                path,
+                "MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING",
+            )
             raise DocumentExistsError(
                 f"{path} exists; overwriting requires proof of read: call "
                 "'read', then retry with if_match=<etag> — or use 'edit' for "
                 "targeted changes, or 'append' to add to the end. Do not "
                 "delete and recreate: that destroys the note first and "
-                "proves nothing. (Write protection is enabled by the "
-                "operator: MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING.)"
+                "proves nothing. (This vault protects existing files from "
+                "blind overwrites.)"
             )
 
     def write(
@@ -807,7 +818,7 @@ class DocumentManager:
             abs_path = self._validate_path(path)
             existed = abs_path.is_file()
             if not existed and not create_if_missing:
-                raise DocumentNotFoundError(f"Document not found: {path}")
+                raise DocumentNotFoundError.note(path)
             check_if_match(abs_path, path, if_match)
 
             if existed:
@@ -937,7 +948,7 @@ class DocumentManager:
         with self._file_write_lock:
             abs_path = self._validate_path(path)
             if not abs_path.is_file():
-                raise DocumentNotFoundError(f"Document not found: {path}")
+                raise DocumentNotFoundError.note(path)
 
             check_if_match(abs_path, path, if_match)
 
@@ -1102,7 +1113,7 @@ class DocumentManager:
             if is_note(path):
                 abs_path = self._validate_path(path)
                 if not abs_path.is_file():
-                    raise DocumentNotFoundError(f"Document not found: {path}")
+                    raise DocumentNotFoundError.note(path)
                 check_if_match(abs_path, path, if_match)
                 abs_path.unlink()
                 if self._mark_paths_dirty is not None:
@@ -1176,9 +1187,12 @@ class DocumentManager:
                 new_abs = self._validate_path(new_path)
 
                 if not old_abs.is_file():
-                    raise DocumentNotFoundError(f"Document not found: {old_path}")
+                    raise DocumentNotFoundError.note(old_path)
                 if new_abs.is_file():
-                    raise DocumentExistsError(f"Target already exists: {new_path}")
+                    raise DocumentExistsError(
+                        f"Target already exists: {new_path}. Pass a new_path "
+                        "that is free; list_documents shows what exists."
+                    )
                 check_if_match(old_abs, old_path, if_match)
 
                 backlinks = self._fts.get_backlinks(old_path) if update_links else []
@@ -1461,13 +1475,18 @@ class DocumentManager:
                 non_note_moves.append((dst_abs, new_path, src_abs))
 
         if not moves:
-            raise DocumentNotFoundError(f"Folder is empty: {old_dir}")
+            raise DocumentNotFoundError(
+                f"Folder is empty: {old_dir}; there is nothing to move."
+            )
 
         # Atomic collision gate — fail before moving anything.
         for _src_abs, dst_abs in moves:
             if dst_abs.exists():
                 rel = dst_abs.relative_to(self._source_dir.resolve()).as_posix()
-                raise DocumentExistsError(f"Target already exists: {rel}")
+                raise DocumentExistsError(
+                    f"Target already exists: {rel}. Pass a new_dir whose "
+                    "paths are free; list_documents shows what exists."
+                )
 
         return moves, md_map, non_note_moves
 
@@ -1552,7 +1571,7 @@ class DocumentManager:
             new_abs = self._validate_dir_path(new_dir)
 
             if not old_abs.is_dir():
-                raise DocumentNotFoundError(f"Folder not found: {old_dir}")
+                raise DocumentNotFoundError.folder(old_dir)
 
             # Reject nesting in either direction (would corrupt the prefix map).
             if old_abs == new_abs:

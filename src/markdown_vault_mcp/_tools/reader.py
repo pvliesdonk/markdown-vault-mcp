@@ -283,9 +283,7 @@ def register(mcp: FastMCP) -> None:
             return asdict(attachment)
         note = await asyncio.to_thread(vault.reader.read, path, section=section)
         if note is None:
-            raise DocumentNotFoundError(
-                f"No note at {path!r}. Find the path with search or list_documents."
-            )
+            raise DocumentNotFoundError.note(path)
         data = asdict(note)
         if section is None:
             # Section reads carry no frontmatter (see the docstring caveat),

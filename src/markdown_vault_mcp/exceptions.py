@@ -1,5 +1,7 @@
 """Exception types for markdown-vault-mcp."""
 
+from __future__ import annotations
+
 from typing import Literal
 
 # ConfigurationError is owned by fastmcp-pvl-core — the shared base guaranteed
@@ -25,12 +27,37 @@ class InvalidRequestError(MarkdownMCPError, ValueError):
     """
 
 
+FIND_NOTE = "Find the path with search or list_documents."
+"""The next step a note refusal gives the model (#1639)."""
+
+
 class DocumentNotFoundError(InvalidRequestError):
     """Raised when the requested document path does not exist on disk.
 
     A caller's request naming a document that is not there, so an
     :class:`InvalidRequestError`, and through it a ``ValueError`` (#1608).
+    The constructors below give each kind of target the same message: a
+    ``"<Kind> not found: <path>"`` prefix callers match on, then the tool
+    that finds the right path (#1639).
     """
+
+    @classmethod
+    def note(cls, path: str) -> DocumentNotFoundError:
+        """A note that is not there."""
+        return cls(f"Document not found: {path}. {FIND_NOTE}")
+
+    @classmethod
+    def attachment(cls, path: str) -> DocumentNotFoundError:
+        """An attachment that is not there."""
+        return cls(
+            f"Attachment not found: {path}. Find the path with "
+            "list_documents(include_attachments=True)."
+        )
+
+    @classmethod
+    def folder(cls, path: str) -> DocumentNotFoundError:
+        """A folder that is not there."""
+        return cls(f"Folder not found: {path}. Find the path with list_folders.")
 
 
 class DocumentUnreadableError(MarkdownMCPError):

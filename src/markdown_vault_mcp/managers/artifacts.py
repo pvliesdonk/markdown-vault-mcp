@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import base64
 import dataclasses
+import logging
 import mimetypes
 import shutil
 import stat as stat_module
@@ -59,6 +60,8 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.managers._write_notifier import WriteNotifier
 
 __all__ = ["ArtifactPolicy", "ArtifactStore"]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -139,13 +142,19 @@ class ArtifactStore:
         if not self._policy.write_protect_existing or if_match is not None:
             return
         if abs_path.is_file():
+            # The operator's setting goes in the log, not the model's text (#1639).
+            logger.info(
+                "write_refused_protected path=%s setting=%s",
+                path,
+                "MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING",
+            )
             raise DocumentExistsError(
                 f"{path} exists; overwriting requires proof of read: call "
                 "'read', then retry with if_match=<etag> — or use 'edit' for "
                 "targeted changes, or 'append' to add to the end. Do not "
                 "delete and recreate: that destroys the note first and "
-                "proves nothing. (Write protection is enabled by the "
-                "operator: MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING.)"
+                "proves nothing. (This vault protects existing files from "
+                "blind overwrites.)"
             )
 
     def validate_path(self, path: str) -> Path:
@@ -173,11 +182,15 @@ class ArtifactStore:
         suffix = artifact_suffix(path)
         if not is_allowed_artifact_suffix(suffix, exts):
             allowed_str = ", ".join(f".{e}" for e in sorted(exts))
+            logger.info(
+                "attachment_refused_extension path=%s extension=%s setting=%s",
+                path,
+                suffix,
+                "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS",
+            )
             raise InvalidRequestError(
                 f"Extension '.{suffix}' is not in the attachment allowlist, so "
-                f"this server does not serve it. Allowed: {allowed_str}. "
-                "(The allowlist is set by the operator: "
-                "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS.)"
+                f"this server does not serve it. Allowed: {allowed_str}."
             )
         return resolve_inside(path, self._source_dir)
 
@@ -214,13 +227,13 @@ class ArtifactStore:
         try:
             st = abs_path.stat()
         except (FileNotFoundError, NotADirectoryError) as exc:
-            raise DocumentNotFoundError(f"Attachment not found: {path}") from exc
+            raise DocumentNotFoundError.attachment(path) from exc
         except OSError as exc:
             raise ValueError(
                 f"Attachment {path} exists but cannot be read: {exc}"
             ) from exc
         if not stat_module.S_ISREG(st.st_mode):
-            raise DocumentNotFoundError(f"Attachment not found: {path}")
+            raise DocumentNotFoundError.attachment(path)
         return st
 
     def read(self, path: str) -> AttachmentContent:
@@ -246,7 +259,7 @@ class ArtifactStore:
         except (FileNotFoundError, NotADirectoryError) as exc:
             # Removed between the stat and the read: absent, as in
             # DocumentManager.read (#745).
-            raise DocumentNotFoundError(f"Attachment not found: {path}") from exc
+            raise DocumentNotFoundError.attachment(path) from exc
         except OSError as exc:
             raise ValueError(
                 f"Attachment {path} exists but cannot be read: {exc}"
@@ -319,7 +332,7 @@ class ArtifactStore:
         with self._file_write_lock:
             abs_path = self.validate_path(path)
             if not abs_path.is_file():
-                raise DocumentNotFoundError(f"Attachment not found: {path}")
+                raise DocumentNotFoundError.attachment(path)
             check_if_match(abs_path, path, if_match)
             abs_path.unlink()
         return abs_path
@@ -352,9 +365,12 @@ class ArtifactStore:
             old_abs = self.validate_path(old_path)
             new_abs = self.validate_path(new_path)
             if not old_abs.is_file():
-                raise DocumentNotFoundError(f"Attachment not found: {old_path}")
+                raise DocumentNotFoundError.attachment(old_path)
             if new_abs.is_file():
-                raise DocumentExistsError(f"Target already exists: {new_path}")
+                raise DocumentExistsError(
+                    f"Target already exists: {new_path}. Pass a new_path that "
+                    "is free; list_documents shows what exists."
+                )
             check_if_match(old_abs, old_path, if_match)
             new_abs.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(old_abs), str(new_abs))
