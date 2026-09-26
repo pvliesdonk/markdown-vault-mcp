@@ -974,7 +974,7 @@ Summarize a note, a set of notes, or a folder subtree with a language model. In 
 
 The tool is only registered when a summarization backend is configured: an `OPENAI_API_KEY`, or an explicit OpenAI-compatible base URL for local endpoints that need no key. Otherwise it does not appear in the tool listing. Any OpenAI-compatible endpoint works: OpenAI, a local Ollama, the Anthropic compatibility endpoint, vLLM, and others.
 
-Inputs larger than one model request are handled map-reduce style. Notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters and each batch is summarized on its own; a final pass combines the partial summaries into one result. Large folders issue several model calls and take proportionally longer. Coverage per call is capped at the note limit (`SUMMARIZE_MAX_NOTES`, also the ceiling for the per-call `max_notes` parameter); the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`). When notes were dropped, the response carries a `hint` telling the caller that full coverage needs separate calls on subfolders or smaller path sets. The live configured limit is substituted into the tool description and into the server instructions at startup, so a calling model can plan those splits before its first call.
+Inputs larger than one model request are handled map-reduce style. Notes are packed into batches of at most `SUMMARIZE_MAX_INPUT_CHARS` characters and each batch is summarized on its own; a final pass combines the partial summaries into one result. Large folders issue several model calls and take proportionally longer. Coverage per call is capped at the note limit (`SUMMARIZE_MAX_NOTES`, also the ceiling for the per-call `max_notes` parameter); the response reports exactly how many notes made it in (`notes_included`) and how many were dropped (`notes_omitted`). When notes were dropped, the response carries a `hint` telling the caller that full coverage needs separate calls on subfolders or smaller path sets. Notes left out for another reason (missing, too large to read whole, unreadable) are listed in `skipped` with their reason, and the `hint` gives the step for each. The live configured limit is substituted into the tool description and into the server instructions at startup, so a calling model can plan those splits before its first call.
 
 **Slow summaries do not block.** The tool is dual-mode: an MCP client that speaks background tasks runs it as a protocol-native task, and for any other client the call runs in the foreground up to the jobs soft deadline (`JOBS_SOFT_DEADLINE_S`, default 25 s). A summary that finishes within the deadline returns inline with `"status": "completed"` and the fields below. If it is still running when the deadline elapses, the tool returns `{"status": "working", "job_id": ...}` immediately and keeps generating in the background; fetch the result with [`get_job_result`](#get_job_result) using that `job_id`. Each individual backend call is itself bounded by `SUMMARIZE_TIMEOUT` (default 120 s); on timeout the summary fails with a clear message that says how to retry rather than a vague client-side hang.
 
@@ -992,11 +992,12 @@ Inputs larger than one model request are handled map-reduce style. Notes are pac
 - `summary` (string): the generated summary text.
 - `sources` (list of `{path, title}`): the notes that were summarised, always populated so individual notes are attributable even when the prose does not name every one.
 - `mode` (string): the mode used.
-- `truncated` (bool): `true` when content was lost to a cap. This covers the server's note limit and the per-request character budget, which can cut a single note as well as a partial summary during the combine step.
+- `truncated` (bool): `true` when content was lost. This covers the server's note limit, notes that were skipped, and the per-request character budget, which can cut a single note as well as a partial summary during the combine step.
 - `notes_included` (int): notes whose content reached the model.
 - `notes_omitted` (int): matched notes dropped by the note limit. When non-zero, the summary does not cover the whole selection.
 - `notes_limit` (int): the note limit in effect for this call.
-- `hint` (string or null): recovery guidance when notes were omitted; `null` when the selection was fully covered.
+- `hint` (string or null): recovery guidance when notes were omitted or skipped, with the step for each cause; `null` when the selection was fully covered.
+- `skipped` (list of `{path, reason}`): matched notes left out for a reason other than the note limit. `reason` is `not_found`, `invalid_path`, `over_read_limit` (too large to read whole; read it by section), or `unreadable` (the file exists but the server can't read it).
 
 When the work is promoted to a background job, a dict with `"status": "working"`, a `job_id` string, a `poll_with` field naming the polling tool, a `retry_after_s` hint, and a `message`. Call [`get_job_result`](#get_job_result) with the `job_id` to fetch the result.
 
@@ -1027,7 +1028,7 @@ The tool is provided by the shared jobs subsystem (`fastmcp-pvl-core`), so its n
 **Returns:** Dict with `job_id`, `status`, `result`, and `error`, where `status` is one of:
 
 - `"working"`: still running; the dict adds `running_for_s` and a `retry_after_s` polling hint. Poll again shortly.
-- `"completed"`: the work is done; `result` carries the tool's full result object (for `summarize`: `summary`, `sources`, `mode`, `truncated`, `notes_included`, `notes_omitted`, `notes_limit`, `hint`).
+- `"completed"`: the work is done; `result` carries the tool's full result object (for `summarize`: `summary`, `sources`, `mode`, `truncated`, `notes_included`, `notes_omitted`, `notes_limit`, `hint`, `skipped`).
 - `"failed"`: the work failed; see `error` for the reason (often a backend timeout; narrow the request and retry).
 
 **Errors:** raises for an unknown, expired, or foreign `job_id`.

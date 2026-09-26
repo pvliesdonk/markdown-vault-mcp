@@ -1898,6 +1898,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.NoteTooLargeError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NoteTooLargeError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#document-errors" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2153,6 +2164,17 @@
     <span class="md-ellipsis">
       
         SummarizeTimeoutError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.NoteTooLargeError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NoteTooLargeError
       
     </span>
   </a>
@@ -2423,6 +2445,42 @@ smaller <code>max_notes</code>, a narrower <code>focus</code>, <code>per_note</c
 an :class:<code>InvalidRequestError</code>. It is also a <code>RuntimeError</code>, the type
 summarization raised for a timeout before (#937), so a handler written
 against that contract still catches it (#1608).</p>
+
+
+
+
+
+
+
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.exceptions.NoteTooLargeError" class="doc doc-heading">
+            <code>NoteTooLargeError</code>
+
+
+<a href="#markdown_vault_mcp.exceptions.NoteTooLargeError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="InvalidRequestError (markdown_vault_mcp.exceptions.InvalidRequestError)" href="#markdown_vault_mcp.exceptions.InvalidRequestError">InvalidRequestError</a></code></p>
+
+
+
+        <p>Raised when <code>read()</code> of a whole note is over the server's read limit.</p>
+<p>A read at a git revision applies the same cap but raises a plain
+:class:<code>InvalidRequestError</code>.</p>
+<p>The caller can read the note one section at a time instead, so it is an
+:class:<code>InvalidRequestError</code>. Its own type lets a caller that skips such
+notes, such as <code>summarize</code>, say why (#1637).</p>
 
 
 

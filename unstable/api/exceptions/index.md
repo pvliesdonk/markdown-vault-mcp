@@ -36,6 +36,16 @@ Raised when a summarization request outruns its per-request budget.
 
 The caller can fit under the budget by asking for less (fewer paths, a smaller `max_notes`, a narrower `focus`, `per_note` mode), so it is an :class:`InvalidRequestError`. It is also a `RuntimeError`, the type summarization raised for a timeout before (#937), so a handler written against that contract still catches it (#1608).
 
+## `NoteTooLargeError`
+
+Bases: `InvalidRequestError`
+
+Raised when `read()` of a whole note is over the server's read limit.
+
+A read at a git revision applies the same cap but raises a plain :class:`InvalidRequestError`.
+
+The caller can read the note one section at a time instead, so it is an :class:`InvalidRequestError`. Its own type lets a caller that skips such notes, such as `summarize`, say why (#1637).
+
 ## Document Errors
 
 ## `DocumentNotFoundError`
