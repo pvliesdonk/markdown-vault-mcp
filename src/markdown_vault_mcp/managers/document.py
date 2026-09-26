@@ -61,6 +61,12 @@ from markdown_vault_mcp.utils import (
     resolve_inside,
     validate_path,
 )
+from markdown_vault_mcp.utils.fs import (
+    is_directory,
+    is_regular_file,
+    path_exists,
+    walk_files_strict,
+)
 from markdown_vault_mcp.utils.links import (
     apply_link_replacement as _apply_link_replacement,
 )
@@ -649,7 +655,7 @@ class DocumentManager:
         """
         if not self._write_protect_existing or if_match is not None:
             return
-        if abs_path.is_file():
+        if is_regular_file(abs_path):
             # The operator's setting goes in the log, not the model's text (#1639).
             logger.info(
                 "write_refused_protected path=%s setting=%s",
@@ -711,7 +717,7 @@ class DocumentManager:
             if not allow_overwrite:
                 self._check_no_clobber(abs_path, path, if_match)
             check_if_match(abs_path, path, if_match)
-            created = not abs_path.is_file()
+            created = not is_regular_file(abs_path)
 
             abs_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -825,7 +831,7 @@ class DocumentManager:
 
         with self._file_write_lock:
             abs_path = self._validate_path(path)
-            existed = abs_path.is_file()
+            existed = is_regular_file(abs_path)
             if not existed and not create_if_missing:
                 raise DocumentNotFoundError.note(path)
             check_if_match(abs_path, path, if_match)
@@ -956,7 +962,7 @@ class DocumentManager:
 
         with self._file_write_lock:
             abs_path = self._validate_path(path)
-            if not abs_path.is_file():
+            if not is_regular_file(abs_path):
                 raise DocumentNotFoundError.note(path)
 
             check_if_match(abs_path, path, if_match)
@@ -1121,7 +1127,7 @@ class DocumentManager:
         with self._file_write_lock:
             if is_note(path):
                 abs_path = self._validate_path(path)
-                if not abs_path.is_file():
+                if not is_regular_file(abs_path):
                     raise DocumentNotFoundError.note(path)
                 check_if_match(abs_path, path, if_match)
                 abs_path.unlink()
@@ -1195,9 +1201,9 @@ class DocumentManager:
                 old_abs = self._validate_path(old_path)
                 new_abs = self._validate_path(new_path)
 
-                if not old_abs.is_file():
+                if not is_regular_file(old_abs):
                     raise DocumentNotFoundError.note(old_path)
-                if new_abs.is_file():
+                if is_regular_file(new_abs):
                     raise DocumentExistsError(
                         f"Target already exists: {new_path!r}. Pass a new_path "
                         "that is free; list_documents shows what exists."
@@ -1339,7 +1345,7 @@ class DocumentManager:
         for source_path, items in by_source.items():
             try:
                 source_abs = self._validate_path(source_path)
-                if not source_abs.is_file():
+                if not is_regular_file(source_abs):
                     logger.warning(
                         "link_rewrite_source_skipped op=%s path=%s reason=not_found",
                         op_name,
@@ -1464,8 +1470,10 @@ class DocumentManager:
         # (dst_abs, new_rel, src_abs) — src_abs so the rename callback can
         # scope its git staging to both sides of the move (#894).
         non_note_moves: list[tuple[Path, str, Path]] = []
-        for src_abs in sorted(old_abs.rglob("*")):
-            if not src_abs.is_file():
+        # A strict walk: an unreadable subfolder is a fault, not an empty one
+        # whose files would be left behind (#1625).
+        for src_abs in walk_files_strict(old_abs):
+            if not is_regular_file(src_abs):
                 continue
             rel_within = src_abs.relative_to(old_abs).as_posix()
             old_path = f"{old_rel}/{rel_within}"
@@ -1491,7 +1499,7 @@ class DocumentManager:
 
         # Atomic collision gate — fail before moving anything.
         for _src_abs, dst_abs in moves:
-            if dst_abs.exists():
+            if path_exists(dst_abs):
                 rel = dst_abs.relative_to(self._source_dir.resolve()).as_posix()
                 raise DocumentExistsError(
                     f"Target already exists: {rel!r}. Pass a new_dir where "
@@ -1580,7 +1588,7 @@ class DocumentManager:
             old_abs = self._validate_dir_path(old_dir)
             new_abs = self._validate_dir_path(new_dir)
 
-            if not old_abs.is_dir():
+            if not is_directory(old_abs):
                 raise DocumentNotFoundError.folder(old_dir)
 
             # Reject nesting in either direction (would corrupt the prefix map).

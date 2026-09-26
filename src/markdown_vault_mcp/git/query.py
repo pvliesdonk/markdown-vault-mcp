@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from markdown_vault_mcp.exceptions import DocumentUnreadableError, InvalidRequestError
 from markdown_vault_mcp.git._run import cleanup_git_env, git_env, literal_pathspec
 from markdown_vault_mcp.types import CommitDiff, HistoryEntry, RevisionContent
+from markdown_vault_mcp.utils.fs import path_exists
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -1903,7 +1904,7 @@ def _require_tracked(
         InvalidRequestError: If the note on disk is not tracked (#1608).
         ValueError: If ``git ls-files`` fails.
     """
-    if not path.exists():
+    if not path_exists(path):
         return
     result = subprocess.run(
         ["git", "-C", str(git_root), "ls-files", "--", literal_pathspec(cur_rel)],

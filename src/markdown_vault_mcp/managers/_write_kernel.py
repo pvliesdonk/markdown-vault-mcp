@@ -21,6 +21,7 @@ from pathlib import Path
 
 from markdown_vault_mcp.exceptions import ConcurrentModificationError
 from markdown_vault_mcp.hashing import compute_file_hash
+from markdown_vault_mcp.utils.fs import is_regular_file
 
 __all__ = ["atomic_write", "check_if_match", "new_file_mode"]
 
@@ -71,7 +72,7 @@ def check_if_match(abs_path: Path, path: str, if_match: str | None) -> None:
     """
     if if_match is None:
         return
-    if not abs_path.is_file():
+    if not is_regular_file(abs_path):
         raise ConcurrentModificationError(
             path,
             expected=if_match,
@@ -96,7 +97,7 @@ def atomic_write(abs_path: Path, data: str | bytes) -> None:
         abs_path: Absolute destination path.
         data: Text (written UTF-8) or raw bytes.
     """
-    existed = abs_path.is_file()
+    existed = is_regular_file(abs_path)
     if isinstance(data, str):
         with tempfile.NamedTemporaryFile(
             dir=abs_path.parent,

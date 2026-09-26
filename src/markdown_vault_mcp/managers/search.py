@@ -81,7 +81,7 @@ from markdown_vault_mcp.utils import (
     normalize_folder,
     validate_path,
 )
-from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS
+from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, is_regular_file
 
 if TYPE_CHECKING:
     import builtins
@@ -1361,8 +1361,18 @@ class SearchManager:
             ``None`` when the entry is filtered out or unreadable.
         """
         suffix = artifact_suffix(abs_path)
+        try:
+            is_file = is_regular_file(abs_path)
+        except OSError as exc:
+            # A listing drops what it cannot stat rather than failing whole,
+            # but says so: on 3.14 is_file() would have dropped it silently
+            # (#1625).
+            logger.warning(
+                "attachment_skipped path=%s reason=stat_error error=%s", abs_path, exc
+            )
+            return None
         if (
-            not abs_path.is_file()
+            not is_file
             or has_md_suffix(abs_path)
             or not is_allowed_artifact_suffix(suffix, exts)
         ):

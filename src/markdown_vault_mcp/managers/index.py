@@ -41,7 +41,11 @@ from markdown_vault_mcp.utils import (
     is_note,
     is_path_excluded,
 )
-from markdown_vault_mcp.utils.fs import iter_markdown_files
+from markdown_vault_mcp.utils.fs import (
+    could_be_regular_file,
+    is_regular_file,
+    iter_markdown_files,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -217,7 +221,7 @@ class IndexManager:
             self._exclude_patterns,
             on_error=on_walk_error,
         ):
-            if not abs_path.is_file():
+            if not could_be_regular_file(abs_path):
                 continue
             # iter_markdown_files yields paths built as source_dir / rel, so
             # relative_to always succeeds (no outside-source_dir guard needed).
@@ -1040,7 +1044,7 @@ class IndexManager:
                 # before the exclusion existed.
                 self._fts.delete_by_path(path)
                 return
-            if abs_path.is_file() and is_note(path):
+            if is_regular_file(abs_path) and is_note(path):
                 note = parse_note(
                     abs_path,
                     self._source_dir,
@@ -1080,8 +1084,13 @@ class IndexManager:
                 exc,
             )
             # A vanished file is a successful deletion. A still-existing
-            # unreadable file retains its old row, so fail and retry the job.
-            if not abs_path.is_file():
+            # unreadable file retains its old row, so fail and retry the job;
+            # a refused stat is "still there", never "vanished" (#1625).
+            try:
+                vanished = not is_regular_file(abs_path)
+            except OSError:
+                vanished = False
+            if vanished:
                 self._fts.delete_by_path(path)
                 return
             raise

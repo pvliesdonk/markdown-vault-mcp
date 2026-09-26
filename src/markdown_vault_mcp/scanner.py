@@ -25,7 +25,11 @@ from markdown_vault_mcp.utils.content_kind import (
     effective_attachment_extensions,
     names_attachment,
 )
-from markdown_vault_mcp.utils.fs import GLOB_SYMLINK_KWARGS, iter_markdown_files
+from markdown_vault_mcp.utils.fs import (
+    GLOB_SYMLINK_KWARGS,
+    could_be_regular_file,
+    iter_markdown_files,
+)
 from markdown_vault_mcp.utils.links import (
     decode_markdown_destination,
     is_anchor_destination,
@@ -2294,7 +2298,7 @@ def scan_directory(
         discovered = source_dir.glob(glob_pattern, **GLOB_SYMLINK_KWARGS)
 
     for abs_path in sorted(discovered):
-        if not abs_path.is_file():
+        if not could_be_regular_file(abs_path):
             continue
 
         # Compute relative path for exclude matching.
