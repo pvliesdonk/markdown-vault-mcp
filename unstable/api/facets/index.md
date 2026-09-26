@@ -111,9 +111,10 @@ Returns:
 
 Raises:
 
-| Type                      | Description                                              |
-| ------------------------- | -------------------------------------------------------- |
-| `DocumentUnreadableError` | If the file exists but cannot be read or parsed (#1608). |
+| Type                      | Description                                                                |
+| ------------------------- | -------------------------------------------------------------------------- |
+| `DocumentUnreadableError` | If the file exists but cannot be read or parsed (#1608).                   |
+| `InvalidRequestError`     | If path holds a NUL byte (#1636), or section is empty or names no heading. |
 
 ### `read_revision(path, revision, *, section=None)`
 
