@@ -13,7 +13,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
-from markdown_vault_mcp.utils import is_note
+from markdown_vault_mcp.utils import folder_of, is_note
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -39,12 +39,6 @@ if TYPE_CHECKING:
 def _is_reserved(path: str) -> bool:
     """Whether *path* names a reserved OKF file (``index.md`` / ``log.md``)."""
     return PurePosixPath(path).name in OKF_RESERVED_FILENAMES
-
-
-def _folder_of(path: str) -> str:
-    """Return the vault-relative folder of *path* (``""`` for the root)."""
-    parent = PurePosixPath(path).parent.as_posix()
-    return "" if parent == "." else parent
 
 
 class WriterFacet:
@@ -310,7 +304,7 @@ class WriterFacet:
         if self._convention_maintainer is not None and is_note(path):
             # The folder's listing still names the deleted note (#1609).
             self._convention_maintainer.refresh_indexes(
-                [_folder_of(path)], trigger_paths=[path]
+                [folder_of(path)], trigger_paths=[path]
             )
         return result
 
@@ -363,18 +357,16 @@ class WriterFacet:
             and not _is_reserved(new_path)
         ):
             # The old folder still lists the note; the new one does not yet
-            # (#1609). A note arriving in a folder gets its listing, as a
-            # write there does, and so does every folder between it and the
-            # nearest indexed ancestor, which would otherwise point at a
-            # missing index.md. A rename to or from a reserved name triggers
-            # nothing: regenerating would overwrite the file just placed, and
-            # a reserved-file change never triggers itself (#1414).
+            # (#1609). Regenerating the nearest indexed level at or above the
+            # new folder lists it there and indexes every missing level below
+            # (#1647). A rename to or from a reserved name triggers nothing:
+            # regenerating would overwrite the file just placed, and a
+            # reserved-file change never triggers itself (#1414).
             maintainer = self._convention_maintainer
-            new_folder = _folder_of(new_path)
             maintainer.refresh_indexes(
-                [_folder_of(old_path), new_folder],
+                [folder_of(old_path)],
                 trigger_paths=[old_path, new_path],
-                create=maintainer.missing_index_chain(new_folder),
+                create=[maintainer.indexed_anchor(folder_of(new_path))],
             )
         return result
 
@@ -411,17 +403,18 @@ class WriterFacet:
         result = self._doc_mgr.move_folder(old_dir, new_dir)
         if self._convention_maintainer is not None:
             # The moved index.md files still list the old paths, and the old
-            # parent still points at a subfolder that is gone (#1609).
+            # parent still points at a subfolder that is gone (#1609). The
+            # nearest indexed level above the destination gets it listed, with
+            # every missing level between indexed (#1647).
             maintainer = self._convention_maintainer
             new_root = new_dir.strip("/")
             maintainer.refresh_indexes(
                 [
                     *maintainer.subtree_folders(new_root),
-                    _folder_of(old_dir.strip("/")),
-                    _folder_of(new_root),
+                    folder_of(old_dir.strip("/")),
                 ],
                 trigger_paths=[old_dir, new_dir],
-                create=maintainer.missing_index_chain(new_root),
+                create=[maintainer.indexed_anchor(folder_of(new_root))],
             )
         return result
 

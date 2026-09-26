@@ -38,6 +38,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from markdown_vault_mcp._okf_write import okf_write_suppressed
+from markdown_vault_mcp.exceptions import DocumentUnreadableError
 from markdown_vault_mcp.okf import (
     OKF_LOG_TITLE,
     OKF_RESERVED_FILENAMES,
@@ -158,7 +159,10 @@ class OkfMigrationManager:
         Progressive disclosure (OKF spec): the listing carries only the
         folder's *immediate* notes plus a pointer to each immediate
         subfolder's own ``index.md`` — it does not flatten the whole
-        subtree, so each level defers depth to the level below. Existing
+        subtree, so each level defers depth to the level below. A subfolder
+        without an ``index.md`` gets one generated the same way, down to the
+        deepest level, so no pointer names a missing file (#1647); an
+        existing subfolder index is pointed at and left as it is. Existing
         frontmatter is preserved (the root ``index.md``'s ``okf_version``
         declaration must survive regeneration), and any field the vault
         requires but the file lacks is seeded, so a freshly generated index
@@ -212,6 +216,11 @@ class OkfMigrationManager:
         entries = note_entries + [
             (f"{sub}/", f"/{prefix}{sub}/index.md", None) for sub in sorted(subfolders)
         ]
+        created: list[str] = []
+        for sub in sorted(subfolders):
+            if not self._has_index(f"{prefix}{sub}"):
+                child = self.generate_index(folder=f"{prefix}{sub}")
+                created += [child.path, *child.created]
 
         index_path = f"{folder}/index.md" if folder else "index.md"
         existing = self._doc_mgr.read(index_path)
@@ -229,8 +238,22 @@ class OkfMigrationManager:
                 allow_overwrite=True,
             )
         return OkfIndexResult(
-            path=index_path, entries=len(entries), frontmatter_preserved=preserved
+            path=index_path,
+            entries=len(entries),
+            frontmatter_preserved=preserved,
+            created=tuple(created),
         )
+
+    def _has_index(self, folder: str) -> bool:
+        """Whether *folder* has an ``index.md``; an unreadable one counts.
+
+        An index that exists but cannot be read is a file the listing may
+        point at, and one ``generate_index`` must not overwrite (#1608).
+        """
+        try:
+            return self._doc_mgr.read(f"{folder}/index.md") is not None
+        except DocumentUnreadableError:
+            return True
 
     def seed_log(self, *, folder: str = "", limit: int = 100) -> OkfLogResult:
         """Seed a reserved ``log.md`` for *folder* from git history.

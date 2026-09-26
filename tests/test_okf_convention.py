@@ -584,6 +584,51 @@ class TestRefreshIndexesGuards:
         assert migrate.index_calls == []  # both attempted, both raised, none raised out
 
 
+class TestMaintainerFolderWalks:
+    def _maintainer(self, source_dir: Path | None) -> ConventionMaintainer:
+        return ConventionMaintainer(
+            doc_mgr=_FakeDoc(),  # type: ignore[arg-type]
+            okf_migrate=_FakeMigrate(),  # type: ignore[arg-type]
+            detector=_FakeDetector(True),  # type: ignore[arg-type]
+            source_dir=source_dir,
+        )
+
+    def test_subtree_folders_skips_hidden_folders(self, tmp_path: Path) -> None:
+        for rel in ("a/b/c", "a/.git/objects", "a/d"):
+            (tmp_path / rel).mkdir(parents=True)
+        assert self._maintainer(tmp_path).subtree_folders("a") == [
+            "a",
+            "a/b",
+            "a/d",
+            "a/b/c",
+        ]
+
+    def test_without_a_vault_directory_only_the_root_is_known(self) -> None:
+        maintainer = self._maintainer(None)
+        assert maintainer.subtree_folders("a") == ["a"]
+        assert maintainer.indexed_anchor("a/b") == "a/b"
+
+    def test_indexed_anchor_is_the_nearest_indexed_level(self, tmp_path: Path) -> None:
+        (tmp_path / "a" / "b" / "c").mkdir(parents=True)
+        (tmp_path / "a" / "index.md").write_text("# a\n", encoding="utf-8")
+        maintainer = self._maintainer(tmp_path)
+        assert maintainer.indexed_anchor("a/b/c") == "a"
+        assert maintainer.indexed_anchor("x/y") == ""
+
+    def test_a_refused_stat_counts_as_indexed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The refresh is attempted and logs its own failure (#1625)."""
+
+        def refuse(path: Path) -> bool:
+            raise PermissionError(path)
+
+        monkeypatch.setattr(
+            "markdown_vault_mcp._okf_convention.is_regular_file", refuse
+        )
+        assert self._maintainer(tmp_path).indexed_anchor("a/b") == "a/b"
+
+
 class TestIndexRefreshEdgeCases:
     def test_renaming_a_note_onto_a_reserved_name_keeps_its_body(
         self, enforced_vault: Vault
@@ -593,6 +638,16 @@ class TestIndexRefreshEdgeCases:
         enforced_vault.writer.rename("guides/a.md", "newf/index.md")
         wait_for_writer_drain(enforced_vault)
         assert "body A precious" in (_content(enforced_vault, "newf/index.md") or "")
+
+    def test_writing_into_a_new_nested_folder_lists_every_level(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.write("new/sub/a.md", "# A\n\nx\n")
+        wait_for_writer_drain(enforced_vault)
+        assert "(/new/index.md)" in (_content(enforced_vault, "index.md") or "")
+        assert "(/new/sub/index.md)" in (_content(enforced_vault, "new/index.md") or "")
+        assert "/new/sub/a.md" in (_content(enforced_vault, "new/sub/index.md") or "")
+        assert _index_links_broken(enforced_vault) == []
 
     def test_renaming_a_reserved_file_triggers_nothing(
         self, enforced_vault: Vault
@@ -606,16 +661,20 @@ class TestIndexRefreshEdgeCases:
     def test_rename_into_a_nested_new_folder_leaves_no_broken_pointer(
         self, enforced_vault: Vault
     ) -> None:
-        enforced_vault.writer.write("a.md", "# A\n\nx\n")
-        enforced_vault.writer.rename("a.md", "deep/er/a.md")
+        enforced_vault.writer.write("guides/a.md", "# A\n\nx\n")
+        enforced_vault.writer.rename("guides/a.md", "deep/er/a.md")
         wait_for_writer_drain(enforced_vault)
         assert "/deep/er/a.md" in (_content(enforced_vault, "deep/er/index.md") or "")
+        assert "(/deep/index.md)" in (_content(enforced_vault, "index.md") or "")
         assert _index_links_broken(enforced_vault) == []
 
     def test_move_folder_into_a_nested_new_parent_leaves_no_broken_pointer(
         self, enforced_vault: Vault
     ) -> None:
-        enforced_vault.writer.write("guides/a.md", "# A\n\nx\n")
-        enforced_vault.writer.move_folder("guides", "top/guides")
+        enforced_vault.writer.write("guides/sub/a.md", "# A\n\nx\n")
+        enforced_vault.writer.move_folder("guides/sub", "top/sub")
         wait_for_writer_drain(enforced_vault)
+        assert "(/top/index.md)" in (_content(enforced_vault, "index.md") or "")
+        top = _content(enforced_vault, "top/index.md") or ""
+        assert "(/top/sub/index.md)" in top
         assert _index_links_broken(enforced_vault) == []

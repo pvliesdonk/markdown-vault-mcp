@@ -325,6 +325,54 @@ class TestGenerateIndex:
         assert "- [sub/](/guides/sub/index.md)" in guides
         assert "/two.md" not in guides  # deferred to guides/sub/index.md
 
+    def test_creates_missing_subfolder_indexes(self, vault: Vault) -> None:
+        """A pointer never names an index.md that does not exist (#1647)."""
+        _write(vault, "guides/one.md", "# One\n")
+        _write(vault, "guides/sub/two.md", "# Two\n")
+        _write(vault, "kept/three.md", "# Three\n")
+        _write(vault, "kept/index.md", "# Hand-written\n")
+
+        result = vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
+
+        assert result.created == ("guides/index.md", "guides/sub/index.md")
+        guides = vault.reader.read("guides/index.md").content
+        assert "- [One](/guides/one.md)" in guides
+        assert "- [sub/](/guides/sub/index.md)" in guides
+        assert "- [Two](/guides/sub/two.md)" in (
+            vault.reader.read("guides/sub/index.md").content
+        )
+        # An existing subfolder index is pointed at, not regenerated.
+        assert vault.reader.read("kept/index.md").content == "# Hand-written\n"
+        assert vault.graph.get_broken_links() == []
+
+    def test_refreshing_an_existing_index_creates_nothing(self, vault: Vault) -> None:
+        _write(vault, "guides/one.md", "# One\n")
+        vault.writer.okf_generate_index()
+        wait_for_writer_drain(vault)
+
+        assert vault.writer.okf_generate_index().created == ()
+
+    def test_unreadable_subfolder_index_counts_as_present(
+        self, vault: Vault, source_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An index.md that exists but cannot be read is never overwritten."""
+        _write(vault, "guides/one.md", "# One\n")
+        _write(vault, "guides/index.md", "# Hand-written\n")
+        real_read = vault._doc_mgr.read
+
+        def refuse(path: str, **kwargs: object) -> object:
+            if path == "guides/index.md":
+                raise DocumentUnreadableError(path, "permission denied")
+            return real_read(path, **kwargs)
+
+        monkeypatch.setattr(vault._doc_mgr, "read", refuse)
+        result = vault.writer.okf_generate_index()
+
+        assert result.created == ()
+        text = (source_dir / "guides" / "index.md").read_text(encoding="utf-8")
+        assert text == "# Hand-written\n"
+
 
 class TestSeedLog:
     def test_empty_history_writes_empty_log(self, vault: Vault) -> None:

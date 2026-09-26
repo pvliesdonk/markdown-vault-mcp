@@ -35,6 +35,7 @@ from markdown_vault_mcp.okf import (
     append_okf_log_entry,
 )
 from markdown_vault_mcp.scanner import strip_frontmatter_block
+from markdown_vault_mcp.utils import folder_of
 from markdown_vault_mcp.utils.fs import is_regular_file
 
 if TYPE_CHECKING:
@@ -106,7 +107,11 @@ class ConventionMaintainer:
         self._source_dir = source_dir
 
     def maintain(self, path: str, operation: WriteOperation) -> None:
-        """Refresh the written note's folder ``log.md`` and ``index.md``.
+        """Refresh the written note's folder ``log.md`` and its listing.
+
+        The listing refreshed is the folder's ``index.md``, or, when the
+        folder has none, the nearest indexed ancestor's, which creates an
+        ``index.md`` at each missing level down to the note (#1647).
 
         A no-op unless *operation* is a content write (``write`` / ``edit``)
         on an OKF-active vault, and never for a write whose target is itself a
@@ -129,10 +134,12 @@ class ConventionMaintainer:
             return
         if not self._detector.state().active:
             return
-        folder = self._folder_of(path)
+        folder = folder_of(path)
         with okf_write_suppressed():
             self._append_log(folder, path, operation)
-            self._refresh_index(folder)
+            # A note in a folder without an index is listed from the nearest
+            # indexed level, which indexes every missing level below (#1647).
+            self._refresh_index(self.indexed_anchor(folder))
 
     def refresh_indexes(
         self,
@@ -170,6 +177,13 @@ class ConventionMaintainer:
 
         After a folder move these are the folders whose ``index.md`` moved
         along, still listing the old paths (#1609).
+
+        Args:
+            root: Vault-relative folder (``""`` for the vault root).
+
+        Returns:
+            *root* first, then its descendants in walk order; only *root*
+            when no vault directory is known.
         """
         if self._source_dir is None:
             return [root]
@@ -183,25 +197,23 @@ class ConventionMaintainer:
                 )
         return found
 
-    def missing_index_chain(self, folder: str) -> list[str]:
-        """Return the folders from *folder* up that lack an ``index.md``.
+    def indexed_anchor(self, folder: str) -> str:
+        """Return the nearest folder at or above *folder* with an ``index.md``.
 
-        A listing points at each immediate subfolder's ``index.md``, so a note
-        or folder arriving several levels below the nearest indexed ancestor
-        needs every level in between indexed too, or the refreshed listings
-        point at files that do not exist (#1609). *folder* is included when it
-        lacks one; the walk continues up to the first *ancestor* that has one,
-        which is not included, even when *folder* itself already has one (a
-        moved folder carries its own). The vault root ends the walk.
+        Regenerating that listing reaches *folder*: ``generate_index`` creates
+        each missing subfolder index below it (#1647), so a note or folder
+        arriving under unindexed levels is listed at every level (#1609).
+
+        Args:
+            folder: Vault-relative folder (``""`` for the vault root).
+
+        Returns:
+            The anchor folder, or ``""`` when no level has an index.
         """
-        chain = [] if self._has_index(folder) else [folder]
         current = folder
-        while current != "":
-            current = self._folder_of(current)
-            if self._has_index(current):
-                break
-            chain.append(current)
-        return chain
+        while current != "" and not self._has_index(current):
+            current = folder_of(current)
+        return current
 
     def _maintains_after(self, trigger_paths: Iterable[str]) -> bool:
         """Whether a structural change should refresh listings at all."""
@@ -229,12 +241,6 @@ class ConventionMaintainer:
             return is_regular_file(index)
         except OSError:
             return True
-
-    @staticmethod
-    def _folder_of(path: str) -> str:
-        """Return the vault-relative folder of *path* (``""`` for the root)."""
-        parent = str(Path(path).parent)
-        return "" if parent == "." else parent
 
     def _append_log(self, folder: str, path: str, operation: WriteOperation) -> None:
         """Append a dated ``**Update**`` bullet to the folder's ``log.md``.

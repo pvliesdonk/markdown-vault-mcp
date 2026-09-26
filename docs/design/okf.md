@@ -499,18 +499,21 @@ Tool tags following switches: #1412.
   which left a library caller's bundle stamped by its own migration. The
   affected folder is the one directly containing the written note; the
   `index.md` refresh reuses the migration `generate_index`, draining the
-  single-writer index first so a just-created note is listed. A brand-new
-  subfolder's pointer in its parent `index.md` lands on the next write into
-  the parent (per-write scope, not a full-tree walk). A `delete`,
+  single-writer index first so a just-created note is listed. When that
+  folder has no `index.md`, the listing regenerated is the nearest indexed
+  ancestor's (`ConventionMaintainer.indexed_anchor`): `generate_index`
+  creates an `index.md` in every subfolder it points at that lacks one, down
+  to the deepest level, so a generated listing never points at a missing
+  file and every level is navigable (#1647). A subfolder that already has
+  an `index.md` is pointed at and not regenerated. A `delete`,
   `rename` or `move_folder` refreshes the listings it made stale, through
   `ConventionMaintainer.refresh_indexes` with the same guards (#1609): the
-  deleted note's folder; a renamed note's old folder and its new one (created
-  if absent, as a write would); after a folder move, every folder of the
-  moved subtree plus the old and the new parent. Only folders that already
-  carry an `index.md` are refreshed, apart from the destination's
-  `missing_index_chain` (the destination and each ancestor up to the first
-  with an `index.md`), which is created so no refreshed listing points at a
-  missing file. No `log.md` entry is written for these operations, which is
+  deleted note's folder; a renamed note's old folder; after a folder move,
+  every folder of the moved subtree and the old parent. Of those, only
+  folders that already carry an `index.md` are refreshed. The destination
+  is reached as a write reaches it: through its indexed anchor (for a move,
+  the anchor of the new parent), whose regeneration lists it and indexes
+  every missing level in between. No `log.md` entry is written for these operations, which is
   left to the log design. A rename to or from a reserved name triggers
   nothing, both because a reserved-file change never triggers itself (#1414)
   and because regenerating would overwrite the note just renamed onto it.
@@ -694,7 +697,7 @@ so new vaults are conformant from note one.
 | 3 | `okf_validate` audit tool | 1 (detection; usable pre-declaration via `OKF_MODE=on`) |
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
 | 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
-| 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes; `index.md` refresh after `delete` / `rename` / `move_folder` (#1609) | 5a |
+| 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes; `index.md` refresh after `delete` / `rename` / `move_folder` (#1609); generated listings create missing subfolder indexes (#1647) | 5a |
 | 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only warning (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |
 | Docs | Guide, interop sections, examples/prompt packs | trails each phase; guide lands with 4 |
