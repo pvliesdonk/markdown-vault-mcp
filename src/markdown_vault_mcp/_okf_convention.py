@@ -21,6 +21,7 @@ provenance-stamped or verification-cleared.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import nullcontext
 from datetime import date
 from pathlib import Path
@@ -34,9 +35,10 @@ from markdown_vault_mcp.okf import (
     append_okf_log_entry,
 )
 from markdown_vault_mcp.scanner import strip_frontmatter_block
+from markdown_vault_mcp.utils.fs import is_regular_file
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
     from contextlib import AbstractContextManager
 
     from markdown_vault_mcp.managers.document import DocumentManager
@@ -63,6 +65,7 @@ class ConventionMaintainer:
         write_lock: AbstractContextManager[object] | None = None,
         today: Callable[[], date] = date.today,
         reserved_frontmatter: ReservedFrontmatterPolicy | None = None,
+        source_dir: Path | None = None,
     ) -> None:
         """Hold the collaborators the secondary writes delegate to.
 
@@ -87,6 +90,9 @@ class ConventionMaintainer:
                 ``log.md``, so the log this maintainer rewrites on every
                 enforced write satisfies the vault's own index gate (#1174).
                 Defaults to the no-required-fields policy.
+            source_dir: The vault root, used after a delete, rename or folder
+                move to find which folders already carry an ``index.md``
+                (#1609). ``None`` (tests) treats every folder as having one.
         """
         self._doc_mgr = doc_mgr
         self._okf_migrate = okf_migrate
@@ -97,6 +103,7 @@ class ConventionMaintainer:
         )
         self._today = today
         self._reserved_frontmatter = reserved_frontmatter or ReservedFrontmatterPolicy()
+        self._source_dir = source_dir
 
     def maintain(self, path: str, operation: WriteOperation) -> None:
         """Refresh the written note's folder ``log.md`` and ``index.md``.
@@ -126,6 +133,82 @@ class ConventionMaintainer:
         with okf_write_suppressed():
             self._append_log(folder, path, operation)
             self._refresh_index(folder)
+
+    def refresh_indexes(
+        self,
+        folders: Iterable[str],
+        *,
+        trigger_paths: Iterable[str],
+        create: Iterable[str] = (),
+    ) -> None:
+        """Refresh folder ``index.md`` files after a delete, rename or move.
+
+        A folder in *folders* is refreshed only if it already has an
+        ``index.md``: the change can only have made that listing stale. A
+        folder in *create* is refreshed regardless, as a folder a note was
+        written into is (#1609). The same guards as :meth:`maintain` apply:
+        nothing on an inactive vault or under a suppressed intent, and nothing
+        when every *trigger_paths* entry is a reserved file, whose change never
+        triggers its own regeneration (#1414). ``log.md`` is left to the log
+        design; only the listings are kept current here. Never raises.
+
+        Args:
+            folders: Folders whose existing listing may be stale.
+            trigger_paths: The vault-relative paths the change touched.
+            create: Folders a note arrived in, refreshed even without an
+                ``index.md`` yet.
+        """
+        if not self._maintains_after(trigger_paths):
+            return
+        wanted = [f for f in folders if self._has_index(f)]
+        with okf_write_suppressed():
+            for folder in dict.fromkeys([*wanted, *create]):
+                self._refresh_index(folder)
+
+    def subtree_folders(self, root: str) -> list[str]:
+        """Return *root* and every non-hidden folder below it, vault-relative.
+
+        After a folder move these are the folders whose ``index.md`` moved
+        along, still listing the old paths (#1609).
+        """
+        if self._source_dir is None:
+            return [root]
+        base = self._source_dir / root if root else self._source_dir
+        found = [root]
+        for dirpath, dirnames, _files in os.walk(base):
+            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+            for name in dirnames:
+                found.append(
+                    Path(dirpath, name).relative_to(self._source_dir).as_posix()
+                )
+        return found
+
+    def _maintains_after(self, trigger_paths: Iterable[str]) -> bool:
+        """Whether a structural change should refresh listings at all."""
+        intent = current_okf_intent()
+        if intent is not None and intent.suppress:
+            return False
+        if all(Path(p).name in OKF_RESERVED_FILENAMES for p in trigger_paths):
+            return False
+        return self._detector.state().active
+
+    def _has_index(self, folder: str) -> bool:
+        """Whether *folder* already carries an ``index.md`` to keep current.
+
+        A refused stat counts as "has one", so the refresh is attempted and
+        its own handling logs any failure (#1625).
+        """
+        if self._source_dir is None:
+            return True
+        index = (
+            self._source_dir / folder / "index.md"
+            if folder
+            else (self._source_dir / "index.md")
+        )
+        try:
+            return is_regular_file(index)
+        except OSError:
+            return True
 
     @staticmethod
     def _folder_of(path: str) -> str:

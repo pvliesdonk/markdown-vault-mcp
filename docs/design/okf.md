@@ -501,7 +501,16 @@ Tool tags following switches: #1412.
   `index.md` refresh reuses the migration `generate_index`, draining the
   single-writer index first so a just-created note is listed. A brand-new
   subfolder's pointer in its parent `index.md` lands on the next write into
-  the parent (per-write scope, not a full-tree walk).
+  the parent (per-write scope, not a full-tree walk). A `delete`,
+  `rename` or `move_folder` refreshes the listings it made stale, through
+  `ConventionMaintainer.refresh_indexes` with the same guards (#1609): the
+  deleted note's folder; a renamed note's old folder and its new one (created
+  if absent, as a write would); after a folder move, every folder of the
+  moved subtree plus the old and the new parent. Only folders that already
+  carry an `index.md` are refreshed, apart from the rename destination, and
+  no `log.md` entry is written for these operations, which is left to the
+  log design. A change whose paths are all reserved files triggers nothing
+  (#1414).
 - **Reconciliation of notes the server did not write** (`OKF_RECONCILE`,
   proposed): designed separately with the provenance evidence it depends
   on (#1420); named here so the switch has an owner in this section.
@@ -682,7 +691,7 @@ so new vaults are conformant from note one.
 | 3 | `okf_validate` audit tool | 1 (detection; usable pre-declaration via `OKF_MODE=on`) |
 | 4 | Migration tools (link conversion, `index.md` generation, `log.md` seeding) + `okf_export` | 1, 3 |
 | 5a | Enforced write layer (`OKF_WRITE`): stamping, verification invalidation, `okf_verify` | 1 |
-| 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes | 5a |
+| 5b | Enforced-write convention maintenance: `log.md` append + affected-folder `index.md` refresh on successful writes; `index.md` refresh after `delete` / `rename` / `move_folder` (#1609) | 5a |
 | 5c | Ownership switches (§6.0): `OKF_MAINTAIN`, `OKF_RECONCILE`, effective-state reporting (#1432), instruction gating (#1431), read-only warning (#1434), reserved-file write refusal (#1419) | 5b |
 | 6 | Ranking downweights | 1 (own phase: different risk profile) |
 | Docs | Guide, interop sections, examples/prompt packs | trails each phase; guide lands with 4 |

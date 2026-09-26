@@ -9,7 +9,10 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
+
+from markdown_vault_mcp.utils import is_note
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -30,6 +33,12 @@ if TYPE_CHECKING:
         RenameResult,
         WriteResult,
     )
+
+
+def _folder_of(path: str) -> str:
+    """Return the vault-relative folder of *path* (``""`` for the root)."""
+    parent = PurePosixPath(path).parent.as_posix()
+    return "" if parent == "." else parent
 
 
 class WriterFacet:
@@ -291,7 +300,13 @@ class WriterFacet:
                 not match.
             DocumentNotFoundError: If *path* does not exist.
         """
-        return self._doc_mgr.delete(path, if_match=if_match)
+        result = self._doc_mgr.delete(path, if_match=if_match)
+        if self._convention_maintainer is not None and is_note(path):
+            # The folder's listing still names the deleted note (#1609).
+            self._convention_maintainer.refresh_indexes(
+                [_folder_of(path)], trigger_paths=[path]
+            )
+        return result
 
     def rename(
         self,
@@ -329,12 +344,22 @@ class WriterFacet:
             InvalidRequestError: If *old_path* or *new_path* escapes the source
                 directory.
         """
-        return self._doc_mgr.rename(
+        result = self._doc_mgr.rename(
             old_path,
             new_path,
             if_match=if_match,
             update_links=update_links,
         )
+        if self._convention_maintainer is not None and is_note(new_path):
+            # The old folder still lists the note; the new one does not yet
+            # (#1609). A note arriving in a folder gets its listing, as a
+            # write there does.
+            self._convention_maintainer.refresh_indexes(
+                [_folder_of(old_path)],
+                trigger_paths=[old_path, new_path],
+                create=[_folder_of(new_path)],
+            )
+        return result
 
     def move_folder(self, old_dir: str, new_dir: str) -> MoveFolderResult:
         """Move a folder subtree to a new prefix, rewriting links vault-wide.
@@ -366,7 +391,20 @@ class WriterFacet:
                 destination clashes, but a mid-move OS error leaves the subtree
                 partially moved with the index unchanged; reindex recovers.
         """
-        return self._doc_mgr.move_folder(old_dir, new_dir)
+        result = self._doc_mgr.move_folder(old_dir, new_dir)
+        if self._convention_maintainer is not None:
+            # The moved index.md files still list the old paths, and the old
+            # parent still points at a subfolder that is gone (#1609).
+            maintainer = self._convention_maintainer
+            maintainer.refresh_indexes(
+                [
+                    *maintainer.subtree_folders(new_dir.strip("/")),
+                    _folder_of(old_dir.strip("/")),
+                    _folder_of(new_dir.strip("/")),
+                ],
+                trigger_paths=[old_dir, new_dir],
+            )
+        return result
 
     def write_attachment(
         self,
