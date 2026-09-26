@@ -2,6 +2,18 @@
 
 ## 2026-09-25
 
+- Recorded a departure in [MCP model-facing text](mcp-model-facing-text.md):
+  Anthropic's "caveats or limitations" is read as limits that hold for
+  every call by design, and failures that depend on one call's state stay
+  out of descriptions for the error text. No claim changed. Next review unchanged: 2027-03-23.
+- Revised [MCP tool outcomes and errors](mcp-tool-outcomes-and-errors.md)
+  for fastmcp-pvl-core 10.0.0 by source and by re-running the in-memory
+  probe on FastMCP 4.0.9. The request-logging middleware now logs
+  `tool_call_failed` at a `ToolError`'s `log_level`, and a new claim
+  records pvl-core's `tool_boundary`: one ERROR `tool_failed` record with
+  the traceback and a fixed "the request itself was fine" message for any
+  exception that is not a FastMCP error. The other table rows are unchanged
+  from 9.0.1. Next review unchanged: 2027-03-25.
 - Extended [Git history and revision queries](git-history-queries.md) for
   #1608: git never rejects date text but filters by a date of its own
   choosing, an unknown ref in a range exits 128 indistinguishably,

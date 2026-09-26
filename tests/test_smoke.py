@@ -214,15 +214,16 @@ def test_register_apps_logs_configured_domain(
 
     Adapted from the template: MVM's ``register_apps`` is real (not a no-op), so
     we construct a server with APP_DOMAIN set and assert the log record (from
-    the _server_apps logger, args carrying the domain) rather than re-calling
-    register_apps on an already-registered server.
+    the _vault_apps logger, which resolves the domain for register_apps' resource
+    block, args carrying the domain) rather than re-calling register_apps on an
+    already-registered server.
     """
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_APP_DOMAIN", "example.com")
-    with caplog.at_level("INFO", logger="markdown_vault_mcp._server_apps"):
+    with caplog.at_level("INFO", logger="markdown_vault_mcp._vault_apps"):
         make_server()
     assert any(
-        r.name == "markdown_vault_mcp._server_apps" and r.args == ("example.com",)
+        r.name == "markdown_vault_mcp._vault_apps" and r.args == ("example.com",)
         for r in caplog.records
     )
 

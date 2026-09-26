@@ -78,7 +78,7 @@ markdown-vault-mcp (new package)
 +-- config_sections/  -- domain-grouped sub-config VIEWS (git/indexing/embeddings/search/sync/content), assembled by ProjectConfig properties; no from_env of their own (#952)
 |   +-- _assembly.py   -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (#1225), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
 |   +-- vault_settings.py -- VaultSettings: frozen config-derived Vault construction settings + pure effective_* derivations (#1158)
-+-- server.py         -- template-owned skeleton; domain wiring in DOMAIN-UPSTREAM/DOMAIN-WIRING (#901)
++-- server.py         -- template-owned skeleton; DOMAIN-WIRING calls _server_wiring.wire_domain (#901)
 +-- _instructions.py  -- contribute_instructions: domain snippets for pvl-core's instructions builder (#901)
 +-- domain.py         -- Service: owns Vault lifecycle + get_vault/set_pending_config singleton (#902)
 +-- _server_apps.py   -- template-owned MCP Apps scaffold; domain apps in DOMAIN-APP-* sentinels (#905)
@@ -1787,8 +1787,8 @@ in-memory subsystem in this repo (`transfer/`); #979 retired that and adopted
 the shared framework. markdown-vault-mcp now supplies only the domain hook: a
 `VaultTransferSink` (`_transfer_sink.py`) implementing the core `TransferSink`
 protocol (`read` / `write`) plus a validator that maps a caller `ref` to a
-vault-relative path. Wiring lives in `server.py`'s DOMAIN-WIRING block, which
-calls `register_transfer_routes(mcp, config.server, config.transfer, sink=…,
+vault-relative path. Wiring lives in `_server_wiring.py`, which `server.py`'s
+DOMAIN-WIRING block calls; it calls `register_transfer_routes(mcp, config.server, config.transfer, sink=…,
 validate=…)` and passes the two optional `download_note` / `upload_note`
 strings that add vault-specific context to the generic tool descriptions.
 
@@ -4024,7 +4024,7 @@ summarize subfolders in separate calls — guidance placed in the result is
 acted on far more reliably than schema documentation. The live configured
 limit is also substituted into the tool description at startup (a
 ``{max_notes}`` placeholder in the docstring, rewritten by
-``apply_summarize_limits`` from the DOMAIN-WIRING block, which owns the
+``apply_summarize_limits`` from ``_server_wiring`` (the DOMAIN-WIRING block), which owns the
 loaded config) and surfaced in the server instructions via
 ``contribute_instructions(summarize_note_limit=...)``, so a calling
 model can plan folder splits before its first call rather than reacting
@@ -4109,7 +4109,7 @@ contain this, both operator-tunable:
   durable execution is the native task path's job, with a ``redis://``
   tasks backend). Because the ``Jobs`` mechanics are built from the loaded
   config, the summarize group and the index-maintenance jobs
-  (``register_index_jobs``) are registered from the DOMAIN-WIRING block
+  (``register_index_jobs``) are registered from ``_server_wiring`` (the DOMAIN-WIRING block)
   (the ``register_domain_prompts`` pattern) rather than the config-free
   ``register_tools()`` layer. The backend gate hides only ``summarize``;
   ``get_job_result`` is always registered, because ``reindex`` and
@@ -4142,7 +4142,7 @@ an event loop; finalization resolves FastMCP's effective tool visibility.
 The domain half lives in `_instructions.py` (kept out of the template-owned
 `server.py`, #901): `_domain_snippets()` selects the fragments that apply to
 a configuration and `contribute_instructions()` hands them to the builder
-from the `DOMAIN-WIRING` block. The guidance still varies with `read_only`
+from `_server_wiring` (the `DOMAIN-WIRING` block). The guidance still varies with `read_only`
 mode — when `read_only=True` the text states this is a read-only instance,
 otherwise it describes write tool semantics — which signals capability
 status to clients and reduces irrelevant prompting.
@@ -4346,8 +4346,8 @@ The config-dependent prompts — ``create_from_template`` (needs the templates
 folder), ``summarize-subtree`` (adapts to the summarize backend, #1035), and
 user-defined prompts (need the prompts folder) — are registered by
 ``register_domain_prompts(mcp, templates_folder, prompts_folder,
-summarize_tool_available=...)``, called from ``make_server``'s
-``DOMAIN-WIRING`` block with the already-resolved config values (no
+summarize_tool_available=...)``, called from ``_server_wiring``
+(``make_server``'s ``DOMAIN-WIRING`` block) with the already-resolved config values (no
 second environment read; a caller-supplied config is honored — #609).
 
 **User-defined prompts**: when ``MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`` is set,
@@ -4743,7 +4743,7 @@ a load failure degrades to system fonts with no loss of function.
 
 **Source layout and build**: the SPA is authored as partials under `src/markdown_vault_mcp/static/spa/` (`shell.html`, `styles.css`, `core.js`, and one `views/*.js` per view). `scripts/build_spa.py` assembles them into `static/app.src.html` via recursive `/*@@FILE:path@@*/` include markers, then `scripts/vendor_spa.py` embeds the vendored libraries into the served `static/app.html`. Both `app.src.html` and `app.html` are generated, committed artifacts; edit the partials, not the generated files. Each script has a `--check` mode enforced in pre-commit and gating merges in CI, so a stale artifact fails fast: `vendor_spa.py --check` runs in the template-owned ci.yml `lint` job (part of the required `CI Success` aggregate), while `build_spa.py --check` runs in the domain-owned `spa-source-check.yml` workflow (#942), whose "SPA source up-to-date" check the branch rulesets require via the `extra_required_checks` copier answer (template v5.4.0's domain seam).
 
-**Module layout**: `_server_apps.py` is the template-owned MCP Apps scaffold — the SPA shell resource and app-tools live inside its `DOMAIN-APP-TOOL-NAMES` / `DOMAIN-APP-RESOURCE` / `DOMAIN-APP-TOOLS` sentinel blocks, so everything outside them stays byte-identical to the template skeleton. The domain helpers that cannot live in the template-owned body — `_compute_claude_app_domain`, `_CDN_RESOURCE_DOMAINS`, and the `GraphView`→SPA `_graph_view_payload` serializer — live in `_vault_apps.py` (#905).
+**Module layout**: `_server_apps.py` is the template-owned MCP Apps scaffold. Its `DOMAIN-APP-TOOL-NAMES` / `DOMAIN-APP-RESOURCE` / `DOMAIN-APP-TOOLS` sentinel blocks keep the template's own text, list the vault's app-only tool names, and call into the vault's modules, so everything outside them stays byte-identical to the template skeleton. `_vault_apps.py` builds the app-shell `AppConfig` (`vault_app_resource_config`: `_compute_claude_app_domain` and `_CDN_RESOURCE_DOMAINS`) and holds the `GraphView`→SPA `_graph_view_payload` serializer; `_vault_app_tools.py` registers the vault's tools in place of the template's placeholders, with the template's `_app_tool_meta` for the app-only ones (#905).
 
 **Domain configuration**: MCP Apps iframes are sandboxed to a specific Claude app domain. The server computes it from `MARKDOWN_VAULT_MCP_BASE_URL` via `_compute_claude_app_domain()` (in `_vault_apps.py`). Override with `MARKDOWN_VAULT_MCP_APP_DOMAIN` when `BASE_URL` does not reflect the actual hostname visible to the Claude client (such as behind a proxy, or on a custom domain).
 

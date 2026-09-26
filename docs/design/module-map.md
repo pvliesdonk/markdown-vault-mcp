@@ -102,8 +102,10 @@ src/markdown_vault_mcp/
     sync.py              -- SyncConfig: file-watcher + GitHub-webhook settings
   domain.py            -- Service: owns the Vault lifecycle (build, boot index/reindex/embeddings jobs, file watcher); get_vault/get_config DI + vault singleton (#902)
   _instructions.py     -- contribute_instructions: domain snippets added to pvl-core's instructions builder from server.py's DOMAIN-WIRING (#901)
-  _server_apps.py      -- template-owned MCP Apps scaffold; vault SPA + app-tools confined to DOMAIN-APP-TOOL-NAMES/DOMAIN-APP-RESOURCE/DOMAIN-APP-TOOLS sentinels (#905)
-  _vault_apps.py       -- domain helpers backing _server_apps sentinels: Claude sandbox-domain compute + CDN CSP + GraphView→SPA wire serializer (#905)
+  _server_apps.py      -- template-owned MCP Apps scaffold; its sentinels keep the template's text and call into _vault_apps / _vault_app_tools (#905)
+  _vault_apps.py       -- domain helpers backing _server_apps sentinels: the app-shell AppConfig (Claude sandbox domain + CDN CSP) + GraphView→SPA wire serializer (#905)
+  _vault_app_tools.py  -- the vault's MCP Apps tools (browse_vault, show_context, the SPA's app-only tools), registered from DOMAIN-APP-TOOLS
+  _server_wiring.py    -- wire_domain(): the vault's make_server wiring (middleware, prompts, transfer, jobs, visibility), called from server.py's DOMAIN-WIRING
   _server_deps.py      -- server_lifespan + LifespanState: Service lifecycle and vault DI for request handlers
   tools.py             -- register_tools: the template's seeded registrar, delegating to the per-facet groups (#578)
   _tools/

@@ -23,7 +23,7 @@ def register(mcp: FastMCP) -> None:
 
     The call-initiated maintenance tools (``reindex``, ``build_embeddings``)
     are registered separately by :func:`register_index_jobs` from
-    ``make_server``'s DOMAIN-WIRING block: they are dual-mode long-running
+    ``_server_wiring`` (called from ``make_server``'s DOMAIN-WIRING): they are dual-mode long-running
     tools (#1033) and need the config-built ``Jobs`` mechanics. The status
     tools below stay here on purpose — they also report work no client call
     initiated (boot-time builds, file-watcher reindexes), so they remain
@@ -124,8 +124,8 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
     writer thread and await the submission's own ``Future``, so a fast run
     returns its real result inline; a run still going at the jobs soft
     deadline is promoted to a background job polled via ``get_job_result``.
-    Registered from ``make_server``'s DOMAIN-WIRING block (the same pattern
-    as the summarize group) because the ``Jobs`` mechanics are built from
+    Registered from ``_server_wiring`` (``make_server``'s DOMAIN-WIRING; the
+    same pattern as the summarize group) because the ``Jobs`` mechanics are built from
     the loaded config.
 
     Args:

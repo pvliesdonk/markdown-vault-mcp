@@ -371,8 +371,8 @@ def register_prompts(mcp: FastMCP) -> None:
     The config-dependent prompts — ``create_from_template`` (needs the templates
     folder), ``summarize-subtree`` (adapts to the summarize backend, #1035),
     and user-defined prompts (need the prompts folder) — are registered
-    separately by :func:`register_domain_prompts`, called from ``make_server``'s
-    ``DOMAIN-WIRING`` block where the resolved config is in scope. A user prompt
+    separately by :func:`register_domain_prompts`, called from ``_server_wiring``
+    (``make_server``'s ``DOMAIN-WIRING``) where the resolved config is in scope. A user prompt
     whose name matches one of these built-ins silently overrides it (see
     :func:`register_domain_prompts`).
 
@@ -514,7 +514,8 @@ def register_domain_prompts(
     ``config.content.templates_folder`` / ``config.content.prompts_folder`` /
     ``config.summarize.has_provider()``), so
     no environment re-read happens here and a caller-supplied config is honored
-    exactly (#609). Called from ``make_server``'s ``DOMAIN-WIRING`` block, after
+    exactly (#609). Called from ``_server_wiring`` (``make_server``'s
+    ``DOMAIN-WIRING``), after
     :func:`register_prompts` has registered the config-independent built-ins.
 
     User-defined prompts take priority: a user prompt whose name matches a

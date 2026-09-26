@@ -2,7 +2,7 @@
 type: Reference
 title: MCP tool outcomes and errors
 description: How the MCP spec, FastMCP, the MCP Python SDK, pvl-core, model vendors and published servers separate a tool's negative outcome from a tool error, on the wire and in the logs.
-subject_version: "MCP 2026-07-28 (with 2025-11-25 and 2025-06-18); FastMCP 4.0.9; mcp 2.2.0; fastmcp-pvl-core 9.0.1; vendor docs and published servers as of 2026-09-25"
+subject_version: "MCP 2026-07-28 (with 2025-11-25 and 2025-06-18); FastMCP 4.0.9; mcp 2.2.0; fastmcp-pvl-core 10.0.0; vendor docs and published servers as of 2026-09-25"
 valid_for: "MCP 2026-07-28 and FastMCP 4.x; vendor and server behaviour as of 2026-09"
 generated:
   by: process:researching-references
@@ -11,6 +11,8 @@ stale_after: 2027-03-25T00:00:00+00:00
 verified:
   - by: process:researching-references-refute
     at: 2026-09-25T13:25:00+02:00
+  - by: process:researching-references
+    at: 2026-09-25T17:00:00+02:00
 status: stable
 sources:
   - id: mcp-schema
@@ -70,8 +72,8 @@ sources:
     resource: https://pypi.org/project/mcp/2.2.0/
     accessed: 2026-09-25
   - id: pvl-core-src
-    title: fastmcp-pvl-core 9.0.1 source (_logging_middleware.py, _middleware.py)
-    resource: https://pypi.org/project/fastmcp-pvl-core/9.0.1/
+    title: fastmcp-pvl-core 10.0.0 source (_logging_middleware.py, _middleware.py, _tool_boundary.py)
+    resource: https://github.com/pvliesdonk/fastmcp-pvl-core/tree/v10.0.0/src/fastmcp_pvl_core
     accessed: 2026-09-25
   - id: claude-handle-tool-calls
     title: Claude Developer Platform, Handle tool calls
@@ -144,9 +146,11 @@ models answer the same question is in the companion page,
 - Does not cover: resources and prompts beyond one contrast; task-augmented
   calls; elicitation; how any particular client renders an error result.
 - Depended on by: the tool layer of every generated server (`tools.py` and
-  anything it calls), `fastmcp-pvl-core`'s request-logging middleware, and
-  any project decision about which outcomes a tool reports as errors. No
-  template module encodes such a rule yet, so no claim carries a pin.
+  anything it calls), `fastmcp-pvl-core`'s request-logging middleware and
+  `tool_boundary`, and any project decision about which outcomes a tool
+  reports as errors. `tests/test_tool_outcomes.py` fails a tool registered
+  without `tool_boundary`, but no test asserts the level of any record this
+  page describes, so no claim carries a pin.
 
 ## Claims
 
@@ -268,17 +272,20 @@ models answer the same question is in the companion page,
   are always sent to clients, regardless of mask_error_details setting".
   [source: fastmcp-docs-tools] [source: fastmcp-src] (`settings.py`)
 - The four ways a tool can end, as they reach the wire and the logs
-  [observed: in-memory FastMCP 4.0.9 server with pvl-core 9.0.1's
+  [observed: in-memory FastMCP 4.0.9 server with pvl-core 10.0.0's
   `RequestLoggingMiddleware`, called through `fastmcp.Client.call_tool_mcp`,
-  log records captured on the `fastmcp` logger, 2026-09-25]:
+  log records captured on the `fastmcp` and `fastmcp_pvl_core` loggers,
+  2026-09-25; the first five rows were first observed on pvl-core 9.0.1,
+  where the middleware column read ERROR for every raise]:
 
   | The tool | `isError` | `fastmcp.server.server` | pvl-core `fastmcp.middleware.requests` |
   |---|---|---|---|
   | raises `ToolError(msg)` | true, `msg` | ERROR, no traceback | ERROR `tool_call_failed` |
-  | raises `ToolError(msg, log_level=INFO)` | true, `msg` | INFO, no traceback | ERROR `tool_call_failed` |
+  | raises `ToolError(msg, log_level=INFO)` | true, `msg` | INFO, no traceback | INFO `tool_call_failed` |
   | raises `ValueError(msg)` | true, `Error calling tool 'x': msg` (masked: without `msg`) | ERROR with traceback | ERROR `tool_call_failed` |
   | returns `ToolResult(..., is_error=True)` | true | nothing | INFO `tool_call_completed` |
   | returns a normal value such as `{"found": false}` | false | nothing | INFO `tool_call_completed` |
+  | raises `ValueError(msg)` under pvl-core's `tool_boundary` | true, the boundary's fixed "the request itself was fine" message | ERROR, no traceback | ERROR `tool_call_failed`, after the boundary's own ERROR `tool_failed` with the traceback |
 
 - FastMCP's documentation describes non-`ToolError` exceptions as
   "converted into an MCP error response". The code produces an `isError`
@@ -301,17 +308,28 @@ models answer the same question is in the companion page,
   anticipated `ToolError` at INFO, while FastMCP defaults it to ERROR unless
   the tool passes `log_level`. [source: mcp-python-sdk] [source: fastmcp-src]
 
-### What fastmcp-pvl-core's middleware records
+### What fastmcp-pvl-core's middleware and boundary record
 
 - `wire_middleware_stack` installs only `RequestLoggingMiddleware`
   (`include_traceback` follows a DEBUG root logger). It wires no
   error-handling middleware. [source: pvl-core-src] (`_middleware.py`)
-- `RequestLoggingMiddleware.on_message` logs `tool_call_failed` at ERROR
-  for any exception leaving `call_next`, with fields `error_type` and
-  `error`. The level is fixed, so a `ToolError`'s `log_level` is ignored.
-  A normal return logs `tool_call_completed` at INFO, and the middleware
-  never inspects `is_error` on the result. [source: pvl-core-src]
+- `RequestLoggingMiddleware.on_message` logs `tool_call_failed` for any
+  exception leaving `call_next`, with fields `error_type` and `error`: at
+  the exception's `log_level` when it is a `FastMCPError`, at ERROR
+  otherwise. 9.0.1 and earlier logged it at ERROR regardless. A normal
+  return logs `tool_call_completed` at INFO, and the middleware never
+  inspects `is_error` on the result. [source: pvl-core-src]
   (`_logging_middleware.py`) [observed: same probe as the FastMCP table]
+- `tool_boundary` passes a `FastMCPError`, and an `MCPError` with code
+  -32021 (missing client capability), through unchanged. An upstream 429
+  or timeout becomes a `ToolError` at WARNING, logged as `tool_failed`
+  without a traceback. Any other exception is logged once as `tool_failed`
+  at ERROR with the traceback and replaced, `from None`, by a `ToolError`
+  with a fixed message saying the request was fine. `is_tool_boundary`
+  follows `__wrapped__` to find the wrapper. [source: pvl-core-src]
+  (`_tool_boundary.py`) The last case is also [observed: same probe as the
+  FastMCP table]; the 429, timeout and -32021 branches are read from source
+  only.
 
 ### What published servers return
 
@@ -378,7 +396,9 @@ models answer the same question is in the companion page,
   - the Python SDK logs `ToolError` at INFO and crashes at ERROR with a
     traceback;
   - FastMCP separates them by traceback only, since both default to ERROR;
-  - pvl-core's middleware does not separate them at all;
+  - pvl-core's middleware separates them by the `ToolError`'s
+    `log_level` since 10.0.0, and `tool_boundary` turns a crash into one
+    ERROR `tool_failed` record before FastMCP sees it;
   - Sentry separates expected 4xx from faults in its own telemetry.
 
   A tool that returns an `isError` result instead of raising is logged by
