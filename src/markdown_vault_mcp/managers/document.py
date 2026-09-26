@@ -272,9 +272,9 @@ class DocumentManager:
             The resolved absolute path.
 
         Raises:
-            InvalidRequestError: If the path escapes the source directory.
-            ValueError: If the path ends with ``.md`` or has an extension not
-                in the attachment allowlist.
+            InvalidRequestError: If the path escapes the source directory, ends
+                with ``.md``, or has an extension not in the attachment
+                allowlist.
         """
         return self._artifacts.validate_path(path)
 
@@ -850,8 +850,8 @@ class DocumentManager:
                 for a file that does not yet exist.
             DocumentExistsError: If ``write_protect_existing`` is enabled and
                 *path* already exists while no *if_match* is supplied.
-            InvalidRequestError: If the path escapes the source directory.
-            ValueError: If the path has an extension not in the allowlist.
+            InvalidRequestError: If the path escapes the source directory or
+                has an extension not in the allowlist.
         """
         return self._artifacts.write(path, content, if_match)
 
@@ -1092,9 +1092,8 @@ class DocumentManager:
             DocumentNotFoundError: If the file does not exist.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current file hash.
-            InvalidRequestError: If the path escapes the source directory.
-            ValueError: If a non-.md path has an extension not in the attachment
-                allowlist.
+            InvalidRequestError: If the path escapes the source directory, or
+                a non-.md path has an extension not in the attachment allowlist.
         """
         self._check_writable()
         with self._file_write_lock:
@@ -1158,8 +1157,8 @@ class DocumentManager:
             DocumentExistsError: If *new_path* already exists.
             ConcurrentModificationError: If *if_match* is provided and does
                 not match the current hash of *old_path*.
-            InvalidRequestError: If either path escapes the source directory.
-            ValueError: If a non-.md path has an extension not in the attachment
+            InvalidRequestError: If either path escapes the source directory,
+                or a non-.md path has an extension not in the attachment
                 allowlist.
         """
         self._check_writable()
