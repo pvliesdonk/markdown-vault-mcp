@@ -53,7 +53,7 @@ def config_contract_env() -> dict[str, str]:
 
     Empty: every field of ``ProjectConfig`` carries a default, so ``from_env``
     constructs from an empty environment; an absent vault directory is a
-    startup condition (``source_dir_missing``), not a construction error.
+    startup condition (``source_dir_problem``), not a construction error.
     """
     return {}
 

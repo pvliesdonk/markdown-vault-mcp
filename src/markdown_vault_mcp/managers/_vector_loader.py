@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.utils.fs import path_exists
+
 if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
@@ -111,7 +113,9 @@ def load_or_self_heal(
     # saved. A string-append would probe embeddings.npy.npy, miss the real
     # store, cold-build an empty index, and later overwrite the store (#819).
     npy_path = embeddings_path.with_suffix(".npy")
-    if npy_path.exists():
+    # A refused stat raises: read as "no store", the cold build below would
+    # later overwrite the real one (#1625).
+    if path_exists(npy_path):
         try:
             set_vectors(
                 VectorIndex.load(

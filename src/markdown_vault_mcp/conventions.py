@@ -29,7 +29,7 @@ from markdown_vault_mcp.utils import (
     reject_nul,
     resolve_inside,
 )
-from markdown_vault_mcp.utils.fs import iter_markdown_files
+from markdown_vault_mcp.utils.fs import is_directory, iter_markdown_files
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
@@ -147,7 +147,7 @@ class ConventionsResolver:
             Empty when disabled or the vault directory does not exist yet
             (e.g. before a managed-git clone completes).
         """
-        if self._filename is None or not self._source_dir.is_dir():
+        if self._filename is None or not is_directory(self._source_dir):
             return []
         folders: set[str] = set()
         for abs_path in iter_markdown_files(self._source_dir, self._exclude_patterns):

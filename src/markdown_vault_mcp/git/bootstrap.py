@@ -24,6 +24,7 @@ from markdown_vault_mcp.git._run import (
     cleanup_git_env,
     git_env,
 )
+from markdown_vault_mcp.utils.fs import is_directory, path_exists
 
 
 class RepoBootstrap:
@@ -136,8 +137,10 @@ class RepoBootstrap:
             )
 
         path = Path(repo_path)
-        if path.exists():
-            if not path.is_dir():
+        # A refused stat raises instead of reading as "absent" and cloning over
+        # a directory the server cannot see into (#1625).
+        if path_exists(path):
+            if not is_directory(path):
                 raise ConfigurationError(
                     f"Managed mode requires SOURCE_DIR to be a directory: {path}"
                 )

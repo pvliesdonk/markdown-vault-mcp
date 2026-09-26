@@ -24,6 +24,7 @@ from markdown_vault_mcp.git.types import (
     PullResult,
 )
 from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.utils.fs import is_directory, path_exists
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
@@ -261,7 +262,11 @@ def rebase_in_progress(
     git_dir = Path(git_dir_proc.stdout.strip())
     if not git_dir.is_absolute():
         git_dir = git_root / git_dir
-    return (git_dir / "rebase-merge").is_dir() or (git_dir / "rebase-apply").is_dir()
+    # A refused stat raises rather than reading as "no rebase": starting a new
+    # one over an unfinished rebase would lose it (#1625).
+    return is_directory(git_dir / "rebase-merge") or is_directory(
+        git_dir / "rebase-apply"
+    )
 
 
 def abort_in_progress_rebase(
@@ -416,7 +421,13 @@ def write_conflict_files(
 
         # --- Update original file with conflict_with frontmatter ---
         original_abs = git_root / rel_path
-        if original_abs.exists():
+        try:
+            original_present = path_exists(original_abs)
+        except OSError:
+            # Treated as present so the read below fails into its handler,
+            # which skips just this original (#1625).
+            original_present = True
+        if original_present:
             try:
                 # Read once and reuse this content for the parse-failure
                 # fallback below (the prior version re-read the file there). The

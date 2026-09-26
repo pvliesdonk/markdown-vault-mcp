@@ -28,13 +28,14 @@ from __future__ import annotations
 import dataclasses
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from fastmcp_pvl_core import parse_bool as _parse_bool
 
 from markdown_vault_mcp._identity import configure_identity_claims
 from markdown_vault_mcp.config_sections.vault_settings import VaultSettings
 from markdown_vault_mcp.exceptions import ConfigurationError
+from markdown_vault_mcp.utils.fs import is_directory
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.config import ProjectConfig
@@ -111,7 +112,7 @@ def resolve_source_dir(raw: str | None) -> Path:
     Takes the already-read env value (so ``config.from_env`` keeps a literal
     ``env(..., "SOURCE_DIR")`` call the wizard drift gate can see). Unset or
     blank means :data:`DEFAULT_SOURCE_DIR`; whether that directory exists is
-    reported at startup (:func:`source_dir_missing`), not here, so a
+    reported at startup (:func:`source_dir_problem`), not here, so a
     ``ProjectConfig`` constructs from an empty environment the way the
     template's contract expects.
     """
@@ -119,15 +120,39 @@ def resolve_source_dir(raw: str | None) -> Path:
     return Path(cleaned) if cleaned else DEFAULT_SOURCE_DIR
 
 
-def source_dir_missing(config: ProjectConfig) -> bool:
-    """Whether the configured vault directory does not exist yet.
+SourceDirProblem = tuple[Literal["missing", "unreadable"], str]
+
+
+def source_dir_problem(config: ProjectConfig) -> SourceDirProblem | None:
+    """Why the configured vault directory cannot be served, or ``None``.
 
     Consulted by :meth:`Service.start`, which then builds no vault and lets
-    every accessor fail with the variable to set: the index writer and the
-    file watcher cannot run over an absent directory. Managed git mode is
-    exempt because its bootstrap clones into the directory itself.
+    every accessor fail with the message, and by the batch CLI commands: the
+    index writer and the file watcher cannot run over an absent directory.
+    Managed git mode is exempt because its bootstrap clones into the directory
+    itself. A directory whose stat is refused is reported as unreadable, not
+    as missing (#1625).
+
+    Returns:
+        ``(reason, message)`` with *reason* ``"missing"`` or ``"unreadable"``,
+        or ``None`` when the directory is there.
     """
-    return config.git.repo_url is None and not config.source_dir.is_dir()
+    if config.git.repo_url is not None:
+        return None
+    try:
+        if is_directory(config.source_dir):
+            return None
+    except OSError as exc:
+        return (
+            "unreadable",
+            f"vault directory {config.source_dir} cannot be accessed "
+            f"({exc.strerror or exc}). Check the directory's permissions.",
+        )
+    return (
+        "missing",
+        f"vault directory {config.source_dir} does not exist. Set "
+        f"{_SOURCE_DIR_VAR} to the path of your markdown vault.",
+    )
 
 
 def to_bool(raw: str | None, *, default: bool) -> bool:
