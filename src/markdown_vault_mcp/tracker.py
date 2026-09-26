@@ -18,6 +18,7 @@ from markdown_vault_mcp.utils.fs import (
     GLOB_SYMLINK_KWARGS,
     could_be_regular_file,
     iter_markdown_files,
+    path_exists,
 )
 
 if TYPE_CHECKING:
@@ -383,10 +384,13 @@ class ChangeTracker:
         """Delete the state file so the next scan treats all files as added.
 
         If the state file does not exist, this is a no-op.
+
+        Raises:
+            OSError: If the state file cannot be statted or removed (#1625).
         """
         self._skipped_carry = {}
         self._skip_reasons_carry = {}
-        if self._state_path.exists():
+        if path_exists(self._state_path):
             self._state_path.unlink()
             logger.debug("reset_deleted_state_file path=%s", self._state_path)
         else:
@@ -428,7 +432,18 @@ class ChangeTracker:
             empty when the state file does not exist or is malformed; a
             version-2 file lacking ``skip_reasons`` loads it as ``{}``.
         """
-        if not self._state_path.exists():
+        try:
+            present = path_exists(self._state_path)
+        except OSError as exc:
+            # Same outcome as an unreadable file below, and said at WARNING;
+            # on 3.14 exists() would have called it missing at DEBUG (#1625).
+            logger.warning(
+                "state_file_read_failed path=%s error=%s outcome=all_added",
+                self._state_path,
+                exc,
+            )
+            return {}, {}, {}
+        if not present:
             logger.debug(
                 "state_file_missing path=%s outcome=all_added", self._state_path
             )

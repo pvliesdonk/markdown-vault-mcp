@@ -24,6 +24,7 @@ from markdown_vault_mcp.git._run import (
     cleanup_git_env,
     git_env,
 )
+from markdown_vault_mcp.utils.fs import is_directory, path_exists
 
 
 class RepoBootstrap:
@@ -125,6 +126,8 @@ class RepoBootstrap:
                 is not a directory, the clone fails, the result is not a git
                 repository, ``origin`` is missing, or the remote URL does
                 not match ``repo_url``.
+            OSError: If *repo_path* cannot be statted, rather than cloning
+                over a directory the server cannot see into (#1625).
         """
         if self._repo_url is None:
             raise ConfigurationError("Managed git mode requires a repo_url.")
@@ -136,8 +139,10 @@ class RepoBootstrap:
             )
 
         path = Path(repo_path)
-        if path.exists():
-            if not path.is_dir():
+        # A refused stat raises instead of reading as "absent" and cloning over
+        # a directory the server cannot see into (#1625).
+        if path_exists(path):
+            if not is_directory(path):
                 raise ConfigurationError(
                     f"Managed mode requires SOURCE_DIR to be a directory: {path}"
                 )

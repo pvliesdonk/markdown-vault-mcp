@@ -24,6 +24,7 @@ from markdown_vault_mcp.git.types import (
     PullResult,
 )
 from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.utils.fs import is_directory, path_exists
 from markdown_vault_mcp.utils.text import read_text_utf8
 
 if TYPE_CHECKING:
@@ -261,7 +262,21 @@ def rebase_in_progress(
     git_dir = Path(git_dir_proc.stdout.strip())
     if not git_dir.is_absolute():
         git_dir = git_root / git_dir
-    return (git_dir / "rebase-merge").is_dir() or (git_dir / "rebase-apply").is_dir()
+    try:
+        return is_directory(git_dir / "rebase-merge") or is_directory(
+            git_dir / "rebase-apply"
+        )
+    except OSError as exc:
+        # Cannot tell: assume a rebase, as for a failed rev-parse above, so
+        # the caller's abort runs rather than wedging every later pull
+        # (#661). Never "no rebase" on a refused stat (#1625).
+        logger.error(
+            "git_conflict_rebase_dir_stat_failed action=assume_rebase_in_progress "
+            "path=%s error=%s",
+            git_dir,
+            exc,
+        )
+        return True
 
 
 def abort_in_progress_rebase(
@@ -416,12 +431,18 @@ def write_conflict_files(
 
         # --- Update original file with conflict_with frontmatter ---
         original_abs = git_root / rel_path
-        if original_abs.exists():
+        try:
+            original_present = path_exists(original_abs)
+        except OSError:
+            # Treated as present so the read below fails into its handler,
+            # which skips just this original (#1625).
+            original_present = True
+        if original_present:
             try:
                 # Read once and reuse this content for the parse-failure
                 # fallback below (the prior version re-read the file there). The
                 # read_text and write_text both sit inside this try, so if the
-                # original was removed/became inaccessible after the exists()
+                # original was removed/became inaccessible after the existence
                 # check (TOCTOU) or is not valid UTF-8, the error is caught below
                 # and skips just this original's update instead of crashing the
                 # whole pull.
@@ -441,7 +462,7 @@ def write_conflict_files(
                 original_abs.write_text(frontmatter.dumps(orig_post), encoding="utf-8")
                 updated_originals.append(rel_path)
             except (OSError, UnicodeDecodeError):
-                # OSError: removed/inaccessible after exists() (TOCTOU), permission,
+                # OSError: removed/inaccessible after the existence check (TOCTOU), permission,
                 # or a write-back failure. UnicodeDecodeError (a ValueError, not an
                 # OSError): the original is not valid UTF-8, so we cannot read it as
                 # text to merge frontmatter. Either way, skip just this original's

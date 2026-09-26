@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.utils.fs import path_exists
+
 if TYPE_CHECKING:
     import logging
     from collections.abc import Callable
@@ -74,6 +76,8 @@ def load_or_self_heal(
         ValueError: If a self-heal rebuild completes but leaves the slot empty.
         Exception: Any exception raised by the ``rebuild`` callback is logged
             at ERROR and re-raised unchanged.
+        OSError: If the sidecar cannot be statted; read as "no store", it
+            would be cold-built and later overwrite the real one (#1625).
     """
     cached = get_vectors()
     if cached is not None:
@@ -111,7 +115,9 @@ def load_or_self_heal(
     # saved. A string-append would probe embeddings.npy.npy, miss the real
     # store, cold-build an empty index, and later overwrite the store (#819).
     npy_path = embeddings_path.with_suffix(".npy")
-    if npy_path.exists():
+    # A refused stat raises: read as "no store", the cold build below would
+    # later overwrite the real one (#1625).
+    if path_exists(npy_path):
         try:
             set_vectors(
                 VectorIndex.load(

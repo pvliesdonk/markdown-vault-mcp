@@ -23,6 +23,7 @@ from fastmcp import FastMCP
 
 from ._icons import _TOOL_ICONS
 from .scanner import parse_frontmatter
+from .utils.fs import is_directory
 from .utils.text import read_text_utf8
 
 _BUILTIN_PROMPTS_DIR = importlib.resources.files("markdown_vault_mcp").joinpath(
@@ -161,7 +162,18 @@ def _load_user_prompt_defs(prompts_folder: str | None) -> dict[str, dict[str, An
         return {}
 
     folder = Path(prompts_folder)
-    if not folder.exists() or not folder.is_dir():
+    try:
+        is_folder = is_directory(folder)
+    except OSError as exc:
+        # Loading prompts is best-effort at startup, but the log says why
+        # (#1625): on 3.14 is_dir() would have called this folder missing.
+        logger.warning(
+            "prompts_folder_invalid path=%r reason=unreadable error=%s",
+            str(folder),
+            exc,
+        )
+        return {}
+    if not is_folder:
         logger.warning(
             "prompts_folder_invalid path=%r reason=missing_or_not_directory",
             str(folder),

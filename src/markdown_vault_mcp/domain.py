@@ -20,7 +20,7 @@ from fastmcp.server.context import Context
 
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections._assembly import (
-    source_dir_missing,
+    source_dir_problem,
     to_vault_instances,
     to_vault_settings,
 )
@@ -183,15 +183,20 @@ class Service:
         # starts, so its tool listing and instructions are reachable, and
         # every tool fails with the variable to set until the operator fixes
         # the deployment and restarts.
-        if source_dir_missing(config):
-            self._startup_error = (
-                f"vault directory {config.source_dir} does not exist. "
-                "Set MARKDOWN_VAULT_MCP_SOURCE_DIR to the path of your markdown vault."
-            )
-            logger.error(
-                "vault_directory_missing path=%s var=MARKDOWN_VAULT_MCP_SOURCE_DIR",
-                config.source_dir,
-            )
+        problem = source_dir_problem(config)
+        if problem is not None:
+            reason, self._startup_error = problem
+            if reason == "missing":
+                logger.error(
+                    "vault_directory_missing path=%s var=MARKDOWN_VAULT_MCP_SOURCE_DIR",
+                    config.source_dir,
+                )
+            else:
+                logger.error(
+                    "vault_directory_unreadable path=%s problem=%s",
+                    config.source_dir,
+                    self._startup_error,
+                )
             set_vault_singleton(None, unavailable=self._startup_error)
             return
         logger.info("vault_initialising source_dir=%s", config.source_dir)

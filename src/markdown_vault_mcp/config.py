@@ -111,10 +111,11 @@ class ProjectConfig:
         default=DEFAULT_SOURCE_DIR,
         metadata={
             "help": (
-                "Path to the markdown vault directory. When it does not exist "
-                "the server starts but every tool fails with a message naming "
-                "this variable until it does (managed git mode clones into it). "
-                "Symbolic links inside the vault are followed on Python 3.13+."
+                "Path to the markdown vault directory. When it does not exist, "
+                "or the server cannot access it, the server starts but every "
+                "tool fails with a message saying which until it is fixed "
+                "(managed git mode clones into it). Symbolic links inside the "
+                "vault are followed on Python 3.13+."
             ),
             "tags": ("vault", "readme"),
         },

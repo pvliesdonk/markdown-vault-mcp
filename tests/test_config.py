@@ -21,7 +21,7 @@ from markdown_vault_mcp.config_sections import (
 )
 from markdown_vault_mcp.config_sections._assembly import (
     DEFAULT_SOURCE_DIR,
-    source_dir_missing,
+    source_dir_problem,
     to_vault_instances,
     to_vault_settings,
 )
@@ -2299,14 +2299,15 @@ def test_boot_reindex_env_override_disables_it(
 
 class TestSourceDirMissing:
     def test_absent_directory_is_reported(self, tmp_path: Path) -> None:
-        assert source_dir_missing(ProjectConfig(source_dir=tmp_path / "absent"))
+        problem = source_dir_problem(ProjectConfig(source_dir=tmp_path / "absent"))
+        assert problem is not None and problem[0] == "missing"
 
     def test_existing_directory_is_not(self, tmp_path: Path) -> None:
-        assert not source_dir_missing(ProjectConfig(source_dir=tmp_path))
+        assert source_dir_problem(ProjectConfig(source_dir=tmp_path)) is None
 
     def test_managed_git_mode_is_exempt(self, tmp_path: Path) -> None:
         config = ProjectConfig(
             source_dir=tmp_path / "absent",
             git_repo_url="https://example.invalid/vault.git",
         )
-        assert not source_dir_missing(config)
+        assert source_dir_problem(config) is None

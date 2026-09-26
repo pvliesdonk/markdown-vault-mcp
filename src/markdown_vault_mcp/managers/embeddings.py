@@ -27,7 +27,7 @@ from markdown_vault_mcp.fts_index import _derive_folder
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.scanner import parse_note
 from markdown_vault_mcp.utils import is_note
-from markdown_vault_mcp.utils.fs import could_be_regular_file
+from markdown_vault_mcp.utils.fs import could_be_regular_file, is_directory, path_exists
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -293,7 +293,7 @@ class EmbeddingsManager:
         Returns:
             The subset safe to reclaim, in input order.
         """
-        if stale_paths and not self._source_dir.is_dir():
+        if stale_paths and not _source_root_available(self._source_dir):
             logger.warning(
                 "build_embeddings_converge_source_root_unavailable kept=%d "
                 "outcome=no_vectors_removed",
@@ -988,6 +988,9 @@ class EmbeddingsManager:
         Returns:
             Dict with keys ``provider``, ``chunk_count``, ``path``,
             ``available``.
+
+        Raises:
+            OSError: If a sidecar file cannot be statted (#1625).
         """
         if self._embedding_provider is None or self._embeddings_path is None:
             return {
@@ -1007,9 +1010,11 @@ class EmbeddingsManager:
             # extension resolves to the real files instead of {path}.npy.npy
             # and misreporting chunk_count=0 (#819).
             npy_path = self._embeddings_path.with_suffix(".npy")
-            if npy_path.exists():
+            # A refused stat raises: a status of "no vectors" for a store the
+            # server cannot read would be wrong (#1625).
+            if path_exists(npy_path):
                 json_path = self._embeddings_path.with_suffix(".json")
-                if json_path.exists():
+                if path_exists(json_path):
                     try:
                         with json_path.open(encoding="utf-8") as fh:
                             loaded_meta = json.load(fh)
@@ -1163,3 +1168,16 @@ class EmbeddingsManager:
         except (UnicodeDecodeError, OSError, yaml.YAMLError, ValueError) as exc:
             logger.warning("deferred_embedding_failed path=%s err=%s", path, exc)
             return None
+
+
+def _source_root_available(source_dir: Path) -> bool:
+    """Whether the vault root can be relied on to judge a source "gone".
+
+    A root the server cannot stat is unavailable, like an unmounted one: every
+    per-path check under it would read as "gone", so nothing is reclaimed
+    (#1130, #1625).
+    """
+    try:
+        return is_directory(source_dir)
+    except OSError:
+        return False

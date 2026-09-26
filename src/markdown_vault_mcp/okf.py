@@ -37,6 +37,7 @@ import yaml
 
 from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.scanner import parse_frontmatter
+from markdown_vault_mcp.utils.fs import is_directory
 from markdown_vault_mcp.utils.links import build_plain_destination, escape_link_text
 from markdown_vault_mcp.utils.text import read_text_utf8
 
@@ -672,6 +673,9 @@ def audit_bundle(
     Returns:
         The audit report. Empty or missing vault directories yield an
         all-zero report rather than an error.
+
+    Raises:
+        OSError: If the vault directory cannot be statted (#1625).
     """
     from markdown_vault_mcp.utils import is_path_excluded
     from markdown_vault_mcp.utils.fs import iter_markdown_files
@@ -688,7 +692,7 @@ def audit_bundle(
             p.relative_to(source_dir).as_posix()
             for p in iter_markdown_files(source_dir, excludes)
         )
-        if source_dir.is_dir()
+        if is_directory(source_dir)
         else []
     )
     for rel in paths:

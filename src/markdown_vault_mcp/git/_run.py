@@ -106,6 +106,8 @@ def _find_git_root(path: Path) -> Path | None:
             [
                 "git",
                 "-C",
+                # Best-effort: an unstatable path falls back to its parent,
+                # and git then reports its own error there (#1625).
                 str(path if path.is_dir() else path.parent),
                 "rev-parse",
                 "--show-toplevel",

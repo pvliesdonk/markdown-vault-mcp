@@ -1784,7 +1784,22 @@ to the read and keeps its indexed row when the read fails (#831), and, for
 the default `**/*.md` discovery, a directory the walk cannot enter keeps what
 was indexed under it rather than reporting it deleted. A custom glob pattern
 still skips such a directory silently, and a forced full rebuild starts from
-an empty index by design.
+an empty index by design. The server's own files follow the same rule. An
+unstatable vector sidecar raises instead of reading as "no store", since the
+cold build that follows would later overwrite the real one (#819);
+`embeddings_status`, the OKF audit, `list_folders` for conventions, git's
+rebase-in-progress check and managed-git bootstrap raise too. Where a safe
+outcome already exists, a refused stat takes it on purpose: tracker state that
+cannot be read logs `state_file_read_failed` and re-adds everything, the
+embeddings convergence keeps every vector when the vault root cannot be
+statted, a conflict original that cannot be checked falls into the handler
+that skips it, and an unusable user-prompts folder is logged with
+`reason=unreadable`. The configured vault directory reports `missing` and
+`unreadable` apart (`source_dir_problem`, logged as `vault_directory_missing`
+or `vault_directory_unreadable`). Two best-effort probes keep pathlib's
+predicate with the reason at the call (the file watcher's root discovery and
+`_find_git_root`), and `tests/test_no_pathlib_existence.py` fails any other
+call (#1625).
 
 ### Lifecycle: Vault.close()
 
@@ -5701,4 +5716,4 @@ Later decision (2026-09-24, #1581):
 
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
-| 29 | `SOURCE_DIR` unset or absent | `from_env` resolves an unset or blank variable to the documented default `/data/vault`; `Service.start` builds no vault when the directory does not exist (managed git mode excepted, its bootstrap clones into it), logs `vault_directory_missing`, and every accessor fails with a message naming the variable. The CLI and the server share the same resolution. | The invariant belongs to the vault, not to configuration: a vault needs its directory to *operate*, and whether the directory's name comes from the environment or from the default (`/data/vault`, the container mount) is immaterial — the value is real either way, so `Required: No` with that default is the truth and `require_source_dir`'s refusal of an unset variable (#34) was a proxy for the wrong condition. Starting and operating are different: constructing the server and running its lifespan must not depend on the filesystem, because a unit test of the tool surface builds and starts a server with no vault at all; operating the vault does, so the check lives where the vault is used and names the variable. A wrong path used to crash the lifespan with a raw `FileNotFoundError` from the file watcher; the named failure at use is stricter, not laxer. Nothing here concerns the template. |
+| 29 | `SOURCE_DIR` unset or absent | `from_env` resolves an unset or blank variable to the documented default `/data/vault`; `Service.start` builds no vault when the directory does not exist (managed git mode excepted, its bootstrap clones into it), logs `vault_directory_missing`, and every accessor fails with a message naming the variable. A directory whose stat is refused is reported apart, as `vault_directory_unreadable` with a "cannot be accessed" message (`source_dir_problem`, #1625). The CLI and the server share the same resolution. | The invariant belongs to the vault, not to configuration: a vault needs its directory to *operate*, and whether the directory's name comes from the environment or from the default (`/data/vault`, the container mount) is immaterial — the value is real either way, so `Required: No` with that default is the truth and `require_source_dir`'s refusal of an unset variable (#34) was a proxy for the wrong condition. Starting and operating are different: constructing the server and running its lifespan must not depend on the filesystem, because a unit test of the tool surface builds and starts a server with no vault at all; operating the vault does, so the check lives where the vault is used and names the variable. A wrong path used to crash the lifespan with a raw `FileNotFoundError` from the file watcher; the named failure at use is stricter, not laxer. Nothing here concerns the template. |

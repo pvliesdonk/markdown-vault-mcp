@@ -307,6 +307,8 @@ def _derive_watch_roots(
         # with followlinks only on 3.13+. So watched roots and indexed files
         # agree on 3.13+; on 3.11/3.12 a symlinked top-level dir may be watched
         # though its files are not indexed (harmless: an extra watch).
+        # Best-effort by design: a child the server cannot stat is not
+        # watched, and the indexing walk logs it as unreadable (#835, #1625).
         if not child.is_dir():
             continue
         if _should_prune_dir(child.name, anchored, anydepth):
