@@ -582,3 +582,40 @@ class TestRefreshIndexesGuards:
         migrate.raise_on_index = True
         maintainer.refresh_indexes(["a", "b"], trigger_paths=["a/x.md"])
         assert migrate.index_calls == []  # both attempted, both raised, none raised out
+
+
+class TestIndexRefreshEdgeCases:
+    def test_renaming_a_note_onto_a_reserved_name_keeps_its_body(
+        self, enforced_vault: Vault
+    ) -> None:
+        """No regeneration may overwrite the file the rename just placed."""
+        enforced_vault.writer.write("guides/a.md", "# A\n\nbody A precious\n")
+        enforced_vault.writer.rename("guides/a.md", "newf/index.md")
+        wait_for_writer_drain(enforced_vault)
+        assert "body A precious" in (_content(enforced_vault, "newf/index.md") or "")
+
+    def test_renaming_a_reserved_file_triggers_nothing(
+        self, enforced_vault: Vault
+    ) -> None:
+        """A reserved-file change never triggers its own regeneration (#1414)."""
+        enforced_vault.writer.write("guides/a.md", "# A\n\nx\n")
+        enforced_vault.writer.rename("guides/index.md", "guides/was-index.md")
+        wait_for_writer_drain(enforced_vault)
+        assert _content(enforced_vault, "guides/index.md") is None
+
+    def test_rename_into_a_nested_new_folder_leaves_no_broken_pointer(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.write("a.md", "# A\n\nx\n")
+        enforced_vault.writer.rename("a.md", "deep/er/a.md")
+        wait_for_writer_drain(enforced_vault)
+        assert "/deep/er/a.md" in (_content(enforced_vault, "deep/er/index.md") or "")
+        assert _index_links_broken(enforced_vault) == []
+
+    def test_move_folder_into_a_nested_new_parent_leaves_no_broken_pointer(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.write("guides/a.md", "# A\n\nx\n")
+        enforced_vault.writer.move_folder("guides", "top/guides")
+        wait_for_writer_drain(enforced_vault)
+        assert _index_links_broken(enforced_vault) == []

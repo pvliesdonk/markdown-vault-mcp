@@ -507,10 +507,13 @@ Tool tags following switches: #1412.
   deleted note's folder; a renamed note's old folder and its new one (created
   if absent, as a write would); after a folder move, every folder of the
   moved subtree plus the old and the new parent. Only folders that already
-  carry an `index.md` are refreshed, apart from the rename destination, and
-  no `log.md` entry is written for these operations, which is left to the
-  log design. A change whose paths are all reserved files triggers nothing
-  (#1414).
+  carry an `index.md` are refreshed, apart from the destination's
+  `missing_index_chain` (the destination and each ancestor up to the first
+  with an `index.md`), which is created so no refreshed listing points at a
+  missing file. No `log.md` entry is written for these operations, which is
+  left to the log design. A rename to or from a reserved name triggers
+  nothing, both because a reserved-file change never triggers itself (#1414)
+  and because regenerating would overwrite the note just renamed onto it.
 - **Reconciliation of notes the server did not write** (`OKF_RECONCILE`,
   proposed): designed separately with the provenance evidence it depends
   on (#1420); named here so the switch has an owner in this section.

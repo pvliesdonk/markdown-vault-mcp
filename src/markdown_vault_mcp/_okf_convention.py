@@ -183,6 +183,26 @@ class ConventionMaintainer:
                 )
         return found
 
+    def missing_index_chain(self, folder: str) -> list[str]:
+        """Return the folders from *folder* up that lack an ``index.md``.
+
+        A listing points at each immediate subfolder's ``index.md``, so a note
+        or folder arriving several levels below the nearest indexed ancestor
+        needs every level in between indexed too, or the refreshed listings
+        point at files that do not exist (#1609). *folder* is included when it
+        lacks one; the walk continues up to the first *ancestor* that has one,
+        which is not included, even when *folder* itself already has one (a
+        moved folder carries its own). The vault root ends the walk.
+        """
+        chain = [] if self._has_index(folder) else [folder]
+        current = folder
+        while current != "":
+            current = self._folder_of(current)
+            if self._has_index(current):
+                break
+            chain.append(current)
+        return chain
+
     def _maintains_after(self, trigger_paths: Iterable[str]) -> bool:
         """Whether a structural change should refresh listings at all."""
         intent = current_okf_intent()

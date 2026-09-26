@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
 from markdown_vault_mcp.utils import is_note
 
 if TYPE_CHECKING:
@@ -33,6 +34,11 @@ if TYPE_CHECKING:
         RenameResult,
         WriteResult,
     )
+
+
+def _is_reserved(path: str) -> bool:
+    """Whether *path* names a reserved OKF file (``index.md`` / ``log.md``)."""
+    return PurePosixPath(path).name in OKF_RESERVED_FILENAMES
 
 
 def _folder_of(path: str) -> str:
@@ -350,14 +356,25 @@ class WriterFacet:
             if_match=if_match,
             update_links=update_links,
         )
-        if self._convention_maintainer is not None and is_note(new_path):
+        if (
+            self._convention_maintainer is not None
+            and is_note(new_path)
+            and not _is_reserved(old_path)
+            and not _is_reserved(new_path)
+        ):
             # The old folder still lists the note; the new one does not yet
             # (#1609). A note arriving in a folder gets its listing, as a
-            # write there does.
-            self._convention_maintainer.refresh_indexes(
-                [_folder_of(old_path)],
+            # write there does, and so does every folder between it and the
+            # nearest indexed ancestor, which would otherwise point at a
+            # missing index.md. A rename to or from a reserved name triggers
+            # nothing: regenerating would overwrite the file just placed, and
+            # a reserved-file change never triggers itself (#1414).
+            maintainer = self._convention_maintainer
+            new_folder = _folder_of(new_path)
+            maintainer.refresh_indexes(
+                [_folder_of(old_path), new_folder],
                 trigger_paths=[old_path, new_path],
-                create=[_folder_of(new_path)],
+                create=maintainer.missing_index_chain(new_folder),
             )
         return result
 
@@ -396,13 +413,15 @@ class WriterFacet:
             # The moved index.md files still list the old paths, and the old
             # parent still points at a subfolder that is gone (#1609).
             maintainer = self._convention_maintainer
+            new_root = new_dir.strip("/")
             maintainer.refresh_indexes(
                 [
-                    *maintainer.subtree_folders(new_dir.strip("/")),
+                    *maintainer.subtree_folders(new_root),
                     _folder_of(old_dir.strip("/")),
-                    _folder_of(new_dir.strip("/")),
+                    _folder_of(new_root),
                 ],
                 trigger_paths=[old_dir, new_dir],
+                create=maintainer.missing_index_chain(new_root),
             )
         return result
 
