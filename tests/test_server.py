@@ -2270,6 +2270,19 @@ class TestFetchTool:
         ]
         assert failed and failed[-1].levelno == level
 
+    def test_remote_rate_limit_passes_through_unchained(self) -> None:
+        """A 429 goes to tool_boundary as raised, not chained to itself."""
+        import httpx
+
+        from markdown_vault_mcp._tools.writer import _remote_status_error
+
+        exc = httpx.HTTPStatusError(
+            "HTTP 429 response from https://example.com/x.md",
+            request=httpx.Request("GET", "https://example.com/x.md"),
+            response=httpx.Response(429),
+        )
+        assert _remote_status_error(exc) is None
+
     async def test_fetch_timeout(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:

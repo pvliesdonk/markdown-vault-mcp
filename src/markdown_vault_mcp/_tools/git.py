@@ -11,6 +11,7 @@ from fastmcp.dependencies import Depends
 from fastmcp_pvl_core import tool_boundary
 
 from markdown_vault_mcp._tools._outcomes import library_outcomes
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.git import PullResult, PushResult, Syncer
 from markdown_vault_mcp.vault import Vault
 
@@ -38,16 +39,16 @@ def _resolve_managed_strategy(vault: Vault) -> Syncer:
         The Vault's syncer if it is in managed mode.
 
     Raises:
-        ValueError: If the deployment isn't wired with a managed git
-            strategy (no ``MARKDOWN_VAULT_MCP_GIT_REPO_URL`` env var).
+        InvalidRequestError: If the deployment isn't wired with a managed git
+            strategy (no ``MARKDOWN_VAULT_MCP_GIT_REPO_URL`` env var): an
+            opt-in left off, so a change of request, not a fault (#1608).
     """
     # The MCP layer is a trusted consumer of Vault internals — adding
     # a public accessor for this single tool would be scope creep.
     strategy = vault._git_strategy
     if not isinstance(strategy, Syncer) or not strategy.is_managed:
-        raise ValueError(
-            "git_sync requires a managed git deployment.  Set "
-            "MARKDOWN_VAULT_MCP_GIT_REPO_URL to enable it."
+        raise InvalidRequestError(
+            "This vault is not synced with a remote, so git_sync has nothing to do."
         )
     return strategy
 

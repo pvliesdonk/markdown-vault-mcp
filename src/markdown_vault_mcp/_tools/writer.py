@@ -159,7 +159,7 @@ def _require_modern_review(ctx: Context, path: str) -> InputRequiredResult | Non
     )
 
 
-def _remote_status_error(exc: httpx.HTTPStatusError) -> Exception:
+def _remote_status_error(exc: httpx.HTTPStatusError) -> ToolError | None:
     """Map the remote site's HTTP status for fetch to an outcome (#1608).
 
     The message names the status, never the URL: the caller's URL may carry
@@ -167,10 +167,14 @@ def _remote_status_error(exc: httpx.HTTPStatusError) -> Exception:
     goes back to ``tool_boundary``, which tells the model to retry later at
     WARNING; a 5xx heals on the remote side, so it is a WARNING retry; any
     other status means the URL is wrong for this request.
+
+    Returns:
+        The ``ToolError`` to raise, or ``None`` for a 429, which the caller
+        re-raises unchanged.
     """
     status = exc.response.status_code
     if status == 429:
-        return exc
+        return None
     if status >= 500:
         return ToolError(
             f"The site answered HTTP {status}, so nothing was saved. Retry later.",
@@ -899,7 +903,10 @@ def register(mcp: FastMCP) -> None:
                 ) from exc
             raise InvalidRequestError(str(exc)) from exc
         except httpx.HTTPStatusError as exc:
-            raise _remote_status_error(exc) from exc
+            mapped = _remote_status_error(exc)
+            if mapped is None:
+                raise
+            raise mapped from exc
         except httpx.TooManyRedirects as exc:
             raise ToolError(
                 "The URL redirects too many times, so nothing was saved. Check "
