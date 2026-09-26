@@ -311,8 +311,11 @@ async def test_validate_bundle_rejected_when_okf_off(
         okf_mode="off",
     )
     sink = VaultTransferSink(config, vault_provider=lambda: vault)
-    with _rejected(r"disabled"):
+    with pytest.raises(ToolError, match="not enabled") as exc:
         await sink.validate("okf-bundle", "download")
+    assert exc.value.log_level == logging.INFO
+    # The model cannot change OKF_MODE; the setting is logged instead (#1639).
+    assert "OKF_MODE" not in str(exc.value)
 
 
 async def test_read_bundle_serves_zip(sink: VaultTransferSink) -> None:
@@ -411,3 +414,21 @@ async def test_validate_bundle_traversal_says_to_pass_a_folder(
 ) -> None:
     with _rejected(r"list_folders"):
         await sink.validate("okf-bundle:../secret", "download")
+
+
+async def test_missing_attachment_names_the_attachment_listing(
+    sink: VaultTransferSink,
+) -> None:
+    with pytest.raises(ToolError, match="include_attachments"):
+        await sink.validate("ghost.png", "download")
+
+
+async def test_extension_refusal_logs_the_setting(
+    sink: VaultTransferSink, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.INFO), pytest.raises(ToolError):
+        await sink.validate("a.xyz", "upload")
+    assert any(
+        "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS" in r.getMessage()
+        for r in caplog.records
+    )

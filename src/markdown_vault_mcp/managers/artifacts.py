@@ -150,11 +150,9 @@ class ArtifactStore:
             )
             raise DocumentExistsError(
                 f"{path} exists; overwriting requires proof of read: call "
-                "'read', then retry with if_match=<etag> — or use 'edit' for "
-                "targeted changes, or 'append' to add to the end. Do not "
-                "delete and recreate: that destroys the note first and "
-                "proves nothing. (This vault protects existing files from "
-                "blind overwrites.)"
+                "'read', then retry with if_match=<etag>. Do not delete and "
+                "recreate: that destroys the file first and proves nothing. "
+                "(This vault protects existing files from blind overwrites.)"
             )
 
     def validate_path(self, path: str) -> Path:
@@ -369,7 +367,8 @@ class ArtifactStore:
             if new_abs.is_file():
                 raise DocumentExistsError(
                     f"Target already exists: {new_path}. Pass a new_path that "
-                    "is free; list_documents shows what exists."
+                    "is free; list_documents(include_attachments=True) shows "
+                    "what exists."
                 )
             check_if_match(old_abs, old_path, if_match)
             new_abs.parent.mkdir(parents=True, exist_ok=True)

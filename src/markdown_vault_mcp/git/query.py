@@ -1940,8 +1940,8 @@ def _require_inside_vault(historical: str, prefix: str, ref: str) -> None:
     if prefix and not historical.startswith(prefix):
         raise InvalidRequestError(
             f"At revision {ref!r} this note lived at {historical!r}, outside the "
-            "vault. Its content there is not the vault's to return; use git "
-            "directly if you need history from outside the vault root."
+            "vault, so its content there is not the vault's to return. Read a "
+            "revision from after it moved into the vault; get_history lists them."
         )
 
 

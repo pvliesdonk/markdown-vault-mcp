@@ -116,6 +116,12 @@ def _exists(path: Path, *, directory: bool = False) -> bool:
 
 def _extension_rejected(ext: str) -> ToolError:
     """Reject an attachment extension the vault does not allow."""
+    # The operator's setting goes in the log, not the model's text (#1639).
+    logger.info(
+        "transfer_refused_extension extension=%s setting=%s",
+        ext,
+        "MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS",
+    )
     return _reject(
         f"Attachment extension not allowed: .{ext}. Use a note (.md) or an "
         "extension listed in stats' attachment_extensions."
@@ -189,11 +195,13 @@ def _validate_source(
     is_artifact = not is_note(path)
     resolved = _inside(path, source_dir, note=not is_artifact)
     if not _exists(resolved):
-        kind = "Attachment" if is_artifact else "Note"
-        raise _reject(
-            f"{kind} not found: {path}. Look the path up with search or "
-            "list_documents first."
+        listing = (
+            "list_documents(include_attachments=True)"
+            if is_artifact
+            else "search or list_documents"
         )
+        kind = "Attachment" if is_artifact else "Note"
+        raise _reject(f"{kind} not found: {path}. Look the path up with {listing}.")
     if is_artifact:
         exts = effective_attachment_extensions(attachment_extensions)
         ext = artifact_suffix(resolved)
@@ -288,9 +296,13 @@ class VaultTransferSink:
                 scope escapes the vault, or names a folder that does not exist.
         """
         if self._config.content.okf_mode == "off":
+            logger.info(
+                "transfer_refused_bundle reason=okf_off setting=%s",
+                "MARKDOWN_VAULT_MCP_OKF_MODE",
+            )
             raise _reject(
-                "OKF bundle export is disabled on this server (OKF_MODE=off). "
-                "Download individual notes instead."
+                "OKF bundle export is not enabled on this server. Download "
+                "individual notes instead."
             )
         if not scope:
             return

@@ -479,7 +479,7 @@ class TestSearch:
         col = _make_vault(vault_path)
         col.index.build_index()
 
-        with pytest.raises(ValueError, match="embedding_provider"):
+        with pytest.raises(ValueError, match="not enabled"):
             col.reader.search("any query", mode="semantic")
 
     def test_search_hybrid_with_mock_embeddings(
@@ -541,7 +541,7 @@ class TestSearch:
         col = _make_vault(vault_path)
         col.index.build_index()
 
-        with pytest.raises(ValueError, match="embedding_provider"):
+        with pytest.raises(ValueError, match="not enabled"):
             col.reader.search("query", mode="hybrid")
 
     def test_document_identity_different_folders(
@@ -2715,7 +2715,7 @@ class TestSemanticSearch:
         col = _make_vault(vault_path)
         col.index.build_index()
 
-        with pytest.raises(ValueError, match="embedding_provider"):
+        with pytest.raises(ValueError, match="not enabled"):
             col.reader.search("query", mode="semantic")
 
     def test_load_vectors_creates_empty_when_no_npy(
@@ -2829,7 +2829,7 @@ class TestSemanticSearch:
         """_require_vectors() raises ValueError when provider/path are absent."""
         col = _make_vault(vault_path)
 
-        with pytest.raises(ValueError, match="embedding_provider"):
+        with pytest.raises(ValueError, match="not enabled"):
             col._search_mgr._require_vectors()
 
 
@@ -2957,7 +2957,7 @@ class TestHybridSearch:
         col = _make_vault(vault_path)
         col.index.build_index()
 
-        with pytest.raises(ValueError, match="embedding_provider"):
+        with pytest.raises(ValueError, match="not enabled"):
             col.reader.search("query", mode="hybrid")
 
 

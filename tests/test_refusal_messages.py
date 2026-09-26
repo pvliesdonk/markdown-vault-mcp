@@ -15,6 +15,7 @@ import pytest
 from markdown_vault_mcp.exceptions import (
     DocumentExistsError,
     DocumentNotFoundError,
+    EditConflictError,
     InvalidRequestError,
 )
 from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -32,6 +33,12 @@ def vault(tmp_path: Path) -> Iterator[Vault]:
     (root / "big.md").write_text("# Big\n\n" + "word " * 400, encoding="utf-8")
     (root / "sub" / "a.md").write_text("# A\n\nsee [[note]]\n", encoding="utf-8")
     (root / "pic.png").write_bytes(b"\x89PNG")
+    (root / "pic2.png").write_bytes(b"\x89PNG")
+    (root / "twice.md").write_text("# T\n\nsame\n\nsame\n", encoding="utf-8")
+    (root / "from").mkdir()
+    (root / "from" / "x.md").write_text("# X\n", encoding="utf-8")
+    (root / "to").mkdir()
+    (root / "to" / "x.md").write_text("# X\n", encoding="utf-8")
     col = Vault(
         source_dir=root,
         settings=VaultSettings(
@@ -96,6 +103,22 @@ _REFUSALS: dict[str, tuple[Callable[[Vault], Any], str]] = {
         lambda v: v.reader.read_attachment("a.xyz"),
         "Allowed",
     ),
+    "rename an attachment onto another": (
+        lambda v: v.writer.rename("pic.png", "pic2.png"),
+        "include_attachments",
+    ),
+    "move a folder onto taken paths": (
+        lambda v: v.writer.move_folder("from", "to"),
+        "new_dir",
+    ),
+    "semantic search with embeddings off": (
+        lambda v: v.reader.search("x", mode="semantic"),
+        "mode='keyword'",
+    ),
+    "old_text found twice": (
+        lambda v: v.writer.edit("twice.md", old_text="same", new_text="x"),
+        "line_start",
+    ),
 }
 
 
@@ -105,7 +128,9 @@ _REFUSALS: dict[str, tuple[Callable[[Vault], Any], str]] = {
 def test_refusal_names_a_next_step_and_no_setting(
     vault: Vault, call: Callable[[Vault], Any], next_step: str
 ) -> None:
-    with pytest.raises((InvalidRequestError, DocumentExistsError)) as exc:
+    with pytest.raises(
+        (InvalidRequestError, DocumentExistsError, EditConflictError)
+    ) as exc:
         call(vault)
     assert next_step in str(exc.value)
     assert "MARKDOWN_VAULT_MCP" not in str(exc.value)
@@ -140,9 +165,17 @@ def test_the_operator_setting_is_logged(
 def test_not_found_messages_keep_their_prefix() -> None:
     """Callers and tests match on the prefix; the next step is appended."""
     assert str(DocumentNotFoundError.note("a.md")).startswith(
-        "Document not found: a.md"
+        "Document not found: 'a.md'"
     )
     assert str(DocumentNotFoundError.attachment("a.png")).startswith(
-        "Attachment not found: a.png"
+        "Attachment not found: 'a.png'"
     )
-    assert str(DocumentNotFoundError.folder("f")).startswith("Folder not found: f")
+    assert str(DocumentNotFoundError.folder("f")).startswith("Folder not found: 'f'")
+
+
+def test_attachment_write_protection_names_no_note_only_tool(vault: Vault) -> None:
+    """edit and append are note tools; an attachment is replaced with if_match."""
+    with pytest.raises(DocumentExistsError) as exc:
+        vault.writer.write_attachment("pic.png", b"x")
+    assert "'edit'" not in str(exc.value)
+    assert "'append'" not in str(exc.value)

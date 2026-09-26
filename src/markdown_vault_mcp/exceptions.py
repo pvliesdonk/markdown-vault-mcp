@@ -44,20 +44,20 @@ class DocumentNotFoundError(InvalidRequestError):
     @classmethod
     def note(cls, path: str) -> DocumentNotFoundError:
         """A note that is not there."""
-        return cls(f"Document not found: {path}. {FIND_NOTE}")
+        return cls(f"Document not found: {path!r}. {FIND_NOTE}")
 
     @classmethod
     def attachment(cls, path: str) -> DocumentNotFoundError:
         """An attachment that is not there."""
         return cls(
-            f"Attachment not found: {path}. Find the path with "
+            f"Attachment not found: {path!r}. Find the path with "
             "list_documents(include_attachments=True)."
         )
 
     @classmethod
     def folder(cls, path: str) -> DocumentNotFoundError:
         """A folder that is not there."""
-        return cls(f"Folder not found: {path}. Find the path with list_folders.")
+        return cls(f"Folder not found: {path!r}. Find the path with list_folders.")
 
 
 class DocumentUnreadableError(MarkdownMCPError):

@@ -854,7 +854,7 @@ class TestBuildEmbeddings:
         """build_embeddings raises ValueError when no provider is configured."""
         mgr, _fts, _ = _make_index_mgr(index_vault, tmp_path)
         mgr.build_index()
-        with pytest.raises(ValueError, match="Embeddings require"):
+        with pytest.raises(ValueError, match="Embeddings are not enabled"):
             mgr.build_embeddings()
 
     def test_builds_with_provider(self, index_vault: Path, tmp_path: Path):

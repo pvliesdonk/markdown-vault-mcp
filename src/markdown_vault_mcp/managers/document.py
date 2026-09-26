@@ -88,6 +88,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# The next step for an old_text that matches more than once (#1639).
+_DISAMBIGUATE = (
+    "Include more surrounding text in old_text, or pass line_start and line_end."
+)
+
 #: Set as :attr:`~markdown_vault_mcp.types.RenameResult.hint` when
 #: ``update_links=True`` is passed for an attachment.  The link graph is
 #: notes-only — references to attachments are not tracked as links — so there
@@ -298,7 +303,10 @@ class DocumentManager:
                 the source directory.
         """
         if not path or path in (".", "/"):
-            raise InvalidRequestError(f"Invalid folder path: {path!r}")
+            raise InvalidRequestError(
+                f"Invalid folder path: {path!r}. Pass a folder below the vault "
+                "root, as list_folders returns it."
+            )
         abs_path = resolve_inside(path, self._source_dir)
         if abs_path == self._source_dir.resolve():
             # A folder scope must be a strict subtree, never the vault root.
@@ -1056,7 +1064,7 @@ class DocumentManager:
         if count > 1:
             raise EditConflictError(
                 f"old_text appears {count} times in {location}; "
-                f"must appear exactly once"
+                f"must appear exactly once. {_DISAMBIGUATE}"
             )
 
         # count == 0: try normalized matching.
@@ -1076,7 +1084,7 @@ class DocumentManager:
         if norm_count > 1:
             raise EditConflictError(
                 f"old_text appears {norm_count} times in {location} after "
-                f"normalization; must appear exactly once"
+                f"normalization; must appear exactly once. {_DISAMBIGUATE}"
             )
 
         # norm_count == 0: raise with diagnostics.
@@ -1484,8 +1492,8 @@ class DocumentManager:
             if dst_abs.exists():
                 rel = dst_abs.relative_to(self._source_dir.resolve()).as_posix()
                 raise DocumentExistsError(
-                    f"Target already exists: {rel}. Pass a new_dir whose "
-                    "paths are free; list_documents shows what exists."
+                    f"Target already exists: {rel}. Pass a new_dir where "
+                    "nothing is in the way."
                 )
 
         return moves, md_map, non_note_moves

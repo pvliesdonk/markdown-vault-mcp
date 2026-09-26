@@ -312,8 +312,8 @@ class SearchManager:
         """Raise :class:`EmbeddingsNotConfiguredError` if semantic search is unconfigured."""
         if not self._vectors_available():
             raise EmbeddingsNotConfiguredError(
-                "Semantic search requires both 'embedding_provider' and "
-                "'embeddings_path' to be configured."
+                "Semantic search is not enabled on this server; search with "
+                "mode='keyword' instead."
             )
 
     def _load_vectors(self) -> VectorStore:

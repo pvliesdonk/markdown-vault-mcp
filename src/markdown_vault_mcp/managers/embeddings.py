@@ -224,8 +224,8 @@ class EmbeddingsManager:
         """Raise :class:`EmbeddingsNotConfiguredError` if embeddings are unconfigured."""
         if self._embedding_provider is None or self._embeddings_path is None:
             raise EmbeddingsNotConfiguredError(
-                "Embeddings require both 'embedding_provider' and "
-                "'embeddings_path' to be configured."
+                "Embeddings are not enabled on this server, so there is nothing "
+                "to build or query; search with mode='keyword' instead."
             )
 
     def _empty_embedding_build_is_authoritative(self, indexed_paths: set[str]) -> bool:

@@ -160,12 +160,12 @@ class TestKeywordSearch:
 class TestSemanticSearch:
     def test_semantic_raises_without_provider(self, search_mgr: SearchManager) -> None:
         """Semantic search raises ValueError without embedding config."""
-        with pytest.raises(ValueError, match="Semantic search requires"):
+        with pytest.raises(ValueError, match="Semantic search is not enabled"):
             search_mgr.search("hello", mode="semantic")
 
     def test_hybrid_raises_without_provider(self, search_mgr: SearchManager) -> None:
         """Hybrid search raises ValueError without embedding config."""
-        with pytest.raises(ValueError, match="Semantic search requires"):
+        with pytest.raises(ValueError, match="Semantic search is not enabled"):
             search_mgr.search("hello", mode="hybrid")
 
 
