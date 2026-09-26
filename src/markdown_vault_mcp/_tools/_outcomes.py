@@ -12,6 +12,8 @@ tool under pvl-core's ``tool_boundary``:
 - an index that is busy or still building tells it to retry shortly, at
   WARNING, because it heals itself.
 
+:func:`maps_library_outcomes` lets a test check that every tool carries it.
+
 Anything else propagates to ``tool_boundary``, which logs it once at ERROR with
 its traceback and tells the model the request was fine.
 """
@@ -40,6 +42,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _F = TypeVar("_F", bound="Callable[..., Any]")
+
+_MARKER = "_mvm_library_outcomes"
 
 _CHANGE_THE_REQUEST = (
     InvalidRequestError,
@@ -73,7 +77,7 @@ def outcome_error(exc: Exception) -> ToolError | None:
     if isinstance(exc, _CHANGE_THE_REQUEST):
         return ToolError(str(exc), log_level=logging.INFO)
     if isinstance(exc, IndexUnavailableError) and exc.reason in _TRANSIENT_INDEX:
-        logger.warning("tool_index_unavailable reason=%s", exc.reason)
+        # The middleware logs the ToolError at WARNING; nothing to add here.
         return ToolError(
             "The search index is busy or still building; the request was fine. "
             "Retry in a minute.",
@@ -107,6 +111,7 @@ def library_outcomes(fn: _F) -> _F:
                     raise
                 raise mapped from None
 
+        setattr(async_wrapper, _MARKER, True)
         return async_wrapper  # type: ignore[return-value]
 
     @functools.wraps(fn)
@@ -119,4 +124,42 @@ def library_outcomes(fn: _F) -> _F:
                 raise
             raise mapped from None
 
+    setattr(sync_wrapper, _MARKER, True)
     return sync_wrapper  # type: ignore[return-value]
+
+
+def maps_library_outcomes(fn: Callable[..., Any]) -> bool:
+    """Report whether *fn* carries :func:`library_outcomes` inside its boundary.
+
+    Follows ``__wrapped__`` from the registered function down. The mapping
+    must sit below ``tool_boundary``: above it, the boundary would already
+    have turned every library signal into a server fault.
+
+    Args:
+        fn: A registered tool's function.
+
+    Returns:
+        ``True`` if :func:`library_outcomes` wraps *fn*'s body below the
+        boundary.
+    """
+    seen: set[int] = set()
+    current: Any = fn
+    below_boundary = False
+    while current is not None and id(current) not in seen:
+        if below_boundary and getattr(current, _MARKER, False):
+            return True
+        if is_tool_boundary_wrapper(current):
+            below_boundary = True
+        seen.add(id(current))
+        current = getattr(current, "__wrapped__", None)
+    return False
+
+
+def is_tool_boundary_wrapper(fn: Callable[..., Any]) -> bool:
+    """Whether *fn* carries ``tool_boundary``'s marker attribute.
+
+    pvl-core's public ``is_tool_boundary`` follows ``__wrapped__`` all the way
+    down, so it cannot say where in the chain the boundary sits; this reads
+    the same private marker at one level only.
+    """
+    return bool(getattr(fn, "_pvl_tool_boundary", False))

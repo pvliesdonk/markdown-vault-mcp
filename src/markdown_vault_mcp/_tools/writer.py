@@ -159,6 +159,29 @@ def _require_modern_review(ctx: Context, path: str) -> InputRequiredResult | Non
     )
 
 
+def _remote_status_error(exc: httpx.HTTPStatusError) -> Exception:
+    """Map the remote site's HTTP status for fetch to an outcome (#1608).
+
+    The message names the status, never the URL: the caller's URL may carry
+    credentials or a signed query, and the middleware logs this text. A 429
+    goes back to ``tool_boundary``, which tells the model to retry later at
+    WARNING; a 5xx heals on the remote side, so it is a WARNING retry; any
+    other status means the URL is wrong for this request.
+    """
+    status = exc.response.status_code
+    if status == 429:
+        return exc
+    if status >= 500:
+        return ToolError(
+            f"The site answered HTTP {status}, so nothing was saved. Retry later.",
+            log_level=logging.WARNING,
+        )
+    return ToolError(
+        f"The site answered HTTP {status}, so nothing was saved. Check the URL.",
+        log_level=logging.INFO,
+    )
+
+
 async def _require_review_elicitation(ctx: Context, path: str) -> None:
     """Gate okf_verify's ``elicit`` mode on an affirmative human elicitation.
 
@@ -823,16 +846,17 @@ def register(mcp: FastMCP) -> None:
                 ``write_attachment`` path as the write tools, so read the
                 existing note first and pass its etag as *if_match* to
                 replace it deliberately, or fetch to a fresh path.
-            ValueError: If the URL scheme is not http/https, the host is
-                blocked or cannot be resolved (on the supplied URL or on any
-                redirect hop), the download exceeds the size limit, or the
-                response cannot be decoded.
-            httpx.TooManyRedirects: If the redirect chain exceeds httpx's
-                ``max_redirects``. Propagates uncaught, like the
-                ``HTTPStatusError`` of a non-2xx response and the
-                ``TransportError`` of a timeout — the vault has no better
-                answer than the transport's own. Unreachable before #1116,
-                when a redirect was refused outright.
+            InvalidRequestError: If the URL scheme is not http/https, the
+                host is blocked or cannot be resolved (on the supplied URL or
+                on any redirect hop), the download exceeds the size limit, or
+                the response cannot be decoded.
+            ToolError: If the remote site answers a non-2xx status (retry
+                later for a 5xx, check the URL otherwise; the message never
+                names the URL) or redirects past httpx's ``max_redirects``.
+            httpx.HTTPStatusError: For a 429, passed to ``tool_boundary``,
+                which answers "retry later".
+            httpx.TransportError: On a timeout or a failed connection;
+                propagates to ``tool_boundary``.
         """
         # Attachment size cap only: markdown notes are not size-limited, and
         # a non-positive configured cap disables the limit. `capped` derives
@@ -870,14 +894,15 @@ def register(mcp: FastMCP) -> None:
             ):
                 raise InvalidRequestError(
                     f"The download is over the {max_bytes:,}-byte limit this "
-                    "server accepts for an attachment, so nothing was saved."
+                    "server accepts for an attachment, so nothing was saved. "
+                    "Ask the user for a smaller file or another source."
                 ) from exc
             raise InvalidRequestError(str(exc)) from exc
-        except (httpx.HTTPStatusError, httpx.TooManyRedirects) as exc:
-            # The remote site's answer, not this server's failure: the caller
-            # has to check the URL (#1608).
+        except httpx.HTTPStatusError as exc:
+            raise _remote_status_error(exc) from exc
+        except httpx.TooManyRedirects as exc:
             raise ToolError(
-                f"Fetching {url!r} failed ({exc}), so nothing was saved. Check "
+                "The URL redirects too many times, so nothing was saved. Check "
                 "the URL.",
                 log_level=logging.INFO,
             ) from exc

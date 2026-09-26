@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from markdown_vault_mcp._tools._outcomes import library_outcomes, outcome_error
+from markdown_vault_mcp._tools._outcomes import (
+    library_outcomes,
+    maps_library_outcomes,
+    outcome_error,
+)
 from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentExistsError,
@@ -144,3 +148,56 @@ async def test_a_fault_reaches_the_model_without_its_detail(
     assert "/srv/secret" not in str(exc.value)
     assert "request itself was fine" in str(exc.value)
     assert any(r.exc_info for r in caplog.records if r.levelno == logging.ERROR)
+
+
+# Tools pvl-core registers itself, around no library call of this package.
+_PVL_CORE_TOOLS = frozenset(
+    {"get_server_info", "create_download_link", "create_upload_link", "get_job_result"}
+)
+
+
+@pytest.mark.parametrize("transport", ["stdio", "http"])
+def test_every_tool_maps_library_outcomes_inside_its_boundary(
+    transport: str, monkeypatch: pytest.MonkeyPatch, vault_path: Any
+) -> None:
+    """A tool without the mapping would report every refusal as a fault."""
+    import asyncio
+    import os
+
+    from fastmcp.tools import FunctionTool
+
+    from markdown_vault_mcp.server import make_server
+
+    for key in list(os.environ):
+        if key.startswith("MARKDOWN_VAULT_MCP_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
+    if transport == "http":
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_BASE_URL", "http://127.0.0.1:8000")
+    server = make_server(transport=transport)
+    tools = asyncio.run(server.local_provider.list_tools())
+    missing = sorted(
+        tool.name
+        for tool in tools
+        if tool.name not in _PVL_CORE_TOOLS
+        and not (isinstance(tool, FunctionTool) and maps_library_outcomes(tool.fn))
+    )
+    assert not missing, (
+        "tools without @library_outcomes directly under @tool_boundary "
+        f"(or under register_long_running_tool): {missing}"
+    )
+
+
+def test_mapping_above_the_boundary_does_not_count() -> None:
+    from fastmcp_pvl_core import tool_boundary
+
+    @library_outcomes
+    @tool_boundary
+    async def upside_down() -> None: ...
+
+    @tool_boundary
+    @library_outcomes
+    async def right_way_up() -> None: ...
+
+    assert not maps_library_outcomes(upside_down)
+    assert maps_library_outcomes(right_way_up)

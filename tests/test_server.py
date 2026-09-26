@@ -2219,6 +2219,57 @@ class TestFetchTool:
                         },
                     )
 
+    @pytest.mark.parametrize(
+        ("status", "level", "phrase"),
+        [
+            (404, logging.INFO, "Check the URL"),
+            (503, logging.WARNING, "Retry later"),
+            (429, logging.WARNING, "retry later"),
+        ],
+    )
+    async def test_fetch_remote_status_outcome_and_no_secret(
+        self,
+        _mcp_env_writable_with_attachments: Path,
+        caplog: pytest.LogCaptureFixture,
+        status: int,
+        level: int,
+        phrase: str,
+    ) -> None:
+        """The remote site's status picks the outcome; the raw URL is logged nowhere (#1608)."""
+        import httpx
+
+        secret = "https://user:hunter2@example.com/x.md?sig=SECRET"
+
+        async def _http_error(url: str, **_kwargs: object) -> None:
+            # fetch_url's own message is the redacted one.
+            raise httpx.HTTPStatusError(
+                f"HTTP {status} response from https://example.com/x.md",
+                request=httpx.Request("GET", url),
+                response=httpx.Response(status),
+            )
+
+        with patch(self._FETCH_URL_SEAM, _http_error):
+            server = make_server()
+            with caplog.at_level(logging.DEBUG):
+                async with Client(server) as client:
+                    result = await client.call_tool_mcp(
+                        "fetch", {"url": secret, "path": "x.md"}
+                    )
+        text = result.content[0].text  # type: ignore[union-attr]
+        assert result.is_error
+        assert phrase in text
+        # INFO and up, the default level: the middleware's DEBUG
+        # tool_call_started line carries the arguments by design.
+        logged = "\n".join(
+            r.getMessage() for r in caplog.records if r.levelno >= logging.INFO
+        )
+        assert "hunter2" not in text + logged
+        assert "SECRET" not in text + logged
+        failed = [
+            r for r in caplog.records if r.getMessage().startswith("tool_call_failed")
+        ]
+        assert failed and failed[-1].levelno == level
+
     async def test_fetch_timeout(
         self, _mcp_env_writable_with_attachments: Path
     ) -> None:

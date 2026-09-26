@@ -1029,7 +1029,7 @@ Two-layer model:
 
 | Library signal | Outcome |
 |-|-|
-| `InvalidRequestError`, and its subclasses `DocumentNotFoundError` and `EmbeddingsNotConfiguredError` | Change the request |
+| `InvalidRequestError`, and its subclasses `DocumentNotFoundError`, `EmbeddingsNotConfiguredError` and `SummarizeTimeoutError` | Change the request |
 | `EditConflictError` | Change the request |
 | `DocumentExistsError` | Change the request |
 | `ReadOnlyError` | Change the request |
@@ -1075,6 +1075,7 @@ fault (#1608).
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match |
 | `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` or `embeddings_path` configured. A subclass of `InvalidRequestError`, so still a `ValueError` |
+| `SummarizeTimeoutError` | `summarize()` | The summarization backend outran its per-request budget; the caller can ask for less. A subclass of `InvalidRequestError` and of `RuntimeError`, the type a timeout had before (#1608) |
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
 | `DocumentUnreadableError` | `read()`, revision reads | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. At a revision: invalid UTF-8, or a Git LFS pointer in place of the note. The cause is chained (#1608) |
 | `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
@@ -4095,11 +4096,13 @@ contain this, both operator-tunable:
 - **Per-request timeout** — ``OpenAISummarizer`` constructs its client with
   ``timeout=SUMMARIZE_TIMEOUT`` (default 120 s, mirroring the embeddings
   transport's configurable timeout (``MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S``,
-  default 30 s). An ``openai.APITimeoutError`` is mapped to a
-  specific, actionable ``RuntimeError`` — naming the budget and the ways to
-  fit under it (fewer paths, a smaller ``max_notes``, a tighter ``focus``,
-  ``per_note`` mode, or a higher ``SUMMARIZE_TIMEOUT``) — so the caller sees
-  guidance rather than a bare timeout.
+  default 30 s). An ``openai.APITimeoutError`` is mapped to
+  ``SummarizeTimeoutError`` — an ``InvalidRequestError`` that is also a
+  ``RuntimeError`` — naming the budget and the ways to fit under it (fewer
+  paths, a smaller ``max_notes``, a tighter ``focus``, ``per_note`` mode), so
+  the model sees guidance to change its request rather than a bare timeout.
+  The operator's lever, a higher ``SUMMARIZE_TIMEOUT``, goes in the
+  ``summarize_timeout`` WARNING log line, not the model's text (#1608).
 - **Dual-mode execution with background promotion (#1033)** — ``summarize``
   is registered through ``fastmcp_pvl_core.register_long_running_tool``
   rather than a bare ``@mcp.tool``, replacing the earlier hand-rolled

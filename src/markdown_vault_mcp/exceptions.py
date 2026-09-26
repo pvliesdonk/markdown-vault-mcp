@@ -98,6 +98,17 @@ class EmbeddingsNotConfiguredError(InvalidRequestError):
     """
 
 
+class SummarizeTimeoutError(InvalidRequestError, RuntimeError):
+    """Raised when a summarization request outruns its per-request budget.
+
+    The caller can fit under the budget by asking for less (fewer paths, a
+    smaller ``max_notes``, a narrower ``focus``, ``per_note`` mode), so it is
+    an :class:`InvalidRequestError`. It is also a ``RuntimeError``, the type
+    summarization raised for a timeout before (#937), so a handler written
+    against that contract still catches it (#1608).
+    """
+
+
 class DocumentExistsError(MarkdownMCPError):
     """Raised when the target path already exists (e.g. rename destination)."""
 

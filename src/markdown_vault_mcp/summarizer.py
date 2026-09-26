@@ -18,7 +18,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
-from markdown_vault_mcp.exceptions import ConfigurationError
+from markdown_vault_mcp.exceptions import ConfigurationError, SummarizeTimeoutError
 
 if TYPE_CHECKING:
     from openai.types.chat import ChatCompletionMessageParam
@@ -191,6 +191,8 @@ class OpenAISummarizer(Summarizer):
             The generated summary text.
 
         Raises:
+            SummarizeTimeoutError: If the call outruns the per-request budget;
+                also a ``RuntimeError``.
             RuntimeError: If the API call fails, the model refuses, or the
                 response carries no text.
         """
@@ -201,17 +203,19 @@ class OpenAISummarizer(Summarizer):
             # convert it into a specific, actionable server-side error that
             # names the budget and the concrete ways to fit under it, so the
             # model/user sees guidance instead of an opaque "timed out".
+            # The operator's lever (a longer budget) goes in the log; the
+            # caller's (a smaller request) in the error (#1608).
             logger.warning(
-                "summarize_timeout model=%s timeout_s=%s", self._model, self._timeout
+                "summarize_timeout model=%s timeout_s=%s setting=%s",
+                self._model,
+                self._timeout,
+                "MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT",
             )
-            raise RuntimeError(
+            raise SummarizeTimeoutError(
                 f"Summarization exceeded the {self._timeout:g}s per-request budget. "
                 "The selection is too large or the focus too demanding to "
                 "generate within the limit. Narrow the request — fewer paths, "
-                "a smaller max_notes, a more focused 'focus', or mode='per_note' "
-                "— or, if the backend is simply slow, raise "
-                "MARKDOWN_VAULT_MCP_SUMMARIZE_TIMEOUT (keep it below your MCP "
-                "client's request timeout)."
+                "a smaller max_notes, a more focused 'focus', or mode='per_note'."
             ) from exc
         except self._openai.OpenAIError as exc:
             # Expected upstream failures (auth, rate limit, 5xx): surface a

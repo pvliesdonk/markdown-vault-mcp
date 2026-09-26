@@ -470,8 +470,16 @@ class TestOpenAISummarizer:
         # (not the generic "failed") so the model/user knows what to do (#937).
         _install_fake_openai(monkeypatch, raise_error="timeout")
         summ = OpenAISummarizer("k", "m", max_tokens=10, timeout=90.0)
-        with pytest.raises(RuntimeError, match="exceeded the 90s per-request budget"):
+        with pytest.raises(
+            RuntimeError, match="exceeded the 90s per-request budget"
+        ) as exc:
             summ.summarize("s", "u")
+        # The model can narrow the request, so it is a change of request (#1608),
+        # still a RuntimeError for callers written against the old contract.
+        from markdown_vault_mcp.exceptions import InvalidRequestError
+
+        assert isinstance(exc.value, InvalidRequestError)
+        assert "MARKDOWN_VAULT_MCP" not in str(exc.value)
 
     def test_refusal_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _install_fake_openai(monkeypatch, content=None, refusal="nope")
