@@ -84,3 +84,38 @@ def test_read_cap_is_its_own_signal(
     )
     with pytest.raises(NoteTooLargeError):
         vault.reader.read("big.md")
+
+
+def test_every_matched_note_is_included_skipped_or_omitted(
+    make_vault: VaultFactory,  # noqa: F811
+) -> None:
+    """The three counts add up, with the limit and a skip in the same call."""
+    vault = make_vault(
+        summarizer=FakeSummarizer(),
+        notes={f"f/n{i}.md": f"# N{i}\n\nbody" for i in range(5)},
+    )
+    # ghost.md is matched first, so it is inside the limit and read (skipped);
+    # a path matched after the limit is omitted without being read.
+    result = vault.summarizer.summarize(["ghost.md", "f"], max_notes=3)
+    matched = 6
+    assert result.notes_included + len(result.skipped) + result.notes_omitted == (
+        matched
+    )
+    assert (result.notes_included, len(result.skipped), result.notes_omitted) == (
+        2,
+        1,
+        3,
+    )
+    assert "note limit" in (result.hint or "")
+    assert "ghost.md" in (result.hint or "")
+
+
+def test_invalid_path_is_skipped_with_a_next_step(
+    make_vault: VaultFactory,  # noqa: F811
+) -> None:
+    vault = make_vault(summarizer=FakeSummarizer())
+    result = vault.summarizer.summarize(["alpha.md", "b\x00.md"])
+    assert result.skipped == [SummarySkip(path="b\x00.md", reason="invalid_path")]
+    hint = result.hint or ""
+    assert "list_documents" in hint
+    assert "\x00" not in hint  # shown escaped, not as a raw control character

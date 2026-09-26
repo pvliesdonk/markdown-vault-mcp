@@ -450,7 +450,9 @@ class SummarizeManager:
 
 _SKIP_STEPS: dict[str, str] = {
     "not_found": "Not found, so skipped: {paths}. Check them with list_documents.",
-    "invalid_path": "Not valid note paths, so skipped: {paths}.",
+    "invalid_path": (
+        "Not valid note paths, so skipped: {paths}. Find the paths with list_documents."
+    ),
     "over_read_limit": (
         "Too large to read whole, so skipped: {paths}. Read them a section at "
         "a time with read(path, section=...)."
@@ -480,5 +482,6 @@ def _coverage_hint(
     for reason, step in _SKIP_STEPS.items():
         paths = [s.path for s in skipped if s.reason == reason]
         if paths:
-            parts.append(step.format(paths=", ".join(paths)))
+            # repr: a refused path may hold a control character (#1636).
+            parts.append(step.format(paths=", ".join(repr(p) for p in paths)))
     return " ".join(parts) or None

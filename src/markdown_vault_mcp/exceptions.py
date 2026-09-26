@@ -61,7 +61,10 @@ class DocumentNotFoundError(InvalidRequestError):
 
 
 class NoteTooLargeError(InvalidRequestError):
-    """Raised when a whole-note read is over the server's read limit.
+    """Raised when ``read()`` of a whole note is over the server's read limit.
+
+    A read at a git revision applies the same cap but raises a plain
+    :class:`InvalidRequestError`.
 
     The caller can read the note one section at a time instead, so it is an
     :class:`InvalidRequestError`. Its own type lets a caller that skips such
