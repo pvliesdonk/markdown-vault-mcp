@@ -214,27 +214,20 @@ def register(mcp: FastMCP) -> None:
         limit: int = 20,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """List commits that touched a note, folder, or the whole vault.
+        """List the commits that touched a note, an attachment, a folder or the whole
+        vault, newest first.
 
-        Only available for git-backed vaults. Use 'stats' to check
-        whether git is configured, or call this and handle the error.
+        A vault without git history returns no commits.
 
         Args:
-            path: Vault-relative path to filter on. A `.md` note or a
-                configured attachment extension (png, pdf, svg, …) scopes to
-                that single file (e.g. "notes/alpha.md",
-                "assets/diagram.png"); an existing folder scopes to its
-                subtree (e.g. "guides" returns commits touching guides/**).
-                Omit (or pass null) for vault-wide commit history.
-            since: ISO 8601 datetime string ("2026-04-01T00:00:00") or a git
-                date expression ("1 week ago"). Passed as --since to git log.
-                Omit for full history.
-            until: ISO 8601 datetime string or git date expression, passed as
-                --until to git log. Both 'since' and 'until' boundaries are
-                inclusive: a commit whose committer date equals either
-                endpoint is included in the result. Omit to disable the upper
-                bound.
-            limit: Maximum number of commits to return. Default 20, max 100.
+            path: A note or attachment path, e.g. "notes/alpha.md", or a folder, e.g.
+                "guides"; omit for the whole vault.
+            since: Earliest commit date, inclusive: an ISO 8601 time such as
+                "2026-04-01T00:00:00" or a relative date such as "1 week ago"; omit for
+                all history.
+            until: Latest commit date, inclusive, in the same forms as since; omit for
+                no upper bound.
+            limit: Maximum commits to return (default 20, at most 100).
 
         Returns:
             Envelope dict with the following fields:
@@ -289,37 +282,23 @@ def register(mcp: FastMCP) -> None:
         limit: int | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Return the diff of a note between a reference point and HEAD.
+        """Return how a note or attachment changed from an earlier commit to now, as one
+        unified diff or one per commit.
 
-        Only available for git-backed vaults. Exactly one of 'since_sha' or
-        'since_timestamp' must be provided. Use 'get_history' first to find
-        commit SHAs.
+        Pass exactly one of since_sha and since_timestamp; find commits with
+        get_history. A vault without git history returns an empty diff.
 
         Args:
-            path: Vault-relative path of the note or attachment to diff (e.g.
-                "notes/alpha.md" or "assets/diagram.png"). May be a `.md`
-                note or a configured attachment extension (png, pdf, svg, …).
-                A binary attachment returns a `--stat` size/rename summary
-                instead of a full unified patch; a text attachment (e.g.
-                `.svg`, `.csv`) returns a full unified diff. `.md` notes are
-                unchanged. An unsupported extension is rejected.
-            since_sha: A commit SHA (full or abbreviated, at least 4 hex digits)
-                to diff from. Mutually exclusive with since_timestamp.
-            since_timestamp: ISO 8601 datetime string, resolved via
-                `git rev-list --before=<ts> -1 HEAD` to the most recent
-                commit at or before that instant. Boundary is
-                **inclusive**: a commit whose committer date equals
-                since_timestamp IS the resolved ref. Mutually exclusive
-                with since_sha.
-            per_commit: When False (default), return a single unified diff from
-                the reference point to HEAD. When True, return one diff per
-                intervening commit.
-            limit: When per_commit=True, cap the number of intervening commits
-                returned to the `limit` most recent ones. Clamped to [1, 100].
-                Defaults to null (unbounded — still bounded by the underlying
-                since..HEAD range). Ignored when per_commit=False. Useful for
-                keeping per-commit responses within context budgets when
-                auditing long histories.
+            path: A note or attachment path, e.g. "notes/alpha.md"; a binary attachment
+                returns a summary of size and renames instead of a patch.
+            since_sha: A commit sha to diff from, e.g. from get_history; at least 4 hex
+                digits.
+            since_timestamp: An ISO 8601 time; diffs from the latest commit at or before
+                it.
+            per_commit: True for one diff per commit since the starting point, newest
+                first; default false for a single diff.
+            limit: With per_commit, how many of the most recent commits to include, 1 to
+                100; omit for all.
 
         Returns:
             Envelope dict whose shape depends on `per_commit`:
@@ -375,33 +354,14 @@ def register(mcp: FastMCP) -> None:
         dry_run: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Synchronously reconcile the local clone with ``origin``.
+        """Pull from and push to the vault's git remote now; returns what each leg did.
 
-        Composes :meth:`~markdown_vault_mcp.git.Syncer.force_pull` and
-        :meth:`~markdown_vault_mcp.git.Syncer.force_push` behind a single tool call so
-        an operator can request "pull then push" with one round-trip.
-        Only available on managed git deployments
-        (``MARKDOWN_VAULT_MCP_GIT_REPO_URL`` set).
-
-        ``direction='pull'`` runs only the pull leg; ``'push'`` only the
-        push leg; ``'both'`` runs pull first, then push.  When pull fails
-        in ``'both'`` mode the push leg is skipped — the failure surfaces
-        in the ``pull`` payload and the caller is expected to inspect
-        ``pull.reason`` (and ``pull.conflict_files`` for conflict
-        resolution) before retrying.
-
-        ``dry_run=True`` projects the would-be pull without moving HEAD,
-        reporting ``fast_forward=False`` with ``reason='diverged'`` when
-        the real pull could not fast-forward.  Push has no safe dry-run
-        (git provides no local probe for "would the remote accept this"),
-        so the push leg returns ``applied=False`` with
-        ``reason='dry_run_unsupported'``.
+        With direction "both" the pull runs first, and a failed pull skips the push.
 
         Args:
-            direction: ``"pull"``, ``"push"``, or ``"both"`` (default).
-            dry_run: When ``True``, projects pull without moving HEAD.
-                See :meth:`~markdown_vault_mcp.git.Syncer.force_push` for why this is
-                a no-op on the push leg.
+            direction: "pull", "push" or "both" (default).
+            dry_run: Report what a pull would do without changing anything; the push leg
+                does not run.
 
         Returns:
             Dict with the following fields:

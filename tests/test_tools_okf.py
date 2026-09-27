@@ -293,7 +293,7 @@ class TestDeclaredBundle:
     async def test_instructions_mention_okf(self) -> None:
         server = make_server()
         assert server.instructions is not None
-        assert "okf_version" in server.instructions
+        assert "'stats' reports an OKF bundle" in server.instructions
 
 
 @pytest.mark.usefixtures("_okf_env")

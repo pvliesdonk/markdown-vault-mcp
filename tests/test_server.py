@@ -201,13 +201,12 @@ class TestServerIdentity:
             GuidanceConfig(
                 read_only=False,
                 conventions_file="_conventions.md",
-                summarize_note_limit=50,
                 okf_mode="on",
             )
         )
         roles = {snippet.text: snippet.role for snippet in snippets}
 
-        assert roles[next(text for text in roles if "'summarize' handles" in text)] is (
+        assert roles[next(text for text in roles if "'summarize-subtree'" in text)] is (
             InstructionRole.INSTANCE
         )
         assert roles[next(text for text in roles if "get_conventions" in text)] is (
@@ -216,9 +215,9 @@ class TestServerIdentity:
         assert roles[next(text for text in roles if "OKF bundle" in text)] is (
             InstructionRole.INSTANCE
         )
-        assert roles[next(text for text in roles if "'search' finds" in text)] is (
-            InstructionRole.CAPABILITIES
-        )
+        assert roles[
+            next(text for text in roles if "Find notes with 'search'" in text)
+        ] is (InstructionRole.CAPABILITIES)
         assert roles[next(text for text in roles if "'write'/'edit'" in text)] is (
             InstructionRole.WORKFLOWS
         )
@@ -234,7 +233,6 @@ class TestServerIdentity:
         text = make_server(transport="http").instructions or ""
         for required in (
             "READ-WRITE",
-            "summarize",
             "get_conventions",
             "OKF bundle",
             "create_upload_link",
@@ -261,7 +259,7 @@ class TestServerIdentity:
         text = make_server(transport="http").instructions or ""
         assert utf16_code_units(text) <= CLAUDE_CODE_INSTRUCTIONS_LIMIT_UTF16
         assert text.index(routing) < text.index("READ-WRITE") < text.index(policy)
-        assert text.index(policy) < text.index("'search' finds")
+        assert text.index(policy) < text.index("Find notes with 'search'")
         assert text.index("get_job_result") < text.index("Full documentation")
 
     @pytest.mark.usefixtures("_mcp_env")

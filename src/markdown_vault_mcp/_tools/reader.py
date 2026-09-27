@@ -52,51 +52,30 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """Find documents matching a query using full-text or semantic search.
+        """Search notes by keyword and meaning; returns notes ranked by score, each with
+        its best-matching sections as snippets.
 
-        Search the vault. Omit 'mode' for the best mode this vault can
-        serve — hybrid when embeddings are configured, keyword when they
-        are not. Pass mode="keyword" for exact terms, operators, or
-        filenames, where FTS5/BM25 beats fusion. Use mode="semantic" for
-        pure vector similarity.
-
-        The 'content' field in each result is a snippet by default, not the
-        full document. Use read(path, section=heading) to retrieve the full
-        text of a specific section.
+        Use list_documents for a complete listing and read for a path you already know.
 
         Args:
-            query: Natural language or keyword query string.
-            limit: Maximum results to return (default 10).
-            mode: "keyword" uses FTS5/BM25 for exact terms. "semantic" uses
-                vector similarity (requires embeddings). "hybrid" fuses both
-                via reciprocal rank fusion — best quality when available.
-                Omit it (the default) to follow the vault's configured
-                DEFAULT_SEARCH_MODE, which ships as "auto": hybrid where
-                embeddings exist, keyword otherwise. Any configured default
-                degrades to "keyword" when it needs embeddings the vault
-                lacks; an explicit "semantic"/"hybrid" still errors when
-                unconfigured.
-            folder: Restrict to documents under this folder path (e.g.
-                "Journal"). Must match a value from 'list_folders'.
-                Use folder="" for root-level (top-level) documents only.
-            filters: Filter by indexed frontmatter field values, e.g.
-                {"cluster": "craft", "tags": "pacing"}. Only fields listed
-                in indexed_frontmatter_fields (see 'stats') can be filtered.
-                Multiple filters are ANDed. For list fields (e.g. tags),
-                this checks membership — {"tags": "pacing"} matches any
-                document where "pacing" appears in the tags list. On an OKF
-                bundle three keys carry OKF semantics: status ("draft"/
-                "stable"/"deprecated"; "stable" also matches notes without
-                a status field), stale ("true"/"false" — stale_after
-                reached), and trust_tier ("unverified"/"machine-confirmed"/
-                "human-reviewed"); "type" filters normally, e.g.
-                {"type": "Playbook", "stale": "false"}.
-            chunks_per_file: Maximum number of sections to return per file
-                (default 2).  Set to 1 to get only the top-ranked section
-                per file.  Must be >= 1.
-            snippet_words: Width of the snippet window in words. Omit to use
-                the server default. Set to 0 to return full chunk content.
-                Use read(path, section=heading) for full section recovery.
+            query: Words to match or a natural-language question.
+            limit: Maximum notes to return (default 10).
+            mode: Omit for the best mode this vault serves. "keyword" suits exact terms,
+                operators and filenames; "semantic" matches meaning only; "hybrid"
+                combines both. "semantic" and "hybrid" need semantic_search_available
+                from stats.
+            folder: Only notes under this folder, a value from list_folders; "" for
+                top-level notes only.
+            filters: Frontmatter values to match, all of them, e.g. {"tags": "pacing"};
+                keys come from indexed_frontmatter_fields in stats, and a list field
+                matches when it holds the value. On an OKF bundle, status (draft, stable
+                or deprecated; stable includes notes with none), stale ("true" or
+                "false") and trust_tier (unverified, machine-confirmed or
+                human-reviewed) filter too.
+            chunks_per_file: Maximum sections per note (default 2).
+            snippet_words: Snippet width in words; omit for the server default, 0 for
+                whole sections. read with section set to a result's heading returns that
+                whole section.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -186,49 +165,20 @@ def register(mcp: FastMCP) -> None:
         revision: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Read the full content of a document or attachment by path.
+        """Return a note's text, frontmatter and etag, or an attachment's bytes as
+        base64.
 
-        For .md documents: returns content (the full raw file including
-        frontmatter), plus the parsed frontmatter, title, and folder.
-        For attachments (pdf, png, etc.): returns base64-encoded binary content
-        and MIME type. Use 'list_documents(include_attachments=True)' to
-        discover attachment paths. Use 'stats' to see allowed extensions.
-
-        Do not guess paths — look them up first via 'search' or 'list_documents'.
-
-        To recover the full text of a specific section returned by 'search',
-        pass section=heading (the value from the result's 'heading' field).
-
-        Pass revision=<sha> (git-backed vaults) to read the note as it stood at
-        that commit — the route back to content a 'write' replaced. Use a
-        write's 'previous_revision', or a sha from 'get_history'. To restore:
-        read again without revision= for a current etag, then 'write' with
-        if_match set to it.
-
-        **Context cost:** every byte returned counts against the LLM's
-        context budget. Reads above ``MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES``
-        (default 256 KB for ``.md``) or
-        ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`` (default 1 MB for
-        binaries) raise ``ValueError``. For partial markdown reads, pass
-        ``section=heading`` (use the ``heading`` field from a ``search()``
-        result).
+        Look paths up with search or list_documents first rather than guessing them.
 
         Args:
-            path: Relative path to the document or attachment
-                (e.g. "Journal/note.md" or "assets/diagram.pdf").
-                Case-sensitive.
-            section: When provided, return the whole section whose heading
-                matches *section* — every paragraph, list, and sub-section
-                from the heading up to the next heading at the same or higher
-                level (case-sensitive; internal whitespace is collapsed before
-                comparison). Pass the ``heading`` value from a ``search``
-                result unchanged for guaranteed match. ``None`` (the default)
-                returns the whole document. Ignored for non-.md paths.
-            revision: Read the note as it stood at that commit instead of on
-                disk (git-backed vaults, .md only). A sha from 'get_history'
-                or a write result's 'previous_revision'. Pass *path* as the
-                note is named today; renames are followed. Composes with
-                section=.
+            path: Path in the vault, e.g. "Journal/note.md" or "assets/diagram.pdf";
+                case-sensitive.
+            section: A heading, e.g. the heading field of a search result; returns that
+                section and its sub-sections instead of the whole note. Notes only.
+            revision: A commit sha from get_history or from a write result's
+                previous_revision; returns the note as it stood then, without an etag.
+                Pass path as the note is named today. To restore that text, write it
+                with the etag of a read without revision.
 
         Returns:
             For .md: dict with path, title, folder, content (the full raw
@@ -310,31 +260,24 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """List documents (and optionally attachments) in the vault.
+        """List notes, and optionally attachments, with path, title and frontmatter but
+        no body text.
 
-        Use this to enumerate documents when you need a complete listing, not
-        ranked search results. For finding documents by content, use 'search'.
-        Does NOT include body content — call 'read' for full text.
+        Use search to find notes by what they say.
 
         Args:
-            folder: Return only documents in this folder (e.g. "Journal").
-                Use folder="" for root-level (top-level) documents only.
-            pattern: Unix glob matched against relative paths (e.g.
-                "Journal/*.md", "**/*meeting*.md").
-            include_attachments: When True, also returns non-.md files (PDFs,
-                images, etc.) that match the configured allowlist. Each
-                attachment entry includes kind="attachment" and mime_type.
-                Default False (notes only).
-            filters: Frontmatter equality filters, ANDed (e.g.
-                {"tags": "craft"}); any frontmatter key works and list
-                fields match by membership. On an OKF bundle three keys
-                carry OKF semantics: status ("draft"/"stable"/"deprecated";
-                "stable" also matches notes without a status field), stale
-                ("true"/"false" — stale_after reached), and trust_tier
-                ("unverified"/"machine-confirmed"/"human-reviewed"). Use
-                {"status": "deprecated"} or {"stale": "true"} to build
-                triage listings. Any filter excludes attachments (they
-                carry no frontmatter).
+            folder: Only notes in this folder, e.g. "Journal"; "" for top-level notes
+                only.
+            pattern: Glob matched against paths, e.g. "Journal/*.md" or
+                "**/*meeting*.md".
+            include_attachments: Also list non-note files, marked kind="attachment" with
+                their mime_type. Default false.
+            filters: Frontmatter values to match, all of them, e.g. {"tags": "craft"};
+                any key works, a list field matches when it holds the value, and
+                attachments never match. On an OKF bundle, status (draft, stable or
+                deprecated; stable includes notes with none), stale ("true" or "false")
+                and trust_tier (unverified, machine-confirmed or human-reviewed) filter
+                too.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -393,11 +336,10 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[str]:
-        """List all folder paths that contain documents.
+        """List every folder that holds notes; "" stands for the top level.
 
-        Call this to discover valid folder names before filtering 'search' or
-        'list_documents' by folder. The root folder (top-level documents) is
-        represented as an empty string "".
+        Pass one as the folder argument of search, list_documents and the other
+        folder-scoped tools.
 
         Args:
             wait_for_pending_writes: When True, wait until your recent
@@ -448,17 +390,14 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[str]:
-        """List all distinct values for a frontmatter field across the vault.
+        """List the distinct values one indexed frontmatter field takes across the
+        vault.
 
-        Use this to discover valid filter values before calling 'search' with
-        the 'filters' argument. Only fields listed in indexed_frontmatter_fields
-        (see 'stats') are indexed — querying other fields returns an empty list.
+        Use the values in the filters argument of search.
 
         Args:
-            field: Frontmatter field name to enumerate (default "tags"). Must
-                be one of the values in indexed_frontmatter_fields (from 'stats')
-                — passing any other field silently returns an empty list, not an
-                error.
+            field: A field from indexed_frontmatter_fields in stats (default "tags");
+                other fields are not indexed and list no values.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -506,12 +445,8 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Get an overview of the vault's size, capabilities, and configuration.
-
-        Call this at the start of a session to understand what the vault
-        contains and what search modes are available. The
-        'semantic_search_available' field tells you whether mode="semantic" or
-        mode="hybrid" can be used in 'search'.
+        """Report the vault's size, link health and capabilities: the search modes it
+        serves and the frontmatter fields search can filter on.
 
         Args:
             wait_for_pending_writes: When True, wait until your recent
@@ -589,34 +524,23 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """Find notes most semantically similar to the given document.
+        """Find the notes closest in meaning to a given note; returns them ranked by
+        similarity with their closest sections, the note itself excluded.
 
-        Uses stored embedding vectors — no re-embedding needed. The
-        reference document is excluded from results. Requires semantic
-        search to be configured (check 'stats' for
-        semantic_search_available). Returns an empty list if embeddings are
-        not configured (check 'embeddings_status') or the document has no
-        stored vectors (call 'build_embeddings' to embed missing chunks).
+        Needs semantic_search_available from stats; without embeddings, or for a note
+        with none stored yet, the list is empty.
 
         Args:
-            path: Relative path of the reference document (e.g.
-                "notes/topic.md"). Case-sensitive.
-            limit: Maximum number of similar notes to return (default 10).
-            chunks_per_file: Maximum sections returned per file (default 2).
-                Set to 1 for one best section per file.  Must be >= 1.
-            folder: Restrict results to this folder (exact match or
-                sub-folder prefix), e.g. "3-Resources". Useful to scope
-                link candidates to one part of the vault.
-                Use folder="" for root-level (top-level) documents only.
-            filters: Frontmatter equality filters, ANDed — e.g.
-                {"type": "resource"}. Matched post-hoc against each
-                candidate's full frontmatter, so any frontmatter key works
-                (unlike keyword 'search' filters, which are limited to
-                indexed_frontmatter_fields). List-valued fields match if
-                the value is among them. On an OKF bundle three keys carry
-                OKF semantics, exactly as in 'search': status ("stable"
-                also matches notes without a status field), stale
-                ("true"/"false"), and trust_tier.
+            path: Path of the note to compare against, e.g. "notes/topic.md";
+                case-sensitive.
+            limit: Maximum notes to return (default 10).
+            chunks_per_file: Maximum sections per note (default 2).
+            folder: Only notes in this folder or below, e.g. "3-Resources"; "" for
+                top-level notes only.
+            filters: Frontmatter values to match, all of them, e.g. {"type":
+                "resource"}; any key works and a list field matches when it holds the
+                value. On an OKF bundle, status (stable includes notes with none), stale
+                ("true" or "false") and trust_tier filter too.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -700,23 +624,17 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]] | dict[str, Any]:
-        """Heading outline for a single note or a whole folder subtree.
+        """Return the heading outline of a note, or of every note under a folder.
 
-        If 'path' ends in '.md' it is a note: returns a flat ordered list of
-        {heading, level} (the title as a synthetic H1). Otherwise 'path' is a
-        folder: returns {path, notes, truncated} where 'notes' is an ordered
-        list of {path, title, headings} aggregating every note under the
-        subtree. Mirrors the 'toc://vault/{path}' resource, adding the
-        max_level / max_notes controls below.
+        For a note: a list of {heading, level}, the title first as level 1. For a
+        folder: {path, notes, truncated}, each note with its path, title and headings.
 
         Args:
-            path: Note path ("a/b.md") or folder prefix ("a/b").
-            max_level: Drop headings deeper than this level (e.g. 2 keeps
-                H1-H2); must be >= 1. The synthetic H1 title always survives.
-                Default None returns all levels.
-            max_notes: Folder mode only — cap on distinct notes (default 200,
-                must be >= 1). When more notes match, the first max_notes (by
-                path) are returned and 'truncated' is True.
+            path: A note path ending in .md, e.g. "a/b.md", or a folder, e.g. "a/b".
+            max_level: Deepest heading level to keep, e.g. 2 for H1 and H2; omit for
+                all. The title always stays.
+            max_notes: Folders only: notes to include, first by path (default 200);
+                truncated is true when more exist.
             wait_for_pending_writes: When True, wait until recent
                 document mutations are applied to the index
                 before answering. Default False answers from the current
@@ -767,18 +685,14 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """Get the most recently modified notes in the vault.
+        """List the most recently modified notes, newest first.
 
-        Returns notes ordered by file modification time (most recent first).
-        Useful for surfacing recently changed content without a search query —
-        for example to summarize recent activity or resume work on recently
-        edited notes.
+        Use it to pick up recent activity without a search query.
 
         Args:
-            limit: Maximum number of notes to return (default 20).
-            folder: Optional folder filter. When provided, only returns
-                notes from this folder (e.g. "Journal").
-                Use folder="" for root-level (top-level) documents only.
+            limit: Maximum notes to return (default 20).
+            folder: Only notes in this folder, e.g. "Journal"; "" for top-level notes
+                only.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -834,27 +748,17 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Get a consolidated context dossier for a document.
+        """Return a note's metadata, backlinks, outlinks, similar notes, folder
+        neighbours, indexed tags and applicable conventions in one call.
 
-        Replaces separate calls to 'get_backlinks', 'get_outlinks', and
-        'get_similar' when you need more than one.
-
-        Returns everything useful about a note in one call: its metadata,
-        backlinks (documents that link to it), outlinks (documents it links
-        to), semantically similar notes, other notes in the same folder, and
-        indexed frontmatter tags. Use this instead of making 4-5 separate
-        tool calls when you need a full picture of a note's place in the
-        vault.
+        Use it instead of get_backlinks, get_outlinks and get_similar when you need more
+        than one of them.
 
         Args:
-            path: Relative path of the document (e.g. "notes/topic.md").
-                Case-sensitive.
-            similar_limit: Maximum number of similar notes to include
-                (default 5). Pass 0 to skip the similarity lookup — do this
-                when 'stats' shows semantic_search_available=False (embeddings
-                are not configured).
-            link_limit: Maximum number of backlinks and outlinks to include
-                each (default 10).
+            path: Path of the note, e.g. "notes/topic.md"; case-sensitive.
+            similar_limit: Maximum similar notes (default 5); 0 skips them, which suits
+                a vault where stats shows semantic_search_available false.
+            link_limit: Maximum backlinks, and separately outlinks (default 10).
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -969,28 +873,13 @@ def register(mcp: FastMCP) -> None:
         path: str = "",
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Get the user's authoring conventions that apply to a note or folder.
-
-        Vaults may carry per-folder convention files (by default
-        '_conventions.md') describing how notes in that folder should be
-        authored — for example "reference material: keep notes
-        self-contained; do not link out to project or journal notes".
-        Conventions accumulate down the tree: a vault-root file applies
-        everywhere and nested files add to it, so entries are returned
-        root-first with the most specific guidance last.
-
-        Call this before creating, restructuring, or linking notes so the
-        result follows the vault owner's rules. The write/edit tools also
-        echo applicable conventions in their responses for a post-write
-        compliance check. Reads directly from disk — works even while the
-        search index is still building.
+        """Return the vault owner's authoring conventions for a note or folder, vault
+        root first and the most specific last.
 
         Args:
-            path: Relative note path (e.g. "3-Resources/topic.md") or folder
-                path (e.g. "3-Resources"). A note path resolves to its
-                parent folder. Pass "" (default) for discovery mode:
-                vault-root conventions plus the full list of folders
-                carrying convention files.
+            path: A note or folder path, e.g. "3-Resources/topic.md" or "3-Resources"; a
+                note takes its folder's conventions. "" (the default) returns the root
+                conventions and lists every folder that has its own.
 
         Returns:
             Dict with:

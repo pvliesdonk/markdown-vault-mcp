@@ -120,9 +120,10 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     miss on first boot.
 
     ``read_only`` selects both the write-guidance sentence and the
-    announcement above. ``summarize_note_limit`` is surfaced so calling models
-    can plan folder splits before their first call (#925); without it the
-    guidance points at the client-side ``summarize-subtree`` prompt instead
+    announcement above. The ``summarize`` tool states its own note limit
+    (#925, :func:`~markdown_vault_mcp._tools.summarize.apply_summarize_limits`),
+    so ``summarize_note_limit`` matters here only when it is ``None``: the
+    guidance then points at the client-side ``summarize-subtree`` prompt
     (#1035). Any ``okf_mode`` other than ``"off"`` emits the OKF sentence, on
     the same permits-rather-than-detects reasoning as the conventions one, and
     ``okf_write`` decides which upkeep it asks for: without the enforced-write
@@ -149,33 +150,26 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
     ]
     snippets.append(
         Snippet(
-            "Notes use vault-relative paths. 'search' finds; 'read' returns full "
-            "content; 'list_documents' enumerates; 'stats' reports capabilities. "
-            "Omit 'mode' for automatic search; use 'keyword' for exact terms.",
+            "Find notes with 'search' or 'list_documents', then open one with "
+            "'read' by its vault-relative path.",
             InstructionRole.CAPABILITIES,
-            ("search", "read", "list_documents", "stats"),
+            ("search", "read", "list_documents"),
         )
     )
-    snippets.append(
-        Snippet(
-            "No 'summarize' tool is configured; use the 'summarize-subtree' "
-            "prompt for multi-note or folder summaries.",
-            InstructionRole.INSTANCE,
+    if config.summarize_note_limit is None:
+        snippets.append(
+            Snippet(
+                "No 'summarize' tool is configured; use the 'summarize-subtree' "
+                "prompt for multi-note or folder summaries.",
+                InstructionRole.INSTANCE,
+            )
         )
-        if config.summarize_note_limit is None
-        else Snippet(
-            f"'summarize' handles at most {config.summarize_note_limit} notes per call; "
-            "split larger folders with 'get_toc'.",
-            InstructionRole.INSTANCE,
-            ("summarize", "get_toc"),
-        )
-    )
     if config.conventions_file is not None:
         snippets.append(
             Snippet(
-                "Before changing or linking notes, call "
-                "'get_conventions(path)'; follow it and write-result "
-                f"'conventions' ('{config.conventions_file}' configured).",
+                "Before creating, changing or linking notes, call "
+                "'get_conventions' and follow it, and the 'conventions' a write "
+                "returns.",
                 InstructionRole.INSTANCE,
                 ("get_conventions",),
             )
@@ -192,8 +186,8 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
         )
         snippets.append(
             Snippet(
-                "If 'stats.okf' reports an OKF bundle ('okf_version' in root "
-                "'index.md'), discount deprecated, stale, or unverified notes by "
+                "When 'stats' reports an OKF bundle, trust deprecated, stale and "
+                "unverified notes less, by "
                 # Terse on purpose: the generated instructions stay under
                 # pvl-core's 1,536-unit generated target, which the maximal
                 # configuration nearly fills, and an agent-authored literal
@@ -208,8 +202,7 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
         snippets.append(
             Snippet(
                 "Use 'write'/'edit'/'append' to change notes, "
-                "'rename'/'move_folder' to move, and 'delete' to remove. Writes "
-                "update the index; never call 'reindex' afterward.",
+                "'rename'/'move_folder' to move, and 'delete' to remove.",
                 InstructionRole.WORKFLOWS,
                 _WRITE_SNIPPET_TOOLS,
             )

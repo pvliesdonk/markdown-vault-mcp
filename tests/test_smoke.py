@@ -152,7 +152,9 @@ def test_instructions_compose_semantic_operator_roles(
     assert sections[2] == mode
     assert sections.index(mode) < sections.index(policy)
     assert sections.index(policy) < next(
-        index for index, section in enumerate(sections) if "'search' finds" in section
+        index
+        for index, section in enumerate(sections)
+        if "Find notes with 'search'" in section
     )
     assert sections[-1] == (
         "Full documentation for this server: "

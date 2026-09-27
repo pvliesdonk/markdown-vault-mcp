@@ -160,9 +160,15 @@ def _register_transfer(mcp: FastMCP, config: ProjectConfig, transport: str) -> N
             "note (a .md file) or attachment."
         ),
         upload_note=(
-            "ref is a vault-relative note (.md) or allowed attachment path. "
-            "Requires a new file unless WRITE_PROTECT_EXISTING=false; "
-            "upload links have no if_match."
+            "ref is a vault-relative path for a note (.md) or an allowed "
+            "attachment. "
+            # Upload links take no if_match, so on a write-protected vault they
+            # cannot prove a read and only create files.
+            + (
+                "It must not exist yet."
+                if config.write_protect_existing
+                else "An existing file at ref is replaced."
+            )
         ),
     )
 

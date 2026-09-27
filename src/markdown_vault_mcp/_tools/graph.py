@@ -42,22 +42,13 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """Find all documents that link TO the given document (backlinks).
+        """List the notes that link to a note.
 
-        Use this to discover which notes reference a particular document.
-        For a full picture of a note's place in the vault (backlinks,
-        outlinks, similar notes, folder peers), use 'get_context' instead
-        of calling this separately. Call 'get_backlinks' directly when you
-        only need the inbound link list.
-        Backlinks reveal implicit relationships that search alone cannot
-        surface — they show what other authors considered relevant to this
-        document.
+        Use get_context when you also need its outlinks or similar notes.
 
         Args:
-            path: Relative path of the target document (e.g.
-                "notes/topic.md"). Case-sensitive.
-            limit: Maximum number of backlinks to return. Omitted (the
-                default) returns all.
+            path: Path of the note linked to, e.g. "notes/topic.md"; case-sensitive.
+            limit: Maximum backlinks to return; omit for all.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -126,20 +117,15 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """Find all links FROM the given document to other documents (outlinks).
+        """List the links in a note, each with an exists flag that is false when the
+        target is missing.
 
-        Use this to see what a document references. For a full picture of
-        a note's place in the vault, use 'get_context' instead of calling
-        this separately. Call 'get_outlinks' directly when you only need
-        the outbound link list. Each result includes an 'exists' flag —
-        False means the link is broken (the target is missing from the
-        vault).
+        Use get_context when you also need its backlinks or similar notes.
 
         Args:
-            path: Relative path of the source document (e.g.
-                "notes/topic.md"). Case-sensitive.
-            limit: Maximum number of outlinks to return. Omitted (the
-                default) returns all.
+            path: Path of the note holding the links, e.g. "notes/topic.md";
+                case-sensitive.
+            limit: Maximum outlinks to return; omit for all.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -206,20 +192,15 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """Find all links that point to non-existent documents (broken links).
+        """List the links whose target is missing from the vault, each with the note
+        that holds it.
 
-        Use this to audit link health across the vault. Call this when
-        'stats' shows broken_link_count > 0, or after a 'rename' that did
-        not use update_links=True, to see what links were left pointing to
-        the old path. A broken link means the target path does not match any
-        indexed document — the referenced note may have been deleted, renamed,
-        or never created.
+        stats reports broken_link_count; a rename without update_links leaves such links
+        behind.
 
         Args:
-            folder: Optional folder filter. When provided, only checks
-                links from documents in this folder (e.g. "Journal").
-                Use folder="" for root-level (top-level) documents only.
-                Without this, checks all documents.
+            folder: Only links in notes in this folder, e.g. "Journal"; "" for top-level
+                notes; omit for the whole vault.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -276,15 +257,9 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """Return all notes with no inbound or outbound links.
+        """List every note with no links in or out, with no limit on the count.
 
-        WARNING: returns ALL orphans with no limit — check 'stats' for
-        orphan_count before calling on large vaults.
-
-        An orphan note has no backlinks (no other note links to it) and no
-        outlinks (it links to nothing). Call this when 'stats' shows
-        orphan_count > 0. Useful for finding isolated notes that may need to
-        be connected to the rest of the vault or removed.
+        stats reports orphan_count; check it first on a large vault.
 
         Args:
             wait_for_pending_writes: When True, wait until your recent
@@ -343,14 +318,12 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[dict[str, Any]]:
-        """Return the documents with the most inbound links, ranked by backlink count.
+        """List the notes with the most backlinks, most first.
 
-        Useful for discovering hub notes — frequently-referenced notes that are
-        likely key concepts in the vault. For the specific documents that link to
-        a particular note, use 'get_backlinks' instead.
+        Use get_backlinks for the notes that link to one of them.
 
         Args:
-            limit: Maximum number of results to return. Default 10.
+            limit: Maximum notes to return (default 10).
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -405,19 +378,13 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Find the shortest connection path between two notes in the link graph.
-
-        Treats links as undirected — a link from A to B or B to A both count
-        as a connection. Uses BFS; max_depth is clamped to [1, 10].
-
-        Useful for discovering how two seemingly unrelated notes are connected
-        through the vault's link structure (the "six degrees of separation" for
-        your notes).
+        """Find the shortest chain of links between two notes, following links in either
+        direction.
 
         Args:
-            source: Vault-relative path of the starting note (e.g. 'Ideas/spark.md').
-            target: Vault-relative path of the destination note.
-            max_depth: Maximum number of hops to search. Default 10, max 10.
+            source: Path of the starting note, e.g. "Ideas/spark.md".
+            target: Path of the destination note.
+            max_depth: Most links to follow, 1 to 10 (default 10).
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.

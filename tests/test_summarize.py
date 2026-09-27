@@ -980,14 +980,13 @@ async def test_summarize_description_carries_live_note_limit(
     async with Client(server) as client:
         tools = {t.name: t for t in await client.list_tools()}
     description = tools["summarize"].description or ""
-    assert "note limit of 7 notes" in description
+    assert "at most 7 notes per call" in description
     assert "{max_notes}" not in description
     # The Args: docstring entry lands in the parameter schema, a separate
-    # field from the tool description — it must be substituted too.
+    # field from the tool description; no placeholder may survive there either.
     param_desc = tools["summarize"].input_schema["properties"]["max_notes"][
         "description"
     ]
-    assert "cap of 7" in param_desc
     assert "{max_notes}" not in param_desc
 
 
@@ -1007,44 +1006,20 @@ def test_apply_summarize_limits_tolerates_missing_description() -> None:
     apply_summarize_limits(mcp, max_notes=5)
 
 
-def test_instructions_carry_live_note_limit() -> None:
+def test_instructions_leave_the_note_limit_to_the_tool() -> None:
     from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
 
     def guidance(**kwargs: object) -> str:
         config = GuidanceConfig(read_only=True, **kwargs)  # type: ignore[arg-type]
         return "\n\n".join(s.text for s in _domain_snippets(config))
 
+    # With a backend configured the summarize tool states its own limit
+    # (#1599), and route trade-offs are operator-facing (#1035).
     with_limit = guidance(summarize_note_limit=7)
-    assert "at most 7 notes per call" in with_limit
-    # With a backend configured the tool is the route; route trade-offs are
-    # operator-facing and stay out of the instructions (#1035).
-    assert "summarize-subtree" not in with_limit
-    without = guidance()
-    assert "notes per call" not in without
+    assert "summarize" not in with_limit
     # No backend does not mean no summarization: the instructions point
     # clients at the client-side prompt route (#1035).
-    assert "summarize-subtree" in without
-
-
-def test_summarize_snippet_declares_the_tools_it_directs_calls_to() -> None:
-    """The live-limit snippet is pruned when its tools are not exposed.
-
-    pvl-core drops a snippet whose declared tools are missing from the
-    exposed set, so an operator who denies ``summarize`` (or ``get_toc``,
-    which the snippet tells the model to size folders with) no longer gets
-    guidance pointing at a tool that is not there.
-    """
-    from markdown_vault_mcp._instructions import GuidanceConfig, _domain_snippets
-
-    limit_snippets = [
-        s
-        for s in _domain_snippets(
-            GuidanceConfig(read_only=True, summarize_note_limit=7)
-        )
-        if "notes per call" in s.text
-    ]
-    assert len(limit_snippets) == 1
-    assert set(limit_snippets[0].requires_tools) == {"summarize", "get_toc"}
+    assert "summarize-subtree" in guidance()
 
 
 async def test_summarize_visible_with_base_url_only(

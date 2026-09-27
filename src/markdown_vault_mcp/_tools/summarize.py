@@ -71,53 +71,22 @@ def register(mcp: FastMCP, jobs: Jobs) -> None:
         max_notes: int | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Summarize a note, a set of notes, or a folder subtree with an LLM.
+        """Summarize notes or folders with a language model; returns one summary that
+        cites its source notes by path, or one summary per note.
 
-        Sends the referenced notes to a language model and returns a generated
-        summary. In the default "synthesis" mode the summary is a single
-        cohesive text that synthesizes across all the notes and references the
-        individual source notes by path, so each point can be traced back to
-        its origin. In "per_note" mode it returns one summary per note instead.
-
-        Inputs larger than one model request are handled automatically: notes
-        are split into batches, each batch is summarized, and the partial
-        summaries are combined into the final result (several model calls, so
-        large folders take proportionally longer). Coverage per call is capped
-        at this server's note limit of {max_notes} notes; the response reports
-        the effective limit as ``notes_limit``. Plan ahead: when a folder
-        holds more notes than the limit (check with ``get_toc`` or
-        ``list_documents``), call this tool once per subfolder or per smaller
-        set of paths and combine the results yourself. When ``notes_omitted``
-        in a response is non-zero, the summary did NOT cover the whole
-        selection.
-
-        Slow summaries do not block: a call still running at the server's
-        soft deadline continues in the background, and this returns
-        ``{"status": "working", "job_id": ...}`` immediately — retrieve the
-        finished summary by calling ``get_job_result`` with that ``job_id``
-        (poll every few seconds). A summary that finishes within the deadline
-        returns inline with ``"status": "completed"`` and the fields below.
-
-        Only available when a summarization backend is configured (an
-        OPENAI_API_KEY or an OpenAI-compatible base URL). Note content is
-        sent to the operator-configured backend; do not summarize notes
-        whose content must not be shared with it.
+        It covers at most {max_notes} notes per call; split a larger folder into
+        subfolders, found with get_toc, and combine the results. The notes are sent to a
+        language model this server's operator chose.
 
         Args:
-            paths: One or more note paths (e.g. "notes/topic.md") and/or folder
-                prefixes (e.g. "notes/project"). Folders expand to every note
-                in the subtree (capped by the note limit). Mix freely;
-                duplicates are de-duplicated.
-            focus: Optional free-text instruction that steers the summary, e.g.
-                "extract action items" or "focus on decisions and their
-                rationale". Omit for a general-purpose summary.
-            mode: "synthesis" (default) for one cross-note summary that
-                references sources, or "per_note" for a separate summary per
-                note.
-            max_notes: Optional per-call note limit. Values above the server's
-                cap of {max_notes} are clamped to it (the cap bounds per-call
-                cost and latency); values below it narrow the work. Omit to
-                use the server cap.
+            paths: Note paths, e.g. "notes/topic.md", and folders, e.g. "notes/project",
+                which stand for every note under them.
+            focus: What the summary should concentrate on, e.g. "extract action items";
+                omit for a general summary.
+            mode: "synthesis" (default) for one summary across all the notes, or
+                "per_note" for one per note.
+            max_notes: A smaller note limit for this call, to narrow the work; omit for
+                the server's limit.
 
         Returns:
             When the summary completes within the soft deadline, a dict with
