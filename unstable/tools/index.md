@@ -538,13 +538,13 @@ Rewrite `[[wikilinks]]` as the bundle-root-absolute markdown links OKF recommend
 
 #### `okf_generate_index`
 
-Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing: `- [title](/path.md) - description` for each note directly in the folder, plus a pointer into each immediate subfolder's own `index.md`. Descriptions are drawn from frontmatter. Spaces in a path are percent-encoded (`- [Target](/Project%20Notes/target.md)`), and a `#` or an unbalanced parenthesis in a path, or a bracket in a title, is backslash-escaped, so a listing stays a set of links to the right notes whatever the notes are called. The listing is one level deep (it does not flatten the subtree). Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted. When the vault sets `REQUIRED_FIELDS`, any required field the file lacks is added, so the generated listing is not itself excluded from the index.
+Generate (or overwrite) a folder's reserved `index.md` as a progressive-disclosure listing: `- [title](/path.md) - description` for each note directly in the folder, plus a pointer into each immediate subfolder's own `index.md`. Descriptions are drawn from frontmatter. Spaces in a path are percent-encoded (`- [Target](/Project%20Notes/target.md)`), and a `#` or an unbalanced parenthesis in a path, or a bracket in a title, is backslash-escaped, so a listing stays a set of links to the right notes whatever the notes are called. The listing is one level deep (it does not flatten the subtree). A subfolder the listing points at that has no `index.md` gets one generated the same way, at every level below, so no pointer is broken; an existing subfolder `index.md` is left as it is. Existing frontmatter is preserved, so regenerating the bundle-root `index.md` keeps its `okf_version` declaration. Reserved files are omitted. When the vault sets `REQUIRED_FIELDS`, any required field the file lacks is added, so the generated listing is not itself excluded from the index.
 
 | Parameter | Type   | Description                               |
 | --------- | ------ | ----------------------------------------- |
 | `folder`  | string | Folder to index; omit for the bundle root |
 
-**Returns:** `path` (string), `entries` (integer), `frontmatter_preserved` (bool). `frontmatter_preserved` reports whether frontmatter already on the file was carried over. A file that had none can still be written with required fields added.
+**Returns:** `path` (string), `entries` (integer), `frontmatter_preserved` (bool), `created` (list of the subfolder `index.md` paths it wrote, outermost first). `frontmatter_preserved` reports whether frontmatter already on the file was carried over. A file that had none can still be written with required fields added.
 
 #### `okf_seed_log`
 
