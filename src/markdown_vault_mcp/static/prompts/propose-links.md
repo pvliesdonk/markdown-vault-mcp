@@ -28,7 +28,7 @@ If the resolved set contains more than 100 notes, pause and ask the user whether
 
 Call `stats()` once. If it reports `semantic_search_available=True`, then for each note in scope call `get_similar(path=<note path>, limit=$per_note_limit)` (default limit: 5). The tool returns a list of candidate dicts directly (index freshness is reported out-of-band in `_meta.index_stale`).
 
-Otherwise the vault has no embeddings and `get_similar` is unavailable: for each note call `search(query=<note title>, mode='keyword', limit=$per_note_limit)` instead and drop the note itself from the result.
+Use keyword search instead, `search(query=<note title>, mode='keyword', limit=$per_note_limit)`, dropping the note itself from the result, for each note where `get_similar` returned an empty list (its embeddings may not be built yet), and for every note when `stats()` reports `semantic_search_available=False` (the vault has no embeddings, so `get_similar` is unavailable).
 
 ## Step 3: Filter out already-linked pairs
 
