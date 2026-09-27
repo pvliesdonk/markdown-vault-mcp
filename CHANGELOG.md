@@ -22,6 +22,58 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 5.0.0 (2026-09-27)
+
+### Breaking Changes
+
+- adopt template v8 and FastMCP 4 (#1465)
+- enable overwrite protection by default (#1477)
+- require VaultSettings for construction (#1478)
+- remove deprecated claim constructor arguments (#1479)
+- keep bearer credentials out of human attribution (#1481)
+- update to v9.0.0 (#1550)
+- raise DocumentUnreadableError for a note that exists but cannot be read (#1627)
+- give caller-caused refusals a type, InvalidRequestError (#1628)
+- tell a revision the caller must change apart from a git failure (#1635)
+- report skipped notes apart from the note limit (#1644)
+- descriptions state the contract only; get_similar and list_tags refuse instead of returning [] (#1652)
+
+### Features
+
+- resolve shortcut reference links (#1533)
+- add a switch to skip the boot reindex (#1543)
+- say when to omit if_match on parallel edits and linked renames (#1572)
+
+### Bug Fixes
+
+- refresh queued writes before index-dependent mutations (#1482)
+- distinguish conflict resolver exit diagnostics (#1488)
+- percent-encode spaces in destinations the server writes (#1514)
+- escape what would re-point a generated or rewritten link (#1518)
+- read an inline link's text with escapes honoured (#1520)
+- read a reference label with escapes honoured (#1522)
+- rewrite the links the index actually holds (#1527)
+- close a link at the nearest unmatched bracket (#1529)
+- open a reference link at the nearest unmatched bracket (#1530)
+- delete notes_fts rows by rowid instead of scanning the content table (#1539)
+- checkpoint tracker state during a reindex pass (#1540)
+- reconcile the index with git HEAD instead of reindexing once per pull (#1560)
+- report event-store configuration errors in one line (#1570)
+- restore the real index-read budget before the trailing mutation (#1584)
+- make the conformance gate clone the template instead of guessing a sibling checkout (#1593)
+- describe READ_ONLY by what it does; group the external embeddings variables (#1597)
+- adopt fastmcp-pvl-core 9.0.1 and retire the client-surface budget gate (#1601)
+- delete the lines when a line-range edit has empty new_text (#1613)
+- reject link refs with ToolError at INFO, not ValueError (#1626)
+- tell an unknown SHA apart from a git failure in get_diff (#1632)
+- tell a missing attachment or note apart from a refused read (#1638)
+- end every tool call through pvl-core's tool boundary (template v10.1.0) (#1641)
+- refuse a path holding a NUL byte as a bad request (#1642)
+- every refusal names its next step and no setting the model cannot reach (#1643)
+- decide existence with stat, so an unreadable path is a fault, not absent (#1645)
+- the server's own files and folders: a refused stat is a fault or a deliberate choice (#1646)
+- delete, rename and move_folder refresh the index.md listings they make stale (#1648)
+
 ## 5.0.0-rc.4 (2026-09-27)
 
 ### Breaking Changes
