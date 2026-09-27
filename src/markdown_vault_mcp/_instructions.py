@@ -186,14 +186,13 @@ def _domain_snippets(config: GuidanceConfig) -> list[Snippet]:
         )
         snippets.append(
             Snippet(
-                "When 'stats' reports an OKF bundle, trust deprecated, stale and "
-                "unverified notes less, by "
+                "When 'stats' reports an OKF bundle, weigh notes by trust tier: "
+                "deprecated, stale and unverified ones count for less. "
                 # Terse on purpose: the generated instructions stay under
-                # pvl-core's 1,536-unit generated target, which the maximal
-                # configuration nearly fills, and an agent-authored literal
-                # space is exactly the defect #1494 fixed on the server's
-                # own output.
-                f"trust tier. {upkeep} Use root-relative Markdown links, "
+                # pvl-core's 1,536-unit generated target, and an
+                # agent-authored literal space is exactly the defect #1494
+                # fixed on the server's own output.
+                f"{upkeep} Use root-relative Markdown links, "
                 "%20 for spaces.",
                 InstructionRole.INSTANCE,
             )

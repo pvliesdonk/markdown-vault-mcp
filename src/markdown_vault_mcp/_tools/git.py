@@ -360,8 +360,8 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             direction: "pull", "push" or "both" (default).
-            dry_run: Report what a pull would do without changing anything; the push leg
-                does not run.
+            dry_run: Report what a pull would do without changing anything; the push
+                leg reports applied false without contacting the remote.
 
         Returns:
             Dict with the following fields:

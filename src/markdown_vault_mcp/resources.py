@@ -214,7 +214,7 @@ def register_resources(mcp: FastMCP) -> None:
         path: str,
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """Heading outline of a note, or of every note under a folder."""
+        """Heading outline of a note, or of up to 200 notes under a folder."""
         gen_before = vault.index.write_generation()
         toc = await asyncio.to_thread(vault.reader.get_toc, path)
         return _stale_resource(vault, json.dumps(toc_payload(toc)), gen_before)

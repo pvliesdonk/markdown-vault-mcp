@@ -758,7 +758,7 @@ class TestStats:
         assert "horror" in topics
         assert "gothic" in topics
 
-    def test_list_tags_unindexed_field_returns_empty(self, vault: Vault) -> None:
+    def test_list_tags_unindexed_field_refuses(self, vault: Vault) -> None:
         """list_tags() on a field not in indexed_frontmatter_fields refuses."""
         with pytest.raises(InvalidRequestError, match="not indexed"):
             vault.reader.list_tags("cluster")
