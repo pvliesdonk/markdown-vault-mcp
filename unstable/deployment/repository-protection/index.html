@@ -16,7 +16,7 @@
         <link rel="prev" href="../template-updates/">
       
       
-        <link rel="next" href="../../api/vault/">
+        <link rel="next" href="../integration-branches/">
       
       
         
@@ -1594,6 +1594,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What ships">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#branches-need-not-be-up-to-date" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Branches need not be up to date
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1683,6 +1700,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../integration-branches/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration Branches
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2014,6 +2059,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="What ships">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#branches-need-not-be-up-to-date" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Branches need not be up to date
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2126,7 +2188,7 @@ and the <code>bootstrap.yml</code> workflow applies them, so the effective prote
 state is checked in, reviewed, and re-applied rather than clicked together
 in the UI and forgotten.</p>
 <h2 id="what-ships">What ships<a class="headerlink" href="#what-ships" title="Permanent link">&para;</a></h2>
-<p>Three rulesets, one file each:</p>
+<p>Four rulesets, one file each:</p>
 <table>
 <thead>
 <tr>
@@ -2139,12 +2201,17 @@ in the UI and forgotten.</p>
 <tr>
 <td><code>protect-main</code></td>
 <td>the default branch</td>
-<td>pull request required (zero approvals), <code>CI Success</code> status check (strict), no deletion, no force push</td>
+<td>pull request required (zero approvals), <code>CI Success</code> status check, no deletion, no force push</td>
 </tr>
 <tr>
 <td><code>protect-release-branches</code></td>
 <td><code>release/*</code> branches</td>
 <td>same gates as the default branch</td>
+</tr>
+<tr>
+<td><code>protect-integration-branches</code></td>
+<td><code>integration/*</code> branches</td>
+<td>pull request required (zero approvals), <code>CI Success</code> status check, no force push</td>
 </tr>
 <tr>
 <td><code>protect-release-tags</code></td>
@@ -2168,11 +2235,37 @@ in the UI and forgotten.</p>
   on pull requests targeting <code>release/*</code> for exactly this reason. Status
   checks are not enforced on branch creation, so cutting <code>release/X.Y</code> is a
   plain push.</li>
+<li><strong><code>integration/*</code></strong> branches park an epic's child pull requests until the
+  whole epic goes to <code>main</code> at once; the
+  <a href="../integration-branches/">integration branches</a> page covers the workflow.
+  Child pull requests need a pull request and <code>CI Success</code>, and force pushes
+  are blocked because a rebase would rewrite the commits every open child is
+  based on. Deletion stays open, so GitHub's automatic head-branch deletion
+  can remove the branch once its final pull request merges. The checks
+  listed in <code>extra_required_checks</code> (below) are not required here: they come
+  from workflows the project owns, which may not run on <code>integration/*</code>, and
+  the final pull request to <code>main</code> has to pass them anyway.</li>
 <li><strong><code>v*</code> tags</strong> are the identity of every shipped release: package
   registries, Docker tags, and install instructions all point at them.
   The ruleset blocks deleting or force-moving them. Creating tags stays
   unrestricted because the release workflow creates one per release.</li>
 </ul>
+<h3 id="branches-need-not-be-up-to-date">Branches need not be up to date<a class="headerlink" href="#branches-need-not-be-up-to-date" title="Permanent link">&para;</a></h3>
+<p>The required checks are not <em>strict</em>: a pull request whose checks passed
+can merge even after its base branch has moved on. The strict setting,
+GitHub's <strong>Require branches to be up to date before merging</strong>, makes every
+merge to <code>main</code> turn each open pull request's green check stale, so each one
+waits for an <strong>Update branch</strong> round trip and a full CI re-run before it can
+merge. On a busy trunk that happens once per sibling merge.</p>
+<p>The cost of turning it off is the semantic conflict: two pull requests that
+each pass alone and break together. CI runs on every push to <code>main</code>,
+<code>release/*</code> and <code>integration/*</code>, so such a break shows up on the merged
+commit rather than slipping through unseen. A release pull request is the
+one place this needs care: nothing stops it merging after its base moved
+on, so re-dispatch Release Prepare first (see the release process page). GitHub's merge queue is the tool
+that closes the gap without the update chore, but it needs a <code>merge_group</code>
+trigger in every required workflow and is not available on repositories
+owned by a personal account.</p>
 <h2 id="who-bypasses-and-how">Who bypasses, and how<a class="headerlink" href="#who-bypasses-and-how" title="Permanent link">&para;</a></h2>
 <p>Ruleset bypass lists name roles, teams, apps, or deploy keys, not user
 accounts. The shipped entry grants bypass to the <strong>repository admin role</strong>
@@ -2236,9 +2329,9 @@ nothing stops the merge.</p>
 <span class="nt">extra_required_checks</span><span class="p">:</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SPA sources</span>
 </code></pre></div>
-<p>Each name renders into the <code>required_status_checks</code> array of both branch
-rulesets, alongside <code>CI Success</code>, and applies to <code>main</code> and <code>release/*</code>
-alike. The answer is the project's own, so the rulesets stay template-owned
+<p>Each name renders into the <code>required_status_checks</code> array of both release
+branch rulesets, alongside <code>CI Success</code>, and applies to <code>main</code> and
+<code>release/*</code> alike. Integration branches require <code>CI Success</code> alone. The answer is the project's own, so the rulesets stay template-owned
 and a <code>copier update</code> re-renders them with the project's checks intact. An
 empty answer, the default, renders exactly the single-context form every
 project already had.</p>
