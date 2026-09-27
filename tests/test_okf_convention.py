@@ -487,3 +487,194 @@ def test_unreadable_folder_log_is_not_overwritten(enforced_vault: Vault) -> None
     enforced_vault.writer.write("guides/playbook.md", "# Playbook\n\nSteps.\n")
     wait_for_writer_drain(enforced_vault)
     assert log.read_bytes() == unreadable
+
+
+# ---------------------------------------------------------------------------
+# #1609: delete / rename / move_folder refresh the affected index.md files
+# ---------------------------------------------------------------------------
+
+
+def _index_links_broken(vault: Vault) -> list[str]:
+    """Broken links whose source is a generated index.md."""
+    return [
+        f"{b.source_path} -> {b.target_path}"
+        for b in vault.graph.get_broken_links()
+        if b.source_path.endswith("index.md")
+    ]
+
+
+class TestIndexRefreshOnStructuralChanges:
+    def test_delete_drops_the_note_from_its_folder_index(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.write("guides/a.md", "# A\n\nx\n")
+        enforced_vault.writer.write("guides/b.md", "# B\n\ny\n")
+        enforced_vault.writer.delete("guides/a.md")
+        wait_for_writer_drain(enforced_vault)
+        index = _content(enforced_vault, "guides/index.md") or ""
+        assert "/guides/a.md" not in index
+        assert "/guides/b.md" in index
+        assert _index_links_broken(enforced_vault) == []
+
+    def test_rename_across_folders_updates_both_indexes(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.write("guides/a.md", "# A\n\nx\n")
+        enforced_vault.writer.write("other/keep.md", "# Keep\n\nk\n")
+        enforced_vault.writer.rename("guides/a.md", "other/a.md")
+        wait_for_writer_drain(enforced_vault)
+        assert "/guides/a.md" not in (_content(enforced_vault, "guides/index.md") or "")
+        assert "/other/a.md" in (_content(enforced_vault, "other/index.md") or "")
+        assert _index_links_broken(enforced_vault) == []
+
+    def test_move_folder_refreshes_the_moved_subtree_and_both_parents(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.write("guides/sub/a.md", "# A\n\nx\n")
+        enforced_vault.writer.write("guides/top.md", "# Top\n\nt\n")
+        enforced_vault.writer.write("archive/old.md", "# Old\n\no\n")
+        enforced_vault.writer.move_folder("guides/sub", "archive/sub")
+        wait_for_writer_drain(enforced_vault)
+        moved = _content(enforced_vault, "archive/sub/index.md") or ""
+        assert "/archive/sub/a.md" in moved
+        assert "/guides/sub/" not in moved
+        assert "sub/index.md" not in (_content(enforced_vault, "guides/index.md") or "")
+        assert "sub/index.md" in (_content(enforced_vault, "archive/index.md") or "")
+        assert _index_links_broken(enforced_vault) == []
+
+
+class TestRefreshIndexesGuards:
+    def _maintainer(
+        self, *, active: bool = True
+    ) -> tuple[ConventionMaintainer, _FakeMigrate]:
+        migrate = _FakeMigrate()
+        maintainer = ConventionMaintainer(
+            doc_mgr=_FakeDoc(),  # type: ignore[arg-type]
+            okf_migrate=migrate,  # type: ignore[arg-type]
+            detector=_FakeDetector(active),  # type: ignore[arg-type]
+        )
+        return maintainer, migrate
+
+    def test_each_folder_is_refreshed_once_in_order(self) -> None:
+        maintainer, migrate = self._maintainer()
+        maintainer.refresh_indexes(["b", "a", "b", ""], trigger_paths=["b/x.md"])
+        assert migrate.index_calls == ["b", "a", ""]
+
+    def test_inactive_vault_is_a_noop(self) -> None:
+        maintainer, migrate = self._maintainer(active=False)
+        maintainer.refresh_indexes(["a"], trigger_paths=["a/x.md"])
+        assert migrate.index_calls == []
+
+    def test_suppressed_change_is_a_noop(self) -> None:
+        maintainer, migrate = self._maintainer()
+        with okf_write_suppressed():
+            maintainer.refresh_indexes(["a"], trigger_paths=["a/x.md"])
+        assert migrate.index_calls == []
+
+    def test_a_reserved_file_change_triggers_nothing(self) -> None:
+        """A reserved-file change never triggers its own regeneration (#1414)."""
+        maintainer, migrate = self._maintainer()
+        maintainer.refresh_indexes(["a"], trigger_paths=["a/index.md"])
+        assert migrate.index_calls == []
+
+    def test_one_failure_does_not_stop_the_others(self) -> None:
+        maintainer, migrate = self._maintainer()
+        migrate.raise_on_index = True
+        maintainer.refresh_indexes(["a", "b"], trigger_paths=["a/x.md"])
+        assert migrate.index_calls == []  # both attempted, both raised, none raised out
+
+
+class TestMaintainerFolderWalks:
+    def _maintainer(self, source_dir: Path | None) -> ConventionMaintainer:
+        return ConventionMaintainer(
+            doc_mgr=_FakeDoc(),  # type: ignore[arg-type]
+            okf_migrate=_FakeMigrate(),  # type: ignore[arg-type]
+            detector=_FakeDetector(True),  # type: ignore[arg-type]
+            source_dir=source_dir,
+        )
+
+    def test_subtree_folders_skips_hidden_folders(self, tmp_path: Path) -> None:
+        for rel in ("a/b/c", "a/.git/objects", "a/d"):
+            (tmp_path / rel).mkdir(parents=True)
+        assert self._maintainer(tmp_path).subtree_folders("a") == [
+            "a",
+            "a/b",
+            "a/d",
+            "a/b/c",
+        ]
+
+    def test_without_a_vault_directory_only_the_root_is_known(self) -> None:
+        maintainer = self._maintainer(None)
+        assert maintainer.subtree_folders("a") == ["a"]
+        assert maintainer.indexed_anchor("a/b") == "a/b"
+
+    def test_indexed_anchor_is_the_nearest_indexed_level(self, tmp_path: Path) -> None:
+        (tmp_path / "a" / "b" / "c").mkdir(parents=True)
+        (tmp_path / "a" / "index.md").write_text("# a\n", encoding="utf-8")
+        maintainer = self._maintainer(tmp_path)
+        assert maintainer.indexed_anchor("a/b/c") == "a"
+        assert maintainer.indexed_anchor("x/y") == ""
+
+    def test_a_refused_stat_counts_as_indexed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The refresh is attempted and logs its own failure (#1625)."""
+
+        def refuse(path: Path) -> bool:
+            raise PermissionError(path)
+
+        monkeypatch.setattr(
+            "markdown_vault_mcp._okf_convention.is_regular_file", refuse
+        )
+        assert self._maintainer(tmp_path).indexed_anchor("a/b") == "a/b"
+
+
+class TestIndexRefreshEdgeCases:
+    def test_renaming_a_note_onto_a_reserved_name_keeps_its_body(
+        self, enforced_vault: Vault
+    ) -> None:
+        """No regeneration may overwrite the file the rename just placed."""
+        enforced_vault.writer.write("guides/a.md", "# A\n\nbody A precious\n")
+        enforced_vault.writer.rename("guides/a.md", "newf/index.md")
+        wait_for_writer_drain(enforced_vault)
+        assert "body A precious" in (_content(enforced_vault, "newf/index.md") or "")
+
+    def test_writing_into_a_new_nested_folder_lists_every_level(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.write("new/sub/a.md", "# A\n\nx\n")
+        wait_for_writer_drain(enforced_vault)
+        assert "(/new/index.md)" in (_content(enforced_vault, "index.md") or "")
+        assert "(/new/sub/index.md)" in (_content(enforced_vault, "new/index.md") or "")
+        assert "/new/sub/a.md" in (_content(enforced_vault, "new/sub/index.md") or "")
+        assert _index_links_broken(enforced_vault) == []
+
+    def test_renaming_a_reserved_file_triggers_nothing(
+        self, enforced_vault: Vault
+    ) -> None:
+        """A reserved-file change never triggers its own regeneration (#1414)."""
+        enforced_vault.writer.write("guides/a.md", "# A\n\nx\n")
+        enforced_vault.writer.rename("guides/index.md", "guides/was-index.md")
+        wait_for_writer_drain(enforced_vault)
+        assert _content(enforced_vault, "guides/index.md") is None
+
+    def test_rename_into_a_nested_new_folder_leaves_no_broken_pointer(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.write("guides/a.md", "# A\n\nx\n")
+        enforced_vault.writer.rename("guides/a.md", "deep/er/a.md")
+        wait_for_writer_drain(enforced_vault)
+        assert "/deep/er/a.md" in (_content(enforced_vault, "deep/er/index.md") or "")
+        assert "(/deep/index.md)" in (_content(enforced_vault, "index.md") or "")
+        assert _index_links_broken(enforced_vault) == []
+
+    def test_move_folder_into_a_nested_new_parent_leaves_no_broken_pointer(
+        self, enforced_vault: Vault
+    ) -> None:
+        enforced_vault.writer.write("guides/sub/a.md", "# A\n\nx\n")
+        enforced_vault.writer.move_folder("guides/sub", "top/sub")
+        wait_for_writer_drain(enforced_vault)
+        assert "(/top/index.md)" in (_content(enforced_vault, "index.md") or "")
+        top = _content(enforced_vault, "top/index.md") or ""
+        assert "(/top/sub/index.md)" in top
+        assert _index_links_broken(enforced_vault) == []

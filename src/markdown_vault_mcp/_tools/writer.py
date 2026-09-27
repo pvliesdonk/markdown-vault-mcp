@@ -1041,15 +1041,17 @@ def register(mcp: FastMCP) -> None:
         `- [title](/path.md) - description` per note, description drawn from
         frontmatter. Existing frontmatter is preserved, so regenerating the
         bundle-root index.md keeps its `okf_version` declaration. Reserved
-        files (index.md, log.md) are omitted from the listing. Waits up to
-        60s for prior index writes; refresh errors abort before generation.
+        files (index.md, log.md) are omitted from the listing. A subfolder
+        without an index.md gets one, recursively. Waits up to 60s for prior
+        index writes; refresh errors abort before generation.
 
         Args:
             folder: Vault-relative folder to index (e.g. "guides"). Omit for
                 the bundle root.
 
         Returns:
-            Dict with path, entries (count), and frontmatter_preserved (bool).
+            Dict with path, entries (count), frontmatter_preserved (bool),
+            and created (subfolder index.md paths written).
         """
         result = await asyncio.to_thread(vault.writer.okf_generate_index, folder=folder)
         return attach_remote_health(vault, asdict(result))

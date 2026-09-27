@@ -100,6 +100,18 @@ def folder_matches(row_folder: str, folder: str) -> bool:
     return row_folder == folder or row_folder.startswith(folder + "/")
 
 
+def folder_of(path: str) -> str:
+    """Return the vault-relative folder holding *path*.
+
+    Args:
+        path: A vault-relative, slash-separated file or folder path.
+
+    Returns:
+        The parent folder, ``""`` for an entry at the vault root.
+    """
+    return path.rsplit("/", 1)[0] if "/" in path else ""
+
+
 def reject_nul(path: str) -> None:
     """Refuse a path holding a NUL byte, which no file name can contain.
 

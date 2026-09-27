@@ -9,7 +9,11 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
+
+from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
+from markdown_vault_mcp.utils import folder_of, is_note
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -30,6 +34,11 @@ if TYPE_CHECKING:
         RenameResult,
         WriteResult,
     )
+
+
+def _is_reserved(path: str) -> bool:
+    """Whether *path* names a reserved OKF file (``index.md`` / ``log.md``)."""
+    return PurePosixPath(path).name in OKF_RESERVED_FILENAMES
 
 
 class WriterFacet:
@@ -291,7 +300,13 @@ class WriterFacet:
                 not match.
             DocumentNotFoundError: If *path* does not exist.
         """
-        return self._doc_mgr.delete(path, if_match=if_match)
+        result = self._doc_mgr.delete(path, if_match=if_match)
+        if self._convention_maintainer is not None and is_note(path):
+            # The folder's listing still names the deleted note (#1609).
+            self._convention_maintainer.refresh_indexes(
+                [folder_of(path)], trigger_paths=[path]
+            )
+        return result
 
     def rename(
         self,
@@ -329,12 +344,31 @@ class WriterFacet:
             InvalidRequestError: If *old_path* or *new_path* escapes the source
                 directory.
         """
-        return self._doc_mgr.rename(
+        result = self._doc_mgr.rename(
             old_path,
             new_path,
             if_match=if_match,
             update_links=update_links,
         )
+        if (
+            self._convention_maintainer is not None
+            and is_note(new_path)
+            and not _is_reserved(old_path)
+            and not _is_reserved(new_path)
+        ):
+            # The old folder still lists the note; the new one does not yet
+            # (#1609). Regenerating the nearest indexed level at or above the
+            # new folder lists it there and indexes every missing level below
+            # (#1647). A rename to or from a reserved name triggers nothing:
+            # regenerating would overwrite the file just placed, and a
+            # reserved-file change never triggers itself (#1414).
+            maintainer = self._convention_maintainer
+            maintainer.refresh_indexes(
+                [folder_of(old_path)],
+                trigger_paths=[old_path, new_path],
+                create=[maintainer.indexed_anchor(folder_of(new_path))],
+            )
+        return result
 
     def move_folder(self, old_dir: str, new_dir: str) -> MoveFolderResult:
         """Move a folder subtree to a new prefix, rewriting links vault-wide.
@@ -366,7 +400,23 @@ class WriterFacet:
                 destination clashes, but a mid-move OS error leaves the subtree
                 partially moved with the index unchanged; reindex recovers.
         """
-        return self._doc_mgr.move_folder(old_dir, new_dir)
+        result = self._doc_mgr.move_folder(old_dir, new_dir)
+        if self._convention_maintainer is not None:
+            # The moved index.md files still list the old paths, and the old
+            # parent still points at a subfolder that is gone (#1609). The
+            # nearest indexed level above the destination gets it listed, with
+            # every missing level between indexed (#1647).
+            maintainer = self._convention_maintainer
+            new_root = new_dir.strip("/")
+            maintainer.refresh_indexes(
+                [
+                    *maintainer.subtree_folders(new_root),
+                    folder_of(old_dir.strip("/")),
+                ],
+                trigger_paths=[old_dir, new_dir],
+                create=[maintainer.indexed_anchor(folder_of(new_root))],
+            )
+        return result
 
     def write_attachment(
         self,

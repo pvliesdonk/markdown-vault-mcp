@@ -534,6 +534,7 @@ class Vault:
                 detector=self._okf,
                 write_lock=self._file_write_lock,
                 reserved_frontmatter=reserved_frontmatter,
+                source_dir=self._source_dir,
             )
         self._writer_facet = WriterFacet(
             self._doc_mgr,

@@ -754,11 +754,14 @@ class OkfIndexResult:
             carried over. Not "the file has frontmatter": a file that had
             none is still written with the vault's required fields seeded
             (#1175), which reports ``False`` here.
+        created: Subfolder ``index.md`` files written because the listing
+            points at them and they did not exist (#1647), outermost first.
     """
 
     path: str
     entries: int
     frontmatter_preserved: bool
+    created: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
