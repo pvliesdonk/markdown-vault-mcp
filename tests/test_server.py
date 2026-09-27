@@ -2589,15 +2589,16 @@ class TestSimilarTool:
     """Integration tests for get_similar tool."""
 
     @pytest.mark.usefixtures("_mcp_env")
-    async def test_get_similar_no_embeddings_returns_empty(self) -> None:
-        """get_similar returns empty list when embeddings not configured."""
+    async def test_get_similar_no_embeddings_says_what_to_use_instead(self) -> None:
+        """Without embeddings the call is refused with the alternatives (#1599)."""
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
-            result = await client.call_tool("get_similar", {"path": "simple.md"})
-        assert _meta_stale(result) is False
-        data = _parse_tool_data(result)
-        assert data == []
+            result = await client.call_tool_mcp("get_similar", {"path": "simple.md"})
+        assert result.is_error is True
+        text = result.content[0].text
+        assert "needs embeddings" in text
+        assert "get_backlinks" in text
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_get_similar_nonexistent_raises(self) -> None:
@@ -2606,52 +2607,32 @@ class TestSimilarTool:
             with pytest.raises((ToolError, MCPError)):
                 await client.call_tool("get_similar", {"path": "nonexistent.md"})
 
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            {"limit": 5, "chunks_per_file": 1},
+            {"folder": "subfolder", "filters": {"tags": "x"}},
+            {"wait_for_pending_writes": True},
+        ],
+        ids=["chunks_per_file", "folder_and_filters", "wait_for_pending_writes"],
+    )
     @pytest.mark.usefixtures("_mcp_env")
-    async def test_get_similar_tool_accepts_chunks_per_file(self) -> None:
-        """The `get_similar` MCP tool surfaces the chunks_per_file kwarg."""
-        server = make_server()
-        async with Client(server) as client:
-            await wait_for_mcp_writer_drain(client)
-            # Without embeddings this returns []; the assertion is that the
-            # call_tool schema accepts the chunks_per_file kwarg without raising.
-            result = await client.call_tool(
-                "get_similar",
-                {"path": "simple.md", "limit": 5, "chunks_per_file": 1},
-            )
-        assert _meta_stale(result) is False
-        data = _parse_tool_data(result)
-        assert isinstance(data, list)
+    async def test_get_similar_schema_accepts_its_arguments(
+        self, extra: dict[str, Any]
+    ) -> None:
+        """Arguments pass schema validation and reach the embeddings check.
 
-    @pytest.mark.usefixtures("_mcp_env")
-    async def test_get_similar_tool_accepts_folder_and_filters(self) -> None:
-        """The `get_similar` MCP tool surfaces the folder/filters kwargs."""
+        Validation runs before the tool body, so the embeddings refusal (not
+        an argument error) shows every argument was accepted.
+        """
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
-            # Without embeddings this returns []; the assertion is that the
-            # call_tool schema accepts the new kwargs without raising.
-            result = await client.call_tool(
-                "get_similar",
-                {
-                    "path": "simple.md",
-                    "folder": "subfolder",
-                    "filters": {"tags": "x"},
-                },
+            result = await client.call_tool_mcp(
+                "get_similar", {"path": "simple.md", **extra}
             )
-        data = _parse_tool_data(result)
-        assert isinstance(data, list)
-
-    @pytest.mark.usefixtures("_mcp_env")
-    async def test_get_similar_with_wait_for_pending_writes(self) -> None:
-        server = make_server()
-        async with Client(server) as client:
-            await wait_for_mcp_writer_drain(client)
-            result = await client.call_tool(
-                "get_similar",
-                {"path": "simple.md", "wait_for_pending_writes": True},
-            )
-        assert _meta_stale(result) is False
-        assert isinstance(_parse_tool_data(result), list)
+        assert result.is_error is True
+        assert "needs embeddings" in result.content[0].text
 
 
 class TestGetTocTool:
@@ -4525,7 +4506,7 @@ class TestIndexStaleSignal:
             ("search", {"query": "topic"}, list),
             ("list_documents", {}, list),
             ("list_folders", {}, list),
-            ("list_tags", {}, list),
+            ("list_tags", {"field": "tags"}, list),
             ("stats", {}, dict),
             ("get_recent", {}, list),
             ("get_broken_links", {}, list),
@@ -4533,7 +4514,6 @@ class TestIndexStaleSignal:
             ("get_most_linked", {}, list),
             ("get_backlinks", {"path": "notes/topic.md"}, list),
             ("get_outlinks", {"path": "notes/topic.md"}, list),
-            ("get_similar", {"path": "notes/topic.md"}, list),
             ("get_context", {"path": "notes/topic.md"}, dict),
             (
                 "get_connection_path",
@@ -4545,12 +4525,18 @@ class TestIndexStaleSignal:
         ],
     )
     async def test_index_stale_true_uniform_across_index_tools(
-        self, tool_name: str, tool_args: dict[str, str], expected_type: type
+        self,
+        tool_name: str,
+        tool_args: dict[str, str],
+        expected_type: type,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Every index-querying tool independently surfaces index_stale in
         ``_meta``; catch copy-paste regressions across the whole set."""
         from markdown_vault_mcp.domain import get_vault_singleton
 
+        # list_tags lists only an indexed field (#1599).
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_INDEXED_FIELDS", "tags")
         server = make_server()
         async with Client(server) as client:
             await wait_for_mcp_writer_drain(client)
@@ -4593,7 +4579,7 @@ class TestWaitForDrainDirect:
         assert not (isinstance(data, dict) and "stale" in data and "data" in data)
         assert _meta_stale(result) is False
 
-    @pytest.mark.usefixtures("_mcp_env")
+    @pytest.mark.usefixtures("_mcp_env_with_fields")
     @pytest.mark.parametrize(
         ("tool_name", "tool_args", "expected_type"),
         [
@@ -4633,7 +4619,7 @@ class TestResourceStaleSignal:
     """MCP resources surface index freshness in the response ``_meta`` field
     while keeping their contents a bare JSON document (#645)."""
 
-    @pytest.mark.usefixtures("_mcp_env")
+    @pytest.mark.usefixtures("_mcp_env_with_fields")
     @pytest.mark.parametrize(
         "uri",
         [
@@ -4644,7 +4630,6 @@ class TestResourceStaleSignal:
             "folders://vault",
             "recent://vault",
             "toc://vault/simple.md",
-            "similar://vault/simple.md",
         ],
     )
     async def test_resource_meta_index_stale_false_when_drained(self, uri: str) -> None:
@@ -4660,6 +4645,27 @@ class TestResourceStaleSignal:
         # application/json MIME type survives the ResourceResult wrapping.
         assert result.contents[0].mime_type == "application/json"
         json.loads(result.contents[0].text)
+
+    @pytest.mark.parametrize(
+        ("uri", "says"),
+        [
+            ("similar://vault/simple.md", "needs embeddings"),
+            ("tags://vault/author", "not indexed"),
+            ("toc://vault/missing.md", "missing.md"),
+        ],
+    )
+    @pytest.mark.usefixtures("_mcp_env")
+    async def test_resource_request_errors_log_at_info(
+        self, uri: str, says: str, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A URI the reader must change is refused without an ERROR (#1599)."""
+        server = make_server()
+        with caplog.at_level(logging.INFO):
+            async with Client(server) as client:
+                await wait_for_mcp_writer_drain(client)
+                with pytest.raises(MCPError, match=says):
+                    await client.read_resource_mcp(uri)
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
 
     @pytest.mark.usefixtures("_mcp_env")
     async def test_resource_meta_index_stale_true_when_writer_dirty(self) -> None:

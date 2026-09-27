@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.exceptions import IndexUnavailableError
+from markdown_vault_mcp.exceptions import (
+    EmbeddingsNotConfiguredError,
+    IndexUnavailableError,
+    InvalidRequestError,
+)
 from markdown_vault_mcp.facets.reader import ReaderFacet
 from markdown_vault_mcp.types import NoteContext, SubtreeToc, VaultStats
 from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -53,8 +57,10 @@ class TestReaderFacetBehaviour:
     def test_list_folders_returns_list(self, built: Vault) -> None:
         assert isinstance(built.reader.list_folders(), list)
 
-    def test_list_tags_returns_list(self, built: Vault) -> None:
-        assert isinstance(built.reader.list_tags(), list)
+    def test_list_tags_refuses_an_unindexed_field(self, built: Vault) -> None:
+        # The shared fixture indexes no frontmatter field (#1599).
+        with pytest.raises(InvalidRequestError, match="indexes no frontmatter"):
+            built.reader.list_tags()
 
     def test_get_recent_returns_list(self, built: Vault) -> None:
         assert isinstance(built.reader.get_recent(), list)
@@ -67,16 +73,12 @@ class TestReaderFacetBehaviour:
         assert isinstance(result, SubtreeToc)
         assert isinstance(result.notes, list) and result.truncated is False
 
-    def test_get_similar_empty_without_embeddings(self, built: Vault) -> None:
-        # No embedding provider configured -> semantic similarity degrades to [].
-        assert built.reader.get_similar("full_frontmatter.md") == []
-
-    def test_get_similar_accepts_filter_params(self, built: Vault) -> None:
-        # folder/filters thread through to SearchManager.get_similar.
-        result = built.reader.get_similar(
-            "full_frontmatter.md", folder="subfolder", filters={"tags": "x"}
-        )
-        assert result == []
+    def test_get_similar_refuses_without_embeddings(self, built: Vault) -> None:
+        # No embedding provider configured: an opt-in feature left off (#1599).
+        with pytest.raises(EmbeddingsNotConfiguredError):
+            built.reader.get_similar(
+                "full_frontmatter.md", folder="subfolder", filters={"tags": "x"}
+            )
 
     def test_get_context_returns_note_context(self, built: Vault) -> None:
         ctx = built.reader.get_context("full_frontmatter.md")

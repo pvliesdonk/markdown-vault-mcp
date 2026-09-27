@@ -12,22 +12,50 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import functools
 import json
+import logging
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext, Depends
+from fastmcp.exceptions import ResourceError
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.context import Context
 
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
 from ._server_queryable import needs_queryable
 from .domain import get_vault
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+
+def _request_outcomes(
+    fn: Callable[..., Awaitable[ResourceResult]],
+) -> Callable[..., Awaitable[ResourceResult]]:
+    """Report a URI the reader must change at INFO, not as a server fault.
+
+    A templated resource reads what the URI names; a note that does not
+    exist, a field that is not indexed or a vault without embeddings is the
+    request's doing (#1608, #1599). ``ResourceError`` defaults to ERROR, so
+    those are re-raised at INFO; anything else stays a fault.
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> ResourceResult:
+        try:
+            return await fn(*args, **kwargs)
+        except InvalidRequestError as exc:
+            raise ResourceError(str(exc), log_level=logging.INFO) from None
+
+    return wrapper
 
 
 def _stale_resource(vault: Vault, contents: str, gen_before: int) -> ResourceResult:
@@ -154,6 +182,7 @@ def register_resources(mcp: FastMCP) -> None:
         mime_type="application/json",
         icons=_TOOL_ICONS["list_tags"],
     )
+    @_request_outcomes
     async def vault_tags_by_field(
         field: str,
         vault: Vault = Depends(get_vault),
@@ -180,6 +209,7 @@ def register_resources(mcp: FastMCP) -> None:
         "toc://vault/{path}", mime_type="application/json", icons=_TOOL_ICONS["read"]
     )
     @needs_queryable()
+    @_request_outcomes
     async def vault_toc(
         path: str,
         vault: Vault = Depends(get_vault),
@@ -195,6 +225,7 @@ def register_resources(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_similar"],
     )
     @needs_queryable()
+    @_request_outcomes
     async def vault_similar(
         path: str,
         vault: Vault = Depends(get_vault),

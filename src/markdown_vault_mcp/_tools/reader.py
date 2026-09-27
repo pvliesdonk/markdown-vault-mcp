@@ -396,8 +396,7 @@ def register(mcp: FastMCP) -> None:
         Use the values in the filters argument of search.
 
         Args:
-            field: A field from indexed_frontmatter_fields in stats (default "tags");
-                other fields are not indexed and list no values.
+            field: A field from indexed_frontmatter_fields in stats (default "tags").
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -527,8 +526,8 @@ def register(mcp: FastMCP) -> None:
         """Find the notes closest in meaning to a given note; returns them ranked by
         similarity with their closest sections, the note itself excluded.
 
-        Needs semantic_search_available from stats; without embeddings, or for a note
-        with none stored yet, the list is empty.
+        Needs semantic_search_available from stats. A note whose embeddings are not
+        built yet has no similar notes.
 
         Args:
             path: Path of the note to compare against, e.g. "notes/topic.md";
