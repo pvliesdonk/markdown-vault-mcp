@@ -50,9 +50,11 @@ repos:
       # Structural-health gate: strict ruff structural rules on CHANGED LINES
       # ONLY, sharing scripts/structural_gate.sh with the CI `structure` job so
       # the command cannot drift between the two. The script derives its
-      # compare branch (nearest of origin/main and origin/release/*, or the
-      # STRUCTURAL_GATE_BASE override), so a backport branch targeting
-      # release/X.Y is measured against that base rather than origin/main.
+      # compare branch (nearest of origin/main, origin/release/* and
+      # origin/integration/*, or the STRUCTURAL_GATE_BASE override), so a
+      # backport branch targeting release/X.Y, or an epic's child branch
+      # targeting integration/<epic>, is measured against that base rather
+      # than origin/main.
       # Pre-push (not commit-time): a commit has no base to compare and may be
       # partial; pre-push sees the full branch range CI checks.
       - id: structural-diff-gate

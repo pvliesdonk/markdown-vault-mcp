@@ -1,4 +1,14 @@
-# Log
+# Reference research log
+
+## 2026-09-26
+
+- Added [GitHub and git behaviour behind integration branches](github-integration-branches.md),
+  checked against GitHub.com documentation, the git 2.36 release notes and
+  the knope 0.23.0 source. Covered up-to-date requirements, merge queue
+  availability, workflow branch filters, closing keywords, retargeting,
+  merge methods, knope's commit walk, `--remerge-diff` and `range-diff`.
+  Single pass; the merge-queue availability claim was re-checked against the
+  page. Draft until a first epic runs through it. Next review: 2027-03-26.
 
 ## 2026-09-25
 

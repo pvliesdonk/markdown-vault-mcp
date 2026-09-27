@@ -11,8 +11,8 @@
 #     the base into the prep branch behind the tool's back and routes around
 #     the recreate rule below.  The only refresh is re-dispatching this
 #     workflow.
-#   * The ruleset's strict required checks already hard-block merging a
-#     stale release PR; re-dispatch instead of merging around staleness.
+#   * The rulesets do not require a PR to be up to date, so nothing blocks
+#     merging a stale release PR; re-dispatch before merging instead.
 name: Release Prepare
 
 on:

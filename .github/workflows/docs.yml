@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # integration/** builds an epic's child PRs too; only a push to main or a
+    # release deploys (see the deploy job's `if:`).
+    branches: [main, "integration/**"]
   release:
     types: [published]
   workflow_dispatch:

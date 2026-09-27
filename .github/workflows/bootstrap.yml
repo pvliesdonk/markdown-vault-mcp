@@ -11,7 +11,8 @@ name: Bootstrap repo
 #      the research form apply.
 #   2. Repository settings that make Renovate auto-merge SAFE — "Allow
 #      auto-merge" plus the checked-in rulesets (`.github/rulesets/*.json`)
-#      requiring PRs and the `CI Success` check on `main` and `release/*`.
+#      requiring PRs and the `CI Success` check on `main`, `release/*` and
+#      `integration/*`.
 #      Without a required check, enabling auto-merge on a PR merges it
 #      immediately; the gate is what holds the merge until CI is green.
 #      Posture, bypass model, and per-branch rules are documented in

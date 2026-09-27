@@ -6,18 +6,23 @@
 # Compare-branch resolution, in order:
 #   1. STRUCTURAL_GATE_BASE — explicit override; CI sets it to the PR's
 #      actual base (origin/<base_ref>).
-#   2. Derived: the nearest base among origin/main and origin/release/*,
-#      picked by most-recent merge-base with HEAD.  A feature branch off main
-#      resolves to origin/main; a backport branch off release/X.Y resolves to
-#      origin/release/X.Y, so backport PRs are measured against the branch
-#      they actually target instead of an ever-growing diff vs main.
+#   2. Derived: the nearest base among origin/main, origin/release/* and
+#      origin/integration/*, picked by most-recent merge-base with HEAD.  A
+#      feature branch off main resolves to origin/main; a backport branch off
+#      release/X.Y resolves to origin/release/X.Y, and an epic's child branch
+#      off integration/<epic> to that integration branch, so each PR is
+#      measured against the branch it actually targets instead of an
+#      ever-growing diff vs main.
 #   3. origin/main, when nothing else resolves (fresh clone, no remotes).
 set -euo pipefail
 
 base="${STRUCTURAL_GATE_BASE:-}"
 if [ -z "$base" ]; then
     best_ts=0
-    for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin/main 'refs/remotes/origin/release/*'); do
+    # origin/main is listed first by hand: for-each-ref sorts by refname, and
+    # origin/integration/* sorts before it.  A missing origin/main fails the
+    # merge-base below and is skipped.
+    for ref in origin/main $(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/release/*' 'refs/remotes/origin/integration/*'); do
         mb="$(git merge-base HEAD "$ref" 2>/dev/null)" || continue
         ts="$(git log -1 --format=%ct "$mb")"
         # Strict > prefers the earlier-listed origin/main on a timestamp tie.

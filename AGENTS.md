@@ -110,7 +110,7 @@ Every PR must pass **all** of the following before merge. Do not open or push a 
    ```bash
    bash scripts/structural_gate.sh
    ```
-   The script derives its compare branch (nearest of `origin/main` and `origin/release/*`; override with `STRUCTURAL_GATE_BASE`) and runs `diff-quality --violations=ruff.check --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" --fail-under=100` against it. `# noqa: C901` (etc.) with a one-line justification is the escape hatch for genuinely irreducible new code.
+   The script derives its compare branch (nearest of `origin/main`, `origin/release/*` and `origin/integration/*`; override with `STRUCTURAL_GATE_BASE`) and runs `diff-quality --violations=ruff.check --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" --fail-under=100` against it. `# noqa: C901` (etc.) with a one-line justification is the escape hatch for genuinely irreducible new code.
 6. **Docs updated** — `README.md` and `docs/**` reflect any user-facing changes in the same commit
 7. **Manifest version lockstep** — `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json`, and `.claude-plugin/plugin/.mcp.json` must all carry the same version: the latest *stable* release. A stable release PR stamps them atomically (knope invokes `scripts/stamp_manifests.py`); rc release PRs deliberately leave them untouched, because the versions they name are only published for stable releases. Manual touches require updating all three.
 
@@ -122,7 +122,7 @@ This project ships a `.pre-commit-config.yaml` that runs ruff (check + format), 
 - **Install once per clone:** `uv run pre-commit install`.
 - **Run on demand before pushing:** `uv run pre-commit run --all-files`. A green run is a precondition for gates #2 and #3 above.
 
-- **Structural gate runs at push time:** the `structural-diff-gate` hook (pre-push stage) runs `scripts/structural_gate.sh` automatically. `uv run pre-commit install` wires it via `default_install_hook_types`. A clean local push implies a clean CI `structure` job — CI runs the same script, pinning the compare branch to the PR's actual base, while the hook derives it (nearest of `origin/main` and `origin/release/*`), so backport branches targeting a release branch are measured against the right base locally too.
+- **Structural gate runs at push time:** the `structural-diff-gate` hook (pre-push stage) runs `scripts/structural_gate.sh` automatically. `uv run pre-commit install` wires it via `default_install_hook_types`. A clean local push implies a clean CI `structure` job — CI runs the same script, pinning the compare branch to the PR's actual base, while the hook derives it (nearest of `origin/main`, `origin/release/*` and `origin/integration/*`), so backport and integration-child branches are measured against the right base locally too.
 
 - **Template conformance runs at push time:** the `template-conformance` hook (pre-push stage) fails a push that adds content outside a sentinel block in a file `copier update` re-renders, compared with the branch's base. Move the content into the block the file declares. Its one sanctioned skip is drift a Decay issue tracks: `SKIP=template-conformance git push`.
 - **Never bypass with `--no-verify`.** A failing hook means the same check will fail in CI; fix the underlying issue rather than silencing it.

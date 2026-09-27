@@ -57,8 +57,12 @@ dev
 env
 hotfix
 knope
+rebase
+rebased
 repo
 repowise
+retargeting
+retargets
 ruleset
 rulesets
 systemd
