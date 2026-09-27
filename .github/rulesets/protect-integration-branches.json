@@ -1,5 +1,5 @@
 {
-  "name": "protect-release-branches",
+  "name": "protect-integration-branches",
   "target": "branch",
   "enforcement": "active",
   "bypass_actors": [
@@ -11,12 +11,11 @@
   ],
   "conditions": {
     "ref_name": {
-      "include": ["refs/heads/release/**"],
+      "include": ["refs/heads/integration/**"],
       "exclude": []
     }
   },
   "rules": [
-    { "type": "deletion" },
     { "type": "non_fast_forward" },
     {
       "type": "pull_request",
@@ -35,8 +34,7 @@
         "strict_required_status_checks_policy": false,
         "do_not_enforce_on_create": true,
         "required_status_checks": [
-          { "context": "CI Success" },
-          { "context": "SPA source up-to-date" }
+          { "context": "CI Success" }
         ]
       }
     }

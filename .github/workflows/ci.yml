@@ -2,12 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main, "release/**"]
+    branches: [main, "release/**", "integration/**"]
   pull_request:
-    # release/** keeps backport PRs CI-gated: the shipped rulesets
-    # (.github/rulesets/) require the CI Success check on release/* exactly
-    # as on main, which deadlocks unless CI actually runs there.
-    branches: [main, "release/**"]
+    # release/** keeps backport PRs CI-gated, and integration/** does the same
+    # for the child PRs of an epic parked on an integration branch: the
+    # shipped rulesets (.github/rulesets/) require the CI Success check on
+    # both exactly as on main, which deadlocks unless CI actually runs there.
+    branches: [main, "release/**", "integration/**"]
   workflow_dispatch:
 
 jobs:

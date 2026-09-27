@@ -144,6 +144,14 @@ repo's PR template (`.github/PULL_REQUEST_TEMPLATE.md`) — every section,
 including "What this PR deliberately does NOT do" and the docs-impact
 checklist.
 
+Pick the base branch before creating the PR: when the epic the work
+belongs to runs on an integration branch (its body names
+`integration/<epic>`), pass `--base integration/<epic>` and write
+`Part of #<epic>` or `Refs #N` in the body instead of `Closes #N`, which
+does nothing on a non-default base. The final `integration/<epic>` →
+`main` PR carries every `Closes` line and is merged with a merge commit;
+`docs/deployment/integration-branches.md` has the whole workflow.
+
 Include a feature's approved spec in the Design section, folded when long,
 ahead of the review report. The spec is agreed in session or offline
 before the PR; the PR archives the decisions for reviewers and future

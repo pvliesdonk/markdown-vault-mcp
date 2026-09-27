@@ -8,12 +8,13 @@ in the UI and forgotten.
 
 ## What ships
 
-Three rulesets, one file each:
+Four rulesets, one file each:
 
 | Ruleset | Targets | Rules |
 |---|---|---|
-| `protect-main` | the default branch | pull request required (zero approvals), `CI Success` status check (strict), no deletion, no force push |
+| `protect-main` | the default branch | pull request required (zero approvals), `CI Success` status check, no deletion, no force push |
 | `protect-release-branches` | `release/*` branches | same gates as the default branch |
+| `protect-integration-branches` | `integration/*` branches | pull request required (zero approvals), `CI Success` status check, no force push |
 | `protect-release-tags` | `v*` tags | no deletion, no force move (creation stays open) |
 
 The reasoning per branch class:
@@ -31,10 +32,39 @@ The reasoning per branch class:
   on pull requests targeting `release/*` for exactly this reason. Status
   checks are not enforced on branch creation, so cutting `release/X.Y` is a
   plain push.
+- **`integration/*`** branches park an epic's child pull requests until the
+  whole epic goes to `main` at once; the
+  [integration branches](integration-branches.md) page covers the workflow.
+  Child pull requests need a pull request and `CI Success`, and force pushes
+  are blocked because a rebase would rewrite the commits every open child is
+  based on. Deletion stays open, so GitHub's automatic head-branch deletion
+  can remove the branch once its final pull request merges. The checks
+  listed in `extra_required_checks` (below) are not required here: they come
+  from workflows the project owns, which may not run on `integration/*`, and
+  the final pull request to `main` has to pass them anyway.
 - **`v*` tags** are the identity of every shipped release: package
   registries, Docker tags, and install instructions all point at them.
   The ruleset blocks deleting or force-moving them. Creating tags stays
   unrestricted because the release workflow creates one per release.
+
+### Branches need not be up to date
+
+The required checks are not *strict*: a pull request whose checks passed
+can merge even after its base branch has moved on. The strict setting,
+GitHub's **Require branches to be up to date before merging**, makes every
+merge to `main` turn each open pull request's green check stale, so each one
+waits for an **Update branch** round trip and a full CI re-run before it can
+merge. On a busy trunk that happens once per sibling merge.
+
+The cost of turning it off is the semantic conflict: two pull requests that
+each pass alone and break together. CI runs on every push to `main`,
+`release/*` and `integration/*`, so such a break shows up on the merged
+commit rather than slipping through unseen. A release pull request is the
+one place this needs care: nothing stops it merging after its base moved
+on, so re-dispatch Release Prepare first (see the release process page). GitHub's merge queue is the tool
+that closes the gap without the update chore, but it needs a `merge_group`
+trigger in every required workflow and is not available on repositories
+owned by a personal account.
 
 ## Who bypasses, and how
 
@@ -113,9 +143,9 @@ extra_required_checks:
   - SPA sources
 ```
 
-Each name renders into the `required_status_checks` array of both branch
-rulesets, alongside `CI Success`, and applies to `main` and `release/*`
-alike. The answer is the project's own, so the rulesets stay template-owned
+Each name renders into the `required_status_checks` array of both release
+branch rulesets, alongside `CI Success`, and applies to `main` and
+`release/*` alike. Integration branches require `CI Success` alone. The answer is the project's own, so the rulesets stay template-owned
 and a `copier update` re-renders them with the project's checks intact. An
 empty answer, the default, renders exactly the single-context form every
 project already had.

@@ -47,12 +47,21 @@ sees — never "since my last push".
      recorded base does not give);
    - otherwise the PR's actual base branch, when a PR exists
      (`gh pr view --json baseRefName`);
-   - only as fallback, derive it: the nearest of `origin/<default>` and
-     `origin/release/*` by ancestry (the same derivation
-     `scripts/structural_gate.sh` uses). Never assume `main`: a PR
+   - only as fallback, derive it: the nearest of `origin/<default>`,
+     `origin/release/*` and `origin/integration/*` by ancestry (the same
+     derivation `scripts/structural_gate.sh` uses). Never assume `main`: a PR
      targeting `release/X.Y` or a stacked PR reviewed against the default
      branch sweeps in the base branch's whole divergence or misses the
      backport's scope.
+   An `integration/<epic>` → `main` PR is the one exception to reviewing
+   the whole range as new: every child was reviewed on its way into the
+   integration branch. Review what those reviews could not see — the
+   conflict resolutions in each merge of `main`
+   (`git log --remerge-diff --merges "origin/$BASE_REF..HEAD"`, git 2.36+),
+   semantic conflicts with `main`, whether the children fit together and
+   the docs describe the finished result, and the release impact (breaking
+   markers, the `Closes` lines). `docs/deployment/integration-branches.md`
+   covers the rebased case.
 2. Compute and **check** the endpoints before reviewing:
 
    ```bash

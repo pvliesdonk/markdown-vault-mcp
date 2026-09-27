@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "integration/**"]
   schedule:
     - cron: "0 6 * * 1"  # Weekly on Monday at 06:00 UTC
 

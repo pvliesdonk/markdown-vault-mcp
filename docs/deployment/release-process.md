@@ -149,7 +149,11 @@ Two rules keep the flow sound:
 - Never press GitHub's "Update branch" button on a release pull request.
   If the base branch moves while the pull request is open, dispatch
   Release Prepare again: it recreates the preparation branch from the
-  base and refreshes the same pull request in place.
+  base and refreshes the same pull request in place. Nothing blocks the
+  merge of a stale release pull request, because the rulesets do not
+  require branches to be up to date. Merged anyway, it ships the newer
+  commits without counting them in its version or changelog, so check
+  that the base has not moved before you merge.
 - A release candidate promotes through a plain `channel: stable` dispatch
   over the same commits. A guard verifies that nothing but release stamps
   and release-notes pages changed since the last candidate, first when

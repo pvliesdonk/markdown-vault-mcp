@@ -276,8 +276,10 @@ def _commit(repo: Path, name: str, stamp: str) -> None:
 
 def test_gate_script_derives_compare_branch(tmp_path: Path) -> None:
     """Base derivation: a branch off main compares against origin/main; a
-    backport branch off release/X.Y compares against origin/release/X.Y (the
-    branch its PR targets); an explicit STRUCTURAL_GATE_BASE always wins.
+    backport branch off release/X.Y compares against origin/release/X.Y and an
+    epic's child branch off integration/<epic> against that integration
+    branch (the branch each PR targets); an explicit STRUCTURAL_GATE_BASE
+    always wins.
 
     The remote-tracking refs are created directly with update-ref — the
     derivation reads refs/remotes/origin/*, not a live remote.
@@ -305,7 +307,16 @@ def test_gate_script_derives_compare_branch(tmp_path: Path) -> None:
     _commit(repo, "b1.py", "2026-01-04T10:00:00")
     assert _print_base(repo) == "origin/release/4.0"
 
-    # The feature branch still resolves to origin/main: both merge-bases land
+    # Integration branch cut from main's tip, advanced by one merged sibling;
+    # a child branch off it -> origin/integration/epic.
+    _git(["checkout", "-b", "integration/epic", "main"], repo)
+    _commit(repo, "i1.py", "2026-01-06T10:00:00")
+    _git(["update-ref", "refs/remotes/origin/integration/epic", "HEAD"], repo)
+    _git(["checkout", "-b", "child", "integration/epic"], repo)
+    _commit(repo, "k1.py", "2026-01-07T10:00:00")
+    assert _print_base(repo) == "origin/integration/epic"
+
+    # The feature branch still resolves to origin/main: every merge-base lands
     # on the same cut commit, and the tie deliberately prefers origin/main...
     _git(["checkout", "feature"], repo)
     assert _print_base(repo) == "origin/main"

@@ -27,9 +27,9 @@ touches existing drift can merge with it into one larger hunk, which is
 then reported whole.
 
 ``--since auto`` compares against the branch's base: ``$TEMPLATE_CONFORMANCE_BASE``
-when set, else the merge-base with the nearest of ``origin/main`` and
-``origin/release/*`` (the structural gate's rule).  ``--hook`` is the
-pre-push hook's mode: a comparison that cannot be made (offline, no ``uv``)
+when set, else the merge-base with the nearest of ``origin/main``,
+``origin/release/*`` and ``origin/integration/*`` (the structural gate's
+rule).  ``--hook`` is the pre-push hook's mode: a comparison that cannot be made (offline, no ``uv``)
 warns and passes, and a failure says how to push deliberate drift.
 
 Exit status: 0 when every template-owned file conforms (with ``--since``:
@@ -597,7 +597,8 @@ with `SKIP=template-conformance git push`.
 
 def derive_base() -> str:
     """The commit a branch started from: ``$TEMPLATE_CONFORMANCE_BASE``, else
-    the most recent merge-base with ``origin/main`` or ``origin/release/*``."""
+    the most recent merge-base with ``origin/main``, ``origin/release/*`` or
+    ``origin/integration/*``."""
     if override := os.environ.get("TEMPLATE_CONFORMANCE_BASE"):
         return override
     refs = subprocess.run(
@@ -607,11 +608,15 @@ def derive_base() -> str:
             "--format=%(refname:short)",
             "refs/remotes/origin/main",
             "refs/remotes/origin/release/*",
+            "refs/remotes/origin/integration/*",
         ],
         capture_output=True,
         text=True,
         check=True,
     ).stdout.split()
+    # for-each-ref sorts by refname, and origin/integration/* sorts before
+    # origin/main; put main first so the strict comparison below prefers it.
+    refs.sort(key=lambda ref: ref != "origin/main")
     best, best_time = "", -1
     for ref in refs:
         mb = subprocess.run(
@@ -630,7 +635,10 @@ def derive_base() -> str:
         if when > best_time:  # strict: origin/main wins a tie, as in the gate
             best, best_time = mb, when
     if not best:
-        raise ValueError("no origin/main or origin/release/* to compare against")
+        raise ValueError(
+            "no origin/main, origin/release/* or origin/integration/* to compare"
+            " against"
+        )
     return best
 
 
