@@ -66,23 +66,18 @@ def _register_browse(mcp: FastMCP, app_uri: str) -> None:
         view: Literal["context", "graph", "browse", "note"] | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Open a visual vault explorer UI for the user — not for reading vault content.
+        """Open an interactive vault explorer for the user to look through: the file
+        tree, the link graph or one note's relationships.
 
-        Displays an interactive visual panel (MCP Apps) to the **user** so they can
-        browse the file tree, explore the link graph, or view a note's relationships.
-        Do NOT call this to retrieve or inspect vault content programmatically — use
-        ``search`` to find notes, ``read`` for note content, ``list_documents`` to
-        enumerate files, and ``get_context`` for a note's relationships instead.
-
-        Only call this when the user explicitly asks to open the visual vault browser
-        or explorer (e.g. "show me the vault browser", "open the graph view").
+        It shows the vault to the user and returns nothing to read; use search, read,
+        list_documents or get_context for content.
 
         Args:
-            path: Optional note path to focus on (e.g. ``"Journal/2024-01-15.md"``).
-            view: Which view to open: ``"context"`` (note relationships),
-                ``"graph"`` (link visualization), ``"browse"`` (file tree),
-                or ``"note"`` (full note preview).
-                Defaults to ``"context"`` if a path is given, ``"browse"`` otherwise.
+            path: Note to open on, e.g. "Journal/2024-01-15.md"; omit to start from the
+                whole vault.
+            view: "context" for a note's relationships, "graph" for the link graph,
+                "browse" for the file tree, or "note" for the note itself; omit for
+                "context" with a path and "browse" without.
 
         Returns:
             - path (str | None): The requested note path, or null if none given.
@@ -176,18 +171,14 @@ def _register_context(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         path: str,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Open a visual context card UI for the user — not for reading note relationships.
+        """Open an interactive card for the user showing a note's backlinks, outlinks,
+        similar notes, tags and frontmatter.
 
-        Displays an interactive context panel (MCP Apps) to the **user** showing a
-        note's backlinks, outlinks, similar notes, tags, and frontmatter visually.
-        Do NOT call this to retrieve note relationship data programmatically — use
-        ``get_context`` instead, which returns the full structured data.
-
-        Only call this when the user explicitly asks to open the visual context card
-        or explorer (e.g. "show me the context card for this note").
+        It shows the note to the user and returns only counts; use get_context for the
+        data.
 
         Args:
-            path: Relative note path (e.g. ``"Journal/2024-01-15.md"``).
+            path: Path of the note, e.g. "Journal/2024-01-15.md".
 
         Returns:
             - path (str): The note path.

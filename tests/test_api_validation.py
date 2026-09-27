@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
 if TYPE_CHECKING:
@@ -231,10 +232,10 @@ class TestListTags:
     def test_list_tags_unindexed_field(
         self, corpus_vault: tuple[Vault, IndexStats]
     ) -> None:
-        """list_tags("author") returns [] — author is not in indexed_frontmatter_fields."""
+        """list_tags("author") refuses — author is not an indexed field."""
         vault, _ = corpus_vault
-        result = vault.reader.list_tags("author")
-        assert result == []
+        with pytest.raises(InvalidRequestError, match="'cluster', 'topics'"):
+            vault.reader.list_tags("author")
 
 
 class TestStats:

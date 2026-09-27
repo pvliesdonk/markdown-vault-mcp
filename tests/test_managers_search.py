@@ -6,6 +6,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.exceptions import (
+    EmbeddingsNotConfiguredError,
+    InvalidRequestError,
+)
 from markdown_vault_mcp.vault import VaultSettings
 
 if TYPE_CHECKING:
@@ -326,8 +330,9 @@ class TestListTags:
         assert "c" in tags
 
     def test_list_tags_empty_for_unindexed(self, search_mgr: SearchManager) -> None:
-        """list_tags() for unindexed field returns empty list."""
-        assert search_mgr.list_tags("nonexistent") == []
+        """list_tags() for an unindexed field refuses and names the indexed ones."""
+        with pytest.raises(InvalidRequestError, match="Pass one of the indexed"):
+            search_mgr.list_tags("nonexistent")
 
 
 # ---------------------------------------------------------------------------
@@ -365,9 +370,9 @@ class TestGetSimilar:
     def test_get_similar_empty_without_embeddings(
         self, search_mgr: SearchManager
     ) -> None:
-        """get_similar() returns empty list without embedding config."""
-        result = search_mgr.get_similar("alpha.md")
-        assert result == []
+        """get_similar() refuses without embedding config."""
+        with pytest.raises(EmbeddingsNotConfiguredError, match="get_backlinks"):
+            search_mgr.get_similar("alpha.md")
 
     def test_get_similar_raises_for_nonexistent(
         self, search_mgr: SearchManager

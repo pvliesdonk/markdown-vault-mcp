@@ -261,13 +261,15 @@ class ReaderFacet:
     def list_tags(self, field: str = "tags") -> list[str]:
         """Return all distinct values indexed for a given frontmatter field.
 
-        If *field* was not in ``indexed_frontmatter_fields``, returns ``[]``.
-
         Args:
             field: Frontmatter key to query (default: ``"tags"``).
 
         Returns:
             Sorted list of distinct value strings.
+
+        Raises:
+            InvalidRequestError: If *field* is not in
+                ``indexed_frontmatter_fields``.
         """
         return self._search_mgr.list_tags(field)
 
@@ -350,6 +352,7 @@ class ReaderFacet:
 
         Raises:
             IndexUnavailableError: If :meth:`IndexFacet.build_index` has not been called.
+            EmbeddingsNotConfiguredError: If the vault has no embeddings.
         """
         self._require_built()
         return self._search_mgr.get_similar(

@@ -347,7 +347,7 @@ class TestOkfInstructions:
     def test_permitting_modes_emit_okf_guidance(self, mode: str) -> None:
         text = _guidance(read_only=True, okf_mode=mode)
         assert "OKF" in text
-        assert "okf_version" in text
+        assert "'stats' reports an OKF bundle" in text
         assert "trust tier" in text
 
     def test_maintained_vault_does_not_ask_the_agent_to_update_navigation(

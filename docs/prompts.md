@@ -107,7 +107,7 @@ Create a new note by adapting a template from your configured templates folder.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `template_name` | string \| null | Optional template filename/path relative to `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` |
+| `template_name` | string | Optional template filename/path relative to `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER`; empty lists the templates to choose from |
 
 **Workflow:**
 

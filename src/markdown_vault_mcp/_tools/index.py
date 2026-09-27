@@ -155,40 +155,18 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
         force: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Run an incremental reindex on the writer thread.
+        """Bring the search index up to date with files changed outside this server,
+        such as by an editor or a sync tool; returns counts of added, modified, deleted
+        and unchanged notes.
 
-        Only needed when files are modified outside this server — for example,
-        by a text editor, a sync tool, or another process writing directly to
-        the vault directory. Do NOT call this after using 'write', 'edit',
-        'delete', or 'rename' — those tools queue index updates automatically.
-
-        Change detection is hash-based, so an unchanged file is never
-        re-parsed. Use force=True to drop the index and re-parse every file
-        regardless of hashes — the repair for index content that no longer
-        matches what the current server would extract. A version upgrade that
-        changes extraction does this by itself on the next start (#1124), so
-        force=True is a manual escape hatch, not routine maintenance. When
-        semantic search is configured, follow a force=True run with
-        'build_embeddings' (without force) so the vector index converges to
-        the rebuilt chunk set; an ordinary reindex re-embeds as it goes.
-
-        To rebuild all embeddings from scratch (e.g. after changing the
-        embedding model), use 'build_embeddings' with force=True.
-
-        A fast reindex (the common case — work scales with the drift, not
-        the vault) returns its result inline. A reindex still running at the
-        server's soft deadline continues in the background and returns
-        ``{"status": "working", "job_id": ...}`` immediately — fetch the
-        outcome with ``get_job_result``. ``get_index_status`` remains the
-        observability view of the index (it also covers boot-time builds and
-        file-watcher reindexes no client call initiated).
+        Writes through this server's tools update the index themselves, so do not call
+        it after them.
 
         Args:
-            force: When True, drop every indexed document and re-parse the
-                whole vault instead of applying the hash-detected delta.
-                The index is not queryable while the rebuild runs, and the
-                cost scales with the vault rather than the drift, so prefer
-                the default.
+            force: Drop the index and re-parse every note instead of only changed ones:
+                slower, and search waits until it finishes. Use it when results no
+                longer match the notes, then run build_embeddings if the vault has
+                semantic search. Default false.
 
         Returns:
             On inline completion, a dict with ``"status": "completed"`` plus
@@ -253,27 +231,15 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
         force: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Rebuild vector embeddings for semantic and hybrid search.
+        """Bring the vector index behind semantic and hybrid search up to date with the
+        notes; returns the number of chunks embedded.
 
-        Embeddings are built automatically on startup, so this is normally
-        not needed. Use force=True to rebuild from scratch after changing
-        the embedding model. Without force, the vector index converges to
-        the FTS chunk set: missing or changed documents are embedded,
-        orphaned vectors are removed, unchanged chunks are untouched.
-
-        A fast convergence (small drift) returns its result inline. A build
-        still running at the server's soft deadline — typical for a
-        force=True rebuild of a large vault — continues in the background
-        and returns ``{"status": "working", "job_id": ...}`` immediately;
-        fetch the outcome with ``get_job_result``. ``embeddings_status``
-        remains the observability view of the vector index.
+        Embeddings are built automatically, so it is needed only after reindex with
+        force, or with force to rebuild them all.
 
         Args:
-            force: When True, discards existing embeddings and rebuilds from
-                scratch. Use only if the embedding model has changed.
-                When False (default), converges the vector index to the
-                FTS chunk set — work scales with the size of the drift,
-                not the size of the vault (#665).
+            force: Discard every embedding and rebuild from scratch, as after the
+                embedding model changed; default false embeds only what changed.
 
         Returns:
             On inline completion, a dict with ``"status": "completed"`` and

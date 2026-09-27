@@ -40,6 +40,7 @@ from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentNotFoundError,
     EditConflictError,
+    FolderMoveInterruptedError,
     InvalidRequestError,
 )
 from markdown_vault_mcp.okf import (
@@ -296,31 +297,21 @@ def register(mcp: FastMCP) -> None:
         if_match: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Create or overwrite a document or attachment.
+        """Create a note or attachment, or replace one whole; returns its path and
+        whether it was created.
 
-        For .md documents: uses 'content' (markdown body) and optional
-        'frontmatter'. WARNING: replaces the entire file — use 'edit'
-        for targeted changes. The index refresh is queued; no reindex is needed.
-
-        For attachments (pdf, png, etc.): uses 'content_base64' (base64-
-        encoded binary). 'content' and 'frontmatter' are ignored.
-        Parent directories are created automatically for both.
+        Use edit for targeted changes and append to add to the end. Parent folders are
+        created as needed.
 
         Args:
-            path: Relative path (e.g. "Journal/note.md" or
-                "assets/photo.png"). Extension determines handling.
-            content: Full markdown body for .md files (excluding
-                frontmatter). Ignored for attachments.
-            frontmatter: Optional YAML frontmatter dict for .md files,
-                e.g. {"title": "My Note", "tags": ["draft"]}.
-                Ignored for attachments.
-            content_base64: Base64-encoded binary content for attachment
-                files. Required when path is not ``.md``.
-
-                **Context cost:** base64 encoding inflates by ~33%; even a 1 MB
-                attachment becomes ~1.3 MB of tokens.
-            if_match: Etag from 'read'; required by default to replace an
-                existing file. A stale etag refuses the write. Omit for new files.
+            path: Path in the vault, e.g. "Journal/note.md" or "assets/photo.png"; the
+                extension decides between note and attachment.
+            content: The note's Markdown body, without frontmatter.
+            frontmatter: The note's frontmatter, e.g. {"title": "My Note", "tags":
+                ["draft"]}.
+            content_base64: An attachment's bytes, base64-encoded; for paths not ending
+                in .md.
+            if_match: Etag from read, to replace an existing file; omit for a new file.
 
         Returns:
             Dict with path (str) and created (bool — true if new file,
@@ -419,41 +410,24 @@ def register(mcp: FastMCP) -> None:
         line_end: int | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Make a targeted text replacement in an existing .md note (not supported for attachments).
+        """Replace text in an existing note: an exact old_text, a range of lines, or an
+        old_text within a range of lines.
 
-        Three edit modes:
-        - **Exact match** (old_text only): pass a portion of the file as
-          old_text — must appear exactly once. Frontmatter can be edited.
-        - **Line-range** (line_start + line_end, no old_text): replace the
-          specified lines with new_text. Lines are 1-based (matching
-          'read' output).
-        - **Scoped match** (old_text + line_start/line_end): search for
-          old_text within the line range only — useful when old_text
-          appears multiple times in the file.
-
-        When exact match fails, a normalized comparison is attempted
-        (Unicode NFC, dash/quote normalization, whitespace collapsing).
-        If a unique normalized match is found, it is used and
-        match_type='normalized' is returned.
-
-        Always call 'read' first to get the current text and line numbers.
-        The index refresh is queued; no reindex is needed.
+        Read the note first for its current text and line numbers. When old_text has no
+        exact match, a unique match after normalising Unicode, dashes, quotes and
+        whitespace is used and reported as match_type "normalized".
 
         Args:
-            path: Relative path to the document.
-            old_text: Text to replace. Must appear exactly once in the
-                document or line range. Get this via 'read'. Optional
-                when using line-range mode.
-            new_text: Replacement text; empty deletes the matched text or
-                the whole line range.
-            if_match: Etag from 'read'; the edit fails if the file changed
-                since. Omit for several old_text-only edits to one file at
-                once; pass it, one edit per read, when line_start/line_end
-                are given.
-            line_start: First line to replace (1-based, inclusive).
-                Must be provided together with line_end.
-            line_end: Last line to replace (1-based, inclusive).
-                Must be provided together with line_start.
+            path: Path of the note.
+            old_text: Text to replace, occurring once in the note or in the line range;
+                omit to replace the whole line range.
+            new_text: Replacement text; empty deletes the matched text or the lines.
+            if_match: Etag from read. Pass it, one edit per read, when line_start and
+                line_end are given; omit it for several old_text-only edits to one note
+                at once.
+            line_start: First line to replace, counting from 1 as read shows them; pass
+                with line_end.
+            line_end: Last line to replace, inclusive; pass with line_start.
 
         Returns:
             - **path** (str): path of the edited document.
@@ -518,32 +492,19 @@ def register(mcp: FastMCP) -> None:
         create_if_missing: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Append text to the end of an existing .md note without reading it.
+        """Add text to the end of an existing note without reading it first.
 
-        The cheapest way to add content at the end of a note (log entries,
-        journal additions, checklist items): unlike 'edit', no prior 'read'
-        is needed, so the existing note content never enters the context.
-        Prefer this over 'edit' whenever the change is purely additive at
-        the end of the note.
-
-        A newline is inserted between the existing content and the appended
-        text when the file does not already end with one, so the appended
-        text starts on its own line. Include leading blank lines or heading
-        markers in 'content' yourself if you want a separating paragraph or
-        section. The index refresh is queued; no reindex is needed.
+        Prefer it over edit when the change only adds at the end, such as a log entry.
+        The text starts on a new line; begin it with a blank line or a heading to start
+        a paragraph or section.
 
         Args:
-            path: Relative path to the document (e.g. "Journal/2026.md").
-            content: Text to append (must be non-empty). Added at the end
-                of the file, after frontmatter and all existing content.
-            if_match: Optional etag obtained from a previous 'read' call.
-                When provided, the append only proceeds if the file has not
-                been modified since that read (optimistic concurrency).
-                Omit to append unconditionally.
-            create_if_missing: When true, a missing note is created with
-                'content' as its body instead of failing. Default false —
-                a typo in 'path' fails loudly rather than silently creating
-                a new note.
+            path: Path of the note, e.g. "Journal/2026.md".
+            content: Non-empty text to add after everything the note holds.
+            if_match: Etag from read; the text is then added only to that version. Omit
+                to append regardless.
+            create_if_missing: Create the note with content as its body when path does
+                not exist. Default false, so a mistyped path creates nothing.
 
         Returns:
             - **path** (str): path of the document.
@@ -590,19 +551,12 @@ def register(mcp: FastMCP) -> None:
         if_match: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Permanently delete a document or attachment.
-
-        For .md documents: removes the file and queues an index refresh.
-        For attachments: only the file is deleted (no index to update).
-        IRREVERSIBLE unless git history exists. Confirm the path with
-        the user before calling.
+        """Permanently delete a note or attachment; only git history can bring it back.
 
         Args:
-            path: Relative path to the document or attachment to delete.
-            if_match: Optional etag obtained from a previous 'read' call.
-                When provided, the deletion only proceeds if the file has
-                not been modified since that read (optimistic concurrency).
-                Omit to delete unconditionally.
+            path: Path of the note or attachment.
+            if_match: Etag from read; the file is then deleted only as that version.
+                Omit to delete it as it is.
 
         Returns:
             Dict with path (str) of the deleted file.
@@ -642,29 +596,19 @@ def register(mcp: FastMCP) -> None:
         update_links: bool = False,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Rename or move a document or attachment. When renaming a .md note,
-        always pass update_links=True to rewrite links in other documents
-        that point to the old path.
+        """Rename or move a note or attachment; with update_links, links to it in other
+        notes follow it.
 
-        For .md documents: link rewrites wait for prior index writes. The move
-        queues another index refresh; no reindex is needed.
-        For attachments: only the file is moved; update_links does not apply
-        (attachment references are not tracked as links).
-        Parent directories are created automatically.
+        For a note, always pass update_links=True. Parent folders are created as needed.
 
         Args:
-            old_path: Current relative path (e.g. "drafts/idea.md"
-                or "assets/old.png").
-            new_path: Target relative path (e.g. "projects/idea.md"
-                or "assets/new.png"). Fails if new_path already exists.
-            if_match: Etag from 'read' of old_path; the rename fails if the
-                file changed since. Omit when renaming several linked notes
-                together.
-            update_links: When True, all .md documents that link to old_path
-                are also updated so their links point to new_path. Replacement
-                is best-effort — failures are logged but do not prevent the
-                rename. Default False; set True whenever renaming a .md note
-                (omitting this leaves backlinks pointing to the old path).
+            old_path: Current path, e.g. "drafts/idea.md" or "assets/old.png".
+            new_path: New path, e.g. "projects/idea.md", where nothing exists yet.
+            if_match: Etag from read of old_path; omit when renaming several linked
+                notes together.
+            update_links: Rewrite links to old_path in other notes so they point at
+                new_path; attachment references are not tracked. Default false; pass
+                true for every note.
 
         Returns:
             Dict with old_path (str), new_path (str), and updated_links (int)
@@ -716,29 +660,15 @@ def register(mcp: FastMCP) -> None:
         new_dir: str,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Move an entire folder subtree to a new location in one call,
-        rewriting every link across the vault that points into the moved
-        subtree — the folder-level analogue of 'rename'.
+        """Move a folder and everything under it to a new location, rewriting every link
+        into it across the vault: rename for a whole folder.
 
-        Moves all files under old_dir (.md notes, attachments, and any other
-        files) to the matching path under new_dir, preserving structure. Links
-        between documents inside the subtree and backlinks from outside are all
-        rewritten. Link rewrites wait for prior index writes. The move queues an
-        index refresh; no reindex is needed.
-
-        The move is atomic at the gate: if any destination file already exists,
-        the call fails before moving anything. Link rewrites are best-effort —
-        a source that cannot be rewritten is reported in failed_links rather
-        than aborting the move. Note: an OS error during the move phase itself
-        (permission error, full disk, concurrent file removal) can leave the
-        subtree partially moved with the index unchanged; call 'reindex' to
-        reconcile the index with the on-disk state.
+        Links that could not be rewritten are listed in failed_links.
 
         Args:
-            old_dir: Relative source folder prefix (e.g. "drafts").
-            new_dir: Relative target folder prefix (e.g. "archive/2026").
-                May be an existing folder — files merge in; a per-file name
-                clash aborts the whole move.
+            old_dir: Folder to move, e.g. "drafts".
+            new_dir: Destination folder, e.g. "archive/2026"; an existing folder is
+                merged into.
 
         Returns:
             Dict with old_dir (str), new_dir (str), files_moved (int),
@@ -754,7 +684,24 @@ def register(mcp: FastMCP) -> None:
         # attributed (#1218); no OKF intent — the enricher's actor for the
         # link-rewrite edits stays the tool actor, as before.
         with write_identity_scope(okf_intent=False):
-            result = await asyncio.to_thread(vault.writer.move_folder, old_dir, new_dir)
+            try:
+                result = await asyncio.to_thread(
+                    vault.writer.move_folder, old_dir, new_dir
+                )
+            except FolderMoveInterruptedError as exc:
+                # A file error while moving can leave the subtree part-moved
+                # with the index still naming the old paths; reindex is the one
+                # repair the model can make. It needs an operator: ERROR. Any
+                # error raised before a file moved stays tool_boundary's.
+                logger.exception(
+                    "move_folder_os_error old_dir=%s new_dir=%s", old_dir, new_dir
+                )
+                raise ToolError(
+                    f"Moving {old_dir!r} to {new_dir!r} hit a file error on the "
+                    "server, so some files may already be under new_dir. The "
+                    "request was fine: call reindex so search matches the files, "
+                    "then tell the user."
+                ) from exc
         return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
@@ -780,48 +727,22 @@ def register(mcp: FastMCP) -> None:
         timeout_s: float = 30.0,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Download a file from a URL and save it to the vault.
+        """Download a URL on the server and save it in the vault as a note or
+        attachment; returns its path, size and final_url.
 
-        Fetches content from an HTTP/HTTPS URL and writes it as a note or
-        attachment. Designed for MCP-to-MCP file transfer when content is
-        too large to pass through the LLM context window.
-
-        **Context cost:** zero for the bytes themselves — the file is
-        downloaded server-side and saved to the vault. After a successful
-        fetch, reference the file by its ``path`` (call ``read(path)`` only
-        for small results, otherwise pass the path to other tools).
-
-        For .md paths: the response is decoded as UTF-8 text and saved as
-        a markdown note with optional frontmatter. The index refresh is queued.
-
-        For other paths: the response is saved as a binary attachment.
-        The existing attachment size limit applies.
+        The bytes never pass through the conversation, so use it for large files and
+        then pass the path to other tools.
 
         Args:
-            url: Source URL to download from. Only http:// and https://
-                schemes are allowed. SSRF protection (via pvl-core's hardened
-                ``fetch_url``, #862): the host is resolved and rejected unless
-                every address is publicly routable (private, loopback,
-                link-local, CGNAT/shared, and reserved ranges are all
-                blocked), the validated IP is pinned for the connection
-                (closing DNS rebinding), and ambient HTTP(S)_PROXY / .netrc
-                settings are ignored. Redirects ARE followed (changed in
-                #1116; through v3.1.0 a redirect was refused), and every hop
-                repeats the whole chain above — a ``Location`` pointing at an
-                internal target is refused exactly as a directly supplied one
-                is. Because of that, the bytes need not come from the host in
-                *url*: check the returned ``final_url`` when the source host
-                matters.
-            path: Destination path in the vault (e.g. "notes/report.md"
-                or "assets/diagram.png"). Extension determines handling:
-                .md for notes, anything else for attachments.
-            frontmatter: Optional YAML frontmatter dict for .md files,
-                e.g. {"title": "Report", "source": "http://..."}. Ignored
-                for attachments.
-            if_match: Etag from 'read'; required by default to replace an
-                existing file. A stale etag refuses the write. Omit for new files.
-            timeout_s: Download timeout in seconds (default 30). Increase
-                for large files on slow connections.
+            url: An http or https URL on the public internet. Redirects are followed, so
+                check final_url in the result when the source host matters.
+            path: Destination path, e.g. "notes/report.md" or "assets/diagram.png"; .md
+                saves a note, anything else an attachment.
+            frontmatter: Frontmatter for a note, e.g. {"title": "Report", "source":
+                "https://example.org/report"}.
+            if_match: Etag from read, to replace an existing file; omit for a new file.
+            timeout_s: Download timeout in seconds (default 30); raise it for a large
+                file from a slow host.
 
         Returns:
             Dict with:
@@ -991,23 +912,15 @@ def register(mcp: FastMCP) -> None:
         folder: str | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Rewrite wikilinks as OKF bundle-root-absolute markdown links.
+        """Rewrite wikilinks as bundle-root-absolute Markdown links, the Open Knowledge
+        Format's recommended style; returns counts of links converted and skipped.
 
-        A migration transform (Open Knowledge Format): converts every
-        resolvable `[[wikilink]]` in the vault (or one folder) into
-        `[text](/path/note.md)`, OKF's recommended link style. Only links
-        whose target is indexed are converted, so the link graph is
-        preserved exactly — a converted link points at the same note the
-        wikilink resolved to. Unresolvable wikilinks are left untouched and
-        counted as skipped; attachment embeds are not links. Each changed
-        note is written through the write path (git commit if configured).
-        Re-running is safe: converted links are plain markdown and are not
-        touched again. Waits up to 60s for prior index writes; refresh
-        errors abort before conversion.
+        A wikilink whose target is not in the vault stays as it is. Running it again
+        changes nothing already converted.
 
         Args:
-            folder: Restrict to this folder subtree (e.g. "guides"). Omit to
-                convert the whole vault.
+            folder: Only notes in this folder and below, e.g. "guides"; omit for the
+                whole vault.
 
         Returns:
             Dict with files_changed, links_converted, links_skipped, and
@@ -1034,20 +947,13 @@ def register(mcp: FastMCP) -> None:
         folder: str = "",
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Generate a reserved OKF index.md listing from the table of contents.
+        """Write a folder's Open Knowledge Format index.md: a link to each note with its
+        description, replacing the old listing and keeping its frontmatter.
 
-        A migration transform (Open Knowledge Format): writes (or overwrites)
-        the folder's `index.md` as a progressive-disclosure listing —
-        `- [title](/path.md) - description` per note, description drawn from
-        frontmatter. Existing frontmatter is preserved, so regenerating the
-        bundle-root index.md keeps its `okf_version` declaration. Reserved
-        files (index.md, log.md) are omitted from the listing. A subfolder
-        without an index.md gets one, recursively. Waits up to 60s for prior
-        index writes; refresh errors abort before generation.
+        Subfolders without an index.md get one too.
 
         Args:
-            folder: Vault-relative folder to index (e.g. "guides"). Omit for
-                the bundle root.
+            folder: Folder to index, e.g. "guides"; omit for the bundle root.
 
         Returns:
             Dict with path, entries (count), frontmatter_preserved (bool),
@@ -1072,22 +978,15 @@ def register(mcp: FastMCP) -> None:
         folder: str = "",
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Seed a reserved OKF log.md change history from git history.
+        """Create a folder's Open Knowledge Format log.md from the git history of the
+        notes under it, one dated section per day, newest first.
 
-        A migration transform (Open Knowledge Format): writes a `log.md` with
-        newest-first `## YYYY-MM-DD` sections built from the vault's git
-        commit history (one bullet per commit). `folder` both chooses where
-        log.md is written and scopes its content: a folder seeds only the
-        commits that touched that subtree, while the bundle root seeds the
-        whole vault's history. Refuses to overwrite an
-        existing log.md — a change history is hand-maintained after seeding,
-        so it is never clobbered. Requires the vault to be git-backed; with no
-        git history the log is written empty.
+        It never replaces an existing log.md. A vault without git history gets an empty
+        log.
 
         Args:
-            folder: Vault-relative folder to write log.md into and scope
-                history to (e.g. "guides"). Omit for the bundle root
-                (whole-vault history).
+            folder: Folder to write log.md in, whose history it covers, e.g. "guides";
+                omit for the bundle root and the whole vault's history.
 
         Returns:
             Dict with path, commits (count), and dates (distinct-day count).
@@ -1116,31 +1015,14 @@ def register(mcp: FastMCP) -> None:
         config: ProjectConfig = Depends(get_config),
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any] | InputRequiredResult:
-        """Attest a note as human-reviewed by appending an OKF verification.
+        """Record that a person reviewed a note, raising its Open Knowledge Format trust
+        tier to human-reviewed; returns the verifier recorded.
 
-        Available when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. Appends a
-        `{by: human:<subject>, at: <UTC instant>}` entry to the note's `verified`
-        frontmatter list, promoting the note's trust tier to `human-reviewed`.
-
-        How the review is confirmed depends on `MARKDOWN_VAULT_MCP_OKF_VERIFY`:
-
-        - **elicit** (default): issues an MCP elicitation asking you to confirm
-          you personally reviewed the note; the entry is written only on an
-          affirmative reply. Fails closed — if the client cannot elicit or the
-          review is declined, nothing is written. The client's handler must
-          present the request to a person rather than answer automatically.
-          Service credentials record confirmed reviews as `human:local`.
-        - **trust-auth**: attributes to the token's `sub` with no confirmation;
-          refuses static bearer credentials, other client-ID-only identities,
-          and callers without auth. Only safe when the sole caller is a
-          human-driven UI. OAuth service tokens carrying `sub` remain a known
-          attribution limitation.
-
-        Note: `human-reviewed` means a human deliberately confirmed the review,
-        not that the content is provably correct.
+        The user may be asked to confirm the review. The record means a person looked,
+        not that the content is correct.
 
         Args:
-            path: Vault-relative path of the note to verify.
+            path: Path of the note the user reviewed.
 
         Returns:
             On the modern protocol's first round, an input request asking the

@@ -31,7 +31,7 @@ Call `get_context(path='$path')`. Note:
 Run two queries to gather context the user may not have linked yet:
 
 1. If `stats()` reports `semantic_search_available=True`, call `search(query=<outcome text>, mode='hybrid', limit=15)` for the richest results. Otherwise fall back to `search(query=<outcome text>, mode='keyword', limit=15)`. The hybrid mode fuses keyword BM25 with vector similarity; keyword mode is still useful when embeddings aren't configured.
-2. `get_similar(path='$path', limit=10)` — semantic near-neighbors (returns an empty list when embeddings are unavailable, so it is always safe to call)
+2. Only when `semantic_search_available=True`: `get_similar(path='$path', limit=10)` for semantic near-neighbors. Without embeddings the server refuses it, so skip this query.
 
 ## Step 4: Classify results into three buckets
 

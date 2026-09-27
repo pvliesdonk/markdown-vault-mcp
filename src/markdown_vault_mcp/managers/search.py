@@ -21,6 +21,7 @@ from markdown_vault_mcp.exceptions import (
     ConfigurationError,
     DocumentNotFoundError,
     EmbeddingsNotConfiguredError,
+    InvalidRequestError,
 )
 from markdown_vault_mcp.managers._ranking import (
     ChannelRow as _ChannelRow,
@@ -1421,14 +1422,29 @@ class SearchManager:
     def list_tags(self, field: str = "tags") -> builtins.list[str]:
         """Return all distinct values indexed for a given frontmatter field.
 
-        If *field* was not in ``indexed_frontmatter_fields``, returns ``[]``.
-
         Args:
             field: Frontmatter key to query (default: ``"tags"``).
 
         Returns:
             Sorted list of distinct value strings.
+
+        Raises:
+            InvalidRequestError: If *field* is not in
+                ``indexed_frontmatter_fields``: the index holds no values for
+                it, so an empty list would claim the vault has none (#1599).
         """
+        if field not in self._indexed_frontmatter_fields:
+            if not self._indexed_frontmatter_fields:
+                raise InvalidRequestError(
+                    f"Field {field!r} is not indexed: this vault indexes no "
+                    "frontmatter fields. Use list_documents with filters, or "
+                    "read notes' frontmatter, instead."
+                )
+            indexed = ", ".join(repr(f) for f in self._indexed_frontmatter_fields)
+            raise InvalidRequestError(
+                f"Field {field!r} is not indexed, so its values cannot be "
+                f"listed. Pass one of the indexed fields as field: {indexed}."
+            )
         return self._fts.list_field_values(field)
 
     def stats(self) -> VaultStats:
@@ -1580,11 +1596,12 @@ class SearchManager:
         Returns:
             List of :class:`~markdown_vault_mcp.types.GroupedResult` ordered
             by descending file score (max of section scores).  Empty list
-            when embeddings are not configured or the document has no
-            stored vectors.
+            when the document has no stored vectors yet.
 
         Raises:
             DocumentNotFoundError: If no document exists at the given path.
+            EmbeddingsNotConfiguredError: If the vault has no embeddings: an
+                opt-in feature left off, which the caller works around (#1599).
             InvalidRequestError: If ``chunks_per_file`` < 1.
         """
         self._validate_path(path)
@@ -1592,8 +1609,12 @@ class SearchManager:
             raise DocumentNotFoundError.note(path)
         folder = normalize_folder(folder)
 
-        if self._embedding_provider is None or self._embeddings_path is None:
-            return []
+        if not self._vectors_available():
+            raise EmbeddingsNotConfiguredError(
+                "Finding similar notes needs embeddings, which this server does "
+                "not have. Use get_backlinks and get_outlinks, or search with "
+                "mode='keyword' for the note's key terms."
+            )
 
         self._load_vectors()
         if self._vectors is None or self._vectors.count == 0:

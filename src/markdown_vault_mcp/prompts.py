@@ -5,8 +5,8 @@ Call :func:`register_prompts` after constructing the
 :func:`~markdown_vault_mcp.server.make_server`.
 """
 
-from __future__ import annotations
-
+# No ``from __future__ import annotations`` here: under postponed annotations
+# FastMCP appends a JSON-schema sentence to every ``str`` prompt argument.
 import importlib.resources
 import inspect
 import keyword
@@ -86,7 +86,7 @@ def _arg_names_valid(kind: str, name: str, arg_defs: list[dict[str, Any]]) -> bo
 def _build_prompt_fn(
     template: str,
     arg_defs: list[dict[str, Any]],
-    derive: Callable[[dict[str, Any]], None] | None = None,
+    derive: "Callable[[dict[str, Any]], None] | None" = None,
 ) -> Any:
     """Build a prompt callable with a synthetic signature (no ``exec``).
 
@@ -133,6 +133,30 @@ def _build_prompt_fn(
     prompt_fn.__signature__ = signature  # type: ignore[attr-defined]
     prompt_fn.__annotations__ = {p.name: str for p in params} | {"return": str}
     return prompt_fn
+
+
+def _prompt_doc(description: str, arg_defs: list[dict[str, Any]]) -> str:
+    """Return a prompt docstring whose ``Args:`` section FastMCP reads.
+
+    FastMCP takes a prompt argument's description from the docstring's
+    ``Args:`` entry, so the descriptions a prompt file declares are written
+    there; without one each argument reaches the client undescribed.
+
+    Args:
+        description: The prompt's one-line description.
+        arg_defs: Argument definitions; each ``description`` becomes its entry.
+
+    Returns:
+        The docstring to assign to the prompt callable.
+    """
+    entries = [
+        f"    {arg['name']}: {' '.join(str(arg['description']).split())}"
+        for arg in arg_defs
+        if str(arg.get("description") or "").strip()
+    ]
+    if not entries:
+        return description
+    return description + "\n\nArgs:\n" + "\n".join(entries) + "\n"
 
 
 def _research_derive(values: dict[str, Any]) -> None:
@@ -272,7 +296,7 @@ def _register_one_user_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) -> 
             return
 
     fn.__name__ = name
-    fn.__doc__ = description or f"User-defined prompt: {name}"
+    fn.__doc__ = _prompt_doc(description or f"User-defined prompt: {name}", arg_defs)
 
     decorator_kwargs: dict[str, Any] = {}
     if tags:
@@ -366,7 +390,7 @@ def _register_one_builtin_prompt(mcp: FastMCP, name: str, defn: dict[str, Any]) 
             return
 
     fn.__name__ = name
-    fn.__doc__ = description
+    fn.__doc__ = _prompt_doc(description, arg_defs)
 
     mcp.prompt(**decorator_kwargs)(fn)
     logger.debug("builtin_prompt_registered prompt=%s", name)
@@ -420,12 +444,17 @@ def _register_create_from_template(mcp: FastMCP, templates_folder: str | None) -
     """
 
     @mcp.prompt(tags={"write"}, icons=_TOOL_ICONS["write"])
-    def create_from_template(template_name: str | None = None) -> str:
-        """Create a new note from a vault template. Pass template_name (e.g. "meeting-notes" or "meeting-notes.md") to skip discovery, or omit to browse available templates first."""
-        template_hint = "None" if template_name is None else repr(template_name)
-        template_name_clean = (
-            (template_name or "").strip().replace("\\", "/").lstrip("/")
-        )
+    def create_from_template(template_name: str = "") -> str:
+        """Create a new note from one of the vault's templates.
+
+        Args:
+            template_name: Template to use, e.g. "meeting-notes"; leave empty
+                to choose from the list.
+        """
+        # A bare ``str`` keeps FastMCP from appending a JSON-schema sentence to
+        # the argument; the empty default is "not given" (browse first).
+        template_hint = repr(template_name) if template_name else "None"
+        template_name_clean = template_name.strip().replace("\\", "/").lstrip("/")
         if template_name_clean:
             resolved: list[str] = []
             for part in PurePosixPath(template_name_clean).parts:

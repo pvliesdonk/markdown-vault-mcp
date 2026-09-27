@@ -3438,8 +3438,10 @@ cross-vault moves.
 matched against the relative path using `fnmatch.fnmatch()`. Example:
 `pattern="Journal/*.md"` returns only documents in the Journal folder.
 
-**`list_tags(field)` behavior**: queries only the `document_tags` table. If
-`field` was not in `indexed_frontmatter_fields`, returns `[]`.
+**`list_tags(field)` behavior**: queries only the `document_tags` table. A
+`field` outside `indexed_frontmatter_fields` raises `InvalidRequestError`
+naming the indexed fields (#1599): the index holds no values for it, so an
+empty list would claim the vault has none.
 
 **`on_write` callback**:
 
@@ -4096,10 +4098,9 @@ acted on far more reliably than schema documentation. The live configured
 limit is also substituted into the tool description at startup (a
 ``{max_notes}`` placeholder in the docstring, rewritten by
 ``apply_summarize_limits`` from ``_server_wiring`` (the DOMAIN-WIRING block), which owns the
-loaded config) and surfaced in the server instructions via
-``contribute_instructions(summarize_note_limit=...)``, so a calling
-model can plan folder splits before its first call rather than reacting
-to a truncated result.
+loaded config), so a calling model can plan folder splits before its
+first call rather than reacting to a truncated result. The tool
+description is its only home (#1599); the instructions no longer repeat it.
 
 **Client-side summarization route (#1035).** The server-side tool is one of
 two routes. The ``summarize-subtree`` prompt ships the same
@@ -4256,9 +4257,11 @@ The generated-text compatibility target is a tested configuration matrix,
 not an estimate from the default stdio server. The maximal case enables
 read-write mode, summarization, conventions, OKF, jobs, and HTTP transfer and
 must remain at or below pvl-core's 1,536 UTF-16-unit generated target. It is
-1,507 units as of #1252's acceptance fix. A second case adds representative
-routing and policy and must remain within Claude Code's 2,048-unit limit.
-The mode, summarize limit, conventions, and OKF guidance are `INSTANCE` facts;
+1,229 units as of #1599, down from 1,507 at #1252's acceptance fix. A second
+case adds representative routing and policy and must remain within Claude Code's 2,048-unit limit.
+The mode, the missing-summarize pointer, conventions, and OKF guidance are
+`INSTANCE` facts (the summarize note limit is in the `summarize` tool's own
+description, #1599);
 the vault/search seed is `CAPABILITIES`; write, transfer, and job sequences are
 `WORKFLOWS`.
 
@@ -4285,6 +4288,23 @@ description and schema is pvl-core's problem to solve with a catalog mode
 (pvliesdonk/fastmcp-pvl-core#300); if that study yields a measured threshold,
 a budget derived from it is stated in tokens, per client class, with its
 derivation beside the number.
+
+**Every model-facing text passes the skill's two gates** (#1599). A tool
+description states the contract; how a call fails and what to do then lives
+in that call's error text, and operator facts (environment variables, limits,
+the `okf_verify` confirmation modes, the fetch SSRF rules) live in the
+operator docs. A fact is stated once, in the surface read when it is needed:
+"no reindex after a write" is in `reindex`'s description only, the summarize
+note limit only in `summarize`'s, and a sequence spanning tools only in
+instructions. The pattern-findable half of gate 1 is pinned by
+`tests/test_model_facing_lexicon.py`, which lists the largest surface (git,
+OKF writes and summarize configured) and fails on an environment variable or
+setting name, a Sphinx role, a reST literal, an issue reference, a
+command-line flag or an exception class anywhere in instructions, tool and
+input-schema descriptions, resources and prompts. Resource descriptions are
+one line for a human; prompt arguments carry their descriptions from the
+prompt file, and the prompts module does without postponed annotations so no
+`str` argument gains FastMCP's schema sentence.
 
 Parameterless tools always pass an explicit concise `description=` at
 registration. Otherwise FastMCP falls back to the complete raw docstring when

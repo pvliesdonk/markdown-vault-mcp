@@ -12,22 +12,50 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import functools
 import json
+import logging
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastmcp import FastMCP
 from fastmcp.dependencies import CurrentContext, Depends
+from fastmcp.exceptions import ResourceError
 from fastmcp.resources import ResourceContent, ResourceResult
 from fastmcp.server.context import Context
 
 from markdown_vault_mcp.config import ProjectConfig
+from markdown_vault_mcp.exceptions import InvalidRequestError
 from markdown_vault_mcp.utils.serialization import toc_payload
 from markdown_vault_mcp.vault import Vault
 
 from ._icons import _TOOL_ICONS
 from ._server_queryable import needs_queryable
 from .domain import get_vault
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+
+def _request_outcomes(
+    fn: Callable[..., Awaitable[ResourceResult]],
+) -> Callable[..., Awaitable[ResourceResult]]:
+    """Report a URI the reader must change at INFO, not as a server fault.
+
+    A templated resource reads what the URI names; a note that does not
+    exist, a field that is not indexed or a vault without embeddings is the
+    request's doing (#1608, #1599). ``ResourceError`` defaults to ERROR, so
+    those are re-raised at INFO; anything else stays a fault.
+    """
+
+    @functools.wraps(fn)
+    async def wrapper(*args: Any, **kwargs: Any) -> ResourceResult:
+        try:
+            return await fn(*args, **kwargs)
+        except InvalidRequestError as exc:
+            raise ResourceError(str(exc), log_level=logging.INFO) from None
+
+    return wrapper
 
 
 def _stale_resource(vault: Vault, contents: str, gen_before: int) -> ResourceResult:
@@ -83,10 +111,7 @@ def register_resources(mcp: FastMCP) -> None:
         ctx: Context = CurrentContext(),
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """Vault configuration: source path, read-only mode, indexed frontmatter fields, exclude patterns, allowed attachment extensions, folder conventions. For counts and search capabilities, use stats://vault.
-
-        Index freshness is reported in _meta.index_stale.
-        """
+        """The vault's settings: read-only mode, indexed fields, exclusions, OKF state."""
         config = _get_config(ctx)
         gen_before = vault.index.write_generation()
         stats = await asyncio.to_thread(vault.reader.stats)
@@ -125,10 +150,7 @@ def register_resources(mcp: FastMCP) -> None:
     async def vault_stats(
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """Vault statistics — document count, chunk count, capabilities.
-
-        Index freshness is reported in _meta.index_stale.
-        """
+        """Vault statistics: note, chunk and link counts and search capabilities."""
         gen_before = vault.index.write_generation()
         result = await asyncio.to_thread(vault.reader.stats)
         return _stale_resource(vault, json.dumps(asdict(result)), gen_before)
@@ -139,10 +161,7 @@ def register_resources(mcp: FastMCP) -> None:
     async def vault_tags(
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """All tags grouped by indexed field.
-
-        Index freshness is reported in _meta.index_stale.
-        """
+        """Every value of every indexed frontmatter field, grouped by field."""
         gen_before = vault.index.write_generation()
         stats = await asyncio.to_thread(vault.reader.stats)
         tag_lists: list[list[str]] = list(
@@ -163,14 +182,12 @@ def register_resources(mcp: FastMCP) -> None:
         mime_type="application/json",
         icons=_TOOL_ICONS["list_tags"],
     )
+    @_request_outcomes
     async def vault_tags_by_field(
         field: str,
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """Tags for a specific indexed field.
-
-        Index freshness is reported in _meta.index_stale.
-        """
+        """Every value of one indexed frontmatter field."""
         gen_before = vault.index.write_generation()
         values = await asyncio.to_thread(vault.reader.list_tags, field)
         return _stale_resource(vault, json.dumps(values), gen_before)
@@ -183,10 +200,7 @@ def register_resources(mcp: FastMCP) -> None:
     async def vault_folders(
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """All folder paths in the vault.
-
-        Index freshness is reported in _meta.index_stale.
-        """
+        """Every folder in the vault that holds notes."""
         gen_before = vault.index.write_generation()
         folders = await asyncio.to_thread(vault.reader.list_folders)
         return _stale_resource(vault, json.dumps(folders), gen_before)
@@ -195,22 +209,12 @@ def register_resources(mcp: FastMCP) -> None:
         "toc://vault/{path}", mime_type="application/json", icons=_TOOL_ICONS["read"]
     )
     @needs_queryable()
+    @_request_outcomes
     async def vault_toc(
         path: str,
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """Table of contents for a note or a folder subtree.
-
-        A note path (ending in ``.md``) returns a flat ordered list of
-        ``{heading, level}`` headings (the title as a synthetic H1). A folder
-        path returns a nested-per-note object
-        ``{path, notes: [{path, title, headings}], truncated}`` aggregating the
-        subtree (default cap 200 notes). Useful for navigating structure
-        without reading full content. See the ``get_toc`` tool for the same
-        data with ``max_level`` / ``max_notes`` controls.
-
-        Index freshness is reported in _meta.index_stale.
-        """
+        """Heading outline of a note, or of up to 200 notes under a folder."""
         gen_before = vault.index.write_generation()
         toc = await asyncio.to_thread(vault.reader.get_toc, path)
         return _stale_resource(vault, json.dumps(toc_payload(toc)), gen_before)
@@ -221,14 +225,12 @@ def register_resources(mcp: FastMCP) -> None:
         icons=_TOOL_ICONS["get_similar"],
     )
     @needs_queryable()
+    @_request_outcomes
     async def vault_similar(
         path: str,
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """Top 10 semantically similar notes for a document.
-
-        Index freshness is reported in _meta.index_stale.
-        """
+        """The 10 notes closest in meaning to a note."""
         gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(vault.reader.get_similar, path, limit=10)
         return _stale_resource(
@@ -243,10 +245,7 @@ def register_resources(mcp: FastMCP) -> None:
     async def vault_recent(
         vault: Vault = Depends(get_vault),
     ) -> ResourceResult:
-        """20 most recently modified notes.
-
-        Index freshness is reported in _meta.index_stale.
-        """
+        """The 20 most recently modified notes."""
         gen_before = vault.index.write_generation()
         results = await asyncio.to_thread(vault.reader.get_recent, limit=20)
         items: list[dict[str, Any]] = [
