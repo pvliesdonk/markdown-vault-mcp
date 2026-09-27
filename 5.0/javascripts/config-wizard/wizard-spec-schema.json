@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pvliesdonk.github.io/fastmcp-server-template/wizard-spec-schema.json",
+  "title": "fastmcp config-wizard spec",
+  "$comment": "Runtime convention not expressible here: wizard.js keys local-vs-server output off a question with id 'deployment' whose 'server' value selects the HTTP/Docker/systemd tabs. A spec omitting it degrades to local-only output.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "meta", "questions"],
+  "properties": {
+    "version": { "const": 1 },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectName", "dockerImage", "envPrefix"],
+      "properties": {
+        "projectName": { "type": "string", "minLength": 1 },
+        "dockerImage": { "type": "string", "minLength": 1 },
+        "envPrefix": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*[A-Z0-9]$",
+          "description": "Mirrors the copier.yml env_prefix validator: uppercase/digits/underscore, ≥2 chars, no trailing underscore."
+        }
+      }
+    },
+    "secretKeys": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "questions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/question" }
+    },
+    "guards": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/guard" }
+    }
+  },
+  "$defs": {
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "type"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "label": { "type": "string", "minLength": 1 },
+        "help": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["text", "select", "bool", "number"] },
+        "var": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+        "advancedGroup": { "type": "string", "minLength": 1 },
+        "showIf": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "options": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/option" }
+        },
+        "dockerVolume": { "type": "string", "pattern": "^/" },
+        "dockerPath": { "type": "string", "pattern": "^/" }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "select" } } },
+          "then": { "required": ["options"] }
+        },
+        {
+          "$comment": "A dockerVolume/dockerPath question binds its var to the container path (generators.js dockerEnvMap). Without var that binding never happens — reject rather than accept a question that silently emits a dead bind mount (dockerVolume) or a no-op (dockerPath).",
+          "if": { "required": ["dockerVolume"] },
+          "then": { "required": ["var"] }
+        },
+        {
+          "if": { "required": ["dockerPath"] },
+          "then": { "required": ["var"] }
+        }
+      ],
+      "not": { "required": ["dockerVolume", "dockerPath"] }
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "label"],
+      "properties": {
+        "value": { "type": "string" },
+        "label": { "type": "string", "minLength": 1 },
+        "emit": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "guard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "message", "when"],
+      "properties": {
+        "level": { "enum": ["warning", "info", "error"] },
+        "message": { "type": "string", "minLength": 1 },
+        "when": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
