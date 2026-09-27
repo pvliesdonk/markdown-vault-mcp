@@ -1541,6 +1541,31 @@ class TestMoveFolderTool:
         assert not (vault_path / "drafts").exists()
 
     @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_move_folder_tool_file_error_says_reindex(
+        self, vault_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A file error mid-move names the repair: reindex, then tell the user."""
+        (vault_path / "drafts").mkdir(exist_ok=True)
+        (vault_path / "drafts" / "a.md").write_text("# A\n", encoding="utf-8")
+
+        def _refuse(*_args: object, **_kwargs: object) -> None:
+            raise PermissionError("denied")
+
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            monkeypatch.setattr(
+                "markdown_vault_mcp.managers.document.shutil.move", _refuse
+            )
+            result = await client.call_tool_mcp(
+                "move_folder", {"old_dir": "drafts", "new_dir": "archive"}
+            )
+        assert result.is_error is True
+        text = result.content[0].text
+        assert "call reindex" in text
+        assert "request was fine" in text
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_move_folder_tool_missing_source_returns_error(self) -> None:
         """move_folder tool returns an error when old_dir does not exist."""
         server = make_server()

@@ -683,7 +683,23 @@ def register(mcp: FastMCP) -> None:
         # attributed (#1218); no OKF intent — the enricher's actor for the
         # link-rewrite edits stays the tool actor, as before.
         with write_identity_scope(okf_intent=False):
-            result = await asyncio.to_thread(vault.writer.move_folder, old_dir, new_dir)
+            try:
+                result = await asyncio.to_thread(
+                    vault.writer.move_folder, old_dir, new_dir
+                )
+            except OSError as exc:
+                # A file error while moving can leave the subtree part-moved
+                # with the index still naming the old paths; reindex is the one
+                # repair the model can make. It needs an operator: ERROR.
+                logger.exception(
+                    "move_folder_os_error old_dir=%s new_dir=%s", old_dir, new_dir
+                )
+                raise ToolError(
+                    f"Moving {old_dir!r} to {new_dir!r} hit a file error on the "
+                    "server, so some files may already be under new_dir. The "
+                    "request was fine: call reindex so search matches the files, "
+                    "then tell the user."
+                ) from exc
         return attach_remote_health(vault, asdict(result))
 
     @mcp.tool(
