@@ -2,25 +2,21 @@
 okf_version: "0.2"
 ---
 
-# External-behaviour references
+# External behavior references
 
-Each page records, with primary sources and dates, how something outside this
-repository behaves where the code depends on it. Read the page for the module
-you are about to touch; a page past its `stale_after` is re-researched with
-the `researching-references` skill, never trusted. Trust tier and staleness
-follow OKF v0.2 (`generated`, `verified`, `stale_after`).
+These pages record external behavior, with source markers and review dates.
+Read the relevant page before relying on its claims; research it again when
+its `stale_after` date passes. Project decisions belong in `docs/design/`.
 
-- [Obsidian markdown dialect and link resolution](/obsidian-markdown.md): wikilinks, embeds, aliases, tags, link resolution as observed on 1.13.7 (#1350, #1358: the tie-break, aliases never resolving, markdown destinations looked up vault-wide, what Obsidian writes). Read before `scanner.py` wikilink extraction or `fts_index.py` resolution.
-- [CommonMark and GitHub Flavored Markdown](/commonmark-gfm.md): line endings, paragraph boundaries, link and reference grammar, code spans and fences, the #1334 decision table. Read before any regex in `scanner.py`.
-- [Git push, credentials and remotes](/git-push-and-remotes.md): push refusals and their wording, `--porcelain`, askpass and `GIT_TERMINAL_PROMPT`, URL forms, `safe.directory`, `symbolic-ref` and `origin/HEAD`. Read before `git/health.py`, `git/push_scheduler.py`, `git/_run.py`, `git/bootstrap.py`, or the repository-discovery part of `git/conflict.py`.
-- [Git staging, commits and rebase state](/git-staging-and-commits.md): pathspec magic, `add`/`check-ignore`, `commit --only` and identity, ancestry and fast-forward, rebase state on disk and conflict markers. Read before `git/strategy.py`, `git/conflict.py`, or the pathspec part of `git/_run.py`.
-- [Open Knowledge Format v0.2](/okf-v0.2.md): frontmatter families, trust tiers, `stale_after` in both texts of v0.2 (date in July, instant with offset since 2026-08-21), reserved files, links, conformance; the timestamp departures. Read before `okf.py`, `_okf_write.py`, `_okf_convention.py` or `okf_bundle.py`.
-- [Git history and revision queries](/git-history-queries.md): `log -z`/`--name-status` framing, `--follow` and rename detection, `--since`/`--until` date semantics, `ls-tree -l`, symlink blobs, LFS pointers. Read before `git/query.py`.
-- [obsidian-git and isomorphic-git in a shared vault](/obsidian-git.md): the plugin's default commit subject and placeholders, where its commit identity lives, when it commits, `syncMethod`/`mergeStrategy` and the pull sequence on desktop (system git) and mobile (isomorphic-git: no rebase, `mergeDriver` only, no `.gitattributes`), the `conflict-files-obsidian-git.md` note it writes into the vault, repository-layout settings, and what Obsidian writes on a new note. Read before touching the pull or conflict path in `git/strategy.py` / `git/conflict.py` for the other side's behaviour, or anything that renders or classifies commits by subject or identity.
-- [Git submodules seen from a superproject](/git-submodules.md): gitlinks and `.gitmodules`, enumerating submodules, what superproject-level `add`/`ls-files`/`log`/`show` answer for a path inside one (`add` refuses it), how `clone`, `submodule update`, `fetch`, `merge --ff-only` and `pull` populate or leave a submodule, the detached HEAD `update` leaves, and the abort a dirty submodule causes. Read before touching `git/bootstrap.py`, the pull path in `git/strategy.py` or `git/query.py` for the submodule epics (#1561, #1562).
-- [GitHub and git behaviour behind integration branches](/github-integration-branches.md): up-to-date requirements, merge queue, workflow branch filters, closing keywords, retargeting, merge methods, knope's commit walk and git's review tools, as the integration-branch workflow relies on them.
-- [GitHub planning objects](/github-planning-objects.md): milestones, issue relationships, and PR design material used by roadmapping and releases.
-- [GitHub repository security settings](/github-repository-security-settings.md): private vulnerability reporting, Dependabot alerts, push protection and the security policy file, as `bootstrap.yml` and `SECURITY.md` rely on them.
+- [GitHub and git behaviour behind integration branches](github-integration-branches.md) —
+  up-to-date requirements, merge queue, workflow branch filters, closing
+  keywords, retargeting, merge methods, knope's commit walk and git's
+  review tools, as the integration-branch workflow relies on them.
+- [GitHub planning objects](github-planning-objects.md) — milestones,
+  issue relationships, and PR design material used by roadmapping and releases.
+- [GitHub repository security settings](github-repository-security-settings.md) —
+  private vulnerability reporting, Dependabot alerts, push protection and the
+  security policy file, as `bootstrap.yml` and `SECURITY.md` rely on them.
 - [MCP model-facing text](mcp-model-facing-text.md) — who reads each
   description field, how clients cut and index it, how FastMCP builds it from
   a docstring, and what the vendors say it should carry; the evidence behind
@@ -32,9 +28,67 @@ follow OKF v0.2 (`generated`, `verified`, `stale_after`).
 - [Negative outcomes and faults outside MCP](negative-outcomes-and-faults.md) —
   how HTTP, gRPC, OpenTelemetry, GraphQL, JSON-RPC and five language error
   models separate a valid "no" from a fault; the companion to the MCP page.
-- [FastMCP 4 protocol and server behaviour](/fastmcp-4.md): SDK field names, protocol-era elicitation, resource path screening, per-server tasks, and OAuth route mounting used by the v8 template migration (#1271).
-- [fastmcp-pvl-core transfer errors and retries](/fastmcp-transfer.md): sink-selected HTTP errors, release on failure, and successful-upload replay. Read before changing `_transfer_sink.py` error handling or transfer retry guidance.
-- [Authenticated subjects and human attribution](/authenticated-subjects.md): bearer client identifiers, token claims, and the limits of OAuth identity for OKF provenance. Read before changing `_identity.py`.
+- [Obsidian markdown dialect and link resolution](obsidian-markdown.md) —
+  wikilinks, embeds, aliases, tags, link resolution as observed on 1.13.7
+  (#1350, #1358: the tie-break, aliases never resolving, markdown destinations
+  looked up vault-wide, what Obsidian writes). Read before `scanner.py`
+  wikilink extraction or `fts_index.py` resolution.
+- [CommonMark and GitHub Flavored Markdown](commonmark-gfm.md) — line endings,
+  paragraph boundaries, link and reference grammar, code spans and fences, the
+  #1334 decision table. Read before any regex in `scanner.py`.
+- [Git push, credentials and remotes](git-push-and-remotes.md) — push refusals
+  and their wording, `--porcelain`, askpass and `GIT_TERMINAL_PROMPT`, URL
+  forms, `safe.directory`, `symbolic-ref` and `origin/HEAD`. Read before
+  `git/health.py`, `git/push_scheduler.py`, `git/_run.py`, `git/bootstrap.py`,
+  or the repository-discovery part of `git/conflict.py`.
+- [Git staging, commits and rebase state](git-staging-and-commits.md) —
+  pathspec magic, `add`/`check-ignore`, `commit --only` and identity, ancestry
+  and fast-forward, rebase state on disk and conflict markers. Read before
+  `git/strategy.py`, `git/conflict.py`, or the pathspec part of `git/_run.py`.
+- [Open Knowledge Format v0.2](okf-v0.2.md) — frontmatter families, trust
+  tiers, `stale_after` in both texts of v0.2 (date in July, instant with offset
+  since 2026-08-21), reserved files, links, conformance; the timestamp
+  departures. Read before `okf.py`, `_okf_write.py`, `_okf_convention.py` or
+  `okf_bundle.py`.
+- [Git history and revision queries](git-history-queries.md) — `log
+  -z`/`--name-status` framing, `--follow` and rename detection,
+  `--since`/`--until` date semantics, `ls-tree -l`, symlink blobs, LFS
+  pointers. Read before `git/query.py`.
+- [obsidian-git and isomorphic-git in a shared vault](obsidian-git.md) — the
+  plugin's default commit subject and placeholders, where its commit identity
+  lives, when it commits, `syncMethod`/`mergeStrategy` and the pull sequence on
+  desktop (system git) and mobile (isomorphic-git: no rebase, `mergeDriver`
+  only, no `.gitattributes`), the `conflict-files-obsidian-git.md` note it
+  writes into the vault, repository-layout settings, and what Obsidian writes
+  on a new note. Read before touching the pull or conflict path in
+  `git/strategy.py` / `git/conflict.py` for the other side's behaviour, or
+  anything that renders or classifies commits by subject or identity.
+- [Git submodules seen from a superproject](git-submodules.md) — gitlinks and
+  `.gitmodules`, enumerating submodules, what superproject-level
+  `add`/`ls-files`/`log`/`show` answer for a path inside one (`add` refuses
+  it), how `clone`, `submodule update`, `fetch`, `merge --ff-only` and `pull`
+  populate or leave a submodule, the detached HEAD `update` leaves, and the
+  abort a dirty submodule causes. Read before touching `git/bootstrap.py`, the
+  pull path in `git/strategy.py` or `git/query.py` for the submodule epics
+  (#1561, #1562).
+- [FastMCP 4 protocol and server behaviour](fastmcp-4.md) — SDK field names,
+  protocol-era elicitation, resource path screening, per-server tasks, and
+  OAuth route mounting used by the v8 template migration (#1271).
+- [fastmcp-pvl-core transfer errors and retries](fastmcp-transfer.md) —
+  sink-selected HTTP errors, release on failure, and successful-upload replay.
+  Read before changing `_transfer_sink.py` error handling or transfer retry
+  guidance.
+- [Authenticated subjects and human attribution](authenticated-subjects.md) —
+  bearer client identifiers, token claims, and the limits of OAuth identity for
+  OKF provenance. Read before changing `_identity.py`.
+- [Python Future completion and cancellation](python-futures.md) — result
+  publication, callback ordering, cancellation and executor lock ownership.
+  Read before changing the index build lifecycle or writer cancellation.
+- [SQLite FTS5 delete cost and shadow-table architecture](sqlite-fts5.md) — why
+  a content-carrying FTS5 table full-scans on non-rowid deletes (#1535), rowid
+  vs. ordinary-column query plans, the `'delete'` special command's
+  external-content-only restriction. Read before touching `_delete_document`,
+  `_insert_sections`, or any `notes_fts` DELETE/INSERT in `fts_index.py`.
 
-- [Python Future completion and cancellation](/python-futures.md): result publication, callback ordering, cancellation and executor lock ownership. Read before changing the index build lifecycle or writer cancellation.
-- [SQLite FTS5 delete cost and shadow-table architecture](/sqlite-fts5.md): why a content-carrying FTS5 table full-scans on non-rowid deletes (#1535), rowid vs. ordinary-column query plans, the `'delete'` special command's external-content-only restriction. Read before touching `_delete_document`, `_insert_sections`, or any `notes_fts` DELETE/INSERT in `fts_index.py`.
+See the [research log](log.md) for completed research passes. Add project
+references here as they are written.

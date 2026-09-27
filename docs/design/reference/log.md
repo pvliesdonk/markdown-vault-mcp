@@ -1,4 +1,4 @@
-# Log
+# Reference research log
 
 ## 2026-09-26
 
