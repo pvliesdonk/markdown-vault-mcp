@@ -6,6 +6,8 @@ Index freshness (`_meta.index_stale`)
 
 The index-querying resources (`config://vault`, `stats://vault`, `tags://vault`, `tags://vault/{field}`, `folders://vault`, `toc://vault/{path}`, `similar://vault/{path}`, and `recent://vault`) keep their bare JSON contents unchanged and report index freshness out-of-band in the resource read's **`_meta.index_stale`** field (read it via `read_resource_mcp(uri).meta`). It is `true` when a write landed during the read or the IndexWriter was non-idle at response time. Resources carry no `wait_for_pending_writes` parameter (they signal only); use the equivalent MCP tool with `wait_for_pending_writes=true` when you need to block for a fresh read.
 
+A read that fails because of the URI itself (a field that is not indexed, a note that does not exist, a vault without embeddings) is logged at INFO, not ERROR: the request needs changing, the server is fine.
+
 ## Quick Reference
 
 | URI                                                                | Description                                    |
@@ -77,7 +79,7 @@ All frontmatter tag values grouped by indexed field.
 
 ## `tags://vault/{field}`
 
-Tag values for a specific indexed frontmatter field. This is a URI template: replace `{field}` with the field name.
+Tag values for a specific indexed frontmatter field. This is a URI template: replace `{field}` with the field name. A field that is not indexed fails with an error naming the indexed fields.
 
 **Example:** `tags://vault/tags`
 
@@ -148,7 +150,7 @@ Calls during a cold-start background FTS build block via the tool-layer `needs_q
 
 ## `similar://vault/{path}`
 
-Top 10 semantically similar notes for a document. Requires embeddings to be built. This is a URI template: replace `{path}` with the document's relative path.
+Top 10 semantically similar notes for a document. Requires embeddings: on a vault without them the read fails with an error saying so. This is a URI template: replace `{path}` with the document's relative path.
 
 Cold-start blocking
 

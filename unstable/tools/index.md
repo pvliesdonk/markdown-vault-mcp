@@ -229,7 +229,7 @@ List all distinct values for a frontmatter field across the vault.
 | --------- | ------ | -------- | ------------------------------------------------------------------------------------------------------- |
 | `field`   | string | `"tags"` | Frontmatter field name to enumerate. Must match a field in `indexed_frontmatter_fields` (check `stats`) |
 
-**Returns:** Sorted list of distinct string values, such as `["craft", "pacing", "worldbuilding"]`.
+**Returns:** Sorted list of distinct string values, such as `["craft", "pacing", "worldbuilding"]`. A field outside `indexed_frontmatter_fields` is refused with an error naming the indexed fields, rather than answered with an empty list that reads as a field with no values.
 
 ### `stats`
 
@@ -780,7 +780,7 @@ A missing attachment is not reported: references to attachments are not links (s
 
 ### `get_similar`
 
-Find semantically similar notes by document path. Requires embeddings to be built.
+Find semantically similar notes by document path. Requires embeddings: on a vault without them the call is refused with an error pointing at `get_backlinks`, `get_outlinks` and keyword search, rather than answered with an empty list. A note whose embeddings are not built yet returns an empty list.
 
 **Parameters:**
 

@@ -205,8 +205,6 @@ Returns:
 
 Return all distinct values indexed for a given frontmatter field.
 
-If *field* was not in `indexed_frontmatter_fields`, returns `[]`.
-
 Parameters:
 
 | Name    | Type  | Description                                 | Default  |
@@ -218,6 +216,12 @@ Returns:
 | Type        | Description                            |
 | ----------- | -------------------------------------- |
 | `list[str]` | Sorted list of distinct value strings. |
+
+Raises:
+
+| Type                  | Description                                    |
+| --------------------- | ---------------------------------------------- |
+| `InvalidRequestError` | If field is not in indexed_frontmatter_fields. |
 
 ### `get_toc(path, *, max_level=None, max_notes=200)`
 
@@ -290,9 +294,10 @@ Returns:
 
 Raises:
 
-| Type                    | Description                                          |
-| ----------------------- | ---------------------------------------------------- |
-| `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
+| Type                           | Description                                          |
+| ------------------------------ | ---------------------------------------------------- |
+| `IndexUnavailableError`        | If :meth:IndexFacet.build_index has not been called. |
+| `EmbeddingsNotConfiguredError` | If the vault has no embeddings.                      |
 
 ### `get_context(path, *, similar_limit=5, link_limit=10)`
 

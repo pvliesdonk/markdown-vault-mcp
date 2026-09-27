@@ -4007,7 +4007,7 @@ The prompt walks through six steps:
 1. **Survey the existing neighborhood.** Call `get_context(path=project)` to see existing backlinks, outlinks, similar notes, and tags.
 1. **Resurface related material.** Run two searches:
 1. If `stats()` reports `semantic_search_available=True`, call `search(query=outcome_text, mode='hybrid', limit=15)`. Otherwise fall back to `search(query=outcome_text, mode='keyword', limit=15)`.
-1. `get_similar(path=project, limit=10)`: returns an empty list when embeddings aren't configured, so it is always safe to call.
+1. Only when `semantic_search_available=True`: `get_similar(path=project, limit=10)`. Without embeddings the server refuses it.
 1. **Classify results into three buckets.** For each result, use the **folder prefix fast path** when the vault follows the canonical layout:
 1. `3-Resources/` → Resource
 1. `4-Archive/` → archived project (similar past work)
@@ -5038,7 +5038,7 @@ List all distinct values for a frontmatter field across the vault.
 | --------- | ------ | -------- | ------------------------------------------------------------------------------------------------------- |
 | `field`   | string | `"tags"` | Frontmatter field name to enumerate. Must match a field in `indexed_frontmatter_fields` (check `stats`) |
 
-**Returns:** Sorted list of distinct string values, such as `["craft", "pacing", "worldbuilding"]`.
+**Returns:** Sorted list of distinct string values, such as `["craft", "pacing", "worldbuilding"]`. A field outside `indexed_frontmatter_fields` is refused with an error naming the indexed fields, rather than answered with an empty list that reads as a field with no values.
 
 ### `stats`
 
@@ -5589,7 +5589,7 @@ A missing attachment is not reported: references to attachments are not links (s
 
 ### `get_similar`
 
-Find semantically similar notes by document path. Requires embeddings to be built.
+Find semantically similar notes by document path. Requires embeddings: on a vault without them the call is refused with an error pointing at `get_backlinks`, `get_outlinks` and keyword search, rather than answered with an empty list. A note whose embeddings are not built yet returns an empty list.
 
 **Parameters:**
 
@@ -5985,6 +5985,8 @@ Index freshness (`_meta.index_stale`)
 
 The index-querying resources (`config://vault`, `stats://vault`, `tags://vault`, `tags://vault/{field}`, `folders://vault`, `toc://vault/{path}`, `similar://vault/{path}`, and `recent://vault`) keep their bare JSON contents unchanged and report index freshness out-of-band in the resource read's **`_meta.index_stale`** field (read it via `read_resource_mcp(uri).meta`). It is `true` when a write landed during the read or the IndexWriter was non-idle at response time. Resources carry no `wait_for_pending_writes` parameter (they signal only); use the equivalent MCP tool with `wait_for_pending_writes=true` when you need to block for a fresh read.
 
+A read that fails because of the URI itself (a field that is not indexed, a note that does not exist, a vault without embeddings) is logged at INFO, not ERROR: the request needs changing, the server is fine.
+
 ## Quick Reference
 
 | URI                                                                | Description                                    |
@@ -6056,7 +6058,7 @@ All frontmatter tag values grouped by indexed field.
 
 ## `tags://vault/{field}`
 
-Tag values for a specific indexed frontmatter field. This is a URI template: replace `{field}` with the field name.
+Tag values for a specific indexed frontmatter field. This is a URI template: replace `{field}` with the field name. A field that is not indexed fails with an error naming the indexed fields.
 
 **Example:** `tags://vault/tags`
 
@@ -6127,7 +6129,7 @@ Calls during a cold-start background FTS build block via the tool-layer `needs_q
 
 ## `similar://vault/{path}`
 
-Top 10 semantically similar notes for a document. Requires embeddings to be built. This is a URI template: replace `{path}` with the document's relative path.
+Top 10 semantically similar notes for a document. Requires embeddings: on a vault without them the read fails with an error saying so. This is a URI template: replace `{path}` with the document's relative path.
 
 Cold-start blocking
 
@@ -6295,9 +6297,9 @@ Create a new note by adapting a template from your configured templates folder.
 
 **Parameters:**
 
-| Parameter       | Type   | Description |
-| --------------- | ------ | ----------- |
-| `template_name` | string | null        |
+| Parameter       | Type   | Description                                                                                                                 |
+| --------------- | ------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `template_name` | string | Optional template filename/path relative to `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER`; empty lists the templates to choose from |
 
 **Workflow:**
 
@@ -8353,8 +8355,6 @@ Returns:
 
 Return all distinct values indexed for a given frontmatter field.
 
-If *field* was not in `indexed_frontmatter_fields`, returns `[]`.
-
 Parameters:
 
 | Name    | Type  | Description                                 | Default  |
@@ -8366,6 +8366,12 @@ Returns:
 | Type        | Description                            |
 | ----------- | -------------------------------------- |
 | `list[str]` | Sorted list of distinct value strings. |
+
+Raises:
+
+| Type                  | Description                                    |
+| --------------------- | ---------------------------------------------- |
+| `InvalidRequestError` | If field is not in indexed_frontmatter_fields. |
 
 ### `get_toc(path, *, max_level=None, max_notes=200)`
 
@@ -8438,9 +8444,10 @@ Returns:
 
 Raises:
 
-| Type                    | Description                                          |
-| ----------------------- | ---------------------------------------------------- |
-| `IndexUnavailableError` | If :meth:IndexFacet.build_index has not been called. |
+| Type                           | Description                                          |
+| ------------------------------ | ---------------------------------------------------- |
+| `IndexUnavailableError`        | If :meth:IndexFacet.build_index has not been called. |
+| `EmbeddingsNotConfiguredError` | If the vault has no embeddings.                      |
 
 ### `get_context(path, *, similar_limit=5, link_limit=10)`
 

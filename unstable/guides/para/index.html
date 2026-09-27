@@ -2846,7 +2846,7 @@ it and stop any dependent delete or rename.</p>
 <li><strong>Survey the existing neighborhood.</strong> Call <code>get_context(path=project)</code> to see existing backlinks, outlinks, similar notes, and tags.</li>
 <li><strong>Resurface related material.</strong> Run two searches:</li>
 <li>If <code>stats()</code> reports <code>semantic_search_available=True</code>, call <code>search(query=outcome_text, mode='hybrid', limit=15)</code>. Otherwise fall back to <code>search(query=outcome_text, mode='keyword', limit=15)</code>.</li>
-<li><code>get_similar(path=project, limit=10)</code>: returns an empty list when embeddings aren't configured, so it is always safe to call.</li>
+<li>Only when <code>semantic_search_available=True</code>: <code>get_similar(path=project, limit=10)</code>. Without embeddings the server refuses it.</li>
 <li><strong>Classify results into three buckets.</strong> For each result, use the <strong>folder prefix fast path</strong> when the vault follows the canonical layout:</li>
 <li><code>3-Resources/</code> → Resource</li>
 <li><code>4-Archive/</code> → archived project (similar past work)</li>

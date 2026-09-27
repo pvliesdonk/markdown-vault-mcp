@@ -3766,7 +3766,7 @@ write(path, content=&lt;replaced content&gt;, if_match=&lt;current etag&gt;)
 </tr>
 </tbody>
 </table>
-<p><strong>Returns:</strong> Sorted list of distinct string values, such as <code>["craft", "pacing", "worldbuilding"]</code>.</p>
+<p><strong>Returns:</strong> Sorted list of distinct string values, such as <code>["craft", "pacing", "worldbuilding"]</code>. A field outside <code>indexed_frontmatter_fields</code> is refused with an error naming the indexed fields, rather than answered with an empty list that reads as a field with no values.</p>
 <h3 id="stats"><code>stats</code><a class="headerlink" href="#stats" title="Permanent link">&para;</a></h3>
 <p>Get an overview of the vault's size, capabilities, and configuration. Call this at the start of a session to understand what the vault contains and what search modes are available.</p>
 <p><strong>Returns:</strong></p>
@@ -4733,7 +4733,7 @@ see the <a href="../guides/git-integration/#provider-username-reference">Git Int
 <p><strong>Returns:</strong> List of entries with <code>source_path</code>, <code>source_title</code>, <code>target_path</code>, <code>link_text</code>, <code>link_type</code>, <code>fragment</code>, and <code>raw_target</code> fields.</p>
 <p>A missing attachment is not reported: references to attachments are not links (see <a href="#get_outlinks"><code>get_outlinks</code></a>). What is listed is a target no indexed note matches, whether a note reference or a destination whose extension is not on the attachment allowlist. Every CommonMark destination spelling is read (<code>&lt;my report.pdf&gt;</code>, <code>report.pdf "PDF"</code>, <code>a\(b\).md</code>, <code>a&amp;amp;b.md</code>), so an attachment written in any of them is excluded like the literal spelling (#1353). <code>stats.broken_link_count</code> counts the same population.</p>
 <h3 id="get_similar"><code>get_similar</code><a class="headerlink" href="#get_similar" title="Permanent link">&para;</a></h3>
-<p>Find semantically similar notes by document path. Requires embeddings to be built.</p>
+<p>Find semantically similar notes by document path. Requires embeddings: on a vault without them the call is refused with an error pointing at <code>get_backlinks</code>, <code>get_outlinks</code> and keyword search, rather than answered with an empty list. A note whose embeddings are not built yet returns an empty list.</p>
 <p><strong>Parameters:</strong></p>
 <table>
 <thead>

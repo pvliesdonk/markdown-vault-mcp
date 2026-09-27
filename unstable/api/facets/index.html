@@ -4453,7 +4453,6 @@ excludes attachments (they carry no frontmatter).</p>
     <div class="doc doc-contents ">
 
         <p>Return all distinct values indexed for a given frontmatter field.</p>
-<p>If <em>field</em> was not in <code>indexed_frontmatter_fields</code>, returns <code>[]</code>.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -4503,6 +4502,30 @@ excludes attachments (they carry no frontmatter).</p>
             <td>
               <div class="doc-md-description">
                 <p>Sorted list of distinct value strings.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="InvalidRequestError">InvalidRequestError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <em>field</em> is not in
+<code>indexed_frontmatter_fields</code>.</p>
               </div>
             </td>
           </tr>
@@ -4942,6 +4965,16 @@ ANDed; applied post-hoc against full frontmatter.</p>
             <td>
               <div class="doc-md-description">
                 <p>If :meth:<code>IndexFacet.build_index</code> has not been called.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="EmbeddingsNotConfiguredError">EmbeddingsNotConfiguredError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the vault has no embeddings.</p>
               </div>
             </td>
           </tr>

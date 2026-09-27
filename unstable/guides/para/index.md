@@ -248,7 +248,7 @@ The prompt walks through six steps:
 1. **Survey the existing neighborhood.** Call `get_context(path=project)` to see existing backlinks, outlinks, similar notes, and tags.
 1. **Resurface related material.** Run two searches:
 1. If `stats()` reports `semantic_search_available=True`, call `search(query=outcome_text, mode='hybrid', limit=15)`. Otherwise fall back to `search(query=outcome_text, mode='keyword', limit=15)`.
-1. `get_similar(path=project, limit=10)`: returns an empty list when embeddings aren't configured, so it is always safe to call.
+1. Only when `semantic_search_available=True`: `get_similar(path=project, limit=10)`. Without embeddings the server refuses it.
 1. **Classify results into three buckets.** For each result, use the **folder prefix fast path** when the vault follows the canonical layout:
 1. `3-Resources/` → Resource
 1. `4-Archive/` → archived project (similar past work)
