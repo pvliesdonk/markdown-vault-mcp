@@ -4257,8 +4257,8 @@ The generated-text compatibility target is a tested configuration matrix,
 not an estimate from the default stdio server. The maximal case enables
 read-write mode, summarization, conventions, OKF, jobs, and HTTP transfer and
 must remain at or below pvl-core's 1,536 UTF-16-unit generated target. It is
-1,507 units as of #1252's acceptance fix. A second case adds representative
-routing and policy and must remain within Claude Code's 2,048-unit limit.
+1,229 units as of #1599, down from 1,507 at #1252's acceptance fix. A second
+case adds representative routing and policy and must remain within Claude Code's 2,048-unit limit.
 The mode, the missing-summarize pointer, conventions, and OKF guidance are
 `INSTANCE` facts (the summarize note limit is in the `summarize` tool's own
 description, #1599);
