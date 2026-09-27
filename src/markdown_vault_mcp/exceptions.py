@@ -152,6 +152,27 @@ class DocumentExistsError(MarkdownMCPError):
     """Raised when the target path already exists (e.g. rename destination)."""
 
 
+class FolderMoveInterruptedError(MarkdownMCPError, OSError):
+    """Raised when an OS error stops ``move_folder`` after files began moving.
+
+    The subtree may be partly moved and the index still names the old paths;
+    a reindex reconciles it. Subclasses :class:`OSError`, which the move phase
+    raised before this type existed, so existing handlers still catch it. The
+    original error is the ``__cause__``.
+
+    Attributes:
+        old_dir: The folder being moved.
+        new_dir: Its destination.
+    """
+
+    def __init__(self, old_dir: str, new_dir: str) -> None:
+        self.old_dir = old_dir
+        self.new_dir = new_dir
+        super().__init__(
+            f"move_folder {old_dir!r} -> {new_dir!r} stopped part-way on an OS error"
+        )
+
+
 class ConcurrentModificationError(MarkdownMCPError):
     """Raised when an ``if_match`` etag does not match the current file state.
 

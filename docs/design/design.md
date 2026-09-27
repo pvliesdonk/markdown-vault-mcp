@@ -3438,8 +3438,10 @@ cross-vault moves.
 matched against the relative path using `fnmatch.fnmatch()`. Example:
 `pattern="Journal/*.md"` returns only documents in the Journal folder.
 
-**`list_tags(field)` behavior**: queries only the `document_tags` table. If
-`field` was not in `indexed_frontmatter_fields`, returns `[]`.
+**`list_tags(field)` behavior**: queries only the `document_tags` table. A
+`field` outside `indexed_frontmatter_fields` raises `InvalidRequestError`
+naming the indexed fields (#1599): the index holds no values for it, so an
+empty list would claim the vault has none.
 
 **`on_write` callback**:
 
@@ -4096,10 +4098,9 @@ acted on far more reliably than schema documentation. The live configured
 limit is also substituted into the tool description at startup (a
 ``{max_notes}`` placeholder in the docstring, rewritten by
 ``apply_summarize_limits`` from ``_server_wiring`` (the DOMAIN-WIRING block), which owns the
-loaded config) and surfaced in the server instructions via
-``contribute_instructions(summarize_note_limit=...)``, so a calling
-model can plan folder splits before its first call rather than reacting
-to a truncated result.
+loaded config), so a calling model can plan folder splits before its
+first call rather than reacting to a truncated result. The tool
+description is its only home (#1599); the instructions no longer repeat it.
 
 **Client-side summarization route (#1035).** The server-side tool is one of
 two routes. The ``summarize-subtree`` prompt ships the same

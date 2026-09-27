@@ -1566,6 +1566,30 @@ class TestMoveFolderTool:
         assert "request was fine" in text
 
     @pytest.mark.usefixtures("_mcp_env_writable")
+    async def test_move_folder_tool_pre_move_timeout_is_not_a_partial_move(
+        self, vault_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A TimeoutError before anything moves never claims files moved."""
+        from markdown_vault_mcp.managers.document import DocumentManager
+
+        (vault_path / "drafts").mkdir(exist_ok=True)
+        (vault_path / "drafts" / "a.md").write_text("# A\n", encoding="utf-8")
+
+        def _timeout(_self: object) -> None:
+            raise TimeoutError("Index refresh timed out")
+
+        server = make_server()
+        async with Client(server) as client:
+            await wait_for_mcp_writer_drain(client)
+            monkeypatch.setattr(DocumentManager, "ensure_index_current", _timeout)
+            result = await client.call_tool_mcp(
+                "move_folder", {"old_dir": "drafts", "new_dir": "archive"}
+            )
+        assert result.is_error is True
+        assert "reindex" not in result.content[0].text
+        assert (vault_path / "drafts" / "a.md").is_file()
+
+    @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_move_folder_tool_missing_source_returns_error(self) -> None:
         """move_folder tool returns an error when old_dir does not exist."""
         server = make_server()

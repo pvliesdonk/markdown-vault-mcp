@@ -357,7 +357,7 @@ def test_move_folder_mid_move_oserror_leaves_subtree_partial(
     """An OSError on the 2nd shutil.move call leaves the subtree partially moved.
 
     Asserts the documented partial-failure contract:
-    - move_folder raises OSError.
+    - move_folder raises FolderMoveInterruptedError, an OSError.
     - The first file reached its new path; the second file is still at the old path.
     - The index was NOT updated: searching a unique token from the first (moved)
       file does NOT return the new path, confirming mark_paths_dirty never ran.
@@ -382,8 +382,13 @@ def test_move_folder_mid_move_oserror_leaves_subtree_partial(
 
     monkeypatch.setattr(_doc_mod.shutil, "move", flaky_move)
 
-    with pytest.raises(OSError, match="injected mid-move failure"):
+    from markdown_vault_mcp.exceptions import FolderMoveInterruptedError
+
+    # Still an OSError for callers written before the type existed (#1599).
+    with pytest.raises(FolderMoveInterruptedError) as excinfo:
         vault.writer.move_folder("drafts", "moved")
+    assert isinstance(excinfo.value, OSError)
+    assert "injected mid-move failure" in str(excinfo.value.__cause__)
 
     wait_for_writer_drain(vault)
 

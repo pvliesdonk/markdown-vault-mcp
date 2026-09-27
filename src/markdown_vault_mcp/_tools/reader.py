@@ -583,7 +583,8 @@ def register(mcp: FastMCP) -> None:
         into links — some folders are self-contained by design.
 
         Raises:
-            ValueError: If no document exists at the given path.
+            DocumentNotFoundError: If no document exists at the given path.
+            EmbeddingsNotConfiguredError: If the vault has no embeddings.
         """
         drained = await _maybe_wait_for_drain(
             vault, wait_for_pending_writes, "get_similar"

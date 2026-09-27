@@ -40,6 +40,7 @@ from markdown_vault_mcp.exceptions import (
     ConcurrentModificationError,
     DocumentNotFoundError,
     EditConflictError,
+    FolderMoveInterruptedError,
     InvalidRequestError,
 )
 from markdown_vault_mcp.okf import (
@@ -687,10 +688,11 @@ def register(mcp: FastMCP) -> None:
                 result = await asyncio.to_thread(
                     vault.writer.move_folder, old_dir, new_dir
                 )
-            except OSError as exc:
+            except FolderMoveInterruptedError as exc:
                 # A file error while moving can leave the subtree part-moved
                 # with the index still naming the old paths; reindex is the one
-                # repair the model can make. It needs an operator: ERROR.
+                # repair the model can make. It needs an operator: ERROR. Any
+                # error raised before a file moved stays tool_boundary's.
                 logger.exception(
                     "move_folder_os_error old_dir=%s new_dir=%s", old_dir, new_dir
                 )

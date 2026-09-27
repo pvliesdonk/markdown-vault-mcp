@@ -26,6 +26,7 @@ from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
     DocumentUnreadableError,
     EditConflictError,
+    FolderMoveInterruptedError,
     InvalidRequestError,
     NoteTooLargeError,
     ReadOnlyError,
@@ -1574,12 +1575,13 @@ class DocumentManager:
             DocumentExistsError: If any destination file already exists.
             InvalidRequestError: If either path escapes the vault, is the vault
                 root, or one path is nested inside the other.
-            OSError: If the OS raises during the move phase (e.g. a permission
-                error, full disk, or concurrent file removal). The pre-move
-                collision gate prevents destination clashes, but an OS error
-                mid-move can leave the subtree partially moved with the index
-                unchanged; a subsequent reindex reconciles the index with the
-                on-disk state.
+            FolderMoveInterruptedError: If the OS raises while files are
+                being moved (e.g. a permission error, full disk, or concurrent
+                file removal). The pre-move collision gate prevents
+                destination clashes, but an OS error mid-move can leave the
+                subtree partially moved with the index unchanged; a
+                subsequent reindex reconciles the index with the on-disk
+                state. It subclasses :class:`OSError`.
         """
         self._check_writable()
         self.ensure_index_current()
@@ -1613,10 +1615,15 @@ class DocumentManager:
                 for row in self._fts.get_backlinks(target_old):
                     annotated.append((target_old, row))
 
-            # 4. Move every file.
-            for src_abs, dst_abs in moves:
-                dst_abs.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(src_abs), str(dst_abs))
+            # 4. Move every file. From here an OS error can leave the subtree
+            #    part-moved, which callers must tell apart from an error
+            #    raised before anything moved.
+            try:
+                for src_abs, dst_abs in moves:
+                    dst_abs.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(src_abs), str(dst_abs))
+            except OSError as exc:
+                raise FolderMoveInterruptedError(old_dir, new_dir) from exc
 
             # 5. Single-pass link rewrite. Group annotated rows by source,
             #    remapping a source that moved to its new path so it is read at
