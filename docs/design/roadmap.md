@@ -223,10 +223,6 @@ compliantly until the template designates where they go. The migration epic
 standalone accuracy bugs from round 1 are fixed on today's site meanwhile,
 because they mislead readers now.
 
-`derived` — Known unknown: how the migration interacts with the
-`020 first-class-library` package's documentation work ([#1436][1436]).
-Resolved by: refinement of [#1665][1665].
-
 ### Other ambitions remain available
 
 `derived` — Vault creation ([#1245][1245]) deserves a mechanism decision before
@@ -341,6 +337,7 @@ verified implementation findings.
 | Is a deployed vault constrained enough to justify a new vector-storage strategy? | [#1377][1377], informed by [#1368][1368] | Not knowing does not change the first cut. Establish the need before committing a storage technology. |
 | Does keeping a submodule current on pull need an operator switch, and what happens when the submodule tree is dirty? | [#1565][1565], under [refinement #1563][1563] | Decide before committing the read-only slice to a cut; the refusal in [#1564][1564] does not depend on it. |
 | Which branch and credentials does a writable submodule use, given the detached HEAD `submodule update` leaves and a remote of its own? | [Refinement #1567][1567] | Not knowing does not change the read-only slice; do not shape the write path before it lands. |
+| How does the docs migration interact with the `020 first-class-library` package's documentation work? | [Refinement #1666][1666] of [#1665][1665], with [#1436][1436] | Not knowing does not change the template-first order; decide at refinement whether library docs move with `020` or with the migration. |
 
 `derived` — The distribution and database-mode decisions change their respective
 delivery scopes, so each has a research issue with an explicit appetite. Other
@@ -449,7 +446,7 @@ argues the order.
 
 ### 28 September 2026 — chart reader-shaped documentation
 
-`derived` — Added § Reader-shaped documentation after #1272's round-1 review.
+`derived` — Added § Reader-shaped documentation after [#1272][1272]'s round-1 review.
 The template epic precedes this repository's migration epic; neither joins a
 package yet.
 
@@ -505,5 +502,6 @@ package yet.
 [1566]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1566
 [1567]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1567
 [1665]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1665
+[1666]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1666
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
