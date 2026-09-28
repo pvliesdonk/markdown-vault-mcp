@@ -12,10 +12,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.check_pins import findings, parse_pins  # noqa: E402
+from scripts.check_pins import findings, main, parse_pins  # noqa: E402
 
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 
@@ -120,3 +122,32 @@ def test_until_on_the_closing_line_is_diagnosed() -> None:
     problems = findings(text, state_of=None)
     assert any("closing `]` line covers nothing" in p for p in problems), problems
     assert any("'a<1': no exit condition" in p for p in problems), problems
+
+
+def test_pyproject_option_reads_only_a_pyproject(tmp_path: Path) -> None:
+    """`--pyproject` names the file this checker parses, nothing else (#694)."""
+    secret = tmp_path / "secret.txt"
+    secret.write_text("token\n", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        main(["--offline", "--pyproject", str(secret)])
+
+
+def test_pyproject_option_accepts_a_pyproject_in_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[project]\nname = 'x'\n", encoding="utf-8")
+    assert main(["--offline", "--pyproject", str(pyproject)]) == 0
+
+
+def test_pyproject_option_refuses_a_path_outside_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outside = tmp_path / "pyproject.toml"
+    outside.write_text("[project]\nname = 'x'\n", encoding="utf-8")
+    here = tmp_path / "repo"
+    here.mkdir()
+    monkeypatch.chdir(here)
+    with pytest.raises(SystemExit):
+        main(["--offline", "--pyproject", str(outside)])

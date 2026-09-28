@@ -8,27 +8,31 @@ on:
   schedule:
     - cron: "0 6 * * 1"  # Weekly on Monday at 06:00 UTC
 
+# Read-only by default; the job below asks for the write scope it needs
+# (SonarCloud githubactions:S8233, #694).
 permissions:
-  actions: read
   contents: read
-  security-events: write
 
 jobs:
   analyze:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4
         with:
           languages: python
           queries: security-extended
           config-file: .github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4
         with:
           # Successful runs upload nothing here — the filtered SARIF two
           # steps down is what reaches code scanning. failure-only still
@@ -43,7 +47,7 @@ jobs:
         # storing a real secret and raises a high-severity alert on the file.
         # Strip exactly that rule on exactly that file — every other rule
         # still scans it, and the rule still covers the rest of the repo.
-        uses: advanced-security/filter-sarif@v1
+        uses: advanced-security/filter-sarif@f3b8118a9349d88f7b1c0c488476411145b6270d  # v1
         with:
           patterns: |
             -scripts/gen_config_surface.py:py/clear-text-storage-sensitive-data
@@ -51,6 +55,6 @@ jobs:
           output: sarif-results/python.sarif
 
       - name: Upload filtered SARIF
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4
         with:
           sarif_file: sarif-results/python.sarif

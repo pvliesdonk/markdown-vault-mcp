@@ -20,7 +20,7 @@ reaches it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -44,15 +44,39 @@ fastmcp's `"fastmcp"` default.
 """
 
 
+def _preset_contract_env(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Set every variable the project's ``config_contract_env`` returns.
+
+    The fixture in the project's ``tests/conftest.py`` supplies values for
+    the variables its ``from_env`` reads with ``env(..., required=True)``.
+    Resolved via ``getfixturevalue`` so a ``conftest.py`` that predates the
+    fixture keeps passing with nothing preset.  Repeated verbatim in every
+    template-owned test that builds from the environment rather than
+    imported: a sibling import only resolves when ``tests/`` is not a package.
+    """
+    try:
+        env = request.getfixturevalue("config_contract_env")
+    except pytest.FixtureLookupError:
+        return
+    for key, value in dict(env).items():
+        monkeypatch.setenv(key, value)
+
+
 @pytest.fixture(autouse=True)
-def _neutral_docket_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def _neutral_docket_env(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Clear the native escape-hatch vars.
 
     An operator value in the ambient environment outranks parts of the
     derivation and would make the assertions below depend on the machine.
     Nothing process-global needs restoring any more: the extension is
     per-server state on the `FastMCP` instance each test builds and drops.
+    The project's `config_contract_env` is applied first.
     """
+    _preset_contract_env(request, monkeypatch)
     monkeypatch.delenv("FASTMCP_DOCKET_URL", raising=False)
     monkeypatch.delenv("FASTMCP_DOCKET_NAME", raising=False)
 
@@ -113,9 +137,21 @@ def test_make_server_configures_the_task_backend(
     assert task_backend.settings().name == _DERIVED_QUEUE_NAME
 
 
+def _config_with(server: ServerConfig) -> ProjectConfig:
+    """The project's config from the environment, with *server* swapped in.
+
+    From the environment rather than a bare ``ProjectConfig(...)``: the autouse
+    fixture above presets whatever ``config_contract_env`` returns, while a
+    config built by hand holds only the placeholders of the project's required
+    fields, which a domain that refuses an empty one rejects when the server is
+    built (#705).
+    """
+    return replace(ProjectConfig.from_env(), server=server)
+
+
 def test_tasks_url_reaches_the_backend(task_backend: _TaskBackendCapture) -> None:
     """An explicit `MARKDOWN_VAULT_MCP_TASKS_URL` selects the Docket backend."""
-    config = ProjectConfig(server=ServerConfig(tasks_url="redis://tasks.test:6379/1"))
+    config = _config_with(ServerConfig(tasks_url="redis://tasks.test:6379/1"))
     make_server(config=config)
     assert task_backend.settings().url == "redis://tasks.test:6379/1"
 
@@ -129,6 +165,6 @@ def test_redis_kv_store_url_is_reused_for_tasks(
     than a default-constructed one: the derivation can only see `kv_store_url`
     if the config passed through.
     """
-    config = ProjectConfig(server=ServerConfig(kv_store_url="redis://kv.test:6379/0"))
+    config = _config_with(ServerConfig(kv_store_url="redis://kv.test:6379/0"))
     make_server(config=config)
     assert task_backend.settings().url == "redis://kv.test:6379/0"

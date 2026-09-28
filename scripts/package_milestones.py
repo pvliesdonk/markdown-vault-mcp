@@ -22,10 +22,15 @@ from typing import Any
 
 PACKAGE = re.compile(r"^([0-9]{3}) (\S.*)$")
 RELEASED = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+ ")
+# GitHub's owner/name shape; the value starts every `gh api` path below.
+REPO = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9._-]+")
 
 
 def api(path: str, *, fields: dict[str, Any] | None = None) -> Any:
     """Read all pages, or PATCH typed JSON and return the server response."""
+    if path.startswith("-"):
+        # `gh api` would parse it as an option, not an endpoint (#694).
+        raise ValueError(f"API path {path!r} must not start with '-'")
     command = ["gh", "api", path]
     if fields is None:
         command += ["--paginate", "--slurp"]
@@ -164,6 +169,8 @@ def finalize(package: dict[str, Any], repo: str, version: str) -> None:
 
 def run(mode: str, repo: str, version: str = "", *, resume_only: bool = False) -> None:
     """Apply the package convention; callers restrict close to stable trunk."""
+    if not REPO.fullmatch(repo):
+        raise ValueError(f"--repo {repo!r} is not an owner/name repository")
     if mode == "close" and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise ValueError("Package closure requires a stable X.Y.Z version")
     milestones = api(f"repos/{repo}/milestones?state=all&per_page=100")

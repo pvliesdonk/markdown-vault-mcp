@@ -45,6 +45,7 @@ inside those markers survives an update.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -57,6 +58,28 @@ class StampError(RuntimeError):
     """A required pin was missing or unstampable — the release must refuse."""
 
 
+# The only two shapes the release flow emits: knope's `X.Y.Z`, and
+# `X.Y.Z-rc.N` from `--prerelease-label rc` (release-prepare.yml).
+_RELEASE_VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?")
+
+
+def _release_version(raw: str) -> str:
+    """Return *raw* if it is a release version this flow emits, else refuse.
+
+    The value is written into uv.lock and every published manifest, so a
+    malformed invocation must stop before anything is rewritten (#694).  The
+    result is rebuilt from the matched digits rather than passed through.
+    """
+    match = _RELEASE_VERSION.fullmatch(raw)
+    if match is None:
+        raise StampError(
+            f"version {raw!r} is neither X.Y.Z nor X.Y.Z-rc.N — "
+            "the only shapes the release flow emits"
+        )
+    major, minor, patch, rc = match.groups()
+    return f"{major}.{minor}.{patch}" + (f"-rc.{rc}" if rc is not None else "")
+
+
 def _load(path: Path) -> Any:
     if not path.is_file():
         raise StampError(f"{path}: not found — run from the repository root")
@@ -64,24 +87,50 @@ def _load(path: Path) -> Any:
         return json.load(fh)
 
 
-def _dump(path: Path, data: Any) -> None:
-    """Write JSON atomically, in the byte format the toolchain expects.
+def _within_cwd(path: str | os.PathLike[str]) -> str:
+    """*path* canonicalised, refusing one outside the working directory (#694).
 
-    ``indent=2, ensure_ascii=False`` plus a trailing newline matches
-    ``scripts/gen_config_surface.py``'s asserted format.  The temp file is
-    created in the target's own directory so the final ``rename`` is atomic
-    on the same filesystem.
+    Every path this script touches lives in the checkout it runs from, so a
+    path that resolves elsewhere (``..``, an absolute path, a symlink) is a
+    broken or hostile invocation.  The realpath-then-prefix shape is the one
+    SonarCloud's path-injection rules recognise.
     """
+    resolved = os.path.realpath(path)
+    base_dir = os.path.realpath(os.getcwd())  # noqa: PTH109 - the shape Sonar reads
+    if resolved != base_dir and not resolved.startswith(base_dir + os.sep):
+        raise StampError(f"path {path!r} is outside the working directory")
+    return resolved
+
+
+def _replace_atomically(path: Path, text: str) -> Path:
+    """Replace *path*'s content with *text* atomically; return the path.
+
+    The temp file is created in the target's own directory so the final
+    ``rename`` is atomic on the same filesystem.  The text is written through
+    an open handle rather than passed to ``Path.write_text``: SonarCloud reads
+    every argument of that call as a path, so the file's own edited content
+    counted as a path injection there, while the path itself stays checked
+    here (#694).
+    """
+    path = Path(_within_cwd(path))
     tmp = path.parent / f".{path.name}.stamp-tmp"
     try:
-        tmp.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
+        with open(tmp, "w", encoding="utf-8") as fh:  # noqa: PTH123 - see above
+            fh.write(text)
         tmp.replace(path)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+    return path
+
+
+def _dump(path: Path, data: Any) -> None:
+    """Write JSON atomically, in the byte format the toolchain expects.
+
+    ``indent=2, ensure_ascii=False`` plus a trailing newline matches
+    ``scripts/gen_config_surface.py``'s asserted format.
+    """
+    _replace_atomically(path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
 
 
 def _is_prerelease(version: str) -> bool:
@@ -134,13 +183,7 @@ def _stamp_uv_lock(version: str) -> list[Path]:
         raise StampError(
             f"{path}: no 'name = \"{normalized}\"' entry with a version line to stamp"
         )
-    tmp = path.parent / f".{path.name}.stamp-tmp"
-    try:
-        tmp.write_text(new_text, encoding="utf-8")
-        tmp.replace(path)
-    except BaseException:
-        tmp.unlink(missing_ok=True)
-        raise
+    path = _replace_atomically(path, new_text)
     print(f"stamp_manifests: uv.lock -> {canonical} (PEP 440 canonical)")
     return [path]
 
@@ -247,7 +290,7 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    version = argv[1]
+    version = _release_version(argv[1])
 
     # uv.lock tracks pyproject.toml, not a published artifact, so its
     # self-version entry moves on EVERY release — before the pre-release

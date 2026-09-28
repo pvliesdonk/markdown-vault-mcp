@@ -54,7 +54,7 @@ runs:
 
     - name: Install uv
       if: steps.detect.outputs.present == 'true'
-      uses: astral-sh/setup-uv@v10.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
       with:
         version: "0.6"
 
@@ -101,7 +101,10 @@ runs:
         ZIP: ${{ steps.pack.outputs.zip }}
       run: |
         test -f "$ZIP" || { echo "::error::zip missing: $ZIP"; exit 1; }
-        work=$(mktemp -d)
+        # Unpacked inside the checkout: verify.py only reads paths under its
+        # working directory (#694).
+        mkdir -p build
+        work=$(mktemp -d build/verify.XXXXXX)
         trap 'rm -rf "$work"' EXIT
         unzip -q "$ZIP" -d "$work"
         python3 .github/actions/build-plugin-zip/verify.py "$work" "$VERSION"

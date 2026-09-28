@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["copier"]
+# ///
 """Report what the template changed in seeded-once files during ``copier update``.
 
 Files under ``_skip_if_exists`` are written on the first ``copier copy`` and
@@ -20,8 +24,9 @@ the update's diff alone never shows it.
 It never fails the update.  A fresh copy, an unchanged ref, a missing tool
 or an impossible render (offline, unknown ref) each leave a clear message —
 in the report where one can be written — and exit 0.  Importing this module
-has no side effects; the ``uv run`` fallback for missing dependencies runs
-from ``main()`` only.
+has no side effects; the ``uv run --script`` fallback for a missing copier
+runs from ``main()`` only.  The script takes no arguments, so that fallback
+hands nothing it was given to ``uv`` (#694).
 """
 
 from __future__ import annotations
@@ -242,7 +247,7 @@ def _refs(current: dict[str, object]) -> tuple[str, str, str]:
 _DRIFT_BEFORE = """
 This is the project as it stood before this update (`HEAD`), compared with
 the template version it was last updated to, so every difference below
-predates the update. Re-run `python scripts/check_template_conformance.py`
+predates the update. Re-run `uv run --script scripts/check_template_conformance.py`
 after resolving the update to see what is left.
 """
 
@@ -276,7 +281,7 @@ def _drift_report(
         return (
             "# Template-owned files that differ from the template\n"
             f"\n**The comparison could not be made:** {type(exc).__name__}: {exc}\n\n"
-            "Run `python scripts/check_template_conformance.py --rev HEAD "
+            "Run `uv run --script scripts/check_template_conformance.py --rev HEAD "
             f"--ref {old}` by hand.\n"
         )
     header = conformance.report_header(
@@ -312,9 +317,10 @@ def _skip(reason: str) -> int:
     return 0
 
 
-def _reexec_with_deps() -> bool:
-    """Re-exec under `uv run --no-project` when copier is missing; True when
-    the caller should fall through to a failure report instead."""
+def _reexec_under_uv() -> bool:
+    """Re-exec under `uv run --script` (the inline metadata above supplies
+    copier) when copier is missing; True when the caller should fall through
+    to a failure report instead."""
     try:
         import copier  # noqa: F401
     except ImportError:
@@ -324,18 +330,8 @@ def _reexec_with_deps() -> bool:
     if os.environ.get("_SEEDED_REPORT_BOOTSTRAPPED") == "1":
         return True
     os.environ["_SEEDED_REPORT_BOOTSTRAPPED"] = "1"
-    argv = [
-        "uv",
-        "run",
-        "--no-project",
-        "--with",
-        "copier",
-        "python",
-        __file__,
-        *sys.argv[1:],
-    ]
     try:
-        os.execvpe("uv", argv, os.environ)
+        os.execvpe("uv", ["uv", "run", "--script", __file__], os.environ)
     except OSError:
         return True
     return True  # pragma: no cover — execvpe does not return on success
@@ -353,7 +349,7 @@ def main() -> int:
     failure: str | None = None
     changes: list[tuple[str, str]] = []
     drift = ""
-    if _reexec_with_deps():
+    if _reexec_under_uv():
         failure = "copier is not importable and `uv` is not available to fetch it"
     else:
         try:

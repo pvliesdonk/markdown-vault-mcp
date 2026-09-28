@@ -24,14 +24,14 @@ jobs:
     name: Renovate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Run Renovate
         # Exact pin: renovatebot/github-action publishes no floating major tag
         # (a bare @v46 does not resolve and fails the job before any step).
         # v46.x bundles a Renovate CLI well past the >=43.59.0 floor (fixes the
         # PEP 735 [dependency-groups] depName bug); do not pin an older renovate-version.
-        uses: renovatebot/github-action@v46.3.3
+        uses: renovatebot/github-action@1cd96b855fee0da6f230617e89dbff0e06ea393a  # v46.3.5
         with:
           configurationFile: renovate.json
           token: ${{ secrets.RELEASE_TOKEN }}

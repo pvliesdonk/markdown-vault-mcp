@@ -1,6 +1,6 @@
 name: Post Coverage Status
 
-# Posts the codecov/patch commit status for fork PRs, where the test job's
+# Posts the coverage/patch commit status for fork PRs, where the test job's
 # GITHUB_TOKEN is read-only and cannot write statuses directly (GitHub security
 # restriction for pull_request events from forks).
 #
@@ -14,7 +14,7 @@ on:
 
 jobs:
   post-status:
-    name: Post codecov/patch status
+    name: Post coverage/patch status
     # Only needed for fork PRs — own-branch PRs post the status directly in the
     # test job. Push events don't upload the artifact so we'd have nothing to read.
     if: >
@@ -31,17 +31,17 @@ jobs:
         # Never fatal: a failed download must still reach the posting step
         # below, which turns it into an `error` status. See that step.
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: patch-coverage
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Post codecov/patch status
+      - name: Post coverage/patch status
         # ALWAYS post something. `ci.yml`'s own-branch counterpart holds the
         # same invariant (`always()` plus an `|| 'error'` default), and this
         # fork-PR fallback has to match it: a project that answers
-        # `extra_required_checks: ["codecov/patch"]` makes this a required
+        # `extra_required_checks: ["coverage/patch"]` makes this a required
         # context, and a required check that never reports does not turn a PR
         # red — it leaves it waiting forever on a status that is not coming,
         # exitable only by an admin bypass or a ruleset edit.
@@ -56,7 +56,7 @@ jobs:
         # the test job never got far enough to write one — which is a broken
         # run, not "the diff touched no covered lines".
         if: always()
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         env:
           DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
         with:
@@ -75,13 +75,13 @@ jobs:
               }
             }
             const sha = context.payload.workflow_run.head_sha;
-            core.info(`Posting codecov/patch: ${state} — ${description} to ${sha}`);
+            core.info(`Posting coverage/patch: ${state} — ${description} to ${sha}`);
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha,
               state,
-              context: 'codecov/patch',
+              context: 'coverage/patch',
               description,
-              target_url: 'https://app.codecov.io/gh/pvliesdonk/markdown-vault-mcp',
+              target_url: context.payload.workflow_run.html_url,
             });

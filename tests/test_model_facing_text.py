@@ -53,8 +53,28 @@ _SECTION_RE = re.compile(
 _STRING_SCHEMA_NOTE = 'following JSON schema: {"type":"string"}'
 
 
+def _preset_contract_env(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Set every variable the project's ``config_contract_env`` returns.
+
+    The fixture in the project's ``tests/conftest.py`` supplies values for
+    the variables its ``from_env`` reads with ``env(..., required=True)``.
+    Resolved via ``getfixturevalue`` so a ``conftest.py`` that predates the
+    fixture keeps passing with nothing preset.  Repeated verbatim in every
+    template-owned test that builds from the environment rather than
+    imported: a sibling import only resolves when ``tests/`` is not a package.
+    """
+    try:
+        env = request.getfixturevalue("config_contract_env")
+    except pytest.FixtureLookupError:
+        return
+    for key, value in dict(env).items():
+        monkeypatch.setenv(key, value)
+
+
 @pytest.fixture
-def server(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
+def server(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> FastMCP:
     """A default deployment's server, built before any event loop starts.
 
     ``make_server`` finalises the instructions synchronously and refuses to
@@ -64,6 +84,7 @@ def server(monkeypatch: pytest.MonkeyPatch) -> FastMCP:
     for key in list(os.environ):
         if key.startswith("MARKDOWN_VAULT_MCP_"):
             monkeypatch.delenv(key, raising=False)
+    _preset_contract_env(request, monkeypatch)
     return make_server()
 
 

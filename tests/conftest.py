@@ -48,12 +48,18 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def config_contract_env() -> dict[str, str]:
-    """Env vars the template's `test_config_contract.py` presets before it
-    constructs the config via an otherwise env-less ``ProjectConfig.from_env()``.
+    """Env vars every template-owned test presets before building from the env.
 
-    Empty: every field of ``ProjectConfig`` carries a default, so ``from_env``
-    constructs from an empty environment; an absent vault directory is a
-    startup condition (``source_dir_problem``), not a construction error.
+    Return each variable your ``from_env`` reads with
+    ``env(..., required=True)``, with a value a test can build with.
+    ``tests/test_config_contract.py`` fails, naming the variable, while one
+    is missing.  Every template-owned test that builds from the environment
+    applies these; ``test_smoke.py`` and ``test_cli.py`` are this project's
+    own, so wire them yourself where they need it.
+
+    Empty: ``from_env`` reads no variable with ``required=True``; an absent
+    vault directory is a startup condition (``source_dir_problem``), not a
+    construction error.
     """
     return {}
 

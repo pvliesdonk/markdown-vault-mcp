@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["copier"]
+# ///
 """Compare this project's template-owned files with a pristine template render.
 
 Every file ``copier update`` re-renders (anything not under
@@ -13,11 +17,17 @@ the project's content into a sentinel block, or open a Decay issue for it.
 
 Usage::
 
-    python scripts/check_template_conformance.py            # working tree vs _commit
-    python scripts/check_template_conformance.py --ref v9.1.0
-    python scripts/check_template_conformance.py --rev HEAD --output drift.md
-    python scripts/check_template_conformance.py --rev HEAD --since origin/main
-    python scripts/check_template_conformance.py --rev HEAD --since auto --hook
+    uv run --script scripts/check_template_conformance.py      # working tree vs _commit
+    uv run --script scripts/check_template_conformance.py --ref v9.1.0
+    uv run --script scripts/check_template_conformance.py --rev HEAD --output drift.md
+    uv run --script scripts/check_template_conformance.py --rev HEAD --since origin/main
+    uv run --script scripts/check_template_conformance.py --rev HEAD --since auto --hook
+
+``uv run --script`` reads the inline metadata above and runs the script in
+its own environment with copier, whatever the project's own environment
+holds.  Run with a plain ``python`` that cannot import copier, it exits 2
+and names that command.  It never re-executes itself under ``uv``, so its
+own arguments never reach another program's option parser (#694).
 
 ``--since BASE`` reports only the drift the compared tree adds over
 ``BASE`` — what a branch introduced — both judged against the same render.
@@ -29,8 +39,8 @@ then reported whole.
 ``--since auto`` compares against the branch's base: ``$TEMPLATE_CONFORMANCE_BASE``
 when set, else the merge-base with the nearest of ``origin/main``,
 ``origin/release/*`` and ``origin/integration/*`` (the structural gate's
-rule).  ``--hook`` is the pre-push hook's mode: a comparison that cannot be made (offline, no ``uv``)
-warns and passes, and a failure says how to push deliberate drift.
+rule).  ``--hook`` is the pre-push hook's mode: a comparison that cannot be made (offline, copier
+unavailable) warns and passes, and a failure says how to push deliberate drift.
 
 Exit status: 0 when every template-owned file conforms (with ``--since``:
 when nothing new differs), 1 when at least one differs, 2 when the comparison could not be made (no answers file, the
@@ -46,7 +56,7 @@ template's render imports must still be imported.
 
 ``scripts/report_seeded_changes.py`` calls :func:`check` during
 ``copier update`` to write ``.copier-template-drift.md``.  Importing this
-module has no side effects; the ``uv run`` fallback runs from ``main()``.
+module has no side effects.
 """
 
 from __future__ import annotations
@@ -368,10 +378,40 @@ def read_worktree(root: Path) -> ReadProject:
     return read
 
 
+def git_revision(value: str) -> str:
+    """*value* as a git revision, refusing one git would read as an option.
+
+    Revisions reach git's command line; `--output=...` there is an option,
+    not a commit (#694).  Also the argparse ``type=`` of every revision flag.
+    """
+    if not re.fullmatch(r"\w[\w./~^@{}+-]*", value, re.ASCII):
+        raise ValueError(
+            f"git revision {value!r} must be a ref, tag, SHA or ~/^ expression"
+        )
+    return value
+
+
+def output_path(value: str) -> Path:
+    """``--output`` canonicalised, refusing a path outside the working directory.
+
+    The report is a file in the checkout (`drift.md`, `.copier-template-drift.md`);
+    a path that resolves elsewhere is a broken or hostile invocation (#694).
+    The realpath-then-prefix shape is the one SonarCloud's path rules read.
+    """
+    resolved = os.path.realpath(value)
+    base_dir = os.path.realpath(os.getcwd())  # noqa: PTH109 - the shape Sonar reads
+    if resolved != base_dir and not resolved.startswith(base_dir + os.sep):
+        raise argparse.ArgumentTypeError(
+            f"--output {value!r} is outside the working directory"
+        )
+    return Path(resolved)
+
+
 def read_revision(rev: str) -> ReadProject:
     """File bytes, symlink target (str), or None, from a git revision."""
+    rev = git_revision(rev)
     listing = subprocess.run(
-        ["git", "ls-tree", "-r", "-z", "--full-tree", rev],
+        ["git", "ls-tree", "-r", "-z", "--full-tree", "--end-of-options", rev],
         capture_output=True,
         check=True,
     ).stdout.decode("utf-8")
@@ -391,7 +431,9 @@ def read_revision(rev: str) -> ReadProject:
         if rel not in modes:
             return None
         blob = subprocess.run(
-            ["git", "show", f"{rev}:./{rel}"], capture_output=True, check=True
+            ["git", "show", "--end-of-options", f"{rev}:./{rel}"],
+            capture_output=True,
+            check=True,
         ).stdout
         return blob.decode("utf-8") if modes[rel] == "120000" else blob
 
@@ -535,45 +577,30 @@ def clean_message(since: str | None) -> str:
     return "Every template-owned file matches the render outside its sentinel blocks."
 
 
-def _reexec_with_deps() -> bool:
-    """Re-exec under `uv run --no-project` when copier is missing; True when
-    the caller should give up instead."""
+def copier_missing() -> bool:
+    """True when copier cannot be imported by this interpreter."""
     try:
         import copier  # noqa: F401
     except ImportError:
-        pass
-    else:
-        return False
-    if os.environ.get("_CONFORMANCE_BOOTSTRAPPED") == "1":
         return True
-    os.environ["_CONFORMANCE_BOOTSTRAPPED"] = "1"
-    argv = [
-        "uv",
-        "run",
-        "--no-project",
-        "--with",
-        "copier",
-        "python",
-        __file__,
-        *sys.argv[1:],
-    ]
-    try:
-        os.execvpe("uv", argv, os.environ)
-    except OSError:
-        return True
-    return True  # pragma: no cover — execvpe does not return on success
+    return False
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
     parser.add_argument(
-        "--ref", help="template ref to render (default: _commit in the answers file)"
+        "--ref",
+        type=git_revision,
+        help="template ref to render (default: _commit in the answers file)",
     )
     parser.add_argument(
-        "--rev", help="compare this git revision instead of the working tree"
+        "--rev",
+        type=git_revision,
+        help="compare this git revision instead of the working tree",
     )
     parser.add_argument(
         "--since",
+        type=git_revision,
         help="report only drift not already present at this git revision",
     )
     parser.add_argument(
@@ -582,7 +609,9 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="pre-push mode: pass with a warning when the comparison cannot be made",
     )
     parser.add_argument(
-        "--output", type=Path, help="write the markdown report here instead of stdout"
+        "--output",
+        type=output_path,
+        help="write the markdown report here instead of stdout",
     )
     return parser.parse_args(argv)
 
@@ -675,9 +704,10 @@ def _run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if _reexec_with_deps():
+    if copier_missing():
         print(
-            "check_template_conformance: copier is not importable and uv is unavailable",
+            "check_template_conformance: copier is not importable here; run "
+            "`uv run --script scripts/check_template_conformance.py`",
             file=sys.stderr,
         )
         return 2

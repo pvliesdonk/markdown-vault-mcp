@@ -176,7 +176,7 @@ commit them and push, and the `.github/rulesets/` path filter starts
     there is not. Verify on a pull request that touches nothing the check
     cares about: the context must still appear, and pass.
 
-### `codecov/patch`, if you require it
+### `coverage/patch`, if you require it
 
 CI requires the full test suite to pass on Python 3.11 through 3.14.
 Only the Python 3.14 job collects branch coverage, using
@@ -190,7 +190,7 @@ Python 3.14 supports branch measurement with coverage.py's
 [`sys.monitoring` core](https://coverage.readthedocs.io/en/latest/config.html#run-core).
 Python 3.12 and 3.13 cannot use that core for branch coverage.
 
-`codecov/patch` is the one context this rule applies to that the template
+`coverage/patch` is the one context this rule applies to that the template
 itself ships, and it is worth knowing how it reaches a pull request before
 you add it to `extra_required_checks`.
 

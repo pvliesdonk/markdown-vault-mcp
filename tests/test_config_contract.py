@@ -16,28 +16,25 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from fastmcp_pvl_core import ConfigurationError, domain_env_surface
+from typer.testing import CliRunner
 
 from markdown_vault_mcp import config as config_module
+from markdown_vault_mcp.cli import app
 from markdown_vault_mcp.config import ProjectConfig
-
-
-def _config_text() -> str:
-    """The rendered `config.py` source — the sentinels live in the file, not the AST."""
-    assert config_module.__file__ is not None
-    return Path(config_module.__file__).read_text(encoding="utf-8")
 
 
 def _preset_contract_env(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Apply the domain's `config_contract_env` fixture before `from_env()`.
+    """Set every variable the project's ``config_contract_env`` returns.
 
-    A domain whose `from_env` hard-requires an env var (a fail-fast startup
-    contract) cannot construct env-less. The domain-owned `tests/conftest.py`
-    may define a `config_contract_env` fixture returning the vars to preset;
-    resolved via `getfixturevalue` so a conftest that predates the seam (the
-    file is `_skip_if_exists`, so `copier update` never adds the fixture)
-    keeps passing with no vars set.
+    The fixture in the project's ``tests/conftest.py`` supplies values for
+    the variables its ``from_env`` reads with ``env(..., required=True)``.
+    Resolved via ``getfixturevalue`` so a ``conftest.py`` that predates the
+    fixture keeps passing with nothing preset.  Repeated verbatim in every
+    template-owned test that builds from the environment rather than
+    imported: a sibling import only resolves when ``tests/`` is not a package.
     """
     try:
         env = request.getfixturevalue("config_contract_env")
@@ -45,6 +42,12 @@ def _preset_contract_env(
         return
     for key, value in dict(env).items():
         monkeypatch.setenv(key, value)
+
+
+def _config_text() -> str:
+    """The rendered `config.py` source — the sentinels live in the file, not the AST."""
+    assert config_module.__file__ is not None
+    return Path(config_module.__file__).read_text(encoding="utf-8")
 
 
 def test_all_three_domain_sentinels_are_present() -> None:
@@ -110,15 +113,94 @@ def test_post_init_can_reject_a_value(
     @dataclass(frozen=True)
     class _Rejecting(ProjectConfig):
         def __post_init__(self) -> None:
-            raise ValueError("domain invariant violated")
+            raise ConfigurationError("domain invariant violated")
 
     for construct in (_Rejecting, _Rejecting.from_env):
         try:
             construct()
-        except ValueError as exc:
+        except ConfigurationError as exc:
             assert "domain invariant violated" in str(exc)
         else:  # pragma: no cover - the raise above always fires
-            raise AssertionError(f"{construct} did not propagate the ValueError")
+            raise AssertionError(
+                f"{construct} did not propagate the ConfigurationError"
+            )
+
+
+def test_every_required_var_is_supplied_by_config_contract_env(
+    request: pytest.FixtureRequest,
+) -> None:
+    """Each var `from_env` reads with `required=True` has a test value.
+
+    Template-owned tests build the config from the environment after
+    applying that fixture; a required var missing from the
+    project's `config_contract_env` would otherwise surface as setup errors
+    scattered across unrelated test files.
+    """
+    required = {
+        f"{config_module._ENV_PREFIX}_{var.suffix}"
+        for var in domain_env_surface(ProjectConfig)
+        if var.required
+    }
+    try:
+        supplied = set(dict(request.getfixturevalue("config_contract_env")))
+    except pytest.FixtureLookupError:
+        supplied = set()
+    missing = sorted(required - supplied)
+    assert not missing, (
+        f"Return {missing} from the `config_contract_env` fixture in "
+        "tests/conftest.py, with values a test can build the server with."
+    )
+
+
+def test_validate_block_raises_configuration_error_not_value_error() -> None:
+    """Live code in the CONFIG-VALIDATE block must not ``raise ValueError``.
+
+    ``serve`` turns only ``ConfigurationError`` into its one-line
+    ``ERROR: configuration error:`` exit; a ``ValueError`` from
+    ``__post_init__`` escapes as a full Rich traceback (#692).  Commented
+    lines are skipped, so the block's own examples do not count.
+    """
+    text = _config_text()
+    start = text.index("# CONFIG-VALIDATE-START")
+    end = text.index("# CONFIG-VALIDATE-END")
+    offenders = [
+        line.strip()
+        for line in text[start:end].splitlines()
+        if line.lstrip().startswith("raise ValueError")
+    ]
+    assert not offenders, (
+        "CONFIG-VALIDATE raises ValueError, which `serve` reports as a "
+        "traceback; raise fastmcp_pvl_core.ConfigurationError instead: "
+        f"{offenders}"
+    )
+
+
+def test_serve_reports_a_validation_failure_in_one_line(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ``ConfigurationError`` from ``__post_init__`` takes serve's one-line exit.
+
+    This is the path the CONFIG-VALIDATE seam documents: one ``ERROR:`` line
+    on stderr and exit 1, not Typer's Rich traceback (#616, #692).
+    """
+    _preset_contract_env(request, monkeypatch)
+
+    @dataclass(frozen=True)
+    class _Rejecting(ProjectConfig):
+        def __post_init__(self) -> None:
+            raise ConfigurationError("domain invariant violated")
+
+    monkeypatch.setattr(
+        "markdown_vault_mcp.cli.ProjectConfig",
+        _Rejecting,
+    )
+
+    result = CliRunner().invoke(app, ["serve"])
+
+    assert result.exit_code == 1, result.output
+    assert "ERROR: configuration error: domain invariant violated" in result.output
+    assert "Traceback" not in result.output
+    assert "\u2502" not in result.output, "Rich traceback frame detected"
 
 
 def test_config_is_frozen_so_validation_must_not_assign() -> None:

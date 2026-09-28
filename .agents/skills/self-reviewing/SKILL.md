@@ -133,7 +133,7 @@ outside a sentinel block (`NAME-START` … `NAME-END` comments) belongs to
 the template. Run:
 
 ```bash
-python scripts/check_template_conformance.py --rev "$HEAD_SHA" --since "$BASE"
+uv run --script scripts/check_template_conformance.py --rev "$HEAD_SHA" --since "$BASE"
 ```
 
 It reports only drift the range adds, each commit judged against the
@@ -141,7 +141,7 @@ template version it pinned. Each file it lists is a `blocker`/`verified`
 finding: cite the hunk and say where the content belongs — the sentinel
 block the file declares for it, a file the template does not render, or
 nowhere. Exit 0 means the range added none. Exit 2 means it could not
-compare (offline, no `uv`): then read every hunk the diff adds to a file
+compare (offline, or copier unavailable): then read every hunk the diff adds to a file
 that carries sentinel blocks, check whether it sits between a `-START`
 and `-END` marker of that file at `HEAD`, and report the ones outside as
 `plausible`. The one accepted justification is a Decay issue in this

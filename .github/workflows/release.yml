@@ -71,7 +71,7 @@ jobs:
 
     steps:
       - name: Checkout the release PR's merge commit (full depth, with tags)
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           # The MERGE COMMIT, not the base branch head: a commit landing on
           # the base between merge and checkout must neither get tagged as
@@ -133,7 +133,7 @@ jobs:
       # manager (github-releases, depName knope-dev/knope) — keep the
       # `version:` key on its own line so that manager keeps matching.
       - name: Install knope
-        uses: knope-dev/action@v2.1.2
+        uses: knope-dev/action@19617851f9f13ab2f27a05989c55efb18aca3675  # v2.1.2
         with:
           version: 0.23.0
 
@@ -353,7 +353,7 @@ jobs:
         run: gh release edit ${{ steps.release.outputs.tag }} --latest=false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           version: "0.6"
 
@@ -364,7 +364,7 @@ jobs:
         run: uv build
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
         with:
           path: .
           format: cyclonedx-json
@@ -378,7 +378,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: dist
           path: dist/
@@ -430,7 +430,7 @@ jobs:
 
     steps:
       - name: Download build artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: dist
           path: dist/
@@ -482,19 +482,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           ref: ${{ needs.release.outputs.tag }}
           fetch-depth: 1
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4
 
       - name: Log in to Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -599,7 +599,7 @@ jobs:
 
       - name: Extract metadata (tags, labels)
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           # Rolling tags are ordering-gated by the publish-time recheck
@@ -626,7 +626,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build-push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -640,14 +640,14 @@ jobs:
           cache-to: type=gha,mode=max,ignore-error=true
 
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build-push.outputs.digest }}
           push-to-registry: true
 
       - name: Generate SBOM for Docker image
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
         with:
           image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-push.outputs.digest }}
           format: cyclonedx-json
@@ -656,7 +656,7 @@ jobs:
           upload-release-assets: false
 
       - name: Attest Docker SBOM
-        uses: actions/attest-sbom@v4
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e  # v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build-push.outputs.digest }}
@@ -676,7 +676,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           ref: ${{ needs.release.outputs.tag }}
           fetch-depth: 1
@@ -728,7 +728,7 @@ jobs:
     if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           ref: ${{ needs.release.outputs.tag }}
       # Render/validate/pack/smoke live in the shared composite action so
@@ -738,7 +738,7 @@ jobs:
         uses: ./.github/actions/build-mcpb
         with:
           version: ${{ needs.release.outputs.version }}
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         with:
           name: mcpb-bundle
           path: dist/markdown-vault-mcp-*.mcpb
@@ -751,7 +751,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: mcpb-bundle
           path: dist/
@@ -784,7 +784,7 @@ jobs:
     outputs:
       present: ${{ steps.build.outputs.present }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           ref: ${{ needs.release.outputs.tag }}
       - name: Build and smoke-test plugin zip
@@ -792,7 +792,7 @@ jobs:
         uses: ./.github/actions/build-plugin-zip
         with:
           version: ${{ needs.release.outputs.version }}
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
         if: steps.build.outputs.present == 'true'
         with:
           name: plugin-zip
@@ -806,7 +806,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
         with:
           name: plugin-zip
           path: dist/
@@ -888,7 +888,7 @@ jobs:
           fi
       - name: Checkout catalog repo
         if: steps.plugin_check.outputs.present == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           repository: pvliesdonk/claude-plugins
           token: ${{ secrets.RELEASE_TOKEN }}
@@ -1038,7 +1038,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           # The released ref, not a branch: the release commit — with the
           # stamped server.json this job publishes — lives on whatever branch
@@ -1079,7 +1079,7 @@ jobs:
           MCP_PUBLISHER_VERSION: v1.7.6
           MCP_PUBLISHER_SHA256: bcc96ca630cae4cf503b4550bd4a17462d42ad4819273bee56f4385bb059ddee
         run: |
-          curl -sL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" -o mcp-publisher.tar.gz
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz" -o mcp-publisher.tar.gz
           echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum -c
           tar xz -f mcp-publisher.tar.gz mcp-publisher
 
@@ -1120,7 +1120,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout default branch
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           # Full history + tags: the port compares the released version

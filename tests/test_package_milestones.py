@@ -140,6 +140,31 @@ def test_prerelease_refuses_mutations(tracker: Tracker) -> None:
     assert not tracker.mutations
 
 
+@pytest.mark.parametrize(
+    "repo", ["--method=DELETE", "-X", "owner", "owner/repo/extra", "owner/re po"]
+)
+def test_malformed_repo_refuses_before_any_api_call(
+    monkeypatch: pytest.MonkeyPatch, repo: str
+) -> None:
+    """``--repo`` becomes the start of every ``gh api`` path (#694)."""
+    calls: list[str] = []
+    monkeypatch.setattr(packages, "api", lambda path, **_: calls.append(path))
+    with pytest.raises(ValueError, match="owner/name"):
+        packages.run("warn", repo)
+    assert not calls
+
+
+def test_api_refuses_a_path_that_reads_as_a_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A path starting with ``-`` would be parsed by ``gh api`` as an option."""
+    started: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "run", lambda command, **_: started.append(command))
+    with pytest.raises(ValueError, match="path"):
+        packages.api("--method=DELETE")
+    assert not started
+
+
 def test_warning_uses_current_package_even_when_later_one_is_open(
     tracker: Tracker, capsys: pytest.CaptureFixture[str]
 ) -> None:

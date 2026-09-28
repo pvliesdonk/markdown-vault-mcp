@@ -1872,7 +1872,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=4" },
     { name = "fastmcp", marker = "extra == 'all'", specifier = ">=4,<5" },
     { name = "fastmcp", marker = "extra == 'mcp'", specifier = ">=4,<5" },
-    { name = "fastmcp-pvl-core", specifier = ">=10.0.0,<11" },
+    { name = "fastmcp-pvl-core", specifier = ">=10.1.0,<11" },
     { name = "fastmcp-pvl-core", extras = ["debug"], marker = "extra == 'debug'" },
     { name = "httpx", specifier = ">=0.25" },
     { name = "httpx", marker = "extra == 'all'", specifier = ">=0.25" },

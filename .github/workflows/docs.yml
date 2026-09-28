@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           # On release events, build the released tag: the release may have
           # been cut from a release/X.Y branch, where `main` describes code
@@ -37,7 +37,7 @@ jobs:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           version: "latest"
 
@@ -45,20 +45,20 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --no-default-groups --group docs --frozen
+        run: uv sync --no-default-groups --group docs --frozen  # NOSONAR(githubactions:S8541): installs this project, which --no-build refuses (#694)
 
       - name: Build documentation
-        run: uv run mkdocs build --strict
+        run: uv run --no-sync --no-build mkdocs build --strict
 
       - name: Install browser test deps
-        run: uv sync --no-default-groups --all-extras --group docs --group browser --frozen
+        run: uv sync --no-default-groups --all-extras --group docs --group browser --frozen  # NOSONAR(githubactions:S8541): installs this project, which --no-build refuses (#694)
 
       # Playwright's browser archives only change when the pinned version
       # does, so cache them rather than pulling ~300 MB from the CDN each run.
       # `playwright install` checks this directory itself and skips the
       # download when it is populated, so no cache-hit conditional is needed.
       - name: Cache Playwright browsers
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('uv.lock') }}
@@ -69,7 +69,7 @@ jobs:
       # no longer depends on apt being reachable.
       - name: Install Chromium
         timeout-minutes: 8
-        run: uv run playwright install chromium
+        run: uv run --no-sync --no-build playwright install chromium
 
       # apt on the hosted runners intermittently stalls (template#430, and
       # upstream actions/runner-images#11347 / microsoft/playwright#34297, both
@@ -83,14 +83,14 @@ jobs:
       - name: Install Chromium system dependencies (fonts)
         timeout-minutes: 5
         continue-on-error: true
-        run: uv run playwright install-deps chromium
+        run: uv run --no-sync --no-build playwright install-deps chromium
 
       - name: Run config-wizard browser tests
         # Both the template-owned smoke suite and the project-owned domain suite
         # (test_config_wizard_domain.py). -m browser selects the browser-marked
         # tests in each; the seeded domain placeholder is skipped until a
         # consumer replaces it with real assertions.
-        run: uv run pytest tests/test_config_wizard_smoke.py tests/test_config_wizard_domain.py -v -m browser
+        run: uv run --no-sync --no-build pytest tests/test_config_wizard_smoke.py tests/test_config_wizard_domain.py -v -m browser
 
   deploy:
     # Publish versioned docs with mike, serving from the gh-pages branch:
@@ -126,7 +126,7 @@ jobs:
     steps:
       # `needs: build` is a sequencing gate only — mike drives its own
       # build internally; no artifact is passed from the build job.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           # Full history required: mike reads and pushes the gh-pages branch.
           fetch-depth: 0
@@ -135,7 +135,7 @@ jobs:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           version: "latest"
 
@@ -143,7 +143,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --no-default-groups --group docs --frozen
+        run: uv sync --no-default-groups --group docs --frozen  # NOSONAR(githubactions:S8541): installs this project, which --no-build refuses (#694)
 
       - name: Configure git identity
         run: |
@@ -166,7 +166,7 @@ jobs:
           # read as success.
           deploy_docs() {
             if [ "$EVENT" = "push" ]; then
-              uv run mike deploy --push unstable --title "unstable (${GITHUB_SHA:0:7})"
+              uv run --no-sync --no-build mike deploy --push unstable --title "unstable (${GITHUB_SHA:0:7})"
               return
             fi
             version="${TAG#v}"
@@ -178,10 +178,10 @@ jobs:
               | python3 -c 'import json,sys; vs=json.load(sys.stdin); print(next((v["version"] for v in vs if "latest" in (v.get("aliases") or [])), ""))' \
               || true)"
             if [ -z "$current" ] || [ "$(printf '%s\n%s\n' "$current" "$minor" | sort -V | tail -1)" = "$minor" ]; then
-              uv run mike deploy --push --update-aliases --title "$version" "$minor" latest \
-                && uv run mike set-default --push latest
+              uv run --no-sync --no-build mike deploy --push --update-aliases --title "$version" "$minor" latest \
+                && uv run --no-sync --no-build mike set-default --push latest
             else
-              uv run mike deploy --push --title "$version" "$minor"
+              uv run --no-sync --no-build mike deploy --push --title "$version" "$minor"
             fi
           }
           # Deploys from the push and release buckets can race on gh-pages;
