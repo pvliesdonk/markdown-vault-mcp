@@ -2475,6 +2475,7 @@
 <span class="w">      </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"serve"</span><span class="p">],</span>
 <span class="w">      </span><span class="nt">"env"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">"MARKDOWN_VAULT_MCP_SOURCE_DIR"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/path/to/your/ObsidianVault"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"MARKDOWN_VAULT_MCP_READ_ONLY"</span><span class="p">:</span><span class="w"> </span><span class="s2">"true"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"MARKDOWN_VAULT_MCP_SERVER_NAME"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my-vault"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"MARKDOWN_VAULT_MCP_EXCLUDE"</span><span class="p">:</span><span class="w"> </span><span class="s2">".obsidian/**,.trash/**"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"MARKDOWN_VAULT_MCP_INDEX_PATH"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/path/to/store/index.db"</span>
@@ -2492,6 +2493,7 @@
 <span class="w">      </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"serve"</span><span class="p">],</span>
 <span class="w">      </span><span class="nt">"env"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">        </span><span class="nt">"MARKDOWN_VAULT_MCP_SOURCE_DIR"</span><span class="p">:</span><span class="w"> </span><span class="s2">"C:\\Users\\YourName\\Documents\\ObsidianVault"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"MARKDOWN_VAULT_MCP_READ_ONLY"</span><span class="p">:</span><span class="w"> </span><span class="s2">"true"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"MARKDOWN_VAULT_MCP_SERVER_NAME"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my-vault"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"MARKDOWN_VAULT_MCP_EXCLUDE"</span><span class="p">:</span><span class="w"> </span><span class="s2">".obsidian/**,.trash/**"</span><span class="p">,</span>
 <span class="w">        </span><span class="nt">"MARKDOWN_VAULT_MCP_INDEX_PATH"</span><span class="p">:</span><span class="w"> </span><span class="s2">"C:\\Users\\YourName\\vault_index.db"</span>
@@ -2532,7 +2534,7 @@
 <li>Copy the token (starts with <code>github_pat_</code>)</li>
 </ol>
 <h3 id="update-the-configuration">Update the configuration<a class="headerlink" href="#update-the-configuration" title="Permanent link">&para;</a></h3>
-<p>Add the highlighted lines to your existing config:</p>
+<p>Switch <code>MARKDOWN_VAULT_MCP_READ_ONLY</code> to <code>"false"</code> and add the git lines (highlighted) to your existing config:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"mcpServers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">"my-vault"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -2555,7 +2557,7 @@
 </code></pre></div>
 <p><strong>What these do:</strong></p>
 <ul>
-<li><code>READ_ONLY=false</code>: enables the write tools (<code>write</code>, <code>edit</code>, <code>append</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, <code>fetch</code>, <code>git_sync</code>, the <code>okf_*</code> tools, <code>create_upload_link</code>)</li>
+<li><code>READ_ONLY=false</code>: registers the write tools that Step 1 left out (<code>write</code>, <code>edit</code>, <code>append</code>, <code>delete</code>, <code>rename</code>, <code>move_folder</code>, <code>fetch</code>, <code>git_sync</code>, the <code>okf_*</code> tools, <code>create_upload_link</code>). It is also the default, so deleting the line has the same effect.</li>
 <li><code>GIT_REPO_URL</code>: enables managed mode (clone/remote validation)</li>
 <li><code>GIT_USERNAME</code> / <code>GIT_TOKEN</code>: HTTPS auth for pull/push</li>
 <li><code>GIT_PUSH_DELAY_S=60</code>: batches rapid writes, pushing after 60 seconds of idle time</li>

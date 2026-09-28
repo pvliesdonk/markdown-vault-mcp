@@ -3332,9 +3332,10 @@
 reached through the <code>reader</code> / <code>writer</code> / <code>graph</code> / <code>index</code> accessors on the
 <a href="../vault/"><code>Vault</code></a> composition root.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span><span class="p">,</span> <span class="n">VaultSettings</span>
 
-<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/path/to/vault"</span><span class="p">))</span>
+<span class="c1"># The library is read-only by default; writes need read_only=False.</span>
+<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="n">source_dir</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/path/to/vault"</span><span class="p">),</span> <span class="n">settings</span><span class="o">=</span><span class="n">VaultSettings</span><span class="p">(</span><span class="n">read_only</span><span class="o">=</span><span class="kc">False</span><span class="p">))</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">build_index</span><span class="p">()</span>
 
 <span class="c1"># Reader facet — search / read / list / metadata</span>

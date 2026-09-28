@@ -26,6 +26,9 @@ vault = Vault(
     ),
 )
 
+# Build (or refresh) the index before the first search: construction never builds it
+vault.index.build_index()
+
 # Search (reader facet)
 results = vault.reader.search("query text", limit=10)
 for r in results:

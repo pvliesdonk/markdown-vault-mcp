@@ -2278,9 +2278,12 @@ Most of what an operator notices comes through those upstreams.</p>
 <p><code>compose.yml</code> no longer assumes Traefik. It pulls the published image
 instead of building, reads <code>.env</code> only if one exists, and publishes port
 8000 on <code>127.0.0.1</code> because the quick start has no authentication. A
-health check probes <code>/health</code>, and a <code>service-data</code> volume holds server
-state. <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> must be set for Compose to mount the
-vault (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>,
+health check probes <code>/health</code>. The file also mounts a <code>service-data</code> volume
+at <code>/data/service</code>, which this server doesn't use: its index, embeddings and
+OIDC state stay on <code>state-data</code> at <code>/data/state</code>, as in 4.2. In <code>.env</code>,
+<code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> names the vault's directory on the host,
+which Compose bind-mounts at <code>/data/vault</code>, so it must be set; inside the
+container the file sets the server's own value to <code>/data/vault</code> (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>,
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1614">#1614</a>). To
 reach the server from other machines, configure authentication first, then
 use a reverse proxy or publish on every interface from
@@ -2331,8 +2334,8 @@ bearer token
 <p>A vault directory that does not exist no longer crashes the server. It
 starts, logs <code>vault_directory_missing</code> at ERROR naming the variable, and
 every tool call fails until the directory is fixed; an unreadable
-directory logs <code>vault_directory_unreadable</code>. An unset
-<code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> now means <code>/data/vault</code> rather than a
+directory logs <code>vault_directory_unreadable</code>. For the server process, an
+unset <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> now means <code>/data/vault</code> rather than a
 refusal to start. Managed git mode is exempt, since it clones into the
 directory
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1590">#1590</a>,
@@ -2520,7 +2523,9 @@ around a write now also catches a missing note. Two changes need code:</p>
 <h2 id="upgrading">Upgrading<a class="headerlink" href="#upgrading" title="Permanent link">&para;</a></h2>
 <p>Before moving a 4.2 deployment or integration to 5.0:</p>
 <ol>
-<li><strong>Compose:</strong> set <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> in <code>.env</code>. Move proxy
+<li><strong>Compose:</strong> set <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> in <code>.env</code> to the
+   vault's directory on the host. No volume needs moving: state stays on
+   <code>state-data</code>, and the new <code>service-data</code> volume stays empty. Move proxy
    labels and networks into an override. Without a proxy the server is
    reachable only on <code>127.0.0.1:8000</code>; to serve other machines, configure
    authentication and publish from the override.</li>
@@ -2548,9 +2553,12 @@ around a write now also catches a missing note. Two changes need code:</p>
    relied on <code>[]</code>.</li>
 <li><strong>First start:</strong> expect one full text-index rebuild. On a large vault
    that restarts often, consider <code>MARKDOWN_VAULT_MCP_BOOT_REINDEX=false</code>.</li>
-<li><strong>Vault directory:</strong> the server no longer refuses to start when
-   <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> is unset or missing. Watch for
-   <code>vault_directory_missing</code> in the log if you relied on the refusal.</li>
+<li><strong>Vault directory:</strong> the server no longer refuses to start when its own
+   <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> is unset or missing (Compose still needs
+   the <code>.env</code> value from step 1). Watch for <code>vault_directory_missing</code> in the
+   log if you relied on the refusal.</li>
+<li><strong>Clients:</strong> nothing to do. The tool set is unchanged, and a client
+    picks up the new tool descriptions when it reconnects after the restart.</li>
 </ol>
 <!-- PATCH-RELEASES-START -->
 <!-- PATCH-RELEASES-END -->

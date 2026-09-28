@@ -3654,7 +3654,8 @@ partial markdown reads (see the tip above).</p>
 <span class="w">  </span><span class="nt">"folder"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Journal"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body..."</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"frontmatter"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"My Note"</span><span class="p">,</span><span class="w"> </span><span class="nt">"tags"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"journal"</span><span class="p">]},</span>
-<span class="w">  </span><span class="nt">"modified_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1741564800.0</span>
+<span class="w">  </span><span class="nt">"modified_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1741564800.0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"etag"</span><span class="p">:</span><span class="w"> </span><span class="s2">"9f2c1e7b4a..."</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>On an OKF bundle, whole-document reads also carry an <code>okf</code> dict (<code>type</code>, <code>status</code>, <code>stale</code>, <code>trust_tier</code>, and the note's full <code>sources</code> list). Section reads omit it — they carry no frontmatter to derive it from.</p>
@@ -3782,6 +3783,7 @@ write(path, content=&lt;replaced content&gt;, if_match=&lt;current etag&gt;)
 <p>On an OKF bundle (see <code>MARKDOWN_VAULT_MCP_OKF_MODE</code> in <a href="../configuration/">Configuration</a>), the response also carries an <code>okf</code> section: the configured mode, the declared spec version, a per-<code>type</code> histogram plus an untyped count, <code>status</code> and trust-tier breakdowns, and the stale-note count. Those counts cover the same note population <a href="#okf_validate"><code>okf_validate</code></a> audits, so the reserved <code>index.md</code> / <code>log.md</code> files land in none of them and are reported on their own as <code>reserved_count</code>.</p>
 <h3 id="embeddings_status"><code>embeddings_status</code><a class="headerlink" href="#embeddings_status" title="Permanent link">&para;</a></h3>
 <p>Check the embedding provider configuration and vector index status. Use this to diagnose why semantic search is unavailable.</p>
+<p><code>available</code> is <code>true</code> as soon as a provider and a vector path are configured, including while the first build is still running; <code>chunk_count</code> grows as chunks are embedded. Neither says the embeddings have caught up with the vault: <a href="#get_index_status"><code>get_index_status</code></a> does.</p>
 <p><strong>Returns:</strong></p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
 <span class="w">  </span><span class="nt">"available"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
@@ -3815,7 +3817,22 @@ build attempt.</p>
   <code>internal_error</code> (an unexpected indexer error rather than a content problem).
   Empty when nothing was skipped. This tells a parse-dropped note apart from
   one that simply has not synced yet, without reading container logs.
-  Exclude-pattern matches and transient I/O skips are intentionally omitted.</p>
+  Exclude-pattern matches and transient I/O skips are intentionally omitted.
+- <code>last_reindex_error</code>: <code>null</code> unless the last reindex job raised; otherwise
+  its message.
+- <code>last_build_embeddings_error</code>: <code>null</code> unless the last embedding build
+  raised; otherwise its message.
+- <code>queue_depth</code>: writer jobs waiting to run.
+- <code>in_flight</code>: the kind of the job running now (<code>build_index</code>,
+  <code>reindex_all</code>, <code>build_embeddings</code>, <code>process_dirty_paths</code>,
+  <code>flush_dirty_embeddings</code>), or <code>null</code> when the writer is idle.
+- <code>dirty_paths</code>: changed notes waiting to be re-indexed.
+- <code>dirty_embeddings</code>: notes whose embeddings are waiting to be recomputed.
+- <code>write_generation</code>: a counter that rises each time a writer job finishes.</p>
+<p><strong>Caught up:</strong> the index and, when semantic search is configured, the
+embeddings reflect the vault once <code>status</code> is <code>"queryable"</code>, <code>queue_depth</code>
+is <code>0</code>, <code>in_flight</code> is <code>null</code>, and <code>dirty_paths</code> and <code>dirty_embeddings</code> are
+both <code>0</code>. Poll until all five hold.</p>
 <p><strong>Tags:</strong> read-only.</p>
 <hr />
 <h3 id="okf_validate"><code>okf_validate</code><a class="headerlink" href="#okf_validate" title="Permanent link">&para;</a></h3>
@@ -3830,7 +3847,7 @@ build attempt.</p>
 </div>
 <h3 id="reindex"><code>reindex</code><a class="headerlink" href="#reindex" title="Permanent link">&para;</a></h3>
 <p>Incrementally update the full-text search index to reflect file changes made outside this server. Only changed files are processed; unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665). A previously indexed note that becomes unparseable is dropped from search results in the same pass (it no longer serves its last-good content), and a <code>read</code> of it fails as a server-side error rather than reporting the note as missing and shows up in <code>skipped_files</code> until it is fixed or deleted (#1129).</p>
-<p>If semantic search is configured, the reindex job re-embeds the changed documents on the writer thread. Poll <code>get_index_status</code> and watch the <code>dirty_embeddings</code> counter to observe embedding convergence.</p>
+<p>If semantic search is configured, the reindex job re-embeds the changed documents on the writer thread. Poll <a href="#get_index_status"><code>get_index_status</code></a> until it reports caught up.</p>
 <div class="admonition note">
 <p class="admonition-title">Boot reconciliation</p>
 <p>The server lifespan automatically queues one incremental reindex at every startup (#665), so files added, modified, or deleted while no server was running are reconciled without a manual <code>reindex</code> call. Reads served before that job completes report <code>index_stale: true</code> in <code>_meta</code>.</p>
@@ -4044,7 +4061,7 @@ reading the note again before each.</p>
 <p><code>match_type</code> is <code>"exact"</code> when the text matched byte-for-byte, or <code>"normalized"</code> when it matched after Unicode/whitespace normalization. The response may also include a <code>conventions</code> list; see <a href="#write"><code>write</code></a>.</p>
 <div class="admonition tip">
 <p class="admonition-title">Usage pattern</p>
-<p>Always call <code>read</code> first to get the exact current text and line numbers. For small edits, use <code>old_text</code> (exact match). For large block replacements, use <code>line_start</code>/<code>line_end</code> with the line numbers shown by <code>read</code>. Frontmatter can be edited; <code>old_text</code> may span the YAML block.</p>
+<p>Always call <code>read</code> first to get the exact current text. For small edits, use <code>old_text</code> (exact match). For large block replacements, use <code>line_start</code>/<code>line_end</code>: lines count from 1 over the <code>content</code> that <code>read</code> returns, frontmatter included (<code>read</code> doesn't number them). Frontmatter can be edited; <code>old_text</code> may span the YAML block.</p>
 </div>
 <div class="admonition info">
 <p class="admonition-title">Normalized matching</p>

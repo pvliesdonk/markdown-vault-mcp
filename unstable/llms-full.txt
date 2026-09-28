@@ -1044,6 +1044,7 @@ Edit your Claude Desktop configuration file:
       "args": ["serve"],
       "env": {
         "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/path/to/your/ObsidianVault",
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true",
         "MARKDOWN_VAULT_MCP_SERVER_NAME": "my-vault",
         "MARKDOWN_VAULT_MCP_EXCLUDE": ".obsidian/**,.trash/**",
         "MARKDOWN_VAULT_MCP_INDEX_PATH": "/path/to/store/index.db"
@@ -1061,6 +1062,7 @@ Edit your Claude Desktop configuration file:
       "args": ["serve"],
       "env": {
         "MARKDOWN_VAULT_MCP_SOURCE_DIR": "C:\\Users\\YourName\\Documents\\ObsidianVault",
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true",
         "MARKDOWN_VAULT_MCP_SERVER_NAME": "my-vault",
         "MARKDOWN_VAULT_MCP_EXCLUDE": ".obsidian/**,.trash/**",
         "MARKDOWN_VAULT_MCP_INDEX_PATH": "C:\\Users\\YourName\\vault_index.db"
@@ -1109,7 +1111,7 @@ ______________________________________________________________________
 
 ### Update the configuration
 
-Add the highlighted lines to your existing config:
+Switch `MARKDOWN_VAULT_MCP_READ_ONLY` to `"false"` and add the git lines (highlighted) to your existing config:
 
 ```
 {
@@ -1135,7 +1137,7 @@ Add the highlighted lines to your existing config:
 
 **What these do:**
 
-- `READ_ONLY=false`: enables the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`)
+- `READ_ONLY=false`: registers the write tools that Step 1 left out (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`). It is also the default, so deleting the line has the same effect.
 - `GIT_REPO_URL`: enables managed mode (clone/remote validation)
 - `GIT_USERNAME` / `GIT_TOKEN`: HTTPS auth for pull/push
 - `GIT_PUSH_DELAY_S=60`: batches rapid writes, pushing after 60 seconds of idle time
@@ -4952,7 +4954,8 @@ The `section` lookup compares heading strings after collapsing all whitespace ru
   "folder": "Journal",
   "content": "---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body...",
   "frontmatter": {"title": "My Note", "tags": ["journal"]},
-  "modified_at": 1741564800.0
+  "modified_at": 1741564800.0,
+  "etag": "9f2c1e7b4a..."
 }
 ```
 
@@ -5063,6 +5066,8 @@ On an OKF bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](https://p
 
 Check the embedding provider configuration and vector index status. Use this to diagnose why semantic search is unavailable.
 
+`available` is `true` as soon as a provider and a vector path are configured, including while the first build is still running; `chunk_count` grows as chunks are embedded. Neither says the embeddings have caught up with the vault: [`get_index_status`](#get_index_status) does.
+
 **Returns:**
 
 ```
@@ -5085,6 +5090,15 @@ Returns background-build state of the FTS index. Use this when `initialize` retu
 - `documents_indexed_error`: `null` on a normal read; the SQLite error message when the document count could not be read (such as a locked or closed database), in which case `documents_indexed` is `0`.
 - `error`: `null` unless the background build raised; otherwise the exception message.
 - `skipped_files`: list of files dropped from the index for a surfaced deterministic reason. Each entry is `{"path", "category", "detail"}`, with `category` one of `parse_error`, `encoding_error`, `missing_frontmatter`, or `internal_error` (an unexpected indexer error rather than a content problem). Empty when nothing was skipped. This tells a parse-dropped note apart from one that simply has not synced yet, without reading container logs. Exclude-pattern matches and transient I/O skips are intentionally omitted.
+- `last_reindex_error`: `null` unless the last reindex job raised; otherwise its message.
+- `last_build_embeddings_error`: `null` unless the last embedding build raised; otherwise its message.
+- `queue_depth`: writer jobs waiting to run.
+- `in_flight`: the kind of the job running now (`build_index`, `reindex_all`, `build_embeddings`, `process_dirty_paths`, `flush_dirty_embeddings`), or `null` when the writer is idle.
+- `dirty_paths`: changed notes waiting to be re-indexed.
+- `dirty_embeddings`: notes whose embeddings are waiting to be recomputed.
+- `write_generation`: a counter that rises each time a writer job finishes.
+
+**Caught up:** the index and, when semantic search is configured, the embeddings reflect the vault once `status` is `"queryable"`, `queue_depth` is `0`, `in_flight` is `null`, and `dirty_paths` and `dirty_embeddings` are both `0`. Poll until all five hold.
 
 **Tags:** read-only.
 
@@ -5110,7 +5124,7 @@ Calls to `reindex` and `build_embeddings` during a cold-start background FTS bui
 
 Incrementally update the full-text search index to reflect file changes made outside this server. Only changed files are processed; unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665). A previously indexed note that becomes unparseable is dropped from search results in the same pass (it no longer serves its last-good content), and a `read` of it fails as a server-side error rather than reporting the note as missing and shows up in `skipped_files` until it is fixed or deleted (#1129).
 
-If semantic search is configured, the reindex job re-embeds the changed documents on the writer thread. Poll `get_index_status` and watch the `dirty_embeddings` counter to observe embedding convergence.
+If semantic search is configured, the reindex job re-embeds the changed documents on the writer thread. Poll [`get_index_status`](#get_index_status) until it reports caught up.
 
 Boot reconciliation
 
@@ -5225,7 +5239,7 @@ Make a targeted text replacement in an existing document. Supports three modes:
 
 Usage pattern
 
-Always call `read` first to get the exact current text and line numbers. For small edits, use `old_text` (exact match). For large block replacements, use `line_start`/`line_end` with the line numbers shown by `read`. Frontmatter can be edited; `old_text` may span the YAML block.
+Always call `read` first to get the exact current text. For small edits, use `old_text` (exact match). For large block replacements, use `line_start`/`line_end`: lines count from 1 over the `content` that `read` returns, frontmatter included (`read` doesn't number them). Frontmatter can be edited; `old_text` may span the YAML block.
 
 Normalized matching
 
@@ -7063,6 +7077,7 @@ Restart the application to pick up the new configuration. If the server connects
       "args": ["serve"],
       "env": {
         "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/Users/me/Documents/ObsidianVault",
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true",
         "MARKDOWN_VAULT_MCP_SERVER_NAME": "my-vault",
         "MARKDOWN_VAULT_MCP_INDEX_PATH": "/Users/me/.local/share/markdown-vault-mcp/index.db",
         "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH": "/Users/me/.local/share/markdown-vault-mcp/embeddings",
@@ -7808,6 +7823,9 @@ vault = Vault(
     ),
 )
 
+# Build (or refresh) the index before the first search: construction never builds it
+vault.index.build_index()
+
 # Search (reader facet)
 results = vault.reader.search("query text", limit=10)
 for r in results:
@@ -8154,9 +8172,10 @@ The read / write / graph / index operations live on four cohesive facets, reache
 
 ```
 from pathlib import Path
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
-vault = Vault(source_dir=Path("/path/to/vault"))
+# The library is read-only by default; writes need read_only=False.
+vault = Vault(source_dir=Path("/path/to/vault"), settings=VaultSettings(read_only=False))
 vault.index.build_index()
 
 # Reader facet — search / read / list / metadata
@@ -11616,7 +11635,7 @@ The server moves from FastMCP 3.4.7 to 4.0.10, through `fastmcp-pvl-core` 10 and
 
 ### Containers
 
-`compose.yml` no longer assumes Traefik. It pulls the published image instead of building, reads `.env` only if one exists, and publishes port 8000 on `127.0.0.1` because the quick start has no authentication. A health check probes `/health`, and a `service-data` volume holds server state. `MARKDOWN_VAULT_MCP_SOURCE_DIR` must be set for Compose to mount the vault ([#1465](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465), [#1614](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1614)). To reach the server from other machines, configure authentication first, then use a reverse proxy or publish on every interface from `compose.override.yml`. The [Docker guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/index.md) has the override, and the new [security model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/security-model/index.md) page explains what the loopback bind does and does not protect.
+`compose.yml` no longer assumes Traefik. It pulls the published image instead of building, reads `.env` only if one exists, and publishes port 8000 on `127.0.0.1` because the quick start has no authentication. A health check probes `/health`. The file also mounts a `service-data` volume at `/data/service`, which this server doesn't use: its index, embeddings and OIDC state stay on `state-data` at `/data/state`, as in 4.2. In `.env`, `MARKDOWN_VAULT_MCP_SOURCE_DIR` names the vault's directory on the host, which Compose bind-mounts at `/data/vault`, so it must be set; inside the container the file sets the server's own value to `/data/vault` ([#1465](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465), [#1614](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1614)). To reach the server from other machines, configure authentication first, then use a reverse proxy or publish on every interface from `compose.override.yml`. The [Docker guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/index.md) has the override, and the new [security model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/security-model/index.md) page explains what the loopback bind does and does not protect.
 
 The image pins its listener to port 8000 and adds a `HEALTHCHECK`. In 4.2, `MARKDOWN_VAULT_MCP_PORT` moved the container's listener; it no longer does. To serve on another host port, change the host side of the port mapping (`"127.0.0.1:9000:8000"`) ([#1465](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465)).
 
@@ -11632,7 +11651,7 @@ Logs are structured as `event_name key=value` and have one format switch, `MARKD
 
 A configuration mistake stops the server with one `ERROR: configuration error: ...` line and exit code 1, including an event-store error under `--transport http` ([#1551](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1551), [#1570](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1570)). An explicit `MARKDOWN_VAULT_MCP_AUTH_MODE` whose required settings are missing now refuses to start. In 4.2, three such configurations "started a server accepting unauthenticated connections": `oidc-proxy` without client credentials, `remote` without `BASE_URL`, and a whitespace-only bearer token ([fastmcp-pvl-core#338](https://github.com/pvliesdonk/fastmcp-pvl-core/pull/338)).
 
-A vault directory that does not exist no longer crashes the server. It starts, logs `vault_directory_missing` at ERROR naming the variable, and every tool call fails until the directory is fixed; an unreadable directory logs `vault_directory_unreadable`. An unset `MARKDOWN_VAULT_MCP_SOURCE_DIR` now means `/data/vault` rather than a refusal to start. Managed git mode is exempt, since it clones into the directory ([#1590](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1590), [#1591](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1591), [#1646](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1646)).
+A vault directory that does not exist no longer crashes the server. It starts, logs `vault_directory_missing` at ERROR naming the variable, and every tool call fails until the directory is fixed; an unreadable directory logs `vault_directory_unreadable`. For the server process, an unset `MARKDOWN_VAULT_MCP_SOURCE_DIR` now means `/data/vault` rather than a refusal to start. Managed git mode is exempt, since it clones into the directory ([#1590](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1590), [#1591](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1591), [#1646](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1646)).
 
 ## Links
 
@@ -11716,7 +11735,7 @@ vault = Vault(
 
 Before moving a 4.2 deployment or integration to 5.0:
 
-1. **Compose:** set `MARKDOWN_VAULT_MCP_SOURCE_DIR` in `.env`. Move proxy labels and networks into an override. Without a proxy the server is reachable only on `127.0.0.1:8000`; to serve other machines, configure authentication and publish from the override.
+1. **Compose:** set `MARKDOWN_VAULT_MCP_SOURCE_DIR` in `.env` to the vault's directory on the host. No volume needs moving: state stays on `state-data`, and the new `service-data` volume stays empty. Move proxy labels and networks into an override. Without a proxy the server is reachable only on `127.0.0.1:8000`; to serve other machines, configure authentication and publish from the override.
 1. **Container port:** if you set `MARKDOWN_VAULT_MCP_PORT` for the image, remove it and change the host side of the port mapping instead.
 1. **Overwrites:** decide whether writes may still replace existing files blindly. The default now refuses them; set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` only where you need the old behaviour.
 1. **Logging:** replace `FASTMCP_LOG_LEVEL` with `MARKDOWN_VAULT_MCP_LOG_LEVEL`, remove `FASTMCP_ENABLE_RICH_LOGGING`, and set `MARKDOWN_VAULT_MCP_LOG_FORMAT=rich` wherever you want coloured output off a terminal. Update log queries and alerts: messages use the `event_name key=value` form, and tool refusals are INFO, not ERROR.
@@ -11724,4 +11743,5 @@ Before moving a 4.2 deployment or integration to 5.0:
 1. **OKF review over bearer tokens:** switch `trust-auth` to `elicit` with a client that shows the confirmation to a person.
 1. **Python:** move FastMCP 3 environments to FastMCP 4; move `Vault` keywords into `VaultSettings` and replace `to_vault_kwargs`; remove the two claim arguments from `GitWriteStrategy`; add `set_commit_observer` and `start(on_tick)` to any custom `git_strategy`; handle `DocumentUnreadableError` from `read()` and `read_revision()`; and handle the refusals from `get_similar` and `list_tags` where you relied on `[]`.
 1. **First start:** expect one full text-index rebuild. On a large vault that restarts often, consider `MARKDOWN_VAULT_MCP_BOOT_REINDEX=false`.
-1. **Vault directory:** the server no longer refuses to start when `MARKDOWN_VAULT_MCP_SOURCE_DIR` is unset or missing. Watch for `vault_directory_missing` in the log if you relied on the refusal.
+1. **Vault directory:** the server no longer refuses to start when its own `MARKDOWN_VAULT_MCP_SOURCE_DIR` is unset or missing (Compose still needs the `.env` value from step 1). Watch for `vault_directory_missing` in the log if you relied on the refusal.
+1. **Clients:** nothing to do. The tool set is unchanged, and a client picks up the new tool descriptions when it reconnects after the restart.

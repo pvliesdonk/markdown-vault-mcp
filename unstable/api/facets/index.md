@@ -4,9 +4,10 @@ The read / write / graph / index operations live on four cohesive facets, reache
 
 ```
 from pathlib import Path
-from markdown_vault_mcp.vault import Vault
+from markdown_vault_mcp.vault import Vault, VaultSettings
 
-vault = Vault(source_dir=Path("/path/to/vault"))
+# The library is read-only by default; writes need read_only=False.
+vault = Vault(source_dir=Path("/path/to/vault"), settings=VaultSettings(read_only=False))
 vault.index.build_index()
 
 # Reader facet — search / read / list / metadata

@@ -71,6 +71,7 @@ Edit your Claude Desktop configuration file:
       "args": ["serve"],
       "env": {
         "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/path/to/your/ObsidianVault",
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true",
         "MARKDOWN_VAULT_MCP_SERVER_NAME": "my-vault",
         "MARKDOWN_VAULT_MCP_EXCLUDE": ".obsidian/**,.trash/**",
         "MARKDOWN_VAULT_MCP_INDEX_PATH": "/path/to/store/index.db"
@@ -88,6 +89,7 @@ Edit your Claude Desktop configuration file:
       "args": ["serve"],
       "env": {
         "MARKDOWN_VAULT_MCP_SOURCE_DIR": "C:\\Users\\YourName\\Documents\\ObsidianVault",
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true",
         "MARKDOWN_VAULT_MCP_SERVER_NAME": "my-vault",
         "MARKDOWN_VAULT_MCP_EXCLUDE": ".obsidian/**,.trash/**",
         "MARKDOWN_VAULT_MCP_INDEX_PATH": "C:\\Users\\YourName\\vault_index.db"
@@ -136,7 +138,7 @@ ______________________________________________________________________
 
 ### Update the configuration
 
-Add the highlighted lines to your existing config:
+Switch `MARKDOWN_VAULT_MCP_READ_ONLY` to `"false"` and add the git lines (highlighted) to your existing config:
 
 ```
 {
@@ -162,7 +164,7 @@ Add the highlighted lines to your existing config:
 
 **What these do:**
 
-- `READ_ONLY=false`: enables the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`)
+- `READ_ONLY=false`: registers the write tools that Step 1 left out (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`). It is also the default, so deleting the line has the same effect.
 - `GIT_REPO_URL`: enables managed mode (clone/remote validation)
 - `GIT_USERNAME` / `GIT_TOKEN`: HTTPS auth for pull/push
 - `GIT_PUSH_DELAY_S=60`: batches rapid writes, pushing after 60 seconds of idle time

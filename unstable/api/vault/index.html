@@ -2710,6 +2710,9 @@
     <span class="p">),</span>
 <span class="p">)</span>
 
+<span class="c1"># Build (or refresh) the index before the first search: construction never builds it</span>
+<span class="n">vault</span><span class="o">.</span><span class="n">index</span><span class="o">.</span><span class="n">build_index</span><span class="p">()</span>
+
 <span class="c1"># Search (reader facet)</span>
 <span class="n">results</span> <span class="o">=</span> <span class="n">vault</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s2">"query text"</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span>
 <span class="k">for</span> <span class="n">r</span> <span class="ow">in</span> <span class="n">results</span><span class="p">:</span>
