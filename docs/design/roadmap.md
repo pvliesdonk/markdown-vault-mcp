@@ -199,6 +199,34 @@ implementation tickets alone do not establish it. The mobile defect
 [#859][859] remains a separate report whose relationship to acceptance must be
 assessed. This check need not delay vault correctness or bundle foundations.
 
+### Reader-shaped documentation
+
+`stated` — Domain documentation lives only in places the template designates
+for it, and non-domain documentation always belongs to the template, with no
+exceptions (owner's ruling, 28 September 2026, work on [#1272][1272]).
+
+`stated` — The owner chose a structure organised by reader goal, with one
+Diátaxis kind per page, a Contribute section last on the site, a front-door
+README, reference generated from code, and the template building it first so
+this repository migrates onto it (28 September 2026).
+
+`evidenced` — Round 1 of the persona review found blockers on most reader
+paths, and found content outside the ownership rule with no recorded decision
+behind it; the walks, counts and audit are in the review comments on
+[#1272][1272] (28 September 2026).
+
+`derived` — The template epic
+([fastmcp-server-template#710](https://github.com/pvliesdonk/fastmcp-server-template/issues/710))
+comes first, because this repository cannot place its domain pages
+compliantly until the template designates where they go. The migration epic
+[#1665][1665] is refined only after the template skeleton exists. The
+standalone accuracy bugs from round 1 are fixed on today's site meanwhile,
+because they mislead readers now.
+
+`derived` — Known unknown: how the migration interacts with the
+`020 first-class-library` package's documentation work ([#1436][1436]).
+Resolved by: refinement of [#1665][1665].
+
 ### Other ambitions remain available
 
 `derived` — Vault creation ([#1245][1245]) deserves a mechanism decision before
@@ -419,6 +447,12 @@ against a superproject holding one submodule (git 2.55.0); the findings are the
 `derived` — Neither epic joins a package yet; § Vaults with git submodules
 argues the order.
 
+### 28 September 2026 — chart reader-shaped documentation
+
+`derived` — Added § Reader-shaped documentation after #1272's round-1 review.
+The template epic precedes this repository's migration epic; neither joins a
+package yet.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1225]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1225
@@ -427,6 +461,7 @@ argues the order.
 [1234]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1234
 [1236]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1236
 [1245]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245
+[1272]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1272
 [1293]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1293
 [1299]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1299
 [1307]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1307
@@ -469,5 +504,6 @@ argues the order.
 [1565]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1565
 [1566]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1566
 [1567]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1567
+[1665]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1665
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
