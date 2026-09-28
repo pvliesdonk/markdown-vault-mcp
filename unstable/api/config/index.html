@@ -2506,7 +2506,17 @@ so direct construction and <code>from_env</code> behave identically.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Validate composed domain fields.  Raise <code>ValueError</code> when invalid.</p>
+        <p>Validate composed domain fields.  Raise <code>ConfigurationError</code> when invalid.</p>
+<p><code>ConfigurationError</code> is what <code>serve</code> turns into its one-line
+<code>ERROR: configuration error: ...</code> exit; any other exception,
+<code>ValueError</code> included, escapes as a full traceback.  Name the
+variable and the problem in the message.</p>
+<p>This hook checks <em>values</em> — bounds, formats, cross-field rules.  A
+variable that must be <em>set</em> belongs on <code>env(..., required=True)</code> in
+CONFIG-FROM-ENV instead: that refuses at startup and marks the var
+required in the generated docs.  Never refuse an empty required field
+here — tests and programmatic callers construct <code>ProjectConfig(...)</code>
+directly, without the environment.</p>
 <p>Runs on EVERY construction path — <code>from_env</code> and a direct
 <code>ProjectConfig(field=...)</code> alike.  That is what makes this the right
 home for a field invariant: <code>env_float</code> / <code>env_int</code> bounds check

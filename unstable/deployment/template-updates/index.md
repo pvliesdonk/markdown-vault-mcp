@@ -20,7 +20,7 @@ Conflict markers show only where a template change and a local change collide. L
 ## The order of work
 
 1. **Read the upgrade notes first.** Every `UPGRADING.md` section in the body names something a person must do: rename a variable, add a secret, rewrite a seeded test, add a `.gitignore` line. Do those steps on the `copier/update` branch before touching anything else; a note that is skipped now is a failure later, on a run nobody connects to this update.
-1. **Read the drift report.** `.copier-template-drift.md` is the list of work; the conflict markers are the part of it the template also touched. Where a drifted file carries a conflict marker, the report shows which side of the hunk is local drift. If the report is missing or could not be computed, run `python scripts/check_template_conformance.py --rev origin/main --ref <previous version>` to produce it.
+1. **Read the drift report.** `.copier-template-drift.md` is the list of work; the conflict markers are the part of it the template also touched. Where a drifted file carries a conflict marker, the report shows which side of the hunk is local drift. If the report is missing or could not be computed, run `uv run --script scripts/check_template_conformance.py --rev origin/main --ref <previous version>` to produce it.
 1. **Resolve conflict markers.** `copier update` runs a three-way merge and leaves diff3-style markers where a template change and a local change collide: `<<<<<<< before updating` (the local side), `||||||| last update` (the common base), `=======`, and `>>>>>>> after updating` (the template side). Resolving a hunk means keeping one side and deleting all four marker lines and the base block between `|||||||` and `=======`. Which side wins turns on whether the hunk is inside a sentinel block, and on what kind of block it is:
 1. **Inside a sentinel block that invites your content, the local side is yours and stays.** These are the `DOMAIN-*`, `CONFIG-*`, `PROJECT-*` and `DOCKERFILE-*` families. Some of them wrap template-shipped content you extend rather than replace (`PROJECT-EXTRAS`, `DOCKERFILE-UV-EXTRAS`), so a template change inside one is possible: read both sides and keep your additions.
 1. **Inside a `GENERATED-*` region the template side wins**, and you do not resolve it by hand. Those regions are written by `scripts/gen_config_surface.py`, which re-runs at the end of the update and rewrites them from your own config.
@@ -46,7 +46,7 @@ uv run mypy src/ tests/
 uv run pytest -x -q
 uv run mkdocs build --strict
 uv run pre-commit run --all-files
-python scripts/check_template_conformance.py
+uv run --script scripts/check_template_conformance.py
 ```
 
 An MCP Apps project also runs `uv run python scripts/vendor_spa.py --check`. The last command lists every template-owned file that still differs from the template outside its sentinel blocks; each one must have a Decay issue from step 4. CI runs the other checks on the pull request. 8. **Merge.** The branch is recreated on the next weekly run, so leave nothing uncommitted on it.

@@ -84,7 +84,11 @@ A relative `prompts_folder` is resolved against `source_dir` here, so direct con
 
 ### `__post_init__()`
 
-Validate composed domain fields. Raise `ValueError` when invalid.
+Validate composed domain fields. Raise `ConfigurationError` when invalid.
+
+`ConfigurationError` is what `serve` turns into its one-line `ERROR: configuration error: ...` exit; any other exception, `ValueError` included, escapes as a full traceback. Name the variable and the problem in the message.
+
+This hook checks *values* — bounds, formats, cross-field rules. A variable that must be *set* belongs on `env(..., required=True)` in CONFIG-FROM-ENV instead: that refuses at startup and marks the var required in the generated docs. Never refuse an empty required field here — tests and programmatic callers construct `ProjectConfig(...)` directly, without the environment.
 
 Runs on EVERY construction path — `from_env` and a direct `ProjectConfig(field=...)` alike. That is what makes this the right home for a field invariant: `env_float` / `env_int` bounds check only the *env-sourced* value, never the default, so a direct construction slips past them. They also cannot express an exclusive bound (their `minimum` / `maximum` are inclusive, so "must be > 0" lets `0` through) or a cross-field rule (A requires B, mutually-exclusive pairs). All three belong here.
 

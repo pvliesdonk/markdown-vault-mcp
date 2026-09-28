@@ -2121,7 +2121,7 @@ this project that says why it does not yet.</p>
    work; the conflict markers are the part of it the template also touched.
    Where a drifted file carries a conflict marker, the report shows which
    side of the hunk is local drift. If the report is missing or could not
-   be computed, run <code>python scripts/check_template_conformance.py --rev
+   be computed, run <code>uv run --script scripts/check_template_conformance.py --rev
    origin/main --ref &lt;previous version&gt;</code> to produce it.</li>
 <li>
 <p><strong>Resolve conflict markers.</strong> <code>copier update</code> runs a three-way merge and
@@ -2205,7 +2205,7 @@ uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span
 uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>-x<span class="w"> </span>-q
 uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
 uv<span class="w"> </span>run<span class="w"> </span>pre-commit<span class="w"> </span>run<span class="w"> </span>--all-files
-python<span class="w"> </span>scripts/check_template_conformance.py
+uv<span class="w"> </span>run<span class="w"> </span>--script<span class="w"> </span>scripts/check_template_conformance.py
 </code></pre></div>
 <p>An MCP Apps project also runs <code>uv run python scripts/vendor_spa.py
    --check</code>. The last command lists every template-owned file that still
