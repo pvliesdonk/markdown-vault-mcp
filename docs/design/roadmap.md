@@ -219,7 +219,8 @@ behind it; the walks, counts and audit are in the review comments on
 ([fastmcp-server-template#710](https://github.com/pvliesdonk/fastmcp-server-template/issues/710))
 comes first, because this repository cannot place its domain pages
 compliantly until the template designates where they go. The migration epic
-[#1665][1665] is refined only after the template skeleton exists. The
+[#1665][1665] is refined only after the template skeleton exists; both
+epics are package `011 reader-shaped-docs` in their repositories. The
 standalone accuracy bugs from round 1 are fixed on today's site meanwhile,
 because they mislead readers now.
 
@@ -255,6 +256,20 @@ removals ([#1225][1225], [#1236][1236]) and
 stable behavior during
 this reconciliation; their original next-major deferral is the reason to group
 them here. Other former `v5` wishes do not acquire a release commitment.
+
+`stated` — **[010 doc-fixes](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/17)
+(patch)** fixes the published documentation that misleads readers today, as
+found by [#1272][1272]'s round-1 review. Bugs go to the next fix cut; the
+earlier `010 reliable-vault` shipped as v5.0.0, so the ordinal is reused
+(owner, 28 September 2026).
+
+`stated` — **[011 reader-shaped-docs](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/18)**
+ships the migration epic [#1665][1665] as a whole, after the template's own
+`011 reader-shaped-docs` package (owner, 28 September 2026).
+
+`derived` — Its kind is left open: the migration is mostly documentation, and
+what it releases depends on the template adoption it carries. Resolved by:
+refinement of [#1665][1665].
 
 `stated` — **[020 first-class-library](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/13)**
 delivers the owner's selected next outcome: supported library use with proper
@@ -447,8 +462,8 @@ argues the order.
 ### 28 September 2026 — chart reader-shaped documentation
 
 `derived` — Added § Reader-shaped documentation after [#1272][1272]'s round-1 review.
-The template epic precedes this repository's migration epic; neither joins a
-package yet.
+The template epic precedes this repository's migration epic; both ship as
+`011 reader-shaped-docs` in their repositories, after the `010 doc-fixes` cut.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
