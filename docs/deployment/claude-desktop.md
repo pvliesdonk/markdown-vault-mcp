@@ -65,6 +65,7 @@ Restart the application to pick up the new configuration. If the server connects
       "args": ["serve"],
       "env": {
         "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/Users/me/Documents/ObsidianVault",
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true",
         "MARKDOWN_VAULT_MCP_SERVER_NAME": "my-vault",
         "MARKDOWN_VAULT_MCP_INDEX_PATH": "/Users/me/.local/share/markdown-vault-mcp/index.db",
         "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH": "/Users/me/.local/share/markdown-vault-mcp/embeddings",

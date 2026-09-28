@@ -413,7 +413,7 @@ def register(mcp: FastMCP) -> None:
         """Replace text in an existing note: an exact old_text, a range of lines, or an
         old_text within a range of lines.
 
-        Read the note first for its current text and line numbers. When old_text has no
+        Read the note first for its current text. When old_text has no
         exact match, a unique match after normalising Unicode, dashes, quotes and
         whitespace is used and reported as match_type "normalized".
 
@@ -425,8 +425,8 @@ def register(mcp: FastMCP) -> None:
             if_match: Etag from read. Pass it, one edit per read, when line_start and
                 line_end are given; omit it for several old_text-only edits to one note
                 at once.
-            line_start: First line to replace, counting from 1 as read shows them; pass
-                with line_end.
+            line_start: First line to replace, counting from 1 over the content read
+                returns, frontmatter included; pass with line_end.
             line_end: Last line to replace, inclusive; pass with line_start.
 
         Returns:
