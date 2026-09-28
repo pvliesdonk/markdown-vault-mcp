@@ -143,7 +143,8 @@ partial markdown reads (see the tip above).
       "folder": "Journal",
       "content": "---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body...",
       "frontmatter": {"title": "My Note", "tags": ["journal"]},
-      "modified_at": 1741564800.0
+      "modified_at": 1741564800.0,
+      "etag": "9f2c1e7b4a..."
     }
     ```
 
@@ -258,6 +259,8 @@ On an OKF bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](../config
 
 Check the embedding provider configuration and vector index status. Use this to diagnose why semantic search is unavailable.
 
+`available` is `true` as soon as a provider and a vector path are configured, including while the first build is still running; `chunk_count` grows as chunks are embedded. Neither says the embeddings have caught up with the vault: [`get_index_status`](#get_index_status) does.
+
 **Returns:**
 
 ```json
@@ -297,6 +300,22 @@ build attempt.
   Empty when nothing was skipped. This tells a parse-dropped note apart from
   one that simply has not synced yet, without reading container logs.
   Exclude-pattern matches and transient I/O skips are intentionally omitted.
+- `last_reindex_error`: `null` unless the last reindex job raised; otherwise
+  its message.
+- `last_build_embeddings_error`: `null` unless the last embedding build
+  raised; otherwise its message.
+- `queue_depth`: writer jobs waiting to run.
+- `in_flight`: the kind of the job running now (`build_index`,
+  `reindex_all`, `build_embeddings`, `process_dirty_paths`,
+  `flush_dirty_embeddings`), or `null` when the writer is idle.
+- `dirty_paths`: changed notes waiting to be re-indexed.
+- `dirty_embeddings`: notes whose embeddings are waiting to be recomputed.
+- `write_generation`: a counter that rises each time a writer job finishes.
+
+**Caught up:** the index and, when semantic search is configured, the
+embeddings reflect the vault once `status` is `"queryable"`, `queue_depth`
+is `0`, `in_flight` is `null`, and `dirty_paths` and `dirty_embeddings` are
+both `0`. Poll until all five hold.
 
 **Tags:** read-only.
 
@@ -321,7 +340,7 @@ No parameters.
 
 Incrementally update the full-text search index to reflect file changes made outside this server. Only changed files are processed; unchanged documents are skipped, and files deliberately excluded from the index (missing required frontmatter, exclude-pattern matches, unparseable content) are remembered across scans so they are not re-parsed or re-reported until their content changes (#665). A previously indexed note that becomes unparseable is dropped from search results in the same pass (it no longer serves its last-good content), and a `read` of it fails as a server-side error rather than reporting the note as missing and shows up in `skipped_files` until it is fixed or deleted (#1129).
 
-If semantic search is configured, the reindex job re-embeds the changed documents on the writer thread. Poll `get_index_status` and watch the `dirty_embeddings` counter to observe embedding convergence.
+If semantic search is configured, the reindex job re-embeds the changed documents on the writer thread. Poll [`get_index_status`](#get_index_status) until it reports caught up.
 
 !!! note "Boot reconciliation"
     The server lifespan automatically queues one incremental reindex at every startup (#665), so files added, modified, or deleted while no server was running are reconciled without a manual `reindex` call. Reads served before that job completes report `index_stale: true` in `_meta`.
@@ -461,7 +480,7 @@ reading the note again before each.
 `match_type` is `"exact"` when the text matched byte-for-byte, or `"normalized"` when it matched after Unicode/whitespace normalization. The response may also include a `conventions` list; see [`write`](#write).
 
 !!! tip "Usage pattern"
-    Always call `read` first to get the exact current text and line numbers. For small edits, use `old_text` (exact match). For large block replacements, use `line_start`/`line_end` with the line numbers shown by `read`. Frontmatter can be edited; `old_text` may span the YAML block.
+    Always call `read` first to get the exact current text. For small edits, use `old_text` (exact match). For large block replacements, use `line_start`/`line_end`: lines count from 1 over the `content` that `read` returns, frontmatter included (`read` doesn't number them). Frontmatter can be edited; `old_text` may span the YAML block.
 
 !!! info "Normalized matching"
     When exact match fails, the tool automatically tries a normalized comparison. Normalization covers Unicode NFC, whitespace collapsing, and smart quote conversion (en-dash/em-dash to hyphen). If a unique match is found, it proceeds and returns `match_type: "normalized"`.

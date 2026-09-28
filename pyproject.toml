@@ -450,6 +450,10 @@ ignore = ["E501"]
 # finish_reason/...) are a test-fake surface; a param object for a fixture
 # helper is pure ceremony. Same gate-only mechanism as scanner.py above.
 "tests/test_summarize.py" = ["PLR0913"]
+# test_docs_examples.py runs the published API Quick Starts exactly as written
+# (#1661); S102 flags that exec. A per-file entry, since an inline noqa is
+# stripped as unused by the base pass (RUF100, S isn't in the base select).
+"tests/test_docs_examples.py" = ["S102"]
 "tests/test_smoke.py" = ["TC002", "TC003"]
 "tests/test_server.py" = ["TC003"]
 # PROJECT-RUFF-IGNORES-END
