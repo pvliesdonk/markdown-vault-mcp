@@ -65,7 +65,7 @@ comparison could not be made, produce it yourself from the pre-update
 commit (the base branch) and the previous template ref:
 
 ```bash
-python scripts/check_template_conformance.py --rev origin/main --ref <previous-ref>
+uv run --script scripts/check_template_conformance.py --rev origin/main --ref <previous-ref>
 ```
 
 This list is the work. Conflict markers are the subset of it that the
@@ -144,7 +144,7 @@ and format, mypy, pytest, `uv run mkdocs build --strict`, `uv run pre-commit
 run --all-files`, and `scripts/vendor_spa.py --check` on an MCP Apps
 project. Fix what the update broke; do not weaken a test to pass.
 
-Then run `python scripts/check_template_conformance.py` against the working
+Then run `uv run --script scripts/check_template_conformance.py` against the working
 tree. Every file it still lists must have a Decay issue from step 5.
 
 ## 8. Commit and report

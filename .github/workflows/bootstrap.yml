@@ -48,14 +48,18 @@ on:
       - scripts/repo_about.py
   workflow_dispatch:
 
+# Read-only by default; the one job that writes with GITHUB_TOKEN asks for
+# that scope itself, so no other job holds it (SonarCloud
+# githubactions:S8233, #694).
 permissions:
-  issues: write
   contents: read
 
 jobs:
   labels:
     name: Ensure repository labels
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     steps:
       - name: Create repository labels
         env:
@@ -107,7 +111,7 @@ jobs:
     name: Enable auto-merge + repository rulesets + About block
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: Allow auto-merge
         env:

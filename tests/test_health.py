@@ -45,14 +45,38 @@ def _get(server: FastMCP, url: str, *, http_path: str = "/mcp") -> Response:
     return asyncio.run(_probe())
 
 
+def _preset_contract_env(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Set every variable the project's ``config_contract_env`` returns.
+
+    The fixture in the project's ``tests/conftest.py`` supplies values for
+    the variables its ``from_env`` reads with ``env(..., required=True)``.
+    Resolved via ``getfixturevalue`` so a ``conftest.py`` that predates the
+    fixture keeps passing with nothing preset.  Repeated verbatim in every
+    template-owned test that builds from the environment rather than
+    imported: a sibling import only resolves when ``tests/`` is not a package.
+    """
+    try:
+        env = request.getfixturevalue("config_contract_env")
+    except pytest.FixtureLookupError:
+        return
+    for key, value in dict(env).items():
+        monkeypatch.setenv(key, value)
+
+
 @pytest.fixture(autouse=True)
-def _kv_store_in_tmp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def _kv_store_in_tmp(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Pin the readiness probe's backend to a temp directory.
 
     Unset, pvl-core defaults to ``file:///data/state`` where that directory
     is usable and ``memory://`` elsewhere — which would make the readiness
-    verdict depend on the host running the tests.
+    verdict depend on the host running the tests.  The project's
+    ``config_contract_env`` is applied first, so this pin wins.
     """
+    _preset_contract_env(request, monkeypatch)
     monkeypatch.setenv(
         "MARKDOWN_VAULT_MCP_KV_STORE_URL",
         f"file://{tmp_path / 'kv'}",

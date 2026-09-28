@@ -18,6 +18,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastmcp_pvl_core import (
+    # For CONFIG-VALIDATE, which raises it.  The redundant alias marks an
+    # explicit re-export, so ruff accepts the import whether or not a check
+    # uses it; a `noqa: F401` would become an unused directive (RUF100) the
+    # moment one does, and fixing that means editing outside the sentinels.
+    ConfigurationError as ConfigurationError,
+)
+
+# isort: split
+# (keeps the import above in its own statement, so adding a name to the one
+#  below never makes ruff re-sort the two — that fix would be outside the
+#  sentinels.)
+from fastmcp_pvl_core import (
     JobsConfig,
     ServerConfig,
     TransferConfig,
@@ -1054,7 +1066,19 @@ class ProjectConfig:
     # CONFIG-FIELDS-END
 
     def __post_init__(self) -> None:
-        """Validate composed domain fields.  Raise ``ValueError`` when invalid.
+        """Validate composed domain fields.  Raise ``ConfigurationError`` when invalid.
+
+        ``ConfigurationError`` is what ``serve`` turns into its one-line
+        ``ERROR: configuration error: ...`` exit; any other exception,
+        ``ValueError`` included, escapes as a full traceback.  Name the
+        variable and the problem in the message.
+
+        This hook checks *values* — bounds, formats, cross-field rules.  A
+        variable that must be *set* belongs on ``env(..., required=True)`` in
+        CONFIG-FROM-ENV instead: that refuses at startup and marks the var
+        required in the generated docs.  Never refuse an empty required field
+        here — tests and programmatic callers construct ``ProjectConfig(...)``
+        directly, without the environment.
 
         Runs on EVERY construction path — ``from_env`` and a direct
         ``ProjectConfig(field=...)`` alike.  That is what makes this the right
@@ -1070,8 +1094,6 @@ class ProjectConfig:
         ``object.__setattr__(self, "name", value)``.
         """
         # CONFIG-VALIDATE-START — validate domain fields below; kept across copier update
-        from markdown_vault_mcp.exceptions import ConfigurationError
-
         # Freeze sequence-valued flat fields into tuples for deep
         # immutability (#639); reject a bare str/bytes, which is itself a
         # Sequence[str] and would silently split into characters.

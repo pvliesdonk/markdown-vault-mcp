@@ -50,7 +50,6 @@ virtualenv
 ADRs
 allowlist
 backports
-codecov
 config
 Dependabot
 dev
@@ -60,7 +59,6 @@ knope
 rebase
 rebased
 repo
-repowise
 retargeting
 retargets
 ruleset

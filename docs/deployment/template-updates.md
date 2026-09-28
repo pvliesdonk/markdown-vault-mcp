@@ -55,7 +55,7 @@ this project that says why it does not yet.
    work; the conflict markers are the part of it the template also touched.
    Where a drifted file carries a conflict marker, the report shows which
    side of the hunk is local drift. If the report is missing or could not
-   be computed, run `python scripts/check_template_conformance.py --rev
+   be computed, run `uv run --script scripts/check_template_conformance.py --rev
    origin/main --ref <previous version>` to produce it.
 3. **Resolve conflict markers.** `copier update` runs a three-way merge and
    leaves diff3-style markers where a template change and a local change
@@ -140,7 +140,7 @@ this project that says why it does not yet.
    uv run pytest -x -q
    uv run mkdocs build --strict
    uv run pre-commit run --all-files
-   python scripts/check_template_conformance.py
+   uv run --script scripts/check_template_conformance.py
    ```
 
    An MCP Apps project also runs `uv run python scripts/vendor_spa.py

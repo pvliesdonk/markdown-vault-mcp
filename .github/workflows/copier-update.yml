@@ -48,13 +48,13 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           version: "latest"
 
@@ -420,7 +420,7 @@ jobs:
           # full record.
           if [ -s .copier-template-drift.md ]; then
             body+=$'\n\n'"### Template-owned files this project had forked"
-            body+=$'\n\n'"\`.copier-template-drift.md\` on this branch lists every template-owned file that differed from the template outside its sentinel blocks before this update, with the commits that last touched those lines. Conform each file or open a Decay issue for it; re-run \`python scripts/check_template_conformance.py\` once the markers are resolved."
+            body+=$'\n\n'"\`.copier-template-drift.md\` on this branch lists every template-owned file that differed from the template outside its sentinel blocks before this update, with the commits that last touched those lines. Conform each file or open a Decay issue for it; re-run the conformance check the report names once the markers are resolved."
             body+=$'\n\n'"<details><summary>.copier-template-drift.md</summary>"
             body+=$'\n\n'"$(head -c 8000 .copier-template-drift.md)"
             if [ "$(wc -c < .copier-template-drift.md)" -gt 8000 ]; then

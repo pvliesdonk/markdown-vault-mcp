@@ -39,7 +39,7 @@ repos:
       # Decay issue: SKIP=template-conformance git push.
       - id: template-conformance
         name: template conformance (added drift vs derived base)
-        entry: python3 scripts/check_template_conformance.py --rev HEAD --since auto --hook
+        entry: uv run --script scripts/check_template_conformance.py --rev HEAD --since auto --hook
         language: system
         pass_filenames: false
         always_run: true

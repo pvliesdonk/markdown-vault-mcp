@@ -19,7 +19,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from vendor import servers_of
+from vendor import VendorError, inside, servers_of, within_cwd
 
 PLUGIN_ROOT_VAR = "${CLAUDE_PLUGIN_ROOT}/wheels/"
 
@@ -49,7 +49,10 @@ def launch_spec(mcp: dict) -> str:
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
         raise VerifyError(f"usage: {argv[0]} <unpacked-dir> <version>")
-    root = pathlib.Path(argv[1])
+    try:
+        root = pathlib.Path(within_cwd(argv[1]))
+    except VendorError as exc:
+        raise VerifyError(str(exc)) from exc
     version = argv[2]
 
     # `.claude-plugin/plugin.json` at the archive root is what makes the zip
@@ -71,8 +74,14 @@ def main(argv: list[str]) -> int:
         raise VerifyError(f"--from is not pinned to a vendored wheel: {spec}")
     # Strip the leading ${CLAUDE_PLUGIN_ROOT}/ and any trailing [extras].
     rel = spec[len("${CLAUDE_PLUGIN_ROOT}/") :].split("[", 1)[0]
-    if not (root / rel).is_file():
-        raise VerifyError(f"--from names {rel}, which is not in the archive")
+    # The path comes from the archive itself: it must name a wheel inside
+    # the archive's wheels/ directory, not a file `..` or a link reaches (#694).
+    try:
+        target = inside(root / "wheels", root / rel)
+    except VendorError as exc:
+        raise VerifyError(f"--from names {rel}, which is outside the archive") from exc
+    if target.suffix != ".whl" or not target.is_file():
+        raise VerifyError(f"--from names {rel}, which is not a wheel in the archive")
 
     print(f"verify: plugin {packed} launches from {rel}")
     return 0

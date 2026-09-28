@@ -158,8 +158,11 @@ def make_server(
     # may use only INSTANCE, CAPABILITIES, and WORKFLOWS; pvl-core reserves the
     # shaped identity, operator routing/policy, and documentation roles.
     # ``finalize_instructions`` renders them once, after tool visibility.
+    # One argument per line with a trailing comma, which ruff keeps as it is at
+    # any length: the blurb may run to the validator's 100 characters (#704).
     instructions_for(mcp).identity(
-        server_name, "Generic markdown vault MCP with hybrid search"
+        server_name,
+        "Generic markdown vault MCP with hybrid search",
     )
     # The docs site publishes llms.txt per version (mkdocs-llmstxt, mike);
     # `/latest/` resolves once the first release has published the site.

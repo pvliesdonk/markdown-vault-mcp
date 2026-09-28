@@ -41,7 +41,7 @@ jobs:
       actions: read # Required for Claude to read CI results on PRs
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           # Full history: the review skill computes a three-dot range via
           # `git merge-base`, which does not exist in a depth-1 clone — the
@@ -77,9 +77,27 @@ jobs:
       # claude-code#73453) so the fan-out completes in-turn. Remove this step and
       # the path_to_claude_code_executable input once #1499 is fixed upstream.
       - name: Install pinned Claude Code (2.1.197, pre-background-subagents)
+        # The binary is downloaded directly and checked against the checksum
+        # the release manifest publishes for linux-x64, rather than piping
+        # claude.ai/install.sh into bash: an unverified script would run with
+        # this job's token (SonarCloud githubactions:S8482, S6506; #694). To
+        # move the pin, copy `platforms["linux-x64"].checksum` from
+        # https://downloads.claude.ai/claude-code-releases/<version>/manifest.json.
+        # `claude install <version>` is the step install.sh ends with; it fetches
+        # the native build again and checks that copy against the same release
+        # manifest itself, so no unverified code runs at either step.
+        env:
+          CLAUDE_CODE_VERSION: "2.1.197"
+          CLAUDE_CODE_SHA256: f54e69cbc89b2da61a415700af7ff52a147e862517d4f1b0eecf768448cf7f83
         run: |
           set -euo pipefail
-          curl -fsSL https://claude.ai/install.sh | bash -s -- 2.1.197
+          DL="$RUNNER_TEMP/claude-$CLAUDE_CODE_VERSION"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$DL" \
+            "https://downloads.claude.ai/claude-code-releases/$CLAUDE_CODE_VERSION/linux-x64/claude"
+          echo "$CLAUDE_CODE_SHA256  $DL" | sha256sum -c -
+          chmod +x "$DL"
+          "$DL" install "$CLAUDE_CODE_VERSION"
+          rm -f "$DL"
           BIN="$HOME/.local/bin/claude"
           test -x "$BIN"
           "$BIN" --version
@@ -87,7 +105,7 @@ jobs:
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@756cc22e19660d20e8cc9496b4f242475a7f7790  # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Use the pinned 2.1.197 CLI installed above (skips the action's own).

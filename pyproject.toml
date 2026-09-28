@@ -55,7 +55,14 @@ classifiers = [
     # PROJECT-LICENSE-CLASSIFIER-END
 ]
 dependencies = [
-    # >=10.0.0 for tool_boundary and is_tool_boundary (pvl-core ADR 0005):
+    # >=10.1.0 for env(..., required=True) and env_int / env_float's
+    # required keyword, and for domain_env_surface reporting such a read as
+    # required: config.py's CONFIG-FROM-ENV example, the template-ci
+    # required-var variant and test_config_contract.py's
+    # every-required-var guard depend on both.
+    #
+    # 10.0.0 was the floor before that, for tool_boundary and
+    # is_tool_boundary (pvl-core ADR 0005):
     # tools.py wraps every tool in the boundary instead of copying it, and
     # tests/test_tool_outcomes.py fails a registered tool that is not
     # wrapped (#678).  The request-logging middleware now logs
@@ -145,7 +152,7 @@ dependencies = [
     # this whole constraint rather than the floor alone (#335), but a floor
     # naming a release nobody can install is still a trap for anyone pinning
     # to it.
-    "fastmcp-pvl-core>=10.0.0,<11",
+    "fastmcp-pvl-core>=10.1.0,<11",
     "typer>=0.12",
 
     # fastmcp.apps and fastmcp.server.providers.addressing are imported
@@ -343,7 +350,7 @@ ignore = ["E501"]
 "scripts/migrate_agent_instructions.py" = ["S603", "S607"]
 "scripts/check_pins.py" = ["S310"]  # urlopen on a validated api.github.com URL
 "scripts/report_seeded_changes.py" = ["S603", "S606", "S607"]
-"scripts/check_template_conformance.py" = ["S603", "S606", "S607"]
+"scripts/check_template_conformance.py" = ["S603", "S607"]
 
 # PROJECT-RUFF-IGNORES-START — replace, extend, or override the entries below
 # Phase 1 write stubs: method signatures define the public API but bodies are
@@ -480,6 +487,8 @@ markers = [
 [tool.coverage.run]
 source = ["src/markdown_vault_mcp"]
 branch = true
+# Relative paths keep coverage.xml valid in the ci.yml job that scans it.
+relative_files = true
 
 [tool.coverage.report]
 fail_under = 80

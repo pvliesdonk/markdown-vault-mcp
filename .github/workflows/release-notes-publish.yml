@@ -36,7 +36,7 @@ jobs:
       contents: write       # gh-pages push (mike deploy)
       pull-requests: read   # the release-merge gate's commits-to-PRs lookup
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           # Full history: tags (locate each minor's releases) and the
           # gh-pages branch (mike) both live outside the pushed commit.
@@ -105,7 +105,7 @@ jobs:
 
       - name: Install uv
         if: steps.pages.outputs.found == 'true'
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           version: "latest"
 
@@ -115,7 +115,7 @@ jobs:
 
       - name: Install docs dependencies
         if: steps.pages.outputs.found == 'true'
-        run: uv sync --no-default-groups --group docs --frozen
+        run: uv sync --no-default-groups --group docs --frozen  # NOSONAR(githubactions:S8541): installs this project, which --no-build refuses (#694)
 
       - name: Redeploy versioned docs with the merged pages
         if: steps.pages.outputs.found == 'true'
@@ -145,7 +145,7 @@ jobs:
               if git rev-parse -q --verify refs/remotes/origin/gh-pages > /dev/null; then
                 git update-ref refs/heads/gh-pages refs/remotes/origin/gh-pages
               fi
-              if uv run --no-sync mike deploy --push --title "$ver" "$minor"; then
+              if uv run --no-sync --no-build mike deploy --push --title "$ver" "$minor"; then
                 deployed=1
                 break
               fi

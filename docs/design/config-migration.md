@@ -87,7 +87,12 @@ generated files.
 Also update `from_env` (between `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END`)
 to read the var if it doesn't already, and `__post_init__` (between
 `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END`) for any invariant the old
-prose described.
+prose described. Old prose that says a variable is required becomes
+`required=True` on its `env(...)` read in `from_env`, plus an entry in
+`config_contract_env` in `tests/conftest.py`; any other invariant goes in
+`__post_init__`, raising `fastmcp_pvl_core.ConfigurationError`. Only a
+`ConfigurationError` gets `serve`'s one-line configuration error; a
+`ValueError` prints a full traceback.
 
 A **top-level** field carries its metadata whether you read it inline in the
 constructor keyword (`cls(read_only=env(_ENV_PREFIX, "READ_ONLY"), ...)`) or

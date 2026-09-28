@@ -240,6 +240,21 @@ def findings(
     return out
 
 
+def _within_cwd(path: str | os.PathLike[str]) -> str:
+    """*path* canonicalised, refusing one outside the working directory (#694).
+
+    Every path this script touches lives in the checkout it runs from, so a
+    path that resolves elsewhere (``..``, an absolute path, a symlink) is a
+    broken or hostile invocation.  The realpath-then-prefix shape is the one
+    SonarCloud's path-injection rules recognise.
+    """
+    resolved = os.path.realpath(path)
+    base_dir = os.path.realpath(os.getcwd())  # noqa: PTH109 - the shape Sonar reads
+    if resolved != base_dir and not resolved.startswith(base_dir + os.sep):
+        raise ValueError(f"path {path!r} is outside the working directory")
+    return resolved
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n", 1)[0])
     parser.add_argument(
@@ -249,7 +264,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--pyproject", type=Path, default=Path("pyproject.toml"))
     args = parser.parse_args(argv)
-    text = args.pyproject.read_text(encoding="utf-8")
+    if args.pyproject.name != "pyproject.toml":
+        # The one file this checker parses; never read an arbitrary path (#694).
+        parser.error(f"--pyproject must name a pyproject.toml, got {args.pyproject}")
+    try:
+        pyproject = Path(_within_cwd(args.pyproject))
+    except ValueError as exc:
+        parser.error(str(exc))
+    text = pyproject.read_text(encoding="utf-8")
     token = os.environ.get("GITHUB_TOKEN") or None
     state_of = None if args.offline else (lambda url: fetch_issue_state(url, token))
     pins = parse_pins(text)
