@@ -217,11 +217,21 @@ behind it; the walks, counts and audit are in the review comments on
 
 `derived` — The template epic
 ([fastmcp-server-template#710](https://github.com/pvliesdonk/fastmcp-server-template/issues/710))
-comes first, because this repository cannot place its domain pages
-compliantly until the template designates where they go. The migration epic
-[#1665][1665] is refined only after the template skeleton exists. The
-standalone accuracy bugs from round 1 are fixed on today's site meanwhile,
-because they mislead readers now.
+came first, because this repository cannot place its domain pages
+compliantly until the template designates where they go; its pages shipped in
+template v11.1.0. The migration epic [#1665][1665] is refined on that
+release: the adoption first, because every other child places text in
+blocks and directories only the adopted render has; then one feature per
+section, in any order; then round 2 of the review, because it is the
+measurement the epic's "Done when" names and the evidence the template's
+review skill distils. The standalone accuracy bugs from round 1 were fixed on
+the old site first, because they misled readers then.
+
+`derived` — Unknown: whether the migrated site clears every round-1 blocker
+class, or whether some class needs a second template change. Resolved by
+round 2 ([#1685](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1685)),
+which has an appetite; a blocker that survives is a finding about the
+direction, filed under [#1665][1665].
 
 ### Other ambitions remain available
 
@@ -443,6 +453,13 @@ against a superproject holding one submodule (git 2.55.0); the findings are the
 
 `derived` — Neither epic joins a package yet; § Vaults with git submodules
 argues the order.
+
+### 2 October 2026 — refine the documentation migration
+
+`derived` — Template v11.1.0 shipped the structure, so [#1665][1665] is
+refined: adoption, then one feature per section, then round 2 as the
+measurement. The ordering argument above is restated accordingly; the
+"Done when" is unchanged.
 
 ### 28 September 2026 — chart reader-shaped documentation
 
