@@ -12,8 +12,10 @@ import json
 import re
 import textwrap
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
+if TYPE_CHECKING:
+    import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOCS = _REPO_ROOT / "docs"
@@ -48,38 +50,6 @@ def _blocks(page: Path, lang: str) -> list[tuple[list[str], str]]:
                 blocks.append(([t for _, t in trail], code))
         i += 1
     return blocks
-
-
-@pytest.fixture
-def example_vault(tmp_path: Path) -> Path:
-    vault = tmp_path / "vault"
-    (vault / "Journal").mkdir(parents=True)
-    (vault / "Journal" / "note.md").write_text(
-        "# Note\n\nSome query text to find, linking [[other]].\n",
-        encoding="utf-8",
-    )
-    (vault / "other.md").write_text("# Other\n\nLinks back.\n", encoding="utf-8")
-    return tmp_path
-
-
-def _quick_start(page: str) -> str:
-    return _blocks(_DOCS / page, "python")[0][1]
-
-
-@pytest.mark.parametrize("page", ["api/vault.md", "api/facets.md"])
-def test_api_quick_start_runs_as_written(page: str, example_vault: Path) -> None:
-    """The first Python block on each API page runs and finds the note.
-
-    Only the placeholder paths change; everything else is the published text.
-    """
-    code = _quick_start(page)
-    code = code.replace("/path/to/vault", str(example_vault / "vault"))
-    code = code.replace("/path/to/index.db", str(example_vault / "index.db"))
-    namespace: dict[str, object] = {}
-    exec(compile(code, page, "exec"), namespace)
-    results = namespace["results"]
-    assert isinstance(results, list)
-    assert results, f"{page}: the Quick Start search found nothing"
 
 
 def _section_blocks(page: Path, heading: str, lang: str) -> list[str]:

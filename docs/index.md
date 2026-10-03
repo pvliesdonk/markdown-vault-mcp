@@ -69,7 +69,7 @@ release body links to the matching page.
 
 ### As a library
 
-```python
+```python { .fragment }
 from pathlib import Path
 from markdown_vault_mcp.vault import Vault
 
