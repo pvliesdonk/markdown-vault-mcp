@@ -125,7 +125,7 @@ MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/var/lib/markdown-vault-mcp/embeddings/embedd
 MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR=/var/lib/markdown-vault-mcp/fastembed
 ```
 
-- **The vault must be writable, even read-only.** The server keeps a change-tracking file in the vault's `.markdown_vault_mcp/` folder unless `MARKDOWN_VAULT_MCP_STATE_PATH` points elsewhere. A vault outside the state directory needs its own `ReadWritePaths=` drop-in, as above. The unit hides `/home` (`ProtectHome=yes`), so a vault there is out of reach.
+- **The vault must be writable, even read-only.** The server keeps a change-tracking file in the vault's `.markdown_vault_mcp/` folder unless `MARKDOWN_VAULT_MCP_STATE_PATH` points elsewhere. A vault outside the state directory needs its own `ReadWritePaths=` drop-in, as above. `ProtectHome=yes` keeps `/home` from the service. A vault under `/srv`, like the one in the drop-in above, stays clear of it.
 - **Without `INDEX_PATH`** the index lives in memory and is rebuilt at every start.
 - **Without `FASTEMBED_CACHE_DIR`** FastEmbed keeps its model in the temporary directory. The unit's `PrivateTmp=yes` discards that at every stop, so the model downloads again at each start.
 
