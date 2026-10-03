@@ -18,7 +18,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Reader | [`search`](reader.md#search) | Search Vault | Search notes by keyword and meaning; returns notes ranked by score, each with its best-matching sections as snippets. |
 | Reader | [`read`](reader.md#read) | Read Note | Return a note's text, frontmatter and etag, or an attachment's bytes as base64. |
 | Reader | [`list_documents`](reader.md#list_documents) | List Documents | List notes, and optionally attachments, with path, title and frontmatter but no body text. |
-| Reader | [`list_folders`](reader.md#list_folders) | List Folders | List every folder that holds notes; "" stands for the top level. |
+| Reader | [`list_folders`](reader.md#list_folders) | List Folders | List every folder that holds notes; `""` stands for the top level. |
 | Reader | [`list_tags`](reader.md#list_tags) | List Tags | List the distinct values one indexed frontmatter field takes across the vault. |
 | Reader | [`stats`](reader.md#stats) | Vault Stats | Report the vault's size, link health and capabilities: the search modes it serves and the frontmatter fields search can filter on. |
 | Reader | [`get_similar`](reader.md#get_similar) | Similar Notes | Find the notes closest in meaning to a given note; returns them ranked by similarity with their closest sections, the note itself excluded. |
@@ -38,7 +38,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Indexing | [`reindex`](indexing.md#reindex) | Reindex Vault | Bring the search index up to date with files changed outside this server, such as by an editor or a sync tool; returns counts of added, modified, deleted and unchanged notes. |
 | Indexing | [`build_embeddings`](indexing.md#build_embeddings) | Build Embeddings | Bring the vector index behind semantic and hybrid search up to date with the notes; returns the number of chunks embedded. |
 | Writer | [`write`](writer.md#write) | Write Note | Create a note or attachment, or replace one whole; returns its path and whether it was created. |
-| Writer | [`edit`](writer.md#edit) | Edit Note | Replace text in an existing note: an exact `old_text`, a range of lines, or an `old_text` within a range of lines. |
+| Writer | [`edit`](writer.md#edit) | Edit Note | Replace text in an existing note, chosen by an exact `old_text`, by a range of lines, or by an `old_text` within a range of lines. |
 | Writer | [`append`](writer.md#append) | Append to Note | Add text to the end of an existing note without reading it first. |
 | Writer | [`delete`](writer.md#delete) | Delete Note | Permanently delete a note or attachment; only git history can bring it back. |
 | Writer | [`rename`](writer.md#rename) | Rename Note | Rename or move a note or attachment; with `update_links`, links to it in other notes follow it. |

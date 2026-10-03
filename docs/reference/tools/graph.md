@@ -23,7 +23,7 @@ Use `get_context` when you also need its outlinks or similar notes.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `path` | `string` | required | Path of the note linked to, e.g. "notes/topic.md"; case-sensitive. |
+| `path` | `string` | required | Path of the note linked to, such as `"notes/topic.md"`; case-sensitive. |
 | `limit` | `integer \| null` | `null` | Maximum backlinks to return; omit for all. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
 
@@ -34,20 +34,20 @@ List of backlink dicts, each with:
     - `source_path` (str): Path of the document containing the link.
     - `source_title` (str): Title of the source document.
     - `link_text` (str): The clickable text of the link.
-    - `link_type` (str): One of "markdown", "wikilink", or "reference".
-    - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+    - `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
+    - fragment (str | None): Heading anchor (such as `"#section"`), or null.
     - `raw_target` (str): Literal link target as written in the source.
 
     Index freshness is reported out-of-band in the response's
-    ``_meta.`index_stale``` field — True when the IndexWriter had
+    `_meta.index_stale` field: True when the IndexWriter had
     pending or in-flight work at any of three observation points
-    (```wait_for_pending_writes``` timing out, a write completing inside the
+    (`wait_for_pending_writes` timing out, a write completing inside the
     read window, or non-idle at response time), False when the data
     is current as of response time.
 
-Combine with ```get_similar``` to find connection gaps — notes that are
+Combine with `get_similar` to find connection gaps: notes that are
 semantically close to the target but not yet linked. Respect folder
-conventions (see '`get_conventions`') before proposing such links —
+conventions (see '`get_conventions`') before proposing such links;
 some folders are self-contained by design.
 
 **Outcomes and errors**
@@ -71,7 +71,7 @@ Use `get_context` when you also need its backlinks or similar notes.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `path` | `string` | required | Path of the note holding the links, e.g. "notes/topic.md"; case-sensitive. |
+| `path` | `string` | required | Path of the note holding the links, such as `"notes/topic.md"`; case-sensitive. |
 | `limit` | `integer \| null` | `null` | Maximum outlinks to return; omit for all. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
 
@@ -81,21 +81,21 @@ List of outlink dicts, each with:
 
     - `target_path` (str): Path of the linked document.
     - `link_text` (str): The clickable text of the link.
-    - `link_type` (str): One of "markdown", "wikilink", or "reference".
-    - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+    - `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
+    - fragment (str | None): Heading anchor (such as `"#section"`), or null.
     - `raw_target` (str): Literal link target as written in the source.
     - exists (bool): True if the target document is indexed.
 
     Index freshness is reported out-of-band in the response's
-    ``_meta.`index_stale``` field — True when the IndexWriter had
+    `_meta.index_stale` field: True when the IndexWriter had
     pending or in-flight work at any of three observation points
-    (```wait_for_pending_writes``` timing out, a write completing inside the
+    (`wait_for_pending_writes` timing out, a write completing inside the
     read window, or non-idle at response time), False when the data
     is current as of response time.
 
-Combine with ```get_similar``` to find connection gaps — notes the
+Combine with `get_similar` to find connection gaps: notes the
 source is semantically close to but hasn't linked yet. Respect folder
-conventions (see '`get_conventions`') before proposing such links —
+conventions (see '`get_conventions`') before proposing such links;
 some folders are self-contained by design.
 
 **Outcomes and errors**
@@ -120,7 +120,7 @@ behind.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `folder` | `string \| null` | `null` | Only links in notes in this folder, e.g. "Journal"; "" for top-level notes; omit for the whole vault. |
+| `folder` | `string \| null` | `null` | Only links in notes in this folder, such as `"Journal"`; `""` for top-level notes; omit for the whole vault. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
 
 **Returns**
@@ -131,13 +131,13 @@ List of dicts, each with:
 - `source_title` (str): Title of the source document.
 - `target_path` (str): The missing target path.
 - `link_text` (str): The clickable text of the link.
-- `link_type` (str): One of "markdown", "wikilink", or "reference".
-- fragment (str | None): Heading anchor (e.g. "#section"), or null.
+- `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
+- fragment (str | None): Heading anchor (such as `"#section"`), or null.
 - `raw_target` (str): Literal link target as written in the source.
 
-Index freshness rides in the response's ``_meta.`index_stale```
-field — True when the IndexWriter was non-idle, a write completed
-inside the read window, or ```wait_for_pending_writes``` timed out; False
+Index freshness rides in the response's `_meta.index_stale`
+field: True when the IndexWriter was non-idle, a write completed
+inside the read window, or `wait_for_pending_writes` timed out; False
 otherwise.
 
 <!-- DOMAIN-EXAMPLE-get_broken_links-START -->
@@ -167,11 +167,11 @@ List of dicts ordered by path, each with:
 - folder (str): Folder containing the note.
 - frontmatter (dict): Parsed YAML frontmatter.
 - `modified_at` (float): Unix timestamp of last modification.
-- kind (str): Always "note".
+- kind (str): Always `"note"`.
 
-Index freshness rides in the response's ``_meta.`index_stale```
-field — True when the IndexWriter was non-idle, a write completed
-inside the read window, or ```wait_for_pending_writes``` timed out; False
+Index freshness rides in the response's `_meta.index_stale`
+field: True when the IndexWriter was non-idle, a write completed
+inside the read window, or `wait_for_pending_writes` timed out; False
 otherwise.
 
 <!-- DOMAIN-EXAMPLE-get_orphan_notes-START -->
@@ -195,13 +195,13 @@ Use `get_backlinks` for the notes that link to one of them.
 
 **Returns**
 
-List of dicts with path (str), title (str), and `backlink_count` (int
-— number of distinct source documents linking to this note), ordered
+List of dicts with path (str), title (str), and `backlink_count` (int:
+number of distinct source documents linking to this note), ordered
 by `backlink_count` descending.
 
-Index freshness rides in the response's ``_meta.`index_stale```
-field — True when the IndexWriter was non-idle, a write completed
-inside the read window, or ```wait_for_pending_writes``` timed out; False
+Index freshness rides in the response's `_meta.index_stale`
+field: True when the IndexWriter was non-idle, a write completed
+inside the read window, or `wait_for_pending_writes` timed out; False
 otherwise.
 
 <!-- DOMAIN-EXAMPLE-get_most_linked-START -->
@@ -219,7 +219,7 @@ direction.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `source` | `string` | required | Path of the starting note, e.g. "Ideas/spark.md". |
+| `source` | `string` | required | Path of the starting note, such as `"Ideas/spark.md"`. |
 | `target` | `string` | required | Path of the destination note. |
 | `max_depth` | `integer` | `10` | Most links to follow, 1 to 10 (default 10). |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
@@ -229,15 +229,15 @@ direction.
 Dict with the connection-path result. Fields:
 
 - `found` (bool): Whether a path was found within `max_depth` hops.
-- `path` (list[str]): Ordered list of note paths from source to target,
+- `path` (list[str]): Note paths in order from source to target,
   or an empty list if not found.
 - `hops` (int): Number of edges in the path (`len(path) - 1`), or -1 if
   not found.
 
 Index freshness is reported out-of-band in the response's
-``_meta.`index_stale``` field — True when the IndexWriter had
+`_meta.index_stale` field: True when the IndexWriter had
 pending or in-flight work at any of three observation points
-(```wait_for_pending_writes``` timing out, a write completing inside the
+(`wait_for_pending_writes` timing out, a write completing inside the
 read window, or non-idle at response time), False otherwise.
 
 <!-- DOMAIN-EXAMPLE-get_connection_path-START -->

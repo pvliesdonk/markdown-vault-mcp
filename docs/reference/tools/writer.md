@@ -25,38 +25,38 @@ created as needed.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `path` | `string` | required | Path in the vault, e.g. "Journal/note.md" or "assets/photo.png"; the extension decides between note and attachment. |
+| `path` | `string` | required | Path in the vault, such as `"Journal/note.md"` or `"assets/photo.png"`; the extension decides between note and attachment. |
 | `content` | `string` | `""` | The note's Markdown body, without frontmatter. |
-| `frontmatter` | `object \| null` | `null` | The note's frontmatter, e.g. {"title": "My Note", "tags": ["draft"]}. |
+| `frontmatter` | `object \| null` | `null` | The note's frontmatter, such as `{"title": "My Note", "tags": ["draft"]}`. |
 | `content_base64` | `string` | `""` | An attachment's bytes, base64-encoded; for paths not ending in .md. |
 | `if_match` | `string \| null` | `null` | Etag from read, to replace an existing file; omit for a new file. |
 
 **Returns**
 
-Dict with path (str) and created (bool — true if new file,
+Dict with path (str) and created (bool: true if new file,
     false if overwrite). On a git-backed vault, an overwrite also
     carries '`previous_revision`': the commit holding the content this
     write just replaced. Read it back with
     read(path, revision=<that sha>), then write it again with `if_match`
     set to the etag from a plain read(path). The key is absent when no
-    commit provably holds the replaced content — a create, no git, or
+    commit provably holds the replaced content: a create, no git, or
     content that was never committed (which git cannot recover at all).
     For .md files, may include 'conventions':
     the user's authoring conventions for the target folder
     (root-first list of {folder, path, content}). When present,
-    verify the note you just wrote complies — e.g. self-containment
-    or linking-direction rules — and issue a follow-up 'edit' if it
+    verify the note you just wrote complies, such as with self-containment
+    or linking-direction rules, and issue a follow-up 'edit' if it
     does not. To check conventions *before* writing, call
     '`get_conventions`(path)'.
 
 Supports split (write several new notes from one source) and merge
 (extend an existing note with content from another) when composed with
-``read`` and ``delete``.
+`read` and `delete`.
 
 **Outcomes and errors**
 
-- ValueError: If `content_base64` is missing/invalid for attachments, or the content exceeds ```MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB```.
-- MCPError: If `if_match` is provided and the file has been modified, or `if_match` is supplied for a file that does not yet exist (ConcurrentModificationError). Also when the server runs with ```MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING`=true`` (default) and path already exists while no `if_match` is supplied (DocumentExistsError) — use 'edit' or 'append' instead, or read the file first and pass its etag as `if_match`.
+- ValueError: If `content_base64` is missing/invalid for attachments, or the content exceeds `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
+- `MCPError`: If `if_match` is provided and the file has been modified, or `if_match` is supplied for a file that does not yet exist (ConcurrentModificationError). Also when the server runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and path already exists while no `if_match` is supplied (DocumentExistsError); use 'edit' or 'append' instead, or read the file first and pass its etag as `if_match`.
 
 <!-- DOMAIN-EXAMPLE-write-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -66,12 +66,12 @@ Supports split (write several new notes from one source) and merge
 
 **Edit Note.** Changes state, not destructive. Tags: `write`.
 
-Replace text in an existing note: an exact `old_text`, a range of lines, or an
-`old_text` within a range of lines.
+Replace text in an existing note, chosen by an exact `old_text`, by a range of
+lines, or by an `old_text` within a range of lines.
 
 Read the note first for its current text. When `old_text` has no
 exact match, a unique match after normalising Unicode, dashes, quotes and
-whitespace is used and reported as `match_type` "normalized".
+whitespace is used and reported as `match_type` `"normalized"`.
 
 **Parameters**
 
@@ -88,7 +88,7 @@ whitespace is used and reported as `match_type` "normalized".
 
 - **path** (str): path of the edited document.
 - **replacements** (int): always 1.
-- **`match_type`** (str): ``'exact'`` or ``'normalized'``.
+- **`match_type`** (str): `'exact'` or `'normalized'`.
 - **conventions** (list, optional): the user's authoring
   conventions for the note's folder (root-first list of
   {folder, path, content}). When present, verify the edited
@@ -99,7 +99,7 @@ whitespace is used and reported as `match_type` "normalized".
 - ValueError: If parameter combination is invalid, or line numbers are out of range.
 - EditConflictError: If `old_text` is not found or appears more than once.
 - DocumentNotFoundError: If no file exists at the given path.
-- MCPError: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
+- `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
 
 <!-- DOMAIN-EXAMPLE-edit-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -119,7 +119,7 @@ a paragraph or section.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `path` | `string` | required | Path of the note, e.g. "Journal/2026.md". |
+| `path` | `string` | required | Path of the note, such as `"Journal/2026.md"`. |
 | `content` | `string` | required | Non-empty text to add after everything the note holds. |
 | `if_match` | `string \| null` | `null` | Etag from read; the text is then added only to that version. Omit to append regardless. |
 | `create_if_missing` | `boolean` | `false` | Create the note with content as its body when path does not exist. Default false, so a mistyped path creates nothing. |
@@ -138,7 +138,7 @@ a paragraph or section.
 
 - ValueError: If content is empty.
 - DocumentNotFoundError: If no file exists at the given path and `create_if_missing` is false.
-- MCPError: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
+- `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
 
 <!-- DOMAIN-EXAMPLE-append-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -167,7 +167,7 @@ its content has been relocated.
 **Outcomes and errors**
 
 - DocumentNotFoundError: If no file exists at the given path.
-- MCPError: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
+- `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
 
 <!-- DOMAIN-EXAMPLE-delete-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -186,8 +186,8 @@ For a note, always pass `update_links`=True. Parent folders are created as neede
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `old_path` | `string` | required | Current path, e.g. "drafts/idea.md" or "assets/old.png". |
-| `new_path` | `string` | required | New path, e.g. "projects/idea.md", where nothing exists yet. |
+| `old_path` | `string` | required | Current path, such as `"drafts/idea.md"` or `"assets/old.png"`. |
+| `new_path` | `string` | required | New path, such as `"projects/idea.md"`, where nothing exists yet. |
 | `if_match` | `string \| null` | `null` | Etag from read of `old_path`; omit when renaming several linked notes together. |
 | `update_links` | `boolean` | `false` | Rewrite links to `old_path` in other notes so they point at `new_path`; attachment references are not tracked. Default false; pass true for every note. |
 
@@ -203,7 +203,7 @@ attachment, saying why nothing was rewritten.
 - DocumentNotFoundError: If `old_path` does not exist.
 - DocumentExistsError: If `new_path` already exists.
 - ValueError: If the path fails traversal validation.
-- MCPError: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
+- `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
 
 <!-- DOMAIN-EXAMPLE-rename-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -222,8 +222,8 @@ Links that could not be rewritten are listed in `failed_links`.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `old_dir` | `string` | required | Folder to move, e.g. "drafts". |
-| `new_dir` | `string` | required | Destination folder, e.g. "archive/2026"; an existing folder is merged into. |
+| `old_dir` | `string` | required | Folder to move, such as `"drafts"`. |
+| `new_dir` | `string` | required | Destination folder, such as `"archive/2026"`; an existing folder is merged into. |
 
 **Returns**
 
@@ -232,7 +232,7 @@ Dict with `old_dir` (str), `new_dir` (str), `files_moved` (int),
 
 **Outcomes and errors**
 
-- DocumentNotFoundError: If `old_dir` is missing, not a folder, or empty.
+- DocumentNotFoundError: If no non-empty folder exists at `old_dir`.
 - DocumentExistsError: If any destination file already exists.
 - ValueError: If a path fails traversal validation or the two paths are nested.
 
@@ -254,9 +254,9 @@ then pass the path to other tools.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `url` | `string` | required | An http or https URL on the public internet. Redirects are followed, so check `final_url` in the result when the source host matters. |
-| `path` | `string` | required | Destination path, e.g. "notes/report.md" or "assets/diagram.png"; .md saves a note, anything else an attachment. |
-| `frontmatter` | `object \| null` | `null` | Frontmatter for a note, e.g. {"title": "Report", "source": "https://example.org/report"}. |
+| `url` | `string` | required | An HTTP or HTTPS URL on the public internet. Redirects are followed, so check `final_url` in the result when the source host matters. |
+| `path` | `string` | required | Destination path, such as `"notes/report.md"` or `"assets/diagram.png"`; .md saves a note, anything else an attachment. |
+| `frontmatter` | `object \| null` | `null` | Frontmatter for a note, such as `{"title": "Report", "source": "https://example.org/report"}`. |
 | `if_match` | `string \| null` | `null` | Etag from read, to replace an existing file; omit for a new file. |
 | `timeout_s` | `number` | `30.0` | Download timeout in seconds (default 30); raise it for a large file from a slow host. |
 
@@ -267,26 +267,26 @@ Dict with:
     - created (bool): true if new file, false if overwrite
     - `content_length` (int): bytes downloaded
     - `content_type` (str or null): Content-Type from the response
-    - `final_url` (str): the URL the bytes actually came from — equal
-      to ``url`` when nothing redirected, otherwise the last hop.
-      Userinfo is stripped; the query string is not, so do not log
+    - `final_url` (str): the URL the bytes actually came from: equal
+      to `url` when nothing redirected, otherwise the last hop.
+      A user name or password in the URL is stripped; the query string is not, so do not log
       it verbatim
     - conventions (list, optional; .md only): the user's authoring
       conventions for the target folder (root-first list of
       {folder, path, content}). When present, verify the saved note
       complies and issue a follow-up 'edit' if it does not.
 
-Primary building block for URL-to-note capture flows: call ``fetch`` to
-retrieve the source, summarize via the LLM, and ``write`` the result
+Primary building block for URL-to-note capture flows: call `fetch` to
+retrieve the source, summarize via the LLM, and `write` the result
 as a new note.
 
 **Outcomes and errors**
 
-- DocumentExistsError: If the server runs with ```MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING`=true`` (default) and *path* already exists while no *`if_match`* is supplied. The save routes through the same guarded ``write`` / ```write_attachment``` path as the write tools, so read the existing note first and pass its etag as *`if_match`* to replace it deliberately, or fetch to a fresh path.
+- DocumentExistsError: If the server runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and *path* already exists while no *`if_match`* is supplied. The save routes through the same guarded `write` / `write_attachment` path as the write tools, so read the existing note first and pass its etag as *`if_match`* to replace it deliberately, or fetch to a fresh path.
 - InvalidRequestError: If the URL scheme is not http/https, the host is blocked or cannot be resolved (on the supplied URL or on any redirect hop), the download exceeds the size limit, or the response cannot be decoded.
-- ToolError: If the remote site answers a non-2xx status (retry later for a 5xx, check the URL otherwise; the message never names the URL) or redirects past httpx's ```max_redirects```.
-- httpx.HTTPStatusError: For a 429, passed to ```tool_boundary```, which answers "retry later".
-- httpx.TransportError: On a timeout or a failed connection; propagates to ```tool_boundary```.
+- ToolError: If the remote site answers a non-2xx status (retry later for a 5xx, check the URL otherwise; the message never names the URL) or redirects more times than the client allows.
+- `httpx.HTTPStatusError`: On a 429; `tool_boundary` turns it into a `"retry later"` answer.
+- `httpx.TransportError`: On a timeout or a failed connection; it propagates to `tool_boundary`.
 
 <!-- DOMAIN-EXAMPLE-fetch-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -306,7 +306,7 @@ changes nothing already converted.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `folder` | `string \| null` | `null` | Only notes in this folder and below, e.g. "guides"; omit for the whole vault. |
+| `folder` | `string \| null` | `null` | Only notes in this folder and below, such as `"guides"`; omit for the whole vault. |
 
 **Returns**
 
@@ -330,7 +330,7 @@ Subfolders without an index.md get one too.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `folder` | `string` | `""` | Folder to index, e.g. "guides"; omit for the bundle root. |
+| `folder` | `string` | `""` | Folder to index, such as `"guides"`; omit for the bundle root. |
 
 **Returns**
 
@@ -355,7 +355,7 @@ log.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `folder` | `string` | `""` | Folder to write log.md in, whose history it covers, e.g. "guides"; omit for the bundle root and the whole vault's history. |
+| `folder` | `string` | `""` | Folder to write log.md in, whose history it covers, such as `"guides"`; omit for the bundle root and the whole vault's history. |
 
 **Returns**
 

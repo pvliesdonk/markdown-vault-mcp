@@ -24,7 +24,7 @@ Summarize a vault document with structured coverage of main topics and key point
 
 | Argument | Required | Description |
 |---|---|---|
-| `path` | yes | Path to the document to summarize. |
+| `path` | yes | Path of the document. |
 
 <!-- DOMAIN-EXAMPLE-summarize-START -->
 <!-- A worked example for this prompt; kept across regeneration. -->
@@ -56,7 +56,7 @@ Review a vault note and propose targeted edits: factual corrections, clarity, st
 
 ## `related`
 
-Find related notes and suggest cross-references. Read-only — does not modify any documents.
+Find related notes and suggest cross-references. Read-only: changes no documents.
 
 | Argument | Required | Description |
 |---|---|---|
@@ -81,11 +81,11 @@ Compare two vault notes: agreements, contradictions, and unique information in e
 
 ## `propose-links`
 
-Propose meaningful new links between semantically-close notes that aren't already connected.
+Propose new links between closely related notes that aren't connected yet.
 
 | Argument | Required | Description |
 |---|---|---|
-| `scope` | no | Candidate set. Accepts a folder path (e.g. '1-Projects'), the literal 'recent' (default; notes modified in the last 30 days), or the literal 'all'. No trailing slashes on folder paths. |
+| `scope` | no | Candidate set. Accepts a folder path (such as '1-Projects'), the literal 'recent' (default; notes modified in the last 30 days), or the literal 'all'. No trailing slashes on folder paths. |
 | `per_note_limit` | no | Max candidates per note to evaluate (default 5). |
 
 <!-- DOMAIN-EXAMPLE-propose-links-START -->
@@ -98,7 +98,7 @@ Create a new note from one of the vault's templates.
 
 | Argument | Required | Description |
 |---|---|---|
-| `template_name` | no | Template to use, e.g. "meeting-notes"; leave empty to choose from the list. |
+| `template_name` | no | Template to use, such as `"meeting-notes"`; leave empty to choose from the list. |
 
 <!-- DOMAIN-EXAMPLE-create_from_template-START -->
 <!-- A worked example for this prompt; kept across regeneration. -->
@@ -110,8 +110,8 @@ Summarize a folder or a set of notes with your own model, in batches that keep n
 
 | Argument | Required | Description |
 |---|---|---|
-| `paths` | yes | One or more note paths and/or folder prefixes (e.g. 'projects/alpha' or 'notes/a.md, notes/b.md'), separated by commas. |
-| `focus` | no | Optional free-text steer, e.g. 'extract action items'. Empty produces a general summary. |
+| `paths` | yes | One or more note paths and/or folder prefixes (such as 'projects/alpha' or 'notes/a.md, notes/b.md'), separated by commas. |
+| `focus` | no | Optional free-text steer, such as 'extract action items'. Empty produces a general summary. |
 
 <!-- DOMAIN-EXAMPLE-summarize-subtree-START -->
 <!-- A worked example for this prompt; kept across regeneration. -->

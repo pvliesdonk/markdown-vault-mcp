@@ -25,13 +25,13 @@ It shows the vault to the user and returns nothing to read; use search, read,
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `path` | `string \| null` | `null` | Note to open on, e.g. "Journal/2024-01-15.md"; omit to start from the whole vault. |
-| `view` | `context \| graph \| browse \| note \| null` | `null` | "context" for a note's relationships, "graph" for the link graph, "browse" for the file tree, or "note" for the note itself; omit for "context" with a path and "browse" without. |
+| `path` | `string \| null` | `null` | Note to open on, such as `"Journal/2024-01-15.md"`; omit to start from the whole vault. |
+| `view` | `context \| graph \| browse \| note \| null` | `null` | `"context"` for a note's relationships, `"graph"` for the link graph, `"browse"` for the file tree, or `"note"` for the note itself; omit for `"context"` with a path and `"browse"` without. |
 
 **Returns**
 
 - path (str | None): The requested note path, or null if none given.
-- view (str): The active view ("context", "graph", "browse", or "note").
+- view (str): The active view (`"context"`, `"graph"`, `"browse"`, or `"note"`).
 - summary (str): Text summary of vault or note state for non-Apps clients.
 
 <!-- DOMAIN-EXAMPLE-browse_vault-START -->
@@ -44,20 +44,20 @@ It shows the vault to the user and returns nothing to read; use search, read,
 
 Return the full NoteContext for a note (app-only).
 
-Called by the SPA context card view via ``app.callServerTool()``.
+Called by the SPA context card view via `app.callServerTool()`.
 Not visible to the LLM.
 
 **Parameters**
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `path` | `string` | required | Relative note path (e.g. ``"Journal/2024-01-15.md"``). |
+| `path` | `string` | required | Relative note path (such as `"Journal/2024-01-15.md"`). |
 
 **Returns**
 
 Dict with path, title, folder, frontmatter, `modified_at`, backlinks,
-outlinks, similar, `folder_notes`, and tags — see '`get_context`' for
-field details. Returns {"error": "..."} if the note is not found.
+outlinks, similar, `folder_notes`, and tags; see '`get_context`' for
+field details. Returns `{"error": "..."}` if the note is not found.
 
 <!-- DOMAIN-EXAMPLE-vault_context-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -77,12 +77,12 @@ data.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `path` | `string` | required | Path of the note, e.g. "Journal/2024-01-15.md". |
+| `path` | `string` | required | Path of the note, such as `"Journal/2024-01-15.md"`. |
 
 **Returns**
 
 - path (str): The note path.
-- view (str): Always "context".
+- view (str): Always `"context"`.
 - summary (str): Text summary with backlink, outlink, and similarity counts.
 
 <!-- DOMAIN-EXAMPLE-show_context-START -->
@@ -95,7 +95,7 @@ data.
 
 Return the link neighborhood of a note as a node/edge graph (app-only).
 
-Called by the SPA graph view via ``app.callServerTool()``.
+Called by the SPA graph view via `app.callServerTool()`.
 Not visible to the LLM.
 
 **Parameters**
@@ -105,7 +105,7 @@ Not visible to the LLM.
 | `path` | `string` | required | Center note path. |
 | `depth` | `integer` | `1` | How many hops to traverse (default 1). |
 | `include_semantic` | `boolean` | `false` | When True, add dashed semantic-similarity edges for each interior node (requires embeddings to be configured; silently omitted when unavailable). |
-| `max_nodes` | `integer` | `200` | Soft cap on returned node count (default 200). BFS and any semantic expansion both stop once the cap is hit; the response sets ``truncated=True``. Bounds dense-vault depth=2 traversals that would otherwise bog down vis-network. |
+| `max_nodes` | `integer` | `200` | Soft cap on returned node count (default 200). BFS and any semantic expansion both stop once the cap is hit; the response sets `truncated=True`. Bounds dense-vault depth=2 traversals that would otherwise bog down vis-network. |
 
 **Returns**
 
@@ -115,10 +115,10 @@ Dict with:
 
   - id (str): Unique identifier for the node.
   - label (str): Display name for the node.
-  - group (str): "note" or "orphan".
+  - group (str): `"note"` or `"orphan"`.
   - folder (str): Parent folder path.
   - `backlink_count` (int): Number of inbound links.
-  - `note_type` (str, optional): The note's OKF ``type``
+  - `note_type` (str, optional): The note's OKF `type`
     frontmatter value; present only on an active OKF
     bundle for notes that declare one.
 
@@ -126,9 +126,9 @@ Dict with:
 
   - from (str): Source node ID.
   - to (str): Target node ID.
-  - type (str): "markdown", "wikilink", "reference", or "semantic".
+  - type (str): `"markdown"`, `"wikilink"`, `"reference"`, or `"semantic"`.
 
-- truncated (bool): True when BFS hit the ```max_nodes``` cap.
+- truncated (bool): True when BFS hit the `max_nodes` cap.
 
 <!-- DOMAIN-EXAMPLE-vault_graph_neighborhood-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -157,10 +157,10 @@ Dict with:
 
   - id (str): Unique identifier for the node.
   - label (str): Display name for the node.
-  - group (str): "hub" or "note".
+  - group (str): `"hub"` or `"note"`.
   - folder (str): Parent folder path.
   - `backlink_count` (int): Number of inbound links.
-  - `note_type` (str, optional): The note's OKF ``type``
+  - `note_type` (str, optional): The note's OKF `type`
     frontmatter value; present only on an active OKF
     bundle for notes that declare one.
 
@@ -168,7 +168,7 @@ Dict with:
 
   - from (str): Source node ID.
   - to (str): Target node ID.
-  - type (str): "markdown", "wikilink", or "reference".
+  - type (str): `"markdown"`, `"wikilink"`, or `"reference"`.
 
 <!-- DOMAIN-EXAMPLE-vault_graph_hubs-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -180,7 +180,7 @@ Dict with:
 
 List folders and notes in a vault directory (app-only).
 
-Called by the SPA browser view via ``app.callServerTool()``.
+Called by the SPA browser view via `app.callServerTool()`.
 Not visible to the LLM.
 
 **Parameters**
@@ -199,7 +199,7 @@ Dict with:
 
   - path (str): Relative path of the note.
   - title (str): Document title.
-  - kind (str): "note" or "attachment".
+  - kind (str): `"note"` or `"attachment"`.
 
 <!-- DOMAIN-EXAMPLE-vault_list-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -211,7 +211,7 @@ Dict with:
 
 Read a note's full content for preview rendering (app-only).
 
-Called by the SPA browser view via ``app.callServerTool()``.
+Called by the SPA browser view via `app.callServerTool()`.
 Not visible to the LLM.
 
 **Parameters**
@@ -236,7 +236,7 @@ or null if the note is not found.
 
 Search the vault (app-only).
 
-Called by the SPA browser search bar via ``app.callServerTool()``.
+Called by the SPA browser search bar via `app.callServerTool()`.
 Not visible to the LLM.
 
 **Parameters**
@@ -251,7 +251,7 @@ Not visible to the LLM.
 
 List of result dicts, each with path (str), title (str),
 snippet (str, first 200 chars of matched chunk), and
-score (float). Returns [{"error": "..."}] on search failure.
+score (float). Returns `[{"error": "..."}]` on search failure.
 
 <!-- DOMAIN-EXAMPLE-vault_search-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
