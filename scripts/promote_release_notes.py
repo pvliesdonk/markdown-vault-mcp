@@ -30,6 +30,11 @@ PATCH_HEADING_RE = re.compile(
 PATCH_HEADING_CANDIDATE_RE = re.compile(
     r"^ {0,3}##[ \t]+v[0-9]+\.[0-9]+\.[0-9]+.*$", re.MULTILINE
 )
+# The front matter a published page opens with (scripts/check_docs_structure.py
+# reads the same block); a canonical page's title is the first line after it.
+FRONT_MATTER_RE = re.compile(
+    r"\A---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL
+)
 ATX_HEADING_RE = re.compile(
     r"^(?P<indent> {0,3})(?P<marks>#{1,6})(?P<suffix>(?:[ \t].*)?)$"
 )
@@ -170,13 +175,29 @@ def _target_summary_count(text: str, tag: str) -> int:
     return 1
 
 
+def front_matter_text(target: Target) -> str:
+    return (
+        "---\n"
+        f'description: "Release notes for the {target.minor} series, '
+        'with the steps to upgrade to it."\n'
+        "kind: how-to\n"
+        "---\n\n"
+    )
+
+
 def new_page_text(next_text: str, target: Target) -> str:
     body = next_text.replace("# Next release", f"# {target.minor}", 1)
     body = body.replace("RELEASE-SUMMARY NEXT", f"RELEASE-SUMMARY {target.tag}")
     return (
-        body.rstrip()
+        front_matter_text(target)
+        + body.rstrip()
         + "\n\n<!-- PATCH-RELEASES-START -->\n<!-- PATCH-RELEASES-END -->\n"
     )
+
+
+def _after_front_matter(text: str) -> str:
+    match = FRONT_MATTER_RE.match(text)
+    return text[match.end() :] if match else text
 
 
 def _new_index_text(index_text: str, target: Target) -> str:
@@ -265,7 +286,7 @@ def shift_headings(text: str, levels: int = 1) -> str:
 def _validate_canonical_page(
     page_text: str, target: Target
 ) -> list[tuple[int, int, int]]:
-    lines = page_text.splitlines()
+    lines = _after_front_matter(page_text).lstrip("\r\n").splitlines()
     title = f"# {target.minor}"
     title_count = sum(line == title for line in lines)
     if not lines or lines[0] != title or title_count != 1:

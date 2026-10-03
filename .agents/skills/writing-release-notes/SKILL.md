@@ -302,9 +302,14 @@ markers each occur exactly once, and the summary is non-empty:
 
     Evidence-linked narrative.
 
-Canonical pages remain one page per minor series. `refresh-known-target` and
-`backfill/redraft` preserve exact `<!-- RELEASE-SUMMARY vX.Y.Z START -->` and
-`END` markers. Patch entries remain inside `<!-- PATCH-RELEASES-START -->` and
+Canonical pages remain one page per minor series. A canonical page opens
+with `description:` and `kind: how-to` front matter, which promotion writes
+on a new page and the docs structure check asks for; its title (`# 3.2`)
+is the first line after it. `next.md` has no front matter. A page promoted
+before this convention may have none: add it, and promotion keeps it.
+`refresh-known-target` and `backfill/redraft` preserve exact
+`<!-- RELEASE-SUMMARY vX.Y.Z START -->` and `END` markers. Patch entries
+remain inside `<!-- PATCH-RELEASES-START -->` and
 `<!-- PATCH-RELEASES-END -->`, oldest first, with undated headings such as
 `## v3.2.1`. Git tags and GitHub releases are the release-date authority.
 

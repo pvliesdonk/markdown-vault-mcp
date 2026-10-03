@@ -183,8 +183,8 @@ produce right now, the same check CI runs on every push.
 ## The OIDC tables became generated too
 
 A later template version turned two more tables into generated regions:
-the OIDC environment-variable tables in `docs/deployment/oidc.md` and
-`docs/guides/authentication.md`. This is a separate hazard from the
+the OIDC environment-variable tables, now in `docs/deploy/oidc.md` and
+`docs/deploy/authentication.md`. This is a separate hazard from the
 four-file migration above and can hit a project that already finished
 that migration, if it adopted the generator before this version and still
 has hand-written OIDC tables in those two files.
@@ -213,7 +213,7 @@ producing the wrong table. It raises a `SystemExit` naming the file and
 the region:
 
 ```text
-ERROR: docs/deployment/oidc.md: region 'OIDC-REQUIRED' is missing its END marker ('<!-- GENERATED-ENV-TABLE-OIDC-REQUIRED-END -->').
+ERROR: docs/deploy/oidc.md: region 'OIDC-REQUIRED' is missing its END marker ('<!-- GENERATED-ENV-TABLE-OIDC-REQUIRED-END -->').
 ```
 
 Recovery: restore the missing marker line around the region so it reads
