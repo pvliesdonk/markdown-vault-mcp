@@ -8,7 +8,11 @@ kind: reference
 # Tools
 
 <!-- DOMAIN-INTRO-START -->
-<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
+Three things hold across these pages:
+
+- A `folder` argument selects that folder and its sub-folders; `""` is the top level, and `Journal`, `Journal/` and `/Journal/` name the same folder.
+- Read tools that query the index report freshness in the response's `_meta.index_stale`. Pass `wait_for_pending_writes=true` to wait for recent writes first.
+- Some tools appear only under a setting: the write tools are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`, `git_sync` needs a git remote, the `okf_*` tools need Open Knowledge Format support on, `summarize` needs a language model, and the transfer-link tools need HTTP with a base URL. The [configuration reference](../configuration.md) has each setting.
 <!-- DOMAIN-INTRO-END -->
 
 Every tool runs with the server's own privileges; the [security model](../../security-model.md) says what that reaches.
@@ -60,7 +64,7 @@ Every tool runs with the server's own privileges; the [security model](../../sec
 | Vault app tools | [`vault_read`](vault_app_tools.md#vault_read) | Vault Read | Read a note's full content for preview rendering (app-only). |
 | Vault app tools | [`vault_search`](vault_app_tools.md#vault_search) | Vault Search | Search the vault (app-only). |
 | Server info | [`get_server_info`](server_info.md#get_server_info) | Server Info | Report the version information of markdown-vault-mcp; returns `server_name`, `server_version`, `core_version`, the MCP protocol revisions supported and the revision and client of this connection, and, when configured, the upstream service's version. |
-| Register | [`create_download_link`](register.md#create_download_link) | Create Download Link | Create a download URL for a file; returns url and `expires_in_s`. |
-| Register | [`create_upload_link`](register.md#create_upload_link) | Create Upload Link | Create an upload URL for a file; returns url and `expires_in_s`. |
-| Register | [`get_job_result`](register.md#get_job_result) | Get Job Result | Get the status of a background job started by a long-running tool on this server; returns status (working, completed or failed) with the result or error once it finishes. |
+| Transfer | [`create_download_link`](transfer.md#create_download_link) | Create Download Link | Create a download URL for a file; returns url and `expires_in_s`. |
+| Transfer | [`create_upload_link`](transfer.md#create_upload_link) | Create Upload Link | Create an upload URL for a file; returns url and `expires_in_s`. |
 | Summarize | [`summarize`](summarize.md#summarize) | Summarize Notes | Summarize notes or folders with a language model; returns one summary that cites its source notes by path, or one summary per note. |
+| Jobs | [`get_job_result`](jobs.md#get_job_result) | Get Job Result | Get the status of a background job started by a long-running tool on this server; returns status (working, completed or failed) with the result or error once it finishes. |

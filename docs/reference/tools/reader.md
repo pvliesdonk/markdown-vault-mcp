@@ -8,11 +8,7 @@ kind: reference
 # Reader
 
 <!-- DOMAIN-INTRO-START -->
-Three things hold across the tool pages:
-
-- A `folder` argument selects that folder and its sub-folders; `""` is the top level, and `Journal`, `Journal/` and `/Journal/` name the same folder.
-- Read tools that query the index report freshness in the response's `_meta.index_stale`. Pass `wait_for_pending_writes=true` to wait for recent writes first.
-- Some tools appear only under a setting: the write tools are hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`, `git_sync` needs a git remote, the `okf_*` tools need Open Knowledge Format support on, `summarize` needs a language model, and the transfer-link tools need HTTP with a base URL. The [configuration reference](../configuration.md) has each setting.
+<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
 <!-- DOMAIN-INTRO-END -->
 
 ## `search`

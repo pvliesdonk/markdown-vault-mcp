@@ -564,7 +564,7 @@ extraPaths = ["src"]
 #   MARKDOWN_VAULT_MCP_BASE_URL = "https://example.invalid"
 # PROJECT-DOCS-CHECKS-START — kept across copier update
 [tool.docs-structure]
-strict = false
+strict = true
 
 # The summarize tool registers only when an OpenAI-compatible endpoint is
 # configured, the transfer-link tools only with a base URL, git_sync only for

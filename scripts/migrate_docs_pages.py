@@ -31,7 +31,9 @@ Template script parks, implementation agent sorts:
   ``mkdocs build --strict`` reports them.  Release notes are published and
   rewritten too; the unpublished history (decision records, designs) and
   fenced code keep their old links. A move whose new page is not rendered
-  for this project (a switched-off page) is not followed.
+  for this project (a switched-off page) is not followed, and neither is
+  one whose old page still exists, as a parked page does (#757): its links
+  name its own anchors.
 - A page without ``DOMAIN-*`` blocks (rewritten by the project, or from a
   template version that predates the block) carries nothing; the note says
   where its text is, since the two cases cannot be told apart here.
@@ -70,7 +72,8 @@ MOVES = (
 )
 # Every page the template's ``redirects`` map in mkdocs.yml serves at a new
 # path: links and nav entries follow these (#745, #746). The pages beyond
-# MOVES carried no DOMAIN blocks, or are the PARKED pages, so only links move.
+# MOVES carried no DOMAIN blocks, or are the PARKED pages, so only links move;
+# a page parked at its old path keeps its links (#757).
 REDIRECTS = (
     *MOVES,
     ("docs/configuration-generator.md", "docs/reference/configuration-generator.md"),
@@ -383,16 +386,18 @@ _FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})", re.MULTILINE)
 
 
 def _moved(root: Path | None = None) -> dict[str, str]:
-    """Docs-relative old -> new for every redirect whose new page exists under *root*.
+    """Docs-relative old -> new for every redirect this project's links should follow.
 
-    Without *root*, every move counts (unit tests); with it, a move whose new
-    page is not rendered for this project (a switched-off page) is left out,
-    so a link to it is not pointed at a page that does not exist.
+    Without *root*, every move counts (unit tests).  With it, two moves are
+    left out: one whose new page is not rendered for this project (a
+    switched-off page), so a link is not pointed at a page that does not
+    exist; and one whose old page still exists (a parked page), whose links
+    name its own anchors and stay on it until the page is emptied (#757).
     """
     return {
         old.removeprefix(DOCS): new.removeprefix(DOCS)
         for old, new in REDIRECTS
-        if root is None or (root / new).exists()
+        if root is None or ((root / new).exists() and not (root / old).exists())
     }
 
 
@@ -517,10 +522,14 @@ def _rewrite_project_links(root: Path, notes: list[str], moved: dict[str, str]) 
 def migrate(root: Path) -> list[str]:
     """Apply the migration under *root*; return the lines to print."""
     notes: list[str] = []
+    for rel in PARKED:
+        _park(root, rel, notes)
     moved = _moved(root)
     for old_rel, new_rel in MOVES:
         _carry(root, old_rel, new_rel, notes, moved)
     _carry_readme(root, notes)
+    # A page _carry parked is an old page that exists again: its links stay.
+    moved = _moved(root)
     mkdocs = root / "mkdocs.yml"
     if mkdocs.exists():
         before = mkdocs.read_text(encoding="utf-8")
@@ -535,8 +544,6 @@ def migrate(root: Path) -> list[str]:
             notes.append("pointed this project's nav entries at the moved pages")
         if renavved != before:
             mkdocs.write_text(renavved, encoding="utf-8")
-    for rel in PARKED:
-        _park(root, rel, notes)
     _rewrite_project_links(root, notes, moved)
     return notes
 
