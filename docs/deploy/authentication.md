@@ -239,27 +239,11 @@ In `oidc-proxy` mode the proxy re-validates the upstream token on every request,
 
 
 <!-- DOMAIN-AUTH-EXTRA-START -->
-## Choosing an OIDC mode
+## This server and authentication
 
-Both modes are supported and neither is going away, but for this server remote mode is the better default. It avoids the session timeout described above: oidc-proxy re-validates the upstream token on every request, so the shortest upstream token lifetime becomes the session lifetime, while remote mode validates locally against JWKS and leaves refresh between the client and the identity provider.
+Which OIDC mode to run follows the rule under [Which mode](oidc.md#which-mode); this server adds no preference of its own. A ready-to-use bearer-token environment is in [`examples/bearer-auth.env`](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/examples/bearer-auth.env).
 
-Reach for oidc-proxy when the provider needs Dynamic Client Registration emulated, or when you want the proxy's session management.
-
-!!! tip "Moving an existing deployment from oidc-proxy to remote"
-    Remove `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID` and `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` from the environment and the server auto-detects remote mode, or set `MARKDOWN_VAULT_MCP_AUTH_MODE=remote` to say so outright. The client credentials stay registered with the provider until you remove them there too.
-
-## Provider guides
-
-For step-by-step setup with specific providers, including the full Authelia configuration:
-
-- [Authelia](../guides/oidc-providers.md#authelia)
-- [Keycloak](../guides/oidc-providers.md#keycloak)
-- [Google](../guides/oidc-providers.md#google)
-- [GitHub (via Keycloak broker)](../guides/oidc-providers.md#github)
-
-A ready-to-use bearer-token environment is in [`examples/bearer-auth.env`](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/examples/bearer-auth.env).
-
-## Bearer subjects and OKF provenance
+### Bearer subjects and OKF provenance
 
 Mapped bearer tokens resolve to subject strings, but for OKF provenance they remain service credentials: writes use the server's tool actor, and confirmed reviews in `elicit` mode use `human:local`. `trust-auth` verification refuses them. See the [OKF guide](../guides/okf.md) for the provenance model.
 <!-- DOMAIN-AUTH-EXTRA-END -->

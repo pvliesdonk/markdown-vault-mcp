@@ -158,5 +158,5 @@ curl -s https://mcp.example.com/.well-known/oauth-protected-resource/myservice/m
 Both must reach this server, and the `resource` field in the JSON must read `https://mcp.example.com/myservice/mcp`. A `resource` naming a different service is the shared-hostname problem above, not an incorrect `BASE_URL`.
 
 <!-- DOMAIN-REVERSE-PROXY-EXTRA-START -->
-<!-- What this server adds behind a proxy (a route it serves outside the mount, a header it needs, an upload size limit to raise); kept across copier update. -->
+This server adds two operational routes, each mounted only when its secret is set: `/github-webhook` and `/gitlab-webhook`, for push-triggered pulls ([Webhooks](../guides/git-integration.md#push-triggered-pull-webhooks)). Route them the way this page routes `/transfer/`; under a path prefix, match the prefix and strip it.
 <!-- DOMAIN-REVERSE-PROXY-EXTRA-END -->

@@ -113,5 +113,20 @@ Then configure and start as above. Python 3.11 or newer with the `venv` module i
 - `systemd-analyze verify /usr/lib/systemd/system/markdown-vault-mcp.service` checks the unit after an edit.
 
 <!-- DOMAIN-SYSTEMD-EXTRA-START -->
-<!-- What this server needs on a package install: data paths to open with ReadWritePaths, the variables that must be set before the first start, services it reaches; kept across copier update. -->
+### Where this server keeps its files
+
+The environment file leaves `MARKDOWN_VAULT_MCP_SOURCE_DIR` commented out. Its default, `/data/vault`, is outside what the unit may write, so set it, and put this server's other files under the state directory too:
+
+```bash
+MARKDOWN_VAULT_MCP_SOURCE_DIR=/var/lib/markdown-vault-mcp/vault
+MARKDOWN_VAULT_MCP_INDEX_PATH=/var/lib/markdown-vault-mcp/index.db
+MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/var/lib/markdown-vault-mcp/embeddings/embeddings
+MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR=/var/lib/markdown-vault-mcp/fastembed
+```
+
+- **The vault must be writable, even read-only.** The server keeps a change-tracking file in the vault's `.markdown_vault_mcp/` folder unless `MARKDOWN_VAULT_MCP_STATE_PATH` points elsewhere. A vault outside the state directory needs its own `ReadWritePaths=` drop-in, as above. `ProtectHome=yes` keeps `/home` from the service. A vault under `/srv`, like the one in the drop-in above, stays clear of it.
+- **Without `INDEX_PATH`** the index lives in memory and is rebuilt at every start.
+- **Without `FASTEMBED_CACHE_DIR`** FastEmbed keeps its model in the temporary directory. The unit's `PrivateTmp=yes` discards that at every stop, so the model downloads again at each start.
+
+For a vault that commits and pushes through the server, an empty `SOURCE_DIR` plus the variables in [Git integration](../guides/git-integration.md#managed-mode-recommended-for-containerized-deployments) is enough: the server clones at the first start.
 <!-- DOMAIN-SYSTEMD-EXTRA-END -->

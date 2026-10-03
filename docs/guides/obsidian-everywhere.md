@@ -86,7 +86,7 @@ This setup gives you one vault, accessible everywhere:
 
 ## Step 4: Server with markdown-vault-mcp
 
-Follow [Docker](docker.md) for deployment details. For this topology, enable git write and server-side pull automation.
+Follow [Docker](../deploy/docker.md) for deployment details. For this topology, enable git write and server-side pull automation.
 
 Current stable pull setting:
 
@@ -104,7 +104,7 @@ MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL=noreply@markdown-vault-mcp
 
 ## Step 5: Protect with Authelia
 
-Use [OIDC Providers](oidc-providers.md#authelia) for provider-specific setup, then [Docker OIDC setup](docker.md#step-4-add-oidc-authentication) for container wiring.
+Use [OIDC Providers](../deploy/oidc-providers.md#authelia) for provider-specific setup, then [OIDC](../deploy/oidc.md) for container wiring.
 
 Target result:
 

@@ -50,5 +50,19 @@ Where the file goes on an upload is fixed when the link is minted; whoever uploa
 A link pasted into a chat or written to a log is a live credential until it is used or expires, since nothing else guards the route. A shorter default lifetime narrows that window; the model can still ask for less with the tool's `ttl_s` argument, never for more than the ceiling.
 
 <!-- DOMAIN-TRANSFER-EXTRA-START -->
-<!-- What a `ref` is for this server (a path, an id), which destinations an upload may name, and any overwrite rule; kept across copier update. -->
+### What a link names on this server
+
+A download link's `ref` is a vault path: a note (`.md`) or an attachment with an allowed extension. A note downloads as its raw Markdown, frontmatter included. With Open Knowledge Format on, `okf-bundle` serves the whole bundle as a zip, and `okf-bundle:<folder>` serves one folder of it.
+
+### Upload destinations
+
+An upload link names a vault path for a note or an allowed attachment. While `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` is on (the default), a link can be minted only for a path that doesn't exist yet. With it off, the upload replaces the file. An uploaded note goes through the normal write path: the index picks it up, and with git on it is committed. A successful upload answers `{"path": ..., "bytes": ...}`. `create_upload_link` is a write tool, so read-only mode hides it.
+
+### Statuses this server adds
+
+| Status | Meaning |
+|---|---|
+| `409` | Also: the destination exists by now, created after the link was minted or by an earlier upload through the same link. Retrying doesn't help. |
+| `410` | The file, or the bundle folder, was removed after the link was minted. |
+| `503` | The vault is shutting down. Retry; the link is kept. |
 <!-- DOMAIN-TRANSFER-EXTRA-END -->

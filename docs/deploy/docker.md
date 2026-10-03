@@ -228,7 +228,17 @@ When the helper is invoked but `debugpy` isn't installed (say, someone sets `DEB
 
 
 <!-- DOMAIN-DOCKER-EXTRA-START -->
-<!-- Project-specific notes for Docker deployment go here; kept across copier
-     update. (E.g. "the /data/uploads volume must be writable by UID Y",
-     "container needs cap_add: SYS_PTRACE for debugging tools".) -->
+### The vault
+
+Set `MARKDOWN_VAULT_MCP_SOURCE_DIR` in `.env` before the first `docker compose up -d`, to the vault's path on the host. This server's `compose.yml` mounts that path at `/data/vault` and tells the server inside to use `/data/vault`. The one variable is a host path to Compose and a container path to the server. While it is unset Compose stops with `Set MARKDOWN_VAULT_MCP_SOURCE_DIR`, and `.env.example` ships it commented out. The files under `examples/` set it to a container path; change it to the host path when you use one of them with Compose.
+
+The write tools are on by default; `MARKDOWN_VAULT_MCP_READ_ONLY=true` makes a search-only server. Read-only still writes one change-tracking file into the vault, under `.markdown_vault_mcp/`, unless `MARKDOWN_VAULT_MCP_STATE_PATH` points elsewhere.
+
+### What `/data/state` holds
+
+This server keeps its search index (`index.db`), its embeddings and the FastEmbed model cache under `/data/state`, beside the server's own state. It writes nothing to `/data/service`. The notes live only in the vault: the index and embeddings under `/data/state` are rebuilt when lost, at the cost of a full reindex.
+
+### Git
+
+The image includes `git` and `git-lfs`. For a vault that commits and pushes the changes made through the server, set the variables in [Git integration](../guides/git-integration.md#managed-mode-recommended-for-containerized-deployments). An empty vault folder plus `MARKDOWN_VAULT_MCP_GIT_REPO_URL` is cloned at the first start.
 <!-- DOMAIN-DOCKER-EXTRA-END -->

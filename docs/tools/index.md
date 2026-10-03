@@ -1257,7 +1257,7 @@ curl -X POST --data-binary @local-diagram.pdf \
 
 ## MCP Apps
 
-These tools power the browser-based vault explorer views. See the [MCP Apps guide](../guides/mcp-apps.md) for details.
+These tools power the browser-based vault explorer views. See the [MCP Apps guide](../deploy/mcp-apps.md) for details.
 
 ### `browse_vault`
 
