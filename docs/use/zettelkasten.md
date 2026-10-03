@@ -374,14 +374,7 @@ Hard problems we keep solving:
 
 ## Using Templates
 
-Templates accelerate note creation. The `fleeting`, `literature`, `permanent`, and `moc` templates are provided in `examples/zettelkasten/templates/`.
-
-**Configure the template folder:**
-
-```bash
-export MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER=/path/to/examples/zettelkasten/templates
-markdown-vault-mcp serve
-```
+Templates accelerate note creation. The `fleeting`, `literature`, `permanent` and `moc` templates are example files in the repository's [`examples/zettelkasten/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/zettelkasten) folder; no install channel ships them. Copy its `templates/` folder into the vault as `_templates/`, the vault folder the template prompt reads by default (`MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER`, vault-relative).
 
 **Use in Claude via the `create_from_template` prompt:**
 
@@ -403,7 +396,7 @@ The prompt calls `list_documents(folder=<templates_folder>)` to enumerate templa
 
 ## Using the Zettelkasten Prompt
 
-The `examples/zettelkasten/prompts/zettelkasten.md` prompt guides you through connecting a note to your vault in five steps:
+The `zettelkasten` prompt, an example file in the same folder (`prompts/zettelkasten.md`), guides you through connecting a note to your vault in five steps:
 
 1. **Read and understand**: extract the central claim
 2. **Survey the neighborhood**: see existing backlinks and similar notes
@@ -411,18 +404,7 @@ The `examples/zettelkasten/prompts/zettelkasten.md` prompt guides you through co
 4. **Suggest links**: present new connections with context
 5. **Check for MOC opportunity**: flag if a new MOC would help
 
-**Configure prompt mounting:**
-
-If your MCP server supports `PROMPTS_FOLDER`:
-
-```bash
-export MARKDOWN_VAULT_MCP_PROMPTS_FOLDER=/path/to/examples/zettelkasten/prompts
-markdown-vault-mcp serve
-```
-
-Then in Claude, the `zettelkasten` prompt is available for use.
-
-**Fire the prompt from Claude.ai's `+` menu.** Once the server is added as a connector on Claude.ai, every MCP prompt (including `zettelkasten`) appears in the compose area's `+` menu. Click `+`, select **connectors**, pick the server, pick the prompt. Claude opens with the invocation scaffolded, so you don't need to remember the arguments. See [How to invoke prompts](../prompts.md#how-to-invoke-prompts) for other clients.
+**Load the prompt:** point `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` at the `prompts/` folder by its absolute path. Keeping that folder outside the vault keeps the prompt file out of search results. The built-in prompts stay available beside it. [Running a prompt](../reference/prompts.md#running-a-prompt) covers how each client offers prompts.
 
 **Use the prompt:**
 
