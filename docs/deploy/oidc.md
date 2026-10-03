@@ -129,11 +129,5 @@ A deployment under a path prefix, and every routing rule it needs, is on [Revers
 
 
 <!-- DOMAIN-OIDC-EXTRA-START -->
-<!-- Project-specific notes for OIDC deployment go here; kept across copier
-     update. (E.g. "Keycloak requires X claim", "Authelia token-cache quirk
-     for /admin paths", "this server's audience claim must include 'mcp'".) -->
-
-## Which mode this server prefers
-
-The Auth Modes table above states what each mode needs. For why remote is the better default here, and how to move an existing oidc-proxy deployment to it, see [Choosing an OIDC mode](authentication.md#choosing-an-oidc-mode).
+The claims this server reads from a token, for git commit authorship, are under [Claims this server reads](oidc-providers.md#claims-this-server-reads).
 <!-- DOMAIN-OIDC-EXTRA-END -->

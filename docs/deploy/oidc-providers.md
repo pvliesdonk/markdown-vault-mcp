@@ -157,5 +157,9 @@ The server is configured against Keycloak exactly as in the [Keycloak](#keycloak
 A failed sign-in names its cause: `invalid_client` is a client ID or secret that does not match the provider's; `redirect_uri_mismatch` is a callback URI that differs from `BASE_URL` + `/auth/callback` in scheme, host, port or path, the prefix included.
 
 <!-- DOMAIN-OIDC-PROVIDERS-EXTRA-START -->
-<!-- What this server needs from a provider beyond the generic setup: a claim it reads, a scope its tools require, a provider it was tested against; kept across copier update. -->
+### Claims this server reads
+
+This server reads claims for one thing: the author of a git commit. With `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` and `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` set (to `name` and `email`, say), a commit made for a signed-in user names that user as its author. The committer stays the server's own identity. In `oidc-proxy` mode the claims come from the provider's ID token, and in `remote` mode from the access token, so the provider must put them in the token that mode reads. A missing claim falls back to the server's identity, with one warning in the log. The scopes that carry these claims (`profile`, `email`) go in `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`.
+
+For Open Knowledge Format provenance, a signed-in user counts as a person; [OKF](../guides/okf.md) explains what that changes.
 <!-- DOMAIN-OIDC-PROVIDERS-EXTRA-END -->

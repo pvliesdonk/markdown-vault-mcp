@@ -72,6 +72,6 @@ Read this page before reporting. A finding that depends on authentication being 
 
 Two more kinds of route answer without an MCP credential. Each checks a credential of its own instead.
 
-- **Transfer links.** `create_upload_link` and `create_download_link` return a `/transfer/...` URL whose token is the credential: whoever holds the URL can use it. A link stops working after its first successful use, or when it expires. `MARKDOWN_VAULT_MCP_TRANSFER_TTL_DEFAULT_S` sets the lifetime (one hour by default), and `MARKDOWN_VAULT_MCP_TRANSFER_TTL_MAX_S` caps what a caller may ask for. The links exist only over HTTP with `MARKDOWN_VAULT_MCP_BASE_URL` set; see [Transfer links](guides/transfer-links.md).
+- **Transfer links.** `create_upload_link` and `create_download_link` return a `/transfer/...` URL whose token is the credential: whoever holds the URL can use it, once, until it expires. They exist only over HTTP with `MARKDOWN_VAULT_MCP_BASE_URL` set; [Transfer links](deploy/transfer-links.md) covers the route, the lifetime and the short grace window after a use.
 - **Git webhooks.** `/github-webhook` and `/gitlab-webhook` exist only when a webhook secret is set. A request must carry a valid signature or token for that secret, and a valid push event makes the server pull and reindex; see [Webhooks](guides/git-integration.md#push-triggered-pull-webhooks).
 <!-- DOMAIN-SECURITY-MODEL-EXTRA-END -->

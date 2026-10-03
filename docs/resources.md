@@ -211,4 +211,4 @@ The 20 most recently modified notes. Each entry is a full `NoteInfo` object with
 
 ## `ui://markdown_vault_mcp/app.html`
 
-Interactive vault explorer delivered as a single self-contained HTML resource. This is an [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) resource; clients that support the MCP Apps protocol render it as an interactive iframe. See the [MCP Apps guide](guides/mcp-apps.md) for details on the four views (Context Card, Graph Explorer, Vault Browser, Note Preview).
+Interactive vault explorer delivered as a single self-contained HTML resource. This is an [MCP Apps](https://modelcontextprotocol.io/specification/2025-06-18/server/apps) resource; clients that support the MCP Apps protocol render it as an interactive iframe. See the [MCP Apps guide](deploy/mcp-apps.md) for details on the four views (Context Card, Graph Explorer, Vault Browser, Note Preview).

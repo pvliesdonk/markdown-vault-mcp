@@ -80,6 +80,12 @@ plugins:
         # PROJECT-REDIRECTS-START — this project's moved pages; kept across copier update
         guides/claude-desktop.md: get-started/claude-desktop.md
         guides/claude-code-plugin.md: get-started/claude-code.md
+        guides/docker.md: deploy/docker.md
+        deployment/index.md: deploy/index.md
+        deployment/systemd.md: deploy/systemd.md
+        guides/oidc-providers.md: deploy/oidc-providers.md
+        guides/mcp-apps.md: deploy/mcp-apps.md
+        guides/transfer-links.md: deploy/transfer-links.md
         # PROJECT-REDIRECTS-END
   # Generates llms.txt + llms-full.txt for the README badge.
   # The sections are filled from `nav:` at build time by
@@ -146,17 +152,12 @@ nav:
       - MCP Apps: deploy/mcp-apps.md
       - Transfer links: deploy/transfer-links.md
       # PROJECT-NAV-DEPLOY-START — this server's deployment additions; kept across copier update
-      - Deployment overview: deployment/index.md
-      - systemd guide: deployment/systemd.md
-      - Docker guide: guides/docker.md
-      - OIDC providers guide: guides/oidc-providers.md
-      - MCP Apps guide: guides/mcp-apps.md
-      - Transfer links guide: guides/transfer-links.md
       # PROJECT-NAV-DEPLOY-END
   - Use:
       - Overview: use/index.md
       # PROJECT-NAV-USE-START — this server's how-tos and explanations (docs/use/); kept across copier update
       - Guides: guides/index.md
+      - Vault explorer: use/vault-explorer.md
       - Git integration: guides/git-integration.md
       - Embeddings: guides/embeddings.md
       - Obsidian everywhere: guides/obsidian-everywhere.md

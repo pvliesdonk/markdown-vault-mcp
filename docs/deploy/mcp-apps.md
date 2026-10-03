@@ -22,5 +22,12 @@ The interface is loaded from the server's own resource, `ui://markdown_vault_mcp
 The app shell is `src/markdown_vault_mcp/static/app.html`, built from `app.src.html` by `scripts/vendor_spa.py`, which embeds the JavaScript libraries the interface needs so the client loads nothing from a content network at run time. The `DOMAIN-APP-RESOURCE` block of `src/markdown_vault_mcp/_server_apps.py` is where the project configures the resource: the content-security policy a client enforces, and the sandbox domain it resolves from `APP_DOMAIN` or `BASE_URL`. Both are a contributor's concern; [Contribute](../contribute/index.md) has the development setup. The shell is rebuilt whenever `app.src.html` changes, and after a template update.
 
 <!-- DOMAIN-MCP-APPS-EXTRA-START -->
-<!-- What this server's app shows and which tool opens it; a view that needs a particular client; kept across copier update. -->
+### This server's interface
+
+`browse_vault` opens the vault explorer, on a note you name or on the folder tree; `show_context` opens it on one note's context card. Both return the same short text summary to every client, and a client that renders MCP Apps also shows the explorer. Its four views are a note's context card, the link graph, the folder browser and a note preview; [Vault explorer](../use/vault-explorer.md) walks through them. `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true` removes both tools.
+
+Two details differ from the description above:
+
+- **The sandbox domain.** With `APP_DOMAIN` unset, this server doesn't use the host of `BASE_URL`. It derives the domain as the first 32 hex characters of `sha256(BASE_URL + HTTP_PATH)`, under `.claudemcpcontent.com`.
+- **Fonts.** The interface loads its web fonts from Google Fonts when it opens, and falls back to system fonts when it can't.
 <!-- DOMAIN-MCP-APPS-EXTRA-END -->
