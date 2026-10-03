@@ -1,3 +1,8 @@
+---
+description: "The git module: commit strategies, history and diffs for a vault under git."
+kind: reference
+---
+
 # Git Integration
 
 The `git` module provides:
@@ -7,7 +12,7 @@ The `git` module provides:
 
 ## Quick Start
 
-```python
+```python { .fragment }
 from pathlib import Path
 from markdown_vault_mcp.git import GitWriteStrategy
 from markdown_vault_mcp.vault import Vault, VaultSettings
@@ -34,7 +39,7 @@ vault.close()
 
 `GitWriteStrategy` no longer accepts `commit_name_claim` or `commit_email_claim`. Remove these constructor arguments. The remaining `git_lfs` and `repo_path` options must now be passed by keyword, so old positional claim arguments cannot silently become LFS or repository settings:
 
-```python
+```python { .fragment }
 strategy = GitWriteStrategy(
     commit_name="vault-service",
     commit_email="vault-service@example.com",

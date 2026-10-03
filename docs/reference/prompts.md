@@ -8,7 +8,9 @@ kind: reference
 # Prompts
 
 <!-- DOMAIN-INTRO-START -->
-<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
+The built-in prompts below come with this server. `summarize`, `summarize-subtree`, `related` and `compare` only read the vault. `research`, `discuss`, `propose-links` and `create_from_template` write to it, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` hides those four.
+
+`MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` adds your own prompts from Markdown files, and a file named after a built-in prompt replaces it. The [PARA](../use/para.md) and [Zettelkasten](../use/zettelkasten.md) pages each come with such a prompt pack.
 <!-- DOMAIN-INTRO-END -->
 
 ## Running a prompt
@@ -27,31 +29,31 @@ Summarize a vault document with structured coverage of main topics and key point
 | `path` | yes | Path of the document. |
 
 <!-- DOMAIN-EXAMPLE-summarize-START -->
-<!-- A worked example for this prompt; kept across regeneration. -->
+`summarize` with `path="Projects/roadmap.md"` covers one note. For a folder or several notes, use [`summarize-subtree`](#summarize-subtree).
 <!-- DOMAIN-EXAMPLE-summarize-END -->
 
 ## `research`
 
-Research a topic and consolidate findings as a new note.
+Search the vault for a topic and save what the best matches say as a new note under Research/.
 
 | Argument | Required | Description |
 |---|---|---|
 | `topic` | yes | The topic to research. |
 
 <!-- DOMAIN-EXAMPLE-research-START -->
-<!-- A worked example for this prompt; kept across regeneration. -->
+`research` with `topic="Product security regulations"` searches this vault only, not the web: hybrid search, or keyword search without embeddings. It reads the three to five best matches and writes `Research/product-security-regulations.md` with `tags: [research]` and a link to each source. It never overwrites: if that path exists it picks another name, and with no matches it writes nothing.
 <!-- DOMAIN-EXAMPLE-research-END -->
 
 ## `discuss`
 
-Review a vault note and propose targeted edits: factual corrections, clarity, structure, and completeness.
+Review a vault note and edit it: factual corrections, clarity, structure and completeness, shown to you first.
 
 | Argument | Required | Description |
 |---|---|---|
 | `path` | yes | Path to the document to analyze. |
 
 <!-- DOMAIN-EXAMPLE-discuss-START -->
-<!-- A worked example for this prompt; kept across regeneration. -->
+`discuss` with `path="Notes/raft.md"` lists the changes it proposes before touching the note, then applies each as a targeted `edit`, never a full rewrite, so the note's frontmatter stays as it is.
 <!-- DOMAIN-EXAMPLE-discuss-END -->
 
 ## `related`
@@ -81,7 +83,7 @@ Compare two vault notes: agreements, contradictions, and unique information in e
 
 ## `propose-links`
 
-Propose new links between closely related notes that aren't connected yet.
+Propose links between closely related notes that aren't connected yet, and add the ones you approve.
 
 | Argument | Required | Description |
 |---|---|---|
@@ -89,7 +91,7 @@ Propose new links between closely related notes that aren't connected yet.
 | `per_note_limit` | no | Max candidates per note to evaluate (default 5). |
 
 <!-- DOMAIN-EXAMPLE-propose-links-START -->
-<!-- A worked example for this prompt; kept across regeneration. -->
+`propose-links` with `scope="1-Projects"` compares each note in that folder with its closest notes. It drops pairs that are already linked or that a folder's conventions rule out, then shows every proposed link as one numbered preview; nothing is written until you approve. Leave `scope` empty for notes changed in the last 30 days, or pass `"all"`. Above 100 notes it asks first. Without [embeddings](../use/embeddings.md) it falls back to keyword matches, which find fewer real connections.
 <!-- DOMAIN-EXAMPLE-propose-links-END -->
 
 ## `create_from_template`
@@ -98,10 +100,10 @@ Create a new note from one of the vault's templates.
 
 | Argument | Required | Description |
 |---|---|---|
-| `template_name` | no | Template to use, such as `"meeting-notes"`; leave empty to choose from the list. |
+| `template_name` | no | Template to use, such as `"meeting-notes.md"`; leave empty to choose from the list. |
 
 <!-- DOMAIN-EXAMPLE-create_from_template-START -->
-<!-- A worked example for this prompt; kept across regeneration. -->
+`create_from_template` with `template_name="meeting.md"` reads `_templates/meeting.md`. It asks for the values it needs and a path for the new note, then writes it. It asks before replacing an existing file. Leave `template_name` empty to choose from the folder's list. `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` moves the templates folder; the [PARA](../use/para.md#using-templates) and [Zettelkasten](../use/zettelkasten.md#using-templates) pages come with template sets.
 <!-- DOMAIN-EXAMPLE-create_from_template-END -->
 
 ## `summarize-subtree`
@@ -114,5 +116,5 @@ Summarize a folder or a set of notes with your own model, in batches that keep n
 | `focus` | no | Optional free-text steer, such as 'extract action items'. Empty produces a general summary. |
 
 <!-- DOMAIN-EXAMPLE-summarize-subtree-START -->
-<!-- A worked example for this prompt; kept across regeneration. -->
+`summarize-subtree` with `paths="Projects/alpha"` and `focus="open decisions"` summarizes the folder with your client's own model, in batches, handing them to subagents where the client has them. It ends by naming the notes it covered, and it only reads. When the operator has set up a summarization backend, the prompt first offers the [`summarize` tool](tools/summarize.md#summarize), which does the same in one call.
 <!-- DOMAIN-EXAMPLE-summarize-subtree-END -->

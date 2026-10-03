@@ -275,13 +275,24 @@ def _mcp_env(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
 
 
-# Optional: literal substitutions ``tests/test_published_examples.py`` applies
-# to a ```` ```python { .run } ```` block before running it, so a published
-# example keeps its placeholder paths and still runs against a fixture::
-#
-#     @pytest.fixture
-#     def docs_example_substitutions(tmp_path: Path) -> dict[str, str]:
-#         return {"/path/to/data": str(tmp_path)}
+@pytest.fixture
+def docs_example_substitutions(tmp_path: Path) -> dict[str, str]:
+    """Placeholder paths in the published ``.run`` blocks, mapped to a small vault.
+
+    ``tests/test_published_examples.py`` swaps these into each block before
+    running it, so the API Quick Starts run as published and find a note.
+    """
+    vault = tmp_path / "vault"
+    (vault / "Journal").mkdir(parents=True)
+    (vault / "Journal" / "note.md").write_text(
+        "# Note\n\nSome query text to find, linking [[other]].\n",
+        encoding="utf-8",
+    )
+    (vault / "other.md").write_text("# Other\n\nLinks back.\n", encoding="utf-8")
+    return {
+        "/path/to/vault": str(vault),
+        "/path/to/index.db": str(tmp_path / "index.db"),
+    }
 
 
 @pytest.fixture

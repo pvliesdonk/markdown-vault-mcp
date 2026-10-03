@@ -1,3 +1,8 @@
+---
+description: "The configuration module: loading settings from environment variables into typed dataclasses."
+kind: reference
+---
+
 # Configuration
 
 The `config` module loads configuration from environment variables and provides a typed dataclass for all settings.
@@ -6,7 +11,7 @@ The `config` module loads configuration from environment variables and provides 
 
 `to_vault_settings` maps a loaded configuration onto a `VaultSettings`, and `to_vault_instances` resolves the constructed collaborators (embedding provider, summarizer, git strategy). Together they feed `Vault` construction:
 
-```python
+```python { .fragment }
 import os
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections._assembly import (
@@ -35,7 +40,7 @@ vault = Vault(
 
 For overrides formerly applied to the keyword dictionary, use `dataclasses.replace` on the settings before constructing the vault:
 
-```python
+```python { .fragment }
 from dataclasses import replace
 from pathlib import Path
 

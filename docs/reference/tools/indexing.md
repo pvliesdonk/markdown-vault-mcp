@@ -25,7 +25,10 @@ None.
 
 Dict with the following fields:
 
-- available (bool): True if semantic search can be used in 'search'.
+- available (bool): True when an embedding provider and a vector
+  index path are configured, even before the first build finishes.
+  It does not say the embeddings are complete; `get_index_status`
+  does.
 - provider (str | None): Provider class name when configured
   (such as `"OllamaProvider"`), or null if not configured.
 - `chunk_count` (int): Number of chunks currently in the vector index.
@@ -59,8 +62,21 @@ Dict with the following fields:
   read; the SQLite error message when the document count
   could not be read (such as a locked or closed database), in
   which case `documents_indexed` is `0`.
-- error (str | None): `None` unless the background build
-  raised.
+- error (str | None): The message of the last background build
+  that failed, or `None`. It can stay set while status is
+  `"queryable"`, until the next successful build clears it, and is
+  always `None` while status is `"building"`.
+- `last_reindex_error` (str | None): The message of the last
+  reindex that failed, or `None` once a reindex succeeds.
+- `last_build_embeddings_error` (str | None): The message of the last
+  embeddings build that failed, or `None` once one succeeds.
+- `queue_depth` (int): Jobs waiting for the index writer.
+- `in_flight` (str | None): The kind of job the index writer is
+  running, such as `"process_dirty_paths"`, or `None` when idle.
+- `dirty_paths` (int): Changed notes not yet refreshed in the index.
+- `dirty_embeddings` (int): Changed notes not yet re-embedded.
+- `write_generation` (int): A counter that rises each time the index
+  writer finishes a job.
 - `skipped_files` (list[dict]): Files dropped from the index for a
   surfaced deterministic reason. Each entry is
   `{"path", "category", "detail"}` where `category` is one of
@@ -71,6 +87,10 @@ Dict with the following fields:
   Distinguishes a parse-dropped note from an unsynced one without
   reading container logs. Exclude-pattern and transient-I/O skips
   are intentionally not listed.
+
+The index, and the embeddings when semantic search is configured,
+have caught up once status is `"queryable"`, `queue_depth` is 0,
+`in_flight` is `None`, and `dirty_paths` and `dirty_embeddings` are both 0.
 
 <!-- DOMAIN-EXAMPLE-get_index_status-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -112,11 +132,15 @@ the reindex counts:
 - `full_rebuild` (bool): True when force=True re-parsed everything.
 
 When promoted, a dict with `"status": "working"`, a `job_id`,
-and a `poll_with` field naming `get_job_result`.
+and a `poll_with` field naming `get_job_result`. A failure after
+promotion is reported through `get_job_result` and mirrored in
+`get_index_status`'s `last_reindex_error`.
 
 **Outcomes and errors**
 
-- IndexUnavailableError: If the index is not queryable (cold-start build pending/failed, or a SQLite failure remapped by the `needs_queryable` layer). Any other failure within the soft deadline re-raises the writer job's own exception; a failure after promotion is reported through `get_job_result` instead (and mirrored in `get_index_status`'s `last_reindex_error`). If the per-subject job cap is hit at promotion time, the call fails with a job-limit error and the queued reindex is cancelled; retry after fetching pending job results.
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
+- ToolError: If the caller's job limit is reached when the call is promoted to a background job; the queued reindex is cancelled, so fetch pending job results and retry.
 
 <!-- DOMAIN-EXAMPLE-reindex-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -130,7 +154,8 @@ Bring the vector index behind semantic and hybrid search up to date with the
 notes; returns the number of chunks embedded.
 
 Embeddings are built automatically, so it is needed only after reindex with
-force, or with force to rebuild them all.
+force, after a failed build (`last_build_embeddings_error` in
+`get_index_status`), or with force to rebuild them all.
 
 **Parameters**
 
@@ -143,12 +168,16 @@ force, or with force to rebuild them all.
 On inline completion, a dict with `"status": "completed"` and
 `chunks_embedded` (int): the total number of chunks embedded.
 When promoted, a dict with `"status": "working"`, a `job_id`,
-and a `poll_with` field naming `get_job_result`.
+and a `poll_with` field naming `get_job_result`. A failure after
+promotion is reported through `get_job_result` and mirrored in
+`get_index_status`'s `last_build_embeddings_error`.
 
 **Outcomes and errors**
 
-- IndexUnavailableError: If the index is not queryable (cold-start build pending/failed, or a SQLite failure remapped by the `needs_queryable` layer).
-- EmbeddingsNotConfiguredError: If no embedding provider is configured; this now surfaces immediately instead of landing only in `get_index_status`. Any other failure within the soft deadline re-raises the writer job's own exception; a failure after promotion is reported through `get_job_result` instead (and mirrored in `last_build_embeddings_error`). If the per-subject job cap is hit at promotion time, the call fails with a job-limit error and the queued build is cancelled; retry after fetching pending job results.
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
+- ToolError: If the caller's job limit is reached when the call is promoted to a background job; the queued build is cancelled, so fetch pending job results and retry.
+- EmbeddingsNotConfiguredError: If no embedding provider is configured.
 
 <!-- DOMAIN-EXAMPLE-build_embeddings-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

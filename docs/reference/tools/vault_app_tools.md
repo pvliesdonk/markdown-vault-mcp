@@ -35,7 +35,11 @@ It shows the vault to the user and returns nothing to read; use search, read,
 - summary (str): Text summary of vault or note state for non-Apps clients.
 
 <!-- DOMAIN-EXAMPLE-browse_vault-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"path": "Journal/2024-01-15.md", "view": "graph"}
+```
+
+opens the explorer showing the link graph around that note. [Vault explorer](../../use/vault-explorer.md) walks through the views.
 <!-- DOMAIN-EXAMPLE-browse_vault-END -->
 
 ## `vault_context`

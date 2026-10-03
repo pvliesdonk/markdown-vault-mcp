@@ -1,8 +1,13 @@
+---
+description: "The data types the Vault API returns."
+kind: reference
+---
+
 # Types
 
 All data types returned by the `Vault` API are importable from the `markdown_vault_mcp.types` module.
 
-```python
+```python { .fragment }
 from markdown_vault_mcp.types import NoteContent, GroupedResult, SectionHit, NoteContext
 ```
 
@@ -86,7 +91,7 @@ from markdown_vault_mcp.types import NoteContent, GroupedResult, SectionHit, Not
 
 Type alias for the kind of write operation reported to callbacks. `WriteCallback` and the `op` argument below both reference it.
 
-```python
+```python { .fragment }
 WriteOperation = Literal["write", "edit", "delete", "rename"]
 ```
 
@@ -94,7 +99,7 @@ WriteOperation = Literal["write", "edit", "delete", "rename"]
 
 Type alias for the `on_write` callback passed to `Vault`. Called after each successful write operation.
 
-```python
+```python { .fragment }
 WriteCallback = Callable[[Path, str, WriteOperation], None]
 ```
 

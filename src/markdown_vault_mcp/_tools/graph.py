@@ -79,13 +79,11 @@ def register(mcp: FastMCP) -> None:
             read window, or non-idle at response time), False when the data
             is current as of response time.
 
-        Combine with `get_similar` to find connection gaps: notes that are
-        semantically close to the target but not yet linked. Respect folder
-        conventions (see 'get_conventions') before proposing such links;
-        some folders are self-contained by design.
-
         Raises:
             ValueError: If no document exists at the given path.
+            ToolError: If the index is busy or still building; retry shortly.
+            IndexUnavailableError: If the index build failed or the index is broken;
+                get_index_status reports the error.
         """
         drained = await _maybe_wait_for_drain(
             vault, wait_for_pending_writes, "get_backlinks"
@@ -149,6 +147,8 @@ def register(mcp: FastMCP) -> None:
             - raw_target (str): Literal link target as written in the source.
             - exists (bool): True if the target document is indexed.
 
+            A reference to an attachment is not a link, so it is not listed.
+
             Index freshness is reported out-of-band in the response's
             `_meta.index_stale` field: True when the IndexWriter had
             pending or in-flight work at any of three observation points
@@ -156,13 +156,11 @@ def register(mcp: FastMCP) -> None:
             read window, or non-idle at response time), False when the data
             is current as of response time.
 
-        Combine with `get_similar` to find connection gaps: notes the
-        source is semantically close to but hasn't linked yet. Respect folder
-        conventions (see 'get_conventions') before proposing such links;
-        some folders are self-contained by design.
-
         Raises:
             ValueError: If no document exists at the given path.
+            ToolError: If the index is busy or still building; retry shortly.
+            IndexUnavailableError: If the index build failed or the index is broken;
+                get_index_status reports the error.
         """
         drained = await _maybe_wait_for_drain(
             vault, wait_for_pending_writes, "get_outlinks"
@@ -196,11 +194,11 @@ def register(mcp: FastMCP) -> None:
         that holds it.
 
         stats reports broken_link_count; a rename without update_links leaves such links
-        behind.
+        behind. Links to attachments are not checked.
 
         Args:
-            folder: Only links in notes in this folder, such as `"Journal"`; `""` for top-level
-                notes; omit for the whole vault.
+            folder: Only links in notes in this folder and its sub-folders, such as
+                `"Journal"`; `""` for top-level notes only; omit for the whole vault.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -284,6 +282,11 @@ def register(mcp: FastMCP) -> None:
             - frontmatter (dict): Parsed YAML frontmatter.
             - modified_at (float): Unix timestamp of last modification.
             - kind (str): Always `"note"`.
+            - content_chars (int): body length in characters, frontmatter
+              excluded; 0 for a note indexed before the field existed.
+
+            A reference to an attachment is not a link, so a note whose only
+            links are to attachments is an orphan.
 
             Index freshness rides in the response's `_meta.index_stale`
             field: True when the IndexWriter was non-idle, a write completed
@@ -338,9 +341,9 @@ def register(mcp: FastMCP) -> None:
                 longer.
 
         Returns:
-            List of dicts with path (str), title (str), and backlink_count (int:
-            number of distinct source documents linking to this note), ordered
-            by backlink_count descending.
+            List of dicts with path (str), title (str), folder (str), and
+            backlink_count (int: number of distinct source documents linking to
+            this note), ordered by backlink_count descending.
 
             Index freshness rides in the response's `_meta.index_stale`
             field: True when the IndexWriter was non-idle, a write completed
@@ -412,6 +415,12 @@ def register(mcp: FastMCP) -> None:
             pending or in-flight work at any of three observation points
             (`wait_for_pending_writes` timing out, a write completing inside the
             read window, or non-idle at response time), False otherwise.
+
+        Raises:
+            DocumentNotFoundError: If either note does not exist.
+            ToolError: If the index is busy or still building; retry shortly.
+            IndexUnavailableError: If the index build failed or the index is broken;
+                get_index_status reports the error.
         """
         drained = await _maybe_wait_for_drain(
             vault, wait_for_pending_writes, "get_connection_path"

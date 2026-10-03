@@ -8,7 +8,7 @@ kind: reference
 # Command line
 
 <!-- DOMAIN-INTRO-START -->
-<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
+`serve` runs the server. `index`, `search` and `reindex` work on the vault and its index directly and need no running server. They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `index` and `reindex` also bring the embeddings up to date when an [embedding provider](../use/embeddings.md) is configured. Without an index path, `search` returns nothing ([#1691](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1691)); set `MARKDOWN_VAULT_MCP_INDEX_PATH` and run `index` first.
 <!-- DOMAIN-INTRO-END -->
 
 Generic markdown vault MCP with hybrid search

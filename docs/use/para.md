@@ -173,9 +173,9 @@ PARA's biggest friction with LLM clients is that not every folder wants the
 same authoring behavior: a Resource note about a regulation should stay
 self-contained and timeless, while the LLM's instinct is to weave in your
 current projects ("this relates to yesterday's slide deck…"). Per-folder
-[convention files](../tools/index.md#get_conventions) fix this: drop a
+[convention files](../reference/tools/reader.md#get_conventions) fix this: drop a
 `_conventions.md` into a folder and the server surfaces it to the client at
-write time (in `write`/`edit` results and via the `get_conventions` tool).
+write time (in the results of `write`, `edit`, `append` and `fetch`, and through the `get_conventions` tool).
 The files are excluded from search results but stay readable.
 
 Two example files that encode PARA's linking directionality:
@@ -517,9 +517,9 @@ The [`examples/para/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/mai
 ## Next Steps
 
 - **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/docs/design/design.md)
-- **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
+- **Explore the MCP tools** to understand the full API: [tools reference](../reference/tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/para/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/para/)
 - **Run this vault as an OKF bundle?** See the [OKF guide](okf.md) and the [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) pack
 - **Prefer idea-centric knowledge management?** See the alternative workflow: [Zettelkasten](zettelkasten.md)
-- **Ambient patterns**: [`docs/prompts.md`](../prompts.md#ambient-patterns-without-prompts) (flows the LLM handles from prose alone: URL capture, research, ad-hoc link proposal)
+- **Ambient patterns**: [What you can do with it](../index.md#what-you-can-do-with-it) (flows the LLM handles from prose alone: URL capture, research, ad-hoc link proposal)
 - **Research workflows**: [research-workflows.md](research-workflows.md) (literature grounding, fact-checking, and writing papers from notes)
