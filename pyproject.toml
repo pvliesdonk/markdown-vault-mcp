@@ -562,4 +562,10 @@ extraPaths = ["src"]
 # PROJECT-DOCS-CHECKS-START — kept across copier update
 [tool.docs-structure]
 strict = false
+
+# The summarize tool registers only when an OpenAI-compatible endpoint is
+# configured; set one so the generated reference documents it in every
+# environment, CI included.
+[tool.docs-reference]
+env = { MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL = "https://example.invalid/v1" }
 # PROJECT-DOCS-CHECKS-END
