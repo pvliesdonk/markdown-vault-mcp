@@ -1,9 +1,9 @@
-"""Published documentation examples do what their text says (#1660-#1663).
+"""Published reference examples match what the tools return (#1662, #1663).
 
-A reader copies these blocks as written, so each is checked against its claim:
-the Python API Quick Starts must run against a real vault and return what they
-print. Configuration examples carry a ``.config`` tag instead, which
-``tests/test_published_examples.py`` checks.
+The `read` worked example on the generated reader page names every key the
+tool returns, and `get_index_status`'s Returns list names every key it
+returns. Runnable Python examples and configuration examples carry `.run`
+and `.config` tags instead, which `tests/test_published_examples.py` checks.
 """
 
 from __future__ import annotations
