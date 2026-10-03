@@ -16,8 +16,12 @@ the wire drops.
 
 The script is template-owned and byte-identical in every project: it reads
 ``python_module`` and ``project_name`` from ``.copier-answers.yml`` and
-imports ``<module>.server.make_server`` and ``<module>.cli.app``.  Variables
-a project's ``from_env`` requires come from ``[tool.docs-reference] env`` in
+imports ``<module>.server.make_server`` and ``<module>.cli.app``.  The server
+is built for the ``http`` transport, the widest surface: a component a
+project registers for HTTP alone, such as the transfer-link tools, is
+documented too (#749).  Variables a project's ``from_env`` requires, and
+what its HTTP-only wiring needs at build time (a transfer project's
+``<PREFIX>_BASE_URL``), come from ``[tool.docs-reference] env`` in
 ``pyproject.toml``.
 
 Usage::
@@ -47,7 +51,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
 
     import typer
     from fastmcp import FastMCP
@@ -425,9 +429,47 @@ def _cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
-# Stretches _prose never touches: code spans and Markdown links.
-_LITERAL = re.compile(r"`[^`]*`|\[[^\]]*\]\([^)]*\)")
-_IDENTIFIER = re.compile(r"\b[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+\b")
+# Stretches _prose never touches: code spans and Markdown links.  A code span
+# is CommonMark's: a run of backticks closed by the next run of the same
+# length, so an RST-style ``double`` span is one span, not two empty ones (#747).
+_OPENER = re.compile(r"[`\[]")
+_RUN = re.compile(r"`+")
+# Link text holds no bracket and the target no parenthesis, so a failed match
+# stops at the next opener and the scan stays linear.
+_LINK = re.compile(r"\[[^\[\]]*\]\([^()]*\)")
+# Not next to a backtick: an unclosed run is literal text, and wrapping the
+# word beside it would lengthen the run into a different one.
+_IDENTIFIER = re.compile(r"(?<!`)\b[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+\b(?!`)")
+
+
+def _literals(text: str) -> Iterator[tuple[int, int]]:
+    """Yield ``(start, end)`` of each code span and link, left to right.
+
+    Whichever starts first wins, as in CommonMark.  A backtick run with no
+    closing run of its length is literal text.  Linear in ``len(text)``:
+    every run's closer is looked up, not searched for.
+    """
+    runs = [(m.start(), m.end()) for m in _RUN.finditer(text)]
+    closer: dict[int, int] = {}  # run start -> end of the next run as long
+    later: dict[int, int] = {}  # run length -> end of the nearest later run
+    for start, end in reversed(runs):
+        if end - start in later:
+            closer[start] = later[end - start]
+        later[end - start] = end
+    run_end = dict(runs)
+    position = 0
+    while opener := _OPENER.search(text, position):
+        start = opener.start()
+        if text[start] == "[":
+            link = _LINK.match(text, start)
+            position = link.end() if link else start + 1
+            if link:
+                yield start, link.end()
+        elif start in closer:
+            position = closer[start]
+            yield start, position
+        else:
+            position = run_end.get(start, start + 1)
 
 
 def _prose(text: str) -> str:
@@ -437,14 +479,18 @@ def _prose(text: str) -> str:
     spell-checks prose and leaves identifiers alone. Existing code spans and
     links are left as they are.
     """
-    parts = _LITERAL.split(text)
-    literals = _LITERAL.findall(text)
     out = []
-    for index, part in enumerate(parts):
-        out.append(_IDENTIFIER.sub(lambda m: f"`{m.group(0)}`", part))
-        if index < len(literals):
-            out.append(literals[index])
+    position = 0
+    for start, end in _literals(text):
+        out.append(_code_identifiers(text[position:start]))
+        out.append(text[start:end])
+        position = end
+    out.append(_code_identifiers(text[position:]))
     return "".join(out)
+
+
+def _code_identifiers(prose: str) -> str:
+    return _IDENTIFIER.sub(lambda m: f"`{m.group(0)}`", prose)
 
 
 def _default_cell(default: str) -> str:
@@ -827,11 +873,11 @@ def _build(root: Path) -> Reference:
     # The server's own startup and request logs are noise here; errors still show.
     logging.disable(logging.WARNING)
     try:
-        server = server_mod.make_server()
+        server = server_mod.make_server(transport="http")
     except Exception as exc:
         raise BuildError(
-            f"make_server() failed: {exc}. A required variable goes under "
-            "[tool.docs-reference] env in pyproject.toml."
+            f'make_server(transport="http") failed: {exc}. A required variable '
+            "goes under [tool.docs-reference] env in pyproject.toml."
         ) from exc
     try:
         return collect(server, cli_mod.app, project_name)

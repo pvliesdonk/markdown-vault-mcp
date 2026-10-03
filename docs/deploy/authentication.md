@@ -188,7 +188,7 @@ Authentication only works with HTTP transport. If you're using `--transport stdi
 
 **Root cause:** this is almost always a token lifetime issue, not a server bug. Check three things:
 
-1. **id_token lifetime** (most common): When using `verify_id_token` mode (the default for Authelia), the server re-validates the upstream `id_token` on every request. If your provider's `id_token` lifetime is shorter than the `access_token` lifetime, the session dies at the `id_token` expiry, even though the access token is still valid. Authelia defaults `id_token` to 1 hour. **Fix: set `id_token` lifetime to match `access_token`** in your provider config.
+1. **id_token lifetime** (most common): In `oidc-proxy` mode the server verifies the upstream `id_token` by default (unless `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` is `true`), and re-validates it on every request. If your provider's `id_token` lifetime is shorter than the `access_token` lifetime, the session dies at the `id_token` expiry, even though the access token is still valid. Authelia defaults `id_token` to 1 hour. **Fix: set `id_token` lifetime to match `access_token`** in your provider config.
 
 2. **access_token lifetime**: If both `id_token` and `access_token` are set correctly but sessions still drop, check that the provider's `expires_in` response matches your configured lifetime.
 
@@ -198,7 +198,7 @@ Authentication only works with HTTP transport. If you're using `--transport stdi
 
 ### Opaque access tokens (Authelia)
 
-Authelia issues opaque (non-JWT) access tokens. This is handled automatically: the server verifies the `id_token` instead. No extra configuration needed.
+Authelia issues opaque (non-JWT) access tokens unless the client sets `access_token_signed_response_alg`. In `oidc-proxy` mode this needs no configuration: the server verifies the `id_token` instead. In `remote` mode the server validates the access token as a signed JWT, so it refuses an opaque one; use `oidc-proxy`, or have Authelia sign the client's access tokens. [Which mode](oidc.md#which-mode) has the rule.
 
 ---
 
@@ -228,7 +228,7 @@ In `oidc-proxy` mode the proxy re-validates the upstream token on every request,
 **Long token lifetimes** are the dependable setting for OIDC. Set all three lifetimes (access, id, refresh) to cover your typical session duration:
 
 - `access_token: '8h'`: covers a workday
-- `id_token: '8h'`: **must match access_token** when using `verify_id_token` mode (critical for Authelia)
+- `id_token: '8h'`: **must match access_token** in `oidc-proxy` mode, which verifies the `id_token` by default (critical for Authelia)
 - `refresh_token: '30d'`: for the clients that refresh
 - Permit `offline_access` for the registered client; the server advertises it by default, so a client that honours the advertised scopes requests it. Where the client may not hold that scope, narrow what the server advertises with `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES` rather than letting the authorization request fail
 
