@@ -8,7 +8,9 @@ kind: reference
 # Writer
 
 <!-- DOMAIN-INTRO-START -->
-<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
+Every tool on this page changes the vault, so a server with `MARKDOWN_VAULT_MCP_READ_ONLY=true` lists none of them; the [security model](../../security-model.md) says what they reach. The `okf_*` tools also need Open Knowledge Format support on, and `okf_verify` needs OKF writes on.
+
+A write saves the file and queues the index update. A following `read` sees the new file, while search and graph reads may lag behind until the index catches up: pass `wait_for_pending_writes=true` on the read tools that take it, and check `_meta.index_stale`. No `reindex` is needed.
 <!-- DOMAIN-INTRO-END -->
 
 ## `write`
@@ -34,24 +36,24 @@ created as needed.
 **Returns**
 
 Dict with path (str) and created (bool: true if new file,
-    false if overwrite). On a git-backed vault, an overwrite also
-    carries '`previous_revision`': the commit holding the content this
-    write just replaced. Read it back with
-    read(path, revision=<that sha>), then write it again with `if_match`
-    set to the etag from a plain read(path). The key is absent when no
-    commit provably holds the replaced content: a create, no git, or
-    content that was never committed (which git cannot recover at all).
-    For .md files, may include 'conventions':
-    the user's authoring conventions for the target folder
-    (root-first list of {folder, path, content}). When present,
-    verify the note you just wrote complies, such as with self-containment
-    or linking-direction rules, and issue a follow-up 'edit' if it
-    does not. To check conventions *before* writing, call
-    '`get_conventions`(path)'.
+false if overwrite). On a git-backed vault, an overwrite also
+carries '`previous_revision`': the commit holding the content this
+write just replaced. Read it back with
+read(path, revision=<that sha>), then write it again with `if_match`
+set to the etag from a plain read(path). The key is absent when no
+commit provably holds the replaced content: a create, no git, or
+content that was never committed (which git cannot recover at all).
+For .md files, may include 'conventions':
+the user's authoring conventions for the target folder
+(root-first list of {folder, path, content}). When present,
+verify the note you just wrote complies, such as with self-containment
+or linking-direction rules, and issue a follow-up 'edit' if it
+does not. To check conventions *before* writing, call
+'`get_conventions`(path)'.
 
-Supports split (write several new notes from one source) and merge
-(extend an existing note with content from another) when composed with
-`read` and `delete`.
+- remote (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
 
 **Outcomes and errors**
 
@@ -93,11 +95,14 @@ whitespace is used and reported as `match_type` `"normalized"`.
   conventions for the note's folder (root-first list of
   {folder, path, content}). When present, verify the edited
   note complies and issue a follow-up 'edit' if it does not.
+- **remote** (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
 
 **Outcomes and errors**
 
 - ValueError: If parameter combination is invalid, or line numbers are out of range.
-- EditConflictError: If `old_text` is not found or appears more than once.
+- EditConflictError: If `old_text` is not found or appears more than once; a not-found error may name the closest line and the first differing character.
 - DocumentNotFoundError: If no file exists at the given path.
 - `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
 
@@ -133,6 +138,9 @@ a paragraph or section.
   conventions for the note's folder (root-first list of
   {folder, path, content}). When present, verify the appended
   content complies and issue a follow-up 'edit' if it does not.
+- **remote** (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
 
 **Outcomes and errors**
 
@@ -161,8 +169,9 @@ Permanently delete a note or attachment; only git history can bring it back.
 
 Dict with path (str) of the deleted file.
 
-Typically called after a split or merge to remove the source note once
-its content has been relocated.
+- remote (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
 
 **Outcomes and errors**
 
@@ -198,12 +207,18 @@ counting the number of source documents whose links were updated.
 Carries hint (str) only when `update_links` was requested for an
 attachment, saying why nothing was rewritten.
 
+- remote (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
+
 **Outcomes and errors**
 
 - DocumentNotFoundError: If `old_path` does not exist.
 - DocumentExistsError: If `new_path` already exists.
 - ValueError: If the path fails traversal validation.
 - `MCPError`: If `if_match` is provided and the file has been modified (ConcurrentModificationError).
+- TimeoutError: With `update_links` on a note, if writes queued before the call have not reached the index within 60 seconds; nothing is changed.
+- IndexUnavailableError: With `update_links` on a note, if the index build failed; nothing is changed.
 
 <!-- DOMAIN-EXAMPLE-rename-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -216,7 +231,7 @@ attachment, saying why nothing was rewritten.
 Move a folder and everything under it to a new location, rewriting every link
 into it across the vault: rename for a whole folder.
 
-Links that could not be rewritten are listed in `failed_links`.
+Notes whose links could not be rewritten are listed in `failed_links`.
 
 **Parameters**
 
@@ -227,14 +242,23 @@ Links that could not be rewritten are listed in `failed_links`.
 
 **Returns**
 
-Dict with `old_dir` (str), `new_dir` (str), `files_moved` (int),
-`updated_links` (int), and `failed_links` (list[str]).
+Dict with `old_dir` (str), `new_dir` (str), `files_moved` (int) and
+`updated_links` (int), plus:
+
+- `failed_links` (list[str]): paths of notes whose links could not be
+  rewritten; the move itself stands.
+- remote (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
 
 **Outcomes and errors**
 
 - DocumentNotFoundError: If no non-empty folder exists at `old_dir`.
-- DocumentExistsError: If any destination file already exists.
+- DocumentExistsError: If any destination file already exists; nothing is moved.
 - ValueError: If a path fails traversal validation or the two paths are nested.
+- ToolError: If a file error on the server interrupts the move, so some files may already be under `new_dir`; call reindex so search matches the files.
+- TimeoutError: If writes queued before the call have not reached the index within 60 seconds; nothing is changed.
+- IndexUnavailableError: If the index build failed; nothing is changed.
 
 <!-- DOMAIN-EXAMPLE-move_folder-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -263,33 +287,39 @@ then pass the path to other tools.
 **Returns**
 
 Dict with:
-    - path (str): vault path of the written file
-    - created (bool): true if new file, false if overwrite
-    - `content_length` (int): bytes downloaded
-    - `content_type` (str or null): Content-Type from the response
-    - `final_url` (str): the URL the bytes actually came from: equal
-      to `url` when nothing redirected, otherwise the last hop.
-      A user name or password in the URL is stripped; the query string is not, so do not log
-      it verbatim
-    - conventions (list, optional; .md only): the user's authoring
-      conventions for the target folder (root-first list of
-      {folder, path, content}). When present, verify the saved note
-      complies and issue a follow-up 'edit' if it does not.
 
-Primary building block for URL-to-note capture flows: call `fetch` to
-retrieve the source, summarize via the LLM, and `write` the result
-as a new note.
+- path (str): vault path of the written file
+- created (bool): true if new file, false if overwrite
+- `content_length` (int): bytes downloaded
+- `content_type` (str or null): Content-Type from the response
+- `final_url` (str): the URL the bytes actually came from: equal
+  to `url` when nothing redirected, otherwise the last hop.
+  A user name or password in the URL is stripped; the query string is not, so do not log
+  it verbatim
+- conventions (list, optional; .md only): the user's authoring
+  conventions for the target folder (root-first list of
+  {folder, path, content}). When present, verify the saved note
+  complies and issue a follow-up 'edit' if it does not.
+- remote (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
 
 **Outcomes and errors**
 
 - DocumentExistsError: If the server runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and *path* already exists while no *`if_match`* is supplied. The save routes through the same guarded `write` / `write_attachment` path as the write tools, so read the existing note first and pass its etag as *`if_match`* to replace it deliberately, or fetch to a fresh path.
-- InvalidRequestError: If the URL scheme is not http/https, the host is blocked or cannot be resolved (on the supplied URL or on any redirect hop), the download exceeds the size limit, or the response cannot be decoded.
+- InvalidRequestError: If the URL scheme is not http/https, the host is not publicly routable (private, loopback, link-local, carrier-grade NAT and reserved ranges are refused) or cannot be resolved, checked on the supplied URL and on every redirect hop, the download exceeds the size limit, or the response cannot be decoded.
 - ToolError: If the remote site answers a non-2xx status (retry later for a 5xx, check the URL otherwise; the message never names the URL) or redirects more times than the client allows.
 - `httpx.HTTPStatusError`: On a 429; `tool_boundary` turns it into a `"retry later"` answer.
 - `httpx.TransportError`: On a timeout or a failed connection; it propagates to `tool_boundary`.
 
 <!-- DOMAIN-EXAMPLE-fetch-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+`fetch(url="https://example.com/report", path="notes/report.md")` returns
+
+```json
+{"path": "notes/report.md", "created": true, "content_length": 4096, "content_type": "text/markdown", "final_url": "https://example.com/report.md"}
+```
+
+`final_url` differs from `url` because the site redirected.
 <!-- DOMAIN-EXAMPLE-fetch-END -->
 
 ## `okf_convert_links`
@@ -310,19 +340,49 @@ changes nothing already converted.
 
 **Returns**
 
-Dict with `files_changed`, `links_converted`, `links_skipped`, and
-`notes_scanned`.
+Dict with:
+
+- `files_changed` (int): notes rewritten.
+- `links_converted` (int): wikilinks turned into Markdown links.
+- `links_skipped` (int): wikilinks left as they are because the target
+  is not in the vault.
+- `notes_scanned` (int): notes examined.
+- remote (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
+
+An attachment embed such as `![[pic.png]]` is not a link, so it is
+left as it is and not counted.
+
+**Outcomes and errors**
+
+- TimeoutError: If writes queued before the call have not reached the index within 60 seconds; nothing is changed.
+- IndexUnavailableError: If the index build failed; nothing is changed.
+- DocumentUnreadableError: If a note it rewrites cannot be read; notes converted before it keep their changes.
 
 <!-- DOMAIN-EXAMPLE-okf_convert_links-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+`okf_convert_links(folder="guides")` on a note containing
+
+```markdown
+See [[Project Notes/plan|the plan]] and [[Missing note]].
+```
+
+rewrites it to
+
+```markdown
+See [the plan](/Project%20Notes/plan.md) and [[Missing note]].
+```
+
+`Missing note` has no target in the vault, so it stays and counts in `links_skipped`.
 <!-- DOMAIN-EXAMPLE-okf_convert_links-END -->
 
 ## `okf_generate_index`
 
 **OKF: Generate index.md.** Destructive. Idempotent. Tags: `okf`, `write`.
 
-Write a folder's Open Knowledge Format index.md: a link to each note with its
-description, replacing the old listing and keeping its frontmatter.
+Write a folder's Open Knowledge Format index.md: a link to each note directly
+in it with its description, and one to each subfolder's index.md, replacing
+the old listing and keeping its frontmatter.
 
 Subfolders without an index.md get one too.
 
@@ -334,11 +394,34 @@ Subfolders without an index.md get one too.
 
 **Returns**
 
-Dict with path, entries (count), `frontmatter_preserved` (bool),
-and created (subfolder index.md paths written).
+Dict with:
+
+- path (str): the index.md written.
+- entries (int): notes and subfolder links listed.
+- `frontmatter_preserved` (bool): true when the file already had
+  frontmatter, which is kept; false when it had none, though the
+  fields the vault requires are still added.
+- created (list[str]): index.md files written for subfolders that
+  had none, outermost first.
+- remote (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
+
+**Outcomes and errors**
+
+- TimeoutError: If writes queued before the call have not reached the index within 60 seconds; nothing is changed.
+- IndexUnavailableError: If the index build failed; nothing is changed.
+- DocumentUnreadableError: If the folder's index.md exists but cannot be read; it is left untouched.
 
 <!-- DOMAIN-EXAMPLE-okf_generate_index-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+`okf_generate_index(folder="guides")` writes `guides/index.md`:
+
+```markdown
+# guides
+
+- [Setup](/guides/setup.md) - Install and first run
+- [Project Notes/](/guides/Project%20Notes/index.md)
+```
 <!-- DOMAIN-EXAMPLE-okf_generate_index-END -->
 
 ## `okf_seed_log`
@@ -348,8 +431,8 @@ and created (subfolder index.md paths written).
 Create a folder's Open Knowledge Format log.md from the git history of the
 notes under it, one dated section per day, newest first.
 
-It never replaces an existing log.md. A vault without git history gets an empty
-log.
+It never replaces an existing log.md. It covers the 100 most recent commits. A
+vault without git history gets an empty log.
 
 **Parameters**
 
@@ -359,8 +442,75 @@ log.
 
 **Returns**
 
-Dict with path, commits (count), and dates (distinct-day count).
+Dict with path (str), commits (int) and dates (int, the number of
+distinct days), plus:
+
+- remote (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
+
+**Outcomes and errors**
+
+- ToolError: If log.md already exists in the folder; nothing is written.
+- DocumentUnreadableError: If log.md exists but cannot be read; it is left untouched.
 
 <!-- DOMAIN-EXAMPLE-okf_seed_log-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+`okf_seed_log(folder="guides")` writes `guides/log.md` and returns `{"path": "guides/log.md", "commits": 3, "dates": 2}`:
+
+```markdown
+# Log
+
+## 2026-09-30
+
+- **Add setup guide** (a1b2c3d)
+- **Fix typo** (e4f5a6b)
+
+## 2026-09-28
+
+- **Start guides** (0c9d8e7)
+```
 <!-- DOMAIN-EXAMPLE-okf_seed_log-END -->
+
+## `okf_verify`
+
+**OKF: Verify Note.** Changes state, not destructive. Tags: `okf`, `okf-enforce`, `write`.
+
+Record that a person reviewed a note, raising its Open Knowledge Format trust
+tier to human-reviewed; returns the verifier recorded.
+
+The user may be asked to confirm the review. The record means a person looked,
+not that the content is correct.
+
+**Parameters**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `path` | `string` | required | Path of the note the user reviewed. |
+
+**Returns**
+
+On the modern protocol's first round, an input request asking the
+client for human confirmation. After confirmation, a dict with:
+
+- `path`: the verified note.
+- `verifier`: the `human:<subject>` actor recorded.
+- `verified_count`: the number of verification entries after the
+  append.
+- remote (dict, optional): present only while the vault's git clone
+  cannot reach its remote, with state, reason, since and detail; the
+  change is committed locally only.
+
+**Outcomes and errors**
+
+- ToolError: If the mode's confirmation gate is not met, or the note changed since it was read; call `okf_verify` again to attest the current text. Under `elicit` the gate needs a client that can ask the user, and the user's confirmation; under `trust-auth`, an authenticated identity.
+- DocumentNotFoundError: If the note does not exist.
+
+<!-- DOMAIN-EXAMPLE-okf_verify-START -->
+After the user confirms, `okf_verify(path="guides/setup.md")` returns `{"path": "guides/setup.md", "verifier": "human:alice", "verified_count": 1}`, and the note's frontmatter gains:
+
+```yaml
+verified:
+- at: '2026-10-03T12:00:00Z'
+  by: human:alice
+```
+<!-- DOMAIN-EXAMPLE-okf_verify-END -->

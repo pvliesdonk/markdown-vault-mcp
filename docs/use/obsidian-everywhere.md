@@ -141,4 +141,4 @@ The PARA and Zettelkasten workflow prompts, and the built-in ones such as `propo
 
 - Add semantic search for better recall: [Embeddings](embeddings.md)
 - Tune git modes and policies: [Git Integration](git-integration.md)
-- Add note templates to standardize AI-generated notes via the `create_from_template` prompt (see [MCP Prompts](../prompts.md#create_from_template))
+- Add note templates to standardize AI-generated notes via the `create_from_template` prompt (see [the prompts reference](../reference/prompts.md#create_from_template))

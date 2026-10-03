@@ -1,5 +1,5 @@
 ---
-description: Research a topic and consolidate findings as a new note.
+description: Search the vault for a topic and save what the best matches say as a new note under Research/.
 arguments:
   - name: topic
     description: The topic to research.

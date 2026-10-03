@@ -8,7 +8,18 @@ kind: reference
 # Resources
 
 <!-- DOMAIN-INTRO-START -->
-<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
+Most JSON resources here serve the same data as a tool, whose reference describes the fields:
+
+- `stats://vault` as [`stats`](tools/reader.md#stats), without its `okf` section;
+- `tags://vault/{field}` as [`list_tags`](tools/reader.md#list_tags), with `tags://vault` grouping every indexed field;
+- `folders://vault` as [`list_folders`](tools/reader.md#list_folders);
+- `toc://vault/{path}` as [`get_toc`](tools/reader.md#get_toc);
+- `similar://vault/{path}` as [`get_similar`](tools/reader.md#get_similar), which needs [embeddings](../use/embeddings.md);
+- `recent://vault` as [`get_recent`](tools/reader.md#get_recent), with an ISO 8601 `modified_at_iso` added to each note.
+
+`config://vault` has no tool twin. It reports the vault path, read-only mode, the indexed and required frontmatter fields, the effective exclude patterns, the templates folder, the conventions file and the folders that carry one, the Open Knowledge Format mode and whether the vault declares a bundle, search by meaning, and the attachment extensions. `ui://markdown_vault_mcp/app.html` is the [vault explorer](../use/vault-explorer.md)'s page, for clients that render MCP Apps.
+
+Every JSON resource reports index freshness in the read's `_meta.index_stale`, `true` while a write is still being indexed. A resource can't wait for the index to catch up; the matching tool's `wait_for_pending_writes` can.
 <!-- DOMAIN-INTRO-END -->
 
 ## Reading a resource

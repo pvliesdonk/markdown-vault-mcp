@@ -101,6 +101,8 @@ plugins:
         api/providers.md: reference/api/providers.md
         api/types.md: reference/api/types.md
         api/vault.md: reference/api/vault.md
+        cli.md: reference/cli.md
+        resources.md: reference/resources.md
         # PROJECT-REDIRECTS-END
   # Generates llms.txt + llms-full.txt for the README badge.
   # The sections are filled from `nav:` at build time by
@@ -202,10 +204,6 @@ nav:
       - Prompts: reference/prompts.md
       - Command line: reference/cli.md
       # PROJECT-NAV-REFERENCE-START — resources, CLI, API reference (docs/reference/api/); kept across copier update
-      - CLI guide: cli.md
-      - Tools guide: tools/index.md
-      - Resources guide: resources.md
-      - Prompts guide: prompts.md
       - Python API:
           - Vault: reference/api/vault.md
           - Facets: reference/api/facets.md

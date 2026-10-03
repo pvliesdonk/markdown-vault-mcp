@@ -567,9 +567,12 @@ extraPaths = ["src"]
 strict = false
 
 # The summarize tool registers only when an OpenAI-compatible endpoint is
-# configured, and the transfer-link tools only with a base URL; set both so
+# configured, the transfer-link tools only with a base URL, git_sync only for
+# a vault with a remote, and okf_verify only with OKF writes on; set each so
 # the generated reference documents them in every environment, CI included.
 [tool.docs-reference.env]
 MARKDOWN_VAULT_MCP_BASE_URL = "https://example.invalid"
 MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL = "https://example.invalid/v1"
+MARKDOWN_VAULT_MCP_GIT_REPO_URL = "https://example.invalid/vault.git"
+MARKDOWN_VAULT_MCP_OKF_WRITE = "true"
 # PROJECT-DOCS-CHECKS-END

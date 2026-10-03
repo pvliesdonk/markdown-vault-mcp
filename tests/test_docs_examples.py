@@ -86,11 +86,13 @@ async def test_read_return_example_lists_the_live_keys(
     live = result.structured_content
     assert isinstance(live, dict)
 
-    documented = json.loads(
-        _section_blocks(_DOCS / "tools" / "index.md", "`read`", "json")[0]
+    page = _DOCS / "reference" / "tools" / "reader.md"
+    response = next(
+        block for block in _section_blocks(page, "`read`", "json") if '"etag"' in block
     )
+    documented = json.loads(response)
     assert set(documented) == set(live), (
-        f"docs/tools/index.md read example keys {sorted(documented)} "
+        f"{page.name} read example keys {sorted(documented)} "
         f"!= live keys {sorted(live)}"
     )
 
@@ -121,8 +123,8 @@ async def test_index_status_returns_list_documents_every_live_key(
     live = result.structured_content
     assert isinstance(live, dict)
 
-    text = (_DOCS / "tools" / "index.md").read_text(encoding="utf-8")
-    section = text.split("### `get_index_status`", 1)[1].split("\n### ", 1)[0]
-    documented = set(re.findall(r"^- `(\w+)`:", section, flags=re.MULTILINE))
+    text = (_DOCS / "reference" / "tools" / "indexing.md").read_text(encoding="utf-8")
+    section = text.split("## `get_index_status`", 1)[1].split("\n## ", 1)[0]
+    documented = set(re.findall(r"^\s*- `?(\w+)`? \(", section, flags=re.MULTILINE))
     missing = sorted(set(live) - documented)
     assert not missing, f"get_index_status keys not in its Returns list: {missing}"

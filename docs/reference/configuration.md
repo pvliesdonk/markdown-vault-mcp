@@ -285,6 +285,13 @@ bare `OPENAI_BASE_URL` only routes summarization when a key already enables it.
     provider. Do not enable an external endpoint for vaults whose contents must
     remain local.
 
+Without a summarization backend, clients summarize with their own model
+through the `summarize-subtree` prompt. With one, the `summarize` tool does it
+in one call, and the prompt points clients at it. The tool spares the client's
+model, but the backend is billed separately, which matters when a subscription
+already covers the client. Neither route is more private by nature: a local
+backend can disclose less than a hosted client model.
+
 Long `summarize`, `reindex`, and `build_embeddings` calls use protocol-native
 background tasks when the client supports them. Other clients receive an inline
 result before `JOBS_SOFT_DEADLINE_S`, or a `job_id` to poll with
