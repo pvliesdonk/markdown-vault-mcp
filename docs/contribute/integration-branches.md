@@ -1,3 +1,8 @@
+---
+description: "How to run an epic on an integration branch and bring it to main in one pull request."
+kind: how-to
+---
+
 # Integration Branches
 
 An integration branch parks an epic's pull requests until the whole epic is

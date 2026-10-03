@@ -60,7 +60,7 @@ sees — never "since my last push".
    (`git log --remerge-diff --merges "origin/$BASE_REF..HEAD"`, git 2.36+),
    semantic conflicts with `main`, whether the children fit together and
    the docs describe the finished result, and the release impact (breaking
-   markers, the `Closes` lines). `docs/deployment/integration-branches.md`
+   markers, the `Closes` lines). `docs/contribute/integration-branches.md`
    covers the rebased case.
 2. Compute and **check** the endpoints before reviewing:
 

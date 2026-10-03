@@ -93,7 +93,7 @@ MARKDOWN_VAULT_MCP_INDEXED_FIELDS=tags,category
 MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=fastembed
 ```
 
-See [Configuration](../configuration.md) for the full list of environment variables.
+See [Configuration](../reference/configuration.md) for the full list of environment variables.
 
 ## Directory Layout
 

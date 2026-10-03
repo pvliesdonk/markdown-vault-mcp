@@ -261,7 +261,7 @@ membership. The exact version is computed from what lands.
 `evidenced` — Major intent accounts for the template/FastMCP adoption already
 recorded in [commit 2c7d46e5][template-adoption]. The already-announced library
 removals ([#1225][1225], [#1236][1236]) and
-[operator default change](../configuration.md#write-safety) were checked against
+[operator default change](../reference/configuration.md#write-safety) were checked against
 stable behavior during
 this reconciliation; their original next-major deferral is the reason to group
 them here. Other former `v5` wishes do not acquire a release commitment.

@@ -69,7 +69,7 @@ does not attempt to catalogue the rest of FastMCP's API.
 - Depended on by: `src/markdown_vault_mcp/server.py`,
   `_tools/writer.py`, `resources.py`, and `_server_apps.py`;
   the server section of `docs/design/design.md`; and the operator guidance in
-  `docs/guides/okf.md` and `docs/deployment/oidc.md`.
+  `docs/guides/okf.md` and `docs/deploy/oidc.md`.
 
 ## Claims
 

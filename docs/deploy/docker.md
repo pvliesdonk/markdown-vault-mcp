@@ -1,3 +1,8 @@
+---
+description: "Run the server with Docker Compose, locally or behind a reverse proxy."
+kind: how-to
+---
+
 # Docker Deployment
 
 ## Quick start
@@ -9,6 +14,8 @@ docker compose up -d
 
 The server listens on port 8000 with HTTP transport, published on the host as `127.0.0.1:8000:8000`, so only the host itself can connect. No reverse proxy, TLS terminator, or external network is assumed. Authentication is off, since every auth variable in `.env.example` is commented out; [Ports](#ports) covers serving other machines.
 
+The [security model](../security-model.md) says what a deployed server exposes and what stays your responsibility.
+
 Copying `.env.example` first is the step to keep. Every variable in it arrives commented out, so the server starts on its defaults and the copy changes no behaviour by itself. It is the file you edit next, and `compose.yml` names it.
 
 Apply a later edit with `docker compose up -d`, which recreates the container with the new values. `docker compose restart` does not pick them up: an env file is read when a container is created, so a restarted container keeps the values it was created with and the edit is ignored without any message.
@@ -17,11 +24,22 @@ Apply a later edit with `docker compose up -d`, which recreates the container wi
 
 `compose.yml` is a working deployment, not an illustration. It is re-rendered on every `copier update`, so fixes and new defaults reach it; edit it inside the sentinel blocks described below and your changes survive.
 
+### Upgrading the image
+
+`compose.yml` names a rolling tag, so a new release is adopted by pulling and recreating:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+`docker compose restart` does not pick up a new image any more than it picks up an edited `.env`: a restarted container keeps the image it was created from. State lives in the [volumes](#volumes), so recreating the container keeps it; what a release changes for your clients and your data is on the [Upgrade](../upgrade/index.md) page.
+
 ### Where configuration goes
 
 The split matters, because two files can set the same variable:
 
-- **`.env` holds the server's configuration.** `compose.yml` reads it with `env_file:`. `.env.example` is generated from the server's own config surface and lists every variable with its default and a one-line description, so it is both the checklist and the place to edit. [Configuration](../configuration.md) carries the full reference.
+- **`.env` holds the server's configuration.** `compose.yml` reads it with `env_file:`. `.env.example` is generated from the server's own config surface and lists every variable with its default and a one-line description, so it is both the checklist and the place to edit. [Configuration](../reference/configuration.md) carries the full reference.
 - **`compose.yml`'s `environment:` block holds only what the file itself determines.** Currently that is `FASTMCP_HOME`, which points at the state volume the file mounts. Values here override `.env`, so a knob set in both places takes the value from `compose.yml`, which is rarely what an operator editing `.env` expects.
 
 The `env_file:` entry is marked `required: false`, so a checkout with no `.env` still starts on defaults. That form needs Compose 2.24.0 or newer; on an older engine, either upgrade or replace the entry with plain `env_file: .env` and make sure the file exists.
@@ -30,7 +48,7 @@ The `env_file:` entry is marked `required: false`, so a checkout with no `.env` 
 
 The image pins its own listener: `CMD` passes `--host 0.0.0.0 --port 8000`, so `MARKDOWN_VAULT_MCP_HOST` and `MARKDOWN_VAULT_MCP_PORT` in a `.env` do not move it. To serve on a different host port, change the host port in the mapping (`"127.0.0.1:9000:8000"`) rather than the server's port.
 
-`compose.yml` publishes on `127.0.0.1` because the quick start runs without authentication. The bind address limits which machines can connect; it does not replace authentication. To serve other machines, first configure a bearer token or OIDC ([Authentication](../guides/authentication.md)), then either put a reverse proxy in front ([Behind a reverse proxy](#behind-a-reverse-proxy)) or publish on every interface from `compose.override.yml`:
+`compose.yml` publishes on `127.0.0.1` because the quick start runs without authentication. The bind address limits which machines can connect; it does not replace authentication. To serve other machines, first configure a bearer token or OIDC ([Authentication](authentication.md)), then either put a reverse proxy in front ([Behind a reverse proxy](#behind-a-reverse-proxy)) or publish on every interface from `compose.override.yml`:
 
 ```yaml
 services:
@@ -56,39 +74,7 @@ A named volume needs an entry in two of those: the mount in `DOMAIN-COMPOSE-VOLU
 
 ### Behind a reverse proxy
 
-Proxy configuration is deployment-specific, so `compose.yml` ships none. Add it in a second file rather than by editing `compose.yml`, which is template-owned and re-rendered: save this as `compose.override.yml`, which Compose loads automatically alongside `compose.yml`.
-
-```yaml
-services:
-  markdown-vault-mcp:
-    # `!reset` drops the published port: the proxy reaches the container over
-    # the shared network, so nothing needs to be on the host. Plain merging
-    # appends to sequences, so without this the port stays published.
-    ports: !reset []
-    networks:
-      - traefik
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)"
-      - "traefik.http.routers.markdown-vault-mcp.tls.certresolver=letsencrypt"
-      - "traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"
-
-networks:
-  traefik:
-    external: true
-```
-
-`!reset` needs Compose 2.24.4 or newer. On an older engine, drop that line and remove the port mapping from `compose.yml` directly, accepting that the edit conflicts on the next template update.
-
-Check the result before starting anything, since a merge that silently kept the port mapping looks identical until the port clashes:
-
-```bash
-docker compose config
-```
-
-Substitute your own hostname for `mcp.example.com`. Set `MARKDOWN_VAULT_MCP_BASE_URL` to the public URL as well: the server needs it to advertise its own address, and it is required once OIDC is enabled. Do not reach for `MARKDOWN_VAULT_MCP_HOST` here. That variable is the interface the server binds to, which is not the name the proxy routes.
-
-The network must already exist and be the one the proxy watches. For the same overlay with OIDC, see [OIDC](oidc.md).
+A `compose.override.yml` that puts the container on the proxy's network, and the routing a path prefix needs, are on [Reverse proxy](reverse-proxy.md). Set `MARKDOWN_VAULT_MCP_BASE_URL` to the public URL there; `MARKDOWN_VAULT_MCP_HOST` is the interface the server binds to, not the name the proxy routes.
 
 ### Building the image yourself
 
@@ -144,7 +130,7 @@ Records then render one `event key=value` line each. The packaged Debian and
 RPM installs behave the same way under `journalctl`: the systemd unit sets
 nothing, and `/etc/markdown-vault-mcp/env` carries the choice.
 
-`MARKDOWN_VAULT_MCP_LOG_LEVEL` sets how much is logged; see [Configuration](../configuration.md#logging).
+`MARKDOWN_VAULT_MCP_LOG_LEVEL` sets how much is logged; see [Configuration](../reference/configuration.md#logging).
 
 ## Image tags
 
@@ -178,15 +164,15 @@ docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revis
 | `MARKDOWN_VAULT_MCP_DEBUG_PORT` | n/a | Remote-debugger TCP port (see [Remote debugging](#remote-debugging); requires `--build-arg DEBUG=true` image) |
 | `MARKDOWN_VAULT_MCP_DEBUG_WAIT` | `false` | Block startup until IDE attaches (see [Remote debugging](#remote-debugging)) |
 
-For OIDC auth variables, see [Authentication](../guides/authentication.md).
+For OIDC auth variables, see [Authentication](authentication.md).
 
-Running behind a reverse proxy on a path prefix (`https://mcp.example.com/myservice/mcp`) rather than its own hostname needs two routing rules, one of which sits outside the prefix: see [Subpath Deployments](oidc.md#subpath-deployments).
+Running behind a reverse proxy on a path prefix (`https://mcp.example.com/myservice/mcp`) rather than its own hostname needs two routing rules, one of which sits outside the prefix: see [A path prefix](reverse-proxy.md#a-path-prefix).
 
 ## Volumes
 
 | Path | Purpose |
 |------|---------|
-| `/data/service` | Your service data (bind-mount or named volume) |
+| `/data/service` | For a server that keeps files of its own (bind-mount or named volume); one that stores nothing here leaves it empty |
 | `/data/state` | State files (FastMCP OIDC state, etc.) |
 
 ## UID/GID

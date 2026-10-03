@@ -1,6 +1,6 @@
 # OIDC Providers
 
-This guide covers configuring markdown-vault-mcp with specific OIDC providers. For general OIDC setup and architecture, see [OIDC Authentication](../deployment/oidc.md).
+This guide covers configuring markdown-vault-mcp with specific OIDC providers. For general OIDC setup and architecture, see [OIDC Authentication](../deploy/oidc.md).
 
 !!! note "Transport requirement"
     OIDC requires HTTP transport (`--transport http`). It has no effect with stdio transport.
@@ -18,7 +18,7 @@ Use Authelia as your OIDC identity provider to authenticate users with local use
 !!! note "Opaque access tokens"
     Authelia issues opaque (non-JWT) access tokens. markdown-vault-mcp handles this automatically by verifying the `id_token` instead, which is always a standard JWT. No extra configuration is needed.
 
-For architecture details and a full Docker Compose deployment, see [OIDC Authentication](../deployment/oidc.md).
+For architecture details and a full Docker Compose deployment, see [OIDC Authentication](../deploy/oidc.md).
 
 ### 1. Register client in `configuration.yml`
 
@@ -64,7 +64,7 @@ identity_providers:
 ```
 
 !!! tip "Token lifetimes"
-    MCP clients (Claude.ai, Claude Code) do not reliably refresh tokens (see [Known Limitations](authentication.md#known-limitations-mcp-oauth-token-refresh)). The `mcp_long_lived` custom lifespan sets both `access_token` and `id_token` to 8 hours so tokens outlast a typical work session. The `id_token` lifetime is critical when using `verify_id_token` mode (the default for Authelia): if omitted, Authelia defaults it to 1 hour regardless of the `access_token` setting. See [Authelia OIDC Provider: Lifespans](https://www.authelia.com/configuration/identity-providers/openid-connect/provider/#lifespans) for the full reference.
+    MCP clients (Claude.ai, Claude Code) do not reliably refresh tokens (see [Known Limitations](../deploy/authentication.md#known-limitations-mcp-oauth-token-refresh)). The `mcp_long_lived` custom lifespan sets both `access_token` and `id_token` to 8 hours so tokens outlast a typical work session. The `id_token` lifetime is critical when using `verify_id_token` mode (the default for Authelia): if omitted, Authelia defaults it to 1 hour regardless of the `access_token` setting. See [Authelia OIDC Provider: Lifespans](https://www.authelia.com/configuration/identity-providers/openid-connect/provider/#lifespans) for the full reference.
 
 ### 2. Generate and hash a client secret
 
@@ -118,7 +118,7 @@ If login fails:
 
 - **"invalid_client"**: Check client ID/secret values and confirm the Authelia hash was generated from the same plain-text secret.
 - **Redirect mismatch**: Ensure redirect URI matches exactly (`BASE_URL` + `/auth/callback`).
-- **Session drops after hours**: Check that the `mcp_long_lived` lifespan is configured and referenced by the client. See the [token lifetime troubleshooting](authentication.md#session-drops-after-token-expiry).
+- **Session drops after hours**: Check that the `mcp_long_lived` lifespan is configured and referenced by the client. See the [token lifetime troubleshooting](../deploy/authentication.md#session-drops-after-token-expiry).
 
 ---
 
@@ -127,7 +127,7 @@ If login fails:
 Use Keycloak directly as your OIDC provider for username/password (or federated) authentication.
 
 !!! tip "Remote mode (simpler alternative)"
-    If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication: Remote mode](authentication.md#how-remote-mode-works) for details.
+    If your reverse proxy already handles OIDC authentication (such as Traefik with ForwardAuth), you can use **remote mode** instead. Set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting `OIDC_CLIENT_ID` and `OIDC_CLIENT_SECRET`. The server auto-detects remote mode and trusts the proxy's authentication. See [Authentication: Remote mode](../deploy/authentication.md#how-remote-mode-works) for details.
 
 ### 1. Create a realm
 
@@ -193,7 +193,7 @@ If login fails:
 Use Google as your OIDC identity provider to authenticate users with their Google accounts.
 
 !!! tip "Remote mode (simpler alternative)"
-    If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead: set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication: Remote mode](authentication.md#how-remote-mode-works).
+    If your reverse proxy already handles Google OIDC authentication, you can use **remote mode** instead: set only `BASE_URL` and `OIDC_CONFIG_URL`, omitting client credentials. See [Authentication: Remote mode](../deploy/authentication.md#how-remote-mode-works).
 
 ### 1. Create OAuth credentials
 

@@ -245,7 +245,7 @@ window; the loop is what catches the deliveries the webhook loses.
     watcher, the same way `GIT_PULL_INTERVAL_S > 0` does. Git rewrites the
     working tree during a checkout, and a watcher firing mid-checkout would
     scan a partial tree. Reindexing stays driven by the webhook and the
-    periodic loop. See [File Watcher](../configuration.md#file-watcher).
+    periodic loop. See [File Watcher](../reference/configuration.md#file-watcher).
 
     The endpoints exist only on those transports. Under `--transport stdio`
     the credential mounts no route, so the watcher stays on and the server
@@ -254,7 +254,7 @@ window; the loop is what catches the deliveries the webhook loses.
     visible.
 
 The variables themselves are listed under
-[Change detection](../configuration.md#change-detection) in the
+[Change detection](../reference/configuration.md#change-detection) in the
 configuration reference.
 
 ## Manual sync: `git_sync` tool

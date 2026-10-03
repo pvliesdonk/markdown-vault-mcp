@@ -1,3 +1,8 @@
+---
+description: "How to work through a template update pull request."
+kind: how-to
+---
+
 # Working Through a Template Update
 
 This project is generated from
@@ -134,6 +139,8 @@ this project that says why it does not yet.
    uv lock --check
    uv sync --all-extras --all-groups --locked
    uv run python scripts/gen_config_surface.py --check
+   uv run python scripts/gen_reference.py
+   uv run python scripts/gen_reference.py --check
    uv run ruff check .
    uv run ruff format --check .
    uv run mypy src/ tests/

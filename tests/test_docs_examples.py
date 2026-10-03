@@ -19,7 +19,9 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOCS = _REPO_ROOT / "docs"
 _UNPUBLISHED = ("design", "decisions", "superpowers")
 
-_FENCE = re.compile(r"^(?P<indent>[ \t]*)```(?P<lang>\w*)[^\n]*$")
+# A backtick fence's info string holds no backtick (CommonMark 4.5), so a line
+# opening with an inline ```code``` span is prose, not a fence.
+_FENCE = re.compile(r"^(?P<indent>[ \t]*)(?P<ticks>`{3,})(?P<lang>\w*)[^`\n]*$")
 _HEADING = re.compile(r"^(?P<hashes>#{1,6}) (?P<title>.+)$")
 
 
@@ -44,18 +46,15 @@ def _blocks(page: Path, lang: str) -> list[tuple[list[str], str]]:
             trail = [(lv, t) for lv, t in trail if lv < level]
             trail.append((level, heading["title"]))
         fence = _FENCE.match(lines[i])
-        if fence and fence["lang"] == lang:
+        if fence:
             body: list[str] = []
             i += 1
-            while not lines[i].strip().startswith("```"):
+            while lines[i].strip() != fence["ticks"]:
                 body.append(lines[i])
                 i += 1
-            code = textwrap.dedent("\n".join(body))
-            blocks.append(([t for _, t in trail], code))
-        elif fence:
-            i += 1
-            while not lines[i].strip().startswith("```"):
-                i += 1
+            if fence["lang"] == lang:
+                code = textwrap.dedent("\n".join(body))
+                blocks.append(([t for _, t in trail], code))
         i += 1
     return blocks
 
@@ -77,7 +76,7 @@ def test_read_only_examples_are_found() -> None:
     """Guard the scanner itself: the Claude Desktop pages carry such examples."""
     pages = {where.split(" § ")[0] for where, _, _ in _read_only_configs()}
     assert "docs/guides/claude-desktop.md" in pages
-    assert "docs/deployment/claude-desktop.md" in pages
+    assert "docs/get-started/claude-desktop.md" in pages
 
 
 @pytest.mark.parametrize(

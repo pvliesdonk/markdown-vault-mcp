@@ -29,7 +29,7 @@ This is the easiest option for non-technical users.
 3. Claude Desktop opens a GUI wizard that prompts for the required env vars. No manual JSON editing needed.
 
 !!! note "Configured through the GUI wizard"
-    The `.mcpb` bundle's wizard shows a deliberately small set of fields, generated from the server's configuration surface so it can never drift from the code: the vault directory (required), read-only mode, exclude patterns, the embedding provider with its per-provider settings and API key, git sync with its access token, and the server name and log level. Everything else (state and index paths, tuning, HTTP auth) stays configurable the documented way through env vars (see [Configuration](../configuration.md)); if you need one of those, use Step 1 (manual config) instead.
+    The `.mcpb` bundle's wizard shows a deliberately small set of fields, generated from the server's configuration surface so it can never drift from the code: the vault directory (required), read-only mode, exclude patterns, the embedding provider with its per-provider settings and API key, git sync with its access token, and the server name and log level. Everything else (state and index paths, tuning, HTTP auth) stays configurable the documented way through env vars (see [Configuration](../reference/configuration.md)); if you need one of those, use Step 1 (manual config) instead.
 
 ---
 
@@ -42,13 +42,13 @@ This is the easiest option for non-technical users.
 ### Install
 
 ```bash
-pip install markdown-vault-mcp[all]
+pip install "markdown-vault-mcp[all]"
 ```
 
 Or with uv:
 
 ```bash
-uv tool install markdown-vault-mcp[all]
+uv tool install "markdown-vault-mcp[all]"
 ```
 
 ### Configure Claude Desktop

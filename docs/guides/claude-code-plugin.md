@@ -58,7 +58,7 @@ The configuration prompt covers these settings, each wired to the matching serve
 | Server name | `markdown-vault-mcp` | `MARKDOWN_VAULT_MCP_SERVER_NAME` |
 | Log level | `INFO` | `FASTMCP_LOG_LEVEL` |
 
-Settings outside this screen (state and index paths, tuning, and the rest of [Configuration](../configuration.md)) stay reachable through env vars: the `env` block of your user-scope `~/.claude/settings.json` reaches the server process for anything the screen does not wire.
+Settings outside this screen (state and index paths, tuning, and the rest of [Configuration](../reference/configuration.md)) stay reachable through env vars: the `env` block of your user-scope `~/.claude/settings.json` reaches the server process for anything the screen does not wire.
 
 The plugin also installs the **`vault-workflow` skill**, which gives Claude guidance on:
 
@@ -97,5 +97,5 @@ To remove the plugin:
 
 ## Next steps
 
-- See [Configuration](../configuration.md) for all available env vars, including git write support and semantic search options
+- See [Configuration](../reference/configuration.md) for all available env vars, including git write support and semantic search options
 - See [Claude Desktop](claude-desktop.md) if you also use Claude Desktop with the same vault

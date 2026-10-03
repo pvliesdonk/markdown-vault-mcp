@@ -448,7 +448,7 @@ def _register_create_from_template(mcp: FastMCP, templates_folder: str | None) -
         """Create a new note from one of the vault's templates.
 
         Args:
-            template_name: Template to use, e.g. "meeting-notes"; leave empty
+            template_name: Template to use, such as `"meeting-notes"`; leave empty
                 to choose from the list.
         """
         # A bare ``str`` keeps FastMCP from appending a JSON-schema sentence to

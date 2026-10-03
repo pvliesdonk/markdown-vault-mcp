@@ -22,6 +22,7 @@ liveness
 resumability
 sandboxing
 subpath
+URIs
 
 # --- OAuth / OIDC token fields ---
 access_token
@@ -35,34 +36,35 @@ json
 lockfile
 middleware
 namespace
-scaffolded
 stderr
 stdio
+streamable
+http
+sse
+zsh
+docstring
+docstrings
 unprefixed
 uv
 uvicorn
 uvicorn's
-venv
-venv's
-virtualenv
 
 # --- Operational / config jargon ---
-ADRs
 allowlist
+APIs
 backports
 config
 Dependabot
-dev
 env
 hotfix
 knope
 rebase
 rebased
-repo
 retargeting
 retargets
 ruleset
 rulesets
+SELinux
 systemd
 truthy
 upserts

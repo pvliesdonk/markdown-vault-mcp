@@ -151,4 +151,4 @@ The token store is KV-backed (`MARKDOWN_VAULT_MCP_KV_STORE_URL`, on-disk state b
 | `MARKDOWN_VAULT_MCP_TRANSFER_LEASE_S` | `60` | Reclaim window for an in-flight reservation. A crashed handler's token becomes claimable again once this lease lapses |
 | `MARKDOWN_VAULT_MCP_TRANSFER_MAX_UPLOAD_BYTES` | `104857600` (100 MiB) | Per-upload size cap; exceeded bodies are rejected with HTTP 413 |
 
-See [Configuration](../configuration.md#one-time-transfer-links) for the full details.
+See [Configuration](../reference/configuration.md#one-time-transfer-links) for the full details.

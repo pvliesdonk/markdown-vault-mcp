@@ -27,7 +27,7 @@ recognise it as the project's decay, not to rationalise it. An update is done
 when every template-owned file conforms or has a Decay issue, not when the
 markers are gone.
 
-`docs/deployment/template-updates.md` explains the update for a human; this
+`docs/contribute/template-updates.md` explains the update for a human; this
 skill is the procedure. Work on the `copier/update` branch the workflow
 opened (or the branch where `copier update --trust` was run). Stop and ask,
 rather than guess, at three points: a conflict hunk inside a sentinel block,
@@ -92,7 +92,13 @@ block. For each hunk:
 - inside a `GENERATED-*` region, resolve nothing: take either side and let
   `scripts/gen_config_surface.py` rewrite the region at the end of the update
   (it runs as an after-stage migration), then confirm with
-  `python scripts/gen_config_surface.py --check`.
+  `python scripts/gen_config_surface.py --check`;
+- the generated reference (`docs/reference/tools/`, `resources.md`,
+  `prompts.md`, `cli.md`) is seeded once and written by
+  `scripts/gen_reference.py` from this project's server; after every update
+  run `uv run python scripts/gen_reference.py` (an update can re-seed a
+  scaffold page the project's generator had deleted, which the run removes
+  again), then confirm with `--check`.
 
 Finish with `git grep -nE '^(<<<<<<<|\|\|\|\|\|\|\||=======|>>>>>>>)'` to prove
 none remain.
@@ -137,9 +143,9 @@ either way.
 ## 7. Refresh and gate
 
 `uv lock` when a dependency floor changed, then the update gate from
-`docs/deployment/template-updates.md`, in full: `git diff --check`, the
+`docs/contribute/template-updates.md`, in full: `git diff --check`, the
 conflict-marker grep, `uv lock --check`, `uv sync --all-extras --all-groups
---locked`, `uv run python scripts/gen_config_surface.py --check`, ruff check
+--locked`, `uv run python scripts/gen_config_surface.py --check`, `uv run python scripts/gen_reference.py --check`, ruff check
 and format, mypy, pytest, `uv run mkdocs build --strict`, `uv run pre-commit
 run --all-files`, and `scripts/vendor_spa.py --check` on an MCP Apps
 project. Fix what the update broke; do not weaken a test to pass.

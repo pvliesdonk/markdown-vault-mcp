@@ -532,14 +532,14 @@ Zettelkasten and the [Open Knowledge Format](okf.md) sit at different layers: th
 
 **Add provenance where it helps.** The OKF `sources` list is a natural home for the citations a literature note already tracks, and `verified` records a human review. Add them to literature and permanent notes to promote their trust tier, and leave quick-capture notes lean. Write `[[wikilinks]]` freely; `okf_convert_links` produces the OKF link style at export time.
 
-The [`examples/okf/`](../../examples/okf/) pack adds the declaration index, typed note templates, and a prompt pack (author, verify, triage-stale, migrate) that drops in alongside the Zettelkasten prompts.
+The [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) pack adds the declaration index, typed note templates, and a prompt pack (author, verify, triage-stale, migrate) that drops in alongside the Zettelkasten prompts.
 
 ## Next Steps
 
-- **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](../design/design.md)
+- **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/docs/design/design.md)
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
-- **Review the examples** for templates and prompts: [`examples/zettelkasten/`](../../examples/zettelkasten/)
-- **Run this vault as an OKF bundle?** See the [OKF guide](okf.md) and the [`examples/okf/`](../../examples/okf/) pack
+- **Review the examples** for templates and prompts: [`examples/zettelkasten/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/zettelkasten/)
+- **Run this vault as an OKF bundle?** See the [OKF guide](okf.md) and the [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) pack
 - **Prefer an action-oriented workflow?** Try the [PARA guide](para.md): Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts
 - **Ambient patterns**: [`docs/prompts.md`](../prompts.md#ambient-patterns-without-prompts): flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)
 - **Research workflows**: [research-workflows.md](research-workflows.md): literature grounding, fact-checking, and writing papers from notes

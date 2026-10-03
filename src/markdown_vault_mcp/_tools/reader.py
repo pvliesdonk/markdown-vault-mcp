@@ -60,17 +60,17 @@ def register(mcp: FastMCP) -> None:
         Args:
             query: Words to match or a natural-language question.
             limit: Maximum notes to return (default 10).
-            mode: Omit for the best mode this vault serves. "keyword" suits exact terms,
-                operators and filenames; "semantic" matches meaning only; "hybrid"
-                combines both. "semantic" and "hybrid" need semantic_search_available
+            mode: Omit for the best mode this vault serves. `"keyword"` suits exact terms,
+                operators and filenames; `"semantic"` matches meaning only; `"hybrid"`
+                combines both. `"semantic"` and `"hybrid"` need semantic_search_available
                 from stats.
-            folder: Only notes under this folder, a value from list_folders; "" for
+            folder: Only notes under this folder, a value from list_folders; `""` for
                 top-level notes only.
-            filters: Frontmatter values to match, all of them, e.g. {"tags": "pacing"};
+            filters: Frontmatter values to match, all of them, such as `{"tags": "pacing"}`;
                 keys come from indexed_frontmatter_fields in stats, and a list field
                 matches when it holds the value. On an OKF bundle, status (draft, stable
-                or deprecated; stable includes notes with none), stale ("true" or
-                "false") and trust_tier (unverified, machine-confirmed or
+                or deprecated; stable includes notes with none), stale (`"true"` or
+                `"false"`) and trust_tier (unverified, machine-confirmed or
                 human-reviewed) filter too.
             chunks_per_file: Maximum sections per note (default 2).
             snippet_words: Snippet width in words; omit for the server default, 0 for
@@ -80,11 +80,11 @@ def register(mcp: FastMCP) -> None:
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a document mutation whose
+                them (such as right after a document mutation whose
                 effect this read should reflect). Default
-                False answers immediately from the current index — almost
+                False answers immediately from the current index; almost
                 always already up to date; inspect the response's
-                ``_meta.index_stale`` field to tell whether a write was still
+                `_meta.index_stale` field to tell whether a write was still
                 in flight. Bounded by a server timeout (default 60s); on
                 timeout it answers from the current index rather than waiting
                 longer.
@@ -98,15 +98,15 @@ def register(mcp: FastMCP) -> None:
             - score (float): File-level score = max(section.score).
               Higher = better match.  BM25 (keyword) or cosine (semantic/
               hybrid); not comparable across modes.
-            - search_type (str): "keyword", "semantic", or "hybrid".
+            - search_type (str): `"keyword"`, `"semantic"`, or `"hybrid"`.
             - frontmatter (dict): Parsed YAML frontmatter of the document.
-            - okf (dict, optional): OKF read annotation — present only when
-              the vault is an active OKF bundle. Carries ``type`` (when
-              declared), ``status`` (defaults to "stable"), ``stale``
-              (bool, ``stale_after`` reached), ``trust_tier`` ("unverified" /
-              "machine-confirmed" / "human-reviewed"), and
-              ``sources_count`` (when the note cites sources).
-            - sections (list[dict]): Up to ``chunks_per_file`` best-matching
+            - okf (dict, optional): OKF read annotation: present only when
+              the vault is an active OKF bundle. Carries `type` (when
+              declared), `status` (defaults to `"stable"`), `stale`
+              (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
+              `"machine-confirmed"` / `"human-reviewed"`), and
+              `sources_count` (when the note cites sources).
+            - sections (list[dict]): Up to `chunks_per_file` best-matching
               sections, each with:
 
               - heading (str | None): Section heading or null for intro.
@@ -115,18 +115,18 @@ def register(mcp: FastMCP) -> None:
                 the full section text.
               - score (float): Chunk-level score for this section.
 
-            Index freshness rides in the response's ``_meta.index_stale``
-            field — True when the IndexWriter was non-idle, a write completed
-            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            Index freshness rides in the response's `_meta.index_stale`
+            field: True when the IndexWriter was non-idle, a write completed
+            inside the read window, or `wait_for_pending_writes` timed out; False
             otherwise.
 
-        Also useful for finding merge candidates during triage — if a
+        Also useful for finding merge candidates during triage; if a
         close match exists for a new capture, prefer merging over
         creating a near-duplicate.
 
         Raises:
-            EmbeddingsNotConfiguredError: If mode is "semantic" or "hybrid" and
-                no embedding provider is configured (a ``ValueError`` subclass).
+            EmbeddingsNotConfiguredError: If mode is `"semantic"` or `"hybrid"` and
+                no embedding provider is configured (a `ValueError` subclass).
         """
         drained = await _maybe_wait_for_drain(vault, wait_for_pending_writes, "search")
         gen_before = vault.index.write_generation()
@@ -171,11 +171,11 @@ def register(mcp: FastMCP) -> None:
         Look paths up with search or list_documents first rather than guessing them.
 
         Args:
-            path: Path in the vault, e.g. "Journal/note.md" or "assets/diagram.pdf";
+            path: Path in the vault, such as `"Journal/note.md"` or `"assets/diagram.pdf"`;
                 case-sensitive.
-            section: A heading, e.g. the heading field of a search result; returns that
+            section: A heading, such as the heading field of a search result; returns that
                 section and its sub-sections instead of the whole note. Notes only.
-            revision: A commit sha from get_history or from a write result's
+            revision: A commit SHA from get_history or from a write result's
                 previous_revision; returns the note as it stood then, without an etag.
                 Pass path as the note is named today. To restore that text, write it
                 with the etag of a read without revision.
@@ -183,11 +183,11 @@ def register(mcp: FastMCP) -> None:
         Returns:
             For .md: dict with path, title, folder, content (the full raw
             file including frontmatter, or the section text when section= is
-            given), frontmatter (dict —
+            given), frontmatter (dict:
             empty {} when section= is provided; call read(path) without
             section= to get the full document's frontmatter),
             modified_at (Unix timestamp), etag (SHA-256 hex str or null).
-            On an active OKF bundle, whole-document reads additionally carry
+            On an active OKF bundle, whole-document reads also carry
             an 'okf' dict (type, status, stale, trust_tier, and the note's
             'sources' list when present); section reads omit it because they
             carry no frontmatter to derive it from.
@@ -197,7 +197,7 @@ def register(mcp: FastMCP) -> None:
             The 'etag' value can be passed as 'if_match' to write, edit,
             delete, or rename to guard against concurrent modifications.
             With revision=: dict with path, historical_path (the name the note
-            carried at that revision), revision, and content — the whole raw
+            carried at that revision), revision, and content: the whole raw
             file, or just one section's body when section= is also given. No
             etag and no modified_at (both describe the note as it is now), and
             no 'okf' block for the same reason.
@@ -205,8 +205,8 @@ def register(mcp: FastMCP) -> None:
         Raises:
             ValueError: If no file exists at the given path, the extension is
                 not in the attachment allowlist, the file exceeds
-                ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB``, or the requested
-                section heading is not found.  With ``revision``: if the vault
+                `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`, or the requested
+                section heading is not found. With `revision`: if the vault
                 is not git-backed, the revision is unusable, the path is an
                 attachment, or git's records do not show the note existing at
                 that revision (a name later reused by a different note is
@@ -266,41 +266,41 @@ def register(mcp: FastMCP) -> None:
         Use search to find notes by what they say.
 
         Args:
-            folder: Only notes in this folder, e.g. "Journal"; "" for top-level notes
+            folder: Only notes in this folder, such as `"Journal"`; `""` for top-level notes
                 only.
-            pattern: Glob matched against paths, e.g. "Journal/*.md" or
-                "**/*meeting*.md".
-            include_attachments: Also list non-note files, marked kind="attachment" with
+            pattern: Glob matched against paths, such as `"Journal/*.md"` or
+                `"**/*meeting*.md"`.
+            include_attachments: Also list non-note files, marked kind=`"attachment"` with
                 their mime_type. Default false.
-            filters: Frontmatter values to match, all of them, e.g. {"tags": "craft"};
+            filters: Frontmatter values to match, all of them, such as `{"tags": "craft"}`;
                 any key works, a list field matches when it holds the value, and
                 attachments never match. On an OKF bundle, status (draft, stable or
-                deprecated; stable includes notes with none), stale ("true" or "false")
+                deprecated; stable includes notes with none), stale (`"true"` or `"false"`)
                 and trust_tier (unverified, machine-confirmed or human-reviewed) filter
                 too.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a document mutation whose
+                them (such as right after a document mutation whose
                 effect this read should reflect). Default
-                False answers immediately from the current index — almost
+                False answers immediately from the current index; almost
                 always already up to date; inspect the response's
-                ``_meta.index_stale`` field to tell whether a write was still
+                `_meta.index_stale` field to tell whether a write was still
                 in flight. Bounded by a server timeout (default 60s); on
                 timeout it answers from the current index rather than waiting
                 longer.
 
         Returns:
             List of info dicts. Every entry has a 'kind' field.
-            Notes: path, title, folder, frontmatter, modified_at, kind="note".
+            Notes: path, title, folder, frontmatter, modified_at, kind=`"note"`.
             Attachments (when include_attachments=True): path, folder,
-            mime_type, size_bytes, modified_at, kind="attachment".
+            mime_type, size_bytes, modified_at, kind=`"attachment"`.
             Body content is not included in either case.
 
-            Index freshness rides in the response's ``_meta.index_stale``
-            field — True when the IndexWriter was non-idle, a write completed
-            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            Index freshness rides in the response's `_meta.index_stale`
+            field: True when the IndexWriter was non-idle, a write completed
+            inside the read window, or `wait_for_pending_writes` timed out; False
             otherwise.
         """
         drained = await _maybe_wait_for_drain(
@@ -336,7 +336,7 @@ def register(mcp: FastMCP) -> None:
         wait_for_pending_writes: _WaitForPendingWrites = False,
         vault: Vault = Depends(get_vault),
     ) -> list[str]:
-        """List every folder that holds notes; "" stands for the top level.
+        """List every folder that holds notes; `""` stands for the top level.
 
         Pass one as the folder argument of search, list_documents and the other
         folder-scoped tools.
@@ -346,23 +346,23 @@ def register(mcp: FastMCP) -> None:
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a document mutation whose
+                them (such as right after a document mutation whose
                 effect this read should reflect). Default
-                False answers immediately from the current index — almost
+                False answers immediately from the current index; almost
                 always already up to date; inspect the response's
-                ``_meta.index_stale`` field to tell whether a write was still
+                `_meta.index_stale` field to tell whether a write was still
                 in flight. Bounded by a server timeout (default 60s); on
                 timeout it answers from the current index rather than waiting
                 longer.
 
         Returns:
-            Sorted list of folder paths, e.g. ["", "Journal", "Projects"].
+            Sorted list of folder paths, such as `["", "Journal", "Projects"]`.
             Pass any of these as the 'folder' argument to 'search' or
             'list_documents'.
 
-            Index freshness rides in the response's ``_meta.index_stale``
-            field — True when the IndexWriter was non-idle, a write completed
-            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            Index freshness rides in the response's `_meta.index_stale`
+            field: True when the IndexWriter was non-idle, a write completed
+            inside the read window, or `wait_for_pending_writes` timed out; False
             otherwise.
         """
         drained = await _maybe_wait_for_drain(
@@ -396,28 +396,28 @@ def register(mcp: FastMCP) -> None:
         Use the values in the filters argument of search.
 
         Args:
-            field: A field from indexed_frontmatter_fields in stats (default "tags").
+            field: A field from indexed_frontmatter_fields in stats (default `"tags"`).
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a document mutation whose
+                them (such as right after a document mutation whose
                 effect this read should reflect). Default
-                False answers immediately from the current index — almost
+                False answers immediately from the current index; almost
                 always already up to date; inspect the response's
-                ``_meta.index_stale`` field to tell whether a write was still
+                `_meta.index_stale` field to tell whether a write was still
                 in flight. Bounded by a server timeout (default 60s); on
                 timeout it answers from the current index rather than waiting
                 longer.
 
         Returns:
-            Sorted list of distinct string values, e.g.
-            ["craft", "pacing", "worldbuilding"]. Use these as values in the
+            Sorted list of distinct string values, such as
+            `["craft", "pacing", "worldbuilding"]`. Use these as values in the
             'filters' dict when calling 'search'.
 
-            Index freshness rides in the response's ``_meta.index_stale``
-            field — True when the IndexWriter was non-idle, a write completed
-            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            Index freshness rides in the response's `_meta.index_stale`
+            field: True when the IndexWriter was non-idle, a write completed
+            inside the read window, or `wait_for_pending_writes` timed out; False
             otherwise.
         """
         drained = await _maybe_wait_for_drain(
@@ -452,11 +452,11 @@ def register(mcp: FastMCP) -> None:
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a document mutation whose
+                them (such as right after a document mutation whose
                 effect this read should reflect). Default
-                False answers immediately from the current index — almost
+                False answers immediately from the current index; almost
                 always already up to date; inspect the response's
-                ``_meta.index_stale`` field to tell whether a write was still
+                `_meta.index_stale` field to tell whether a write was still
                 in flight. Bounded by a server timeout (default 60s); on
                 timeout it answers from the current index rather than waiting
                 longer.
@@ -467,8 +467,8 @@ def register(mcp: FastMCP) -> None:
             - document_count (int): Total number of indexed documents.
             - chunk_count (int): Total number of indexed text chunks.
             - folder_count (int): Total number of folders containing documents.
-            - semantic_search_available (bool): True if mode="semantic" or
-              mode="hybrid" can be used in 'search'.
+            - semantic_search_available (bool): True if mode=`"semantic"` or
+              mode=`"hybrid"` can be used in 'search'.
             - indexed_frontmatter_fields (list[str]): Field names usable as
               'filters' in 'search' and as 'field' in 'list_tags'.
             - attachment_extensions (list[str]): Allowed non-.md extensions.
@@ -480,15 +480,15 @@ def register(mcp: FastMCP) -> None:
               Call 'get_orphan_notes' if non-zero.
             - okf (dict, optional): Present only when the vault is an active
               OKF (Open Knowledge Format) bundle. Carries mode,
-              declared_version, a per-``type`` histogram plus untyped_count,
+              declared_version, a per-`type` histogram plus untyped_count,
               status and trust-tier breakdowns, and stale_count. Those cover
               the note population 'okf_validate' audits; the reserved
-              ``index.md`` / ``log.md`` files are counted apart as
+              `index.md` / `log.md` files are counted apart as
               reserved_count.
 
-            Index freshness rides in the response's ``_meta.index_stale``
-            field — True when the IndexWriter was non-idle, a write completed
-            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            Index freshness rides in the response's `_meta.index_stale`
+            field: True when the IndexWriter was non-idle, a write completed
+            inside the read window, or `wait_for_pending_writes` timed out; False
             otherwise.
         """
         drained = await _maybe_wait_for_drain(vault, wait_for_pending_writes, "stats")
@@ -530,25 +530,25 @@ def register(mcp: FastMCP) -> None:
         built yet has no similar notes.
 
         Args:
-            path: Path of the note to compare against, e.g. "notes/topic.md";
+            path: Path of the note to compare against, such as `"notes/topic.md"`;
                 case-sensitive.
             limit: Maximum notes to return (default 10).
             chunks_per_file: Maximum sections per note (default 2).
-            folder: Only notes in this folder or below, e.g. "3-Resources"; "" for
+            folder: Only notes in this folder or below, such as `"3-Resources"`; `""` for
                 top-level notes only.
-            filters: Frontmatter values to match, all of them, e.g. {"type":
-                "resource"}; any key works and a list field matches when it holds the
+            filters: Frontmatter values to match, all of them, such as
+                `{"type": "resource"}`; any key works and a list field matches when it holds the
                 value. On an OKF bundle, status (stable includes notes with none), stale
-                ("true" or "false") and trust_tier filter too.
+                (`"true"` or `"false"`) and trust_tier filter too.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a document mutation whose
+                them (such as right after a document mutation whose
                 effect this read should reflect). Default
-                False answers immediately from the current index — almost
+                False answers immediately from the current index; almost
                 always already up to date; inspect the response's
-                ``_meta.index_stale`` field to tell whether a write was still
+                `_meta.index_stale` field to tell whether a write was still
                 in flight. Bounded by a server timeout (default 60s); on
                 timeout it answers from the current index rather than waiting
                 longer.
@@ -561,7 +561,7 @@ def register(mcp: FastMCP) -> None:
             - folder (str): Parent folder path.
             - score (float): File-level cosine similarity (max of section
               scores), 0.0-1.0; higher = more similar.
-            - search_type (str): Always "semantic".
+            - search_type (str): Always `"semantic"`.
             - frontmatter (dict): Parsed YAML frontmatter.
             - sections (list[dict]): Up to chunks_per_file best-matching
               sections, each with:
@@ -571,16 +571,16 @@ def register(mcp: FastMCP) -> None:
               - score (float): Chunk-level score for this section.
 
             Index freshness is reported out-of-band in the response's
-            ``_meta.index_stale`` field — True when the IndexWriter had
+            `_meta.index_stale` field: True when the IndexWriter had
             pending or in-flight work at any of three observation points
-            (``wait_for_pending_writes`` timing out, a write completing inside the
+            (`wait_for_pending_writes` timing out, a write completing inside the
             read window, or non-idle at response time), False otherwise.
 
-        Useful for finding link candidates that aren't yet wikilinked — the
+        Useful for finding link candidates that aren't linked yet; the
         vault's organic graph is almost always denser than its explicit one.
-        See the ``propose-links`` prompt for a full vault-wide sweep. Respect
+        See the `propose-links` prompt for a full vault-wide sweep. Respect
         folder conventions (see 'get_conventions') when turning similarity
-        into links — some folders are self-contained by design.
+        into links; some folders are self-contained by design.
 
         Raises:
             DocumentNotFoundError: If no document exists at the given path.
@@ -630,8 +630,8 @@ def register(mcp: FastMCP) -> None:
         folder: {path, notes, truncated}, each note with its path, title and headings.
 
         Args:
-            path: A note path ending in .md, e.g. "a/b.md", or a folder, e.g. "a/b".
-            max_level: Deepest heading level to keep, e.g. 2 for H1 and H2; omit for
+            path: A note path ending in .md, such as `"a/b.md"`, or a folder, such as `"a/b"`.
+            max_level: Deepest heading level to keep, such as 2 for H1 and H2; omit for
                 all. The title always stays.
             max_notes: Folders only: notes to include, first by path (default 200);
                 truncated is true when more exist.
@@ -691,28 +691,28 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             limit: Maximum notes to return (default 20).
-            folder: Only notes in this folder, e.g. "Journal"; "" for top-level notes
+            folder: Only notes in this folder, such as `"Journal"`; `""` for top-level notes
                 only.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a document mutation whose
+                them (such as right after a document mutation whose
                 effect this read should reflect). Default
-                False answers immediately from the current index — almost
+                False answers immediately from the current index; almost
                 always already up to date; inspect the response's
-                ``_meta.index_stale`` field to tell whether a write was still
+                `_meta.index_stale` field to tell whether a write was still
                 in flight. Bounded by a server timeout (default 60s); on
                 timeout it answers from the current index rather than waiting
                 longer.
 
         Returns:
-            List of note info dicts, each with: path, title, folder,
-            frontmatter, modified_at (Unix timestamp), kind ("note").
+            One dict per note, each with: path, title, folder,
+            frontmatter, modified_at (Unix timestamp), kind (`"note"`).
 
-            Index freshness rides in the response's ``_meta.index_stale``
-            field — True when the IndexWriter was non-idle, a write completed
-            inside the read window, or ``wait_for_pending_writes`` timed out; False
+            Index freshness rides in the response's `_meta.index_stale`
+            field: True when the IndexWriter was non-idle, a write completed
+            inside the read window, or `wait_for_pending_writes` timed out; False
             otherwise.
         """
         drained = await _maybe_wait_for_drain(
@@ -755,7 +755,7 @@ def register(mcp: FastMCP) -> None:
         than one of them.
 
         Args:
-            path: Path of the note, e.g. "notes/topic.md"; case-sensitive.
+            path: Path of the note, such as `"notes/topic.md"`; case-sensitive.
             similar_limit: Maximum similar notes (default 5); 0 skips them, which suits
                 a vault where stats shows semantic_search_available false.
             link_limit: Maximum backlinks, and separately outlinks (default 10).
@@ -763,11 +763,11 @@ def register(mcp: FastMCP) -> None:
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
                 Use it right after modifying notes when this read must see
-                them (e.g. right after a document mutation whose
+                them (such as right after a document mutation whose
                 effect this read should reflect). Default
-                False answers immediately from the current index — almost
+                False answers immediately from the current index; almost
                 always already up to date; inspect the response's
-                ``_meta.index_stale`` field to tell whether a write was still
+                `_meta.index_stale` field to tell whether a write was still
                 in flight. Bounded by a server timeout (default 60s); on
                 timeout it answers from the current index rather than waiting
                 longer.
@@ -786,16 +786,16 @@ def register(mcp: FastMCP) -> None:
               - source_path (str): Path of the document containing the link.
               - source_title (str): Title of the source document.
               - link_text (str): The clickable text of the link.
-              - link_type (str): One of "markdown", "wikilink", or "reference".
-              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+              - link_type (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
+              - fragment (str | None): Heading anchor (such as `"#section"`), or null.
               - raw_target (str): Literal link target as written in the source.
 
             - outlinks (list): Links from this note. List of dicts, each with:
 
               - target_path (str): Path of the linked document.
               - link_text (str): The clickable text of the link.
-              - link_type (str): One of "markdown", "wikilink", or "reference".
-              - fragment (str | None): Heading anchor (e.g. "#section"), or null.
+              - link_type (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
+              - fragment (str | None): Heading anchor (such as `"#section"`), or null.
               - raw_target (str): Literal link target as written in the source.
               - exists (bool): True if the target document is indexed.
 
@@ -808,7 +808,7 @@ def register(mcp: FastMCP) -> None:
               - folder (str): Parent folder path.
               - score (float): File-level cosine similarity 0.0-1.0 = score
                 of the best matching section.
-              - search_type (str): Always "semantic".
+              - search_type (str): Always `"semantic"`.
               - frontmatter (dict): Parsed YAML frontmatter.
               - sections (list): Single best-matching section, each with
                 heading (str|null), content (str), score (float).
@@ -821,22 +821,22 @@ def register(mcp: FastMCP) -> None:
             - conventions (list, optional): the user's authoring conventions
               for the note's folder (root-first list of {folder, path,
               content}). Present only when convention files apply. Honor
-              them when writing to or proposing links involving this note —
+              them when writing to or proposing links involving this note;
               some folders are self-contained by design.
             - okf (dict, optional): OKF read annotation for this note
               (type, status, stale, trust_tier, sources_count). Present
               only when the vault is an active OKF bundle.
 
             Index freshness is reported out-of-band in the response's
-            ``_meta.index_stale`` field — True when the IndexWriter had
+            `_meta.index_stale` field: True when the IndexWriter had
             pending or in-flight work at any of three observation points
-            (``wait_for_pending_writes`` timing out, a write completing inside the
+            (`wait_for_pending_writes` timing out, a write completing inside the
             read window, or non-idle at response time), False otherwise.
 
-        The ``similar`` field in the response surfaces notes that may warrant
-        explicit links to the context note but don't yet — a common input to
-        manual or automated link proposal. Respect the ``conventions`` field
-        (and 'get_conventions') when proposing links — some folders are
+        The `similar` field in the response surfaces notes that may warrant
+        explicit links to the context note but don't yet, a common input to
+        manual or automated link proposal. Respect the `conventions` field
+        (and 'get_conventions') when proposing links; some folders are
         self-contained by design.
 
         Raises:
@@ -877,8 +877,8 @@ def register(mcp: FastMCP) -> None:
         root first and the most specific last.
 
         Args:
-            path: A note or folder path, e.g. "3-Resources/topic.md" or "3-Resources"; a
-                note takes its folder's conventions. "" (the default) returns the root
+            path: A note or folder path, such as `"3-Resources/topic.md"` or `"3-Resources"`; a
+                note takes its folder's conventions. `""` (the default) returns the root
                 conventions and lists every folder that has its own.
 
         Returns:
@@ -886,13 +886,13 @@ def register(mcp: FastMCP) -> None:
 
             - path (str): The path that was queried.
             - conventions (list): Applicable convention entries, root-first.
-              Each has folder (str, "" for vault root), path (str, the
+              Each has folder (str, `""` for vault root), path (str, the
               convention file's own path), and content (str, its markdown
               body).
             - convention_folders (list[str], discovery mode only): all
-              folders carrying a convention file ("" = vault root),
-              included only when path is "" — it requires a vault-wide
-              folder walk, so targeted lookups skip it.
+              folders carrying a convention file (`""` = vault root),
+              included only when path is `""`; it requires a vault-wide
+              folder walk, so a call with a path skips it.
 
         Raises:
             ValueError: If the path escapes the vault root.
@@ -923,7 +923,7 @@ def register(mcp: FastMCP) -> None:
     async def okf_validate(vault: Vault = Depends(get_vault)) -> dict[str, Any]:
         """Audit the vault's OKF (Open Knowledge Format) conformance.
 
-        Reports conformance as degrees, not a verdict — during a migration
+        Reports conformance as degrees, not a verdict; during a migration
         this is the progress meter. Reads the vault from disk (works before
         the index is built and before the vault declares 'okf_version'), and
         skips paths matching the vault's effective exclude patterns.

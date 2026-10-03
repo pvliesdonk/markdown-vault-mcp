@@ -1,3 +1,8 @@
+---
+description: "How a release is cut, published and promoted."
+kind: explanation
+---
+
 # Release Process
 
 `main` is trunk: every change merges there, and merging a feature is not
@@ -86,7 +91,7 @@ newest in the relevant series, so a patch release cut from an old
 while the candidate's version is still ahead of the newest stable. This holds
 even when two releases overlap: each rolling channel checks the tag
 ordering again inside its own publish job. See
-[Image tags](docker.md#image-tags) for the Docker tag list.
+[Image tags](../deploy/docker.md#image-tags) for the Docker tag list.
 
 ## Testing a candidate's Claude Code plugin
 

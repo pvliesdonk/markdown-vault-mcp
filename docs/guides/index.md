@@ -12,8 +12,8 @@ Step-by-step walkthroughs for common deployment scenarios. Each guide takes you 
 | Add semantic search to my vault | [Claude Desktop](claude-desktop.md#step-3-add-semantic-search) |
 | Run the server in a Docker container | [Docker](docker.md) |
 | Add git write support to a container | [Docker](docker.md#step-2-add-git-write-support) |
-| Protect my server with a bearer token | [Authentication](authentication.md#bearer-token) |
-| Protect my server with OIDC authentication | [Authentication](authentication.md#oidc) |
+| Protect my server with a bearer token | [Authentication](../deploy/authentication.md#bearer-token) |
+| Protect my server with OIDC authentication | [Authentication](../deploy/authentication.md#oidc) |
 | Access my vault from desktop, mobile, AND Claude | [Obsidian Everywhere](obsidian-everywhere.md) |
 | Do research (literature grounding, interconnected notes, paper drafting) | [Research workflows](research-workflows.md) |
 | Use FastEmbed for local embeddings | [Embeddings](embeddings.md#fastembed) |
@@ -34,4 +34,4 @@ All guides assume you have:
 - A directory of markdown files (such as an Obsidian vault)
 - Python 3.11+ installed (for local installs) or Docker (for container deployments)
 
-For installation instructions, see [Installation](../installation.md). For the full environment variable reference, see [Configuration](../configuration.md).
+For installation instructions, see [Installation](../get-started/installation.md). For the full environment variable reference, see [Configuration](../reference/configuration.md).

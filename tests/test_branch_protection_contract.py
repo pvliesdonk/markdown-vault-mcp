@@ -6,11 +6,11 @@ ruleset protects.  The two live in different files, so a change to one can
 silently deadlock or unguard the other.  The posture asserted here:
 
 - No branch ruleset requires a pull request to be up to date with its base
-  before merging (`docs/deployment/repository-protection.md`).
+  before merging (`docs/contribute/repository-protection.md`).
 - `integration/*` branches require `CI Success` alone, and `ci.yml` runs
   on pull requests to them and pushes to them, so an epic's child pull
   requests are gated without waiting on a domain check that never reports
-  (`docs/deployment/integration-branches.md`).
+  (`docs/contribute/integration-branches.md`).
 - The release workflow never fires for a pull request merged into an
   integration branch.
 """
