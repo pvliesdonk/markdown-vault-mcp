@@ -1,3 +1,8 @@
+---
+description: "Choose and configure an embedding provider for search by meaning: FastEmbed, Ollama, OpenAI-compatible endpoints or Voyage."
+kind: how-to
+---
+
 # Embedding Providers
 
 This guide covers configuring each supported embedding provider for semantic search. You only need one provider; choose based on your requirements:

@@ -161,5 +161,5 @@ A failed sign-in names its cause: `invalid_client` is a client ID or secret that
 
 This server reads claims for one thing: the author of a git commit. With `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME_CLAIM` and `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL_CLAIM` set (to `name` and `email`, say), a commit made for a signed-in user names that user as its author. The committer stays the server's own identity. In `oidc-proxy` mode the claims come from the provider's ID token by default (from the access token with `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true`), and in `remote` mode from the access token. The provider must put them in the token the server reads. A missing claim falls back to the server's identity, with one warning in the log. The scopes that carry these claims (`profile`, `email`) go in `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`.
 
-For Open Knowledge Format provenance, a signed-in user counts as a person; [OKF](../guides/okf.md) explains what that changes.
+For Open Knowledge Format provenance, a signed-in user counts as a person; [OKF](../use/okf.md) explains what that changes.
 <!-- DOMAIN-OIDC-PROVIDERS-EXTRA-END -->

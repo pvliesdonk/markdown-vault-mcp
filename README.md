@@ -17,12 +17,12 @@ Generic markdown vault MCP with hybrid search
 <!-- DOMAIN-README-PITCH-START -->
 Give Claude, or any MCP client, a folder of Markdown notes to search, read and write. An Obsidian vault works as it is.
 
-- **Hybrid search.** Keyword search with SQLite FTS5 and, once an embedding provider is configured, search by meaning, fused by Reciprocal Rank Fusion. Results are short snippets; `read` fetches the whole section. See [Embeddings](docs/guides/embeddings.md).
+- **Hybrid search.** Keyword search with SQLite FTS5 and, once an embedding provider is configured, search by meaning, fused by Reciprocal Rank Fusion. Results are short snippets; `read` fetches the whole section. See [Embeddings](docs/use/embeddings.md).
 - **Frontmatter as data.** YAML frontmatter fields become search filters, and long notes are split at their headings.
 - **Careful writes.** The write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are on by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`. Replacing a file takes the etag from reading it, and per-folder `_conventions.md` rules reach the client as it writes.
-- **Git.** Optional commit per write with a delayed push, pull or webhook sync, and history and diffs; an overwritten note can be read back at the revision it replaced. See [Git integration](docs/guides/git-integration.md).
+- **Git.** Optional commit per write with a delayed push, pull or webhook sync, and history and diffs; an overwritten note can be read back at the revision it replaced. See [Git integration](docs/use/git-integration.md).
 - **Links.** Backlinks, outlinks, broken links and the path between two notes, for wikilinks and Markdown links alike, with interactive views in clients that render [MCP Apps](docs/deploy/mcp-apps.md).
-- **Open Knowledge Format.** OKF bundles are recognized, and results carry each note's type, status and trust tier. See [OKF](docs/guides/okf.md).
+- **Open Knowledge Format.** OKF bundles are recognized, and results carry each note's type, status and trust tier. See [OKF](docs/use/okf.md).
 
 The [tools reference](docs/reference/tools/index.md) lists every tool. The same engine is a Python library: see the [Vault API](docs/api/vault.md).
 <!-- DOMAIN-README-PITCH-END -->

@@ -1,3 +1,8 @@
+---
+description: "Run a PARA vault (Projects, Areas, Resources, Archive) with this server: folders, frontmatter, prompts and the capture-to-archive loop."
+kind: how-to
+---
+
 # PARA with markdown-vault-mcp
 
 PARA (Projects, Areas, Resources, Archive) is Tiago Forte's system for organizing digital information around action (what you are doing, responsible for, or referencing). Where a Zettelkasten is idea-centric and emergent, PARA is action-oriented and top-down: every note has a home determined by what you do with it. This guide shows how to use markdown-vault-mcp as a PARA backend, using its frontmatter-aware search, linking, and templating to run the canonical Capture → Triage → Project Work → Weekly Review → Archive loop.
@@ -110,7 +115,7 @@ Indexed fields are also keyword-searchable by default (`SEARCHABLE_FIELDS` inher
 
 Then you can run targeted queries via the Python API:
 
-```python
+```python { .fragment }
 # All active projects
 results = vault.reader.search(
     "project",
@@ -203,7 +208,7 @@ Use the create_from_template prompt with template_name="inbox"
 
 **Programmatically (scripting escape hatch):**
 
-```python
+```python { .fragment }
 from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir="/path/to/vault")
@@ -312,7 +317,7 @@ The easiest path is to use `para-weekly-review` Step 7, which handles the full l
 
 For scripting outside the prompt:
 
-```python
+```python { .fragment }
 from datetime import date
 from markdown_vault_mcp.vault import Vault
 
@@ -505,6 +510,6 @@ The [`examples/para/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/mai
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/para/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/para/)
 - **Run this vault as an OKF bundle?** See the [OKF guide](okf.md) and the [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) pack
-- **Prefer idea-centric knowledge management?** See the alternative workflow: [`docs/guides/zettelkasten.md`](zettelkasten.md)
+- **Prefer idea-centric knowledge management?** See the alternative workflow: [Zettelkasten](zettelkasten.md)
 - **Ambient patterns**: [`docs/prompts.md`](../prompts.md#ambient-patterns-without-prompts) (flows the LLM handles from prose alone: URL capture, research, ad-hoc link proposal)
 - **Research workflows**: [research-workflows.md](research-workflows.md) (literature grounding, fact-checking, and writing papers from notes)

@@ -240,5 +240,5 @@ This server keeps its search index (`index.db`), its embeddings and the FastEmbe
 
 ### Git
 
-The image includes `git` and `git-lfs`. For a vault that commits and pushes the changes made through the server, set the variables in [Git integration](../guides/git-integration.md#managed-mode-recommended-for-containerized-deployments). An empty vault folder plus `MARKDOWN_VAULT_MCP_GIT_REPO_URL` is cloned at the first start.
+The image includes `git` and `git-lfs`. For a vault that commits and pushes the changes made through the server, set the variables in [Git integration](../use/git-integration.md#managed-mode-recommended-for-containerized-deployments). An empty vault folder plus `MARKDOWN_VAULT_MCP_GIT_REPO_URL` is cloned at the first start.
 <!-- DOMAIN-DOCKER-EXTRA-END -->

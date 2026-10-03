@@ -312,7 +312,7 @@ repeated privacy prompts; root-level notes then rely on explicit scans.
 Folder convention files guide clients before writes. OKF read semantics can be
 auto-detected from a root `index.md`; the separately gated OKF write layer adds
 provenance, invalidates stale verification, and maintains `log.md` and
-`index.md`. See the [OKF guide](../guides/okf.md) for the trust and verification
+`index.md`. See the [OKF guide](../use/okf.md) for the trust and verification
 model.
 
 Attachments in hidden or excluded directories are never listed. Full note

@@ -128,5 +128,5 @@ MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR=/var/lib/markdown-vault-mcp/fastembed
 - **Without `INDEX_PATH`** the index lives in memory and is rebuilt at every start.
 - **Without `FASTEMBED_CACHE_DIR`** FastEmbed keeps its model in the temporary directory. The unit's `PrivateTmp=yes` discards that at every stop, so the model downloads again at each start.
 
-For a vault that commits and pushes through the server, an empty `SOURCE_DIR` plus the variables in [Git integration](../guides/git-integration.md#managed-mode-recommended-for-containerized-deployments) is enough: the server clones at the first start.
+For a vault that commits and pushes through the server, an empty `SOURCE_DIR` plus the variables in [Git integration](../use/git-integration.md#managed-mode-recommended-for-containerized-deployments) is enough: the server clones at the first start.
 <!-- DOMAIN-SYSTEMD-EXTRA-END -->

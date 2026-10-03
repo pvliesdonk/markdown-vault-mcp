@@ -34,7 +34,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Incremental reindexing**: hash-based change detection, only re-processes modified files
 - **Write operations**: create, edit, append to, delete, rename documents with automatic index updates
 - **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, surfaced to LLM clients at write time via [`get_conventions`](tools/index.md#get_conventions) and in `write`/`edit` results
-- **[Open Knowledge Format](guides/okf.md)**: recognizes OKF bundles (an `okf_version` declaration in the root `index.md`) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier; those dimensions are filterable and nudge ranking, and the server ships an `okf_validate` audit, one-shot migration transforms, an optional enforced write layer (provenance + verification + `log.md`/`index.md` upkeep), and a downloadable bundle export
+- **[Open Knowledge Format](use/okf.md)**: recognizes OKF bundles (an `okf_version` declaration in the root `index.md`) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier; those dimensions are filterable and nudge ranking, and the server ships an `okf_validate` audit, one-shot migration transforms, an optional enforced write layer (provenance + verification + `log.md`/`index.md` upkeep), and a downloadable bundle export
 - **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, and so on)
 - **LLM summarization**: optional `summarize` tool condenses a note, a set of notes, or a subtree with a language model via any OpenAI-compatible endpoint (OpenAI, Ollama, Anthropic, vLLM, and others); the synthesis references the individual source notes by path. Gated on `OPENAI_API_KEY` or a configured base URL.
 - **Git integration**: optional auto-commit (one commit per write tool call) and deferred push, with token auth via `GIT_ASKPASS`
@@ -53,8 +53,8 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 A few flows the server enables with an LLM on top (none of these require a bespoke prompt):
 
 - **"Fetch <url> and summarize into a Resource note."** Claude composes `fetch` + `search` + `write`.
-- **"Research <topic> and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks. See the [Research workflows guide](guides/research-workflows.md) for the full loop.
-- **"Summarize today's conversations into Inbox notes."** Claude.ai composes `conversation_search` + `recent_chats` + `write`; the [`para-capture-chats`](guides/para.md#using-the-para-prompts) prompt is the one-click version.
+- **"Research <topic> and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks. See the [Research workflows guide](use/research-workflows.md) for the full loop.
+- **"Summarize today's conversations into Inbox notes."** Claude.ai composes `conversation_search` + `recent_chats` + `write`; the [`para-capture-chats`](use/para.md#using-the-para-prompts) prompt is the one-click version.
 - **Find missing links.** The [`propose-links`](prompts.md) builtin prompt scans recently modified notes and proposes useful connections.
 
 See [MCP Prompts](prompts.md) for the codified workflows and the ambient-pattern reference.

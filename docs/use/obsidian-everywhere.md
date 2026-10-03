@@ -1,3 +1,8 @@
+---
+description: "Keep one Obsidian vault on desktop, mobile and Claude, with git as the source of truth."
+kind: explanation
+---
+
 # Obsidian Everywhere
 
 A reference architecture for keeping one Obsidian vault available on desktop, mobile, and Claude, with git as the source of truth.
