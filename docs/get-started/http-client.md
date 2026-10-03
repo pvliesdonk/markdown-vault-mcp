@@ -50,7 +50,15 @@ Claude calls the server's `get_server_info` tool, which reads the server's versi
 ### What to know about this server
 
 <!-- DOMAIN-HTTP-CLIENT-EXTRA-START -->
-<!-- What a remote client of this server should know first: the first read-only task to try, and any feature that needs a particular credential or client; kept across copier update. -->
+A first task that changes nothing:
+
+> Search the vault for notes about <a topic>, and summarize what they say.
+
+Whether Claude can also write is the operator's choice: a server in read-only mode lists none of the tools that change files. Some tools depend on the client or the operator:
+
+- `browse_vault` and `show_context` open an interactive view in clients that render [MCP Apps](../deploy/mcp-apps.md); other clients get the same data as text.
+- `create_download_link` and `create_upload_link` return a one-time URL for moving a file out of or into the vault, which works without your credential. See [Transfer links](../deploy/transfer-links.md).
+- `summarize` appears only when the operator configured a language model for it.
 <!-- DOMAIN-HTTP-CLIENT-EXTRA-END -->
 
 ## Next

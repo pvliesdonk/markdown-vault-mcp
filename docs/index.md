@@ -19,6 +19,8 @@ What the server can reach, what it changes and who gets in is set out in the [se
 - [Contribute](contribute/index.md): change the project.
 
 <!-- DOMAIN-INDEX-FEATURES-START -->
+Whether it fits your notes, what it assumes and what to use instead is under [Does it fit?](https://github.com/pvliesdonk/markdown-vault-mcp#does-it-fit) in the README.
+
 A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
 
 Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault) and it exposes search, read, write, and edit tools over the [Model Context Protocol](https://modelcontextprotocol.io/).

@@ -78,6 +78,8 @@ plugins:
         deployment/repository-protection.md: contribute/repository-protection.md
         deployment/integration-branches.md: contribute/integration-branches.md
         # PROJECT-REDIRECTS-START — this project's moved pages; kept across copier update
+        guides/claude-desktop.md: get-started/claude-desktop.md
+        guides/claude-code-plugin.md: get-started/claude-code.md
         # PROJECT-REDIRECTS-END
   # Generates llms.txt + llms-full.txt for the README badge.
   # The sections are filled from `nav:` at build time by
@@ -132,8 +134,6 @@ nav:
       - A remote server: get-started/http-client.md
       - Installation: get-started/installation.md
       # PROJECT-NAV-GET-STARTED-START — this server's first-run pages; kept across copier update
-      - Claude Desktop guide: guides/claude-desktop.md
-      - Claude Code plugin: guides/claude-code-plugin.md
       # PROJECT-NAV-GET-STARTED-END
   - Deploy:
       - Overview: deploy/index.md

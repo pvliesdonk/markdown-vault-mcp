@@ -15,5 +15,5 @@ Each page here takes you from nothing to a first working call with one client. P
 A first setup is the moment to decide what the server may touch. What it can reach, what it changes and who gets in is set out in the [security model](../security-model.md); each tutorial says which of that its setup allows.
 
 <!-- DOMAIN-GET-STARTED-INTRO-START -->
-<!-- One or two sentences on what a newcomer to this server should try first; kept across copier update. -->
+Point the server at a folder of Markdown notes, an Obsidian vault included, and start read-only: Claude can search and read your notes but not change them. Writing, git commits and search by meaning come after, from [Use](../use/index.md).
 <!-- DOMAIN-GET-STARTED-INTRO-END -->
