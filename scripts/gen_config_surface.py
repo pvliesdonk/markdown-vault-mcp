@@ -2691,7 +2691,7 @@ def splice_region(text: str, region_id: str, body: str, *, source: str) -> str:
     Pure: never reads or writes a file — the caller owns all I/O (a spliced
     file must already exist; `render_splice_file` is what enforces that).
     *source* is the file this *text* came from (a project-relative path,
-    e.g. ``"docs/deployment/oidc.md"``) — used only to name the offending
+    e.g. ``"docs/deploy/oidc.md"``) — used only to name the offending
     file in an error message, never to read or write anything here.
 
     Both markers may sit behind a comment prefix — `  # <!-- ... -->` in a
@@ -3299,7 +3299,7 @@ def write_artifacts(
     # env-destination guard: a var that would land in no env artifact is a
     # config-presentation bug, and this guard's message (which names the
     # known section tags) is the actionable one — it must fire before any
-    # renderer runs, or docs/configuration.md's own `complete: true` guard
+    # renderer runs, or docs/reference/configuration.md's own `complete: true` guard
     # reports the same root cause with a less specific message. Both run
     # before anything is written to disk, so partial output never masks
     # either.

@@ -275,6 +275,15 @@ def _mcp_env(
     monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(vault_path))
 
 
+# Optional: literal substitutions ``tests/test_published_examples.py`` applies
+# to a ```` ```python { .run } ```` block before running it, so a published
+# example keeps its placeholder paths and still runs against a fixture::
+#
+#     @pytest.fixture
+#     def docs_example_substitutions(tmp_path: Path) -> dict[str, str]:
+#         return {"/path/to/data": str(tmp_path)}
+
+
 @pytest.fixture
 def server(_mcp_env: None) -> FastMCP:
     """Construct a fresh server before any async client loop starts."""

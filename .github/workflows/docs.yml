@@ -47,6 +47,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --no-default-groups --group docs --frozen  # NOSONAR(githubactions:S8541): installs this project, which --no-build refuses (#694)
 
+      - name: Check documentation structure
+        # Errors fail; warnings fail only with `strict = true` under
+        # [tool.docs-structure] in pyproject.toml. See
+        # docs/contribute/docs-structure.md.
+        run: uv run --no-sync --no-build python scripts/check_docs_structure.py
+
       - name: Build documentation
         run: uv run --no-sync --no-build mkdocs build --strict
 

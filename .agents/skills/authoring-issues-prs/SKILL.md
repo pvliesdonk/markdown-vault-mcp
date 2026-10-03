@@ -150,7 +150,7 @@ belongs to runs on an integration branch (its body names
 `Part of #<epic>` or `Refs #N` in the body instead of `Closes #N`, which
 does nothing on a non-default base. The final `integration/<epic>` →
 `main` PR carries every `Closes` line and is merged with a merge commit;
-`docs/deployment/integration-branches.md` has the whole workflow.
+`docs/contribute/integration-branches.md` has the whole workflow.
 
 Include a feature's approved spec in the Design section, folded when long,
 ahead of the review report. The spec is agreed in session or offline

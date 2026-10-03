@@ -168,7 +168,7 @@ hand-editing the generated file.
 
 Once the diff in step 4 confirms every var survived the move, delete the
 hand-written prose you copied out in step 1 from wherever it lived
-(`README.md`, `docs/configuration.md`, or similar). It now duplicates the
+(`README.md`, `docs/reference/configuration.md`, or similar). It now duplicates the
 generated artifact and would drift from it over time if kept.
 
 ## Verifying you're done
@@ -380,7 +380,7 @@ file itself.
 
 A later template version again reshapes the two Markdown destinations:
 
-- **`docs/configuration.md` is now the complete generated reference.**
+- **`docs/reference/configuration.md` is now the complete generated reference.**
   Every collected var renders in exactly one section table, spliced
   between `GENERATED-ENV-TABLE-REF-*` marker pairs, one region per
   section (Server, Authentication, Persistence, and so on, mirroring
@@ -399,7 +399,7 @@ A later template version again reshapes the two Markdown destinations:
 
 Why: the flat generated README table this replaces became unreadable the
 moment a project grew a few dozen domain vars, and the hand-written
-tables projects kept in `docs/configuration.md` were drift debt — every
+tables projects kept in `docs/reference/configuration.md` were drift debt — every
 row duplicated field metadata the generator already owns.
 
 Migration, on the first `copier update` that pulls this version in:
@@ -413,7 +413,7 @@ Migration, on the first `copier update` that pulls this version in:
 2. **Give your domain fields `wizard: {group: ...}` hints** if they lack
    them, so the reference's domain section renders grouped. Projects
    that already grouped their wizard questions get this for free.
-3. **Resolve the `docs/configuration.md` merge.** If you never touched
+3. **Resolve the `docs/reference/configuration.md` merge.** If you never touched
    the template's version, the update lands cleanly. If you rewrote the
    page with hand-written tables (common), copier reports conflicts:
    take the template's side for the page skeleton and every
@@ -435,7 +435,7 @@ reference section fails the `complete: true` guard instead, naming the
 var and its tags:
 
 ```text
-ERROR: docs/configuration.md declares `complete: true` but its regions match none of: 'DEMO_MCP_MYSTERY' (tags=['no_such_tag']). Add one of each var's tags to a region (or a new region covering it) so the reference stays complete.
+ERROR: docs/reference/configuration.md declares `complete: true` but its regions match none of: 'DEMO_MCP_MYSTERY' (tags=['no_such_tag']). Add one of each var's tags to a region (or a new region covering it) so the reference stays complete.
 ```
 
 In practice that error means the same thing as the env-destination guard

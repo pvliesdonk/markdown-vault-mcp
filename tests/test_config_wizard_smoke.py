@@ -62,7 +62,7 @@ def _stale_wizard_assets() -> list[str]:
 
 @pytest.fixture(scope="module")
 def site_url() -> typing.Iterator[str]:
-    if not (SITE / "configuration-generator" / "index.html").exists():
+    if not (SITE / "reference" / "configuration-generator" / "index.html").exists():
         pytest.skip("site/ not built -- run `uv run mkdocs build` first")
     # A built-but-stale site/ (source edited under docs/ without rebuilding)
     # would silently run these tests against outdated assets and false-fail.
@@ -106,7 +106,7 @@ def page(browser: Browser, site_url: str) -> typing.Iterator[Page]:
     # Fresh page per test: the wizard keeps answer state in a module-level JS
     # object, so each test must start from a clean load to stay order-independent.
     pg = browser.new_page()
-    pg.goto(f"{site_url}/configuration-generator/")
+    pg.goto(f"{site_url}/reference/configuration-generator/")
     pg.wait_for_selector("#cfg-wizard select")
     yield pg
     pg.close()

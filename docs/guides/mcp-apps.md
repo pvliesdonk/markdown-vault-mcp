@@ -148,7 +148,7 @@ either artifact is stale; both run in CI and as pre-commit hooks.
 
 MCP Apps views require a client that supports the MCP Apps protocol. Currently supported by Claude on claude.ai. Clients without Apps support receive a text-only fallback from `browse_vault` and `show_context`.
 
-To hide `browse_vault` and `show_context` from the tool listing entirely (for clients that never render Apps panels), set `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true`. See [Configuration](../configuration.md).
+To hide `browse_vault` and `show_context` from the tool listing entirely (for clients that never render Apps panels), set `MARKDOWN_VAULT_MCP_DISABLE_APPS_UI=true`. See [Configuration](../reference/configuration.md).
 
 ### Firing prompts from Claude.ai's `+` menu
 

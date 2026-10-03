@@ -31,7 +31,7 @@ To change what the wizard asks:
 
 The same metadata drives the documentation, so a domain field is documented the moment it exists — never hand-write an env-var table:
 
-- **`docs/configuration.md`** is the complete generated reference: every collected var renders in exactly one section table (the generator's `complete: true` guard fails generation if one would be missed). Domain fields render under `## Domain variables`, segmented into `###` sub-sections by each field's `wizard: {group: ...}` hint — the same grouping the config wizard shows — with ungrouped fields first. Hand-authored prose belongs *around* the `GENERATED-ENV-TABLE-REF-*` marker pairs (the `DOMAIN-CONFIG-VARS` block holds this project's conceptual prose), never inside them.
+- **`docs/reference/configuration.md`** is the complete generated reference: every collected var renders in exactly one section table (the generator's `complete: true` guard fails generation if one would be missed). Domain fields render under `## Domain variables`, segmented into `###` sub-sections by each field's `wizard: {group: ...}` hint — the same grouping the config wizard shows — with ungrouped fields first. Hand-authored prose belongs *around* the `GENERATED-ENV-TABLE-REF-*` marker pairs (the `DOMAIN-CONFIG-VARS` block holds this project's conceptual prose), never inside them.
 - **`README.md`'s two config tables are curated subsets**, not the full surface. Add `readme` to a field's `tags` metadata to feature it in the README's Domain configuration table; leave the rest to the reference. Keep the featured set small — it is a landing-page entry point.
 
 ### mcpb install screen

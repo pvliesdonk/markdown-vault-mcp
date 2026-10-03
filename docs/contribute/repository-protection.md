@@ -1,3 +1,8 @@
+---
+description: "The branch and tag rules that decide what a release can ship from."
+kind: explanation
+---
+
 # Repository Protection
 
 The template ships GitHub repository rulesets that gate the branches a

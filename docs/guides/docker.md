@@ -77,7 +77,7 @@ You should see log output with the number of documents indexed. If you see permi
     docker compose build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)
     ```
 
-    See [Docker deployment](../deployment/docker.md#uidgid-configuration) for more options.
+    See [Docker deployment](../deploy/docker.md#uidgid-configuration) for more options.
 
 ---
 
@@ -161,7 +161,7 @@ Clients must include the `Authorization: Bearer your-secret-token` header in eve
 
 > **Tip:** Generate a random token with `openssl rand -hex 32`.
 
-For more details on bearer token auth (client usage, when to use it), see the [Authentication guide](authentication.md#bearer-token).
+For more details on bearer token auth (client usage, when to use it), see the [Authentication guide](../deploy/authentication.md#bearer-token).
 
 ---
 
@@ -191,9 +191,9 @@ MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=your-64-char-hex-key
 
 For the full OIDC setup including provider registration, Traefik configuration, subpath deployments, and troubleshooting:
 
-- [Authentication guide: OIDC section](authentication.md#oidc): overview and variable reference
+- [Authentication guide: OIDC section](../deploy/authentication.md#oidc): overview and variable reference
 - [OIDC provider setup](oidc-providers.md): step-by-step for Authelia, Keycloak, Google, GitHub
-- [OIDC deployment reference](../deployment/oidc.md): Docker Compose, subpath config, architecture
+- [OIDC deployment reference](../deploy/oidc.md): Docker Compose, subpath config, architecture
 
 ### Verify
 

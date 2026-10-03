@@ -217,7 +217,7 @@ def render_report(
         text += (
             f"\n**The report could not be computed:** {failure}\n\n"
             "Open the template's compare view for the two refs and check every "
-            "`_skip_if_exists` path by hand (see `docs/deployment/template-updates.md`).\n"
+            "`_skip_if_exists` path by hand (see `docs/contribute/template-updates.md`).\n"
         )
     elif not changes:
         text += "\nNo seeded file changed between these refs.\n"

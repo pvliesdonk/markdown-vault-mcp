@@ -1,12 +1,22 @@
+---
+description: "What Markdown Vault MCP is, what it does, and where to start reading."
+kind: explanation
+---
+
 # Markdown Vault MCP
 
 Generic markdown vault MCP with hybrid search
 
-## Getting started
+What the server can reach, what it changes and who gets in is set out in the [security model](security-model.md).
 
-- [Installation](installation.md)
-- [Configuration](configuration.md)
-- [Tools](tools/index.md)
+## Where to go
+
+- [Get started](get-started/index.md): a first success with the client you use.
+- [Deploy](deploy/index.md): run it for real, in a container and behind authentication.
+- [Use](use/index.md): get more out of its features.
+- [Reference](reference/configuration.md): configuration, [tools](reference/tools/index.md), resources, prompts and the command line.
+- [Upgrade](upgrade/index.md): release channels and what changes when you move.
+- [Contribute](contribute/index.md): change the project.
 
 <!-- DOMAIN-INDEX-FEATURES-START -->
 A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
@@ -32,7 +42,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **MCP prompts**: summarize, research, discuss, create from template, compare, and find related notes
 - **MCP Apps**: browser-based views (Context Card, Graph Explorer, Vault Browser, and Note Preview) for clients supporting the MCP Apps protocol
 - **One-time transfer links**: mint short-lived capability URLs to move files into or out of the vault out-of-band over HTTP (`create_download_link` / `create_upload_link`; HTTP/SSE transports only)
-- **[Configuration Generator](configuration-generator.md)**: build a working config, Docker command, or systemd unit in your browser.
+- **[Configuration Generator](reference/configuration-generator.md)**: build a working config, Docker command, or systemd unit in your browser.
 <!-- DOMAIN-INDEX-FEATURES-END -->
 
 <!-- DOMAIN-INDEX-USE-CASES-START -->
@@ -88,7 +98,7 @@ docker compose up -d
 /plugin install markdown-vault-mcp@pvliesdonk
 ```
 
-See [Installation](installation.md) for all installation methods (PyPI, uv, Docker, Linux packages, Claude Code plugin) and [Configuration](configuration.md) for all available options.
+See [Installation](get-started/installation.md) for all installation methods (PyPI, uv, Docker, Linux packages, Claude Code plugin) and [Configuration](reference/configuration.md) for all available options.
 
 ## Architecture
 

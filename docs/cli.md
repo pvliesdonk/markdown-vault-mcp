@@ -40,7 +40,7 @@ For reverse proxies, you can either:
 - Keep app path at `/mcp` and use proxy rewrite/strip-prefix middleware.
 - Set app path directly to the public path (`/vault/mcp`) and route without rewrite.
 
-When OIDC is enabled under a subpath, the configuration is different: the subpath goes in `BASE_URL` only, and `HTTP_PATH` stays at `/mcp`. See [OIDC subpath deployments](deployment/oidc.md#subpath-deployments).
+When OIDC is enabled under a subpath, the configuration is different: the subpath goes in `BASE_URL` only, and `HTTP_PATH` stays at `/mcp`. See [OIDC subpath deployments](deploy/oidc.md#subpath-deployments).
 
 Then your redirect URI is:
 

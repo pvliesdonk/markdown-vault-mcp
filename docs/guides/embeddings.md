@@ -115,13 +115,13 @@ If embeddings are working, hybrid and semantic search modes will return results 
 ### Install
 
 ```bash
-pip install markdown-vault-mcp[embeddings]
+pip install "markdown-vault-mcp[embeddings]"
 ```
 
 Or with uv:
 
 ```bash
-uv pip install markdown-vault-mcp[embeddings]
+uv pip install "markdown-vault-mcp[embeddings]"
 ```
 
 The `[all]` extra includes FastEmbed as well.
@@ -369,7 +369,7 @@ provider.
     back to 1500 characters. If your model's context is smaller than roughly
     536 tokens, set `MARKDOWN_VAULT_MCP_MAX_CHUNK_CHARS` explicitly, or the
     endpoint will reject or truncate oversize chunks. See
-    [`MAX_CHUNK_CHARS`](../configuration.md).
+    [`MAX_CHUNK_CHARS`](../reference/configuration.md).
 
 !!! note "Auto-detection reacts to the key alone"
     With `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` unset, an `OPENAI_API_KEY` in

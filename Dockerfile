@@ -18,7 +18,7 @@ WORKDIR /app
 # (debugpy) and bake the listener into the image.  Accepts the same boolean
 # vocabulary as runtime ``parse_bool`` (``true``/``1``/``yes``/``on``,
 # case-insensitive); anything else is treated as off.  See
-# ``docs/deployment/docker.md`` for the full attach workflow.
+# ``docs/deploy/docker.md`` for the full attach workflow.
 ARG DEBUG=false
 
 # DOCKERFILE-UV-EXTRAS-START — append `--extra <name>` flags below to pull domain-specific extras; kept across copier update

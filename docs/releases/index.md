@@ -1,8 +1,15 @@
+---
+description: "Release notes for each minor series, with the steps to upgrade."
+kind: how-to
+---
+
 # Release notes
 
 Human-readable notes for each minor release: what changed, who is affected,
 and what to do about it, with every claim linked to the issue or pull request
-behind it.
+behind it. A page's Upgrading section answers three questions on fixed lines,
+**Clients**, **State** and **Security posture**; the
+[Upgrade](../upgrade/index.md) page says what each answers.
 
 ## Available pages
 

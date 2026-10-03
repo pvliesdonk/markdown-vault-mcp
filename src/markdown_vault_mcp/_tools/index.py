@@ -33,6 +33,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         description="Check embedding provider and vector-index status.",
+        tags={"group:indexing"},
         icons=_TOOL_ICONS["embeddings_status"],
         annotations={
             "title": "Embeddings Status",
@@ -68,6 +69,7 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
         description="Report FTS index readiness, progress, and last build error.",
+        tags={"group:indexing"},
         annotations={
             "title": "Index Status",
             "read_only_hint": True,
@@ -142,6 +144,7 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
         mcp,
         jobs,
         icons=_TOOL_ICONS["reindex"],
+        tags={"group:indexing"},
         annotations={
             "title": "Reindex Vault",
             "read_only_hint": False,
@@ -218,6 +221,7 @@ def register_index_jobs(mcp: FastMCP, jobs: Jobs) -> None:
         mcp,
         jobs,
         icons=_TOOL_ICONS["build_embeddings"],
+        tags={"group:indexing"},
         annotations={
             "title": "Build Embeddings",
             "read_only_hint": False,
