@@ -220,10 +220,10 @@ def register(mcp: FastMCP) -> None:
         A vault without git history returns no commits.
 
         Args:
-            path: A note or attachment path, e.g. "notes/alpha.md", or a folder, e.g.
-                "guides"; omit for the whole vault.
+            path: A note or attachment path, such as `"notes/alpha.md"`, or a folder, such as
+                `"guides"`; omit for the whole vault.
             since: Earliest commit date, inclusive: an ISO 8601 time such as
-                "2026-04-01T00:00:00" or a relative date such as "1 week ago"; omit for
+                `"2026-04-01T00:00:00"` or a relative date such as `"1 week ago"`; omit for
                 all history.
             until: Latest commit date, inclusive, in the same forms as since; omit for
                 no upper bound.
@@ -234,17 +234,17 @@ def register(mcp: FastMCP) -> None:
 
             - commits (list[dict]): Commit entries, newest-first. Each entry
               contains:
-                - sha (str): Full commit SHA (40 hex digits, or 64 in a
+                - `sha` (str): Full commit SHA (40 hex digits, or 64 in a
                   SHA-256 repository).
                 - short_sha (str): 7-character abbreviated SHA.
                 - timestamp (str): ISO 8601 author timestamp.
-                - author (str): Author name and email, e.g. "Name <email>".
+                - author (str): Author name and email, such as `"Name <email>"`.
                 - message (str): First line of the commit message.
                 - paths_changed (list[str]): Files touched by the commit.
                   Populated for vault-wide queries (path=None) and folder
                   queries (the subtree files the commit touched). Always empty
                   for single-note queries, since the path is already
-                  determined by the query arguments — callers know which
+                  determined by the query arguments; callers know which
                   file the commit touched without needing it echoed back.
             - total (int): Count of entries in `commits` (always equals
               `len(commits)`; does NOT indicate how many commits exist
@@ -289,9 +289,9 @@ def register(mcp: FastMCP) -> None:
         get_history. A vault without git history returns an empty diff.
 
         Args:
-            path: A note or attachment path, e.g. "notes/alpha.md"; a binary attachment
+            path: A note or attachment path, such as `"notes/alpha.md"`; a binary attachment
                 returns a summary of size and renames instead of a patch.
-            since_sha: A commit sha to diff from, e.g. from get_history; at least 4 hex
+            since_sha: A commit SHA to diff from, such as from get_history; at least 4 hex
                 digits.
             since_timestamp: An ISO 8601 time; diffs from the latest commit at or before
                 it.
@@ -310,7 +310,7 @@ def register(mcp: FastMCP) -> None:
             - When per_commit=True:
                 - commits (list[dict]): Per-commit entries, newest-first.
                   Each contains:
-                    - sha (str): Full commit SHA.
+                    - `sha` (str): Full commit SHA.
                     - short_sha (str): Abbreviated SHA.
                     - timestamp (str): ISO 8601 author timestamp.
                     - message (str): First line of commit message.

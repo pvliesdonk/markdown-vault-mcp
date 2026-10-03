@@ -31,13 +31,15 @@ rm -f .github/workflows/copier-update.yml \
       .github/workflows/claude-code-review.yml
 rm -f scripts/copier_update_notes.py
 rm -f scripts/migrate_agent_instructions.py
+rm -f scripts/migrate_docs_nav.py scripts/migrate_docs_pages.py
 rm -f scripts/report_seeded_changes.py .copier-seeded-changes.md
 rm -f scripts/check_template_conformance.py .copier-template-drift.md
 sed -i.bak '/# >>> template-tracking: conformance hook/,/# <<< template-tracking: conformance hook/d' .pre-commit-config.yaml && rm -f .pre-commit-config.yaml.bak
 rm -rf .agents/skills/applying-template-updates .claude/skills/applying-template-updates
-rm -f docs/deployment/template-updates.md
+rm -f docs/contribute/template-updates.md
 # The page above is in the MkDocs nav; a dangling entry fails `mkdocs build --strict`.
-sed -i.bak '/Template Updates: deployment\/template-updates.md/d' mkdocs.yml && rm -f mkdocs.yml.bak
+sed -i.bak '/contribute\/template-updates.md/d' mkdocs.yml && rm -f mkdocs.yml.bak
+sed -i.bak '/template-updates.md/d' docs/contribute/index.md && rm -f docs/contribute/index.md.bak
 ```
 
 What this removes and why:
@@ -51,6 +53,9 @@ What this removes and why:
 - `scripts/migrate_agent_instructions.py` — the CLAUDE.md → AGENTS.md
   migration that only `copier update`'s `_migrations` stage invoked; dead
   weight once you no longer run `copier update`.
+- `scripts/migrate_docs_nav.py` and `scripts/migrate_docs_pages.py` — the
+  docs-navigation and reference-move migrations, also run only by `copier
+  update`'s `_migrations` stage.
 - `scripts/report_seeded_changes.py` and its output `.copier-seeded-changes.md`
   — the seeded-file report a `copier update` writes; nothing writes it after
   detaching.
@@ -59,7 +64,7 @@ What this removes and why:
   a pristine template render; a detached fork owns every line, so there is
   nothing left to compare. The `sed` line removes the pre-push hook that
   runs it from `.pre-commit-config.yaml`.
-- the `applying-template-updates` skill and `docs/deployment/template-updates.md`
+- the `applying-template-updates` skill and `docs/contribute/template-updates.md`
   — the procedure for the weekly template update pull request, which a
   detached fork never receives. The `sed` line removes the page's nav
   entry (`docs.yml` runs `mkdocs build --strict`, which fails on a
@@ -74,8 +79,8 @@ still redeploys canonical `docs/releases/` pages on merge.) The remaining
 template-owned skills under `.agents/skills/` (`applying-template-updates`,
 `authoring-issues-prs`, `config-contract`, `designing-tool-outcomes`, `logging-standard`,
 `releasing`, `repository-protection`, `researching-references`,
-`roadmapping`, `self-reviewing`, `tool-registration`, `writing-model-facing-text`,
-`writing-release-notes`) and
+`roadmapping`, `self-reviewing`, `tool-registration`, `writing-documentation`,
+`writing-model-facing-text`, `writing-release-notes`) and
 their `.claude/skills/<name>`
 symlinks are independent of Claude review wiring; retain or remove each
 according to the detached fork's process — a fork that keeps using Claude
@@ -93,7 +98,7 @@ Code, for instance, has no reason to drop the symlinks even after detaching.
 # `applying-template-updates` drops the AGENTS.md Skills bullet for the
 # skill Step 2 removed, and the rule on `Template conformance runs at push
 # time` drops the AGENTS.md bullet for the pre-push hook Step 2 removed.
-for f in AGENTS.md .agents/skills/releasing/SKILL.md .agents/skills/config-contract/SKILL.md .agents/skills/tool-registration/SKILL.md docs/deployment/release-process.md; do
+for f in AGENTS.md .agents/skills/releasing/SKILL.md .agents/skills/config-contract/SKILL.md .agents/skills/tool-registration/SKILL.md docs/contribute/release-process.md; do
   sed -i.bak \
     -e '/<!-- TEMPLATE-TRACKING-START -->/,/<!-- TEMPLATE-TRACKING-END -->/d' \
     -e '/<!-- ===== TEMPLATE-OWNED SECTIONS BELOW/d' \
@@ -137,13 +142,10 @@ These leftover references are harmless but now misleading:
 - The **Template** badge at the top of `README.md` (the
   `![Template](https://img.shields.io/badge/dynamic/yaml?...&label=template)`
   entry) points at the now-deleted `.copier-answers.yml`. Remove it.
-- In the secrets table, the `RELEASE_TOKEN` row lists `copier-update.yml` as a
-  consumer. Drop that workflow from the row.
-- The `### \`uv.lock\` refresh after \`copier update\`` subsection no longer
-  applies. Remove it.
-- The **Contributing** section names the `applying-template-updates` skill
-  and links `docs/deployment/template-updates.md`, both removed in Step 2.
-  Drop those two references.
+- In `docs/contribute/index.md`, the secrets table's `RELEASE_TOKEN` row
+  lists `copier-update.yml` as a consumer: drop that workflow from the row.
+  The `### \`uv.lock\` after a template update` subsection no longer
+  applies: remove it.
 
 ## You are now standalone
 

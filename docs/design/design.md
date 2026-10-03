@@ -4657,7 +4657,7 @@ When all four required vars are set (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT
 
 **Token verification:** By default the server verifies the upstream `id_token` (always a standard JWT per OIDC Core) rather than the `access_token`. This works with all providers, including those that issue opaque (non-JWT) access tokens (such as Authelia). Set `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN=true` to revert to access-token JWT verification when audience-claim validation on that token is required.
 
-**Token lifetime recommendations:** MCP clients do not reliably refresh tokens (see [Known Limitations](../guides/authentication.md#known-limitations-mcp-oauth-token-refresh)). Configure all token lifetimes on your identity provider: `access_token: '8h'`, `id_token: '8h'`, `refresh_token: '30d'`. The `id_token` lifetime is critical when using `verify_id_token` mode; if shorter than `access_token`, the session dies at the `id_token` expiry regardless of the access token setting. Include `offline_access` in provider-side scopes for when clients support refresh.
+**Token lifetime recommendations:** MCP clients do not reliably refresh tokens (see [Known Limitations](../deploy/authentication.md#known-limitations-mcp-oauth-token-refresh)). Configure all token lifetimes on your identity provider: `access_token: '8h'`, `id_token: '8h'`, `refresh_token: '30d'`. The `id_token` lifetime is critical when using `verify_id_token` mode; if shorter than `access_token`, the session dies at the `id_token` expiry regardless of the access token setting. Include `offline_access` in provider-side scopes for when clients support refresh.
 
 **Authelia client registration** (in your Authelia `configuration.yml`):
 ```yaml

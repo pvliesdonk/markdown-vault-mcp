@@ -76,7 +76,7 @@ Find documents matching a query using full-text or semantic search.
 | `chunks_per_file` | int | server default (`2`) | Maximum number of matching sections returned per file. Overrides `MARKDOWN_VAULT_MCP_CHUNKS_PER_FILE` for this call. `0` is rejected. |
 | `snippet_words` | int | server default (`200`) | Approximate word budget for each section's `content` field. `0` returns the full chunk. Overrides `MARKDOWN_VAULT_MCP_SNIPPET_WORDS` for this call. |
 
-**Returns:** List of grouped result dicts ranked by relevance, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type`, `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order). On an OKF (Open Knowledge Format) bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](../configuration.md)), each entry also carries an `okf` dict with the note's `type`, lifecycle `status`, `stale` flag, `trust_tier`, and `sources_count`. On such a bundle, ranking also downweights `deprecated` notes (more) and stale notes (less) so current content surfaces first, and demotes the reserved navigation files `index.md` / `log.md` below real notes. This ranking adjustment applies only when a bundle is detected; on any other vault the result order is unchanged.
+**Returns:** List of grouped result dicts ranked by relevance, one entry per file with up to `chunks_per_file` best-matching sections. Each entry contains: `path`, `title`, `folder`, `score` (max section score), `search_type`, `frontmatter`, and `sections` (a list of `{heading, content, score}` dicts sorted by score then document order). On an OKF (Open Knowledge Format) bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](../reference/configuration.md)), each entry also carries an `okf` dict with the note's `type`, lifecycle `status`, `stale` flag, `trust_tier`, and `sources_count`. On such a bundle, ranking also downweights `deprecated` notes (more) and stale notes (less) so current content surfaces first, and demotes the reserved navigation files `index.md` / `log.md` below real notes. This ranking adjustment applies only when a bundle is detected; on any other vault the result order is unchanged.
 
 !!! note "Grouped result shape"
     Each file appears at most once in results, with up to `chunks_per_file` sections nested under `sections`. The top-level `score` is the maximum of the section scores (MaxP aggregation). Iterate `sections` to drill into individual matches.
@@ -253,7 +253,7 @@ Get an overview of the vault's size, capabilities, and configuration. Call this 
 }
 ```
 
-On an OKF bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](../configuration.md)), the response also carries an `okf` section: the configured mode, the declared spec version, a per-`type` histogram plus an untyped count, `status` and trust-tier breakdowns, and the stale-note count. Those counts cover the same note population [`okf_validate`](#okf_validate) audits, so the reserved `index.md` / `log.md` files land in none of them and are reported on their own as `reserved_count`.
+On an OKF bundle (see `MARKDOWN_VAULT_MCP_OKF_MODE` in [Configuration](../reference/configuration.md)), the response also carries an `okf` section: the configured mode, the declared spec version, a per-`type` histogram plus an untyped count, `status` and trust-tier breakdowns, and the stale-note count. Those counts cover the same note population [`okf_validate`](#okf_validate) audits, so the reserved `index.md` / `log.md` files land in none of them and are reported on their own as `reserved_count`.
 
 ### `embeddings_status`
 
@@ -446,7 +446,7 @@ if it does not.
     that already exists fails unless the call carries a matching `if_match`
     etag. Read the document first and pass its `etag` as `if_match` to replace
     it. Operators can set `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false`
-    to allow blind overwrites. See [Write safety](../configuration.md#write-safety).
+    to allow blind overwrites. See [Write safety](../reference/configuration.md#write-safety).
 
 ### `edit`
 
@@ -617,9 +617,9 @@ Seed a folder's reserved `log.md` change history from the vault's git commit his
 
 #### `okf_verify`
 
-Attest a note as human-reviewed by appending a `{by: human:<subject>, at: <UTC instant>}` entry to its `verified` frontmatter list, promoting the note's trust tier to `human-reviewed`. Part of the [enforced write layer](../guides/okf.md#the-enforced-write-layer): registered only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. The append itself does not clear `verified`; only content-changing writes do that.
+Attest a note as human-reviewed by appending a `{by: human:<subject>, at: <UTC instant>}` entry to its `verified` frontmatter list, promoting the note's trust tier to `human-reviewed`. Part of the [enforced write layer](../use/okf.md#the-enforced-write-layer): registered only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. The append itself does not clear `verified`; only content-changing writes do that.
 
-How the review is confirmed depends on [`MARKDOWN_VAULT_MCP_OKF_VERIFY`](../configuration.md):
+How the review is confirmed depends on [`MARKDOWN_VAULT_MCP_OKF_VERIFY`](../reference/configuration.md):
 
 - **`elicit`** (default): the tool issues an MCP elicitation asking you to confirm you reviewed the note, and writes the entry only on an affirmative reply. It fails closed (if the client cannot elicit or you decline, it errors and writes nothing), so a model cannot self-attest on your behalf. The subject recorded is the token's `sub` when present, else `local`, including reviews confirmed using a static bearer credential.
 - **`trust-auth`**: attributes to the token's `sub` with no confirmation. It rejects static bearer credentials, other client-ID-only identities, and callers without auth. Only safe when the sole caller is a human-driven UI.
@@ -658,7 +658,7 @@ For `.md` destinations, the response may also include a `conventions` list; see 
 !!! note "Overwrite protection"
     `fetch` saves through the same guarded path as `write`, so by default a fetch to a path that
     already exists fails unless the call carries a matching `if_match` etag.
-    See [Write safety](../configuration.md#write-safety).
+    See [Write safety](../reference/configuration.md#write-safety).
 
 The download itself runs through `fastmcp-pvl-core`'s hardened `fetch_url`
 primitive, so the SSRF protections above are shared, audited code rather
@@ -832,7 +832,7 @@ managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` not set).
     `MARKDOWN_VAULT_MCP_GIT_REPO_URL` and a working
     `MARKDOWN_VAULT_MCP_GIT_TOKEN` (with the
     `MARKDOWN_VAULT_MCP_GIT_USERNAME` appropriate for your provider;
-    see the [Git Integration guide](../guides/git-integration.md#provider-username-reference)).
+    see the [Git Integration guide](../use/git-integration.md#provider-username-reference)).
 
 ---
 
@@ -869,7 +869,7 @@ Find all links from a document, with existence check.
 
 **Returns:** List of link targets with an `exists` field indicating whether the target document is in the vault. Each entry has `target_path`, `link_text`, `link_type`, `fragment`, `raw_target`, and `exists` fields. Index freshness is reported in `_meta.index_stale` (see the freshness note at the top of this page).
 
-The link graph covers notes only. A reference whose target carries a configured attachment extension (`![[diagram.png]]`, `[[Document.pdf#page=3]]`, `[paper](papers/x.pdf)`) is not a link and does not appear here, in `get_backlinks`, or in `get_broken_links`; image links `![alt](src)` never did. A note whose only links are such references counts as an orphan in `get_orphan_notes` and `stats.orphan_count`. Which extensions count is `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` (see [Configuration](../configuration.md)).
+The link graph covers notes only. A reference whose target carries a configured attachment extension (`![[diagram.png]]`, `[[Document.pdf#page=3]]`, `[paper](papers/x.pdf)`) is not a link and does not appear here, in `get_backlinks`, or in `get_broken_links`; image links `![alt](src)` never did. A note whose only links are such references counts as an orphan in `get_orphan_notes` and `stats.orphan_count`. Which extensions count is `MARKDOWN_VAULT_MCP_ATTACHMENT_EXTENSIONS` (see [Configuration](../reference/configuration.md)).
 
 ### `get_broken_links`
 
@@ -967,7 +967,7 @@ Get the vault owner's authoring conventions that apply to a note or folder.
 
 Vaults may carry per-folder convention files (default `_conventions.md`,
 configurable via
-[`MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`](../configuration.md)) whose free-form
+[`MARKDOWN_VAULT_MCP_CONVENTIONS_FILE`](../reference/configuration.md)) whose free-form
 markdown describes how notes in that folder should be authored, such as
 *"reference material: keep notes self-contained; do not link out to project
 or journal notes."* Conventions accumulate down the tree: a vault-root file
@@ -1122,7 +1122,7 @@ When the work is promoted to a background job, a dict with `"status": "working"`
     The referenced notes are sent to the summarization backend the operator configured, which may be a remote provider or a local endpoint. Do not summarize notes whose content must not be shared with that backend. The [`summarize-subtree` prompt](../prompts.md#summarize-subtree) is the client-side alternative that summarizes with the client's own model; see its docs for how the two routes relate.
 
 !!! note "Dependency"
-    Requires the `openai` SDK and an OpenAI-compatible backend (an `OPENAI_API_KEY`, or a base URL such as a local Ollama). Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the endpoint, model, and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](../configuration.md).
+    Requires the `openai` SDK and an OpenAI-compatible backend (an `OPENAI_API_KEY`, or a base URL such as a local Ollama). Install with `pip install 'markdown-vault-mcp[summarize]'` (or `[all]`). Configure the endpoint, model, and limits via the `MARKDOWN_VAULT_MCP_SUMMARIZE_*` env vars. See [Configuration](../reference/configuration.md).
 
 ---
 
@@ -1257,7 +1257,7 @@ curl -X POST --data-binary @local-diagram.pdf \
 
 ## MCP Apps
 
-These tools power the browser-based vault explorer views. See the [MCP Apps guide](../guides/mcp-apps.md) for details.
+These tools power the browser-based vault explorer views. See the [MCP Apps guide](../deploy/mcp-apps.md) for details.
 
 ### `browse_vault`
 

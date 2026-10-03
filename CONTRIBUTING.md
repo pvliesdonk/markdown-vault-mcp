@@ -109,7 +109,7 @@ final pull request brings the epic to `main` with a merge commit, never a
 squash. Children write `Part of #<epic>`, because a closing keyword only
 acts when a pull request merges into the default branch; the final pull
 request carries the `Closes` lines. It is optional, and the
-`docs/deployment/integration-branches.md` page covers the workflow and how to
+`docs/contribute/integration-branches.md` page covers the workflow and how to
 review the final pull request.
 
 After a stable default-branch release, the workflow records the computed

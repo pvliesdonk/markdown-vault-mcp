@@ -5,12 +5,12 @@
 #
 # Configuration lives in `.env`, not here.  `.env.example` is generated from
 # the server's own config surface and lists every variable with its default
-# and a one-line description, so it is the file to edit; `docs/configuration.md`
+# and a one-line description, so it is the file to edit; `docs/reference/configuration.md`
 # carries the full reference.  The `environment:` block below is only for
 # values this compose file itself determines — paths on the volumes it mounts.
 #
 # Reverse proxies, TLS and published hostnames are deployment-specific and are
-# NOT assumed here; `docs/deployment/docker.md` has a Traefik overlay to copy.
+# NOT assumed here; `docs/deploy/docker.md` has a Traefik overlay to copy.
 #
 # The image is pulled, not built.  To run your own build:
 # `docker build -t ghcr.io/pvliesdonk/markdown-vault-mcp:dev . && docker compose up -d`
@@ -28,7 +28,7 @@ services:
     # Published on the host's loopback interface only, so this file as written
     # reaches no other machine.  Authentication, not the bind address, is what
     # protects the server: set a bearer token or OIDC in `.env` first, then
-    # publish wider from `compose.override.yml` (`docs/deployment/docker.md`).
+    # publish wider from `compose.override.yml` (`docs/deploy/docker.md`).
     ports:
       - "127.0.0.1:8000:8000"
     # Named volume permissions are fixed automatically by the entrypoint.

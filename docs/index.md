@@ -1,14 +1,26 @@
+---
+description: "What Markdown Vault MCP is, what it does, and where to start reading."
+kind: explanation
+---
+
 # Markdown Vault MCP
 
 Generic markdown vault MCP with hybrid search
 
-## Getting started
+What the server can reach, what it changes and who gets in is set out in the [security model](security-model.md).
 
-- [Installation](installation.md)
-- [Configuration](configuration.md)
-- [Tools](tools/index.md)
+## Where to go
+
+- [Get started](get-started/index.md): a first success with the client you use.
+- [Deploy](deploy/index.md): run it for real, in a container and behind authentication.
+- [Use](use/index.md): get more out of its features.
+- [Reference](reference/configuration.md): configuration, [tools](reference/tools/index.md), resources, prompts and the command line.
+- [Upgrade](upgrade/index.md): release channels and what changes when you move.
+- [Contribute](contribute/index.md): change the project.
 
 <!-- DOMAIN-INDEX-FEATURES-START -->
+Whether it fits your notes, what it assumes and what to use instead is under [Does it fit?](https://github.com/pvliesdonk/markdown-vault-mcp#does-it-fit) in the README.
+
 A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
 
 Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault) and it exposes search, read, write, and edit tools over the [Model Context Protocol](https://modelcontextprotocol.io/).
@@ -22,7 +34,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **Incremental reindexing**: hash-based change detection, only re-processes modified files
 - **Write operations**: create, edit, append to, delete, rename documents with automatic index updates
 - **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, surfaced to LLM clients at write time via [`get_conventions`](tools/index.md#get_conventions) and in `write`/`edit` results
-- **[Open Knowledge Format](guides/okf.md)**: recognizes OKF bundles (an `okf_version` declaration in the root `index.md`) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier; those dimensions are filterable and nudge ranking, and the server ships an `okf_validate` audit, one-shot migration transforms, an optional enforced write layer (provenance + verification + `log.md`/`index.md` upkeep), and a downloadable bundle export
+- **[Open Knowledge Format](use/okf.md)**: recognizes OKF bundles (an `okf_version` declaration in the root `index.md`) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier; those dimensions are filterable and nudge ranking, and the server ships an `okf_validate` audit, one-shot migration transforms, an optional enforced write layer (provenance + verification + `log.md`/`index.md` upkeep), and a downloadable bundle export
 - **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, and so on)
 - **LLM summarization**: optional `summarize` tool condenses a note, a set of notes, or a subtree with a language model via any OpenAI-compatible endpoint (OpenAI, Ollama, Anthropic, vLLM, and others); the synthesis references the individual source notes by path. Gated on `OPENAI_API_KEY` or a configured base URL.
 - **Git integration**: optional auto-commit (one commit per write tool call) and deferred push, with token auth via `GIT_ASKPASS`
@@ -32,7 +44,7 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 - **MCP prompts**: summarize, research, discuss, create from template, compare, and find related notes
 - **MCP Apps**: browser-based views (Context Card, Graph Explorer, Vault Browser, and Note Preview) for clients supporting the MCP Apps protocol
 - **One-time transfer links**: mint short-lived capability URLs to move files into or out of the vault out-of-band over HTTP (`create_download_link` / `create_upload_link`; HTTP/SSE transports only)
-- **[Configuration Generator](configuration-generator.md)**: build a working config, Docker command, or systemd unit in your browser.
+- **[Configuration Generator](reference/configuration-generator.md)**: build a working config, Docker command, or systemd unit in your browser.
 <!-- DOMAIN-INDEX-FEATURES-END -->
 
 <!-- DOMAIN-INDEX-USE-CASES-START -->
@@ -41,8 +53,8 @@ Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Z
 A few flows the server enables with an LLM on top (none of these require a bespoke prompt):
 
 - **"Fetch <url> and summarize into a Resource note."** Claude composes `fetch` + `search` + `write`.
-- **"Research <topic> and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks. See the [Research workflows guide](guides/research-workflows.md) for the full loop.
-- **"Summarize today's conversations into Inbox notes."** Claude.ai composes `conversation_search` + `recent_chats` + `write`; the [`para-capture-chats`](guides/para.md#using-the-para-prompts) prompt is the one-click version.
+- **"Research <topic> and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks. See the [Research workflows guide](use/research-workflows.md) for the full loop.
+- **"Summarize today's conversations into Inbox notes."** Claude.ai composes `conversation_search` + `recent_chats` + `write`; the [`para-capture-chats`](use/para.md#using-the-para-prompts) prompt is the one-click version.
 - **Find missing links.** The [`propose-links`](prompts.md) builtin prompt scans recently modified notes and proposes useful connections.
 
 See [MCP Prompts](prompts.md) for the codified workflows and the ambient-pattern reference.
@@ -88,7 +100,7 @@ docker compose up -d
 /plugin install markdown-vault-mcp@pvliesdonk
 ```
 
-See [Installation](installation.md) for all installation methods (PyPI, uv, Docker, Linux packages, Claude Code plugin) and [Configuration](configuration.md) for all available options.
+See [Installation](get-started/installation.md) for all installation methods (PyPI, uv, Docker, Linux packages, Claude Code plugin) and [Configuration](reference/configuration.md) for all available options.
 
 ## Architecture
 

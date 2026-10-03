@@ -87,8 +87,9 @@ a failure.
 | What to do after the call given its outcome (index stale, task queued) | the result or the error text of that call |
 | How the call can fail, and what to do then | the error text of that call, never the description |
 | Side effects: read-only, destructive, idempotent | `annotations=`; plus one clause in the description only when it changes the choice |
-| Operator configuration, env vars, CLI commands, limits | `docs/configuration.md` and the operator guides |
-| How it is implemented, links to framework docs, `Returns:`, `Raises:` | a `#` comment, or a docstring section FastMCP strips |
+| Operator configuration, env vars, CLI commands, limits | `docs/reference/configuration.md` and the operator guides |
+| How it is implemented, links to framework docs | a `#` comment |
+| What comes back and each way the call ends, for the reader of the site | the `Returns:` and `Raises:` docstring sections: FastMCP strips them from the wire, and `scripts/gen_reference.py` publishes them on the tool's reference page, so they are held to site quality |
 | Policy the client enforces (confirm before deleting) | nowhere on the server: the client owns the human in the loop |
 | A long procedure, worked examples, a workflow that spans many calls | a skill served over MCP (SEP-2640; FastMCP's `SkillsDirectoryProvider`), pointed at from instructions; never the only home of a fact a call depends on |
 

@@ -1,0 +1,59 @@
+---
+description: "The step for your channel, what a new release changes for your clients and your state, and where a release page answers those questions."
+kind: how-to
+---
+
+# Upgrade
+
+An upgrade is a new version of the same server. Three questions come with every one: the step to run; what a connected client has to do; what happens to the state. This page answers them for any release and says where a release page answers them for that release: its Upgrading section. The [release notes](../releases/index.md) tell each release's own story.
+
+## The step for your channel
+
+One step per channel; the linked page owns the detail.
+
+| You run | The step |
+|---|---|
+| The command, installed with uv | `uv tool upgrade markdown-vault-mcp`; pin one release with `uv tool install "markdown-vault-mcp==X.Y.Z"` ([Installation](../get-started/installation.md#as-a-command-on-your-machine)) |
+| The command, installed with pip | `pip install --upgrade "markdown-vault-mcp"` ([Installation](../get-started/installation.md#as-a-command-on-your-machine)) |
+| Claude Desktop | with the bundle: install the new release's `.mcpb` the same way as the first; with the command: upgrade it as above, then quit and reopen Claude Desktop ([Claude Desktop](../get-started/claude-desktop.md)) |
+| Docker Compose | `docker compose pull` then `docker compose up -d`; `restart` keeps the old image ([Upgrading the image](../deploy/docker.md#upgrading-the-image)) |
+| The Linux package | install the new `.deb` or `.rpm` the same way as the first; `postinstall` installs the new version into the virtual environment and restarts a running service ([systemd](../deploy/systemd.md#upgrade)) |
+| The Claude Code plugin | `/plugin`, the plugin under **Installed**, **Update now**; from a shell, `claude plugin update markdown-vault-mcp@pvliesdonk` ([Claude Code](../get-started/claude-code.md)) |
+
+## Release channels
+
+Artifacts ship on three channels. Each row lists what that channel publishes.
+
+| Channel | Version identity | Artifacts |
+|---|---|---|
+| `edge` (rolling) | None; the commit is the identity | Docker image `:edge`, rebuilt on every merge to `main`; the `.mcpb` bundle and the Claude Code plugin `.zip` as workflow artifacts; the rolling `unstable` docs version. No git tag, GitHub release or PyPI entry. |
+| Pre-release | `vX.Y.Z-rc.N`, computed and reviewed in its release pull request | PyPI (as `X.Y.ZrcN`); a GitHub release with wheels, `sdist`, `.deb`/`.rpm` packages, the `.mcpb` bundle, the plugin `.zip` and the SBOM; the Docker image under `vX.Y.Z-rc.N` plus the rolling `rc` tag. Not the plugin marketplace, the MCP registry or the docs deploy. |
+| Stable | `vX.Y.Z` | Everything: PyPI, Docker (the version tag plus `latest`, `vX` and `vX.Y`), `.deb`/`.rpm`, the GitHub release assets, the plugin marketplace and MCP registry entries when the release is the newest stable, and versioned docs with the `latest` alias. |
+
+A PEP 440 resolver skips pre-releases unless the requirement pins one or you pass `--pre`; ask for a candidate by name with `pip install "markdown-vault-mcp==X.Y.ZrcN"`. The rolling tags are ordering-aware: a patch cut from an older series never moves `latest` back, and a candidate for an already-released version never moves `rc`. The [release process](../contribute/release-process.md) describes the model as maintainers see it.
+
+## Your clients after an upgrade
+
+An MCP client discovers the server's tools, resources and prompts when it connects, so a new release's surface reaches it on the next connection: restart a local server, or reconnect to a remote one. Nothing in the client's configuration changes for an upgrade. A client that caches the server's instructions (Claude.ai does) picks up new instructions when the connector is reconnected.
+
+## Security posture
+
+A release that changes what the server can reach, what it changes or who gets in says so on its **Security posture** line, even when the answer is none. The [security model](../security-model.md) is the page those changes are measured against.
+
+## State that survives
+
+A container or a package install keeps its state across upgrades in the paths the deployment pages name: the Docker [volumes](../deploy/docker.md#volumes), or `/var/lib/markdown-vault-mcp` and `/etc/markdown-vault-mcp/env` for a package install. A release that changes a state format says so on its **State** line, with the step to take.
+
+## What a release page tells you
+
+A release page's Upgrading section answers the three questions on three fixed lines (a page written before this format answers them in its Upgrading text instead):
+
+- **Clients:** what a client has to do, or that nothing is needed beyond reconnecting.
+- **State:** what is kept and what is rebuilt or moved, with the step when there is one.
+- **Security posture:** any change in what the server exposes or trusts, or none.
+
+The steps a release needs sit above those lines, each conditional on what you run, so a step that does not apply to your deployment is skipped by its first words. A patch release adds its own section to the series page.
+
+<!-- DOMAIN-UPGRADE-INTRO-START -->
+<!-- What an upgrade of this server touches beyond the generic picture (indexes to rebuild, data formats); kept across copier update. -->
+<!-- DOMAIN-UPGRADE-INTRO-END -->

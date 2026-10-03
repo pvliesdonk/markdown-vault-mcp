@@ -155,6 +155,31 @@ repos:
         files: ^(docs/|README\.md$)
         exclude: ^docs/(superpowers|design|decisions)/
 
+  # Documentation structure (#715): errors fail the commit; warnings print,
+  # and fail only with `strict = true` under [tool.docs-structure] in
+  # pyproject.toml. See docs/contribute/docs-structure.md.
+  - repo: local
+    hooks:
+      - id: docs-structure
+        name: docs structure
+        entry: uv run --no-sync python scripts/check_docs_structure.py
+        language: system
+        pass_filenames: false
+        files: ^(docs/|mkdocs\.yml$|pyproject\.toml$)
+
+  # Generated reference (#716): docs/reference/ is written from the
+  # registered server by scripts/gen_reference.py; a stale page fails the
+  # commit. Run `uv run python scripts/gen_reference.py` after changing a
+  # tool, resource, prompt or CLI option.
+  - repo: local
+    hooks:
+      - id: gen-reference
+        name: generated reference is up to date
+        entry: uv run --no-sync python scripts/gen_reference.py --check
+        language: system
+        pass_filenames: false
+        files: ^(src/|docs/reference/|mkdocs\.yml$|pyproject\.toml$)
+
 # DOMAIN-HOOKS-START — add domain-specific hooks (shellcheck, yamllint,
 # project linters, etc.) below as full `- repo:` blocks indented to match the
 # `repos:` list above; kept across copier update. Everything OUTSIDE this

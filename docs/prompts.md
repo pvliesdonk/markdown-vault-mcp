@@ -187,7 +187,7 @@ frontmatter, then pass the returned etag as `write`'s `if_match` argument.
     This prompt modifies documents and is hidden when `READ_ONLY=true`.
 
 !!! note "Embeddings recommended"
-    `propose-links` falls back to keyword search without embeddings, but the quality of candidates is noticeably better when `get_similar` is available. See [Embeddings](guides/embeddings.md) for setup.
+    `propose-links` falls back to keyword search without embeddings, but the quality of candidates is noticeably better when `get_similar` is available. See [Embeddings](use/embeddings.md) for setup.
 
 ## Ambient patterns without prompts
 
@@ -220,7 +220,7 @@ Not every LLM-native workflow needs a codified MCP prompt. With a capable model 
 
 **Tools composed:** `conversation_search` + `recent_chats` (Claude.ai client-side) → LLM distillation → `write` per topic.
 
-**Why (partially) codified:** the [`para-capture-chats`](guides/para.md#using-the-para-prompts) prompt exists as the one-click version because it has platform-specific tool names to call out and constraints on what to skip (pure Q&A, debugging). Outside the PARA pack, the ambient ask works fine.
+**Why (partially) codified:** the [`para-capture-chats`](use/para.md#using-the-para-prompts) prompt exists as the one-click version because it has platform-specific tool names to call out and constraints on what to skip (pure Q&A, debugging). Outside the PARA pack, the ambient ask works fine.
 
 ### Split and merge captures
 

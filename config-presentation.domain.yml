@@ -103,7 +103,7 @@ wizard_guards: []
 # Deliberately reduced from the old 26-field screen: HTTP-auth fields
 # (bearer/OIDC) cannot apply to a stdio bundle, and operator tuning
 # (state/index/embeddings paths, cache dirs, push-delay) stays reachable
-# via env vars per docs/configuration.md. One line per field to adjust.
+# via env vars per docs/reference/configuration.md. One line per field to adjust.
 files:
   packaging/mcpb/manifest.json.in:
     # Anchored so the Claude Code plugin screen below reuses the identical

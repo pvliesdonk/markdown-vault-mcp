@@ -931,10 +931,17 @@ def test_notes_publish_ignores_next_only_changes() -> None:
 
 
 def test_next_notes_are_excluded_from_published_docs() -> None:
+    """The staging page reaches neither the site nor llms.txt.
+
+    `exclude_docs` keeps it off the site, and the llms.txt hook skips every
+    page `exclude_docs` matches, so no llms.txt pattern needs to leave it
+    out (#714).
+    """
     text = (REPO_ROOT / "mkdocs.yml").read_text(encoding="utf-8")
-    assert "releases/next.md" in text
+    config = yaml.safe_load(text)
+    assert "releases/next.md" in config["exclude_docs"].split()
+    assert "scripts/llmstxt_sections_hook.py" in config["hooks"]
     assert "releases/*.md" not in text
-    assert "releases/[0-9]*.[0-9]*.md" in text
 
 
 def test_pending_marker_machinery_is_gone() -> None:

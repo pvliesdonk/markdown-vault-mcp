@@ -2,10 +2,10 @@
 description: Summarize a folder or a set of notes with your own model, in batches that keep note bodies out of the conversation.
 arguments:
   - name: paths
-    description: "One or more note paths and/or folder prefixes (e.g. 'projects/alpha' or 'notes/a.md, notes/b.md'), separated by commas."
+    description: "One or more note paths and/or folder prefixes (such as 'projects/alpha' or 'notes/a.md, notes/b.md'), separated by commas."
     required: true
   - name: focus
-    description: "Optional free-text steer, e.g. 'extract action items'. Empty produces a general summary."
+    description: "Optional free-text steer, such as 'extract action items'. Empty produces a general summary."
     required: false
 icons: summarize
 ---
