@@ -26,10 +26,12 @@ Template script parks, implementation agent sorts:
   reports E2 on it until then.  The update is not finished while a parked
   page exists.
 - Links on the project's own pages and its ``nav:`` entries that point at a
-  moved page are rewritten to the new path, anchor kept, so the structure
-  check does not report them; release notes, decision records and fenced
-  code keep their old links, which the redirects serve. A move whose new
-  page is not rendered for this project (a switched-off page) is not followed.
+  page the template's redirects serve (``REDIRECTS``) are rewritten to the
+  new path, anchor kept, so neither the structure check nor
+  ``mkdocs build --strict`` reports them.  Release notes are published and
+  rewritten too; the unpublished history (decision records, designs) and
+  fenced code keep their old links. A move whose new page is not rendered
+  for this project (a switched-off page) is not followed.
 - A page without ``DOMAIN-*`` blocks (rewritten by the project, or from a
   template version that predates the block) carries nothing; the note says
   where its text is, since the two cases cannot be told apart here.
@@ -65,6 +67,25 @@ MOVES = (
     ("docs/guides/authentication.md", "docs/deploy/authentication.md"),
     ("docs/deployment/oidc.md", "docs/deploy/oidc.md"),
     ("docs/guides/authorization.md", "docs/deploy/authorization.md"),
+)
+# Every page the template's ``redirects`` map in mkdocs.yml serves at a new
+# path: links and nav entries follow these (#745, #746). The pages beyond
+# MOVES carried no DOMAIN blocks, or are the PARKED pages, so only links move.
+REDIRECTS = (
+    *MOVES,
+    ("docs/configuration-generator.md", "docs/reference/configuration-generator.md"),
+    ("docs/tools/index.md", "docs/reference/tools/index.md"),
+    ("docs/prompts.md", "docs/reference/prompts.md"),
+    ("docs/deployment/release-process.md", "docs/contribute/release-process.md"),
+    ("docs/deployment/template-updates.md", "docs/contribute/template-updates.md"),
+    (
+        "docs/deployment/repository-protection.md",
+        "docs/contribute/repository-protection.md",
+    ),
+    (
+        "docs/deployment/integration-branches.md",
+        "docs/contribute/integration-branches.md",
+    ),
 )
 PARKED = ("docs/tools/index.md", "docs/prompts.md")
 README = "README.md"
@@ -354,13 +375,15 @@ def _park(root: Path, rel: str, notes: list[str]) -> None:
     )
 
 
-# Pages whose links are a historical record: the redirect serves them.
-_HISTORY = ("releases/", "decisions/", "design/", "superpowers/")
+# Unpublished history (mkdocs.yml's exclude_docs): its links are a record,
+# and no build checks them. Release notes are published, so a strict build
+# checks their links and they are rewritten like any other page (#746).
+_HISTORY = ("decisions/", "design/", "superpowers/")
 _FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})", re.MULTILINE)
 
 
 def _moved(root: Path | None = None) -> dict[str, str]:
-    """Docs-relative old -> new for every move whose new page exists under *root*.
+    """Docs-relative old -> new for every redirect whose new page exists under *root*.
 
     Without *root*, every move counts (unit tests); with it, a move whose new
     page is not rendered for this project (a switched-off page) is left out,
@@ -368,7 +391,7 @@ def _moved(root: Path | None = None) -> dict[str, str]:
     """
     return {
         old.removeprefix(DOCS): new.removeprefix(DOCS)
-        for old, new in MOVES
+        for old, new in REDIRECTS
         if root is None or (root / new).exists()
     }
 

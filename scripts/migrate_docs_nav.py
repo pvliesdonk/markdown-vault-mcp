@@ -12,7 +12,9 @@ Steps (each printed when taken):
 1. Resolve every conflict inside `nav:` to its "after updating" side, which
    together with the cleanly merged lines is the new frame.
 2. Read HEAD:mkdocs.yml's old `PROJECT-NAV` block and keep each entry whose
-   page the resolved nav does not already list, with its section titles.
+   page the resolved nav does not already list, with its section titles.  A
+   template page the frame lists at its new path (`REDIRECTS` in
+   migrate_docs_pages.py) counts as listed, so it is dropped (#745).
 3. Write those entries into the `PROJECT-NAV-UNSORTED` block at the end of
    `nav:` for the agent applying the update to sort into the section blocks.
 4. Resolve the conflict copier leaves where the old hand-kept
@@ -30,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from migrate_docs_pages import DOCS, REDIRECTS
 
 OLD_START = "# PROJECT-NAV-START"
 OLD_END = "# PROJECT-NAV-END"
@@ -109,7 +112,10 @@ def _old_project_nav(head_text: str) -> list[Any] | None:
 
 
 def _keep_missing(node: Any, present: set[str]) -> Any:
-    """Drop leaves already present in the nav, and sections left empty."""
+    """Drop leaves already present in the nav, and sections left empty.
+
+    *present* holds each page's new path and the old paths that redirect to it.
+    """
     if isinstance(node, str):
         return None if node in present else node
     if isinstance(node, list):
@@ -182,6 +188,11 @@ def park(updated_text: str, head_text: str) -> tuple[str, list[str]]:
     first, stop = _nav_bounds(lines)
     region = _resolve(lines[first + 1 : stop])
     present = set(_leaves(yaml.safe_load("nav:\n" + "\n".join(region))["nav"]))
+    present |= {
+        old.removeprefix(DOCS)
+        for old, new in REDIRECTS
+        if new.removeprefix(DOCS) in present
+    }
     missing = _keep_missing(old_nav, present)
     parked = _leaves(missing) if missing else []
     if missing:

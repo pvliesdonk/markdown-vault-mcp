@@ -181,8 +181,8 @@ nav:
           - Git: reference/tools/git.md
           - Vault app tools: reference/tools/vault_app_tools.md
           - Server info: reference/tools/server_info.md
-          - Summarize: reference/tools/summarize.md
           - Register: reference/tools/register.md
+          - Summarize: reference/tools/summarize.md
           # GENERATED-NAV-TOOLS-END
       - Resources: reference/resources.md
       - Prompts: reference/prompts.md

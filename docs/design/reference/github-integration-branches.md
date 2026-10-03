@@ -62,7 +62,7 @@ sources:
 
 ## Scope
 
-This page supports `docs/contribute/integration-branches.md`, the
+This page supports `docs/deployment/integration-branches.md`, the
 non-strict required checks in `.github/rulesets/`, and the `integration/**`
 triggers in `ci.yml`. It covers what GitHub, git and knope do when an epic's
 pull requests merge into a non-default branch that later merges into the
