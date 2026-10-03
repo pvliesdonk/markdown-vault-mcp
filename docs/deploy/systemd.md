@@ -83,7 +83,7 @@ What a release changes for your clients and your data is on the [Upgrade](../upg
 
 ## Without a package
 
-On a distribution the packages do not cover, mirror what the package does. The unit and the environment template live in the repository's `packaging/` directory at every release tag:
+On a distribution the packages do not cover, mirror what the package does. The unit and the environment template live in the repository's `packaging/` directory at every release tag. Before you run the block, set `EXTRAS` to the value `packaging/scripts/postinstall.sh` gives it at the same tag: the package installs those extras, and an install without them lacks the features they bring.
 
 ```bash
 sudo groupadd --system markdown-vault-mcp
@@ -91,7 +91,8 @@ sudo useradd --system --gid markdown-vault-mcp --no-create-home \
   --home-dir /var/lib/markdown-vault-mcp --shell /usr/sbin/nologin markdown-vault-mcp
 sudo mkdir -p /opt/markdown-vault-mcp /etc/markdown-vault-mcp /var/lib/markdown-vault-mcp
 sudo python3 -m venv /opt/markdown-vault-mcp/venv
-sudo /opt/markdown-vault-mcp/venv/bin/pip install "markdown-vault-mcp==X.Y.Z"
+EXTRAS=""  # set from packaging/scripts/postinstall.sh first, such as "[all]"
+sudo /opt/markdown-vault-mcp/venv/bin/pip install "markdown-vault-mcp${EXTRAS}==X.Y.Z"
 sudo curl -fsSL -o /usr/lib/systemd/system/markdown-vault-mcp.service \
   https://raw.githubusercontent.com/pvliesdonk/markdown-vault-mcp/vX.Y.Z/packaging/markdown-vault-mcp.service
 sudo curl -fsSL -o /etc/markdown-vault-mcp/env.example \

@@ -557,15 +557,19 @@ extraPaths = ["src"]
 # documentation debt fails CI (docs/contribute/docs-structure.md, Checks).
 # Variables scripts/gen_reference.py sets before building the server, for a
 # `from_env` that requires them (the scaffold requires none), go in a
-# `[tool.docs-reference]` table inside the block:
-#   env = { MARKDOWN_VAULT_MCP_UPSTREAM_URL = "https://example.invalid" }
+# `[tool.docs-reference.env]` table inside the block.  It builds the server
+# for the http transport, so a project wiring transfer links needs BASE_URL:
+#   [tool.docs-reference.env]
+#   MARKDOWN_VAULT_MCP_UPSTREAM_URL = "https://example.invalid"
+#   MARKDOWN_VAULT_MCP_BASE_URL = "https://example.invalid"
 # PROJECT-DOCS-CHECKS-START — kept across copier update
 [tool.docs-structure]
 strict = false
 
 # The summarize tool registers only when an OpenAI-compatible endpoint is
-# configured; set one so the generated reference documents it in every
-# environment, CI included.
-[tool.docs-reference]
-env = { MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL = "https://example.invalid/v1" }
+# configured, and the transfer-link tools only with a base URL; set both so
+# the generated reference documents them in every environment, CI included.
+[tool.docs-reference.env]
+MARKDOWN_VAULT_MCP_BASE_URL = "https://example.invalid"
+MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL = "https://example.invalid/v1"
 # PROJECT-DOCS-CHECKS-END
