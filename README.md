@@ -15,27 +15,16 @@ Generic markdown vault MCP with hybrid search
 **[Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/)** | **[Config wizard](https://pvliesdonk.github.io/markdown-vault-mcp/latest/reference/configuration-generator/)** | **[PyPI](https://pypi.org/project/markdown-vault-mcp/)** | **[Docker](https://github.com/pvliesdonk/markdown-vault-mcp/pkgs/container/markdown-vault-mcp)**
 
 <!-- DOMAIN-README-PITCH-START -->
-- **Hybrid search**: SQLite FTS5 keyword search (BM25, porter stemming) and semantic search (FastEmbed, Ollama, OpenAI, or Voyage AI embeddings, plus any OpenAI-compatible endpoint via `OPENAI_BASE_URL`), fused with Reciprocal Rank Fusion; diversity-aware ranking returns sentence-scale snippets with full-section recovery via `read(path, section=heading)`. See the [Embeddings guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/embeddings/), including the [recipe for OpenAI-compatible endpoints](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/embeddings/#openai-compatible-endpoints).
-- **Frontmatter-aware indexing**: YAML frontmatter fields become filterable and searchable, with optional required-field enforcement and adaptive heading-level chunking for long documents.
-- **Write operations**: the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are registered by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`; writes update the index automatically, per-folder `_conventions.md` authoring rules are surfaced to LLM clients at write time, and attachments (PDFs, images, and other non-markdown files) are read/write too.
-- **Incremental reindexing**: hash-based change detection with boot-time reconciliation; the vector index converges to the reconciled chunk set, and parse-pipeline upgrades rebuild the index once automatically.
-- **Git integration**: optional auto-commit (one commit per write tool call) with deferred push, plus a pull loop or a GitHub or GitLab push webhook for external changes; history and diff tools read the log back. An overwriting `write` returns the revision holding the content it replaced, and `read(path, revision=sha)` reads a note back at that revision, so an overwrite is recoverable from the client that made it. When the clone stops reaching its remote, every write result carries a `remote` warning saying the content is committed locally only, and the log marks the transition rather than repeating each cycle. See the [Git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/git-integration/).
-- **OKF-aware**: recognizes [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundles and annotates results with each note's type, lifecycle status, staleness, and trust tier, plus conformance audit and migration tooling. Static bearer writes use tool provenance; human review through a bearer credential requires confirmation with `okf_verify` in `elicit` mode. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/okf/).
-- **MCP surface**: 34 LLM-visible tools, 9 resources, and 8 prompt templates, plus browser-based MCP Apps views and one-time transfer links. Full references: [Tools](https://pvliesdonk.github.io/markdown-vault-mcp/latest/tools/), [Resources](https://pvliesdonk.github.io/markdown-vault-mcp/latest/resources/), [Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/latest/prompts/), [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/mcp-apps/), [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/transfer-links/), [CLI](https://pvliesdonk.github.io/markdown-vault-mcp/latest/cli/).
+Give Claude, or any MCP client, a folder of Markdown notes to search, read and write. An Obsidian vault works as it is.
 
-Overwrite protection is enabled by default. Before replacing an existing file
-with `write` or `fetch`, read that destination and pass its etag as `if_match`.
-New files need no etag. Transfer upload links require a
-new destination because they have no `if_match` option. Set
-`MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites;
-see the [transfer guide](docs/guides/transfer-links.md#upload-walkthrough).
+- **Hybrid search.** Keyword search with SQLite FTS5 and, once an embedding provider is configured, search by meaning, fused by Reciprocal Rank Fusion. Results are short snippets; `read` fetches the whole section. See [Embeddings](docs/guides/embeddings.md).
+- **Frontmatter as data.** YAML frontmatter fields become search filters, and long notes are split at their headings.
+- **Careful writes.** The write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are on by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`. Replacing a file takes the etag from reading it, and per-folder `_conventions.md` rules reach the client as it writes.
+- **Git.** Optional commit per write with a delayed push, pull or webhook sync, and history and diffs; an overwritten note can be read back at the revision it replaced. See [Git integration](docs/guides/git-integration.md).
+- **Links.** Backlinks, outlinks, broken links and the path between two notes, for wikilinks and Markdown links alike, with interactive views in clients that render [MCP Apps](docs/deploy/mcp-apps.md).
+- **Open Knowledge Format.** OKF bundles are recognized, and results carry each note's type, status and trust tier. See [OKF](docs/guides/okf.md).
 
-Python integrations use `VaultSettings` for configuration. See the
-[Vault API](docs/api/vault.md#migrating-from-4x) for the migration from the
-removed 4.x constructor keywords and the
-[configuration API](docs/api/config.md#migrating-from-4x) for typed assembly.
-The [Git API](docs/api/git.md#migrating-from-4x) covers removal of the deprecated
-strategy claim keywords and the keyword-only LFS and repository options.
+The [tools reference](docs/reference/tools/index.md) lists every tool. The same engine is a Python library: see the [Vault API](docs/api/vault.md).
 <!-- DOMAIN-README-PITCH-END -->
 
 ## Does it fit?
@@ -43,15 +32,16 @@ strategy claim keywords and the keyword-only LFS and repository options.
 What the server can reach, what it changes and who gets in is set out in the [security model](docs/security-model.md); the block below says who it serves and where it stops.
 
 <!-- DOMAIN-README-FIT-START -->
-With this server mounted in Claude, you can:
+It suits one person or a small team who keep notes as Markdown files and want Claude to search them, follow their links and write back into them, on their own machine or as a shared server. It reaches the vault folder, plus only what you configure: a git remote, an embedding or summarizing model, and the URLs a `fetch` call names.
 
-- **Capture a URL as a note.** "Fetch <url>, summarize as a Resource note under `3-Resources/`, and link any existing notes on the topic." Claude composes `fetch` + `search` + `write`.
-- **Research a topic into your vault.** "Research product security regulations, compare them, and create a set of interlinked notes: one per regulation, plus a map-of-content." Claude composes web-search tools (client-side) + `write` with wikilinks. See the [Research workflows guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/research-workflows/) for the full loop.
-- **Distill today's thinking.** "Summarize today's conversations into Inbox notes." Claude.ai only; uses `conversation_search` + `recent_chats` + `write`. The [`para-capture-chats`](examples/para/prompts/para-capture-chats.md) prompt is the one-click version.
-- **Find missing links.** Fire the [`propose-links`](https://pvliesdonk.github.io/markdown-vault-mcp/latest/prompts/#propose-links) prompt from the `+` menu: it scans recently modified notes and proposes links between notes that aren't yet connected, writing them on confirmation.
-- **Split or merge captures.** "Split this Inbox note into two." / "Merge this into `<existing note>` instead of duplicating." Claude composes `read` + `write` + `delete`.
+What it assumes:
 
-The vault needs no external scheduler or separate capture app: it sits behind your conversations and absorbs their output.
+- **One vault per server.** Several vaults take one server each, for now ([#1232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232)); give each a `MARKDOWN_VAULT_MCP_SERVER_NAME`.
+- **Markdown is what gets searched.** Other files, such as PDFs and images, can be read and written as attachments, but their contents are not indexed yet ([#1234](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1234)).
+- **Embeddings live in memory.** Search by meaning holds every vector at 4 bytes × chunks × dimensions: about 70 MB for 23,000 chunks at 768 dimensions, about 900 MiB at ten times that and 1,024 dimensions. Memory, not query time, is the first limit ([#1377](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1377)).
+- **State sits on local disk.** The index and embeddings are files, and by default the server keeps a change-tracking file in a `.markdown_vault_mcp/` folder inside the vault, read-only mode included. `MARKDOWN_VAULT_MCP_STATE_PATH` moves it.
+
+Reach for something else for a corpus of hundreds of thousands of chunks (a vector database behind a retrieval pipeline), for mostly scanned or office documents (a document management system with text recognition), or for many users who must not see each other's notes (a multi-tenant knowledge platform): every caller the server admits gets every tool it exposes.
 <!-- DOMAIN-README-FIT-END -->
 
 ## Quick start
@@ -83,15 +73,13 @@ docker run --rm -p 8000:8000 --env-file .env ghcr.io/pvliesdonk/markdown-vault-m
 A `compose.yml` ships at the repository root and runs as-is: copy `.env.example` to `.env`, then `docker compose up -d`. [Deploy](docs/deploy/index.md) covers authentication, OIDC, a reverse proxy and system packages (`.deb`/`.rpm` on the releases page). The server answers `/health` and `/health/ready` outside the MCP mount, and its `get_server_info` tool reports the running version.
 
 <!-- DOMAIN-README-EXTRAS-START -->
+The plain package covers keyword search, the write tools and git. Search by meaning, the file watcher and the `summarize` tool need extras; `[all]` installs every one:
+
 ```bash
-pip install "markdown-vault-mcp[mcp]"             # FastMCP server
-pip install "markdown-vault-mcp[embeddings-api]"  # Ollama/OpenAI embeddings via API
-pip install "markdown-vault-mcp[embeddings]"      # FastEmbed local embeddings
-pip install "markdown-vault-mcp[file-watcher]"    # watchdog-based external-change watcher
-pip install "markdown-vault-mcp[all]"             # MCP + FastEmbed + API embeddings
+uv tool install "markdown-vault-mcp[all]"
 ```
 
-For the Claude Code plugin channel (`/plugin install markdown-vault-mcp@pvliesdonk`) and all other install routes, see the [Installation guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/installation/) and the [Claude Code plugin guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/claude-code-plugin/).
+The Docker image, the `.mcpb` bundle and the Claude Code plugin already include them. [Installation](docs/get-started/installation.md#notes-for-this-server) lists each extra.
 <!-- DOMAIN-README-EXTRAS-END -->
 
 ## Configuration

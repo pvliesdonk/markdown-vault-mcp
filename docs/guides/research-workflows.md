@@ -11,7 +11,7 @@ This guide's baseline works with just Claude, markdown-vault-mcp, and web search
 
 ## Setup
 
-Install and configure markdown-vault-mcp per the [Claude Desktop guide](claude-desktop.md) or [Obsidian Everywhere](obsidian-everywhere.md) for the full multi-device setup. This guide assumes your vault is already connected to Claude and that you can invoke vault tools (`search`, `read`, `write`, `get_similar`, `get_context`) from a conversation.
+Install and configure markdown-vault-mcp per the [Claude Desktop tutorial](../get-started/claude-desktop.md) or [Obsidian Everywhere](obsidian-everywhere.md) for the full multi-device setup. This guide assumes your vault is already connected to Claude and that you can invoke vault tools (`search`, `read`, `write`, `get_similar`, `get_context`) from a conversation.
 
 ### Adding scholar-mcp (optional)
 

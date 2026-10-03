@@ -1,9 +1,9 @@
 """Published documentation examples do what their text says (#1660-#1663).
 
 A reader copies these blocks as written, so each is checked against its claim:
-a configuration shown under a "read-only" heading must actually configure a
-read-only server, and the Python API Quick Starts must run against a real
-vault and return what they print.
+the Python API Quick Starts must run against a real vault and return what they
+print. Configuration examples carry a ``.config`` tag instead, which
+``tests/test_published_examples.py`` checks.
 """
 
 from __future__ import annotations
@@ -17,20 +17,11 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOCS = _REPO_ROOT / "docs"
-_UNPUBLISHED = ("design", "decisions", "superpowers")
 
 # A backtick fence's info string holds no backtick (CommonMark 4.5), so a line
 # opening with an inline ```code``` span is prose, not a fence.
 _FENCE = re.compile(r"^(?P<indent>[ \t]*)(?P<ticks>`{3,})(?P<lang>\w*)[^`\n]*$")
 _HEADING = re.compile(r"^(?P<hashes>#{1,6}) (?P<title>.+)$")
-
-
-def _published_pages() -> list[Path]:
-    return sorted(
-        p
-        for p in _DOCS.rglob("*.md")
-        if p.relative_to(_DOCS).parts[0] not in _UNPUBLISHED
-    )
 
 
 def _blocks(page: Path, lang: str) -> list[tuple[list[str], str]]:
@@ -57,45 +48,6 @@ def _blocks(page: Path, lang: str) -> list[tuple[list[str], str]]:
                 blocks.append(([t for _, t in trail], code))
         i += 1
     return blocks
-
-
-def _read_only_configs() -> list[tuple[str, str, dict[str, str]]]:
-    found = []
-    for page in _published_pages():
-        for trail, code in _blocks(page, "json"):
-            if not any("read-only" in t.lower() for t in trail):
-                continue
-            servers = json.loads(code).get("mcpServers", {})
-            for name, server in servers.items():
-                rel = str(page.relative_to(_REPO_ROOT))
-                found.append((f"{rel} § {trail[-1]}", name, server.get("env", {})))
-    return found
-
-
-def test_read_only_examples_are_found() -> None:
-    """Guard the scanner itself: the Claude Desktop pages carry such examples."""
-    pages = {where.split(" § ")[0] for where, _, _ in _read_only_configs()}
-    assert "docs/guides/claude-desktop.md" in pages
-    assert "docs/get-started/claude-desktop.md" in pages
-
-
-@pytest.mark.parametrize(
-    ("where", "server", "env"),
-    _read_only_configs(),
-    ids=lambda v: v if isinstance(v, str) else "",
-)
-def test_read_only_examples_set_read_only(
-    where: str, server: str, env: dict[str, str]
-) -> None:
-    """A config under a "read-only" heading must not register the write tools.
-
-    ``MARKDOWN_VAULT_MCP_READ_ONLY`` defaults to false (config.py), so a
-    read-only example has to set it.
-    """
-    assert env.get("MARKDOWN_VAULT_MCP_READ_ONLY") == "true", (
-        f"{where}: server {server!r} is shown as read-only but does not set "
-        "MARKDOWN_VAULT_MCP_READ_ONLY=true"
-    )
 
 
 @pytest.fixture

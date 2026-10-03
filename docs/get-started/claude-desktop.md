@@ -62,99 +62,31 @@ Claude Desktop passes every value as written, so paths are absolute (`~` is not 
 ### What this server needs
 
 <!-- DOMAIN-CLAUDE-DESKTOP-START -->
-### Read-only with Ollama embeddings
+The server needs one setting: `MARKDOWN_VAULT_MCP_SOURCE_DIR`, the absolute path of the folder that holds your notes. For a first run, also set `MARKDOWN_VAULT_MCP_READ_ONLY` to `true`. Claude then gets the tools that search and read, and none of the tools that change files:
 
-```json
+```json { .config data-expect="read_only=True" }
 {
   "mcpServers": {
-    "my-vault": {
-      "command": "markdown-vault-mcp",
-      "args": ["serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/Users/me/Documents/ObsidianVault",
-        "MARKDOWN_VAULT_MCP_READ_ONLY": "true",
-        "MARKDOWN_VAULT_MCP_SERVER_NAME": "my-vault",
-        "MARKDOWN_VAULT_MCP_INDEX_PATH": "/Users/me/.local/share/markdown-vault-mcp/index.db",
-        "MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH": "/Users/me/.local/share/markdown-vault-mcp/embeddings",
-        "MARKDOWN_VAULT_MCP_INDEXED_FIELDS": "tags",
-        "MARKDOWN_VAULT_MCP_EXCLUDE": ".obsidian/**,.trash/**",
-        "MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER": "ollama",
-        "OLLAMA_HOST": "http://localhost:11434"
-      }
-    }
-  }
-}
-```
-
-### Read-write with managed git mode
-
-```json
-{
-  "mcpServers": {
-    "my-vault": {
-      "command": "markdown-vault-mcp",
-      "args": ["serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/Users/me/Documents/ObsidianVault",
-        "MARKDOWN_VAULT_MCP_READ_ONLY": "false",
-        "MARKDOWN_VAULT_MCP_INDEX_PATH": "/Users/me/.local/share/markdown-vault-mcp/index.db",
-        "MARKDOWN_VAULT_MCP_GIT_REPO_URL": "https://github.com/your-org/your-vault.git",
-        "MARKDOWN_VAULT_MCP_GIT_USERNAME": "x-access-token",
-        "MARKDOWN_VAULT_MCP_GIT_TOKEN": "ghp_your_token_here",
-        "MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S": "60"
-      }
-    }
-  }
-}
-```
-
-### Read-write with unmanaged / commit-only mode
-
-```json
-{
-  "mcpServers": {
-    "my-vault": {
-      "command": "markdown-vault-mcp",
-      "args": ["serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/Users/me/Documents/ObsidianVault",
-        "MARKDOWN_VAULT_MCP_READ_ONLY": "false",
-        "MARKDOWN_VAULT_MCP_INDEX_PATH": "/Users/me/.local/share/markdown-vault-mcp/index.db"
-      }
-    }
-  }
-}
-```
-
-In unmanaged mode, writes are committed only if `SOURCE_DIR` is already a git repository. Pull/push are handled externally.
-
-### Multiple vaults
-
-```json
-{
-  "mcpServers": {
-    "notes": {
-      "command": "markdown-vault-mcp",
+    "markdown-vault-mcp": {
+      "command": "/Users/me/.local/bin/markdown-vault-mcp",
       "args": ["serve"],
       "env": {
         "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/Users/me/Documents/Notes",
-        "MARKDOWN_VAULT_MCP_SERVER_NAME": "notes"
-      }
-    },
-    "docs": {
-      "command": "markdown-vault-mcp",
-      "args": ["serve"],
-      "env": {
-        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/Users/me/Projects/docs",
-        "MARKDOWN_VAULT_MCP_SERVER_NAME": "docs"
+        "MARKDOWN_VAULT_MCP_READ_ONLY": "true",
+        "MARKDOWN_VAULT_MCP_EXCLUDE": ".obsidian/**,.trash/**"
       }
     }
   }
 }
 ```
 
-!!! tip "Naming instances"
-    Use `MARKDOWN_VAULT_MCP_SERVER_NAME` to give each instance a descriptive name. This helps Claude distinguish between vaults when multiple instances are configured.
+`MARKDOWN_VAULT_MCP_EXCLUDE` keeps an Obsidian vault's settings folder and trash out of the results. Read-only covers the tools, not the folder: the server still keeps a small change-tracking file in a `.markdown_vault_mcp/` folder inside the vault, unless `MARKDOWN_VAULT_MCP_STATE_PATH` names a path elsewhere. The search index lives in memory and is rebuilt at each start; set `MARKDOWN_VAULT_MCP_INDEX_PATH` to a file outside the vault to keep it between starts.
+
+The first task, after the check in step 4:
+
+> Search my vault for notes about <a topic you have written about>, and summarize what they say.
+
+Claude searches, reads the notes it found and answers, and nothing in the vault changes. To let Claude write, remove the `READ_ONLY` line, since writing is on by default. [Git integration](../guides/git-integration.md) adds a commit for every change, and [Embeddings](../guides/embeddings.md) adds search by meaning.
 <!-- DOMAIN-CLAUDE-DESKTOP-END -->
 
 ## 3. Restart Claude Desktop

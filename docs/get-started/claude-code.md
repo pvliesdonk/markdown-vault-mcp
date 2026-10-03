@@ -65,7 +65,24 @@ Claude calls the server's `get_server_info` tool, which reads the server's versi
 ### Your first task
 
 <!-- DOMAIN-CLAUDE-CODE-FIRST-TASK-START -->
-<!-- The first task to give Claude Code with this server, read-only where the server has such a mode, and the `--env` settings it needs; kept across copier update. -->
+**With the plugin**, Claude Code asks for the plugin's settings when you enable it. Only the vault directory is required: the absolute path of the folder that holds your notes. For a first run, set **Read-only mode** to `true`. The plugin's default is `false`, which gives Claude the tools that change files. Restart Claude Code after answering, because the server starts with a session.
+
+The plugin also brings its own skills. `vault-workflow` teaches Claude how to search, follow links and write safely. `vault-summarize` handles summaries across many notes, with a read-only `vault-mapper` subagent. Ask Claude to set up or repair your vault and `vault-setup` looks for candidate folders, checks your choice and records it. A check at the start of each session says so when no vault directory is set, or the one set has gone.
+
+**With the command**, pass the same settings with `--env`:
+
+```bash
+claude mcp add --transport stdio \
+  --env MARKDOWN_VAULT_MCP_SOURCE_DIR=/Users/me/Documents/Notes \
+  --env MARKDOWN_VAULT_MCP_READ_ONLY=true \
+  markdown-vault-mcp -- markdown-vault-mcp serve
+```
+
+Then give Claude its first task:
+
+> Search my vault for notes about <a topic you have written about>, and summarize what they say.
+
+Claude searches, reads the notes it found and answers, and nothing in the vault changes. [What this server needs](claude-desktop.md#what-this-server-needs) covers the other settings worth knowing on a first run.
 <!-- DOMAIN-CLAUDE-CODE-FIRST-TASK-END -->
 
 ## Next

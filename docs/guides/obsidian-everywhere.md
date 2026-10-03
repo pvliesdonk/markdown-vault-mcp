@@ -114,7 +114,7 @@ Target result:
 
 ## Step 6: Connect Claude
 
-Use [Claude Desktop](claude-desktop.md) to configure the MCP endpoint and verify tools. If you want semantic retrieval quality beyond keyword search, add embeddings via [Embeddings](embeddings.md).
+Use [Claude Desktop](../get-started/claude-desktop.md) to configure the MCP endpoint and verify tools. If you want semantic retrieval quality beyond keyword search, add embeddings via [Embeddings](embeddings.md).
 
 Verification checklist:
 

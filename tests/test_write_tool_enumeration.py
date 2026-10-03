@@ -31,8 +31,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # the backticked rendering; the mcpb manifest is JSON prose, so plain.
 _DOC_SITES: tuple[tuple[str, str], ...] = (
     ("README.md", write_tools_phrase(markdown=True)),
-    ("docs/guides/claude-code-plugin.md", write_tools_phrase(markdown=True)),
-    ("docs/guides/claude-desktop.md", write_tools_phrase(markdown=True)),
     ("docs/guides/docker.md", write_tools_phrase(markdown=True)),
     ("docs/design/design.md", write_tools_phrase(markdown=True)),
     ("packaging/mcpb/manifest.json.in", write_tools_phrase()),
