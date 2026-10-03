@@ -73,5 +73,5 @@ Read this page before reporting. A finding that depends on authentication being 
 
 One more kind of route answers without an MCP credential, and checks a credential of its own instead.
 
-- **Git webhooks.** `/github-webhook` and `/gitlab-webhook` exist only when a webhook secret is set. A request must carry a valid signature or token for that secret, and a valid push event makes the server pull and reindex; see [Webhooks](guides/git-integration.md#push-triggered-pull-webhooks).
+- **Git webhooks.** `/github-webhook` and `/gitlab-webhook` exist only when a webhook secret is set. A request must carry a valid signature or token for that secret, and a valid push event makes the server pull and reindex; see [Webhooks](use/git-integration.md#push-triggered-pull-webhooks).
 <!-- DOMAIN-SECURITY-MODEL-EXTRA-END -->

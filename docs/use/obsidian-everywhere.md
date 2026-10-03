@@ -1,3 +1,8 @@
+---
+description: "Keep one Obsidian vault on desktop, mobile and Claude, with git as the source of truth."
+kind: explanation
+---
+
 # Obsidian Everywhere
 
 A reference architecture for keeping one Obsidian vault available on desktop, mobile, and Claude, with git as the source of truth.
@@ -123,9 +128,7 @@ Verification checklist:
 3. Server commits and pushes that note to the repository
 4. Desktop/mobile clients pull and see the same note
 
-### Firing prompts from Claude.ai's `+` menu
-
-When Claude.ai is part of your setup, every MCP prompt this server exposes can be fired from the compose area's `+` menu once the server is added as a connector. Click `+`, select **connectors**, pick the server, pick a prompt; Claude opens with the invocation scaffolded. This is the recommended way to invoke multi-step prompts like `propose-links` or the PARA / Zettelkasten workflow prompts. See [How to invoke prompts](../prompts.md#how-to-invoke-prompts) for the full invocation reference.
+The PARA and Zettelkasten workflow prompts, and the built-in ones such as `propose-links`, run from the client; [Running a prompt](../reference/prompts.md#running-a-prompt) says how each client offers them.
 
 ## Limitations & troubleshooting
 

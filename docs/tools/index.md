@@ -617,7 +617,7 @@ Seed a folder's reserved `log.md` change history from the vault's git commit his
 
 #### `okf_verify`
 
-Attest a note as human-reviewed by appending a `{by: human:<subject>, at: <UTC instant>}` entry to its `verified` frontmatter list, promoting the note's trust tier to `human-reviewed`. Part of the [enforced write layer](../guides/okf.md#the-enforced-write-layer): registered only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. The append itself does not clear `verified`; only content-changing writes do that.
+Attest a note as human-reviewed by appending a `{by: human:<subject>, at: <UTC instant>}` entry to its `verified` frontmatter list, promoting the note's trust tier to `human-reviewed`. Part of the [enforced write layer](../use/okf.md#the-enforced-write-layer): registered only when `MARKDOWN_VAULT_MCP_OKF_WRITE` is enabled. The append itself does not clear `verified`; only content-changing writes do that.
 
 How the review is confirmed depends on [`MARKDOWN_VAULT_MCP_OKF_VERIFY`](../reference/configuration.md):
 
@@ -832,7 +832,7 @@ managed git mode (`MARKDOWN_VAULT_MCP_GIT_REPO_URL` not set).
     `MARKDOWN_VAULT_MCP_GIT_REPO_URL` and a working
     `MARKDOWN_VAULT_MCP_GIT_TOKEN` (with the
     `MARKDOWN_VAULT_MCP_GIT_USERNAME` appropriate for your provider;
-    see the [Git Integration guide](../guides/git-integration.md#provider-username-reference)).
+    see the [Git Integration guide](../use/git-integration.md#provider-username-reference)).
 
 ---
 

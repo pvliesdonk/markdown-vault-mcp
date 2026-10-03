@@ -1,3 +1,8 @@
+---
+description: "Choose a git mode for the vault, configure commits, pushes and pulls, and read history back."
+kind: how-to
+---
+
 # Git Integration
 
 Use this guide to choose and configure the right git mode for your deployment.

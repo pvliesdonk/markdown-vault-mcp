@@ -1,3 +1,8 @@
+---
+description: "Run a PARA vault (Projects, Areas, Resources, Archive) with this server: folders, frontmatter, prompts and the capture-to-archive loop."
+kind: how-to
+---
+
 # PARA with markdown-vault-mcp
 
 PARA (Projects, Areas, Resources, Archive) is Tiago Forte's system for organizing digital information around action (what you are doing, responsible for, or referencing). Where a Zettelkasten is idea-centric and emergent, PARA is action-oriented and top-down: every note has a home determined by what you do with it. This guide shows how to use markdown-vault-mcp as a PARA backend, using its frontmatter-aware search, linking, and templating to run the canonical Capture → Triage → Project Work → Weekly Review → Archive loop.
@@ -6,6 +11,30 @@ PARA (Projects, Areas, Resources, Archive) is Tiago Forte's system for organizin
     This is one of many ways to organize a vault with markdown-vault-mcp. The server is a generic markdown vault backend; PARA conventions are applied in this guide but not required or enforced by the server.
 
 This guide assumes you're working with a PARA vault through Claude (or another MCP client) as the primary interface. The four PARA prompts (capture-from-chats, triage, kickoff, and weekly review) are where most of the value lives; Claude handles surfacing, classification, and batch operations you'd otherwise skip or defer. The Python and CLI examples scattered throughout are the scripting escape hatch, not the day-to-day pattern.
+
+## Get the prompts and templates
+
+The four PARA prompts and five templates this guide uses are example files in the repository's [`examples/para/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/para) folder. No install channel ships them: not the package, the Docker image or the Claude Code plugin. Download the folder, then:
+
+- Copy `templates/` into the vault as `_templates/`. The template prompt looks for templates in that vault folder by default (`MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER`, vault-relative).
+- Keep `prompts/` outside the vault, so the prompt files stay out of search results. Point `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` at it. For Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "markdown-vault-mcp": {
+      "command": "/Users/me/.local/bin/markdown-vault-mcp",
+      "args": ["serve"],
+      "env": {
+        "MARKDOWN_VAULT_MCP_SOURCE_DIR": "/Users/me/Documents/Notes",
+        "MARKDOWN_VAULT_MCP_PROMPTS_FOLDER": "/Users/me/para/prompts"
+      }
+    }
+  }
+}
+```
+
+The built-in prompts stay available beside the PARA ones; a file named like a built-in prompt replaces it. The four PARA prompts write to the vault, so a read-only server doesn't list them. They assume the folder names and frontmatter fields set out below. For a vault that names them differently, edit the prompt files; they are plain Markdown.
 
 ## Vault Setup
 
@@ -110,7 +139,7 @@ Indexed fields are also keyword-searchable by default (`SEARCHABLE_FIELDS` inher
 
 Then you can run targeted queries via the Python API:
 
-```python
+```python { .fragment }
 # All active projects
 results = vault.reader.search(
     "project",
@@ -203,7 +232,7 @@ Use the create_from_template prompt with template_name="inbox"
 
 **Programmatically (scripting escape hatch):**
 
-```python
+```python { .fragment }
 from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir="/path/to/vault")
@@ -312,7 +341,7 @@ The easiest path is to use `para-weekly-review` Step 7, which handles the full l
 
 For scripting outside the prompt:
 
-```python
+```python { .fragment }
 from datetime import date
 from markdown_vault_mcp.vault import Vault
 
@@ -339,14 +368,7 @@ After this sequence, `search(filters={"type": "project", "status": "archived"})`
 
 ## Using Templates
 
-Templates accelerate note creation. The five PARA templates (`inbox`, `project`, `area`, `resource`, `weekly-review`) live in `examples/para/templates/`.
-
-**Configure the templates folder:**
-
-```bash
-export MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER=/path/to/examples/para/templates
-markdown-vault-mcp serve
-```
+Templates accelerate note creation. The five PARA templates (`inbox`, `project`, `area`, `resource`, `weekly-review`) go in the vault's `_templates/` folder, as set out under [Get the prompts and templates](#get-the-prompts-and-templates).
 
 **Use in Claude via the `create_from_template` prompt:**
 
@@ -369,14 +391,7 @@ The prompt calls `list_documents` on the templates folder to enumerate choices, 
 
 ## Using the PARA Prompts
 
-The four PARA prompts live in `examples/para/prompts/` and are loaded via `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER`:
-
-```bash
-export MARKDOWN_VAULT_MCP_PROMPTS_FOLDER=/path/to/examples/para/prompts
-markdown-vault-mcp serve
-```
-
-Then in Claude, the `para-capture-chats`, `para-triage`, `para-project-kickoff`, and `para-weekly-review` prompts are available. On Claude.ai they also appear in the compose area's `+` menu after adding the MCP server as a connector.
+With `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` set ([Get the prompts and templates](#get-the-prompts-and-templates)), the `para-capture-chats`, `para-triage`, `para-project-kickoff` and `para-weekly-review` prompts are available. Each prompt file's front matter carries its description and arguments, which is what a client shows; the sections below say when to reach for each. [Running a prompt](../reference/prompts.md#running-a-prompt) covers how each client offers them.
 
 ### `para-capture-chats`
 
@@ -505,6 +520,6 @@ The [`examples/para/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/mai
 - **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/para/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/para/)
 - **Run this vault as an OKF bundle?** See the [OKF guide](okf.md) and the [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) pack
-- **Prefer idea-centric knowledge management?** See the alternative workflow: [`docs/guides/zettelkasten.md`](zettelkasten.md)
+- **Prefer idea-centric knowledge management?** See the alternative workflow: [Zettelkasten](zettelkasten.md)
 - **Ambient patterns**: [`docs/prompts.md`](../prompts.md#ambient-patterns-without-prompts) (flows the LLM handles from prose alone: URL capture, research, ad-hoc link proposal)
 - **Research workflows**: [research-workflows.md](research-workflows.md) (literature grounding, fact-checking, and writing papers from notes)

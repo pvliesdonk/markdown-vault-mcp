@@ -245,5 +245,5 @@ Which OIDC mode to run follows the rule under [Which mode](oidc.md#which-mode); 
 
 ### Bearer subjects and OKF provenance
 
-Mapped bearer tokens resolve to subject strings, but for OKF provenance they remain service credentials: writes use the server's tool actor, and confirmed reviews in `elicit` mode use `human:local`. `trust-auth` verification refuses them. See the [OKF guide](../guides/okf.md) for the provenance model.
+Mapped bearer tokens resolve to subject strings, but for OKF provenance they remain service credentials: writes use the server's tool actor, and confirmed reviews in `elicit` mode use `human:local`. `trust-auth` verification refuses them. See the [OKF guide](../use/okf.md) for the provenance model.
 <!-- DOMAIN-AUTH-EXTRA-END -->

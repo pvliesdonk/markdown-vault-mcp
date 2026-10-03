@@ -1,3 +1,8 @@
+---
+description: "Run a Zettelkasten with this server: atomic notes, links, and finding connections."
+kind: how-to
+---
+
 # Zettelkasten with markdown-vault-mcp
 
 A Zettelkasten is a personal knowledge management system based on atomic notes, cross-linking, and emergent discovery. This guide shows how to use markdown-vault-mcp as your Zettelkasten backend, using its search, linking, and graph navigation tools to build a connected knowledge base.
@@ -76,7 +81,7 @@ Indexed fields are also keyword-searchable by default (`SEARCHABLE_FIELDS` inher
 
 Then you can search by note type or tag using the Python API:
 
-```python
+```python { .fragment }
 results = vault.reader.search("query", filters={"type": "permanent"})
 results = vault.reader.search("query", filters={"tags": "system-design"})
 ```
@@ -113,7 +118,7 @@ markdown-vault-mcp serve &
 
 Or programmatically:
 
-```python
+```python { .fragment }
 from markdown_vault_mcp.vault import Vault
 
 vault = Vault(source_dir="/path/to/vault")
@@ -154,7 +159,7 @@ Expand inbox notes into permanent knowledge. Two paths:
 
 **Example workflow:**
 
-```python
+```python { .fragment }
 # See the note's current neighborhood
 context = vault.reader.get_context("Inbox/consensus-algorithms.md")
 print(f"Backlinks: {context.backlinks}")
@@ -177,7 +182,7 @@ Linking transforms isolated notes into a knowledge network. Four tools support t
 
 **Explore the neighborhood:**
 
-```python
+```python { .fragment }
 # See everything connected to this note
 context = vault.reader.get_context("Notes/consensus.md")
 ```
@@ -192,7 +197,7 @@ Returns:
 
 **Find related notes you haven't linked yet:**
 
-```python
+```python { .fragment }
 similar = vault.reader.get_similar("Notes/consensus.md", limit=10)
 for note in similar:
     print(f"Similar: {note.title} ({note.score:.2f})")
@@ -200,7 +205,7 @@ for note in similar:
 
 **Discover indirect connections:**
 
-```python
+```python { .fragment }
 # Find the shortest path between two ideas
 path = vault.graph.get_connection_path(
     source="Notes/distributed-systems.md",
@@ -217,7 +222,7 @@ else:
 
 Edit the note and add `[[wikilink]]` or `[text](path.md)` references:
 
-```python
+```python { .fragment }
 vault.writer.edit(
     "Notes/consensus.md",
     old_text="## Evidence",
@@ -234,7 +239,7 @@ All three link formats work:
 
 When a note title changes, rename it and update all backlinks automatically:
 
-```python
+```python { .fragment }
 vault.writer.rename(
     "Notes/old-title.md",
     "Notes/new-title.md",
@@ -248,7 +253,7 @@ Weekly reviews keep your vault healthy and connected:
 
 **Check vault statistics:**
 
-```python
+```python { .fragment }
 stats = vault.reader.stats()
 print(f"Documents: {stats.document_count}")
 print(f"Broken links: {stats.broken_link_count}")
@@ -257,7 +262,7 @@ print(f"Orphan notes: {stats.orphan_count}")
 
 **Find isolated notes:**
 
-```python
+```python { .fragment }
 orphans = vault.graph.get_orphan_notes()
 for note in orphans:
     print(f"Isolated: {note.path}")
@@ -266,7 +271,7 @@ for note in orphans:
 
 **Find and fix broken links:**
 
-```python
+```python { .fragment }
 broken = vault.graph.get_broken_links()
 for link in broken:
     print(f"Broken: {link.source_path} -> {link.target_path}")
@@ -275,7 +280,7 @@ for link in broken:
 
 **Identify hub notes (candidates for MOCs):**
 
-```python
+```python { .fragment }
 hubs = vault.graph.get_most_linked(limit=10)
 for hub in hubs:
     print(f"{hub.title}: {hub.backlink_count} inbound links")
@@ -295,15 +300,15 @@ A **MOC** (Map of Content) is a curated hub note that aggregates links to relate
 
 1. Identify the theme (such as "Distributed Systems")
 2. Search for related notes:
-   ```python
+   ```python { .fragment }
    results = vault.reader.search("distributed systems", mode="hybrid", limit=30)
    ```
 3. Use `get_most_linked()` to find existing hubs:
-   ```python
+   ```python { .fragment }
    hubs = vault.graph.get_most_linked(limit=10)
    ```
 4. Create a new `moc` template note:
-   ```python
+   ```python { .fragment }
    vault.writer.write(
        "Notes/Distributed-Systems-MOC.md",
        content="# Distributed Systems\n\n## Core concepts\n...",
@@ -316,7 +321,7 @@ A **MOC** (Map of Content) is a curated hub note that aggregates links to relate
    ```
 5. Add `[[wikilinks]]` to permanent notes grouped by depth or topic
 6. Link the MOC back from related permanent notes:
-   ```python
+   ```python { .fragment }
    vault.writer.edit(
        "Notes/consensus.md",
        old_text="## Related",
@@ -369,14 +374,7 @@ Hard problems we keep solving:
 
 ## Using Templates
 
-Templates accelerate note creation. The `fleeting`, `literature`, `permanent`, and `moc` templates are provided in `examples/zettelkasten/templates/`.
-
-**Configure the template folder:**
-
-```bash
-export MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER=/path/to/examples/zettelkasten/templates
-markdown-vault-mcp serve
-```
+Templates accelerate note creation. The `fleeting`, `literature`, `permanent` and `moc` templates are example files in the repository's [`examples/zettelkasten/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/zettelkasten) folder; no install channel ships them. Copy its `templates/` folder into the vault as `_templates/`, the vault folder the template prompt reads by default (`MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER`, vault-relative).
 
 **Use in Claude via the `create_from_template` prompt:**
 
@@ -398,7 +396,7 @@ The prompt calls `list_documents(folder=<templates_folder>)` to enumerate templa
 
 ## Using the Zettelkasten Prompt
 
-The `examples/zettelkasten/prompts/zettelkasten.md` prompt guides you through connecting a note to your vault in five steps:
+The `zettelkasten` prompt, an example file in the same folder (`prompts/zettelkasten.md`), guides you through connecting a note to your vault in five steps:
 
 1. **Read and understand**: extract the central claim
 2. **Survey the neighborhood**: see existing backlinks and similar notes
@@ -406,18 +404,7 @@ The `examples/zettelkasten/prompts/zettelkasten.md` prompt guides you through co
 4. **Suggest links**: present new connections with context
 5. **Check for MOC opportunity**: flag if a new MOC would help
 
-**Configure prompt mounting:**
-
-If your MCP server supports `PROMPTS_FOLDER`:
-
-```bash
-export MARKDOWN_VAULT_MCP_PROMPTS_FOLDER=/path/to/examples/zettelkasten/prompts
-markdown-vault-mcp serve
-```
-
-Then in Claude, the `zettelkasten` prompt is available for use.
-
-**Fire the prompt from Claude.ai's `+` menu.** Once the server is added as a connector on Claude.ai, every MCP prompt (including `zettelkasten`) appears in the compose area's `+` menu. Click `+`, select **connectors**, pick the server, pick the prompt. Claude opens with the invocation scaffolded, so you don't need to remember the arguments. See [How to invoke prompts](../prompts.md#how-to-invoke-prompts) for other clients.
+**Load the prompt:** point `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` at the `prompts/` folder by its absolute path. Keeping that folder outside the vault keeps the prompt file out of search results. The built-in prompts stay available beside it. [Running a prompt](../reference/prompts.md#running-a-prompt) covers how each client offers prompts.
 
 **Use the prompt:**
 
@@ -433,7 +420,7 @@ The prompt guides you through connecting the note to related ideas and flags whe
 
 Before writing your first note, run `stats()` to understand your vault's shape:
 
-```python
+```python { .fragment }
 stats = vault.reader.stats()
 print(f"Documents: {stats.document_count}")
 print(f"Broken links: {stats.broken_link_count}")
@@ -455,7 +442,7 @@ Run it again each month to track how your vault grows.
 
 Always prefer `mode='hybrid'` when searching:
 
-```python
+```python { .fragment }
 # Good
 vault.reader.search("consensus", mode="hybrid", limit=20)
 
@@ -469,7 +456,7 @@ Hybrid search combines full-text ranking (exact matches, stemming) with semantic
 
 Orphaned notes (no inbound or outbound links) are knowledge dead zones. Schedule a weekly check:
 
-```python
+```python { .fragment }
 orphans = vault.graph.get_orphan_notes()
 for note in orphans:
     # Either integrate it: add outlinks to existing notes
@@ -482,7 +469,7 @@ This prevents accumulating notes you're not thinking about.
 
 When you want to see how two seemingly distant topics relate, use `get_connection_path()`:
 
-```python
+```python { .fragment }
 path = vault.graph.get_connection_path(
     source="Notes/machine-learning.md",
     target="Notes/philosophy.md",
@@ -503,7 +490,7 @@ Exception: Delete broken links immediately. `get_broken_links()` makes this easy
 
 Tags are not a rigid classification system. Use them for grouping and quick filtering:
 
-```python
+```yaml
 # Good
 tags: [systems, distributed, algorithms]
 

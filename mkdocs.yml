@@ -86,6 +86,14 @@ plugins:
         guides/oidc-providers.md: deploy/oidc-providers.md
         guides/mcp-apps.md: deploy/mcp-apps.md
         guides/transfer-links.md: deploy/transfer-links.md
+        guides/index.md: use/index.md
+        guides/embeddings.md: use/embeddings.md
+        guides/git-integration.md: use/git-integration.md
+        guides/obsidian-everywhere.md: use/obsidian-everywhere.md
+        guides/okf.md: use/okf.md
+        guides/para.md: use/para.md
+        guides/research-workflows.md: use/research-workflows.md
+        guides/zettelkasten.md: use/zettelkasten.md
         # PROJECT-REDIRECTS-END
   # Generates llms.txt + llms-full.txt for the README badge.
   # The sections are filled from `nav:` at build time by
@@ -156,15 +164,14 @@ nav:
   - Use:
       - Overview: use/index.md
       # PROJECT-NAV-USE-START — this server's how-tos and explanations (docs/use/); kept across copier update
-      - Guides: guides/index.md
+      - Embeddings: use/embeddings.md
+      - Git integration: use/git-integration.md
       - Vault explorer: use/vault-explorer.md
-      - Git integration: guides/git-integration.md
-      - Embeddings: guides/embeddings.md
-      - Obsidian everywhere: guides/obsidian-everywhere.md
-      - Research workflows: guides/research-workflows.md
-      - Zettelkasten: guides/zettelkasten.md
-      - PARA: guides/para.md
-      - Open Knowledge Format: guides/okf.md
+      - Obsidian everywhere: use/obsidian-everywhere.md
+      - Open Knowledge Format: use/okf.md
+      - PARA: use/para.md
+      - Zettelkasten: use/zettelkasten.md
+      - Research workflows: use/research-workflows.md
       # PROJECT-NAV-USE-END
   # Reference is generated from the code by scripts/gen_reference.py; a fact
   # on these pages changes at its source (docstring, annotation, CLI help).

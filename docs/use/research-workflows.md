@@ -1,3 +1,8 @@
+---
+description: "Use the vault and Claude for research: seed, ground, absorb, interconnect and produce."
+kind: explanation
+---
+
 # Research workflows with markdown-vault-mcp
 
 Research in a vault treats Claude as a persistent sparring partner. The vault is the durable workspace that outlives any single session (notes, links, literature, drafts) and Claude is the reasoning agent you rent by the conversation. Claude's memory doesn't persist; the vault's does. The workflow is to keep pushing what matters into notes, so the next session starts where the previous one stopped.

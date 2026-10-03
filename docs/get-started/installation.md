@@ -112,5 +112,5 @@ To install them all:
 uv tool install "markdown-vault-mcp[all]"
 ```
 
-The Docker image, the `.mcpb` bundle and the Claude Code plugin install `[all]`. The `mcp` extra stays for older install commands; the plain package already includes the server. [Embeddings](../guides/embeddings.md) explains choosing a provider.
+The Docker image, the `.mcpb` bundle and the Claude Code plugin install `[all]`. The `mcp` extra stays for older install commands; the plain package already includes the server. [Embeddings](../use/embeddings.md) explains choosing a provider.
 <!-- DOMAIN-INSTALL-EXTRA-END -->

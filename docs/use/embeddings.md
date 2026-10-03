@@ -1,3 +1,8 @@
+---
+description: "Choose and configure an embedding provider for search by meaning: FastEmbed, Ollama, OpenAI-compatible endpoints or Voyage."
+kind: how-to
+---
+
 # Embedding Providers
 
 This guide covers configuring each supported embedding provider for semantic search. You only need one provider; choose based on your requirements:
@@ -10,6 +15,8 @@ This guide covers configuring each supported embedding provider for semantic sea
 | [Voyage AI](#voyage-ai) | No (API call) | N/A | Yes | Minimal | Negligible |
 
 All four providers produce embeddings that enable the `semantic` and `hybrid` search modes in the `search` tool.
+
+The server needs the matching package extra: `embeddings` for FastEmbed, `embeddings-api` for Ollama, OpenAI and Voyage (quoted, as in `uv tool install "markdown-vault-mcp[embeddings-api]"`). `[all]` covers both, and the Docker image, the `.mcpb` bundle and the Claude Code plugin install it.
 
 ## Ollama
 
@@ -105,6 +112,8 @@ You should get a JSON response with an `embedding` array. After starting the vau
 > Search for "project planning" using hybrid mode
 
 If embeddings are working, hybrid and semantic search modes will return results ranked by conceptual similarity.
+
+On a large vault the first build takes a while; [Common to all providers](#common-to-all-providers) says how to tell when it has finished.
 
 ---
 
@@ -412,6 +421,7 @@ Regardless of which provider you choose:
 
 - **`MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` is required** to enable semantic search. Without it, only keyword search is available.
 - Embeddings are built automatically on first startup when a provider is configured. Subsequent starts load the persisted index from disk and only process changed files.
+- The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider and a vector path are configured, whether or not the build has run. The build has caught up once [`get_index_status`](../reference/tools/indexing.md#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
 - Use `mode="hybrid"` in search for best results; it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.
 
 !!! note "Large vaults"

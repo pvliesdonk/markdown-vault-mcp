@@ -86,7 +86,7 @@ The first task, after the check in step 4:
 
 > Search my vault for notes about <a topic you have written about>, and summarize what they say.
 
-Claude searches, reads the notes it found and answers, and nothing in the vault changes. To let Claude write, remove the `READ_ONLY` line, since writing is on by default. [Git integration](../guides/git-integration.md) adds a commit for every change, and [Embeddings](../guides/embeddings.md) adds search by meaning.
+Claude searches, reads the notes it found and answers, and nothing in the vault changes. To let Claude write, remove the `READ_ONLY` line, since writing is on by default. [Git integration](../use/git-integration.md) adds a commit for every change, and [Embeddings](../use/embeddings.md) adds search by meaning.
 <!-- DOMAIN-CLAUDE-DESKTOP-END -->
 
 ## 3. Restart Claude Desktop
