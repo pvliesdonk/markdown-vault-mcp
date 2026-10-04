@@ -347,8 +347,8 @@ class IndexWriteCoordinator:
 
         Raises:
             IndexUnavailableError: If :meth:`build_index` has not been called.
-            EmbeddingsNotConfiguredError: If ``embedding_provider`` /
-                ``embeddings_path`` is unset (a ``ValueError`` subclass).
+            EmbeddingsNotConfiguredError: If ``embedding_provider`` is unset
+                (a ``ValueError`` subclass).
         """
         self._readiness.require_built()
         result: int = self._writer.submit(BuildEmbeddings(force=force)).result()

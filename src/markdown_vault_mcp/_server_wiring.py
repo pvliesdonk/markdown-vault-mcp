@@ -38,7 +38,9 @@ def wire_domain(mcp: FastMCP, config: ProjectConfig, transport: str) -> None:
         "vault_startup mode=%s vault=%s embeddings=%s",
         "read-only" if config.read_only else "read-write",
         config.source_dir,
-        "enabled" if config.indexing.embeddings_path else "disabled",
+        "enabled"
+        if config.indexing.embeddings_path or (config.embeddings.provider or "").strip()
+        else "disabled",
     )
 
     # Push-webhook endpoints (#530, #1178).  The routes, their credential

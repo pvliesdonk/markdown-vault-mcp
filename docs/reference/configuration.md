@@ -360,7 +360,7 @@ starting points live under `examples/`: `obsidian-readonly.env`,
 | `VOYAGE_API_KEY` | (none) | No | Voyage AI API key for the voyage embedding provider. Bare (not MARKDOWN_VAULT_MCP_-prefixed), matching the OPENAI_API_KEY / OLLAMA_HOST convention. Setting it never auto-selects the provider; choose it explicitly with MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage. |
 | `OPENAI_BASE_URL` | (none) | No | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_BASE_URL (embeddings). For the summarize tool it only routes traffic when an API key already enables the feature; it never enables summarize by itself. |
 | `OPENAI_EMBEDDING_MODEL` | (none) | No | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL. |
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | (none) | No | Embedding provider: openai, voyage, ollama, or fastembed. Unset auto-detects from the environment (never voyage). Any OpenAI-compatible endpoint works with openai plus OPENAI_BASE_URL; see the embeddings guide. |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` | (none) | No | Embedding provider: openai, voyage, ollama, or fastembed; setting it turns on search by meaning. Unset auto-detects from the environment (never voyage), but only when EMBEDDINGS_PATH is set. Any OpenAI-compatible endpoint works with openai plus OPENAI_BASE_URL; see the embeddings guide. |
 | `MARKDOWN_VAULT_MCP_OLLAMA_MODEL` | `nomic-embed-text` | No | Ollama embedding model name. |
 | `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY` | `false` | No | Force Ollama to embed on CPU only. |
 | `MARKDOWN_VAULT_MCP_VOYAGE_MODEL` | `voyage-4` | No | Voyage AI embedding model name. |
@@ -391,7 +391,7 @@ starting points live under `examples/`: `obsidian-readonly.env`,
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | (none) | No | Path to the SQLite FTS5 index file; unset keeps the index in memory. Set it for persistence across restarts. |
 | `MARKDOWN_VAULT_MCP_STATE_PATH` | (none) | No | Path to the change-tracking state file. Defaults to INDEX_PATH plus .state.json (index.db.state.json beside index.db); without INDEX_PATH the state is kept in memory. Never written into the vault by default. |
-| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | (none) | No | Path to the numpy embeddings file; required to enable semantic search. |
+| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | (none) | No | Base path for the embeddings files. Defaults beside INDEX_PATH (index-db-embeddings.npy and .json beside index.db); without INDEX_PATH the vectors are kept in memory and rebuilt at each start. Setting it also lets the provider be auto-detected. |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | (none) | No | Comma-separated frontmatter fields promoted to the tag index for structured filtering. Changing it cold-rebuilds the index once on next startup; SEARCHABLE_FIELDS inherits this value when unset. |
 | `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | (none) | No | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index. |
 | `MARKDOWN_VAULT_MCP_EXCLUDE` | (none) | No | Comma-separated glob patterns excluded from scanning (.obsidian/**,.trash/**). |

@@ -226,8 +226,10 @@ class Vault:
     Args:
         source_dir: Root directory of the markdown vault.
         settings: Configuration settings. ``None`` uses ``VaultSettings()``.
-        embedding_provider: Provider used to generate embeddings; required
-            when ``settings.embeddings_path`` is set.
+        embedding_provider: Provider used to generate embeddings; semantic
+            search is on whenever one is given. Its vectors persist beside
+            the index, or at ``settings.embeddings_path``, and stay in
+            memory without either.
         summarizer: Optional summarization backend. Without one the
             :attr:`summarizer` accessor raises.
         git_strategy: Optional strategy for background Git tasks, started
@@ -281,7 +283,7 @@ class Vault:
                 metacharacters.
         """
         self._index_path = settings.index_path
-        self._embeddings_path = settings.embeddings_path
+        self._embeddings_path = settings.effective_embeddings_path()
         self._embedding_batch_size = settings.embedding_batch_size
         self._read_only = settings.read_only
         self._write_protect_existing = settings.write_protect_existing
@@ -381,6 +383,13 @@ class Vault:
         db_path: Path | str = (
             self._index_path if self._index_path is not None else ":memory:"
         )
+        if str(db_path) != ":memory:":
+            # SQLite creates the file but not its folder; a packaged default
+            # may point into one not made yet (#1708). The vector sidecars and
+            # the state file create theirs on first save.
+            from pathlib import Path
+
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._fts = FTSIndex(
             db_path=db_path,
             indexed_frontmatter_fields=self._indexed_frontmatter_fields or None,

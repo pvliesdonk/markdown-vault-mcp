@@ -322,7 +322,7 @@ class Service:
             for extra in (
                 settings.effective_state_path(config.source_dir),
                 config.indexing.index_path,
-                config.indexing.embeddings_path,
+                settings.effective_embeddings_path(),
             ):
                 if extra is not None:
                     internal_dirs.append(extra.parent)

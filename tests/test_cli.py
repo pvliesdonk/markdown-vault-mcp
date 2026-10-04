@@ -866,7 +866,7 @@ def test_reindex_builds_embeddings_when_configured() -> None:
         result = runner.invoke(app, ["reindex"])
 
     assert result.exit_code == 0, result.output
-    mock_vault.index.build_embeddings.assert_called_once_with()
+    mock_vault.index.build_embeddings.assert_called_once_with(force=False)
 
 
 def test_reindex_swallows_embeddings_not_configured_error() -> None:
@@ -926,7 +926,7 @@ def test_reindex_never_forces_embedding_rebuild() -> None:
 
     assert result.exit_code == 0, result.output
     # Must be called with no arguments (no force=True)
-    mock_vault.index.build_embeddings.assert_called_once_with()
+    mock_vault.index.build_embeddings.assert_called_once_with(force=False)
 
 
 def test_reindex_against_real_vault(
@@ -996,6 +996,63 @@ def test_search_in_memory_leaves_a_shared_state_file_alone(
     assert result.exit_code == 0, result.output
     assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
     assert not state.exists()
+
+
+def test_search_by_meaning_on_an_in_memory_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Semantic search embeds in memory, never into a shared EMBEDDINGS_PATH."""
+    import markdown_vault_mcp.providers as providers_mod
+    from tests.conftest import MockEmbeddingProvider
+
+    monkeypatch.setattr(
+        providers_mod, "get_embedding_provider", lambda _c: MockEmbeddingProvider()
+    )
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    shared = tmp_path / "shared" / "embeddings"
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.delenv(f"{_ENV_PREFIX}_INDEX_PATH", raising=False)
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", str(shared))
+
+    result = runner.invoke(app, ["search", "--json", "-m", "semantic", "world"])
+
+    assert result.exit_code == 0, result.output
+    assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
+    assert not shared.parent.exists()
+
+
+@pytest.mark.parametrize("command", ["index", "reindex"])
+def test_batch_commands_skip_embeddings_nothing_would_keep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """Without an index or embeddings path, embedding would be paid for nothing."""
+    import markdown_vault_mcp.providers as providers_mod
+    from tests.conftest import MockEmbeddingProvider
+
+    class _Counting(MockEmbeddingProvider):
+        calls = 0
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            _Counting.calls += 1
+            return super().embed(texts)
+
+    monkeypatch.setattr(providers_mod, "get_embedding_provider", lambda _c: _Counting())
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.delenv(f"{_ENV_PREFIX}_INDEX_PATH", raising=False)
+    monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", raising=False)
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
+
+    result = runner.invoke(app, [command])
+
+    assert result.exit_code == 0, result.output
+    assert "Embeddings skipped" in result.output
+    assert _Counting.calls == 0
 
 
 def test_search_never_builds_an_on_disk_index(

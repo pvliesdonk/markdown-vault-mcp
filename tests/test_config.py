@@ -472,8 +472,65 @@ class TestVaultInstancesProvider:
         # No provider → the chunk char cap falls back to the ceiling (#790).
         assert settings.max_chunk_chars == 1500
 
-    def test_no_embeddings_path_skips_provider(self, monkeypatch, tmp_path) -> None:
-        """With no embeddings_path the provider is never resolved, even if broken."""
+    def test_explicit_provider_needs_no_embeddings_path(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """A configured provider turns semantic search on by itself (#1708)."""
+        import markdown_vault_mcp.providers as providers_mod
+
+        class _FakeProvider:
+            context_length = 512
+
+        fake = _FakeProvider()
+        monkeypatch.setattr(
+            providers_mod, "get_embedding_provider", lambda _config: fake
+        )
+        config = ProjectConfig(
+            source_dir=tmp_path,
+            embedding_provider="openai",
+            embeddings_path=None,
+        )
+        assert to_vault_instances(config).embedding_provider is fake
+
+    @pytest.mark.parametrize(
+        ("provider", "exc"),
+        [
+            ("openai", ImportError("missing dep")),
+            ("openai", RuntimeError("boom")),
+            ("bogus", None),
+        ],
+    )
+    def test_explicit_provider_without_path_that_fails_degrades(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        provider: str,
+        exc: Exception | None,
+    ) -> None:
+        """Before #1708 such a provider was never loaded; it must not stop startup."""
+        import markdown_vault_mcp.providers as providers_mod
+
+        if exc is not None:
+
+            def _boom(_config: object) -> None:
+                raise exc
+
+            monkeypatch.setattr(providers_mod, "get_embedding_provider", _boom)
+        config = ProjectConfig(
+            source_dir=tmp_path, embedding_provider=provider, embeddings_path=None
+        )
+        with caplog.at_level("WARNING"):
+            assert to_vault_instances(config).embedding_provider is None
+        assert any(
+            r.message.startswith("embedding_provider_load_failed")
+            for r in caplog.records
+        )
+
+    def test_autodetect_still_needs_an_embeddings_path(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Without a provider or a path, detection never runs (#1708)."""
         import markdown_vault_mcp.providers as providers_mod
 
         def _boom(_config):
@@ -481,12 +538,9 @@ class TestVaultInstancesProvider:
 
         monkeypatch.setattr(providers_mod, "get_embedding_provider", _boom)
         config = ProjectConfig(
-            source_dir=tmp_path,
-            embedding_provider="openai",
-            embeddings_path=None,
+            source_dir=tmp_path, embedding_provider=None, embeddings_path=None
         )
-        instances = to_vault_instances(config)
-        assert instances.embedding_provider is None
+        assert to_vault_instances(config).embedding_provider is None
 
     def test_provider_loads_sets_instance(self, monkeypatch, tmp_path) -> None:
         """A successfully resolved provider is threaded into the instances."""

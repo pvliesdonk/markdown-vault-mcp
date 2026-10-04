@@ -157,7 +157,8 @@ class SearchManager:
         fts: The FTS index to query.
         source_dir: Absolute path to the vault root directory.
         embeddings_path: Base path for ``.npy`` / ``.json`` sidecar files.
-            ``None`` disables semantic search.
+            ``None`` keeps the vectors in memory; semantic search follows
+            *embedding_provider* alone (#1708).
         embedding_provider: Provider used to generate embeddings.
         indexed_frontmatter_fields: Frontmatter keys promoted to
             ``document_tags`` for structured filtering.
@@ -227,7 +228,7 @@ class SearchManager:
         self._folder_weights = folder_weights
         self._embed_text_format = embed_text_format
 
-        # Vector index is loaded lazily (only if embeddings_path is set).
+        # Vector index is loaded lazily, from the sidecars or empty in memory.
         self._vectors: VectorStore | None = None
 
     # ------------------------------------------------------------------
@@ -263,12 +264,10 @@ class SearchManager:
         """Report whether semantic search is configured for this vault.
 
         Returns:
-            ``True`` when both an embedding provider and an embeddings path
-            are set.
+            ``True`` when an embedding provider is set; its vectors may be
+            held in memory (#1708).
         """
-        return (
-            self._embedding_provider is not None and self._embeddings_path is not None
-        )
+        return self._embedding_provider is not None
 
     def _resolve_mode(
         self, mode: Literal["keyword", "semantic", "hybrid"] | None
@@ -330,14 +329,24 @@ class SearchManager:
 
         Raises:
             RuntimeError: If called without a prior ``_require_vectors()``
-                (``_embedding_provider`` or ``_embeddings_path`` is ``None``).
+                (``_embedding_provider`` is ``None``).
             ValueError: If a self-heal rebuild fails to produce a usable index.
         """
         if self._vectors is not None:
             return self._vectors
-        if self._embeddings_path is None or self._embedding_provider is None:
+        if self._embedding_provider is None:
             raise RuntimeError(
                 "_require_vectors() must be called before _load_vectors()"
+            )
+        if self._embeddings_path is None:
+            # Held in memory (#1708) and not built yet: answer from an empty
+            # index without installing it. The writer thread owns the slot,
+            # and installing here could replace the index a running
+            # build_embeddings is filling, losing its vectors.
+            from markdown_vault_mcp.vector_index import VectorIndex
+
+            return VectorIndex(
+                self._embedding_provider, embed_text_format=self._embed_text_format
             )
         return load_or_self_heal(
             embeddings_path=self._embeddings_path,
@@ -739,8 +748,8 @@ class SearchManager:
 
         Raises:
             EmbeddingsNotConfiguredError: If *mode* is ``"semantic"`` or
-                ``"hybrid"`` but no embedding provider or embeddings path is
-                configured (a ``ValueError`` subclass).
+                ``"hybrid"`` but no embedding provider is configured (a
+                ``ValueError`` subclass).
         """
         eff_cap = (
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
@@ -1462,9 +1471,7 @@ class SearchManager:
         folders = self._fts.list_folders()
         folder_count = len(folders)
 
-        semantic_available = (
-            self._embedding_provider is not None and self._embeddings_path is not None
-        )
+        semantic_available = self._embedding_provider is not None
 
         exts = self._effective_attachment_extensions()
         attachment_extensions = ["*"] if "*" in exts else sorted(exts)
@@ -1772,11 +1779,7 @@ class SearchManager:
         # chunks_per_file=1 to keep dossiers compact: one best section per
         # file gives the LLM enough to decide drill-worthiness.
         similar_grouped: list[GroupedResult] = []
-        if (
-            similar_limit > 0
-            and self._embedding_provider is not None
-            and self._embeddings_path is not None
-        ):
+        if similar_limit > 0 and self._embedding_provider is not None:
             try:
                 similar_grouped = self.get_similar(
                     path, limit=similar_limit, chunks_per_file=1

@@ -369,8 +369,8 @@ provider.
     while keeping the same model name goes undetected: vectors from two
     different models end up in one index, and search quality degrades
     quietly. Force the rebuild yourself by deleting the two sidecar files
-    beside `EMBEDDINGS_PATH` (the `.npy` matrix and the `.json` metadata)
-    and restarting.
+    (the `.npy` matrix and the `.json` metadata, at `EMBEDDINGS_PATH` or
+    beside the index) and restarting.
 
 !!! note "Unknown context length falls back to a 1500-character chunk cap"
     The chunk cap derives from the model's context length. That is known only
@@ -419,9 +419,10 @@ Set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` explicitly to avoid surprises when y
 
 Regardless of which provider you choose:
 
-- **`MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` is required** to enable semantic search. Without it, only keyword search is available.
-- Embeddings are built automatically on first startup when a provider is configured. Subsequent starts load the persisted index from disk and only process changed files.
-- The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider and a vector path are configured, whether or not the build has run. The build has caught up once [`get_index_status`](../reference/tools/indexing.md#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
+- **Setting `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` turns search by meaning on.** Left unset, the provider is auto-detected only when `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` is set.
+- **Where the vectors live.** At `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when set, otherwise beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (`index-db-embeddings.npy` and `.json` beside `index.db`). With neither set, they are held in memory and every note is embedded again at each start, which a paid provider bills each time. The Claude Desktop bundle and the Claude Code plugin set no index path yet, so a provider picked on their install screen embeds again at each Claude Desktop launch or Claude Code session ([#1728](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728)).
+- Embeddings are built automatically on first startup when a provider is configured. Later starts load the stored vectors and only process changed files.
+- The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider is configured, whether or not the build has run. The build has caught up once [`get_index_status`](../reference/tools/indexing.md#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
 - Use `mode="hybrid"` in search for best results; it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.
 
 !!! note "Large vaults"

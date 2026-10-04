@@ -228,10 +228,10 @@ class VaultInstances:
 def _resolve_embedding_provider(config: ProjectConfig) -> EmbeddingProvider | None:
     """Resolve the embedding provider, honouring the explicit-vs-auto posture.
 
-    Semantic search is gated by the storage path in ``config.indexing``,
-    while the provider lives in ``config.embeddings`` (cross-section
-    coupling).  An unrecognised provider name raises ConfigurationError from
-    the resolver and propagates unchanged.
+    An explicitly configured provider is resolved on its own; auto-detection
+    runs only when the storage path in ``config.indexing`` is set
+    (cross-section coupling, #1708).  An unrecognised provider name raises
+    ConfigurationError from the resolver and propagates unchanged.
 
     Args:
         config: The served project configuration.
@@ -241,16 +241,33 @@ def _resolve_embedding_provider(config: ProjectConfig) -> EmbeddingProvider | No
 
     Raises:
         ConfigurationError: If an explicitly configured provider fails to
-            load.
+            load while ``EMBEDDINGS_PATH`` is set. Without it the failure is
+            logged at WARNING and keyword search carries on (#1708).
     """
-    if config.indexing.embeddings_path is None:
-        return None
     explicit_provider = (config.embeddings.provider or "").strip()
+    # An explicit provider turns semantic search on by itself (#1708);
+    # auto-detection still waits for a storage path, so an install that merely
+    # has a backend importable never starts embedding at every start.
+    if not explicit_provider and config.indexing.embeddings_path is None:
+        return None
     try:
         from markdown_vault_mcp import providers as _providers
 
         return _providers.get_embedding_provider(config)
-    except (ImportError, RuntimeError) as exc:
+    except (ImportError, RuntimeError, ConfigurationError) as exc:
+        if explicit_provider and config.indexing.embeddings_path is None:
+            # Before #1708 a provider without EMBEDDINGS_PATH was never
+            # loaded, so a broken one cost nothing; it must not stop a server
+            # that starts today. Keyword search carries on.
+            logger.warning(
+                "embedding_provider_load_failed provider=%s error=%s "
+                "outcome=keyword_only",
+                explicit_provider,
+                exc,
+            )
+            return None
+        if isinstance(exc, ConfigurationError):
+            raise
         if explicit_provider:
             # The operator explicitly chose a backend; a load failure is
             # a configuration error that must surface, not silently fall

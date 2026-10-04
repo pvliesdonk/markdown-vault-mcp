@@ -121,8 +121,7 @@ class ReaderFacet:
 
         Raises:
             EmbeddingsNotConfiguredError: If *mode* is ``"semantic"`` or
-                ``"hybrid"`` but no embedding provider or embeddings path is
-                configured.
+                ``"hybrid"`` but no embedding provider is configured.
         """
         return self._search_mgr.search(
             query,
