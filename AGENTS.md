@@ -20,50 +20,16 @@ demand, not context every session needs.
 
 ## Conventions
 
-- Python 3.11+
-- `uv` for package management, `ruff` for linting/formatting (line length 88)
-- `hatchling` build backend
-- Conventional commits, one type from `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test` — optionally scoped (`feat(search): ...`) and with `!` for a breaking change. Only `feat`, `fix`, and the `!` marker drive releases: `feat` cuts a minor, `fix` a patch, `!` a major. Every other type — `perf` included — cuts nothing and never reaches `CHANGELOG.md`; a performance change that must ship on its own is either honestly a `fix:` (it fixes a performance defect) or released with Release Prepare's explicit `override_version` input.
-- Google-style docstrings on all public functions
-- `logging.getLogger(__name__)` throughout, no `print()`; messages are `event_name key=%s` (see the `logging-standard` skill), and `tests/test_logging_standard.py` fails on any first-party call that is not
-- Type hints everywhere
-- Tests: `pytest` with fixtures in `tests/fixtures/`
-
-**Pull-request titles are enforced, not merely encouraged.** A squash merge
-takes the PR title as the commit subject, so CI's `PR Title` job checks it
-against the type list above and fails the `CI Success` aggregate when it does
-not match. This is not style policing: knope computes versions and writes
-`CHANGELOG.md` from those subjects, and it silently ignores a subject whose
-type it does not count — no fallback heading, no entry, no warning. That
-silent-drop class is exactly what the gate exists for: it keeps the history
-parseable and the accepted set deliberate. The changelog itself carries three
-sections per release — Breaking Changes first, then Features, then Bug
-Fixes — fed only by `!`/`feat`/`fix` subjects; the richness for everything
-else lives on the `docs/releases/` notes page, not in the changelog.
-
-Retitling is enough to clear a failure — the job reads the current title from
-the API, so re-running it after a retitle needs no push.
-
-**Reverts are the one accepted title with a caveat.** `Revert "..."`, the
-shape `git revert` and GitHub's revert button generate, passes: it is the
-ecosystem's convention, and Conventional Commits deliberately leaves reverts
-unspecified. But **neither revert form reaches `CHANGELOG.md`** — knope
-counts only `feat`/`fix`/`!`, so `revert: ORIGINAL SUBJECT` is just as
-changelog-invisible as the quoted form. The job says so with a warning
-annotation rather than letting you find out at release time. The revert is
-narrated on the `docs/releases/` page instead, whose research runs off merged
-pull requests and linked issues rather than commit subjects.
-
-The accepted set lives in `scripts/check_pr_title.py`. That list, the
-knope-counted subset (`feat`/`fix`/`!`), and this section's prose are checked
-against each other by `tests/test_commit_conventions.py`, so no one of the
-three can drift alone.
-
-
+- Write commit subjects and pull-request titles as conventional commits: one type from `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`, an optional scope (`feat(search): ...`), and `!` for a breaking change. The `PR Title` job fails any other title; retitle to clear it, no push needed. Accepted types: `scripts/check_pr_title.py`.
+- Only `feat`, `fix`, and the `!` marker drive releases: `feat` cuts a minor, `fix` a patch, `!` a major. Every other type, `perf` included, cuts nothing and never reaches `CHANGELOG.md`. Ship a change that needs a release of its own as a `fix:` or through Release Prepare's `override_version` input.
+- `Revert "..."` titles pass the title job. Neither revert form reaches `CHANGELOG.md`; narrate a revert on its `docs/releases/` page.
+- Write a Google-style docstring on every public function and a type hint on every signature.
+- Log through `logging.getLogger(__name__)`, never `print()`, with messages shaped `event_name key=%s` (the `logging-standard` skill); `tests/test_logging_standard.py` fails any other first-party call.
+- Put shared test fixtures in `tests/fixtures/`.
 
 ## Skills
 
-Detailed guidance lives in skills under `.agents/skills/` (portable; Claude Code reaches them through `.claude/skills/` symlinks). They load only when invoked, so invoke them explicitly:
+Skills live under `.agents/skills/`; Claude Code reads them through the `.claude/skills/` symlinks. They load only when invoked, so invoke the one that matches before you start:
 
 - `releasing` — before any release, release-candidate, unstable-channel, plugin-channel, or release-notes work.
 - `config-contract` — before adding a config field, env var, Dockerfile extension point, mcpb install-screen entry, or release-manifest stamp.
@@ -80,172 +46,105 @@ Detailed guidance lives in skills under `.agents/skills/` (portable; Claude Code
 - `roadmapping` — when charting, refining or revisiting epics and release packages; before planning work that spans PRs.
 - `researching-references` — when a change depends on how something outside the repo behaves (a markdown dialect, git, a file format, a vendor API) and `docs/design/reference/` has no current page for it.
 
-Project-owned skills follow the same shape: a directory under `.agents/skills/` plus a relative symlink in `.claude/skills/`.
+Project-owned skills follow the same shape: a directory under `.agents/skills/` plus a relative symlink in `.claude/skills/`. Project-specific issue and PR conventions go inside the `authoring-issues-prs` skill's `DOMAIN-AUTHORING` block.
 
 ## Breaking Changes and the `!` Marker
 
-The release version is computed by knope from commit subjects and lands in a reviewed release PR, so the `!` marker (or `BREAKING CHANGE:` footer) *is* the major-version decision — apply it deliberately, not by habit; the release-PR review is where a mis-typed `!` gets caught, but the reviewer should never have to. A change is **breaking** only if it breaks one of two surfaces:
+Mark a commit `!` (or add a `BREAKING CHANGE:` footer) only when it breaks one of two surfaces for a user of the last stable release:
 
-- **Operator surface** — an environment variable, config file, CLI flag, deployment layout, or on-disk state format a human must change to upgrade.
-- **Public library interface** — anything importable from `markdown_vault_mcp` that a downstream Python consumer uses. A mechanical guard for this tier is tracked at pvliesdonk/fastmcp-server-template#352.
+- Operator surface: an environment variable, config file, CLI flag, deployment layout, or on-disk state format a human must change to upgrade.
+- Public library interface: anything importable from `markdown_vault_mcp` that a downstream Python consumer uses.
 
-A change to the **MCP surface**, meaning the tools, resources and prompts a client discovers over the protocol (their names, parameters, schemas and payload shapes, and adding or removing any of them), is **not** breaking on its own. The LLM client is stateless and re-discovers the surface over the protocol on connect, so a server restart resolves it with no user action.
+A change to the MCP surface (the tools, resources and prompts a client discovers over the protocol: their names, parameters, schemas and payload shapes, and adding or removing any of them) is not breaking on its own, because the client re-discovers the surface on connect. It is breaking when a component keeps its shape but its previous behaviour is no longer reachable; an additive or dual-mode change is not.
 
-Two refinements:
-
-1. **Re-discovery covers a component's *shape*, not its *semantics*.** A tool, resource or prompt that keeps its shape but changes what it does can still break operator automation, prompts, or skills. If only the MCP surface changed and the previous behaviour is still reachable (additive / dual-mode), the change is not breaking; if the old behaviour is gone, treat it as breaking even though the schema re-discovers cleanly.
-2. **Assess against the last stable release, not the previous commit.** A change to something introduced in the same unreleased range breaks nothing a user has, and does not earn a `!`. When a feature and its rework land in one release cycle, only the net effect on the released surface counts. Sanity-check any commit carrying `!` before it merges: if `git tag --contains` on the commit that introduced the surface comes back empty, the surface never shipped and the `!` is spurious.
-
-The two-part test: (1) does an operator or a library consumer of the last stable release have to change something? → breaking. (2) If only the MCP surface changed, is the previous behaviour still reachable? → not breaking; if it is gone, breaking.
+Assess against the last stable release, not the previous commit: a change to a surface introduced in the same unreleased range earns no `!`. Before merging a commit carrying `!`, run `git tag --contains` on the commit that introduced the surface; an empty result means the surface never shipped and the `!` is spurious.
 
 ## Hard PR Acceptance Gates
 
-Every PR must pass **all** of the following before merge. Do not open or push a PR until these are green locally:
+Run every gate locally and open or push a PR only when all of them pass:
 
-1. **CI passes** — `uv run pytest -x -q` all tests pass. CI runs the full suite on required Python 3.11–3.14, collecting coverage only on Python 3.14. Both CI test commands include `--durations=20` to report slow tests.
-2. **Lint passes** — run in this exact order: `uv run ruff check --fix .` then `uv run ruff format .` then verify with `uv run ruff format --check .`. Always run format *after* check --fix because check --fix can leave files needing reformatting.
-3. **Type-check passes** — `uv run mypy src/ tests/` reports no errors
-4. **Patch coverage ≥ 80%** — CI's `coverage/patch` status (diff-cover) measures only lines added/changed in the PR diff; SonarQube Cloud's quality gate holds new code to the same floor. Run `uv run pytest --cov=src/markdown_vault_mcp --cov-report=term-missing` and verify new code is exercised. Use the path form for `--cov`: a dotted module target (e.g. `--cov=markdown_vault_mcp.config`) makes coverage.py import the module speculatively, which leaves an orphaned beartype import hook behind and aborts the whole session at conftest load. Add tests for every uncovered branch before pushing.
-
-5. **Structural quality (diff) passes** — new/changed code must introduce no new structural violations (complexity, too-many-*, security). Enforced on the diff only, so pre-existing code is never blocked. Run before pushing:
-   ```bash
-   bash scripts/structural_gate.sh
-   ```
-   The script derives its compare branch (nearest of `origin/main`, `origin/release/*` and `origin/integration/*`; override with `STRUCTURAL_GATE_BASE`) and runs `diff-quality --violations=ruff.check --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" --fail-under=100` against it. `# noqa: C901` (etc.) with a one-line justification is the escape hatch for genuinely irreducible new code.
-6. **Docs updated** — `README.md` and `docs/**` reflect any user-facing changes in the same commit
-7. **Manifest version lockstep** — `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json`, and `.claude-plugin/plugin/.mcp.json` must all carry the same version: the latest *stable* release. A stable release PR stamps them atomically (knope invokes `scripts/stamp_manifests.py`); rc release PRs deliberately leave them untouched, because the versions they name are only published for stable releases. Manual touches require updating all three.
-
+1. Tests: `uv run pytest -x -q`.
+2. Lint: `uv run ruff check --fix .`, then `uv run ruff format .`, then `uv run ruff format --check .`, in that order.
+3. Types: `uv run mypy src/ tests/`.
+4. Patch coverage ≥ 80% on the lines the PR adds or changes: `uv run pytest --cov=src/markdown_vault_mcp --cov-report=term-missing`; add a test for every uncovered new branch before pushing. Pass `--cov` the path form; a dotted module target (`--cov=markdown_vault_mcp.config`) aborts the whole session at conftest load.
+5. Docs: `README.md` and `docs/**` reflect every user-facing change in the same commit (Documentation Discipline below).
+6. Manifest version lockstep: `server.json`, `.claude-plugin/plugin/.claude-plugin/plugin.json` and `.claude-plugin/plugin/.mcp.json` carry the same version, the latest stable release. A stable release PR stamps all three; when you touch one by hand, update all three.
+7. Structural quality (diff) passes: new or changed lines add no structural violation (complexity, too-many-*, security); pre-existing code is never blocked. Run `bash scripts/structural_gate.sh` before pushing. It runs `diff-quality --violations=ruff.check --options="--extend-select=C901,PLR0911,PLR0912,PLR0913,PLR0915,S" --fail-under=100` against the nearest of `origin/main`, `origin/release/*` and `origin/integration/*` (override with `STRUCTURAL_GATE_BASE`). For irreducible new code, add `# noqa: C901` (or the rule that fired) with a one-line justification.
 
 ## Pre-commit Hooks
 
-This project ships a `.pre-commit-config.yaml` that runs ruff (check + format), mypy on `src/` and `tests/`, gitleaks secret scanning, and standard whitespace/YAML/JSON checks — aligned with the `ci.yml` lint/typecheck/secrets jobs so a clean pre-commit run implies a clean CI lane.
-
-- **Install once per clone:** `uv run pre-commit install`.
-- **Run on demand before pushing:** `uv run pre-commit run --all-files`. A green run is a precondition for gates #2 and #3 above.
-
-- **Structural gate runs at push time:** the `structural-diff-gate` hook (pre-push stage) runs `scripts/structural_gate.sh` automatically. `uv run pre-commit install` wires it via `default_install_hook_types`. A clean local push implies a clean CI `structure` job — CI runs the same script, pinning the compare branch to the PR's actual base, while the hook derives it (nearest of `origin/main`, `origin/release/*` and `origin/integration/*`), so backport and integration-child branches are measured against the right base locally too.
-
-- **Template conformance runs at push time:** the `template-conformance` hook (pre-push stage) fails a push that adds content outside a sentinel block in a file `copier update` re-renders, compared with the branch's base. Move the content into the block the file declares. Its one sanctioned skip is drift a Decay issue tracks: `SKIP=template-conformance git push`.
-- **Never bypass with `--no-verify`.** A failing hook means the same check will fail in CI; fix the underlying issue rather than silencing it.
-
-Domain-specific additions (shellcheck, yamllint, project-specific linters, additional file checks) belong between the `DOMAIN-HOOKS` markers at the end of the config, never outside them; hooks inside that block on top of the shipped defaults survive `copier update`.
-
+- Install once per clone with `uv run pre-commit install`; run `uv run pre-commit run --all-files` before pushing.
+- The `structural-diff-gate` hook runs `scripts/structural_gate.sh` at push time.
+- **Template conformance runs at push time:** the `template-conformance` hook fails a push that adds content outside a sentinel block in a file `copier update` re-renders. Move the content into the block the file declares. Skip the hook only for drift a Decay issue tracks: `SKIP=template-conformance git push`.
+- Fix a failing hook; never bypass it with `--no-verify`, because the same check fails in CI.
+- Add domain hooks (shellcheck, yamllint, project linters) between the `DOMAIN-HOOKS` markers at the end of the config, never outside them; hooks inside that block on top of the shipped defaults survive `copier update`.
 
 ## Structural health
 
-The structural gate stops *new* debt; these practices and the advisory audit keep existing debt visible.
+- Keep each function single-purpose; a section that needs its own comment is a function of its own.
+- Nest at most three levels; extract or return early beyond that.
+- Pass at most five parameters; past that, pass an object or split the function.
+- Give a new responsibility its own collaborator instead of a longer class.
+- Before substantial work in an unfamiliar area, or before touching a flagged module, run the advisory audit:
 
-**Local-shape rules (checkable while you write):**
+  ```bash
+  uv run --with radon python -m radon cc -s -n C src/    # complexity hotspots (grade C+)
+  uv run --with radon python -m radon mi -s src/         # maintainability index
+  uv run --with vulture vulture src/                     # dead-code candidates
+  ```
 
-- Keep functions short and single-purpose; if a function needs a comment to explain a *section*, that section is a function.
-- Nesting beyond ~3 levels is a smell — extract or invert/early-return.
-- Five parameters is the ceiling; past it, pass an object or split the function.
-- A new responsibility is a **new collaborator, not a longer class**. When a class grows a second reason to change, that reason belongs in its own unit.
-
-**Advisory audit (on demand — run before substantial work in an unfamiliar area, or when about to touch a flagged module):**
-
-```bash
-uv run --with radon python -m radon cc -s -n C src/    # complexity hotspots (grade C+)
-uv run --with radon python -m radon mi -s src/         # maintainability index
-uv run --with vulture vulture src/                     # dead-code candidates
-```
-
-Each analyzer is optional and degrades gracefully if absent. `vulture` over-reports on importable/decorated/framework-registered code — **confirm before deleting** and keep a whitelist.
-
-**When you notice decay outside the current change's scope** — a god class forming, a dead branch, a leaking abstraction, a name that no longer matches behaviour, or an audit hotspot — do **not** fix it inline (scope creep) and do **not** pass over it silently. **Open an issue** using the **Decay** form (`.github/ISSUE_TEMPLATE/decay.yml`): What / Where / Why it compounds / Suggested direction.
-
-Constrain issues to **decay that will compound**, not anything imperfect. The diff-gate blocks new debt; these issues are the refactor-later backlog for pre-existing debt — neither blocks the current PR.
-
+  `vulture` over-reports on imported, decorated and framework-registered code; confirm each candidate before deleting it.
+- When you notice decay outside the current change's scope (a god class forming, a dead branch, a leaking abstraction, a name that no longer matches behaviour, an audit hotspot), open an issue with the Decay form (`.github/ISSUE_TEMPLATE/decay.yml`: What, Where, Why it compounds, Suggested direction) instead of fixing it inline or passing it over. File only decay that will compound; it does not block the current PR.
 
 ## PR Discipline
 
-**Every PR must have at least one associated issue.** If the work doesn't have one yet — a bug found in the wild, an opportunistic cleanup, a small improvement — create the issue first, then open the PR with `Closes #N` (or `Refs #N`) in the body. A single PR may close multiple issues (`Closes #A, closes #B`) — bundling related fixes is fine; the rule is "no orphan PRs", not "one PR per issue". This keeps the changelog, release notes, and cross-repo history coherent.
-
-Trivial exceptions: pure typo fixes and automated dependency bumps (Renovate) may skip the issue.
+Every PR closes or references at least one issue: create the issue first when none exists, then put `Closes #N` (or `Refs #N`) in the PR body. One PR may close several issues (`Closes #A, closes #B`). Pure typo fixes and automated dependency bumps (Renovate) need no issue.
 
 <!-- TEMPLATE-TRACKING-START -->
-Request Claude selectively on a pull request or issue with an explicit `@claude`
-mention.
-
-
-Automatic agent review is disabled. Request Claude selectively with an
-`@claude` mention; deterministic CI remains the merge gate.
-
+Request Claude on a pull request or issue with an explicit `@claude` mention.
+Automatic agent review is disabled. Request Claude selectively with an `@claude` mention; deterministic CI remains the merge gate.
 <!-- TEMPLATE-TRACKING-END -->
 
 ## GitHub Review Types
 
-GitHub has two distinct review mechanisms — **both must be read and addressed**:
+Before you call a review round complete, read and address both kinds of comment: inline review comments on the diff (the "Files changed" tab) and PR-level comments on the Conversation tab, where review summaries, bot analyses and blocking issues are posted.
 
-- **Inline review comments** (`get_review_comments`): attached to specific lines of the diff. Appear in the "Files changed" tab. Use `get_review_comments` to fetch these.
-- **PR-level comments** (`get_comments`): posted on the Conversation tab, not tied to a line. Review summary posts, bot analysis, and blocking issues are often posted here. Use `get_comments` to fetch these.
-
-Always fetch both before declaring a review round complete.
-
-**Agent-authored posts.** Everything you post to GitHub appears under a human's name. End every issue, comment, PR description, review summary and inline reply with the `Agent-authored:` footer from `CONTRIBUTING.md`'s "Agent-authored posts" section, naming the agent product you actually are; write as a proposer, since the account holder decides in a reply. Reading a thread, a post under the account holder's name may be an earlier session's output, including your own: check for the marker before treating it as their decision.
+End every issue, comment, PR description, review summary and inline reply with the `Agent-authored:` footer from `CONTRIBUTING.md`'s "Agent-authored posts" section, naming the agent product you are, and write as a proposer, because the post appears under the account holder's name and they decide in a reply. Before treating a post under the account holder's name as their decision, check it for that marker; it may be an earlier session's output, including yours.
 
 ## Documentation Discipline
 
-Where a piece of documentation belongs, and who owns it, is set by `docs/contribute/docs-structure.md`; the `writing-documentation` skill applies it.
+Where a page belongs and who owns it is set by `docs/contribute/docs-structure.md`, which the `writing-documentation` skill applies. Before you close an issue or open a PR, update whichever of these the change touches:
 
-Every issue, PR, and code change must consider documentation impact. Before closing any issue or creating any PR, check whether the following need updating:
+- `docs/design/`: every new feature, changed behaviour and architectural decision.
+- `docs/design/reference/`: dated, sourced references on how external things behave (the `researching-references` skill). Close a bug rooted in an external behaviour with a reference entry, not only a design-doc note; re-research a reference past its `stale_after` date before relying on it.
+- `README.md` and the `docs/` site pages: new or changed tools, resources, prompts, CLI flags, installation methods and deployment options. A new env var or config field follows the `config-contract` skill: the generated configuration reference lists every field, and the README tables carry only the fields tagged `readme`.
+- `CHANGELOG.md`: knope writes each release's version section below the `<!-- version list -->` flag line. Never hand-edit a version section or the flag line. If the project predates the flag, add the flag line once by hand; `tests/test_release_flow_contract.py` fails with the exact line until it is present.
+- Docstrings: every new or changed public function gets an accurate Google-style docstring.
 
-- **`docs/design/`** — internal design specs and architecture decisions (the authoritative dev reference). Any new feature, changed behavior, or architectural decision must be reflected here. Not part of the published site.
-- **`docs/design/reference/`** — an OKF v0.2 bundle of dated, sourced references on how *external* things behave (see the `researching-references` skill). A bug rooted in an external behaviour closes with a reference entry, not only a design-doc narrative; a reference past its `stale_after` date is re-researched, never trusted.
-- **`README.md`** — user-facing documentation. New env vars, tools, resources, prompts, CLI flags, or configuration options must be documented here.
-- **`docs/` site pages** — the published documentation site. New or changed MCP tools/resources/prompts, new env vars, new installation methods or deployment options.
-- **`CHANGELOG.md`** — machine-generated audit trail: knope writes each release's version section (below the `<!-- version list -->` insertion flag) into the release PR's diff. Never hand-edit version sections or the flag line. If this project was generated before the flag existed, add the flag line to `CHANGELOG.md` once by hand — `tests/test_release_flow_contract.py` fails with the exact line until it is present.
-- **Inline docstrings** — new or changed public API methods need accurate Google-style docstrings.
+Code without matching docs is incomplete.
 
-**Rule: code without matching docs is incomplete.**
+## Documentation Conventions
 
-## Documentation Conventions (user-facing vs internal)
+Vale lints `docs/` and `README.md` in pre-commit and CI; keep them clean. Internal docs are neither linted nor published; put them in one of these three subtrees and add no other exclusion:
 
-`docs/` is the **published, user-facing documentation site** (mkdocs + mike).
-Everything under `docs/`, plus **`README.md`**, is operator-facing prose and is
-**Vale-linted** in CI and pre-commit — keep it clean.
-
-**Internal / developer docs are not user-facing and are not linted.** They live
-under a fixed set of subtrees, excluded from both the published site and Vale:
-
-- `docs/design/` — design specs and architecture notes; `docs/design/reference/` holds the external-behaviour references
-- `docs/decisions/` — architecture decision records (ADRs)
-- `docs/superpowers/` — agent scratch, gitignored; a feature's approved spec ships in its PR body
-
-This boundary is declared in three places that **must stay in lockstep** (the
-`template-ci` "vale exclusion-scope lockstep" job asserts the CI glob and the
-pre-commit exclude match): the mkdocs `exclude_docs:` block, the `vale` CI
-step's `glob:` input (`!docs/{superpowers,design,decisions}/**` — one glob
-with brace alternation, because Vale honors only a single `--glob`), and
-the `- id: vale` pre-commit hook's `exclude:` regex
-(`^docs/(superpowers|design|decisions)/`). The set is fixed by convention — do
-not add per-project exclusions; put internal docs in one of the subtrees above.
+- `docs/design/`: design specs and architecture notes, with `docs/design/reference/` for the external-behaviour references.
+- `docs/decisions/`: architecture decision records.
+- `docs/superpowers/`: agent scratch, gitignored; a feature's approved spec ships in its PR body.
 
 ## Roadmap
 
-Read `docs/design/roadmap.md` before planning; update its argument when direction changes.
-Epics are parent issues with native sub-issues; packages are ordinal-named milestones for one release cut.
-The `roadmapping` skill defines refinement, evidence and package membership. GitHub owns status; the index owns the argument.
+Read `docs/design/roadmap.md` before planning work, and update its argument when direction changes. GitHub owns status (epics are parent issues with native sub-issues; release packages are ordinal-named milestones); the index owns the argument.
 
 <!-- TEMPLATE-TRACKING-START -->
 ## Shared Infrastructure
 
-Shared infrastructure (auth providers, middleware stack, logging bootstrap, event store factory, CLI scaffolding, release pipeline, Docker entrypoint, nfpm packaging, mcpb bundle) lives upstream in two places:
+Shared infrastructure (auth providers, middleware, logging bootstrap, event store, CLI scaffolding, release pipeline, Docker entrypoint, nfpm and mcpb packaging) lives upstream in [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core), the Python library, and [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template), the copier template this project was generated from. Fixes to shared code land there and propagate here via `copier update`, run by the weekly `.github/workflows/copier-update.yml` cron or by hand.
 
-- [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core) — the Python library that provides `ServerConfig`, auth builders, middleware helpers, and the `make_serve_parser` / `configure_logging_from_env` / `run_http` / `normalise_http_path` CLI helpers.
-- [`fastmcp-server-template`](https://github.com/pvliesdonk/fastmcp-server-template) — the copier template this project was generated from. Ships the CI/release workflows, `knope.toml`, `Dockerfile`, `packaging/nfpm.yaml`, `packaging/mcpb/*`, `scripts/stamp_manifests.py`, server.py skeleton, and this very section of AGENTS.md.
-
-Fixes and improvements to shared code land in those repos and propagate here via `copier update` against the template's latest tag — run manually or via the weekly `.github/workflows/copier-update.yml` cron. Starter files listed in `_skip_if_exists` (e.g. `packaging/mcpb/*`, the `tools.py` / `resources.py` / `prompts.py` / `domain.py` scaffolds, `CHANGELOG.md`, `LICENSE`) are written once and require manual reconciliation on template updates; `AGENTS.md`, `README.md`, `.pre-commit-config.yaml`, `scripts/stamp_manifests.py`, `compose.yml`, `Dockerfile` and `pyproject.toml` are deliberately *not* among them — all seven are re-rendered on update, and only content inside their sentinel blocks survives (`DOMAIN-START` / `DOMAIN-END` in this file and the named `DOMAIN-README-*` blocks in `README.md`, `DOMAIN-HOOKS` in the pre-commit config, `DOMAIN-MANIFESTS-HELPERS` / `DOMAIN-MANIFESTS` in the stamp script, the four `DOMAIN-COMPOSE-*` blocks in the compose file, the four `DOCKERFILE-*` blocks in the Dockerfile, and `PROJECT-DEPS` / `PROJECT-EXTRAS` / `PROJECT-LICENSE` / `PROJECT-CLASSIFIERS` / `PROJECT-LICENSE-CLASSIFIER` / `PROJECT-UV` / `PROJECT-RUFF-IGNORES` / `PROJECT-DOCS-CHECKS` in `pyproject.toml`) — review `_skip_if_exists` in the template's `copier.yml` if you need to force-sync a file. Content written into a re-rendered file outside its sentinel blocks is drift, not a customisation: `uv run --script scripts/check_template_conformance.py` lists every such line against the pinned template version. Domain-specific code (tools, resources, prompts, and the fields and logic inside the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END`, `CONFIG-FROM-ENV-START` / `CONFIG-FROM-ENV-END`, and `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels) stays in this repo.
+Content outside a sentinel block in a file `copier update` re-renders is drift, not a customisation: `uv run --script scripts/check_template_conformance.py` lists every such line against the pinned template version, and `docs/contribute/template-updates.md` names each file's blocks. Domain code (tools, resources, prompts, and the config fields inside the `CONFIG-*` sentinels) stays in this repo. A conflict marker in a copier-update PR often signals a template bug; check whether the template needs fixing before resolving locally.
 
 ## Contributing fixes upstream
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the three-tier routing (library to `fastmcp-pvl-core`, template to `fastmcp-server-template`, domain to this repo), the issue/PR discipline, and the uncertainty rule. CONTRIBUTING.md is the single source; this section is a pointer.
-
-The provider-neutral release-notes skill lives at `.agents/skills/writing-release-notes/SKILL.md`; invoke it explicitly when preparing or revising release narrative. Claude Code reaches the same skills through `.claude/skills/` symlinks.
-
-The `authoring-issues-prs` skill (`.agents/skills/authoring-issues-prs/SKILL.md`, reachable by Claude Code via `.claude/skills/`) fires when filing issues or PRs: it walks the routing, picks the issue form, and performs the follow-up steps forms cannot (native sub-issue links for epics, the release milestone or `ships-atomically` label). The skill is template-owned and re-rendered on `copier update`; project-specific authoring conventions belong inside its `DOMAIN-AUTHORING` sentinel block.
-
-If a conflict marker appears in a copier-update bot PR, the conflict itself often signals a template bug — investigate whether the template's version needs fixing before resolving locally.
+`CONTRIBUTING.md` holds the three-tier routing (library to `fastmcp-pvl-core`, template to `fastmcp-server-template`, domain to this repo), the issue and PR discipline, and the uncertainty rule.
 <!-- TEMPLATE-TRACKING-END -->
 
 <!-- ===== TEMPLATE-OWNED SECTIONS END ===== -->
