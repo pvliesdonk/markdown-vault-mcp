@@ -1,3 +1,8 @@
+---
+description: "The Vault class, the library's entry point, and how to construct and configure it."
+kind: reference
+---
+
 # Vault
 
 The `Vault` class is the primary public API for the library. MCP tools, CLI commands, and direct integrations all go through this class. It is a thin composition root: the read / write / graph / index operations live on the four facets, reached through the `reader` / `writer` / `graph` / `index` accessors (see [Facets](facets.md)).
@@ -6,7 +11,7 @@ The `Vault` class is the primary public API for the library. MCP tools, CLI comm
 
 Construction uses `VaultSettings`: pass `source_dir` plus a `VaultSettings` carrying the configuration knobs. Collaborator objects (`embedding_provider`, `summarizer`, `git_strategy`, `on_write`, and `chunk_strategy`) stay explicit keywords.
 
-```python
+```python { .run data-expect="results" }
 from pathlib import Path
 from markdown_vault_mcp.vault import Vault, VaultSettings
 
@@ -44,7 +49,7 @@ vault.close()
 
 The 31 configuration keywords on `Vault` have been removed. Move each value to the same-named field on `VaultSettings`. Replace `Vault(source_dir=root, read_only=False, index_path=index)` with:
 
-```python
+```python { .fragment }
 vault = Vault(
     source_dir=root,
     settings=VaultSettings(read_only=False, index_path=index),

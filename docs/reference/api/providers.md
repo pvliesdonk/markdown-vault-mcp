@@ -1,10 +1,15 @@
+---
+description: "The embedding providers the library supports, and how one is chosen."
+kind: reference
+---
+
 # Embedding Providers
 
 The `providers` module defines an abstract base class for embedding providers and four concrete implementations for OpenAI, Voyage AI, Ollama, and FastEmbed.
 
 ## Quick Start
 
-```python
+```python { .fragment }
 from markdown_vault_mcp.providers import get_embedding_provider
 
 # Auto-detect based on environment variables
@@ -42,7 +47,7 @@ side. Only `embed()` is abstract. `embed_query()` defaults to it, so a
 provider whose model draws no query/document distinction writes nothing
 extra and embeds both sides identically.
 
-```python
+```python { .fragment }
 vectors = provider.embed(["a stored note"])       # index side
 query_vector = provider.embed_query(["a search"])  # search side
 ```

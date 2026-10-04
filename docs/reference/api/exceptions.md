@@ -1,8 +1,13 @@
+---
+description: "The exceptions the library raises, and what each one means."
+kind: reference
+---
+
 # Exceptions
 
 All exceptions are importable from the `markdown_vault_mcp.exceptions` module.
 
-```python
+```python { .fragment }
 from markdown_vault_mcp.exceptions import DocumentNotFoundError, ReadOnlyError
 ```
 

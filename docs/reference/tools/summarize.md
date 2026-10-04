@@ -8,7 +8,7 @@ kind: reference
 # Summarize
 
 <!-- DOMAIN-INTRO-START -->
-<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
+The note limit in `summarize`'s description is the default. `MARKDOWN_VAULT_MCP_SUMMARIZE_MAX_NOTES` sets it, and a running server states its own value.
 <!-- DOMAIN-INTRO-END -->
 
 ## `summarize`
@@ -58,16 +58,24 @@ When the summary completes within the soft deadline, a dict with
   `unreadable`).
 
 When the work is promoted to a background job, a dict with
-`"status": "working"`, a `"job_id"` string, and a
-`"message"`; call `get_job_result` with the `job_id` to
-fetch the result.
+`"status": "working"`, a `job_id` string, `poll_with` naming
+`get_job_result`, `retry_after_s` (the seconds to wait before
+polling) and a `message`; call `get_job_result` with the `job_id`
+to fetch the result.
 
 **Outcomes and errors**
 
 - InvalidRequestError: If `paths` is empty, `mode` is invalid, `max_notes` is below 1, or the paths hold no note that exists and is within the read limit.
 - ValueError: If every note found exists but cannot be read.
+- SummarizeTimeoutError: If a backend call outran its time limit; narrow the request.
 - RuntimeError: If the summarization backend call fails within the soft deadline. A backend failure that happens after promotion is reported through `get_job_result` instead.
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
 
 <!-- DOMAIN-EXAMPLE-summarize-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"paths": ["1-Projects/export"], "focus": "decisions and their rationale"}
+```
+
+A slow run returns `{"status": "working", "job_id": "…", "poll_with": "get_job_result", "retry_after_s": 5.0, "message": "…"}`; poll `get_job_result` with that `job_id`.
 <!-- DOMAIN-EXAMPLE-summarize-END -->

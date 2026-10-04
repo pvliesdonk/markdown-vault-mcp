@@ -1,10 +1,15 @@
+---
+description: "The reader, writer, graph and index facets that carry the library's operations."
+kind: reference
+---
+
 # Facets
 
 The read / write / graph / index operations live on four cohesive facets,
 reached through the `reader` / `writer` / `graph` / `index` accessors on the
 [`Vault`](vault.md) composition root.
 
-```python
+```python { .run data-expect="results" }
 from pathlib import Path
 from markdown_vault_mcp.vault import Vault, VaultSettings
 

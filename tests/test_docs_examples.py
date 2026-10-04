@@ -1,9 +1,9 @@
-"""Published documentation examples do what their text says (#1660-#1663).
+"""Published reference examples match what the tools return (#1662, #1663).
 
-A reader copies these blocks as written, so each is checked against its claim:
-the Python API Quick Starts must run against a real vault and return what they
-print. Configuration examples carry a ``.config`` tag instead, which
-``tests/test_published_examples.py`` checks.
+The `read` worked example on the generated reader page names every key the
+tool returns, and `get_index_status`'s Returns list names every key it
+returns. Runnable Python examples and configuration examples carry `.run`
+and `.config` tags instead, which `tests/test_published_examples.py` checks.
 """
 
 from __future__ import annotations
@@ -12,8 +12,10 @@ import json
 import re
 import textwrap
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import pytest
+if TYPE_CHECKING:
+    import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DOCS = _REPO_ROOT / "docs"
@@ -50,38 +52,6 @@ def _blocks(page: Path, lang: str) -> list[tuple[list[str], str]]:
     return blocks
 
 
-@pytest.fixture
-def example_vault(tmp_path: Path) -> Path:
-    vault = tmp_path / "vault"
-    (vault / "Journal").mkdir(parents=True)
-    (vault / "Journal" / "note.md").write_text(
-        "# Note\n\nSome query text to find, linking [[other]].\n",
-        encoding="utf-8",
-    )
-    (vault / "other.md").write_text("# Other\n\nLinks back.\n", encoding="utf-8")
-    return tmp_path
-
-
-def _quick_start(page: str) -> str:
-    return _blocks(_DOCS / page, "python")[0][1]
-
-
-@pytest.mark.parametrize("page", ["api/vault.md", "api/facets.md"])
-def test_api_quick_start_runs_as_written(page: str, example_vault: Path) -> None:
-    """The first Python block on each API page runs and finds the note.
-
-    Only the placeholder paths change; everything else is the published text.
-    """
-    code = _quick_start(page)
-    code = code.replace("/path/to/vault", str(example_vault / "vault"))
-    code = code.replace("/path/to/index.db", str(example_vault / "index.db"))
-    namespace: dict[str, object] = {}
-    exec(compile(code, page, "exec"), namespace)
-    results = namespace["results"]
-    assert isinstance(results, list)
-    assert results, f"{page}: the Quick Start search found nothing"
-
-
 def _section_blocks(page: Path, heading: str, lang: str) -> list[str]:
     """Code blocks in *lang* under the first heading equal to *heading*."""
     return [code for trail, code in _blocks(page, lang) if heading in trail]
@@ -116,11 +86,13 @@ async def test_read_return_example_lists_the_live_keys(
     live = result.structured_content
     assert isinstance(live, dict)
 
-    documented = json.loads(
-        _section_blocks(_DOCS / "tools" / "index.md", "`read`", "json")[0]
+    page = _DOCS / "reference" / "tools" / "reader.md"
+    response = next(
+        block for block in _section_blocks(page, "`read`", "json") if '"etag"' in block
     )
+    documented = json.loads(response)
     assert set(documented) == set(live), (
-        f"docs/tools/index.md read example keys {sorted(documented)} "
+        f"{page.name} read example keys {sorted(documented)} "
         f"!= live keys {sorted(live)}"
     )
 
@@ -151,8 +123,8 @@ async def test_index_status_returns_list_documents_every_live_key(
     live = result.structured_content
     assert isinstance(live, dict)
 
-    text = (_DOCS / "tools" / "index.md").read_text(encoding="utf-8")
-    section = text.split("### `get_index_status`", 1)[1].split("\n### ", 1)[0]
-    documented = set(re.findall(r"^- `(\w+)`:", section, flags=re.MULTILINE))
+    text = (_DOCS / "reference" / "tools" / "indexing.md").read_text(encoding="utf-8")
+    section = text.split("## `get_index_status`", 1)[1].split("\n## ", 1)[0]
+    documented = set(re.findall(r"^\s*- `?(\w+)`? \(", section, flags=re.MULTILINE))
     missing = sorted(set(live) - documented)
     assert not missing, f"get_index_status keys not in its Returns list: {missing}"

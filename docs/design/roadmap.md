@@ -50,7 +50,7 @@ integration consumes that contract, and both paths have an installation and
 upgrade story. The outcome does not require a particular distribution layout.
 
 `evidenced` — [#1436][1436] records the missing declared and guarded library
-surface. The existing [API documentation](../api/vault.md) describes library
+surface. The existing [API documentation](../reference/api/vault.md) describes library
 construction; that does not establish complete support for a consumer outside
 the MCP server's lifecycle. The reported downstream indexing/search use case
 provides a concrete consumer for the research.

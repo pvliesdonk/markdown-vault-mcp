@@ -1,5 +1,5 @@
 ---
-description: Propose new links between closely related notes that aren't connected yet.
+description: Propose links between closely related notes that aren't connected yet, and add the ones you approve.
 arguments:
   - name: scope
     description: "Candidate set. Accepts a folder path (such as '1-Projects'), the literal 'recent' (default; notes modified in the last 30 days), or the literal 'all'. No trailing slashes on folder paths."

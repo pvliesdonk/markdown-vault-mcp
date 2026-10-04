@@ -34,7 +34,11 @@ For this server, ref is a vault-relative path to an existing note (a .md file) o
 `object`
 
 <!-- DOMAIN-EXAMPLE-create_download_link-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"ref": "assets/diagram.pdf", "ttl_s": 600}
+```
+
+returns `{"url": "https://mcp.example.com/transfer/<token>", "expires_in_s": 600}`. [Transfer links](../../deploy/transfer-links.md) covers fetching it, and what a `ref` names on this server.
 <!-- DOMAIN-EXAMPLE-create_download_link-END -->
 
 ## `create_upload_link`
@@ -60,5 +64,9 @@ ref is a vault-relative path for a note (.md) or an allowed attachment. It must 
 `object`
 
 <!-- DOMAIN-EXAMPLE-create_upload_link-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"ref": "assets/uploaded-diagram.pdf"}
+```
+
+returns `{"url": "https://mcp.example.com/transfer/<token>", "expires_in_s": 3600}`; send the raw bytes as [Transfer links](../../deploy/transfer-links.md) shows.
 <!-- DOMAIN-EXAMPLE-create_upload_link-END -->

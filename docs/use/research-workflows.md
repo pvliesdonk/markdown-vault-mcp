@@ -69,7 +69,7 @@ The phases are vocabulary for the shape of what you're doing in the moment. When
 Seeding covers three common entry points, each corresponding to a different origin story for a research idea:
 
 - **From a conversation.** If your client exposes chat history (Claude.ai has `conversation_search` and `recent_chats`), the [`para-capture-chats`](para.md#para-capture-chats) prompt distils recent chats into Inbox-shaped notes ready for later triage. The vault doesn't need to be a PARA vault; the prompt produces plain notes with titles and bodies, and you choose where they land.
-- **From a research question.** The [`research`](../prompts.md#research) builtin prompt takes a topic and produces a single synthesis note with a topic slug. Good for "I want to know what's out there on X" before you have a thesis.
+- **From a research question.** The [`research`](../reference/prompts.md#research) builtin prompt takes a topic and produces a single synthesis note with a topic slug. Good for "I want to know what's out there on X" before you have a thesis.
 - **From a raw thesis.** Just write it. Prose to Claude: "Create a note at `research/consent-dynamics.md` with this thesis: *Informed consent in platform terms of service is structurally impossible because…* Tag it `draft`."
 
 All three paths end at the same place: a new note in the vault with a title and a rough body, with `[citation needed]` or `[verify]` markers on anything that isn't yet grounded. You are not trying to produce polished prose; you are trying to produce something you can come back to.
@@ -251,7 +251,7 @@ Ask template:
 
 Claude runs the tool, reads the candidates, then proposes links with one-line rationales. You confirm; Claude adds wikilinks via `edit`. The rationale is the important part: a raw `get_similar` score tells you two notes share vocabulary, not that linking them serves the reader. Ask Claude to name the connection in a sentence; reject candidates where the best available rationale is "both notes talk about X."
 
-For a vault-wide sweep ("find every note that should probably be linked but isn't"), invoke [`propose-links`](../prompts.md#propose-links) from Claude.ai's `+` menu (or as a prompt in any MCP client). It walks recent notes, runs `get_similar` per note (dropping pairs already linked via `get_outlinks`), and applies LLM judgment to produce a batch preview. You approve in bulk; Claude applies the edits.
+For a vault-wide sweep ("find every note that should probably be linked but isn't"), invoke [`propose-links`](../reference/prompts.md#propose-links) from Claude.ai's `+` menu (or as a prompt in any MCP client). It walks recent notes, runs `get_similar` per note (dropping pairs already linked via `get_outlinks`), and applies LLM judgment to produce a batch preview. You approve in bulk; Claude applies the edits.
 
 For examining a specific note's neighborhood without committing to edits, ask Claude to run `get_context(path="research/incentive-misalignment.md")`. It returns backlinks, outlinks, similar notes, folder peers, and tags in one call: the full dossier for deciding what to link and what to write next. Use it before starting a writing session on an existing note; it is fast and thorough, and it often surfaces a link you were about to miss.
 
@@ -398,5 +398,5 @@ The whole loop took four sessions across a month. Seeding took 5 minutes, ground
 - [Zettelkasten](zettelkasten.md): idea-centric organisation; pairs well with literature notes and atomic permanent notes.
 - [PARA](para.md): action-oriented organisation; research fits under Resources (reference material) and Projects (active research outputs).
 - [Obsidian Everywhere](obsidian-everywhere.md): multi-device setup for phone-first capture between sessions.
-- [MCP Prompts reference](../prompts.md): especially the [ambient patterns](../prompts.md#ambient-patterns-without-prompts) and [`propose-links`](../prompts.md#propose-links).
+- [Prompts reference](../reference/prompts.md), especially [`propose-links`](../reference/prompts.md#propose-links); [What you can do with it](../index.md#what-you-can-do-with-it) covers the flows that need no prompt.
 - [scholar-mcp](https://github.com/pvliesdonk/scholar-mcp): when citation rigour matters: citation graphs, BibTeX, full-text PDF conversion.

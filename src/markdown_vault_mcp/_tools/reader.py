@@ -72,7 +72,8 @@ def register(mcp: FastMCP) -> None:
                 or deprecated; stable includes notes with none), stale (`"true"` or
                 `"false"`) and trust_tier (unverified, machine-confirmed or
                 human-reviewed) filter too.
-            chunks_per_file: Maximum sections per note (default 2).
+            chunks_per_file: Maximum sections per note, at least 1; omit for the server
+                default.
             snippet_words: Snippet width in words; omit for the server default, 0 for
                 whole sections. read with section set to a result's heading returns that
                 whole section.
@@ -96,7 +97,7 @@ def register(mcp: FastMCP) -> None:
             - title (str): Document title.
             - folder (str): Parent folder path.
             - score (float): File-level score = max(section.score).
-              Higher = better match.  BM25 (keyword) or cosine (semantic/
+              Higher is a better match. BM25 (keyword) or cosine (semantic/
               hybrid); not comparable across modes.
             - search_type (str): `"keyword"`, `"semantic"`, or `"hybrid"`.
             - frontmatter (dict): Parsed YAML frontmatter of the document.
@@ -115,18 +116,20 @@ def register(mcp: FastMCP) -> None:
                 the full section text.
               - score (float): Chunk-level score for this section.
 
+            On an active OKF bundle, ranking demotes deprecated notes, stale notes
+            less, and the reserved index.md and log.md below real notes.
+
+            An empty query returns an empty list in semantic and hybrid mode.
+
             Index freshness rides in the response's `_meta.index_stale`
             field: True when the IndexWriter was non-idle, a write completed
             inside the read window, or `wait_for_pending_writes` timed out; False
             otherwise.
 
-        Also useful for finding merge candidates during triage; if a
-        close match exists for a new capture, prefer merging over
-        creating a near-duplicate.
-
         Raises:
             EmbeddingsNotConfiguredError: If mode is `"semantic"` or `"hybrid"` and
                 no embedding provider is configured (a `ValueError` subclass).
+            InvalidRequestError: If chunks_per_file is below 1.
         """
         drained = await _maybe_wait_for_drain(vault, wait_for_pending_writes, "search")
         gen_before = vault.index.write_generation()
@@ -206,11 +209,17 @@ def register(mcp: FastMCP) -> None:
             ValueError: If no file exists at the given path, the extension is
                 not in the attachment allowlist, the file exceeds
                 `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`, or the requested
-                section heading is not found. With `revision`: if the vault
+                section heading is not found. A whole note over the size limit
+                this server returns in one read
+                (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`) is refused; read it by
+                `section`. With `revision`: if the vault
                 is not git-backed, the revision is unusable, the path is an
                 attachment, or git's records do not show the note existing at
                 that revision (a name later reused by a different note is
                 refused rather than answered with the other note's content).
+            DocumentUnreadableError: If the file cannot be read or decoded, its
+                frontmatter does not parse, or git stores it in LFS at that
+                revision.
         """
         if revision is not None:
             return asdict(
@@ -266,8 +275,8 @@ def register(mcp: FastMCP) -> None:
         Use search to find notes by what they say.
 
         Args:
-            folder: Only notes in this folder, such as `"Journal"`; `""` for top-level notes
-                only.
+            folder: Only notes in this folder and its sub-folders, such as `"Journal"`;
+                `""` for top-level notes only; omit for the whole vault.
             pattern: Glob matched against paths, such as `"Journal/*.md"` or
                 `"**/*meeting*.md"`.
             include_attachments: Also list non-note files, marked kind=`"attachment"` with
@@ -293,7 +302,9 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             List of info dicts. Every entry has a 'kind' field.
-            Notes: path, title, folder, frontmatter, modified_at, kind=`"note"`.
+            Notes: path, title, folder, frontmatter, modified_at, kind=`"note"`,
+            and content_chars (int): body length in characters, frontmatter
+            excluded; 0 for a note indexed before the field existed.
             Attachments (when include_attachments=True): path, folder,
             mime_type, size_bytes, modified_at, kind=`"attachment"`.
             Body content is not included in either case.
@@ -419,6 +430,10 @@ def register(mcp: FastMCP) -> None:
             field: True when the IndexWriter was non-idle, a write completed
             inside the read window, or `wait_for_pending_writes` timed out; False
             otherwise.
+
+        Raises:
+            InvalidRequestError: If field is not an indexed frontmatter field; the
+                message names the fields that are indexed.
         """
         drained = await _maybe_wait_for_drain(
             vault, wait_for_pending_writes, "list_tags"
@@ -471,7 +486,8 @@ def register(mcp: FastMCP) -> None:
               mode=`"hybrid"` can be used in 'search'.
             - indexed_frontmatter_fields (list[str]): Field names usable as
               'filters' in 'search' and as 'field' in 'list_tags'.
-            - attachment_extensions (list[str]): Allowed non-.md extensions.
+            - attachment_extensions (list[str]): Allowed non-.md extensions, or
+              `["*"]` when any extension is allowed.
             - link_count (int): Total number of indexed links. 0 may mean no
               links exist or link tracking not yet built (call 'reindex').
             - broken_link_count (int): Links pointing to missing documents.
@@ -533,7 +549,8 @@ def register(mcp: FastMCP) -> None:
             path: Path of the note to compare against, such as `"notes/topic.md"`;
                 case-sensitive.
             limit: Maximum notes to return (default 10).
-            chunks_per_file: Maximum sections per note (default 2).
+            chunks_per_file: Maximum sections per note, at least 1; omit for the server
+                default.
             folder: Only notes in this folder or below, such as `"3-Resources"`; `""` for
                 top-level notes only.
             filters: Frontmatter values to match, all of them, such as
@@ -576,15 +593,13 @@ def register(mcp: FastMCP) -> None:
             (`wait_for_pending_writes` timing out, a write completing inside the
             read window, or non-idle at response time), False otherwise.
 
-        Useful for finding link candidates that aren't linked yet; the
-        vault's organic graph is almost always denser than its explicit one.
-        See the `propose-links` prompt for a full vault-wide sweep. Respect
-        folder conventions (see 'get_conventions') when turning similarity
-        into links; some folders are self-contained by design.
-
         Raises:
             DocumentNotFoundError: If no document exists at the given path.
             EmbeddingsNotConfiguredError: If the vault has no embeddings.
+            InvalidRequestError: If chunks_per_file is below 1.
+            ToolError: If the index is busy or still building; retry shortly.
+            IndexUnavailableError: If the index build failed or the index is broken;
+                get_index_status reports the error.
         """
         drained = await _maybe_wait_for_drain(
             vault, wait_for_pending_writes, "get_similar"
@@ -643,13 +658,19 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             Note mode: list of {heading (str), level (int)}.
-            Folder mode: {path (str), notes (list[{path, title, headings}]),
-            truncated (bool)}. Empty/nonexistent folder → empty 'notes'.
+            Folder mode: {path (str), notes (list[{path, title, headings,
+            content_chars}]), truncated (bool)}. Empty/nonexistent folder → empty
+            'notes'. Each note's content_chars (int) is its body length in
+            characters, frontmatter excluded; 0 for a note indexed before the
+            field existed.
 
             Index freshness is reported out-of-band in '_meta.index_stale'.
 
         Raises:
             ValueError: Note path with no document; invalid folder path.
+            ToolError: If the index is busy or still building; retry shortly.
+            IndexUnavailableError: If the index build failed or the index is broken;
+                get_index_status reports the error.
         """
         drained = await _maybe_wait_for_drain(vault, wait_for_pending_writes, "get_toc")
         gen_before = vault.index.write_generation()
@@ -691,8 +712,8 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             limit: Maximum notes to return (default 20).
-            folder: Only notes in this folder, such as `"Journal"`; `""` for top-level notes
-                only.
+            folder: Only notes in this folder and its sub-folders, such as `"Journal"`;
+                `""` for top-level notes only; omit for the whole vault.
             wait_for_pending_writes: When True, wait until your recent
                 document mutations have been applied to the
                 index before answering, so the results reflect those changes.
@@ -708,7 +729,9 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             One dict per note, each with: path, title, folder,
-            frontmatter, modified_at (Unix timestamp), kind (`"note"`).
+            frontmatter, modified_at (Unix timestamp), kind (`"note"`), and
+            content_chars (int): body length in characters, frontmatter excluded;
+            0 for a note indexed before the field existed.
 
             Index freshness rides in the response's `_meta.index_stale`
             field: True when the IndexWriter was non-idle, a write completed
@@ -833,14 +856,11 @@ def register(mcp: FastMCP) -> None:
             (`wait_for_pending_writes` timing out, a write completing inside the
             read window, or non-idle at response time), False otherwise.
 
-        The `similar` field in the response surfaces notes that may warrant
-        explicit links to the context note but don't yet, a common input to
-        manual or automated link proposal. Respect the `conventions` field
-        (and 'get_conventions') when proposing links; some folders are
-        self-contained by design.
-
         Raises:
             ValueError: If no document exists at the given path.
+            ToolError: If the index is busy or still building; retry shortly.
+            IndexUnavailableError: If the index build failed or the index is broken;
+                get_index_status reports the error.
         """
         drained = await _maybe_wait_for_drain(
             vault, wait_for_pending_writes, "get_context"
@@ -894,6 +914,10 @@ def register(mcp: FastMCP) -> None:
               included only when path is `""`; it requires a vault-wide
               folder walk, so a call with a path skips it.
 
+            Convention files are left out of search and listings but can be read
+            and edited like any note. This tool reads them from disk, so it
+            answers while the index is still building.
+
         Raises:
             ValueError: If the path escapes the vault root.
         """
@@ -908,7 +932,10 @@ def register(mcp: FastMCP) -> None:
         return await asyncio.to_thread(_lookup)
 
     @mcp.tool(
-        description="Audit the vault's Open Knowledge Format conformance.",
+        description=(
+            "Audit how far the vault conforms to the Open Knowledge Format, with "
+            "example paths per rule; works on a vault not yet declared as a bundle."
+        ),
         icons=_TOOL_ICONS["okf_validate"],
         tags={"okf"},
         annotations={
@@ -921,34 +948,43 @@ def register(mcp: FastMCP) -> None:
     @tool_boundary
     @library_outcomes
     async def okf_validate(vault: Vault = Depends(get_vault)) -> dict[str, Any]:
-        """Audit the vault's OKF (Open Knowledge Format) conformance.
-
-        Reports conformance as degrees, not a verdict; during a migration
-        this is the progress meter. Reads the vault from disk (works before
-        the index is built and before the vault declares 'okf_version'), and
-        skips paths matching the vault's effective exclude patterns.
-
-        Findings come in three severities. Conformance (spec violations):
-        notes missing a non-empty 'type', notes with unparseable
-        frontmatter, 'okf_version' declared outside the root index.md, and
-        index.md files carrying frontmatter (any on a folder index; anything
-        but 'okf_version' on the root), including indexes the server
-        generated. Advisory (tolerated but worth fixing): 'status' values
-        outside draft/stable/deprecated, log.md files whose '##' headings are
-        not YYYY-MM-DD dates, and a missing root index.md. Informational (not
-        deviations): notes containing wikilinks (relevant only when
-        exporting; internal links resolve fine either way) and notes
-        lacking the recommended 'title'/'description'. Reserved files
-        (index.md, log.md) are exempt from the 'type' rule.
+        """Audit the vault's Open Knowledge Format conformance from disk.
 
         Returns:
-            Report dict: 'mode', 'declared_version', 'active' (detection
-            state); 'total_notes' and 'conformant_notes' (the progress
-            ratio); per-rule findings each carrying 'count' and up to 20
-            'examples' paths ('missing_type', 'unparseable_frontmatter',
-            'misplaced_okf_version', 'index_frontmatter', 'unknown_status',
-            'log_heading_shape', 'wikilink_files', 'missing_recommended'); and
-            'root_index_missing' (bool).
+            Report dict. The audit reads the vault from disk, so it works before
+            the index is built, and it skips the vault's excluded paths. Every
+            rule except root_index_missing is a finding with `count` (int) and
+            up to 20 `examples` (list[str] of paths).
+
+            - mode (str), declared_version (str | None), active (bool): the
+              detection state.
+            - total_notes (int), conformant_notes (int): the progress ratio;
+              the reserved index.md and log.md are not counted as notes.
+
+            Conformance rules, which the format requires:
+
+            - missing_type: notes without a non-empty `type`; the reserved
+              index.md and log.md are exempt.
+            - unparseable_frontmatter: notes whose frontmatter does not parse.
+            - misplaced_okf_version: `okf_version` declared anywhere but the
+              root index.md.
+            - index_frontmatter: index.md files carrying frontmatter, any on a
+              folder index and anything but `okf_version` on the root,
+              server-generated indexes included.
+
+            Advisory rules, tolerated but worth fixing:
+
+            - unknown_status: a `status` outside draft, stable and deprecated.
+            - log_heading_shape: log.md files whose `##` headings are not
+              YYYY-MM-DD dates.
+            - root_index_missing (bool): true when the root index.md is absent.
+
+            Informational rules, not deviations:
+
+            - wikilink_files: notes containing wikilinks, which matter only when
+              exporting.
+            - missing_recommended: notes without the recommended `title` or
+              `description`.
         """
         report = await asyncio.to_thread(vault.reader.okf_validate)
         return asdict(report)

@@ -29,7 +29,7 @@ Use `list_documents` for a complete listing and read for a path you already know
 | `mode` | `keyword \| semantic \| hybrid \| null` | `null` | Omit for the best mode this vault serves. `"keyword"` suits exact terms, operators and filenames; `"semantic"` matches meaning only; `"hybrid"` combines both. `"semantic"` and `"hybrid"` need `semantic_search_available` from stats. |
 | `folder` | `string \| null` | `null` | Only notes under this folder, a value from `list_folders`; `""` for top-level notes only. |
 | `filters` | `object \| null` | `null` | Frontmatter values to match, all of them, such as `{"tags": "pacing"}`; keys come from `indexed_frontmatter_fields` in stats, and a list field matches when it holds the value. On an OKF bundle, status (draft, stable or deprecated; stable includes notes with none), stale (`"true"` or `"false"`) and `trust_tier` (unverified, machine-confirmed or human-reviewed) filter too. |
-| `chunks_per_file` | `integer \| null` | `null` | Maximum sections per note (default 2). |
+| `chunks_per_file` | `integer \| null` | `null` | Maximum sections per note, at least 1; omit for the server default. |
 | `snippet_words` | `integer \| null` | `null` | Snippet width in words; omit for the server default, 0 for whole sections. read with section set to a result's heading returns that whole section. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
 
@@ -37,44 +37,52 @@ Use `list_documents` for a complete listing and read for a path you already know
 
 List of result dicts ranked by file relevance. Each contains:
 
-    - path (str): Relative path of the document.
-    - title (str): Document title.
-    - folder (str): Parent folder path.
-    - score (float): File-level score = max(section.score).
-      Higher = better match.  BM25 (keyword) or cosine (semantic/
-      hybrid); not comparable across modes.
-    - `search_type` (str): `"keyword"`, `"semantic"`, or `"hybrid"`.
-    - frontmatter (dict): Parsed YAML frontmatter of the document.
-    - okf (dict, optional): OKF read annotation: present only when
-      the vault is an active OKF bundle. Carries `type` (when
-      declared), `status` (defaults to `"stable"`), `stale`
-      (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
-      `"machine-confirmed"` / `"human-reviewed"`), and
-      `sources_count` (when the note cites sources).
-    - sections (list[dict]): Up to `chunks_per_file` best-matching
-      sections, each with:
+- path (str): Relative path of the document.
+- title (str): Document title.
+- folder (str): Parent folder path.
+- score (float): File-level score = max(section.score).
+  Higher is a better match. BM25 (keyword) or cosine (semantic/
+  hybrid); not comparable across modes.
+- `search_type` (str): `"keyword"`, `"semantic"`, or `"hybrid"`.
+- frontmatter (dict): Parsed YAML frontmatter of the document.
+- okf (dict, optional): OKF read annotation: present only when
+  the vault is an active OKF bundle. Carries `type` (when
+  declared), `status` (defaults to `"stable"`), `stale`
+  (bool, `stale_after` reached), `trust_tier` (`"unverified"` /
+  `"machine-confirmed"` / `"human-reviewed"`), and
+  `sources_count` (when the note cites sources).
+- sections (list[dict]): Up to `chunks_per_file` best-matching
+  sections, each with:
 
-      - heading (str | None): Section heading or null for intro.
-      - content (str): Matched snippet (or full chunk if
-        `snippet_words`=0).  Call read(path, section=heading) for
-        the full section text.
-      - score (float): Chunk-level score for this section.
+  - heading (str | None): Section heading or null for intro.
+  - content (str): Matched snippet (or full chunk if
+    `snippet_words`=0).  Call read(path, section=heading) for
+    the full section text.
+  - score (float): Chunk-level score for this section.
 
-    Index freshness rides in the response's `_meta.index_stale`
-    field: True when the IndexWriter was non-idle, a write completed
-    inside the read window, or `wait_for_pending_writes` timed out; False
-    otherwise.
+On an active OKF bundle, ranking demotes deprecated notes, stale notes
+less, and the reserved index.md and log.md below real notes.
 
-Also useful for finding merge candidates during triage; if a
-close match exists for a new capture, prefer merging over
-creating a near-duplicate.
+An empty query returns an empty list in semantic and hybrid mode.
+
+Index freshness rides in the response's `_meta.index_stale`
+field: True when the IndexWriter was non-idle, a write completed
+inside the read window, or `wait_for_pending_writes` timed out; False
+otherwise.
 
 **Outcomes and errors**
 
 - EmbeddingsNotConfiguredError: If mode is `"semantic"` or `"hybrid"` and no embedding provider is configured (a `ValueError` subclass).
+- InvalidRequestError: If `chunks_per_file` is below 1.
 
 <!-- DOMAIN-EXAMPLE-search-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+Find craft notes on a topic, two sections per note:
+
+```json
+{"query": "character development techniques", "limit": 5, "filters": {"tags": "craft"}}
+```
+
+To read a hit in full, pass its path and a section heading to `read`: `read(path=hit["path"], section=hit["sections"][0]["heading"])`.
 <!-- DOMAIN-EXAMPLE-search-END -->
 
 ## `read`
@@ -119,10 +127,31 @@ no 'okf' block for the same reason.
 
 **Outcomes and errors**
 
-- ValueError: If no file exists at the given path, the extension is not in the attachment allowlist, the file exceeds `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`, or the requested section heading is not found. With `revision`: if the vault is not git-backed, the revision is unusable, the path is an attachment, or git's records do not show the note existing at that revision (a name later reused by a different note is refused rather than answered with the other note's content).
+- ValueError: If no file exists at the given path, the extension is not in the attachment allowlist, the file exceeds `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`, or the requested section heading is not found. A whole note over the size limit this server returns in one read (`MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES`) is refused; read it by `section`. With `revision`: if the vault is not git-backed, the revision is unusable, the path is an attachment, or git's records do not show the note existing at that revision (a name later reused by a different note is refused rather than answered with the other note's content).
+- DocumentUnreadableError: If the file cannot be read or decoded, its frontmatter does not parse, or git stores it in LFS at that revision.
 
 <!-- DOMAIN-EXAMPLE-read-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+Read a note:
+
+```json
+{"path": "Journal/note.md"}
+```
+
+returns
+
+```json
+{
+  "path": "Journal/note.md",
+  "title": "My Note",
+  "folder": "Journal",
+  "content": "---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body.\n",
+  "frontmatter": {"title": "My Note", "tags": ["journal"]},
+  "modified_at": 1791052994.65,
+  "etag": "1f196a744076635e77bc55e674dcdd69a29d9d32614c516a51ced986a51aaebe"
+}
+```
+
+`content` is the raw file, frontmatter included. Pass `etag` as `if_match` to `write`, `edit`, `delete` or `rename` to change the note you read.
 <!-- DOMAIN-EXAMPLE-read-END -->
 
 ## `list_documents`
@@ -138,7 +167,7 @@ Use search to find notes by what they say.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `folder` | `string \| null` | `null` | Only notes in this folder, such as `"Journal"`; `""` for top-level notes only. |
+| `folder` | `string \| null` | `null` | Only notes in this folder and its sub-folders, such as `"Journal"`; `""` for top-level notes only; omit for the whole vault. |
 | `pattern` | `string \| null` | `null` | Glob matched against paths, such as `"Journal/*.md"` or `"**/*meeting*.md"`. |
 | `include_attachments` | `boolean` | `false` | Also list non-note files, marked kind=`"attachment"` with their `mime_type`. Default false. |
 | `filters` | `object \| null` | `null` | Frontmatter values to match, all of them, such as `{"tags": "craft"}`; any key works, a list field matches when it holds the value, and attachments never match. On an OKF bundle, status (draft, stable or deprecated; stable includes notes with none), stale (`"true"` or `"false"`) and `trust_tier` (unverified, machine-confirmed or human-reviewed) filter too. |
@@ -147,7 +176,9 @@ Use search to find notes by what they say.
 **Returns**
 
 List of info dicts. Every entry has a 'kind' field.
-Notes: path, title, folder, frontmatter, `modified_at`, kind=`"note"`.
+Notes: path, title, folder, frontmatter, `modified_at`, kind=`"note"`,
+and `content_chars` (int): body length in characters, frontmatter
+excluded; 0 for a note indexed before the field existed.
 Attachments (when `include_attachments`=True): path, folder,
 `mime_type`, `size_bytes`, `modified_at`, kind=`"attachment"`.
 Body content is not included in either case.
@@ -158,7 +189,11 @@ inside the read window, or `wait_for_pending_writes` timed out; False
 otherwise.
 
 <!-- DOMAIN-EXAMPLE-list_documents-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+Stale notes on an OKF bundle, for a triage pass:
+
+```json
+{"folder": "Playbooks", "filters": {"stale": "true"}}
+```
 <!-- DOMAIN-EXAMPLE-list_documents-END -->
 
 ## `list_folders`
@@ -218,6 +253,10 @@ field: True when the IndexWriter was non-idle, a write completed
 inside the read window, or `wait_for_pending_writes` timed out; False
 otherwise.
 
+**Outcomes and errors**
+
+- InvalidRequestError: If field is not an indexed frontmatter field; the message names the fields that are indexed.
+
 <!-- DOMAIN-EXAMPLE-list_tags-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-list_tags-END -->
@@ -246,7 +285,8 @@ Dict with the following fields:
   mode=`"hybrid"` can be used in 'search'.
 - `indexed_frontmatter_fields` (list[str]): Field names usable as
   'filters' in 'search' and as 'field' in '`list_tags`'.
-- `attachment_extensions` (list[str]): Allowed non-.md extensions.
+- `attachment_extensions` (list[str]): Allowed non-.md extensions, or
+  `["*"]` when any extension is allowed.
 - `link_count` (int): Total number of indexed links. 0 may mean no
   links exist or link tracking not yet built (call 'reindex').
 - `broken_link_count` (int): Links pointing to missing documents.
@@ -267,7 +307,11 @@ inside the read window, or `wait_for_pending_writes` timed out; False
 otherwise.
 
 <!-- DOMAIN-EXAMPLE-stats-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"document_count": 42, "chunk_count": 156, "folder_count": 5, "semantic_search_available": true,
+ "indexed_frontmatter_fields": ["tags", "cluster"], "attachment_extensions": ["pdf", "png", "jpg"],
+ "link_count": 310, "broken_link_count": 3, "orphan_count": 7}
+```
 <!-- DOMAIN-EXAMPLE-stats-END -->
 
 ## `get_similar`
@@ -286,7 +330,7 @@ built yet has no similar notes.
 |---|---|---|---|
 | `path` | `string` | required | Path of the note to compare against, such as `"notes/topic.md"`; case-sensitive. |
 | `limit` | `integer` | `10` | Maximum notes to return (default 10). |
-| `chunks_per_file` | `integer \| null` | `null` | Maximum sections per note (default 2). |
+| `chunks_per_file` | `integer \| null` | `null` | Maximum sections per note, at least 1; omit for the server default. |
 | `folder` | `string \| null` | `null` | Only notes in this folder or below, such as `"3-Resources"`; `""` for top-level notes only. |
 | `filters` | `object \| null` | `null` | Frontmatter values to match, all of them, such as `{"type": "resource"}`; any key works and a list field matches when it holds the value. On an OKF bundle, status (stable includes notes with none), stale (`"true"` or `"false"`) and `trust_tier` filter too. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
@@ -295,39 +339,38 @@ built yet has no similar notes.
 
 List of result dicts ranked by file similarity. Each contains:
 
-    - path (str): Relative path of the similar document.
-    - title (str): Document title.
-    - folder (str): Parent folder path.
-    - score (float): File-level cosine similarity (max of section
-      scores), 0.0-1.0; higher = more similar.
-    - `search_type` (str): Always `"semantic"`.
-    - frontmatter (dict): Parsed YAML frontmatter.
-    - sections (list[dict]): Up to `chunks_per_file` best-matching
-      sections, each with:
+- path (str): Relative path of the similar document.
+- title (str): Document title.
+- folder (str): Parent folder path.
+- score (float): File-level cosine similarity (max of section
+  scores), 0.0-1.0; higher = more similar.
+- `search_type` (str): Always `"semantic"`.
+- frontmatter (dict): Parsed YAML frontmatter.
+- sections (list[dict]): Up to `chunks_per_file` best-matching
+  sections, each with:
 
-      - heading (str | None): Section heading or null for intro.
-      - content (str): Matched chunk text.
-      - score (float): Chunk-level score for this section.
+  - heading (str | None): Section heading or null for intro.
+  - content (str): Matched chunk text.
+  - score (float): Chunk-level score for this section.
 
-    Index freshness is reported out-of-band in the response's
-    `_meta.index_stale` field: True when the IndexWriter had
-    pending or in-flight work at any of three observation points
-    (`wait_for_pending_writes` timing out, a write completing inside the
-    read window, or non-idle at response time), False otherwise.
-
-Useful for finding link candidates that aren't linked yet; the
-vault's organic graph is almost always denser than its explicit one.
-See the `propose-links` prompt for a full vault-wide sweep. Respect
-folder conventions (see '`get_conventions`') when turning similarity
-into links; some folders are self-contained by design.
+Index freshness is reported out-of-band in the response's
+`_meta.index_stale` field: True when the IndexWriter had
+pending or in-flight work at any of three observation points
+(`wait_for_pending_writes` timing out, a write completing inside the
+read window, or non-idle at response time), False otherwise.
 
 **Outcomes and errors**
 
 - DocumentNotFoundError: If no document exists at the given path.
 - EmbeddingsNotConfiguredError: If the vault has no embeddings.
+- InvalidRequestError: If `chunks_per_file` is below 1.
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
 
 <!-- DOMAIN-EXAMPLE-get_similar-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"path": "3-Resources/okf.md", "folder": "3-Resources", "filters": {"type": "resource"}, "chunks_per_file": 1}
+```
 <!-- DOMAIN-EXAMPLE-get_similar-END -->
 
 ## `get_toc`
@@ -351,17 +394,30 @@ folder: {path, notes, truncated}, each note with its path, title and headings.
 **Returns**
 
 Note mode: list of {heading (str), level (int)}.
-Folder mode: {path (str), notes (list[{path, title, headings}]),
-truncated (bool)}. Empty/nonexistent folder → empty 'notes'.
+Folder mode: {path (str), notes (list[{path, title, headings,
+`content_chars`}]), truncated (bool)}. Empty/nonexistent folder → empty
+'notes'. Each note's `content_chars` (int) is its body length in
+characters, frontmatter excluded; 0 for a note indexed before the
+field existed.
 
 Index freshness is reported out-of-band in '_meta.`index_stale`'.
 
 **Outcomes and errors**
 
 - ValueError: Note path with no document; invalid folder path.
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
 
 <!-- DOMAIN-EXAMPLE-get_toc-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"path": "1-Projects/export", "max_level": 2, "max_notes": 50}
+```
+
+returns
+
+```json
+{"path": "1-Projects/export", "notes": [{"path": "1-Projects/export/plan.md", "title": "Plan", "headings": [{"heading": "Plan", "level": 1}, {"heading": "Scope", "level": 2}], "content_chars": 4120}], "truncated": false}
+```
 <!-- DOMAIN-EXAMPLE-get_toc-END -->
 
 ## `get_recent`
@@ -377,13 +433,15 @@ Use it to pick up recent activity without a search query.
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `limit` | `integer` | `20` | Maximum notes to return (default 20). |
-| `folder` | `string \| null` | `null` | Only notes in this folder, such as `"Journal"`; `""` for top-level notes only. |
+| `folder` | `string \| null` | `null` | Only notes in this folder and its sub-folders, such as `"Journal"`; `""` for top-level notes only; omit for the whole vault. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
 
 **Returns**
 
 One dict per note, each with: path, title, folder,
-frontmatter, `modified_at` (Unix timestamp), kind (`"note"`).
+frontmatter, `modified_at` (Unix timestamp), kind (`"note"`), and
+`content_chars` (int): body length in characters, frontmatter excluded;
+0 for a note indexed before the field existed.
 
 Index freshness rides in the response's `_meta.index_stale`
 field: True when the IndexWriter was non-idle, a write completed
@@ -417,76 +475,76 @@ than one of them.
 
 Dict with the note context. Fields:
 
-    - path (str): Relative path of the document.
-    - title (str): Document title.
-    - folder (str): Parent folder path.
-    - frontmatter (dict): Parsed YAML frontmatter.
-    - `modified_at` (float): Unix timestamp of last modification.
-    - backlinks (list): Documents linking to this note. List of dicts,
-      each with:
+- path (str): Relative path of the document.
+- title (str): Document title.
+- folder (str): Parent folder path.
+- frontmatter (dict): Parsed YAML frontmatter.
+- `modified_at` (float): Unix timestamp of last modification.
+- backlinks (list): Documents linking to this note. List of dicts,
+  each with:
 
-      - `source_path` (str): Path of the document containing the link.
-      - `source_title` (str): Title of the source document.
-      - `link_text` (str): The clickable text of the link.
-      - `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
-      - fragment (str | None): Heading anchor (such as `"#section"`), or null.
-      - `raw_target` (str): Literal link target as written in the source.
+  - `source_path` (str): Path of the document containing the link.
+  - `source_title` (str): Title of the source document.
+  - `link_text` (str): The clickable text of the link.
+  - `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
+  - fragment (str | None): Heading anchor (such as `"#section"`), or null.
+  - `raw_target` (str): Literal link target as written in the source.
 
-    - outlinks (list): Links from this note. List of dicts, each with:
+- outlinks (list): Links from this note. List of dicts, each with:
 
-      - `target_path` (str): Path of the linked document.
-      - `link_text` (str): The clickable text of the link.
-      - `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
-      - fragment (str | None): Heading anchor (such as `"#section"`), or null.
-      - `raw_target` (str): Literal link target as written in the source.
-      - exists (bool): True if the target document is indexed.
+  - `target_path` (str): Path of the linked document.
+  - `link_text` (str): The clickable text of the link.
+  - `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
+  - fragment (str | None): Heading anchor (such as `"#section"`), or null.
+  - `raw_target` (str): Literal link target as written in the source.
+  - exists (bool): True if the target document is indexed.
 
-    - similar (list): Semantically similar notes, field-collapsed by
-      file (`chunks_per_file`=1 for compact dossiers).  List of dicts,
-      each with:
+- similar (list): Semantically similar notes, field-collapsed by
+  file (`chunks_per_file`=1 for compact dossiers).  List of dicts,
+  each with:
 
-      - path (str): Relative path of the similar document.
-      - title (str): Document title.
-      - folder (str): Parent folder path.
-      - score (float): File-level cosine similarity 0.0-1.0 = score
-        of the best matching section.
-      - `search_type` (str): Always `"semantic"`.
-      - frontmatter (dict): Parsed YAML frontmatter.
-      - sections (list): Single best-matching section, each with
-        heading (str|null), content (str), score (float).
-        Call `get_similar`(path, `chunks_per_file`=N) for more sections.
+  - path (str): Relative path of the similar document.
+  - title (str): Document title.
+  - folder (str): Parent folder path.
+  - score (float): File-level cosine similarity 0.0-1.0 = score
+    of the best matching section.
+  - `search_type` (str): Always `"semantic"`.
+  - frontmatter (dict): Parsed YAML frontmatter.
+  - sections (list): Single best-matching section, each with
+    heading (str|null), content (str), score (float).
+    Call `get_similar`(path, `chunks_per_file`=N) for more sections.
 
-    - `folder_notes` (list[str]): Paths of other notes in the same
-      folder (up to 20). Plain strings, not dicts.
-    - tags (dict[str, list[str]]): Indexed frontmatter field →
-      distinct values for this note.
-    - conventions (list, optional): the user's authoring conventions
-      for the note's folder (root-first list of {folder, path,
-      content}). Present only when convention files apply. Honor
-      them when writing to or proposing links involving this note;
-      some folders are self-contained by design.
-    - okf (dict, optional): OKF read annotation for this note
-      (type, status, stale, `trust_tier`, `sources_count`). Present
-      only when the vault is an active OKF bundle.
+- `folder_notes` (list[str]): Paths of other notes in the same
+  folder (up to 20). Plain strings, not dicts.
+- tags (dict[str, list[str]]): Indexed frontmatter field →
+  distinct values for this note.
+- conventions (list, optional): the user's authoring conventions
+  for the note's folder (root-first list of {folder, path,
+  content}). Present only when convention files apply. Honor
+  them when writing to or proposing links involving this note;
+  some folders are self-contained by design.
+- okf (dict, optional): OKF read annotation for this note
+  (type, status, stale, `trust_tier`, `sources_count`). Present
+  only when the vault is an active OKF bundle.
 
-    Index freshness is reported out-of-band in the response's
-    `_meta.index_stale` field: True when the IndexWriter had
-    pending or in-flight work at any of three observation points
-    (`wait_for_pending_writes` timing out, a write completing inside the
-    read window, or non-idle at response time), False otherwise.
-
-The `similar` field in the response surfaces notes that may warrant
-explicit links to the context note but don't yet, a common input to
-manual or automated link proposal. Respect the `conventions` field
-(and '`get_conventions`') when proposing links; some folders are
-self-contained by design.
+Index freshness is reported out-of-band in the response's
+`_meta.index_stale` field: True when the IndexWriter had
+pending or in-flight work at any of three observation points
+(`wait_for_pending_writes` timing out, a write completing inside the
+read window, or non-idle at response time), False otherwise.
 
 **Outcomes and errors**
 
 - ValueError: If no document exists at the given path.
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
 
 <!-- DOMAIN-EXAMPLE-get_context-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"path": "3-Resources/okf.md", "similar_limit": 0, "link_limit": 5}
+```
+
+With `similar_limit` at `0` the similarity lookup is skipped, as for a vault without embeddings.
 <!-- DOMAIN-EXAMPLE-get_context-END -->
 
 ## `get_conventions`
@@ -516,19 +574,31 @@ Dict with:
   included only when path is `""`; it requires a vault-wide
   folder walk, so a call with a path skips it.
 
+Convention files are left out of search and listings but can be read
+and edited like any note. This tool reads them from disk, so it
+answers while the index is still building.
+
 **Outcomes and errors**
 
 - ValueError: If the path escapes the vault root.
 
 <!-- DOMAIN-EXAMPLE-get_conventions-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"path": "3-Resources/topic.md"}
+```
+
+returns the conventions that apply, root first:
+
+```json
+{"path": "3-Resources/topic.md", "conventions": [{"folder": "", "path": "_conventions.md", "content": "…"}, {"folder": "3-Resources", "path": "3-Resources/_conventions.md", "content": "Keep notes self-contained; do not link out to project notes."}]}
+```
 <!-- DOMAIN-EXAMPLE-get_conventions-END -->
 
 ## `okf_validate`
 
 **Validate OKF Bundle.** Read-only. Idempotent. Tags: `okf`.
 
-Audit the vault's Open Knowledge Format conformance.
+Audit how far the vault conforms to the Open Knowledge Format, with example paths per rule; works on a vault not yet declared as a bundle.
 
 **Parameters**
 
@@ -536,13 +606,40 @@ None.
 
 **Returns**
 
-Report dict: 'mode', '`declared_version`', 'active' (detection
-state); '`total_notes`' and '`conformant_notes`' (the progress
-ratio); per-rule findings each carrying 'count' and up to 20
-'examples' paths ('`missing_type`', '`unparseable_frontmatter`',
-'`misplaced_okf_version`', '`index_frontmatter`', '`unknown_status`',
-'`log_heading_shape`', '`wikilink_files`', '`missing_recommended`'); and
-'`root_index_missing`' (bool).
+Report dict. The audit reads the vault from disk, so it works before
+the index is built, and it skips the vault's excluded paths. Every
+rule except `root_index_missing` is a finding with `count` (int) and
+up to 20 `examples` (list[str] of paths).
+
+- mode (str), `declared_version` (str | None), active (bool): the
+  detection state.
+- `total_notes` (int), `conformant_notes` (int): the progress ratio;
+  the reserved index.md and log.md are not counted as notes.
+
+Conformance rules, which the format requires:
+
+- `missing_type`: notes without a non-empty `type`; the reserved
+  index.md and log.md are exempt.
+- `unparseable_frontmatter`: notes whose frontmatter does not parse.
+- `misplaced_okf_version`: `okf_version` declared anywhere but the
+  root index.md.
+- `index_frontmatter`: index.md files carrying frontmatter, any on a
+  folder index and anything but `okf_version` on the root,
+  server-generated indexes included.
+
+Advisory rules, tolerated but worth fixing:
+
+- `unknown_status`: a `status` outside draft, stable and deprecated.
+- `log_heading_shape`: log.md files whose `##` headings are not
+  YYYY-MM-DD dates.
+- `root_index_missing` (bool): true when the root index.md is absent.
+
+Informational rules, not deviations:
+
+- `wikilink_files`: notes containing wikilinks, which matter only when
+  exporting.
+- `missing_recommended`: notes without the recommended `title` or
+  `description`.
 
 <!-- DOMAIN-EXAMPLE-okf_validate-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

@@ -114,18 +114,24 @@ def register(mcp: FastMCP, jobs: Jobs) -> None:
               `unreadable`).
 
             When the work is promoted to a background job, a dict with
-            `"status": "working"`, a `"job_id"` string, and a
-            `"message"`; call `get_job_result` with the `job_id` to
-            fetch the result.
+            `"status": "working"`, a `job_id` string, `poll_with` naming
+            `get_job_result`, `retry_after_s` (the seconds to wait before
+            polling) and a `message`; call `get_job_result` with the `job_id`
+            to fetch the result.
 
         Raises:
             InvalidRequestError: If `paths` is empty, `mode` is invalid,
                 `max_notes` is below 1, or the paths hold no note that exists
                 and is within the read limit.
             ValueError: If every note found exists but cannot be read.
+            SummarizeTimeoutError: If a backend call outran its time limit;
+                narrow the request.
             RuntimeError: If the summarization backend call fails within the
                 soft deadline. A backend failure that happens after promotion
                 is reported through `get_job_result` instead.
+            ToolError: If the index is busy or still building; retry shortly.
+            IndexUnavailableError: If the index build failed or the index is broken;
+                get_index_status reports the error.
         """
         result = await asyncio.to_thread(
             vault.summarizer.summarize,

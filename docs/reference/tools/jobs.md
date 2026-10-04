@@ -28,5 +28,9 @@ Get the status of a background job started by a long-running tool on this server
 `object`
 
 <!-- DOMAIN-EXAMPLE-get_job_result-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"job_id": "j_3f9a"}
+```
+
+While the job runs: `{"job_id": "j_3f9a", "status": "working", "result": null, "error": null, "running_for_s": 41.3, "retry_after_s": 5.0, "message": "Still running. …"}`. When it is done: `{"job_id": "j_3f9a", "status": "completed", "result": {…}, "error": null}`, with the tool's own result; `"failed"` carries `error` instead. An unknown, expired or another caller's `job_id` is refused the same way. Records expire `MARKDOWN_VAULT_MCP_JOBS_RESULT_TTL_S` after creation (one hour by default).
 <!-- DOMAIN-EXAMPLE-get_job_result-END -->

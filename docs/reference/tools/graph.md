@@ -31,31 +31,36 @@ Use `get_context` when you also need its outlinks or similar notes.
 
 List of backlink dicts, each with:
 
-    - `source_path` (str): Path of the document containing the link.
-    - `source_title` (str): Title of the source document.
-    - `link_text` (str): The clickable text of the link.
-    - `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
-    - fragment (str | None): Heading anchor (such as `"#section"`), or null.
-    - `raw_target` (str): Literal link target as written in the source.
+- `source_path` (str): Path of the document containing the link.
+- `source_title` (str): Title of the source document.
+- `link_text` (str): The clickable text of the link.
+- `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
+- fragment (str | None): Heading anchor (such as `"#section"`), or null.
+- `raw_target` (str): Literal link target as written in the source.
 
-    Index freshness is reported out-of-band in the response's
-    `_meta.index_stale` field: True when the IndexWriter had
-    pending or in-flight work at any of three observation points
-    (`wait_for_pending_writes` timing out, a write completing inside the
-    read window, or non-idle at response time), False when the data
-    is current as of response time.
-
-Combine with `get_similar` to find connection gaps: notes that are
-semantically close to the target but not yet linked. Respect folder
-conventions (see '`get_conventions`') before proposing such links;
-some folders are self-contained by design.
+Index freshness is reported out-of-band in the response's
+`_meta.index_stale` field: True when the IndexWriter had
+pending or in-flight work at any of three observation points
+(`wait_for_pending_writes` timing out, a write completing inside the
+read window, or non-idle at response time), False when the data
+is current as of response time.
 
 **Outcomes and errors**
 
 - ValueError: If no document exists at the given path.
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
 
 <!-- DOMAIN-EXAMPLE-get_backlinks-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"path": "3-Resources/okf.md", "limit": 5}
+```
+
+returns
+
+```json
+[{"source_path": "1-Projects/export.md", "source_title": "Export", "link_text": "OKF", "link_type": "wikilink", "fragment": null, "raw_target": "okf"}]
+```
 <!-- DOMAIN-EXAMPLE-get_backlinks-END -->
 
 ## `get_outlinks`
@@ -79,28 +84,27 @@ Use `get_context` when you also need its backlinks or similar notes.
 
 List of outlink dicts, each with:
 
-    - `target_path` (str): Path of the linked document.
-    - `link_text` (str): The clickable text of the link.
-    - `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
-    - fragment (str | None): Heading anchor (such as `"#section"`), or null.
-    - `raw_target` (str): Literal link target as written in the source.
-    - exists (bool): True if the target document is indexed.
+- `target_path` (str): Path of the linked document.
+- `link_text` (str): The clickable text of the link.
+- `link_type` (str): One of `"markdown"`, `"wikilink"`, or `"reference"`.
+- fragment (str | None): Heading anchor (such as `"#section"`), or null.
+- `raw_target` (str): Literal link target as written in the source.
+- exists (bool): True if the target document is indexed.
 
-    Index freshness is reported out-of-band in the response's
-    `_meta.index_stale` field: True when the IndexWriter had
-    pending or in-flight work at any of three observation points
-    (`wait_for_pending_writes` timing out, a write completing inside the
-    read window, or non-idle at response time), False when the data
-    is current as of response time.
+A reference to an attachment is not a link, so it is not listed.
 
-Combine with `get_similar` to find connection gaps: notes the
-source is semantically close to but hasn't linked yet. Respect folder
-conventions (see '`get_conventions`') before proposing such links;
-some folders are self-contained by design.
+Index freshness is reported out-of-band in the response's
+`_meta.index_stale` field: True when the IndexWriter had
+pending or in-flight work at any of three observation points
+(`wait_for_pending_writes` timing out, a write completing inside the
+read window, or non-idle at response time), False when the data
+is current as of response time.
 
 **Outcomes and errors**
 
 - ValueError: If no document exists at the given path.
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
 
 <!-- DOMAIN-EXAMPLE-get_outlinks-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
@@ -114,13 +118,13 @@ List the links whose target is missing from the vault, each with the note
 that holds it.
 
 stats reports `broken_link_count`; a rename without `update_links` leaves such links
-behind.
+behind. Links to attachments are not checked.
 
 **Parameters**
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `folder` | `string \| null` | `null` | Only links in notes in this folder, such as `"Journal"`; `""` for top-level notes; omit for the whole vault. |
+| `folder` | `string \| null` | `null` | Only links in notes in this folder and its sub-folders, such as `"Journal"`; `""` for top-level notes only; omit for the whole vault. |
 | `wait_for_pending_writes` | `boolean` | `false` | Wait for recent index writes. On timeout, answer from the current index with _meta.`index_stale`=true. Default false. |
 
 **Returns**
@@ -168,6 +172,11 @@ List of dicts ordered by path, each with:
 - frontmatter (dict): Parsed YAML frontmatter.
 - `modified_at` (float): Unix timestamp of last modification.
 - kind (str): Always `"note"`.
+- `content_chars` (int): body length in characters, frontmatter
+  excluded; 0 for a note indexed before the field existed.
+
+A reference to an attachment is not a link, so a note whose only
+links are to attachments is an orphan.
 
 Index freshness rides in the response's `_meta.index_stale`
 field: True when the IndexWriter was non-idle, a write completed
@@ -195,9 +204,9 @@ Use `get_backlinks` for the notes that link to one of them.
 
 **Returns**
 
-List of dicts with path (str), title (str), and `backlink_count` (int:
-number of distinct source documents linking to this note), ordered
-by `backlink_count` descending.
+List of dicts with path (str), title (str), folder (str), and
+`backlink_count` (int: number of distinct source documents linking to
+this note), ordered by `backlink_count` descending.
 
 Index freshness rides in the response's `_meta.index_stale`
 field: True when the IndexWriter was non-idle, a write completed
@@ -240,6 +249,20 @@ pending or in-flight work at any of three observation points
 (`wait_for_pending_writes` timing out, a write completing inside the
 read window, or non-idle at response time), False otherwise.
 
+**Outcomes and errors**
+
+- DocumentNotFoundError: If either note does not exist.
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
+
 <!-- DOMAIN-EXAMPLE-get_connection_path-START -->
-<!-- A worked example for this tool; kept across regeneration. -->
+```json
+{"source": "Ideas/spark.md", "target": "3-Resources/okf.md", "max_depth": 4}
+```
+
+returns
+
+```json
+{"found": true, "path": ["Ideas/spark.md", "1-Projects/export.md", "3-Resources/okf.md"], "hops": 2}
+```
 <!-- DOMAIN-EXAMPLE-get_connection_path-END -->

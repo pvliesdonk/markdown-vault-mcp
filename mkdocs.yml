@@ -94,6 +94,15 @@ plugins:
         guides/para.md: use/para.md
         guides/research-workflows.md: use/research-workflows.md
         guides/zettelkasten.md: use/zettelkasten.md
+        api/config.md: reference/api/config.md
+        api/exceptions.md: reference/api/exceptions.md
+        api/facets.md: reference/api/facets.md
+        api/git.md: reference/api/git.md
+        api/providers.md: reference/api/providers.md
+        api/types.md: reference/api/types.md
+        api/vault.md: reference/api/vault.md
+        cli.md: reference/cli.md
+        resources.md: reference/resources.md
         # PROJECT-REDIRECTS-END
   # Generates llms.txt + llms-full.txt for the README badge.
   # The sections are filled from `nav:` at build time by
@@ -196,18 +205,14 @@ nav:
       - Prompts: reference/prompts.md
       - Command line: reference/cli.md
       # PROJECT-NAV-REFERENCE-START — resources, CLI, API reference (docs/reference/api/); kept across copier update
-      - CLI guide: cli.md
-      - Tools guide: tools/index.md
-      - Resources guide: resources.md
-      - Prompts guide: prompts.md
       - Python API:
-          - Vault: api/vault.md
-          - Facets: api/facets.md
-          - Git integration: api/git.md
-          - Configuration: api/config.md
-          - Embedding providers: api/providers.md
-          - Types: api/types.md
-          - Exceptions: api/exceptions.md
+          - Vault: reference/api/vault.md
+          - Facets: reference/api/facets.md
+          - Git integration: reference/api/git.md
+          - Configuration: reference/api/config.md
+          - Embedding providers: reference/api/providers.md
+          - Types: reference/api/types.md
+          - Exceptions: reference/api/exceptions.md
       # PROJECT-NAV-REFERENCE-END
   # Landing page only, deliberately: per-minor pages stay out of nav so a new
   # release never needs a nav edit (mkdocs treats not-in-nav pages as INFO,

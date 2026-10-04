@@ -505,7 +505,7 @@ Use search and links for discovery. Tags are just shortcuts.
 Two shape operations that an LLM handles cleanly but manual workflows usually skip:
 
 - **Split.** When a quick-capture note contains two ideas (one literature reference and one early permanent claim), ask Claude to split it into two notes. Each is then developed independently.
-- **Merge.** When a quick-capture note restates or extends an existing permanent note, ask Claude to merge it (add as a new paragraph or `## Extension` section) rather than letting near-duplicates accumulate. The [`search`](../tools/index.md#search) + `read` + `write` + `delete` composition handles this in a single prompt turn.
+- **Merge.** When a quick-capture note restates or extends an existing permanent note, ask Claude to merge it (add as a new paragraph or `## Extension` section) rather than letting near-duplicates accumulate. The [`search`](../reference/tools/reader.md#search) + `read` + `write` + `delete` composition handles this in a single prompt turn.
 
 Resist pre-splitting or pre-merging before review. Claude does both in one pass.
 
@@ -524,9 +524,9 @@ The [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main
 ## Next Steps
 
 - **Read the design document** for details on the linking system and search algorithms: [`docs/design/design.md`](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/docs/design/design.md)
-- **Explore the MCP tools** to understand the full API: [`tools/index.md`](../tools/index.md)
+- **Explore the MCP tools** to understand the full API: [tools reference](../reference/tools/index.md)
 - **Review the examples** for templates and prompts: [`examples/zettelkasten/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/zettelkasten/)
 - **Run this vault as an OKF bundle?** See the [OKF guide](okf.md) and the [`examples/okf/`](https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf/) pack
 - **Prefer an action-oriented workflow?** Try the [PARA guide](para.md): Projects, Areas, Resources, Archive with triage, kickoff, and weekly review prompts
-- **Ambient patterns**: [`docs/prompts.md`](../prompts.md#ambient-patterns-without-prompts): flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)
+- **Ambient patterns**: [What you can do with it](../index.md#what-you-can-do-with-it): flows the LLM handles from prose alone (URL capture, research, split/merge, ad-hoc link proposal)
 - **Research workflows**: [research-workflows.md](research-workflows.md): literature grounding, fact-checking, and writing papers from notes

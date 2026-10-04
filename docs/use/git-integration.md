@@ -55,11 +55,26 @@ the name the note has today; a rename since that revision is followed.
 Two limits. `previous_revision` is absent when no commit provably holds the
 replaced content: a newly created note, or two writes in quick succession
 where the first never reached a commit. Content that never reached a commit
-is not recoverable from git at all. Separately, `read` fails rather than
-returning content where git's records do not connect the revision to
-today's note, because the next thing a caller does with the result is write
-it back. The full rules, including the cases that fail, are in
-[Reading an earlier revision](../tools/index.md#reading-an-earlier-revision).
+is not recoverable from git at all. Separately, `read` resolves the note, not the path: pass the name the note
+has today, and a rename since that revision is followed, with
+`historical_path` reporting the name it carried. Where git's records do not
+connect the revision to today's note, `read` fails rather than returning
+content, because the next thing a caller does with the result is write it
+back. It fails when:
+
+- a different note has since taken over the name;
+- the note was deleted and a new one created at the same path;
+- a rename also rewrote the note so heavily that git records an unrelated add;
+- the note on disk was never committed, so git has nothing recording its identity;
+- the revision is not an ancestor of the current history, such as a SHA from a branch that history has since moved off;
+- the note lived outside the vault at that revision, having been renamed in from elsewhere in the repository;
+- the path held a symbolic link or something other than a file at that revision;
+- git stores the note in LFS at that revision, where the repository holds a pointer rather than the note's text.
+
+A whole-note read at a revision keeps the same size limit as any read; read
+such a note by `section`. A note that has since been deleted is still
+readable at a revision that has it, which is how a deleted note is
+recovered.
 
 ## Managed Mode (Recommended For Containerized Deployments)
 
@@ -346,7 +361,7 @@ commits) reports `would_apply=false`. The push leg has no safe local
     behavior (a non-fast-forward push that the next reconcile resolves).
 
 The full enumeration of `pull.reason` and `push.reason` values lives in
-the [`git_sync` tool reference](../tools/index.md#git_sync).
+the [`git_sync` tool reference](../reference/tools/git.md#git_sync).
 
 `git_sync` is hidden when the deployment isn't in managed git mode (no
 `MARKDOWN_VAULT_MCP_GIT_REPO_URL` set) or when
@@ -363,9 +378,22 @@ Two things make that visible.
 
 **Every write tool says so.** While the clone is not reaching its remote,
 each write result carries a `remote` object with `state`, `reason`, `since`,
-and a `detail` sentence for the caller to act on. See
-[the write-tools reference](../tools/index.md#write-operations) for the shape
-and its limits. This is the signal for a client whose only route to the
+and a `detail` sentence for the caller to act on. It appears once a push has
+failed or been rejected, or once a divergence has defeated the conflict
+resolver:
+
+```json
+{"state": "unsynced", "reason": "non_fast_forward",
+ "since": "2026-09-04T07:12:33+00:00",
+ "detail": "This vault's git clone has not reached its remote since ..."}
+```
+
+The key is absent, not null, when there is nothing to report: no git, no
+remote, or a clone that is reaching it. It reports the sync state known when
+the response was built, never the fate of that particular write: the commit
+runs off the request thread and the push is deferred, so the first write
+after a break can still answer clean and the next one warns. `git_sync`
+carries no such key, because it reports the sync outcome directly. This is the signal for a client whose only route to the
 repository is this server: it says the content is committed locally only, so
 the client can keep its own copy instead of treating the note as saved.
 
