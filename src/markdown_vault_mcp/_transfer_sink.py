@@ -38,7 +38,11 @@ from fastmcp_pvl_core import (
 )
 
 from markdown_vault_mcp.domain import get_vault_singleton
-from markdown_vault_mcp.exceptions import DocumentExistsError, DocumentNotFoundError
+from markdown_vault_mcp.exceptions import (
+    DocumentExistsError,
+    DocumentNotFoundError,
+    InvalidRequestError,
+)
 from markdown_vault_mcp.okf_bundle import build_okf_bundle
 from markdown_vault_mcp.utils import (
     artifact_suffix,
@@ -414,9 +418,12 @@ class VaultTransferSink:
 
         Raises:
             TransferUnavailableError: The vault is being torn down (retryable 503).
-            UnicodeDecodeError: A note upload whose body is not valid UTF-8.
             TransferSinkError: The protected destination exists, including a
-                file created after validation or by a prior upload (409 Conflict).
+                file created after validation or by a prior upload (409
+                Conflict); a note upload whose body is not valid UTF-8 (415
+                Unsupported Media Type); or a body the vault refuses to write,
+                such as one the OKF enforced-write layer cannot stamp (422
+                Unprocessable Content). Each leaves the link usable.
         """
         vault = self._resolve_vault()
         try:
@@ -429,5 +436,17 @@ class VaultTransferSink:
             raise TransferSinkError(
                 409, f"upload destination exists: {handle}"
             ) from exc
+        # The rest of a request the uploader must change, mirroring the tool
+        # layer's outcomes (#1696): pvl-core answers any other exception 500.
+        except UnicodeDecodeError as exc:
+            logger.info("transfer_upload_refused path=%s reason=not_utf8", handle)
+            raise TransferSinkError(415, f"note body is not UTF-8: {handle}") from exc
+        except InvalidRequestError as exc:
+            logger.info(
+                "transfer_upload_refused path=%s reason=invalid_request detail=%s",
+                handle,
+                exc,
+            )
+            raise TransferSinkError(422, str(exc)) from exc
         logger.info("transfer_upload_committed path=%s bytes=%d", handle, len(body))
         return {"path": handle, "bytes": len(body)}
