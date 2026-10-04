@@ -19,111 +19,33 @@ What the server can reach, what it changes and who gets in is set out in the [se
 - [Contribute](contribute/index.md): change the project.
 
 <!-- DOMAIN-INDEX-FEATURES-START -->
-Whether it fits your notes, what it assumes and what to use instead is under [Does it fit?](https://github.com/pvliesdonk/markdown-vault-mcp#does-it-fit) in the README.
-
-A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
-
-Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault) and it exposes search, read, write, and edit tools over the [Model Context Protocol](https://modelcontextprotocol.io/).
+Point it at a folder of Markdown notes, an Obsidian vault included, and it gives Claude or any MCP client tools to search, read and write them. Whether it fits your notes, what it assumes and what to use instead is under [Does it fit?](https://github.com/pvliesdonk/markdown-vault-mcp#does-it-fit) in the README.
 
 ## Features
 
-- **Full-text search**: SQLite FTS5 with BM25 scoring, porter stemming
-- **Semantic search**: cosine similarity over embedding vectors (FastEmbed, Ollama, OpenAI, or Voyage AI)
-- **Hybrid search**: Reciprocal Rank Fusion combining FTS5 and vector results
-- **Frontmatter-aware**: indexes YAML frontmatter fields, supports required field enforcement
-- **Incremental reindexing**: hash-based change detection, only re-processes modified files
-- **Write operations**: create, edit, append to, delete, rename documents with automatic index updates
-- **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, surfaced to LLM clients at write time via [`get_conventions`](reference/tools/reader.md#get_conventions) and in the results of `write`, `edit`, `append` and `fetch`
-- **[Open Knowledge Format](use/okf.md)**: recognizes OKF bundles (an `okf_version` declaration in the root `index.md`) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier; those dimensions are filterable and nudge ranking, and the server ships an `okf_validate` audit, one-shot migration transforms, an optional enforced write layer (provenance + verification + `log.md`/`index.md` upkeep), and a downloadable bundle export
-- **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, and so on)
-- **LLM summarization**: optional `summarize` tool condenses a note, a set of notes, or a subtree with a language model via any OpenAI-compatible endpoint (OpenAI, Ollama, Anthropic, vLLM, and others); the synthesis references the individual source notes by path. Gated on `OPENAI_API_KEY` or a configured base URL.
-- **Git integration**: optional auto-commit (one commit per write tool call) and deferred push, with token auth via `GIT_ASKPASS`
-- **OIDC authentication**: optional token-based auth for HTTP deployments
-- **MCP tools**: search, read, write, edit, append, delete, rename, link graph analysis, and admin operations
-- **MCP resources**: vault configuration, statistics, tags, folders, document outlines, similar notes, and recent notes
-- **MCP prompts**: summarize, research, discuss, create from template, compare, and find related notes
-- **MCP Apps**: browser-based views (Context Card, Graph Explorer, Vault Browser, and Note Preview) for clients supporting the MCP Apps protocol
-- **One-time transfer links**: mint short-lived capability URLs to move files into or out of the vault out-of-band over HTTP (`create_download_link` / `create_upload_link`; HTTP/SSE transports only)
-- **[Configuration Generator](reference/configuration-generator.md)**: build a working config, Docker command, or systemd unit in your browser.
+Each line links to the page that covers it.
+
+- **Hybrid search**: SQLite FTS5 keyword search, plus search by meaning once an embedding provider is configured; Reciprocal Rank Fusion merges the two. [Embeddings](use/embeddings.md).
+- **Frontmatter as data**: YAML frontmatter fields become search filters, and required fields can be enforced. [Configuration](reference/configuration.md).
+- **Writes**: create, edit, append to, delete, rename and move notes and attachments, with the index kept current. Replacing a file takes the etag from reading it, and per-folder `_conventions.md` rules reach the client as it writes. [Write tools](reference/tools/writer.md).
+- **Links**: backlinks, outlinks, broken links, orphans and the path between two notes. [Graph tools](reference/tools/graph.md).
+- **Git**: an optional commit per write, a delayed push, pull or webhook sync, and history and diffs. [Git integration](use/git-integration.md).
+- **Open Knowledge Format**: recognizes OKF bundles, adds each note's type, status, staleness and trust tier to results, and audits and migrates a vault. [Open Knowledge Format](use/okf.md).
+- **Summaries**: an optional `summarize` tool with a model you configure, or the `summarize-subtree` prompt with the client's own model. [Prompts](reference/prompts.md#summarize-subtree).
+- **Vault explorer**: interactive views in clients that render MCP Apps. [Vault explorer](use/vault-explorer.md).
+- **Transfer links**: one-time URLs that move a file into or out of the vault over HTTP. [Transfer links](deploy/transfer-links.md).
+- **A Python library**: the same engine for your own code. [Vault API](reference/api/vault.md).
 <!-- DOMAIN-INDEX-FEATURES-END -->
 
 <!-- DOMAIN-INDEX-USE-CASES-START -->
 ## What you can do with it
 
-A few flows the server enables with an LLM on top (none of these require a bespoke prompt):
+A few flows the server enables with an LLM on top; none needs a bespoke prompt:
 
 - **"Fetch <url> and summarize into a Resource note."** Claude composes `fetch` + `search` + `write`.
-- **"Research <topic> and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks. See the [Research workflows guide](use/research-workflows.md) for the full loop.
+- **"Research <topic> and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks. See [Research workflows](use/research-workflows.md) for the full loop.
 - **"Summarize today's conversations into Inbox notes."** Claude.ai composes `conversation_search` + `recent_chats` + `write`; the [`para-capture-chats`](use/para.md#using-the-para-prompts) prompt is the one-click version.
-- **Find missing links.** The [`propose-links`](reference/prompts.md#propose-links) builtin prompt scans recently modified notes and proposes useful connections.
+- **Find missing links.** The built-in [`propose-links`](reference/prompts.md#propose-links) prompt scans recently modified notes and proposes connections between them.
 
-See the [prompts reference](reference/prompts.md) for the codified workflows.
-
-## Release notes
-
-Per-minor [release notes](releases/index.md) explain what changed in each
-release, who is affected, and what to check before upgrading. The GitHub
-release body links to the matching page.
-
-## Quick Start
-
-### As a library
-
-```python { .fragment }
-from pathlib import Path
-from markdown_vault_mcp.vault import Vault
-
-vault = Vault(source_dir=Path("/path/to/vault"))
-vault.index.build_index()
-results = vault.reader.search("query text", limit=10)
-```
-
-### As an MCP server
-
-```bash
-export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/vault
-markdown-vault-mcp serve
-```
-
-### With Docker Compose
-
-```bash
-cp examples/obsidian-readonly.env .env
-# Edit .env to set MARKDOWN_VAULT_MCP_SOURCE_DIR
-docker compose up -d
-```
-
-### As a Claude Code plugin
-
-```
-/plugin marketplace add pvliesdonk/claude-plugins
-/plugin install markdown-vault-mcp@pvliesdonk
-```
-
-See [Installation](get-started/installation.md) for all installation methods (PyPI, uv, Docker, Linux packages, Claude Code plugin) and [Configuration](reference/configuration.md) for all available options.
-
-## Architecture
-
-The library is fully synchronous, with no asyncio in core modules. The MCP server layer uses `asyncio.to_thread()` to bridge to the async FastMCP layer.
-
-```
-┌──────────────┐
-│  MCP Server   │  ← FastMCP, asyncio.to_thread()
-├──────────────┤
-│  Vault        │  ← Thin facade / public API
-├──────────────┤
-│  Scanner      │  ← File discovery, frontmatter parsing, chunking
-│  FTS Index    │  ← SQLite FTS5, BM25 scoring
-│  Vector Index │  ← numpy embeddings, cosine similarity
-│  Tracker      │  ← Hash-based change detection
-│  Providers    │  ← Embedding provider ABC + implementations
-│  Git          │  ← Auto-commit/push strategy
-├──────────────┤
-│  Config       │  ← Environment variable loading
-└──────────────┘
-```
-
-## License
-
-[MIT](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/LICENSE)
+The [prompts reference](reference/prompts.md) has the codified workflows.
 <!-- DOMAIN-INDEX-USE-CASES-END -->
