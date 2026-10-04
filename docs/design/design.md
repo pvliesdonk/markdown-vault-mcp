@@ -810,7 +810,14 @@ operations (`read`, `write`, `edit`, `delete`, `rename`,
 `stats`, `list_folders`, `list_tags`, `get_recent`,
 `get_orphan_notes`, `get_most_linked`, `get_broken_links`) work on an
 unbuilt index: bucket-1 hits disk directly; bucket-2 queries
-whatever is currently in the index (empty on cold start).
+whatever is currently in the index (empty on cold start). So the CLI
+`search` command calls `build_index()` before it queries when its index is
+in memory (`INDEX_PATH` unset or `:memory:`), since that index starts empty,
+and keeps the build's change tracking in memory even when `STATE_PATH` is
+set, since that file may be a running server's (#1691). An on-disk index is
+only read: it may belong to a running server, and `build_index()`
+rebuilds an index whose recorded provenance differs from the caller's
+settings, so a shell with other settings would rebuild it under the server.
 `wait_until_queryable(timeout=None)` is the readiness primitive: it
 blocks on the background-build completion event with a bounded
 timeout and raises `IndexUnavailableError(reason="timeout")` on

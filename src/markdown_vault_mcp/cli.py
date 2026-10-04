@@ -141,7 +141,12 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.vault import Vault
 
 
-def _build_vault(source_dir: str | None = None, index_path: str | None = None) -> Vault:
+def _build_vault(
+    source_dir: str | None = None,
+    index_path: str | None = None,
+    *,
+    scratch_state: bool = False,
+) -> Vault:
     """Build a synchronous Vault from env vars + optional CLI overrides.
 
     Uses the same settings-first ``to_vault_settings`` / ``to_vault_instances``
@@ -153,6 +158,9 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
         source_dir: Overrides ``{PREFIX}_SOURCE_DIR`` when given (set into the
             environment before ``ProjectConfig.from_env()`` reads it).
         index_path: Overrides the resolved SQLite index path when given.
+        scratch_state: Keep the change-tracking state in memory, ignoring
+            ``STATE_PATH``, for a one-shot in-memory index whose state must
+            not overwrite a running server's (#1691).
 
     Returns:
         A constructed :class:`~markdown_vault_mcp.vault.Vault` (index not built).
@@ -184,6 +192,8 @@ def _build_vault(source_dir: str | None = None, index_path: str | None = None) -
     settings = to_vault_settings(config, instances=instances)
     if index_path:
         settings = dataclasses.replace(settings, index_path=Path(index_path))
+    if scratch_state:
+        settings = dataclasses.replace(settings, state_path=None)
     return Vault(
         source_dir=config.source_dir,
         settings=settings,
@@ -245,7 +255,15 @@ def search(
     from markdown_vault_mcp._http_logging import quiet_http_loggers
 
     quiet_http_loggers()
-    vault = _build_vault(source_dir, None)
+    # An in-memory index is empty until built, so build it, keeping its state
+    # in memory too: STATE_PATH may be a running server's (#1691). An on-disk
+    # index is only read: build_index() would rebuild a server's index
+    # whenever this shell's settings differ from the ones it was built with.
+    configured_index = ProjectConfig.from_env().indexing.index_path
+    in_memory = configured_index is None or str(configured_index) == ":memory:"
+    vault = _build_vault(source_dir, None, scratch_state=in_memory)
+    if in_memory:
+        vault.index.build_index()
     results = vault.reader.search(
         query,
         limit=limit,
