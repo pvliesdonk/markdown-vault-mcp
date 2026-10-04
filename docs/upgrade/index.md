@@ -55,5 +55,11 @@ A release page's Upgrading section answers the three questions on three fixed li
 The steps a release needs sit above those lines, each conditional on what you run, so a step that does not apply to your deployment is skipped by its first words. A patch release adds its own section to the series page.
 
 <!-- DOMAIN-UPGRADE-INTRO-START -->
-<!-- What an upgrade of this server touches beyond the generic picture (indexes to rebuild, data formats); kept across copier update. -->
+## What an upgrade of this server touches
+
+An upgrade never rewrites your notes. What it can touch is the state the server derives from them.
+
+- **The text index.** The index records how it was built: the version of the rules that turn notes into index rows, the embedding model, and the indexing settings (title field, searchable and indexed frontmatter fields, chunk size override, attachment extensions). When any of these differs at start, the server rebuilds the index once and logs `index_provenance_changed` naming what changed. A release that changes those rules says so on its **State** line.
+- **The embeddings.** A rebuild of the text index keeps them: only a note whose sections came out different is embedded again.
+- **Where that state lives.** Under Docker Compose, on the `state-data` volume at `/data/state`. On a package install, wherever the environment file's `MARKDOWN_VAULT_MCP_INDEX_PATH` and `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` point ([systemd](../deploy/systemd.md)). A command that a desktop client starts keeps the index in memory unless `MARKDOWN_VAULT_MCP_INDEX_PATH` is set, so it rebuilds at every start anyway. The change-tracking file sits in the vault's `.markdown_vault_mcp/` folder unless `MARKDOWN_VAULT_MCP_STATE_PATH` moves it.
 <!-- DOMAIN-UPGRADE-INTRO-END -->
