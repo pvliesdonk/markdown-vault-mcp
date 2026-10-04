@@ -484,14 +484,11 @@ against a superproject holding one submodule (git 2.55.0); the findings are the
 `derived` — Neither epic joins a package yet; § Vaults with git submodules
 argues the order.
 
-### 4 October 2026 — record round 2 of the documentation review
+### 28 September 2026 — chart reader-shaped documentation
 
-`derived` — Round 2 resolved § Reader-shaped documentation's unknown: the
-migrated site does not yet meet the epic's "Done when". The owner ruled the
-remaining blockers out of the migration's final pull request; they joined
-`013 surfaced-fixes` as behaviour work, and the epic stays open on an unchanged
-"Done when". Added `011` and `013` to § Packages, which did
-not list them.
+`derived` — Added § Reader-shaped documentation after [#1272][1272]'s round-1 review.
+The template epic precedes this repository's migration epic; neither joins a
+package yet.
 
 ### 2 October 2026 — refine the documentation migration
 
@@ -500,11 +497,14 @@ refined: adoption, then one feature per section, then round 2 as the
 measurement. The ordering argument above is restated accordingly; the
 "Done when" is unchanged.
 
-### 28 September 2026 — chart reader-shaped documentation
+### 4 October 2026 — record round 2 of the documentation review
 
-`derived` — Added § Reader-shaped documentation after [#1272][1272]'s round-1 review.
-The template epic precedes this repository's migration epic; neither joins a
-package yet.
+`derived` — Round 2 resolved § Reader-shaped documentation's unknown: the
+migrated site does not yet meet the epic's "Done when". The owner ruled the
+remaining blockers out of the migration's final pull request; they joined
+`013 surfaced-fixes` as behaviour work, and the epic stays open on an unchanged
+"Done when". Added `011` and `013` to § Packages, which did
+not list them.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
