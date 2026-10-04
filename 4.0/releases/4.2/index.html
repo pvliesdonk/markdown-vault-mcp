@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Generic markdown vault MCP server with FTS5 + semantic search">
+        <meta name="description" content="Release notes for the 4.2 series, with the steps to upgrade to it.">
       
       
       
@@ -19,7 +19,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
     
     
       
@@ -2020,7 +2020,7 @@ revision (a different note took over the name, a rename rewrote the note
 beyond recognition, the revision is off the current history), the read
 <strong>fails rather than returning content</strong>, because the next thing a caller
 does with the result is write it back. The
-<a href="../../tools/#reading-an-earlier-revision">tools reference</a> lists every
+<a href="../use/git-integration.md#getting-an-overwritten-note-back">git integration guide</a> lists every
 refusal case. Every refusal, including the one where git records the note
 as a copy of another, ends by pointing at <code>get_history</code>; none suggests
 reading a different note, because the copy source is only git's similarity
@@ -2031,7 +2031,7 @@ vault without git.</p>
 through LFS. No <code>restore</code> tool ships with this, deliberately: the read/write
 round trip above is the restore, and it keeps the caller in charge of what
 gets written. See "Getting an overwritten note back" in the
-<a href="../../guides/git-integration/">git integration guide</a>.</p>
+<a href="../use/git-integration.md">git integration guide</a>.</p>
 <h2 id="history-that-describes-the-right-note">History that describes the right note<a class="headerlink" href="#history-that-describes-the-right-note" title="Permanent link">&para;</a></h2>
 <p>Building the revision reader forced a hard look at what the history readers
 were actually reporting, and six long-standing bugs fell out. Every one of
@@ -2122,7 +2122,7 @@ when a claim is configured
 The first authenticated write now reports the configured key and whether
 it was absent or empty, once per field per process; the commit still falls
 back to the static identity. See "What a commit covers" in the
-<a href="../../guides/git-integration/">git integration guide</a>.</p>
+<a href="../use/git-integration.md">git integration guide</a>.</p>
 <h2 id="a-write-that-cannot-leave-the-host-says-so">A write that cannot leave the host says so<a class="headerlink" href="#a-write-that-cannot-leave-the-host-says-so" title="Permanent link">&para;</a></h2>
 <p>The sharpest report of the cycle came from a production deployment.
 <a href="https://github.com/FoundationOperations">@FoundationOperations</a> ran the
@@ -2181,7 +2181,7 @@ as it already did for pushes. Contributed by
 <a href="https://github.com/FoundationOperations">@FoundationOperations</a>
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1363">#1363</a>).</p>
 <p>See "When the clone stops reaching its remote" in the
-<a href="../../guides/git-integration/">git integration guide</a>.</p>
+<a href="../use/git-integration.md">git integration guide</a>.</p>
 <h2 id="push-triggered-reindex-for-gitlab-hosted-vaults">Push-triggered reindex for GitLab-hosted vaults<a class="headerlink" href="#push-triggered-reindex-for-gitlab-hosted-vaults" title="Permanent link">&para;</a></h2>
 <p>At 4.1 the push webhook was GitHub-only end to end, so "on GitLab there is
 no configuration that gets external edits indexed promptly": the vault was
@@ -2203,7 +2203,7 @@ supported, either of which mounts the route:</p>
 <p>Set both during a migration and the server accepts either.
 <code>MARKDOWN_VAULT_MCP_GITHUB_WEBHOOK_SECRET</code> and <code>/github-webhook</code> are
 untouched; an existing GitHub setup needs no change. The setup walkthrough
-is in the <a href="../../guides/git-integration/">git integration guide</a>.</p>
+is in the <a href="../use/git-integration.md">git integration guide</a>.</p>
 <p>One related fix reaches beyond GitLab: on <code>--transport stdio</code>, where no HTTP
 route can exist, a configured webhook credential used to stand the file
 watcher down anyway, leaving that deployment with no external-change
@@ -2266,7 +2266,7 @@ Notes are now embedded as documents and search queries as queries on the
 other providers send byte-identical requests to before. An existing Voyage
 vault re-embeds itself once on first start after upgrade, automatically, at
 the cost of one pass of Voyage API calls; see the
-<a href="../../guides/embeddings/">embeddings guide</a>.</p>
+<a href="../use/embeddings.md">embeddings guide</a>.</p>
 <p><strong>An unparseable note no longer serves stale content.</strong> The index used to
 encode "deleted," "excluded," and "could not be parsed" as the same
 absence, and the pipelines disagreed on what to do when a previously
@@ -2544,7 +2544,7 @@ section states why remote is the better default for this server
 Nothing about runtime mode selection changed; an existing deployment is
 unaffected.</p>
 <p><strong>The configuration reference is now generated.</strong> The whole env-var surface
-in <a href="../../configuration/">the configuration reference</a> is produced from the
+in <a href="../reference/configuration.md">the configuration reference</a> is produced from the
 config model itself and guarded in CI, so the tables can no longer drift
 from the code. One correction rode along: the JWT signing key documentation
 had claimed the key was required on Linux/Docker because the default was
@@ -2584,7 +2584,7 @@ scheduled for the next major, but mixing <code>settings=</code> with a non-defau
 legacy keyword raises <code>ValueError</code> naming each conflict: pick one mode per
 construction. Collaborator arguments (<code>embedding_provider</code>, <code>summarizer</code>,
 <code>git_strategy</code>, <code>on_write</code>, <code>chunk_strategy</code>) and <code>source_dir</code> stay as
-keywords and are not deprecated. See the <a href="../../api/vault/">Vault API page</a>.</p>
+keywords and are not deprecated. See the <a href="../reference/api/vault.md">Vault API page</a>.</p>
 <p>Under the hood, the concrete classes now sit behind protocols:
 <code>git_strategy</code> is typed against a <code>VersionedStore</code> protocol rather than the
 concrete <code>GitWriteStrategy</code>, and <code>markdown_vault_mcp.git</code> and
@@ -2703,6 +2703,9 @@ fastmcp-pvl-core 7 carry that migration, tracked for the next major as
 
 
 
+
+  
+  
 
 
 

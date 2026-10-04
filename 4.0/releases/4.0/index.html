@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Generic markdown vault MCP server with FTS5 + semantic search">
+        <meta name="description" content="Release notes for the 4.0 series, with the steps to upgrade to it.">
       
       
       
@@ -19,7 +19,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
     
     
       
@@ -2130,7 +2130,7 @@ template's minimal-skeleton convention
 <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/912">#912</a>). Import
 from the owning submodule instead: <code>from markdown_vault_mcp.vault import
 Vault</code>, <code>from markdown_vault_mcp.config import ProjectConfig</code>, and so on.
-See the <a href="https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/CLAUDE.md#project-structure">source layout</a>
+See the <a href="https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/docs/design/module-map.md">source layout</a>
 for which submodule owns which name.</p>
 <p>This is a breaking change to the public library interface under this
 project's own versioning policy, and issue #903 said so explicitly before
@@ -2219,7 +2219,7 @@ Vault content may only ever advise, never authorize.</p>
   agent applies that judgment visibly, rather than the ranker reshuffling
   results silently.</li>
 </ul>
-<p>The <a href="../../guides/okf/">OKF guide</a> covers the full migration path (audit,
+<p>The <a href="../use/okf.md">OKF guide</a> covers the full migration path (audit,
 declare, enrich, convert) and interop notes for PARA and Zettelkasten
 vaults, alongside an <a href="https://github.com/pvliesdonk/markdown-vault-mcp/tree/main/examples/okf">example pack</a>
 of declaration templates and prompts.</p>
@@ -2346,8 +2346,8 @@ including release candidates, <code>main</code> could briefly point the plugin a
 rc version that was never published to PyPI; the 4.0.0 stable cut is the
 point where that pin resolves to a real, installable version again
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1053">#1053</a>).</p>
-<p>See the <a href="../../guides/claude-code-plugin/">Claude Code plugin</a> and
-<a href="../../guides/claude-desktop/">Claude Desktop</a> guides for the current setup
+<p>See the <a href="../get-started/claude-code.md">Claude Code plugin</a> and
+<a href="../get-started/claude-desktop.md">Claude Desktop</a> tutorials for the current setup
 flow.</p>
 <h2 id="other-changes">Other changes<a class="headerlink" href="#other-changes" title="Permanent link">&para;</a></h2>
 <h3 id="search-indexing-and-links">Search, indexing, and links<a class="headerlink" href="#search-indexing-and-links" title="Permanent link">&para;</a></h3>
@@ -2405,7 +2405,7 @@ remaining lifetime shrinks to <code>MARKDOWN_VAULT_MCP_TRANSFER_GRACE_TTL_S</cod
 (default 60 seconds) instead, so a served-but-stalled transfer can still
 retry.
 The <code>create_download_link</code>/<code>create_upload_link</code> call contract itself is
-unchanged. See the <a href="../../guides/transfer-links/">transfer links guide</a> for
+unchanged. See the <a href="../deploy/transfer-links.md">transfer links guide</a> for
 the full parameter reference.</p>
 <h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h3>
 <ul>
@@ -2452,6 +2452,9 @@ for the full commit-level list, or the
 
 
 
+
+  
+  
 
 
 

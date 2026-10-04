@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Generic markdown vault MCP server with FTS5 + semantic search">
+        <meta name="description" content="Release notes for the 4.1 series, with the steps to upgrade to it.">
       
       
       
@@ -19,7 +19,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
     
     
       
@@ -2093,7 +2093,7 @@ stale against <code>main</code>
 key must not silently take over an index. Pointing the <code>openai</code> provider at
 Voyage by hand keeps working; the named preset exists so the endpoint, key and
 model default are discoverable, and so the vector sidecar records the real
-provider identity. See the <a href="../../guides/embeddings/">embeddings guide</a>.</p>
+provider identity. See the <a href="../use/embeddings.md">embeddings guide</a>.</p>
 <p><strong>Write protection</strong> is a new opt-in guard contributed by
 <a href="https://github.com/Finomosec">@Finomosec</a>
 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1064">#1064</a>,
@@ -2129,7 +2129,7 @@ before.</p>
 <p>This also reached further than the one-shot migration tools. With
 <code>MARKDOWN_VAULT_MCP_OKF_WRITE</code> on, the convention layer rewrites <code>log.md</code> after
 every content write, and that path both failed to add frontmatter and stripped
-frontmatter an operator had added by hand. See the <a href="../../guides/okf/">OKF guide</a>.</p>
+frontmatter an operator had added by hand. See the <a href="../use/okf.md">OKF guide</a>.</p>
 <p><strong>Existing bundles are not migrated.</strong> A vault keeps its body-only <code>log.md</code> and
 <code>index.md</code> until something rewrites them. With <code>OKF_WRITE</code> on, the next write
 into a folder fixes that folder; otherwise re-run <code>okf_generate_index</code> and
@@ -2192,6 +2192,9 @@ project moved to mypy 2.x
 
 
 
+
+  
+  
 
 
 
