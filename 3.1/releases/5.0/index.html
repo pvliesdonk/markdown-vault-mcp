@@ -1,0 +1,2403 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Release notes for the 5.0 series, with the steps to upgrade to it.">
+      
+      
+      
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/3.1/releases/5.0/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>5.0 - markdown-vault-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/config-wizard.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#50" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="markdown-vault-mcp" class="md-header__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            markdown-vault-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              5.0
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../guides/" class="md-tabs__link">
+          
+  
+  
+  Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tools/" class="md-tabs__link">
+          
+  
+  
+  MCP Interface
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../deployment/" class="md-tabs__link">
+          
+  
+  
+  Deployment
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../api/vault/" class="md-tabs__link">
+          
+  
+  
+  Python API
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="markdown-vault-mcp" class="md-nav__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    markdown-vault-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration-generator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration Generator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/git-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/embeddings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/oidc-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/obsidian-everywhere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Obsidian Everywhere
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/research-workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research Workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/zettelkasten/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zettelkasten
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/para/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/mcp-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/transfer-links/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer Links
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../guides/claude-code-plugin/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Interface
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    MCP Interface
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deployment
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/systemd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systemd
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../deployment/oidc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/facets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Facets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embedding Providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#upgrading" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-a-tool-call-ends" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How a tool call ends
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overwrite-protection-is-on-by-default" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overwrite protection is on by default
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Running the server
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Running the server">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#containers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Containers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#health-and-shutdown" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Health and shutdown
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Logs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#startup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Startup
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Links
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Links">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#links-the-server-writes-work-in-obsidian" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Links the server writes work in Obsidian
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-link-graph-holds-more-of-what-a-reader-follows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The link graph holds more of what a reader follows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#large-vaults-and-git-backed-vaults" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Large vaults and git-backed vaults
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Large vaults and git-backed vaults">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reindexing-no-longer-scans-the-whole-table-per-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reindexing no longer scans the whole table per note
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-index-follows-git-head" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The index follows git HEAD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#link-tools-wait-for-recent-writes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Link tools wait for recent writes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OKF
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="OKF">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a-bearer-credential-is-not-a-person" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A bearer credential is not a person
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#generated-listings-stay-current" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Generated listings stay current
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-python-library" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Python library
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="50">5.0<a class="headerlink" href="#50" title="Permanent link">&para;</a></h1>
+<!-- notes-range-end: dfbd21e3df583960651dbe6115a17068009085e6 -->
+
+<!-- RELEASE-SUMMARY v5.0.0 START -->
+<p>5.0 is a major release, and most deployments have something to change. The
+server moves to FastMCP 4. Compose publishes on loopback without a proxy,
+and logs default to JSON off a terminal. Writable servers refuse a blind
+overwrite of an existing file unless the operator opts out. Python
+consumers configure <code>Vault</code> through <code>VaultSettings</code>. Every tool call now
+ends one of four ways: done, change the request, refresh and retry, or a
+server fault. Refusals log at INFO with a next step; only real faults log
+at ERROR with a traceback. Links the server writes work in Obsidian, the
+link graph picks up link forms it used to miss, and large vaults no longer
+pay a full-table scan per changed note. The index follows git HEAD, so
+notes deleted by a pull leave the listings. OKF stops treating a bearer credential as
+a person and keeps its generated <code>index.md</code> listings current. Read
+<a href="#upgrading">Upgrading</a> before you move.</p>
+<!-- RELEASE-SUMMARY v5.0.0 END -->
+
+<p>This is the first stable release since <a href="../4.2/">4.2</a>. One outside report
+shaped it: a 25,380-note vault whose reindex read over a terabyte from
+disk. Two threads run through the rest. Breaking changes announced during
+4.x now land: overwrite protection on by default, the
+<code>VaultSettings</code>-only constructor, the claim arguments removed. And the
+server now reports what happened truthfully to whoever asks, whether that
+is a model calling a tool, an operator reading the log, or Python code
+catching an exception.</p>
+<h2 id="upgrading">Upgrading<a class="headerlink" href="#upgrading" title="Permanent link">&para;</a></h2>
+<p>Before moving a 4.2 deployment or integration to 5.0:</p>
+<ol>
+<li><strong>Compose:</strong> set <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> in <code>.env</code> to the
+   vault's directory on the host. Move proxy labels and networks into an
+   override. Without a proxy the server is reachable only on
+   <code>127.0.0.1:8000</code>; to serve other machines, configure authentication and
+   publish from the override.</li>
+<li><strong>Container port:</strong> if you set <code>MARKDOWN_VAULT_MCP_PORT</code> for the image,
+   remove it and change the host side of the port mapping instead.</li>
+<li><strong>Overwrites:</strong> decide whether writes may still replace existing files
+   blindly. The default now refuses them; set
+   <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false</code> only where you need
+   the old behaviour.</li>
+<li><strong>Logging:</strong> replace <code>FASTMCP_LOG_LEVEL</code> with
+   <code>MARKDOWN_VAULT_MCP_LOG_LEVEL</code>, remove <code>FASTMCP_ENABLE_RICH_LOGGING</code>,
+   and set <code>MARKDOWN_VAULT_MCP_LOG_FORMAT=rich</code> wherever you want coloured
+   output off a terminal. Update log queries and alerts: messages use the
+   <code>event_name key=value</code> form, and tool refusals are INFO, not ERROR.</li>
+<li><strong>Authentication:</strong> if <code>MARKDOWN_VAULT_MCP_AUTH_MODE</code> is set, make sure
+   the variables its mode requires are set too.</li>
+<li><strong>OKF review over bearer tokens:</strong> switch <code>trust-auth</code> to <code>elicit</code> with
+   a client that shows the confirmation to a person.</li>
+<li><strong>Python:</strong> move FastMCP 3 environments to FastMCP 4; move <code>Vault</code>
+   keywords into <code>VaultSettings</code> and replace <code>to_vault_kwargs</code>; remove the
+   two claim arguments from <code>GitWriteStrategy</code>; add
+   <code>set_commit_observer</code> and <code>start(on_tick)</code> to any custom <code>git_strategy</code>;
+   handle <code>DocumentUnreadableError</code> from <code>read()</code> and <code>read_revision()</code>;
+   and handle the refusals from <code>get_similar</code> and <code>list_tags</code> where you
+   relied on <code>[]</code>.</li>
+<li><strong>Vault directory:</strong> the server no longer refuses to start when its own
+   <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> is unset or missing (Compose still needs
+   the <code>.env</code> value from step 1). Watch for <code>vault_directory_missing</code> in the
+   log if you relied on the refusal.</li>
+</ol>
+<p><strong>Clients:</strong> nothing to do beyond reconnecting. The tool set is unchanged,
+and a client picks up the new tool descriptions when it reconnects after
+the restart.</p>
+<p><strong>State:</strong> kept. Under Compose, the index, the embeddings and the OIDC state
+stay on the <code>state-data</code> volume at <code>/data/state</code>, and no volume moves; the
+new <code>service-data</code> volume stays empty. The first start rebuilds the text
+index once, because 5.0 changes how its rows are derived from the notes.
+The embeddings survive it: only a note whose sections came out different
+from that rebuild is embedded again. On a large vault that restarts often,
+consider <code>MARKDOWN_VAULT_MCP_BOOT_REINDEX=false</code>.</p>
+<p><strong>Security posture:</strong> narrower in three ways and wider in one. Compose
+publishes on <code>127.0.0.1</code> only; a whole-file <code>write</code> or <code>fetch</code> onto an
+existing file needs that file's etag; and a bearer credential no longer
+counts as a person for OKF review. HTTP deployments gain the
+unauthenticated <code>/health</code> and <code>/health/ready</code> routes, whose bodies
+<code>MARKDOWN_VAULT_MCP_HEALTH_DETAIL</code> limits.</p>
+<h2 id="how-a-tool-call-ends">How a tool call ends<a class="headerlink" href="#how-a-tool-call-ends" title="Permanent link">&para;</a></h2>
+<p>In 4.2, the server's own refusals reached FastMCP as unhandled
+exceptions, so an ordinary refusal was logged at ERROR with a full
+traceback. A <code>write</code> without <code>if_match</code>, an <code>edit</code> with a stale etag and a
+<code>get_outlinks</code> on a missing path all looked like crashes in the log
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1608">#1608</a>).
+An operator could not alert on ERROR without being paged for a model's
+typo.</p>
+<p>Every tool call now ends in one of four outcomes: the contract was met;
+the caller must change the request; the caller must refresh, then retry;
+or the server failed (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1615">#1615</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1641">#1641</a>).
+What each party sees:</p>
+<ul>
+<li><strong>In the log</strong>, a refusal is one line at INFO; a busy or still-building
+  index is one line at WARNING. A server fault is logged once, as
+  <code>tool_failed</code>, at ERROR with its traceback. Alerting on ERROR now means
+  something broke. Log queries that matched <code>tool_call_failed</code> at ERROR
+  for refusals need updating.</li>
+<li><strong>The model</strong> gets a refusal message that names its next step: which
+  tool to call or what to pass instead
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1643">#1643</a>).
+  Refusals no longer name <code>MARKDOWN_VAULT_MCP_*</code> settings the model cannot
+  change; the setting goes to the log as a <code>setting=</code> field instead. For a
+  fault, the model gets a fixed message saying "the request itself was
+  fine; retry later, and tell the user if it keeps failing"
+  (<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/374">fastmcp-pvl-core#374</a>).
+  Git's stderr, which carries server paths, no longer reaches the model
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1632">#1632</a>).</li>
+<li><strong>Python code</strong> gets a typed exception; see
+  <a href="#the-python-library">the library section</a>.</li>
+</ul>
+<p>The classification also corrected several outcomes that were
+misreported:</p>
+<ul>
+<li><code>get_similar</code> and the <code>similar://</code> resource refuse on a vault without
+  embeddings, and <code>list_tags</code> and <code>tags://</code> refuse a field that is not
+  indexed. In 4.2 all four returned an empty list, which a model could not
+  tell apart from "no matches"
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1599">#1599</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1652">#1652</a>).</li>
+<li><code>summarize</code> reports notes it skipped in a new <code>skipped</code> list, each entry
+  a path and a reason: <code>not_found</code>, <code>invalid_path</code>, <code>over_read_limit</code> or
+  <code>unreadable</code>. <code>notes_omitted</code> now counts only notes dropped by the note
+  limit; 4.2 blamed unreadable notes on the limit too
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1637">#1637</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1644">#1644</a>).</li>
+<li>A note that exists but cannot be read is a fault, not a missing note.
+  Before this, OKF upkeep could overwrite an unreadable <code>index.md</code> or
+  <code>log.md</code> as if it were absent
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1627">#1627</a>).
+  On Python 3.14, where <code>pathlib</code>'s existence checks swallow permission
+  errors, the server now decides existence with <code>stat()</code>. An unreadable
+  note is no longer purged from the index, and an unreadable embeddings
+  store no longer triggers a cold rebuild over it
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1625">#1625</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1645">#1645</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1646">#1646</a>).</li>
+<li>A missing attachment is told apart from a refused read, and a transfer
+  download answers 410 Gone only for a file that is truly gone
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1638">#1638</a>).</li>
+<li><code>get_diff</code> with an unknown commit is a refusal, not a git failure
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1632">#1632</a>),
+  and <code>read</code> with a bad <code>revision</code> is a refusal pointing at <code>get_history</code>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1635">#1635</a>).
+  A git vault with no commits yet returns an empty history.</li>
+<li>A path holding a NUL byte is a bad request, not a server fault
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1636">#1636</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1642">#1642</a>).</li>
+</ul>
+<p>The tool, parameter and resource descriptions were rewritten to state
+each tool's contract and nothing else. Measured in UTF-16 units, tool
+descriptions went from 22,930 to 7,971 and input schemas from 28,128 to
+21,778 (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1652">#1652</a>).
+The tool set itself is unchanged. The <a href="../reference/tools/index.md">tools reference</a>
+and <a href="../reference/resources.md">resources reference</a> describe each refusal.</p>
+<h2 id="overwrite-protection-is-on-by-default">Overwrite protection is on by default<a class="headerlink" href="#overwrite-protection-is-on-by-default" title="Permanent link">&para;</a></h2>
+<p><code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING</code> now defaults to <code>true</code>. A
+whole-file <code>write</code> or a <code>fetch</code> onto an existing path is refused unless it
+carries <code>if_match</code> set to the target's current etag. <code>edit</code>, <code>append</code>,
+<code>delete</code> and <code>rename</code> are unaffected. The failure being guarded is a model
+calling <code>write</code> where it meant <code>edit</code>, and the issue that flipped the
+default notes that "a default-off guard only protects operators who
+already know the failure exists, which is the population least likely to
+hit it"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1136">#1136</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1477">#1477</a>).</p>
+<p>Deliberate replacement still works: <code>read</code> the note, then <code>write</code> with its
+etag as <code>if_match</code>. An upload link has no <code>if_match</code>, so under protection
+<code>create_upload_link</code> refuses an existing destination. To keep 4.2's blind
+overwrites, set <code>MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false</code>. The
+library default in <code>VaultSettings</code> stays <code>False</code>; the flip is in the
+server configuration. See <a href="../reference/configuration.md">Configuration</a>.</p>
+<p>Two related tool fixes. The <code>edit</code> and <code>rename</code> descriptions now say when
+to omit <code>if_match</code>: for several text-matching edits to one file at once,
+and for renaming several linked notes together
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1493">#1493</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1572">#1572</a>). A
+line-range <code>edit</code> with an empty <code>new_text</code> deletes the lines; 4.2 left a
+blank line behind
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1607">#1607</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1613">#1613</a>).</p>
+<h2 id="running-the-server">Running the server<a class="headerlink" href="#running-the-server" title="Permanent link">&para;</a></h2>
+<p>The server moves from FastMCP 3.4.7 to 4.0.10, through <code>fastmcp-pvl-core</code>
+10 and the fastmcp-server-template 10.2 release
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1271">#1271</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1641">#1641</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1649">#1649</a>).
+Most of what an operator notices comes through those upstreams.</p>
+<h3 id="containers">Containers<a class="headerlink" href="#containers" title="Permanent link">&para;</a></h3>
+<p><code>compose.yml</code> no longer assumes Traefik. It pulls the published image
+instead of building, reads <code>.env</code> only if one exists, and publishes port
+8000 on <code>127.0.0.1</code> because the quick start has no authentication. A
+health check probes <code>/health</code>. The file also mounts a <code>service-data</code> volume
+at <code>/data/service</code>, which this server doesn't use: its index, embeddings and
+OIDC state stay on <code>state-data</code> at <code>/data/state</code>, as in 4.2. In <code>.env</code>,
+<code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> names the vault's directory on the host,
+which Compose bind-mounts at <code>/data/vault</code>, so it must be set; inside the
+container the file sets the server's own value to <code>/data/vault</code> (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1614">#1614</a>). To
+reach the server from other machines, configure authentication first, then
+use a reverse proxy or publish on every interface from
+<code>compose.override.yml</code>. The <a href="../deploy/docker.md">Docker guide</a> has the
+override, and the new <a href="../security-model.md">security model</a> page
+explains what the loopback bind does and does not protect.</p>
+<p>The image pins its listener to port 8000 and adds a <code>HEALTHCHECK</code>. In 4.2,
+<code>MARKDOWN_VAULT_MCP_PORT</code> moved the container's listener; it no longer
+does. To serve on another host port, change the host side of the port
+mapping (<code>"127.0.0.1:9000:8000"</code>)
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>).</p>
+<h3 id="health-and-shutdown">Health and shutdown<a class="headerlink" href="#health-and-shutdown" title="Permanent link">&para;</a></h3>
+<p>HTTP deployments gain unauthenticated <code>/health</code> (liveness) and
+<code>/health/ready</code> (503 when a readiness check fails) routes, placed beside
+the MCP mount path. <code>MARKDOWN_VAULT_MCP_HEALTH_DETAIL</code> sets how much the
+bodies reveal: <code>status</code>, <code>standard</code> (the default, which adds name,
+version and per-check verdicts) or <code>full</code> (adds redacted reasons; for
+trusted networks only)
+(<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/318">fastmcp-pvl-core#318</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1465">#1465</a>).
+<code>MARKDOWN_VAULT_MCP_SHUTDOWN_GRACE_S</code> makes the SIGTERM drain window
+configurable; its default of 3 seconds is the value 4.2 hardcoded
+(<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/331">fastmcp-pvl-core#331</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>).</p>
+<h3 id="logs">Logs<a class="headerlink" href="#logs" title="Permanent link">&para;</a></h3>
+<p>Logs are structured as <code>event_name key=value</code> and have one format switch,
+<code>MARKDOWN_VAULT_MCP_LOG_FORMAT</code>: <code>rich</code> for a terminal, <code>json</code> for a
+collector. Unset, it picks Rich when stderr is a terminal and JSON
+everywhere else, so a container or journald now receives JSON with no
+configuration. <code>FASTMCP_ENABLE_RICH_LOGGING</code> is removed.
+<code>MARKDOWN_VAULT_MCP_LOG_LEVEL</code> replaces <code>FASTMCP_LOG_LEVEL</code>; the old name
+still works through 5.x and logs a deprecation warning
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1548">#1548</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1550">#1550</a>). See
+<a href="../reference/configuration.md#logging">Configuration: logging</a>.</p>
+<h3 id="startup">Startup<a class="headerlink" href="#startup" title="Permanent link">&para;</a></h3>
+<p>A configuration mistake stops the server with one
+<code>ERROR: configuration error: ...</code> line and exit code 1, including an
+event-store error under <code>--transport http</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1551">#1551</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1570">#1570</a>). An
+explicit <code>MARKDOWN_VAULT_MCP_AUTH_MODE</code> whose required settings are
+missing now refuses to start. In 4.2, three such configurations "started a
+server accepting unauthenticated connections": <code>oidc-proxy</code> without
+client credentials, <code>remote</code> without <code>BASE_URL</code>, and a whitespace-only
+bearer token
+(<a href="https://github.com/pvliesdonk/fastmcp-pvl-core/pull/338">fastmcp-pvl-core#338</a>).</p>
+<p>A vault directory that does not exist no longer crashes the server. It
+starts, logs <code>vault_directory_missing</code> at ERROR naming the variable, and
+every tool call fails until the directory is fixed; an unreadable
+directory logs <code>vault_directory_unreadable</code>. For the server process, an
+unset <code>MARKDOWN_VAULT_MCP_SOURCE_DIR</code> now means <code>/data/vault</code> rather than a
+refusal to start. Managed git mode is exempt, since it clones into the
+directory
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1590">#1590</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1591">#1591</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1646">#1646</a>).</p>
+<h2 id="links">Links<a class="headerlink" href="#links" title="Permanent link">&para;</a></h2>
+<h3 id="links-the-server-writes-work-in-obsidian">Links the server writes work in Obsidian<a class="headerlink" href="#links-the-server-writes-work-in-obsidian" title="Permanent link">&para;</a></h3>
+<p>The OKF index generator, <code>okf_convert_links</code> and the link rewrite behind
+<code>rename</code> and <code>move_folder</code> wrote destinations with literal spaces. The
+indexer accepted them, but they are "invalid CommonMark links and fail in
+Obsidian" (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1494">#1494</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1514">#1514</a>). All
+three now write <code>%20</code>. They also escape the characters that would end or
+re-point a link: <code>#</code>, an unbalanced parenthesis, and brackets in a title.
+In 4.2, renaming a note to a name with an unbalanced <code>)</code> rewrote its
+links onto a shorter path, which pointed at a different note or at none
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1516">#1516</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1518">#1518</a>).
+Links already written with literal spaces are not repaired, and they are
+still read and indexed.</p>
+<h3 id="the-link-graph-holds-more-of-what-a-reader-follows">The link graph holds more of what a reader follows<a class="headerlink" href="#the-link-graph-holds-more-of-what-a-reader-follows" title="Permanent link">&para;</a></h3>
+<p>Backlinks, outlinks and broken-link reports come from the indexer's link
+extraction, which missed several valid CommonMark forms. It now reads:</p>
+<ul>
+<li>link text and reference labels containing an escaped <code>\]</code>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1520">#1520</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1522">#1522</a>);</li>
+<li>links whose text contains an unmatched or nested <code>[</code>, closing and
+  opening at the nearest unmatched bracket
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1529">#1529</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1530">#1530</a>);</li>
+<li>shortcut references, a bare <code>[label]</code> with a matching definition
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1531">#1531</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1533">#1533</a>).</li>
+</ul>
+<p>Across 97,655 bracket arrangements, disagreements with the markdown-it-py
+reference parser went from 462 to 0 in the narrow set and from 5,574 to 0
+in the wide one
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1533">#1533</a>). One
+row goes away on purpose: <code>![alt][r]</code> whose definition points at a note is
+an image, and no longer counts as a link.</p>
+<p><code>rename</code> now rewrites the same links the index holds. In 4.2, a link like
+<code>[Bra\]cket](old.md)</code> was left pointing at the old name while the rename
+"still reports <code>updated_links=1</code>"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1521">#1521</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1527">#1527</a>). A
+source the rewrite cannot change is no longer counted.</p>
+<p>A file of unbalanced brackets could stall indexing: "A single such file
+stalls indexing for the whole vault"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1343">#1343</a>).
+Wikilinks are now matched with a linear scan; 40,000 <code>[</code> characters took
+about 29 s and now take 40 ms
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1524">#1524</a>).</p>
+<p>These changes alter what the index stores, so the first start after
+upgrading rebuilds the text index once, automatically.</p>
+<h2 id="large-vaults-and-git-backed-vaults">Large vaults and git-backed vaults<a class="headerlink" href="#large-vaults-and-git-backed-vaults" title="Permanent link">&para;</a></h2>
+<h3 id="reindexing-no-longer-scans-the-whole-table-per-note">Reindexing no longer scans the whole table per note<a class="headerlink" href="#reindexing-no-longer-scans-the-whole-table-per-note" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/humblesuperintelligence">@humblesuperintelligence</a>
+reported the cost on a vault of 25,380 notes: "every note that is added,
+modified, or reindexed pays one full-table scan", so a batch of changed
+notes costs time proportional to their number times the table size.
+A live incident "measured <strong>1,526 GB read at up to 554 MB/s over 85
+minutes</strong>"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1535">#1535</a>).
+Three changes address it:</p>
+<ul>
+<li>Removing a note's search rows goes by row ID instead of scanning the
+  content table. Existing databases are migrated once, in SQL, on first
+  open (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1539">#1539</a>).</li>
+<li>A reindex pass checkpoints its progress every 30 seconds, so an
+  interrupted pass resumes rather than starting over
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1540">#1540</a>).</li>
+<li><code>MARKDOWN_VAULT_MCP_BOOT_REINDEX=false</code> skips the reindex that
+  reconciles offline changes at startup. It defaults to <code>true</code>, the 4.2
+  behaviour. With it off, edits made while no server was running stay
+  invisible until a reindex runs, through the <code>reindex</code> tool or
+  <code>markdown-vault-mcp reindex</code>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1543">#1543</a>).</li>
+</ul>
+<p>Tuning SQLite's cache and memory map, also requested in #1535, was
+measured and not adopted; the maintainer found cache tuning "is
+counterproductive under exactly the memory pressure it was requested for"
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1535#issuecomment-5744048724">#1535 closing comment</a>).</p>
+<h3 id="the-index-follows-git-head">The index follows git HEAD<a class="headerlink" href="#the-index-follows-git-head" title="Permanent link">&para;</a></h3>
+<p>In 4.2, a commit that deleted notes could reach the working tree through
+a path that did not reindex. <code>list_documents</code>, <code>list_folders</code> and
+<code>get_broken_links</code> then kept serving the deleted notes while <code>read</code>
+reported them gone
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1532">#1532</a>).
+The server now records the HEAD the index last reflected and reindexes
+whenever the current HEAD differs, after every periodic pull, webhook
+delivery and <code>git_sync</code>. Its own commits cost no extra scan
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1560">#1560</a>).</p>
+<h3 id="link-tools-wait-for-recent-writes">Link tools wait for recent writes<a class="headerlink" href="#link-tools-wait-for-recent-writes" title="Permanent link">&para;</a></h3>
+<p><code>okf_convert_links</code> could skip a wikilink whose target had been written
+seconds earlier, because the index had not caught up
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1464">#1464</a>).
+<code>okf_convert_links</code>, <code>okf_generate_index</code>, <code>rename</code> with <code>update_links</code>
+and <code>move_folder</code> now wait up to 60 seconds for queued index updates
+before touching files, and stop without changing anything if the refresh
+fails (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1482">#1482</a>).
+See <a href="../reference/tools/writer.md">index freshness after writes</a>.</p>
+<h2 id="okf">OKF<a class="headerlink" href="#okf" title="Permanent link">&para;</a></h2>
+<h3 id="a-bearer-credential-is-not-a-person">A bearer credential is not a person<a class="headerlink" href="#a-bearer-credential-is-not-a-person" title="Permanent link">&para;</a></h3>
+<p>In 4.2, writes made with a static bearer token were stamped
+<code>by: human:bearer-anon</code> in OKF provenance, while git attributed the same
+writes to the configured agent identity
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1463">#1463</a>).
+Static bearer, mapped bearer and client-ID-only callers are now service
+principals: their writes stamp the server tool actor, and
+<code>MARKDOWN_VAULT_MCP_OKF_VERIFY=trust-auth</code> refuses them for <code>okf_verify</code>.
+Review clients on bearer authentication should use <code>elicit</code>, the default,
+and show the confirmation to a person; an affirmative reply is recorded as
+<code>human:local</code>. Existing stamps are not rewritten. OAuth tokens that carry
+a <code>sub</code> claim keep their current attribution, pending
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1480">#1480</a>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1481">#1481</a>). The
+<a href="../use/okf.md#recording-a-human-review">OKF guide</a> covers each
+authentication case.</p>
+<h3 id="generated-listings-stay-current">Generated listings stay current<a class="headerlink" href="#generated-listings-stay-current" title="Permanent link">&para;</a></h3>
+<p>With <code>OKF_WRITE</code> on, <code>delete</code>, <code>rename</code> and <code>move_folder</code> left a folder's
+generated <code>index.md</code> listing notes that no longer existed, so
+<code>get_broken_links</code> reported the server's own entries
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1609">#1609</a>).
+They now refresh every listing they make stale. <code>okf_generate_index</code> also
+wrote pointers to subfolder <code>index.md</code> files that did not exist
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1647">#1647</a>);
+it now creates them, and reports them in a new <code>created</code> list
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1648">#1648</a>).
+One visible effect: on an <code>OKF_WRITE</code> vault, the first refresh of an
+indexed folder creates <code>index.md</code> in every folder beneath it that lacks one,
+and on a git-backed vault those files land in commits.</p>
+<h2 id="the-python-library">The Python library<a class="headerlink" href="#the-python-library" title="Permanent link">&para;</a></h2>
+<p>The public import surface did not change, but four construction and
+exception contracts did.</p>
+<p><strong><code>Vault</code> takes <code>VaultSettings</code>.</strong> The 31 configuration keywords
+deprecated in 4.2 are removed, along with both import paths for
+<code>to_vault_kwargs</code>. Passing an old keyword raises <code>TypeError</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1225">#1225</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1478">#1478</a>):</p>
+<div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span><span class="p">,</span> <span class="n">VaultSettings</span>
+
+<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span>
+    <span class="n">source_dir</span><span class="o">=</span><span class="n">root</span><span class="p">,</span>
+    <span class="n">settings</span><span class="o">=</span><span class="n">VaultSettings</span><span class="p">(</span><span class="n">read_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">index_path</span><span class="o">=</span><span class="n">index</span><span class="p">),</span>
+<span class="p">)</span>
+</code></pre></div>
+<p><code>source_dir</code> and the collaborators <code>embedding_provider</code>, <code>summarizer</code>,
+<code>git_strategy</code>, <code>on_write</code> and <code>chunk_strategy</code> stay keywords. Code
+building from <code>ProjectConfig</code> calls <code>to_vault_instances(config)</code>, then
+<code>to_vault_settings(config, instances=instances)</code>, then <code>Vault</code>; see the
+<a href="../reference/api/config.md#migrating-from-4x">configuration migration</a> and the
+<a href="../reference/api/vault.md#migrating-from-4x">Vault migration</a>.</p>
+<p><strong>Git strategies.</strong> <code>GitWriteStrategy</code> drops <code>commit_name_claim</code> and
+<code>commit_email_claim</code>, and takes <code>git_lfs</code> and <code>repo_path</code> by keyword only;
+operators keep the <code>MARKDOWN_VAULT_MCP_GIT_COMMIT_*_CLAIM</code> variables
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1236">#1236</a>,
+<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1479">#1479</a>). The
+startup warning about a missing <code>git config user.email</code> is gone with them.
+A custom <code>git_strategy</code> must also provide <code>set_commit_observer</code>, and its
+<code>start()</code> receives an <code>on_tick</code> callback, both part of the <code>Syncer</code>
+protocol in <code>markdown_vault_mcp.git.interfaces</code>
+(<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1560">#1560</a>).
+See the <a href="../reference/api/git.md#migrating-from-4x">Git API migration</a>.</p>
+<p><strong>Exceptions.</strong> A new <code>InvalidRequestError</code>, a <code>ValueError</code>, marks every
+refusal the caller caused; <code>DocumentNotFoundError</code>,
+<code>EmbeddingsNotConfiguredError</code> and the new <code>NoteTooLargeError</code> derive from
+it (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1628">#1628</a>).
+Code that caught <code>ValueError</code> keeps working, and an <code>except ValueError</code>
+around a write now also catches a missing note. Two changes need code:</p>
+<ul>
+<li><code>read()</code> returns <code>None</code> only when no file exists. A note that exists
+  but cannot be read raises <code>DocumentUnreadableError</code>, which is not a
+  <code>ValueError</code>. <code>read_revision()</code> raises it too, for invalid UTF-8 and
+  Git LFS pointers
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1627">#1627</a>,
+  <a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1635">#1635</a>).</li>
+<li><code>get_similar</code> raises <code>EmbeddingsNotConfiguredError</code> without embeddings,
+  and <code>list_tags</code> raises on a field that is not indexed, instead of returning <code>[]</code>
+  (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/pull/1652">#1652</a>).</li>
+</ul>
+<p><code>summarize</code>'s <code>notes_omitted</code> changes meaning as described
+<a href="#how-a-tool-call-ends">above</a>. The
+<a href="../reference/api/exceptions.md">exceptions reference</a> lists the classes.</p>
+<!-- PATCH-RELEASES-START -->
+<!-- PATCH-RELEASES-END -->
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/config-wizard/wizard.js" type="module"></script>
+      
+    
+  </body>
+</html>

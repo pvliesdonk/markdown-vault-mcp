@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
     
     
       
@@ -2382,15 +2382,15 @@ openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> 
 <span class="w">  </span><span class="nt">oidc</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">clients</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">client_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">markdown-vault-mcp</span>
-<span class="w">        </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;$pbkdf2-sha512$...&#39;</span><span class="w">   </span><span class="c1"># authelia crypto hash generate</span>
+<span class="w">        </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="s">'$pbkdf2-sha512$...'</span><span class="w">   </span><span class="c1"># authelia crypto hash generate</span>
 <span class="w">        </span><span class="nt">redirect_uris</span><span class="p">:</span>
 <span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://mcp.example.com/callback</span>
 <span class="w">        </span><span class="nt">grant_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">authorization_code</span><span class="p p-Indicator">]</span>
 <span class="w">        </span><span class="nt">response_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">code</span><span class="p p-Indicator">]</span>
 <span class="w">        </span><span class="nt">pkce_challenge_method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">S256</span>
 <span class="w">        </span><span class="nt">scopes</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">openid</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">profile</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">email</span><span class="p p-Indicator">]</span>
-<span class="w">        </span><span class="nt">access_token_signed_response_alg</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;RS256&#39;</span>
-<span class="w">        </span><span class="nt">token_endpoint_auth_method</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;client_secret_post&#39;</span>
+<span class="w">        </span><span class="nt">access_token_signed_response_alg</span><span class="p">:</span><span class="w"> </span><span class="s">'RS256'</span>
+<span class="w">        </span><span class="nt">token_endpoint_auth_method</span><span class="p">:</span><span class="w"> </span><span class="s">'client_secret_post'</span>
 </code></pre></div>
 <h4 id="2-set-environment-variables">2. Set environment variables<a class="headerlink" href="#2-set-environment-variables" title="Permanent link">&para;</a></h4>
 <div class="highlight"><pre><span></span><code><span class="nv">MARKDOWN_VAULT_MCP_BASE_URL</span><span class="o">=</span>https://mcp.example.com
@@ -2410,7 +2410,7 @@ openssl<span class="w"> </span>rand<span class="w"> </span>-hex<span class="w"> 
 <span class="w">  </span><span class="nt">oidc</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">clients</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">client_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">markdown-vault-mcp</span>
-<span class="w">        </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;$pbkdf2-sha512$...&#39;</span><span class="w">   </span><span class="c1"># authelia crypto hash generate</span>
+<span class="w">        </span><span class="nt">client_secret</span><span class="p">:</span><span class="w"> </span><span class="s">'$pbkdf2-sha512$...'</span><span class="w">   </span><span class="c1"># authelia crypto hash generate</span>
 <span class="w">        </span><span class="nt">redirect_uris</span><span class="p">:</span>
 <span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://mcp.example.com/auth/callback</span>
 <span class="w">        </span><span class="nt">grant_types</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">authorization_code</span><span class="p p-Indicator">]</span>
@@ -2469,10 +2469,10 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <span class="w">      </span><span class="nt">FASTMCP_HOME</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/data/state/fastmcp</span>
 <span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unless-stopped</span>
 <span class="w">    </span><span class="nt">labels</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.enable=true&quot;</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)&quot;</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.markdown-vault-mcp.tls.certresolver=letsencrypt&quot;</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000&quot;</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.enable=true"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.markdown-vault-mcp.rule=Host(`mcp.example.com`)"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.markdown-vault-mcp.tls.certresolver=letsencrypt"</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.services.markdown-vault-mcp.loadbalancer.server.port=8000"</span>
 <span class="w">    </span><span class="nt">networks</span><span class="p">:</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">traefik</span>
 
@@ -2541,13 +2541,13 @@ Client → markdown-vault-mcp (present JWT → validate via JWKS)
 <p>Example Traefik configuration:</p>
 <div class="highlight"><pre><span></span><code><span class="nt">labels</span><span class="p">:</span>
 <span class="w">  </span><span class="c1"># Operational routes: strip /vault prefix before forwarding</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.vault-app.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">PathPrefix(`/vault`)&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.middlewares.strip-vault.stripprefix.prefixes=/vault&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.vault-app.middlewares=strip-vault&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.services.vault-app.loadbalancer.server.port=8000&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.vault-app.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">PathPrefix(`/vault`)"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.middlewares.strip-vault.stripprefix.prefixes=/vault"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.vault-app.middlewares=strip-vault"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.services.vault-app.loadbalancer.server.port=8000"</span>
 <span class="w">  </span><span class="c1"># OAuth discovery routes: forward without stripping</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.vault-wellknown.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">(PathPrefix(`/.well-known/oauth-authorization-server`)</span><span class="nv"> </span><span class="s">||</span><span class="nv"> </span><span class="s">PathPrefix(`/.well-known/oauth-protected-resource/vault/mcp`))&quot;</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">&quot;traefik.http.routers.vault-wellknown.service=vault-app&quot;</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.vault-wellknown.rule=Host(`mcp.example.com`)</span><span class="nv"> </span><span class="s">&amp;&amp;</span><span class="nv"> </span><span class="s">(PathPrefix(`/.well-known/oauth-authorization-server`)</span><span class="nv"> </span><span class="s">||</span><span class="nv"> </span><span class="s">PathPrefix(`/.well-known/oauth-protected-resource/vault/mcp`))"</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"traefik.http.routers.vault-wellknown.service=vault-app"</span>
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
