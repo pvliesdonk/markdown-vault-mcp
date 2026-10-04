@@ -1,0 +1,107 @@
+# Indexing
+
+## `embeddings_status`
+
+**Embeddings Status.** Read-only. Idempotent.
+
+Check embedding provider and vector-index status.
+
+**Parameters**
+
+None.
+
+**Returns**
+
+Dict with the following fields:
+
+- available (bool): True when an embedding provider and a vector index path are configured, even before the first build finishes. It does not say the embeddings are complete; `get_index_status` does.
+- provider (str | None): Provider class name when configured (such as `"OllamaProvider"`), or null if not configured.
+- `chunk_count` (int): Number of chunks currently in the vector index.
+- path (str | None): Vector index file path when persisted, or null.
+
+## `get_index_status`
+
+**Index Status.** Read-only.
+
+Report FTS index readiness, progress, and last build error.
+
+**Parameters**
+
+None.
+
+**Returns**
+
+Dict with the following fields:
+
+- status (str): `"queryable"`, `"building"`, or `"failed"`.
+- `documents_indexed` (int): Count of documents committed to the FTS index right now (rises during `"building"`). `0` both for an empty index and when the count could not be read; see `documents_indexed_error` to tell them apart.
+- `documents_indexed_error` (str | None): `None` on a normal read; the SQLite error message when the document count could not be read (such as a locked or closed database), in which case `documents_indexed` is `0`.
+- error (str | None): The message of the last background build that failed, or `None`. It can stay set while status is `"queryable"`, until the next successful build clears it, and is always `None` while status is `"building"`.
+- `last_reindex_error` (str | None): The message of the last reindex that failed, or `None` once a reindex succeeds.
+- `last_build_embeddings_error` (str | None): The message of the last embeddings build that failed, or `None` once one succeeds.
+- `queue_depth` (int): Jobs waiting for the index writer.
+- `in_flight` (str | None): The kind of job the index writer is running, such as `"process_dirty_paths"`, or `None` when idle.
+- `dirty_paths` (int): Changed notes not yet refreshed in the index.
+- `dirty_embeddings` (int): Changed notes not yet re-embedded.
+- `write_generation` (int): A counter that rises each time the index writer finishes a job.
+- `skipped_files` (list[dict]): Files dropped from the index for a surfaced deterministic reason. Each entry is `{"path", "category", "detail"}` where `category` is one of `"parse_error"`, `"encoding_error"`, `"missing_frontmatter"`, or `"internal_error"` (an unexpected indexer error, vs a content problem). Empty when nothing was skipped. Distinguishes a parse-dropped note from an unsynced one without reading container logs. Exclude-pattern and transient-I/O skips are intentionally not listed.
+
+The index, and the embeddings when semantic search is configured, have caught up once status is `"queryable"`, `queue_depth` is 0, `in_flight` is `None`, and `dirty_paths` and `dirty_embeddings` are both 0.
+
+## `reindex`
+
+**Reindex Vault.** Changes state, not destructive. Idempotent.
+
+Bring the search index up to date with files changed outside this server, such as by an editor or a sync tool; returns counts of added, modified, deleted and unchanged notes.
+
+Writes through this server's tools update the index themselves, so do not call it after them.
+
+**Parameters**
+
+| Name    | Type      | Default | Description                                                                                                                                                                                                                                  |
+| ------- | --------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `force` | `boolean` | `false` | Drop the index and re-parse every note instead of only changed ones: slower, and search waits until it finishes. Use it when results no longer match the notes, then run `build_embeddings` if the vault has semantic search. Default false. |
+
+**Returns**
+
+On inline completion, a dict with `"status": "completed"` plus the reindex counts:
+
+- added (int): Documents added since the last index. On a force=True rebuild every indexed document is counted here, because the rebuild dropped and re-added them all.
+- modified (int): Documents that changed since the last index (always 0 on a force=True rebuild).
+- deleted (int): Documents removed since the last index (always 0 on a force=True rebuild; the drop is not a vault change).
+- unchanged (int): Documents with no changes (always 0 on a force=True rebuild).
+- skipped (int): Files deliberately not indexed (missing required frontmatter, exclude patterns, unparseable).
+- `full_rebuild` (bool): True when force=True re-parsed everything.
+
+When promoted, a dict with `"status": "working"`, a `job_id`, and a `poll_with` field naming `get_job_result`. A failure after promotion is reported through `get_job_result` and mirrored in `get_index_status`'s `last_reindex_error`.
+
+**Outcomes and errors**
+
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
+- ToolError: If the caller's job limit is reached when the call is promoted to a background job; the queued reindex is cancelled, so fetch pending job results and retry.
+
+## `build_embeddings`
+
+**Build Embeddings.** Changes state, not destructive. Idempotent.
+
+Bring the vector index behind semantic and hybrid search up to date with the notes; returns the number of chunks embedded.
+
+Embeddings are built automatically, so it is needed only after reindex with force, after a failed build (`last_build_embeddings_error` in `get_index_status`), or with force to rebuild them all.
+
+**Parameters**
+
+| Name    | Type      | Default | Description                                                                                                                     |
+| ------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `force` | `boolean` | `false` | Discard every embedding and rebuild from scratch, as after the embedding model changed; default false embeds only what changed. |
+
+**Returns**
+
+On inline completion, a dict with `"status": "completed"` and `chunks_embedded` (int): the total number of chunks embedded. When promoted, a dict with `"status": "working"`, a `job_id`, and a `poll_with` field naming `get_job_result`. A failure after promotion is reported through `get_job_result` and mirrored in `get_index_status`'s `last_build_embeddings_error`.
+
+**Outcomes and errors**
+
+- ToolError: If the index is busy or still building; retry shortly.
+- IndexUnavailableError: If the index build failed or the index is broken; `get_index_status` reports the error.
+- ToolError: If the caller's job limit is reached when the call is promoted to a background job; the queued build is cancelled, so fetch pending job results and retry.
+- EmbeddingsNotConfiguredError: If no embedding provider is configured.

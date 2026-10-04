@@ -2,66 +2,90 @@
 
 > Generic markdown vault MCP with hybrid search
 
-## Getting Started
+## Overview
 
-- [Home](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/index.md): Overview — features, quick start, and project links
-- [Installation](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/installation/index.md): Installation from PyPI, uv, source, or Docker
-- [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md): All environment variables with types and defaults
-- [Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration-generator/index.md): In-browser generator for config, Docker, and systemd artifacts
-- [CLI Reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/cli/index.md): CLI reference — serve, index, search, reindex, and subpath mounts
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/index.md): What Markdown Vault MCP is, what it does, and where to start reading.
 
-## Guides
+## Security model
 
-- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/index.md): Guide overview — which guide to read
-- [Git Integration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/git-integration/index.md): Git modes — managed, unmanaged (commit-only), and no-git
-- [Claude Desktop](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/claude-desktop/index.md): Claude Desktop setup (read-only, git write, semantic search)
-- [Docker](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/docker/index.md): Docker deployment (basic, git write, bearer token, OIDC)
-- [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/embeddings/index.md): Embedding providers (Ollama, sentence-transformers, OpenAI)
-- [Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/authentication/index.md): Authentication modes — bearer token, OIDC, and troubleshooting
-- [Security Model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/security-model/index.md): The shared security model — data access, outbound requests, and credentials
-- [OIDC Providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/oidc-providers/index.md): OIDC provider setup (Authelia, Keycloak, Google, GitHub via broker)
-- [Obsidian Everywhere](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/obsidian-everywhere/index.md): Reference architecture for desktop + mobile + Claude on one vault
-- [Research Workflows](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/research-workflows/index.md): Research workflows (seed → ground → absorb → interconnect → produce, with optional scholar-mcp integration)
-- [Zettelkasten](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/zettelkasten/index.md): Zettelkasten workflow (fleeting → literature → permanent notes, MOCs, graph navigation)
-- [PARA](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/para/index.md): PARA workflow (Projects/Areas/Resources/Archive with triage, kickoff, and weekly review prompts)
-- [Open Knowledge Format](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/index.md): Open Knowledge Format (OKF) support and migrating a vault into the format
-- [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/mcp-apps/index.md): MCP Apps — Context Card, Graph Explorer, Vault Browser, and Note Preview views
-- [Transfer Links](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/transfer-links/index.md): One-time transfer links — capability-URL download and upload without inflating LLM context
-- [Claude Code Plugin](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/claude-code-plugin/index.md): Claude Code plugin — install via /plugin marketplace
+- [Security model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/security-model/index.md): What the server protects, what it can reach, and what stays the operator's responsibility.
 
-## MCP Interface
+## Get started
 
-- [Tools](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/index.md): MCP tools with parameters and examples (search, read, write, link graph, MCP Apps)
-- [Resources](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/resources/index.md): MCP resources with URI patterns (config, stats, tags, folders, toc, similar, recent, ui)
-- [Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/prompts/index.md): All 6 MCP prompts with workflow descriptions
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/get-started/index.md): Pick your client and reach a first working call with Markdown Vault MCP.
+- [Claude Desktop](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/get-started/claude-desktop/index.md): Connect Claude Desktop to Markdown Vault MCP on your machine and make a first, read-only call.
+- [Claude Code](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/get-started/claude-code/index.md): Run Markdown Vault MCP inside Claude Code through its plugin, or connect Claude Code to a server that already runs.
+- [A remote server](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/get-started/http-client/index.md): Connect claude.ai, Claude Code or another client to a Markdown Vault MCP server that runs somewhere else.
+- [Installation](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/get-started/installation/index.md): Every way to install Markdown Vault MCP, by where it runs, with a check of what you installed.
 
-## Deployment
+## Deploy
 
-- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/index.md): Deployment overview
-- [Docker](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/docker/index.md): Docker Compose, Traefik, volumes, UID/GID, image tags
-- [systemd](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/systemd/index.md): systemd service — package install, manual install, security hardening
-- [Claude Desktop](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/claude-desktop/index.md): Claude Desktop configuration reference
-- [OIDC Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/oidc/index.md): OIDC authentication setup with Authelia
-- [Release Process](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/release-process/index.md): Branch-aware release model — channels, release branches, merge-back
-- [Repository Protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/repository-protection/index.md): Repository rulesets — per-branch posture and bypass model
-- [Template Updates](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deployment/template-updates/index.md): Working through a copier template update pull request
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/index.md): Run Markdown Vault MCP for real: Docker or a system package, authentication, OIDC and its providers, a reverse proxy.
+- [Docker](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/docker/index.md): Run the server with Docker Compose, locally or behind a reverse proxy.
+- [systemd and packages](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/systemd/index.md): Run Markdown Vault MCP as a systemd service from the .deb or .rpm package, from the environment file to upgrades.
+- [Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/authentication/index.md): Choose and configure an authentication mode for an HTTP deployment.
+- [OIDC](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc/index.md): Which OIDC mode to run and how to configure it: the server as a resource server, or as the provider's registered client.
+- [OIDC providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc-providers/index.md): Register Markdown Vault MCP with Authelia, Keycloak or Google, or sign in through GitHub via a broker, and see which OIDC mode each allows.
+- [Reverse proxy](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/reverse-proxy/index.md): Put Markdown Vault MCP behind a reverse proxy: TLS, its own hostname or a path prefix, and the routing rules OAuth discovery needs.
+- [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/mcp-apps/index.md): What an MCP App of Markdown Vault MCP is, which clients render it, and the one setting an operator may need.
+- [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/transfer-links/index.md): One-time download and upload links: how a client uses them, and what the operator configures and exposes.
 
-## Python API
+## Use
 
-- [Vault](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/vault/index.md): Vault class API reference
-- [Facets](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/facets/index.md): Reader/Writer/Graph/Index facet API reference
-- [Git Integration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/git/index.md): GitWriteStrategy API reference
-- [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/config/index.md): Configuration loading API reference
-- [Embedding Providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/providers/index.md): Embedding provider API reference
-- [Types](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/types/index.md): All data types returned by the Vault API
-- [Exceptions](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/api/exceptions/index.md): All exceptions raised by the library
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/index.md): How to use this server's features for real tasks, and why they behave as they do.
+- [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md): Choose and configure an embedding provider for search by meaning: FastEmbed, Ollama, OpenAI-compatible endpoints or Voyage.
+- [Git integration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/git-integration/index.md): Choose a git mode for the vault, configure commits, pushes and pulls, and read history back.
+- [Vault explorer](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/vault-explorer/index.md): What the vault explorer shows in a client that renders MCP Apps, and how to open each view.
+- [Obsidian everywhere](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/obsidian-everywhere/index.md): Keep one Obsidian vault on desktop, mobile and Claude, with git as the source of truth.
+- [Open Knowledge Format](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/index.md): How the server recognizes an Open Knowledge Format bundle, what it adds to results, and the tools that audit and migrate one.
+- [PARA](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/para/index.md): Run a PARA vault (Projects, Areas, Resources, Archive) with this server: folders, frontmatter, prompts and the capture-to-archive loop.
+- [Zettelkasten](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/zettelkasten/index.md): Run a Zettelkasten with this server: atomic notes, links, and finding connections.
+- [Research workflows](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/research-workflows/index.md): Use the vault and Claude for research: seed, ground, absorb, interconnect and produce.
 
-## Release Notes
+## Reference
 
-- [3.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/index.md)
-- [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/index.md)
-- [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.0/index.md)
-- [4.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.1/index.md)
-- [4.2](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.2/index.md)
-- [5.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/5.0/index.md)
+- [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/configuration/index.md): Every environment variable the server reads, with its type, default and effect.
+- [Configuration generator](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/configuration-generator/index.md): Generate a configuration for your deployment in the browser.
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/index.md): Every tool this server registers, by group.
+- [Reader](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/reader/index.md): Reference for the Reader group of tools.
+- [Graph](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/graph/index.md): Reference for the Graph group of tools.
+- [Indexing](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/indexing/index.md): Reference for the Indexing group of tools.
+- [Writer](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/writer/index.md): Reference for the Writer group of tools.
+- [Git](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/git/index.md): Reference for the Git group of tools.
+- [Vault app tools](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/vault_app_tools/index.md): Reference for the Vault app tools group of tools.
+- [Server info](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/server_info/index.md): Reference for the Server info group of tools.
+- [Transfer](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/transfer/index.md): Reference for the Transfer group of tools.
+- [Summarize](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/summarize/index.md): Reference for the Summarize group of tools.
+- [Jobs](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/jobs/index.md): Reference for the Jobs group of tools.
+- [Resources](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/resources/index.md): The resources and resource templates this server serves.
+- [Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/prompts/index.md): The prompt templates this server offers to MCP clients.
+- [Command line](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/cli/index.md): The `markdown-vault-mcp` command line: commands, options and their environment variables.
+- [Vault](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/vault/index.md): The Vault class, the library's entry point, and how to construct and configure it.
+- [Facets](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/facets/index.md): The reader, writer, graph and index facets that carry the library's operations.
+- [Git integration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/git/index.md): The git module: commit strategies, history and diffs for a vault under git.
+- [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/config/index.md): The configuration module: loading settings from environment variables into typed dataclasses.
+- [Embedding providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/providers/index.md): The embedding providers the library supports, and how one is chosen.
+- [Types](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/types/index.md): The data types the Vault API returns.
+- [Exceptions](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/exceptions/index.md): The exceptions the library raises, and what each one means.
+
+## Upgrade
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/upgrade/index.md): The step for your channel, what a new release changes for your clients and your state, and where a release page answers those questions.
+- [Release notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md): Release notes for each minor series, with the steps to upgrade.
+- [1.x](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/1.x/index.md): Release notes for the 1.x line, with the steps to upgrade to it.
+- [3.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.0/index.md): Release notes for the 3.0 series, with the steps to upgrade to it.
+- [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/3.1/index.md): Release notes for the 3.1 series, with the steps to upgrade to it.
+- [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.0/index.md): Release notes for the 4.0 series, with the steps to upgrade to it.
+- [4.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.1/index.md): Release notes for the 4.1 series, with the steps to upgrade to it.
+- [4.2](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.2/index.md): Release notes for the 4.2 series, with the steps to upgrade to it.
+- [5.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/5.0/index.md): Release notes for the 5.0 series, with the steps to upgrade to it.
+
+## Contribute
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/index.md): Set up a clone of Markdown Vault MCP to contribute, and learn where a fix belongs.
+- [Documentation structure](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/docs-structure/index.md): Where each piece of documentation belongs, and who owns it.
+- [Release process](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/release-process/index.md): How a release is cut, published and promoted.
+- [Template updates](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/template-updates/index.md): How to work through a template update pull request.
+- [Repository protection](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/repository-protection/index.md): The branch and tag rules that decide what a release can ship from.
+- [Integration branches](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/integration-branches/index.md): How to run an epic on an integration branch and bring it to main in one pull request.
 

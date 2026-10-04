@@ -1,0 +1,55 @@
+# Transfer
+
+## `create_download_link`
+
+**Create Download Link.** Read-only.
+
+Create a download URL for a file; returns url and `expires_in_s`.
+
+Use it to hand a file to the user or another program instead of returning its bytes in a tool result.
+
+For this server, ref is a vault-relative path to an existing note (a .md file) or attachment.
+
+**Parameters**
+
+| Name    | Type             | Default  | Description                                                                                                                          |
+| ------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `ref`   | `string`         | required | The file to serve, in this server's reference format.                                                                                |
+| `ttl_s` | `number \| null` | `null`   | Link lifetime in seconds; omit for the server's default. A value above the server's maximum is capped, and zero or less is rejected. |
+
+**Returns**
+
+`object`
+
+```
+{"ref": "assets/diagram.pdf", "ttl_s": 600}
+```
+
+returns `{"url": "https://mcp.example.com/transfer/<token>", "expires_in_s": 600}`. [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/transfer-links/index.md) covers fetching it, and what a `ref` names on this server.
+
+## `create_upload_link`
+
+**Create Upload Link.** Changes state, not destructive. Tags: `write`.
+
+Create an upload URL for a file; returns url and `expires_in_s`.
+
+Use it to receive a file's bytes instead of passing them as a tool argument.
+
+ref is a vault-relative path for a note (.md) or an allowed attachment. It must not exist yet.
+
+**Parameters**
+
+| Name    | Type             | Default  | Description                                                                                                                          |
+| ------- | ---------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `ref`   | `string`         | required | Where to store the uploaded file, in this server's reference format.                                                                 |
+| `ttl_s` | `number \| null` | `null`   | Link lifetime in seconds; omit for the server's default. A value above the server's maximum is capped, and zero or less is rejected. |
+
+**Returns**
+
+`object`
+
+```
+{"ref": "assets/uploaded-diagram.pdf"}
+```
+
+returns `{"url": "https://mcp.example.com/transfer/<token>", "expires_in_s": 3600}`; send the raw bytes as [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/transfer-links/index.md) shows.

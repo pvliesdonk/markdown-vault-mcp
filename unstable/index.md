@@ -2,110 +2,41 @@
 
 Generic markdown vault MCP with hybrid search
 
-## Getting started
+What the server can reach, what it changes and who gets in is set out in the [security model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/security-model/index.md).
 
-- [Installation](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/installation/index.md)
-- [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md)
-- [Tools](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/index.md)
+## Where to go
 
-A generic markdown vault [MCP](https://modelcontextprotocol.io/) server with FTS5 full-text search, semantic vector search, frontmatter-aware indexing, incremental reindexing, and non-markdown attachment support.
+- [Get started](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/get-started/index.md): a first success with the client you use.
+- [Deploy](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/index.md): run it for real, in a container and behind authentication.
+- [Use](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/index.md): get more out of its features.
+- [Reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/configuration/index.md): configuration, [tools](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/index.md), resources, prompts and the command line.
+- [Upgrade](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/upgrade/index.md): release channels and what changes when you move.
+- [Contribute](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/contribute/index.md): change the project.
 
-Point it at a directory of Markdown files (an Obsidian vault, a docs folder, a Zettelkasten, a PARA vault) and it exposes search, read, write, and edit tools over the [Model Context Protocol](https://modelcontextprotocol.io/).
+Point it at a folder of Markdown notes, an Obsidian vault included, and it gives Claude or any MCP client tools to search, read and write them. Whether it fits your notes, what it assumes and what to use instead is under [Does it fit?](https://github.com/pvliesdonk/markdown-vault-mcp#does-it-fit) in the README.
 
 ## Features
 
-- **Full-text search**: SQLite FTS5 with BM25 scoring, porter stemming
-- **Semantic search**: cosine similarity over embedding vectors (FastEmbed, Ollama, OpenAI, or Voyage AI)
-- **Hybrid search**: Reciprocal Rank Fusion combining FTS5 and vector results
-- **Frontmatter-aware**: indexes YAML frontmatter fields, supports required field enforcement
-- **Incremental reindexing**: hash-based change detection, only re-processes modified files
-- **Write operations**: create, edit, append to, delete, rename documents with automatic index updates
-- **Folder conventions**: per-folder `_conventions.md` files carry your authoring rules, surfaced to LLM clients at write time via [`get_conventions`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/tools/#get_conventions) and in `write`/`edit` results
-- **[Open Knowledge Format](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/okf/index.md)**: recognizes OKF bundles (an `okf_version` declaration in the root `index.md`) and annotates search/read results with each note's type, lifecycle status, staleness, and trust tier; those dimensions are filterable and nudge ranking, and the server ships an `okf_validate` audit, one-shot migration transforms, an optional enforced write layer (provenance + verification + `log.md`/`index.md` upkeep), and a downloadable bundle export
-- **Attachment support**: read, write, delete, and list non-markdown files (PDFs, images, and so on)
-- **LLM summarization**: optional `summarize` tool condenses a note, a set of notes, or a subtree with a language model via any OpenAI-compatible endpoint (OpenAI, Ollama, Anthropic, vLLM, and others); the synthesis references the individual source notes by path. Gated on `OPENAI_API_KEY` or a configured base URL.
-- **Git integration**: optional auto-commit (one commit per write tool call) and deferred push, with token auth via `GIT_ASKPASS`
-- **OIDC authentication**: optional token-based auth for HTTP deployments
-- **MCP tools**: search, read, write, edit, append, delete, rename, link graph analysis, and admin operations
-- **MCP resources**: vault configuration, statistics, tags, folders, document outlines, similar notes, and recent notes
-- **MCP prompts**: summarize, research, discuss, create from template, compare, and find related notes
-- **MCP Apps**: browser-based views (Context Card, Graph Explorer, Vault Browser, and Note Preview) for clients supporting the MCP Apps protocol
-- **One-time transfer links**: mint short-lived capability URLs to move files into or out of the vault out-of-band over HTTP (`create_download_link` / `create_upload_link`; HTTP/SSE transports only)
-- **[Configuration Generator](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration-generator/index.md)**: build a working config, Docker command, or systemd unit in your browser.
+Each line links to the page that covers it.
+
+- **Hybrid search**: SQLite FTS5 keyword search, plus search by meaning once an embedding provider is configured; Reciprocal Rank Fusion merges the two. [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md).
+- **Frontmatter as data**: YAML frontmatter fields become search filters, and required fields can be enforced. [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/configuration/index.md).
+- **Writes**: create, edit, append to, delete, rename and move notes and attachments, with the index kept current. Replacing a file takes the etag from reading it, and per-folder `_conventions.md` rules reach the client as it writes. [Write tools](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/writer/index.md).
+- **Links**: backlinks, outlinks, broken links, orphans and the path between two notes. [Graph tools](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/graph/index.md).
+- **Git**: an optional commit per write, a delayed push, pull or webhook sync, and history and diffs. [Git integration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/git-integration/index.md).
+- **Open Knowledge Format**: recognizes OKF bundles, adds each note's type, status, staleness and trust tier to results, and audits and migrates a vault. [Open Knowledge Format](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/index.md).
+- **Summaries**: an optional `summarize` tool with a model you configure, or the `summarize-subtree` prompt with the client's own model. [Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/prompts/#summarize-subtree).
+- **Vault explorer**: interactive views in clients that render MCP Apps. [Vault explorer](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/vault-explorer/index.md).
+- **Transfer links**: one-time URLs that move a file into or out of the vault over HTTP. [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/transfer-links/index.md).
+- **A Python library**: the same engine for your own code. [Vault API](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/vault/index.md).
 
 ## What you can do with it
 
-A few flows the server enables with an LLM on top (none of these require a bespoke prompt):
+A few flows the server enables with an LLM on top; none needs a bespoke prompt:
 
 - **"Fetch and summarize into a Resource note."** Claude composes `fetch` + `search` + `write`.
-- **"Research and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks. See the [Research workflows guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/research-workflows/index.md) for the full loop.
-- **"Summarize today's conversations into Inbox notes."** Claude.ai composes `conversation_search` + `recent_chats` + `write`; the [`para-capture-chats`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/guides/para/#using-the-para-prompts) prompt is the one-click version.
-- **Find missing links.** The [`propose-links`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/prompts/index.md) builtin prompt scans recently modified notes and proposes useful connections.
+- **"Research and create a set of interlinked notes."** Claude composes web tools + `write` with wikilinks. See [Research workflows](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/research-workflows/index.md) for the full loop.
+- **"Summarize today's conversations into Inbox notes."** Claude.ai composes `conversation_search` + `recent_chats` + `write`; the [`para-capture-chats`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/para/#using-the-para-prompts) prompt is the one-click version.
+- **Find missing links.** The built-in [`propose-links`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/prompts/#propose-links) prompt scans recently modified notes and proposes connections between them.
 
-See [MCP Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/prompts/index.md) for the codified workflows and the ambient-pattern reference.
-
-## Release notes
-
-Per-minor [release notes](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/index.md) explain what changed in each release, who is affected, and what to check before upgrading. The GitHub release body links to the matching page.
-
-## Quick Start
-
-### As a library
-
-```
-from pathlib import Path
-from markdown_vault_mcp.vault import Vault
-
-vault = Vault(source_dir=Path("/path/to/vault"))
-vault.index.build_index()
-results = vault.reader.search("query text", limit=10)
-```
-
-### As an MCP server
-
-```
-export MARKDOWN_VAULT_MCP_SOURCE_DIR=/path/to/vault
-markdown-vault-mcp serve
-```
-
-### With Docker Compose
-
-```
-cp examples/obsidian-readonly.env .env
-# Edit .env to set MARKDOWN_VAULT_MCP_SOURCE_DIR
-docker compose up -d
-```
-
-### As a Claude Code plugin
-
-```
-/plugin marketplace add pvliesdonk/claude-plugins
-/plugin install markdown-vault-mcp@pvliesdonk
-```
-
-See [Installation](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/installation/index.md) for all installation methods (PyPI, uv, Docker, Linux packages, Claude Code plugin) and [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/configuration/index.md) for all available options.
-
-## Architecture
-
-The library is fully synchronous, with no asyncio in core modules. The MCP server layer uses `asyncio.to_thread()` to bridge to the async FastMCP layer.
-
-```
-┌──────────────┐
-│  MCP Server   │  ← FastMCP, asyncio.to_thread()
-├──────────────┤
-│  Vault        │  ← Thin facade / public API
-├──────────────┤
-│  Scanner      │  ← File discovery, frontmatter parsing, chunking
-│  FTS Index    │  ← SQLite FTS5, BM25 scoring
-│  Vector Index │  ← numpy embeddings, cosine similarity
-│  Tracker      │  ← Hash-based change detection
-│  Providers    │  ← Embedding provider ABC + implementations
-│  Git          │  ← Auto-commit/push strategy
-├──────────────┤
-│  Config       │  ← Environment variable loading
-└──────────────┘
-```
-
-## License
-
-[MIT](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/LICENSE)
+The [prompts reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/prompts/index.md) has the codified workflows.

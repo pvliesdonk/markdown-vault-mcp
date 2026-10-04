@@ -1,0 +1,3764 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Reference for the Reader group of tools.">
+      
+      
+      
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/reader/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../graph/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Reader - markdown-vault-mcp</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../../stylesheets/config-wizard.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#reader" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="markdown-vault-mcp" class="md-header__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            markdown-vault-mcp
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Reader
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Overview
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../security-model/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Security model
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../get-started/" class="md-tabs__link">
+          
+  
+  
+  Get started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../deploy/" class="md-tabs__link">
+          
+  
+  
+  Deploy
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../use/" class="md-tabs__link">
+          
+  
+  
+  Use
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../configuration/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../upgrade/" class="md-tabs__link">
+          
+  
+  
+  Upgrade
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../contribute/" class="md-tabs__link">
+          
+  
+  
+  Contribute
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="markdown-vault-mcp" class="md-nav__button md-logo" aria-label="markdown-vault-mcp" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    markdown-vault-mcp
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/pvliesdonk/markdown-vault-mcp" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    pvliesdonk/markdown-vault-mcp
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../security-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../get-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../get-started/claude-desktop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Desktop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../get-started/claude-code/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Claude Code
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../get-started/http-client/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    A remote server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../get-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deploy
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Deploy
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deploy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deploy/docker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Docker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deploy/systemd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systemd and packages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deploy/authentication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authentication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deploy/oidc/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deploy/oidc-providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OIDC providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deploy/reverse-proxy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reverse proxy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deploy/mcp-apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../deploy/transfer-links/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer links
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Use
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Use
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/embeddings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embeddings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/git-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/vault-explorer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault explorer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/obsidian-everywhere/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Obsidian everywhere
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/okf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Knowledge Format
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/para/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    PARA
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/zettelkasten/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Zettelkasten
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../use/research-workflows/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Research workflows
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../configuration-generator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration generator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tools
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tools
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reader
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reader
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#list_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#list_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_folders
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#list_tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_tags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get_similar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_similar
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get_toc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_toc
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get_recent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_recent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get_context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get_conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf_validate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_validate
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../graph/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graph
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../indexing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Indexing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../writer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Writer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vault_app_tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault app tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../server_info/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Server info
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../transfer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Transfer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../summarize/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Summarize
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jobs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Jobs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../prompts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Prompts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_7" id="__nav_6_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/vault/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vault
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/facets/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Facets
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/git/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Git integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/providers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embedding providers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api/exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exceptions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Upgrade
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Upgrade
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../upgrade/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../releases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release notes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contribute
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contribute/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contribute/docs-structure/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Documentation structure
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contribute/release-process/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release process
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contribute/template-updates/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Template updates
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contribute/repository-protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repository protection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../contribute/integration-branches/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integration branches
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#search" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        search
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#read" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#list_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_documents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#list_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_folders
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#list_tags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        list_tags
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        stats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get_similar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_similar
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get_toc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_toc
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get_recent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_recent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get_context" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_context
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#get_conventions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_conventions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#okf_validate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        okf_validate
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<!-- generated by scripts/gen_reference.py; edit the docstrings, not this page -->
+
+<h1 id="reader">Reader<a class="headerlink" href="#reader" title="Permanent link">&para;</a></h1>
+<!-- DOMAIN-INTRO-START -->
+<!-- A short orientation for this page; task guidance belongs under Use. Kept across regeneration. -->
+<!-- DOMAIN-INTRO-END -->
+
+<h2 id="search"><code>search</code><a class="headerlink" href="#search" title="Permanent link">&para;</a></h2>
+<p><strong>Search Vault.</strong> Read-only. Idempotent.</p>
+<p>Search notes by keyword and meaning; returns notes ranked by score, each with
+its best-matching sections as snippets.</p>
+<p>Use <code>list_documents</code> for a complete listing and read for a path you already know.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query</code></td>
+<td><code>string</code></td>
+<td>required</td>
+<td>Words to match or a natural-language question.</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td><code>integer</code></td>
+<td><code>10</code></td>
+<td>Maximum notes to return (default 10).</td>
+</tr>
+<tr>
+<td><code>mode</code></td>
+<td><code>keyword \| semantic \| hybrid \| null</code></td>
+<td><code>null</code></td>
+<td>Omit for the best mode this vault serves. <code>"keyword"</code> suits exact terms, operators and filenames; <code>"semantic"</code> matches meaning only; <code>"hybrid"</code> combines both. <code>"semantic"</code> and <code>"hybrid"</code> need <code>semantic_search_available</code> from stats.</td>
+</tr>
+<tr>
+<td><code>folder</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Only notes under this folder, a value from <code>list_folders</code>; <code>""</code> for top-level notes only.</td>
+</tr>
+<tr>
+<td><code>filters</code></td>
+<td><code>object \| null</code></td>
+<td><code>null</code></td>
+<td>Frontmatter values to match, all of them, such as <code>{"tags": "pacing"}</code>; keys come from <code>indexed_frontmatter_fields</code> in stats, and a list field matches when it holds the value. On an OKF bundle, status (draft, stable or deprecated; stable includes notes with none), stale (<code>"true"</code> or <code>"false"</code>) and <code>trust_tier</code> (unverified, machine-confirmed or human-reviewed) filter too.</td>
+</tr>
+<tr>
+<td><code>chunks_per_file</code></td>
+<td><code>integer \| null</code></td>
+<td><code>null</code></td>
+<td>Maximum sections per note, at least 1; omit for the server default.</td>
+</tr>
+<tr>
+<td><code>snippet_words</code></td>
+<td><code>integer \| null</code></td>
+<td><code>null</code></td>
+<td>Snippet width in words; omit for the server default, 0 for whole sections. read with section set to a result's heading returns that whole section.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>List of result dicts ranked by file relevance. Each contains:</p>
+<ul>
+<li>path (str): Relative path of the document.</li>
+<li>title (str): Document title.</li>
+<li>folder (str): Parent folder path.</li>
+<li>score (float): File-level score = max(section.score).
+  Higher is a better match. BM25 (keyword) or cosine (semantic/
+  hybrid); not comparable across modes.</li>
+<li><code>search_type</code> (str): <code>"keyword"</code>, <code>"semantic"</code>, or <code>"hybrid"</code>.</li>
+<li>frontmatter (dict): Parsed YAML frontmatter of the document.</li>
+<li>okf (dict, optional): OKF read annotation: present only when
+  the vault is an active OKF bundle. Carries <code>type</code> (when
+  declared), <code>status</code> (defaults to <code>"stable"</code>), <code>stale</code>
+  (bool, <code>stale_after</code> reached), <code>trust_tier</code> (<code>"unverified"</code> /
+  <code>"machine-confirmed"</code> / <code>"human-reviewed"</code>), and
+  <code>sources_count</code> (when the note cites sources).</li>
+<li>
+<p>sections (list[dict]): Up to <code>chunks_per_file</code> best-matching
+  sections, each with:</p>
+</li>
+<li>
+<p>heading (str | None): Section heading or null for intro.</p>
+</li>
+<li>content (str): Matched snippet (or full chunk if
+    <code>snippet_words</code>=0).  Call read(path, section=heading) for
+    the full section text.</li>
+<li>score (float): Chunk-level score for this section.</li>
+</ul>
+<p>On an active OKF bundle, ranking demotes deprecated notes, stale notes
+less, and the reserved index.md and log.md below real notes.</p>
+<p>An empty query returns an empty list in semantic and hybrid mode.</p>
+<p>Index freshness rides in the response's <code>_meta.index_stale</code>
+field: True when the IndexWriter was non-idle, a write completed
+inside the read window, or <code>wait_for_pending_writes</code> timed out; False
+otherwise.</p>
+<p><strong>Outcomes and errors</strong></p>
+<ul>
+<li>EmbeddingsNotConfiguredError: If mode is <code>"semantic"</code> or <code>"hybrid"</code> and no embedding provider is configured (a <code>ValueError</code> subclass).</li>
+<li>InvalidRequestError: If <code>chunks_per_file</code> is below 1.</li>
+</ul>
+<!-- DOMAIN-EXAMPLE-search-START -->
+<p>Find craft notes on a topic, two sections per note:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"query"</span><span class="p">:</span><span class="w"> </span><span class="s2">"character development techniques"</span><span class="p">,</span><span class="w"> </span><span class="nt">"limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="nt">"filters"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"tags"</span><span class="p">:</span><span class="w"> </span><span class="s2">"craft"</span><span class="p">}}</span>
+</code></pre></div>
+<p>To read a hit in full, pass its path and a section heading to <code>read</code>: <code>read(path=hit["path"], section=hit["sections"][0]["heading"])</code>.</p>
+<!-- DOMAIN-EXAMPLE-search-END -->
+
+<h2 id="read"><code>read</code><a class="headerlink" href="#read" title="Permanent link">&para;</a></h2>
+<p><strong>Read Note.</strong> Read-only. Idempotent.</p>
+<p>Return a note's text, frontmatter and etag, or an attachment's bytes as
+base64.</p>
+<p>Look paths up with search or <code>list_documents</code> first rather than guessing them.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>string</code></td>
+<td>required</td>
+<td>Path in the vault, such as <code>"Journal/note.md"</code> or <code>"assets/diagram.pdf"</code>; case-sensitive.</td>
+</tr>
+<tr>
+<td><code>section</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>A heading, such as the heading field of a search result; returns that section and its sub-sections instead of the whole note. Notes only.</td>
+</tr>
+<tr>
+<td><code>revision</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>A commit SHA from <code>get_history</code> or from a write result's <code>previous_revision</code>; returns the note as it stood then, without an etag. Pass path as the note is named today. To restore that text, write it with the etag of a read without revision.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>For .md: dict with path, title, folder, content (the full raw
+file including frontmatter, or the section text when section= is
+given), frontmatter (dict:
+empty {} when section= is provided; call read(path) without
+section= to get the full document's frontmatter),
+<code>modified_at</code> (Unix timestamp), etag (SHA-256 hex str or null).
+On an active OKF bundle, whole-document reads also carry
+an 'okf' dict (type, status, stale, <code>trust_tier</code>, and the note's
+'sources' list when present); section reads omit it because they
+carry no frontmatter to derive it from.
+For attachments: dict with path, <code>mime_type</code> (str or null),
+<code>size_bytes</code> (int), <code>content_base64</code> (str), <code>modified_at</code> (Unix timestamp),
+etag (SHA-256 hex str or null).
+The 'etag' value can be passed as '<code>if_match</code>' to write, edit,
+delete, or rename to guard against concurrent modifications.
+With revision=: dict with path, <code>historical_path</code> (the name the note
+carried at that revision), revision, and content: the whole raw
+file, or just one section's body when section= is also given. No
+etag and no <code>modified_at</code> (both describe the note as it is now), and
+no 'okf' block for the same reason.</p>
+<p><strong>Outcomes and errors</strong></p>
+<ul>
+<li>ValueError: If no file exists at the given path, the extension is not in the attachment allowlist, the file exceeds <code>MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB</code>, or the requested section heading is not found. A whole note over the size limit this server returns in one read (<code>MARKDOWN_VAULT_MCP_MAX_NOTE_READ_BYTES</code>) is refused; read it by <code>section</code>. With <code>revision</code>: if the vault is not git-backed, the revision is unusable, the path is an attachment, or git's records do not show the note existing at that revision (a name later reused by a different note is refused rather than answered with the other note's content).</li>
+<li>DocumentUnreadableError: If the file cannot be read or decoded, its frontmatter does not parse, or git stores it in LFS at that revision.</li>
+</ul>
+<!-- DOMAIN-EXAMPLE-read-START -->
+<p>Read a note:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Journal/note.md"</span><span class="p">}</span>
+</code></pre></div>
+<p>returns</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Journal/note.md"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"My Note"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"folder"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Journal"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"---\ntitle: My Note\ntags: [journal]\n---\n\nThe note body.\n"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"frontmatter"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"My Note"</span><span class="p">,</span><span class="w"> </span><span class="nt">"tags"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"journal"</span><span class="p">]},</span>
+<span class="w">  </span><span class="nt">"modified_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1791052994.65</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"etag"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1f196a744076635e77bc55e674dcdd69a29d9d32614c516a51ced986a51aaebe"</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>content</code> is the raw file, frontmatter included. Pass <code>etag</code> as <code>if_match</code> to <code>write</code>, <code>edit</code>, <code>delete</code> or <code>rename</code> to change the note you read.</p>
+<!-- DOMAIN-EXAMPLE-read-END -->
+
+<h2 id="list_documents"><code>list_documents</code><a class="headerlink" href="#list_documents" title="Permanent link">&para;</a></h2>
+<p><strong>List Documents.</strong> Read-only. Idempotent.</p>
+<p>List notes, and optionally attachments, with path, title and frontmatter but
+no body text.</p>
+<p>Use search to find notes by what they say.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>folder</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Only notes in this folder and its sub-folders, such as <code>"Journal"</code>; <code>""</code> for top-level notes only; omit for the whole vault.</td>
+</tr>
+<tr>
+<td><code>pattern</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Glob matched against paths, such as <code>"Journal/*.md"</code> or <code>"**/*meeting*.md"</code>.</td>
+</tr>
+<tr>
+<td><code>include_attachments</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Also list non-note files, marked kind=<code>"attachment"</code> with their <code>mime_type</code>. Default false.</td>
+</tr>
+<tr>
+<td><code>filters</code></td>
+<td><code>object \| null</code></td>
+<td><code>null</code></td>
+<td>Frontmatter values to match, all of them, such as <code>{"tags": "craft"}</code>; any key works, a list field matches when it holds the value, and attachments never match. On an OKF bundle, status (draft, stable or deprecated; stable includes notes with none), stale (<code>"true"</code> or <code>"false"</code>) and <code>trust_tier</code> (unverified, machine-confirmed or human-reviewed) filter too.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>List of info dicts. Every entry has a 'kind' field.
+Notes: path, title, folder, frontmatter, <code>modified_at</code>, kind=<code>"note"</code>,
+and <code>content_chars</code> (int): body length in characters, frontmatter
+excluded; 0 for a note indexed before the field existed.
+Attachments (when <code>include_attachments</code>=True): path, folder,
+<code>mime_type</code>, <code>size_bytes</code>, <code>modified_at</code>, kind=<code>"attachment"</code>.
+Body content is not included in either case.</p>
+<p>Index freshness rides in the response's <code>_meta.index_stale</code>
+field: True when the IndexWriter was non-idle, a write completed
+inside the read window, or <code>wait_for_pending_writes</code> timed out; False
+otherwise.</p>
+<!-- DOMAIN-EXAMPLE-list_documents-START -->
+<p>Stale notes on an OKF bundle, for a triage pass:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"folder"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Playbooks"</span><span class="p">,</span><span class="w"> </span><span class="nt">"filters"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"stale"</span><span class="p">:</span><span class="w"> </span><span class="s2">"true"</span><span class="p">}}</span>
+</code></pre></div>
+<!-- DOMAIN-EXAMPLE-list_documents-END -->
+
+<h2 id="list_folders"><code>list_folders</code><a class="headerlink" href="#list_folders" title="Permanent link">&para;</a></h2>
+<p><strong>List Folders.</strong> Read-only. Idempotent.</p>
+<p>List every folder that holds notes; <code>""</code> stands for the top level.</p>
+<p>Pass one as the folder argument of search, <code>list_documents</code> and the other
+folder-scoped tools.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Sorted list of folder paths, such as <code>["", "Journal", "Projects"]</code>.
+Pass any of these as the 'folder' argument to 'search' or
+'<code>list_documents</code>'.</p>
+<p>Index freshness rides in the response's <code>_meta.index_stale</code>
+field: True when the IndexWriter was non-idle, a write completed
+inside the read window, or <code>wait_for_pending_writes</code> timed out; False
+otherwise.</p>
+<!-- DOMAIN-EXAMPLE-list_folders-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-list_folders-END -->
+
+<h2 id="list_tags"><code>list_tags</code><a class="headerlink" href="#list_tags" title="Permanent link">&para;</a></h2>
+<p><strong>List Tags.</strong> Read-only. Idempotent.</p>
+<p>List the distinct values one indexed frontmatter field takes across the
+vault.</p>
+<p>Use the values in the filters argument of search.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>field</code></td>
+<td><code>string</code></td>
+<td><code>"tags"</code></td>
+<td>A field from <code>indexed_frontmatter_fields</code> in stats (default <code>"tags"</code>).</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Sorted list of distinct string values, such as
+<code>["craft", "pacing", "worldbuilding"]</code>. Use these as values in the
+'filters' dict when calling 'search'.</p>
+<p>Index freshness rides in the response's <code>_meta.index_stale</code>
+field: True when the IndexWriter was non-idle, a write completed
+inside the read window, or <code>wait_for_pending_writes</code> timed out; False
+otherwise.</p>
+<p><strong>Outcomes and errors</strong></p>
+<ul>
+<li>InvalidRequestError: If field is not an indexed frontmatter field; the message names the fields that are indexed.</li>
+</ul>
+<!-- DOMAIN-EXAMPLE-list_tags-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-list_tags-END -->
+
+<h2 id="stats"><code>stats</code><a class="headerlink" href="#stats" title="Permanent link">&para;</a></h2>
+<p><strong>Vault Stats.</strong> Read-only. Idempotent.</p>
+<p>Report the vault's size, link health and capabilities: the search modes it
+serves and the frontmatter fields search can filter on.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Dict with the following fields:</p>
+<ul>
+<li><code>document_count</code> (int): Total number of indexed documents.</li>
+<li><code>chunk_count</code> (int): Total number of indexed text chunks.</li>
+<li><code>folder_count</code> (int): Total number of folders containing documents.</li>
+<li><code>semantic_search_available</code> (bool): True if mode=<code>"semantic"</code> or
+  mode=<code>"hybrid"</code> can be used in 'search'.</li>
+<li><code>indexed_frontmatter_fields</code> (list[str]): Field names usable as
+  'filters' in 'search' and as 'field' in '<code>list_tags</code>'.</li>
+<li><code>attachment_extensions</code> (list[str]): Allowed non-.md extensions, or
+  <code>["*"]</code> when any extension is allowed.</li>
+<li><code>link_count</code> (int): Total number of indexed links. 0 may mean no
+  links exist or link tracking not yet built (call 'reindex').</li>
+<li><code>broken_link_count</code> (int): Links pointing to missing documents.
+  Call '<code>get_broken_links</code>' if non-zero.</li>
+<li><code>orphan_count</code> (int): Notes with no inbound or outbound links.
+  Call '<code>get_orphan_notes</code>' if non-zero.</li>
+<li>okf (dict, optional): Present only when the vault is an active
+  OKF (Open Knowledge Format) bundle. Carries mode,
+  <code>declared_version</code>, a per-<code>type</code> histogram plus <code>untyped_count</code>,
+  status and trust-tier breakdowns, and <code>stale_count</code>. Those cover
+  the note population '<code>okf_validate</code>' audits; the reserved
+  <code>index.md</code> / <code>log.md</code> files are counted apart as
+  <code>reserved_count</code>.</li>
+</ul>
+<p>Index freshness rides in the response's <code>_meta.index_stale</code>
+field: True when the IndexWriter was non-idle, a write completed
+inside the read window, or <code>wait_for_pending_writes</code> timed out; False
+otherwise.</p>
+<!-- DOMAIN-EXAMPLE-stats-START -->
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"document_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span><span class="w"> </span><span class="nt">"chunk_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">156</span><span class="p">,</span><span class="w"> </span><span class="nt">"folder_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"> </span><span class="nt">"semantic_search_available"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w"> </span><span class="nt">"indexed_frontmatter_fields"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"tags"</span><span class="p">,</span><span class="w"> </span><span class="s2">"cluster"</span><span class="p">],</span><span class="w"> </span><span class="nt">"attachment_extensions"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"pdf"</span><span class="p">,</span><span class="w"> </span><span class="s2">"png"</span><span class="p">,</span><span class="w"> </span><span class="s2">"jpg"</span><span class="p">],</span>
+<span class="w"> </span><span class="nt">"link_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">310</span><span class="p">,</span><span class="w"> </span><span class="nt">"broken_link_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">"orphan_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">7</span><span class="p">}</span>
+</code></pre></div>
+<!-- DOMAIN-EXAMPLE-stats-END -->
+
+<h2 id="get_similar"><code>get_similar</code><a class="headerlink" href="#get_similar" title="Permanent link">&para;</a></h2>
+<p><strong>Similar Notes.</strong> Read-only. Idempotent.</p>
+<p>Find the notes closest in meaning to a given note; returns them ranked by
+similarity with their closest sections, the note itself excluded.</p>
+<p>Needs <code>semantic_search_available</code> from stats. A note whose embeddings are not
+built yet has no similar notes.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>string</code></td>
+<td>required</td>
+<td>Path of the note to compare against, such as <code>"notes/topic.md"</code>; case-sensitive.</td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td><code>integer</code></td>
+<td><code>10</code></td>
+<td>Maximum notes to return (default 10).</td>
+</tr>
+<tr>
+<td><code>chunks_per_file</code></td>
+<td><code>integer \| null</code></td>
+<td><code>null</code></td>
+<td>Maximum sections per note, at least 1; omit for the server default.</td>
+</tr>
+<tr>
+<td><code>folder</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Only notes in this folder or below, such as <code>"3-Resources"</code>; <code>""</code> for top-level notes only.</td>
+</tr>
+<tr>
+<td><code>filters</code></td>
+<td><code>object \| null</code></td>
+<td><code>null</code></td>
+<td>Frontmatter values to match, all of them, such as <code>{"type": "resource"}</code>; any key works and a list field matches when it holds the value. On an OKF bundle, status (stable includes notes with none), stale (<code>"true"</code> or <code>"false"</code>) and <code>trust_tier</code> filter too.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>List of result dicts ranked by file similarity. Each contains:</p>
+<ul>
+<li>path (str): Relative path of the similar document.</li>
+<li>title (str): Document title.</li>
+<li>folder (str): Parent folder path.</li>
+<li>score (float): File-level cosine similarity (max of section
+  scores), 0.0-1.0; higher = more similar.</li>
+<li><code>search_type</code> (str): Always <code>"semantic"</code>.</li>
+<li>frontmatter (dict): Parsed YAML frontmatter.</li>
+<li>
+<p>sections (list[dict]): Up to <code>chunks_per_file</code> best-matching
+  sections, each with:</p>
+</li>
+<li>
+<p>heading (str | None): Section heading or null for intro.</p>
+</li>
+<li>content (str): Matched chunk text.</li>
+<li>score (float): Chunk-level score for this section.</li>
+</ul>
+<p>Index freshness is reported out-of-band in the response's
+<code>_meta.index_stale</code> field: True when the IndexWriter had
+pending or in-flight work at any of three observation points
+(<code>wait_for_pending_writes</code> timing out, a write completing inside the
+read window, or non-idle at response time), False otherwise.</p>
+<p><strong>Outcomes and errors</strong></p>
+<ul>
+<li>DocumentNotFoundError: If no document exists at the given path.</li>
+<li>EmbeddingsNotConfiguredError: If the vault has no embeddings.</li>
+<li>InvalidRequestError: If <code>chunks_per_file</code> is below 1.</li>
+<li>ToolError: If the index is busy or still building; retry shortly.</li>
+<li>IndexUnavailableError: If the index build failed or the index is broken; <code>get_index_status</code> reports the error.</li>
+</ul>
+<!-- DOMAIN-EXAMPLE-get_similar-START -->
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3-Resources/okf.md"</span><span class="p">,</span><span class="w"> </span><span class="nt">"folder"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3-Resources"</span><span class="p">,</span><span class="w"> </span><span class="nt">"filters"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"resource"</span><span class="p">},</span><span class="w"> </span><span class="nt">"chunks_per_file"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">}</span>
+</code></pre></div>
+<!-- DOMAIN-EXAMPLE-get_similar-END -->
+
+<h2 id="get_toc"><code>get_toc</code><a class="headerlink" href="#get_toc" title="Permanent link">&para;</a></h2>
+<p><strong>Table of Contents.</strong> Read-only. Idempotent.</p>
+<p>Return the heading outline of a note, or of every note under a folder.</p>
+<p>For a note: a list of {heading, level}, the title first as level 1. For a
+folder: {path, notes, truncated}, each note with its path, title and headings.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>string</code></td>
+<td>required</td>
+<td>A note path ending in .md, such as <code>"a/b.md"</code>, or a folder, such as <code>"a/b"</code>.</td>
+</tr>
+<tr>
+<td><code>max_level</code></td>
+<td><code>integer \| null</code></td>
+<td><code>null</code></td>
+<td>Deepest heading level to keep, such as 2 for H1 and H2; omit for all. The title always stays.</td>
+</tr>
+<tr>
+<td><code>max_notes</code></td>
+<td><code>integer</code></td>
+<td><code>200</code></td>
+<td>Folders only: notes to include, first by path (default 200); truncated is true when more exist.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Note mode: list of {heading (str), level (int)}.
+Folder mode: {path (str), notes (list[{path, title, headings,
+<code>content_chars</code>}]), truncated (bool)}. Empty/nonexistent folder → empty
+'notes'. Each note's <code>content_chars</code> (int) is its body length in
+characters, frontmatter excluded; 0 for a note indexed before the
+field existed.</p>
+<p>Index freshness is reported out-of-band in '_meta.<code>index_stale</code>'.</p>
+<p><strong>Outcomes and errors</strong></p>
+<ul>
+<li>ValueError: Note path with no document; invalid folder path.</li>
+<li>ToolError: If the index is busy or still building; retry shortly.</li>
+<li>IndexUnavailableError: If the index build failed or the index is broken; <code>get_index_status</code> reports the error.</li>
+</ul>
+<!-- DOMAIN-EXAMPLE-get_toc-START -->
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1-Projects/export"</span><span class="p">,</span><span class="w"> </span><span class="nt">"max_level"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="nt">"max_notes"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span><span class="p">}</span>
+</code></pre></div>
+<p>returns</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1-Projects/export"</span><span class="p">,</span><span class="w"> </span><span class="nt">"notes"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1-Projects/export/plan.md"</span><span class="p">,</span><span class="w"> </span><span class="nt">"title"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Plan"</span><span class="p">,</span><span class="w"> </span><span class="nt">"headings"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"heading"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Plan"</span><span class="p">,</span><span class="w"> </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">},</span><span class="w"> </span><span class="p">{</span><span class="nt">"heading"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Scope"</span><span class="p">,</span><span class="w"> </span><span class="nt">"level"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">}],</span><span class="w"> </span><span class="nt">"content_chars"</span><span class="p">:</span><span class="w"> </span><span class="mi">4120</span><span class="p">}],</span><span class="w"> </span><span class="nt">"truncated"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">}</span>
+</code></pre></div>
+<!-- DOMAIN-EXAMPLE-get_toc-END -->
+
+<h2 id="get_recent"><code>get_recent</code><a class="headerlink" href="#get_recent" title="Permanent link">&para;</a></h2>
+<p><strong>Recent Notes.</strong> Read-only. Idempotent.</p>
+<p>List the most recently modified notes, newest first.</p>
+<p>Use it to pick up recent activity without a search query.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>limit</code></td>
+<td><code>integer</code></td>
+<td><code>20</code></td>
+<td>Maximum notes to return (default 20).</td>
+</tr>
+<tr>
+<td><code>folder</code></td>
+<td><code>string \| null</code></td>
+<td><code>null</code></td>
+<td>Only notes in this folder and its sub-folders, such as <code>"Journal"</code>; <code>""</code> for top-level notes only; omit for the whole vault.</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>One dict per note, each with: path, title, folder,
+frontmatter, <code>modified_at</code> (Unix timestamp), kind (<code>"note"</code>), and
+<code>content_chars</code> (int): body length in characters, frontmatter excluded;
+0 for a note indexed before the field existed.</p>
+<p>Index freshness rides in the response's <code>_meta.index_stale</code>
+field: True when the IndexWriter was non-idle, a write completed
+inside the read window, or <code>wait_for_pending_writes</code> timed out; False
+otherwise.</p>
+<!-- DOMAIN-EXAMPLE-get_recent-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-get_recent-END -->
+
+<h2 id="get_context"><code>get_context</code><a class="headerlink" href="#get_context" title="Permanent link">&para;</a></h2>
+<p><strong>Note Context.</strong> Read-only. Idempotent.</p>
+<p>Return a note's metadata, backlinks, outlinks, similar notes, folder
+neighbours, indexed tags and applicable conventions in one call.</p>
+<p>Use it instead of <code>get_backlinks</code>, <code>get_outlinks</code> and <code>get_similar</code> when you need more
+than one of them.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>string</code></td>
+<td>required</td>
+<td>Path of the note, such as <code>"notes/topic.md"</code>; case-sensitive.</td>
+</tr>
+<tr>
+<td><code>similar_limit</code></td>
+<td><code>integer</code></td>
+<td><code>5</code></td>
+<td>Maximum similar notes (default 5); 0 skips them, which suits a vault where stats shows <code>semantic_search_available</code> false.</td>
+</tr>
+<tr>
+<td><code>link_limit</code></td>
+<td><code>integer</code></td>
+<td><code>10</code></td>
+<td>Maximum backlinks, and separately outlinks (default 10).</td>
+</tr>
+<tr>
+<td><code>wait_for_pending_writes</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Wait for recent index writes. On timeout, answer from the current index with _meta.<code>index_stale</code>=true. Default false.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Dict with the note context. Fields:</p>
+<ul>
+<li>path (str): Relative path of the document.</li>
+<li>title (str): Document title.</li>
+<li>folder (str): Parent folder path.</li>
+<li>frontmatter (dict): Parsed YAML frontmatter.</li>
+<li><code>modified_at</code> (float): Unix timestamp of last modification.</li>
+<li>
+<p>backlinks (list): Documents linking to this note. List of dicts,
+  each with:</p>
+</li>
+<li>
+<p><code>source_path</code> (str): Path of the document containing the link.</p>
+</li>
+<li><code>source_title</code> (str): Title of the source document.</li>
+<li><code>link_text</code> (str): The clickable text of the link.</li>
+<li><code>link_type</code> (str): One of <code>"markdown"</code>, <code>"wikilink"</code>, or <code>"reference"</code>.</li>
+<li>fragment (str | None): Heading anchor (such as <code>"#section"</code>), or null.</li>
+<li>
+<p><code>raw_target</code> (str): Literal link target as written in the source.</p>
+</li>
+<li>
+<p>outlinks (list): Links from this note. List of dicts, each with:</p>
+</li>
+<li>
+<p><code>target_path</code> (str): Path of the linked document.</p>
+</li>
+<li><code>link_text</code> (str): The clickable text of the link.</li>
+<li><code>link_type</code> (str): One of <code>"markdown"</code>, <code>"wikilink"</code>, or <code>"reference"</code>.</li>
+<li>fragment (str | None): Heading anchor (such as <code>"#section"</code>), or null.</li>
+<li><code>raw_target</code> (str): Literal link target as written in the source.</li>
+<li>
+<p>exists (bool): True if the target document is indexed.</p>
+</li>
+<li>
+<p>similar (list): Semantically similar notes, field-collapsed by
+  file (<code>chunks_per_file</code>=1 for compact dossiers).  List of dicts,
+  each with:</p>
+</li>
+<li>
+<p>path (str): Relative path of the similar document.</p>
+</li>
+<li>title (str): Document title.</li>
+<li>folder (str): Parent folder path.</li>
+<li>score (float): File-level cosine similarity 0.0-1.0 = score
+    of the best matching section.</li>
+<li><code>search_type</code> (str): Always <code>"semantic"</code>.</li>
+<li>frontmatter (dict): Parsed YAML frontmatter.</li>
+<li>
+<p>sections (list): Single best-matching section, each with
+    heading (str|null), content (str), score (float).
+    Call <code>get_similar</code>(path, <code>chunks_per_file</code>=N) for more sections.</p>
+</li>
+<li>
+<p><code>folder_notes</code> (list[str]): Paths of other notes in the same
+  folder (up to 20). Plain strings, not dicts.</p>
+</li>
+<li>tags (dict[str, list[str]]): Indexed frontmatter field →
+  distinct values for this note.</li>
+<li>conventions (list, optional): the user's authoring conventions
+  for the note's folder (root-first list of {folder, path,
+  content}). Present only when convention files apply. Honor
+  them when writing to or proposing links involving this note;
+  some folders are self-contained by design.</li>
+<li>okf (dict, optional): OKF read annotation for this note
+  (type, status, stale, <code>trust_tier</code>, <code>sources_count</code>). Present
+  only when the vault is an active OKF bundle.</li>
+</ul>
+<p>Index freshness is reported out-of-band in the response's
+<code>_meta.index_stale</code> field: True when the IndexWriter had
+pending or in-flight work at any of three observation points
+(<code>wait_for_pending_writes</code> timing out, a write completing inside the
+read window, or non-idle at response time), False otherwise.</p>
+<p><strong>Outcomes and errors</strong></p>
+<ul>
+<li>ValueError: If no document exists at the given path.</li>
+<li>ToolError: If the index is busy or still building; retry shortly.</li>
+<li>IndexUnavailableError: If the index build failed or the index is broken; <code>get_index_status</code> reports the error.</li>
+</ul>
+<!-- DOMAIN-EXAMPLE-get_context-START -->
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3-Resources/okf.md"</span><span class="p">,</span><span class="w"> </span><span class="nt">"similar_limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">"link_limit"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">}</span>
+</code></pre></div>
+<p>With <code>similar_limit</code> at <code>0</code> the similarity lookup is skipped, as for a vault without embeddings.</p>
+<!-- DOMAIN-EXAMPLE-get_context-END -->
+
+<h2 id="get_conventions"><code>get_conventions</code><a class="headerlink" href="#get_conventions" title="Permanent link">&para;</a></h2>
+<p><strong>Folder Conventions.</strong> Read-only. Idempotent.</p>
+<p>Return the vault owner's authoring conventions for a note or folder, vault
+root first and the most specific last.</p>
+<p><strong>Parameters</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>A note or folder path, such as <code>"3-Resources/topic.md"</code> or <code>"3-Resources"</code>; a note takes its folder's conventions. <code>""</code> (the default) returns the root conventions and lists every folder that has its own.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns</strong></p>
+<p>Dict with:</p>
+<ul>
+<li>path (str): The path that was queried.</li>
+<li>conventions (list): Applicable convention entries, root-first.
+  Each has folder (str, <code>""</code> for vault root), path (str, the
+  convention file's own path), and content (str, its markdown
+  body).</li>
+<li><code>convention_folders</code> (list[str], discovery mode only): all
+  folders carrying a convention file (<code>""</code> = vault root),
+  included only when path is <code>""</code>; it requires a vault-wide
+  folder walk, so a call with a path skips it.</li>
+</ul>
+<p>Convention files are left out of search and listings but can be read
+and edited like any note. This tool reads them from disk, so it
+answers while the index is still building.</p>
+<p><strong>Outcomes and errors</strong></p>
+<ul>
+<li>ValueError: If the path escapes the vault root.</li>
+</ul>
+<!-- DOMAIN-EXAMPLE-get_conventions-START -->
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3-Resources/topic.md"</span><span class="p">}</span>
+</code></pre></div>
+<p>returns the conventions that apply, root first:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3-Resources/topic.md"</span><span class="p">,</span><span class="w"> </span><span class="nt">"conventions"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span><span class="nt">"folder"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"_conventions.md"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"…"</span><span class="p">},</span><span class="w"> </span><span class="p">{</span><span class="nt">"folder"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3-Resources"</span><span class="p">,</span><span class="w"> </span><span class="nt">"path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3-Resources/_conventions.md"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Keep notes self-contained; do not link out to project notes."</span><span class="p">}]}</span>
+</code></pre></div>
+<!-- DOMAIN-EXAMPLE-get_conventions-END -->
+
+<h2 id="okf_validate"><code>okf_validate</code><a class="headerlink" href="#okf_validate" title="Permanent link">&para;</a></h2>
+<p><strong>Validate OKF Bundle.</strong> Read-only. Idempotent. Tags: <code>okf</code>.</p>
+<p>Audit how far the vault conforms to the Open Knowledge Format, with example paths per rule; works on a vault not yet declared as a bundle.</p>
+<p><strong>Parameters</strong></p>
+<p>None.</p>
+<p><strong>Returns</strong></p>
+<p>Report dict. The audit reads the vault from disk, so it works before
+the index is built, and it skips the vault's excluded paths. Every
+rule except <code>root_index_missing</code> is a finding with <code>count</code> (int) and
+up to 20 <code>examples</code> (list[str] of paths).</p>
+<ul>
+<li>mode (str), <code>declared_version</code> (str | None), active (bool): the
+  detection state.</li>
+<li><code>total_notes</code> (int), <code>conformant_notes</code> (int): the progress ratio;
+  the reserved index.md and log.md are not counted as notes.</li>
+</ul>
+<p>Conformance rules, which the format requires:</p>
+<ul>
+<li><code>missing_type</code>: notes without a non-empty <code>type</code>; the reserved
+  index.md and log.md are exempt.</li>
+<li><code>unparseable_frontmatter</code>: notes whose frontmatter does not parse.</li>
+<li><code>misplaced_okf_version</code>: <code>okf_version</code> declared anywhere but the
+  root index.md.</li>
+<li><code>index_frontmatter</code>: index.md files carrying frontmatter, any on a
+  folder index and anything but <code>okf_version</code> on the root,
+  server-generated indexes included.</li>
+</ul>
+<p>Advisory rules, tolerated but worth fixing:</p>
+<ul>
+<li><code>unknown_status</code>: a <code>status</code> outside draft, stable and deprecated.</li>
+<li><code>log_heading_shape</code>: log.md files whose <code>##</code> headings are not
+  YYYY-MM-DD dates.</li>
+<li><code>root_index_missing</code> (bool): true when the root index.md is absent.</li>
+</ul>
+<p>Informational rules, not deviations:</p>
+<ul>
+<li><code>wikilink_files</code>: notes containing wikilinks, which matter only when
+  exporting.</li>
+<li><code>missing_recommended</code>: notes without the recommended <code>title</code> or
+  <code>description</code>.</li>
+</ul>
+<!-- DOMAIN-EXAMPLE-okf_validate-START -->
+<!-- A worked example for this tool; kept across regeneration. -->
+<!-- DOMAIN-EXAMPLE-okf_validate-END -->
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../../javascripts/config-wizard/wizard.js" type="module"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,122 @@
+# OIDC Authentication
+
+Optional token-based authentication for HTTP deployments. OIDC activates automatically based on which environment variables are set. For an overview of all authentication modes (bearer token, OIDC, no auth), see the [Authentication guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/authentication/index.md).
+
+Transport requirement
+
+OIDC requires `--transport http` (or `sse`). It has no effect with `--transport stdio`.
+
+## Which mode
+
+The server accepts a provider's sign-in in one of two ways, and the choice turns on one question: who is the provider's registered client?
+
+- **`remote`**: the registered client is your MCP client. It gets its token from the provider and presents it; the server validates the token's signature against the provider's published keys and holds no client secret. Two things must hold. The provider issues access tokens as signed JSON Web Tokens (Keycloak does; Authelia only when the client sets `access_token_signed_response_alg`; Google never does). And the client can become a registered client: either the provider accepts Dynamic Client Registration, or you register the client by hand and configure the MCP client with it (Claude Code's `--client-id`, a claude.ai connector's **Use your own OAuth client**). Token refresh is between the client and the provider; the server never sees it.
+- **`oidc-proxy`**: the registered client is the server itself. One registration with the provider covers every MCP client because clients register with the server rather than the provider. Its default is to verify the provider's ID token; opaque access tokens are no obstacle. It re-validates that upstream token on every request, so a session ends when the upstream token expires whatever the client could refresh. The server holds the client secret.
+
+The rule: `remote` when both of its conditions hold for your provider and your clients, `oidc-proxy` otherwise. [OIDC providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc-providers/index.md) says which holds for Authelia, Keycloak, Google and GitHub, and walks through each.
+
+## Auth Modes
+
+| Mode           | Required Variables                                                    | Description                                          |
+| -------------- | --------------------------------------------------------------------- | ---------------------------------------------------- |
+| **remote**     | `BASE_URL`, `OIDC_CONFIG_URL`                                         | Local JWKS validation. No client credentials needed. |
+| **oidc-proxy** | `BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | Full OAuth proxy with session management.            |
+
+Set `MARKDOWN_VAULT_MCP_AUTH_MODE` to state the mode, or let the server auto-detect it from which variables are set.
+
+## Remote Mode Variables
+
+| Variable                             | Description                   |
+| ------------------------------------ | ----------------------------- |
+| `MARKDOWN_VAULT_MCP_BASE_URL`        | Public base URL of the server |
+| `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` | OIDC discovery endpoint       |
+
+Optional: `OIDC_AUDIENCE`, `OIDC_REQUIRED_SCOPES` (same as OIDCProxy mode). Without either, the server accepts any unexpired token the issuer signed, whichever client it was issued to; set `OIDC_AUDIENCE` to the value your provider puts in tokens meant for this server.
+
+No `CLIENT_ID` or `CLIENT_SECRET` needed. Tokens are validated locally via JWKS.
+
+## OIDCProxy Required Variables
+
+| Variable                                | Description                                                                                                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MARKDOWN_VAULT_MCP_BASE_URL`           | Public base URL of the deployed server (`https://mcp.example.com`). Required for OIDC. Also the fallback source of the MCP Apps domain when `app_domain` is unset. |
+| `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL`    | OIDC discovery document URL (`https://auth.example.com/.well-known/openid-configuration`).                                                                         |
+| `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID`     | OIDC client identifier registered with the provider.                                                                                                               |
+| `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` | OIDC client secret registered with the provider.                                                                                                                   |
+
+## Optional Variables
+
+| Variable                                      | Default                 | Description                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE`            | (none)                  | Expected `aud` claim; tokens issued for another audience are rejected.                                                                                                                                                                                                                                                                                                        |
+| `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES`     | `openid`                | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode.                                                                                                                                                                                                                                                                             |
+| `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`   | `openid offline_access` | Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (such as `groups`) without also requiring them in every token. |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | `derived`               | Signing key for issued tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret then invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`.                                    |
+| `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false`                 | Validate the access token instead of the id token.                                                                                                                                                                                                                                                                                                                            |
+
+## JWT Signing Key
+
+The signing key applies to oidc-proxy mode; remote mode does not use it. When `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` is unset, FastMCP derives the signing key from the OIDC client secret using deterministic key derivation, so the key stays the same across restarts and tokens keep validating.
+
+The real reason to set an explicit key is secret rotation: because the default key is derived from the client secret, rotating that secret changes the derived key and invalidates every token issued under the old one. Setting an explicit signing key decouples token validity from client-secret rotation:
+
+```
+# Generate once, store in your .env file
+openssl rand -hex 32
+```
+
+## Provider setup
+
+The provider's side, the client to register, the discovery URL and the variables for each, is on [OIDC providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc-providers/index.md): Authelia, Keycloak, Google, and GitHub through a broker.
+
+## Architecture
+
+### Remote mode
+
+The server validates tokens locally using JWKS, with no upstream token calls after startup:
+
+```
+Client → IdP (authenticate + get JWT)
+Client → markdown-vault-mcp (present JWT → validate via JWKS)
+```
+
+1. Client authenticates directly with the OIDC provider
+1. Client presents the JWT access token to the MCP server
+1. Server validates the token locally using the provider's JWKS keys
+1. No upstream calls. Token refresh is between client and IdP.
+
+### OIDCProxy mode
+
+The server uses FastMCP's built-in `OIDCProxy` auth provider (not the external `mcp-auth-proxy` sidecar). The authentication flow:
+
+```
+Client → markdown-vault-mcp (with OIDCProxy) → OIDC Provider (Authelia/Keycloak)
+```
+
+1. Client connects to the MCP server
+1. Server redirects to the OIDC provider for authentication
+1. Provider authenticates the user and returns a code
+1. Server exchanges the code for tokens
+1. Subsequent requests include the JWT token
+
+## Docker Compose with OIDC
+
+OIDC needs no change to `compose.yml`. Put the server behind the reverse proxy with the `compose.override.yml` from [Reverse proxy](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/reverse-proxy/#its-own-hostname), unchanged, and add the OIDC settings to `.env`.
+
+The `.env` additions:
+
+```
+MARKDOWN_VAULT_MCP_BASE_URL=https://mcp.example.com
+MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL=https://auth.example.com/.well-known/openid-configuration
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID=my-mcp-server
+MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET=your-client-secret
+MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY=your-stable-hex-key
+```
+
+For a prefixed deployment (such as `https://mcp.example.com/myservice/mcp`), see [A path prefix](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/reverse-proxy/#a-path-prefix).
+
+## Subpath Deployments
+
+A deployment under a path prefix, and every routing rule it needs, is on [Reverse proxy](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/reverse-proxy/#a-path-prefix).
+
+The claims this server reads from a token, for git commit authorship, are under [Claims this server reads](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc-providers/#claims-this-server-reads).

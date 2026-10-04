@@ -1,0 +1,241 @@
+# Authentication
+
+This guide covers how to protect your MCP server with authentication. Choose the mode that fits your deployment.
+
+Transport requirement
+
+Authentication only works with HTTP transport (`--transport http` or `sse`). It has no effect with `--transport stdio`.
+
+## Auth modes
+
+The server supports five authentication modes:
+
+| Mode                  | When to use                                                                                                                                                                                                       | Configuration                                                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Multi-auth**        | Mixed clients, such as Claude web (OIDC) + Claude Code (bearer token) on the same server                                                                                                                          | Set both `MARKDOWN_VAULT_MCP_BEARER_TOKEN` and the OIDC variables                                   |
+| **Bearer token**      | Simple deployments behind a VPN, Docker compose stacks, development                                                                                                                                               | Set `MARKDOWN_VAULT_MCP_BEARER_TOKEN` only                                                          |
+| **OIDC (remote)**     | Production with user identity, SSO, multi-user access; local JWKS validation, no confidential client to register ([which mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc/#which-mode)) | Set `MARKDOWN_VAULT_MCP_BASE_URL` + `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL` only                       |
+| **OIDC (oidc-proxy)** | The same, where the server should run the OAuth flow itself and manage sessions                                                                                                                                   | Set all four OIDC variables (`BASE_URL`, `OIDC_CONFIG_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`) |
+| **No auth**           | Local stdio usage, trusted networks; see [Security model](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/security-model/index.md)                                                                       | Default (nothing to configure)                                                                      |
+
+When both bearer token and OIDC are configured, the server accepts **either** credential: a valid bearer token or a valid OIDC session. This is useful when different clients require different authentication flows against the same server instance.
+
+______________________________________________________________________
+
+## Bearer token
+
+The simplest way to protect your server. A single static token shared between server and clients.
+
+### Setup
+
+1. Generate a random token:
+
+   ```
+   openssl rand -hex 32
+   ```
+
+1. Set the environment variable:
+
+   ```
+   MARKDOWN_VAULT_MCP_BEARER_TOKEN=your-generated-token
+   ```
+
+1. Start the server with HTTP transport:
+
+   ```
+   markdown-vault-mcp serve --transport http --port 8000
+   ```
+
+### Client usage
+
+Clients must include the token in every request:
+
+```
+Authorization: Bearer your-generated-token
+```
+
+### When to use bearer token
+
+- Deployments behind a VPN or firewall
+- Docker compose stacks where services communicate internally
+- Development and testing environments
+- Any scenario where full OIDC is overkill
+
+### Mapped bearer tokens (multi-subject)
+
+The bearer-token mode above shares one subject across every authenticated caller. By default this is the library's `bearer-anon`; override with `MARKDOWN_VAULT_MCP_BEARER_DEFAULT_SUBJECT`. For audit logs and authorization that distinguish callers, switch to mapped-token mode by pointing `MARKDOWN_VAULT_MCP_BEARER_TOKENS_FILE` at a TOML file:
+
+```
+# tokens.toml
+[tokens]
+"ghp_alice_xxxxxxxx" = "user:alice@example.com"
+"sk_ci_yyyyyyyy"     = "service:ci-bot"
+```
+
+Each token resolves to a distinct subject string for downstream attribution. Subject strings are opaque: the `<kind>:<id>` convention (`user:`, `service:`, `token:`) is documentation only. When `BEARER_TOKENS_FILE` is set it overrides `BEARER_TOKEN` (a `WARNING` is logged if both are present). A missing or malformed file aborts startup with `ConfigurationError` rather than silently denying every request.
+
+______________________________________________________________________
+
+## OIDC
+
+Full OAuth 2.1 authentication using an external identity provider. Supports user login flows, SSO, and multi-user access control. Which of the two OIDC modes runs follows from which variables are set; `MARKDOWN_VAULT_MCP_AUTH_MODE` states the choice instead of leaving it to be inferred. Which mode to choose is decided on the OIDC page's [Which mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc/#which-mode); the provider pages are on [OIDC providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc-providers/index.md).
+
+### How remote mode works
+
+The client authenticates with the identity provider and presents the resulting token, which the server validates locally against the provider's JWKS:
+
+```
+Client → OIDC Provider (log in, get JWT)
+Client → markdown-vault-mcp (present JWT, validated via JWKS)
+```
+
+No redirect passes through the server and no code exchange happens, so the provider needs no client registered for this server.
+
+### How oidc-proxy mode works
+
+The server proxies OIDC itself, with no external auth sidecar to deploy:
+
+```
+Client → markdown-vault-mcp → OIDC Provider
+```
+
+1. Client connects to the server
+1. Server redirects to the OIDC provider for login
+1. Provider authenticates the user and returns a code
+1. Server exchanges the code for tokens
+1. Subsequent requests include the JWT
+
+### Remote mode variables
+
+`MARKDOWN_VAULT_MCP_BASE_URL` and `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL`, plus any of the optional variables below. Omitting the two client credentials is what selects this mode.
+
+### OIDCProxy required variables
+
+| Variable                                | Description                                                                                                                                                        |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MARKDOWN_VAULT_MCP_BASE_URL`           | Public base URL of the deployed server (`https://mcp.example.com`). Required for OIDC. Also the fallback source of the MCP Apps domain when `app_domain` is unset. |
+| `MARKDOWN_VAULT_MCP_OIDC_CONFIG_URL`    | OIDC discovery document URL (`https://auth.example.com/.well-known/openid-configuration`).                                                                         |
+| `MARKDOWN_VAULT_MCP_OIDC_CLIENT_ID`     | OIDC client identifier registered with the provider.                                                                                                               |
+| `MARKDOWN_VAULT_MCP_OIDC_CLIENT_SECRET` | OIDC client secret registered with the provider.                                                                                                                   |
+
+### Optional variables
+
+| Variable                                      | Default                 | Description                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_OIDC_AUDIENCE`            | (none)                  | Expected `aud` claim; tokens issued for another audience are rejected.                                                                                                                                                                                                                                                                                                        |
+| `MARKDOWN_VAULT_MCP_OIDC_REQUIRED_SCOPES`     | `openid`                | Scopes a caller must present, space- or comma-separated. Defaults to `openid` in oidc-proxy mode.                                                                                                                                                                                                                                                                             |
+| `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES`   | `openid offline_access` | Scopes advertised to MCP clients in protected-resource metadata, space- or comma-separated. Overrides the default `openid offline_access`; `oidc_required_scopes` is always added on top. Set this when the registered client is not permitted `offline_access`, or to have clients request extra claim scopes (such as `groups`) without also requiring them in every token. |
+| `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`     | `derived`               | Signing key for issued tokens; used in oidc-proxy mode only. When unset, the key is derived deterministically from `oidc_client_secret`, so tokens survive a restart. Rotating that secret then invalidates every issued token. Set this explicitly to decouple token validity from secret rotation. Generate with `openssl rand -hex 32`.                                    |
+| `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` | `false`                 | Validate the access token instead of the id token.                                                                                                                                                                                                                                                                                                                            |
+
+JWT signing key and secret rotation
+
+When `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY` is unset, FastMCP derives the signing key from the OIDC client secret, so the key stays the same across restarts. Rotating the client secret changes the derived key and invalidates every token issued under the old one. Set an explicit key to decouple token validity from client-secret rotation:
+
+```
+openssl rand -hex 32
+```
+
+Long-running sessions
+
+Not every client refreshes a token, and most providers issue no refresh token unless `offline_access` was requested, which Claude Code does not do on its own; see [Known Limitations](#known-limitations-mcp-oauth-token-refresh). Configure **all** token lifetimes (access, id, refresh) on your identity provider to cover a full workday (8 hours or more). For simpler deployments, bearer token auth is unaffected by these limitations.
+
+For the full OIDC reference (env vars, Docker Compose, subpath deployments, architecture):
+
+- [OIDC Authentication reference](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc/index.md)
+
+______________________________________________________________________
+
+## Troubleshooting
+
+### "invalid client" error
+
+The `client_id` and/or `redirect_uris` in your OIDC provider config don't match the values in your `.env` file. Verify both sides match exactly.
+
+### Tokens invalidated after a client-secret rotation
+
+You're missing `MARKDOWN_VAULT_MCP_OIDC_JWT_SIGNING_KEY`. Without it, FastMCP derives the signing key from the OIDC client secret, so rotating that secret changes the derived key and invalidates every token issued under the old one. Generate and set a stable key to decouple token validity from secret rotation:
+
+```
+openssl rand -hex 32
+```
+
+### Auth has no effect
+
+Authentication only works with HTTP transport. If you're using `--transport stdio`, auth is silently ignored. Switch to `--transport http`.
+
+### Bearer token not working
+
+- Verify the env var is set and non-empty (whitespace-only values are ignored)
+- Check that clients send `Authorization: Bearer <token>` (not `Basic` or other schemes)
+- If OIDC is also configured, multi-auth is active: both bearer and OIDC are accepted simultaneously
+
+### OIDC redirect fails
+
+- Verify `BASE_URL` matches your public URL exactly (including any subpath prefix)
+- For subpath deployments, see [A path prefix](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/reverse-proxy/#a-path-prefix); `BASE_URL` must include the prefix, `HTTP_PATH` must not
+- Check that `redirect_uris` in your provider config includes your callback URL (such as `https://mcp.example.com/auth/callback`)
+
+### Session drops after token expiry
+
+**Symptom:** the MCP client works for a period (often ~1 hour), then starts returning 401 errors or stops responding. Restarting the client fixes it temporarily.
+
+**Root cause:** this is almost always a token lifetime issue, not a server bug. Check three things:
+
+1. **id_token lifetime** (most common): In `oidc-proxy` mode the server verifies the upstream `id_token` by default (unless `MARKDOWN_VAULT_MCP_OIDC_VERIFY_ACCESS_TOKEN` is `true`), and re-validates it on every request. If your provider's `id_token` lifetime is shorter than the `access_token` lifetime, the session dies at the `id_token` expiry, even though the access token is still valid. Authelia defaults `id_token` to 1 hour. **Fix: set `id_token` lifetime to match `access_token`** in your provider config.
+1. **access_token lifetime**: If both `id_token` and `access_token` are set correctly but sessions still drop, check that the provider's `expires_in` response matches your configured lifetime.
+1. **No refresh token**: the client holds none, so the session ends at the token lifetime. Claude Code does not request `offline_access` itself, and in `remote` mode nothing else asks the provider for it; see [Known Limitations](#known-limitations-mcp-oauth-token-refresh) below.
+
+**Workaround:** configure **all** token lifetimes on your identity provider to cover a full workday. The Authelia client on the [OIDC providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc-providers/#authelia) page carries such a lifespan.
+
+### Opaque access tokens (Authelia)
+
+Authelia issues opaque (non-JWT) access tokens unless the client sets `access_token_signed_response_alg`. In `oidc-proxy` mode this needs no configuration: the server verifies the `id_token` instead. In `remote` mode the server validates the access token as a signed JWT, so it refuses an opaque one; use `oidc-proxy`, or have Authelia sign the client's access tokens. [Which mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc/#which-mode) has the rule.
+
+______________________________________________________________________
+
+## Known Limitations: MCP OAuth token refresh
+
+Ecosystem-wide issue
+
+The limitations below affect **all** OAuth-protected MCP servers, not just this one. They come from the MCP clients and the MCP Python SDK, not from this server. The state of each is as of 2026-10-02; check the linked issues for current status.
+
+### The problem
+
+An OIDC session lasts as long as the client can keep a valid access token. Whether it outlives the token's lifetime depends on the client holding a refresh token and using it, and on the provider issuing one.
+
+### Where refresh stands
+
+| Layer              | State                                                                                                                                                  | Impact                                                                                                                                                                                                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Claude Code**    | Refreshes a stored token when a request returns `401` and retries once; when the provider rejects the refresh token, `/mcp` offers **Re-authenticate** | A session survives token expiry when the client holds a refresh token                                                                                                                                                                                                                                                                |
+| **Claude Code**    | Does not ask for `offline_access` on its own ([claude-code#7744](https://github.com/anthropics/claude-code/issues/7744), closed as not planned)        | Most providers issue no refresh token without that scope. In `oidc-proxy` mode the server asks the provider for `offline_access` itself, so the grant the proxy obtains carries one; in `remote` mode the client's request decides, and the server's advertised scopes (`openid offline_access` by default) are a hint it may ignore |
+| **MCP Python SDK** | Token refresh deadlocks inside SSE streams ([python-sdk#1326](https://github.com/modelcontextprotocol/python-sdk/issues/1326), open)                   | A client built on the SDK hangs when refreshing during an active stream                                                                                                                                                                                                                                                              |
+
+In `oidc-proxy` mode the proxy re-validates the upstream token on every request, so the session ends when the upstream access or ID token expires, however long the proxy's own token lives.
+
+### What works today
+
+**Bearer token auth** is unaffected by all of the above. If your deployment allows it (such as Claude Code with env vars, or API clients), bearer tokens are the simplest and most reliable option.
+
+**Long token lifetimes** are the dependable setting for OIDC. Set all three lifetimes (access, id, refresh) to cover your typical session duration:
+
+- `access_token: '8h'`: covers a workday
+- `id_token: '8h'`: **must match access_token** in `oidc-proxy` mode, which verifies the `id_token` by default (critical for Authelia)
+- `refresh_token: '30d'`: for the clients that refresh
+- Permit `offline_access` for the registered client; the server advertises it by default, so a client that honours the advertised scopes requests it. Where the client may not hold that scope, narrow what the server advertises with `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES` rather than letting the authorization request fail
+
+What a longer lifetime costs is how long a leaked token stays usable. The server checks an access or ID token's signature, issuer and expiry against the provider's published keys; it does not ask the provider whether the token was revoked since. A token copied from a client's storage or a log works for its remaining lifetime (up to 8 hours with the values above), even after the user is disabled or the session revoked at the provider. A refresh token is checked by the provider each time it is used, so revoking it there takes effect at the next refresh; until then it lets its holder mint new access tokens for up to 30 days. Choose lifetimes you would accept as that exposure window, and keep them shorter where re-authenticating during a session is acceptable.
+
+### Tracking
+
+- [anthropics/claude-code#7744](https://github.com/anthropics/claude-code/issues/7744): `offline_access` scope never requested (closed, not planned)
+- [modelcontextprotocol/python-sdk#1326](https://github.com/modelcontextprotocol/python-sdk/issues/1326): SSE refresh deadlock (open)
+
+## This server and authentication
+
+Which OIDC mode to run follows the rule under [Which mode](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/oidc/#which-mode); this server adds no preference of its own. A ready-to-use bearer-token environment is in [`examples/bearer-auth.env`](https://github.com/pvliesdonk/markdown-vault-mcp/blob/main/examples/bearer-auth.env).
+
+### Bearer subjects and OKF provenance
+
+Mapped bearer tokens resolve to subject strings, but for OKF provenance they remain service credentials: writes use the server's tool actor, and confirmed reviews in `elicit` mode use `human:local`. `trust-auth` verification refuses them. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/okf/index.md) for the provenance model.
