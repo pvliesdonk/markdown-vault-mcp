@@ -6333,12 +6333,9 @@ class TestRenameCommitEndToEnd:
             col.close()
 
         assert _commit_files(vault) == {"note.md", "renamed.md"}
-        # The external edit is still uncommitted, and so is the index state
-        # directory the Vault created — neither was the server's to commit.
-        assert _worktree_status(vault) == {
-            " M bystander.md",
-            "?? .markdown_vault_mcp/",
-        }
+        # The external edit is still uncommitted: it was not the server's to
+        # commit. The Vault keeps no state in the vault (#1693).
+        assert _worktree_status(vault) == {" M bystander.md"}
 
 
 # ---------------------------------------------------------------------------
@@ -6655,9 +6652,8 @@ class TestMoveFolderCommitsEveryFile:
         finally:
             col.close()
 
-        # Only the index state directory the Vault created remains, which was
-        # never the server's to commit.
-        assert _worktree_status(vault) == {"?? .markdown_vault_mcp/"}
+        # Nothing remains: the Vault keeps no state in the vault (#1693).
+        assert _worktree_status(vault) == set()
 
 
 def _tracked_files(repo: Path) -> set[str]:

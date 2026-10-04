@@ -576,8 +576,21 @@ for built-in names, or pass a custom instance.
   without it loads it as `{}`. The legacy flat `{relative_path: sha256_hash}`
   format still loads (every entry is treated as indexed), so upgrades need no
   migration.
-- **Default path**: `{source_dir}/.markdown_vault_mcp/state.json` (when
-  `state_path=None`).
+- **Default path** (when `state_path=None`): `{index file name}.state.json`
+  beside `index_path` (`index.db.state.json`; the whole name, so two indexes
+  in one directory never share it). With no on-disk index (`index_path`
+  unset or `:memory:`) the state is held in memory, since an in-memory index
+  starts empty and a persisted state would describe nothing (#1693). The
+  state never defaults into the vault: a read-only or synced vault is left as
+  the owner keeps it. Before #1693 it defaulted to
+  `{source_dir}/.markdown_vault_mcp/state.json`, a choice that dates from #7
+  with no recorded reason. Whenever the new file does not exist and that old
+  one does, `Vault` copies it into place (temp file, then rename), so the
+  first reindex after the upgrade does not treat every note as added and
+  re-embed it; it logs `legacy_state_file_unused` (INFO) while the old file is
+  present and never deletes it. Keeping the tracker state in the index
+  database itself would retire the sidecar and this copy altogether; that is
+  a larger change than #1693 and is not made here.
 - On `reindex()`: scan all files, compare hashes to stored state, re-parse and
   re-embed only changed/added files, remove deleted entries. Files matching
   `exclude_patterns` are skipped during re-parsing (mirroring `scan_directory`
@@ -3312,7 +3325,8 @@ kwargs):
 - `index_path=None`: index is created in-memory (`:memory:` SQLite). If
   provided, persisted to disk.
 - `embeddings_path=None`: semantic search is disabled.
-- `state_path=None`: defaults to `{source_dir}/.markdown_vault_mcp/state.json`.
+- `state_path=None`: defaults to `{index file name}.state.json` beside `index_path`,
+  or to memory without one (#1693).
 
 **Index build**: callers build the FTS index explicitly via
 `IndexFacet.build_index`; the server builds at startup, and a cold on-disk

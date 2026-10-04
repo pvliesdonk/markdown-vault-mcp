@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import subprocess
 import threading
 from typing import TYPE_CHECKING, Any
 
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
-# state-path default historically lived in this module; domain.py still
-# imports it from here).
+# state-path default historically lived in this module). They now name only
+# the pre-#1693 location that _adopt_legacy_state_file reads from.
 from markdown_vault_mcp.config_sections.vault_settings import (
     _DEFAULT_STATE_FILENAME as _DEFAULT_STATE_FILENAME,
 )
@@ -70,6 +71,63 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+
+
+def _adopt_legacy_state_file(source_dir: Path, state_path: Path | None) -> None:
+    """Seed the state file from its pre-#1693 copy in the vault, once.
+
+    Without this, the first reindex after an upgrade finds no state, treats
+    every note as added and re-embeds it. The legacy file is only read: it is
+    the vault owner's to delete, and is reported as safe to delete.
+
+    Args:
+        source_dir: The vault root.
+        state_path: The state file this vault now uses, or ``None`` (memory).
+    """
+    from markdown_vault_mcp.utils.fs import is_regular_file, path_exists
+
+    legacy = source_dir / _DEFAULT_STATE_SUBDIR / _DEFAULT_STATE_FILENAME
+    try:
+        if not is_regular_file(legacy):
+            return
+        if state_path is not None and path_exists(state_path):
+            # An explicit STATE_PATH may name the legacy file another way.
+            if state_path.samefile(legacy):
+                return
+        elif state_path is not None:
+            _copy_into_place(legacy, state_path)
+            logger.info("legacy_state_file_copied from=%s to=%s", legacy, state_path)
+    except OSError as exc:
+        # Best effort: without the copy the next reindex re-parses every note.
+        logger.warning("legacy_state_file_copy_failed path=%s error=%s", legacy, exc)
+        return
+    logger.info("legacy_state_file_unused path=%s detail=safe_to_delete", legacy)
+
+
+def _copy_into_place(source: Path, dest: Path) -> None:
+    """Copy *source* to *dest* through a temp file, so *dest* is never partial.
+
+    Args:
+        source: The file to copy.
+        dest: Where it lands; its directory is created when missing.
+
+    Raises:
+        OSError: If the copy or the rename fails; the temp file is removed.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=dest.parent, suffix=".tmp")
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        shutil.copyfile(source, tmp)
+        tmp.replace(dest)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
@@ -308,8 +366,9 @@ class Vault:
         self._max_note_read_bytes = settings.max_note_read_bytes
         self._summarize_max_notes = settings.summarize_max_notes
         self._summarize_max_input_chars = settings.summarize_max_input_chars
-        # Default state path: {source_dir}/.markdown_vault_mcp/state.json
+        # Beside the index, or in memory without one; never in the vault (#1693).
         self._state_path = settings.effective_state_path(self._source_dir)
+        _adopt_legacy_state_file(self._source_dir, self._state_path)
 
     def _build_managers(self, settings: VaultSettings) -> None:
         """Construct the index/tracker sub-modules and the manager layer.

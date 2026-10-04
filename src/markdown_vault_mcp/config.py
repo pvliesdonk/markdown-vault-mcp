@@ -183,7 +183,9 @@ class ProjectConfig:
         metadata={
             "help": (
                 "Path to the change-tracking state file. Defaults to "
-                "{SOURCE_DIR}/.markdown_vault_mcp/state.json."
+                "INDEX_PATH plus .state.json (index.db.state.json beside "
+                "index.db); without INDEX_PATH the state is kept in memory. "
+                "Never written into the vault by default."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},

@@ -60,14 +60,20 @@ class ChangeTracker:
         tracker.update_state(notes, skipped=newly_skipped)
     """
 
-    def __init__(self, state_path: Path) -> None:
+    def __init__(self, state_path: Path | None) -> None:
         """Initialise the tracker.
 
         Args:
             state_path: Path to the JSON state file. The file need not exist
-                yet; the parent directory is created on first write.
+                yet; the parent directory is created on first write. ``None``
+                keeps the state in memory for this tracker's lifetime, which
+                is what an in-memory index needs (#1693).
         """
         self._state_path = state_path
+        # The saved state when there is no file to hold it.
+        self._memory_state: (
+            tuple[dict[str, str], dict[str, str], dict[str, dict[str, str]]] | None
+        ) = None
         # Skipped entries from the last detect_changes() that are still on
         # disk with unchanged content; carried forward by update_state().
         self._skipped_carry: dict[str, str] = {}
@@ -383,13 +389,17 @@ class ChangeTracker:
     def reset(self) -> None:
         """Delete the state file so the next scan treats all files as added.
 
-        If the state file does not exist, this is a no-op.
+        If the state file does not exist, this is a no-op. Without a state
+        path, the in-memory state is dropped instead.
 
         Raises:
             OSError: If the state file cannot be statted or removed (#1625).
         """
         self._skipped_carry = {}
         self._skip_reasons_carry = {}
+        if self._state_path is None:
+            self._memory_state = None
+            return
         if path_exists(self._state_path):
             self._state_path.unlink()
             logger.debug("reset_deleted_state_file path=%s", self._state_path)
@@ -432,6 +442,15 @@ class ChangeTracker:
             empty when the state file does not exist or is malformed; a
             version-2 file lacking ``skip_reasons`` loads it as ``{}``.
         """
+        if self._state_path is None:
+            if self._memory_state is None:
+                return {}, {}, {}
+            mem_indexed, mem_skipped, mem_reasons = self._memory_state
+            return (
+                dict(mem_indexed),
+                dict(mem_skipped),
+                {path: dict(reason) for path, reason in mem_reasons.items()},
+            )
         try:
             present = path_exists(self._state_path)
         except OSError as exc:
@@ -530,7 +549,8 @@ class ChangeTracker:
     ) -> None:
         """Write the indexed, skipped, and skip_reasons maps to state as JSON.
 
-        Creates parent directories if they do not exist.
+        Creates parent directories if they do not exist. Without a state path
+        the maps are kept in memory instead.
 
         Args:
             indexed: Mapping of relative document path to SHA256 hex digest
@@ -541,6 +561,13 @@ class ChangeTracker:
                 ``{"category", "detail"}`` dict for the surfaced deterministic
                 skips (#775). A strict subset of ``skipped``.
         """
+        if self._state_path is None:
+            self._memory_state = (
+                dict(indexed),
+                dict(skipped),
+                {path: dict(reason) for path, reason in skip_reasons.items()},
+            )
+            return
         state = {
             "version": _STATE_VERSION,
             "indexed": indexed,
