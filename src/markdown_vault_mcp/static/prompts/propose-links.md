@@ -1,8 +1,8 @@
 ---
-description: Propose meaningful new links between semantically-close notes that aren't already connected.
+description: Propose links between closely related notes that aren't connected yet, and add the ones you approve.
 arguments:
   - name: scope
-    description: "Candidate set. Accepts a folder path (e.g. '1-Projects'), the literal 'recent' (default; notes modified in the last 30 days), or the literal 'all'. No trailing slashes on folder paths."
+    description: "Candidate set. Accepts a folder path (such as '1-Projects'), the literal 'recent' (default; notes modified in the last 30 days), or the literal 'all'. No trailing slashes on folder paths."
     required: false
   - name: per_note_limit
     description: "Max candidates per note to evaluate (default 5)."

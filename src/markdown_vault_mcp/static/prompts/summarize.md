@@ -2,7 +2,7 @@
 description: Summarize a vault document with structured coverage of main topics and key points.
 arguments:
   - name: path
-    description: Path to the document to summarize.
+    description: Path of the document.
     required: true
 icons: read
 ---

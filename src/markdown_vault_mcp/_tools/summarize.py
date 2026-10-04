@@ -79,53 +79,59 @@ def register(mcp: FastMCP, jobs: Jobs) -> None:
         language model this server's operator chose.
 
         Args:
-            paths: Note paths, e.g. "notes/topic.md", and folders, e.g. "notes/project",
+            paths: Note paths, such as `"notes/topic.md"`, and folders, such as `"notes/project"`,
                 which stand for every note under them.
-            focus: What the summary should concentrate on, e.g. "extract action items";
+            focus: What the summary should concentrate on, such as `"extract action items"`;
                 omit for a general summary.
-            mode: "synthesis" (default) for one summary across all the notes, or
-                "per_note" for one per note.
+            mode: `"synthesis"` (default) for one summary across all the notes, or
+                `"per_note"` for one per note.
             max_notes: A smaller note limit for this call, to narrow the work; omit for
                 the server's limit.
 
         Returns:
             When the summary completes within the soft deadline, a dict with
-            ``"status": "completed"`` plus:
+            `"status": "completed"` plus:
 
             - summary (str): The generated summary text.
             - sources (list[dict]): The notes that were summarised, each with
-              ``path`` and ``title`` — always populated so individual notes are
+              `path` and `title`: always populated so individual notes are
               attributable even when the prose does not name every one.
-            - mode (str): The mode used ("synthesis" or "per_note").
+            - mode (str): The mode used (`"synthesis"` or `"per_note"`).
             - truncated (bool): True when content was lost (notes omitted at
               the note limit, notes skipped, or content cut to fit a request
               budget).
             - notes_included (int): Notes whose content reached the model.
             - notes_omitted (int): Matched notes dropped by the note limit.
-              When non-zero, the summary does not cover the whole selection —
+              When non-zero, the summary does not cover the whole selection;
               surface that to the reader.
             - notes_limit (int): The note limit in effect for this call.
             - hint (str | None): Recovery guidance when notes were omitted
               or skipped, one step per cause; follow it for full coverage.
               None when fully covered.
             - skipped (list[dict]): Matched notes left out for a reason other
-              than the note limit, each with ``path`` and ``reason``
-              (``not_found``, ``invalid_path``, ``over_read_limit``,
-              ``unreadable``).
+              than the note limit, each with `path` and `reason`
+              (`not_found`, `invalid_path`, `over_read_limit`,
+              `unreadable`).
 
             When the work is promoted to a background job, a dict with
-            ``"status": "working"``, a ``"job_id"`` string, and a
-            ``"message"`` — call ``get_job_result`` with the ``job_id`` to
-            fetch the result.
+            `"status": "working"`, a `job_id` string, `poll_with` naming
+            `get_job_result`, `retry_after_s` (the seconds to wait before
+            polling) and a `message`; call `get_job_result` with the `job_id`
+            to fetch the result.
 
         Raises:
-            InvalidRequestError: If ``paths`` is empty, ``mode`` is invalid,
-                ``max_notes`` is below 1, or the paths hold no note that exists
+            InvalidRequestError: If `paths` is empty, `mode` is invalid,
+                `max_notes` is below 1, or the paths hold no note that exists
                 and is within the read limit.
             ValueError: If every note found exists but cannot be read.
+            SummarizeTimeoutError: If a backend call outran its time limit;
+                narrow the request.
             RuntimeError: If the summarization backend call fails within the
                 soft deadline. A backend failure that happens after promotion
-                is reported through ``get_job_result`` instead.
+                is reported through `get_job_result` instead.
+            ToolError: If the index is busy or still building; retry shortly.
+            IndexUnavailableError: If the index build failed or the index is broken;
+                get_index_status reports the error.
         """
         result = await asyncio.to_thread(
             vault.summarizer.summarize,

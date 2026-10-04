@@ -220,10 +220,11 @@ def register(mcp: FastMCP) -> None:
         A vault without git history returns no commits.
 
         Args:
-            path: A note or attachment path, e.g. "notes/alpha.md", or a folder, e.g.
-                "guides"; omit for the whole vault.
+            path: A note or attachment path, such as `"notes/alpha.md"`, or a folder, such as
+                `"guides"`; omit for the whole vault. Give a note's current name:
+                history from before a rename is included.
             since: Earliest commit date, inclusive: an ISO 8601 time such as
-                "2026-04-01T00:00:00" or a relative date such as "1 week ago"; omit for
+                `"2026-04-01T00:00:00"` or a relative date such as `"1 week ago"`; omit for
                 all history.
             until: Latest commit date, inclusive, in the same forms as since; omit for
                 no upper bound.
@@ -234,17 +235,17 @@ def register(mcp: FastMCP) -> None:
 
             - commits (list[dict]): Commit entries, newest-first. Each entry
               contains:
-                - sha (str): Full commit SHA (40 hex digits, or 64 in a
+                - `sha` (str): Full commit SHA (40 hex digits, or 64 in a
                   SHA-256 repository).
                 - short_sha (str): 7-character abbreviated SHA.
                 - timestamp (str): ISO 8601 author timestamp.
-                - author (str): Author name and email, e.g. "Name <email>".
+                - author (str): Author name and email, such as `"Name <email>"`.
                 - message (str): First line of the commit message.
                 - paths_changed (list[str]): Files touched by the commit.
                   Populated for vault-wide queries (path=None) and folder
                   queries (the subtree files the commit touched). Always empty
                   for single-note queries, since the path is already
-                  determined by the query arguments — callers know which
+                  determined by the query arguments; callers know which
                   file the commit touched without needing it echoed back.
             - total (int): Count of entries in `commits` (always equals
               `len(commits)`; does NOT indicate how many commits exist
@@ -289,9 +290,9 @@ def register(mcp: FastMCP) -> None:
         get_history. A vault without git history returns an empty diff.
 
         Args:
-            path: A note or attachment path, e.g. "notes/alpha.md"; a binary attachment
+            path: A note or attachment path, such as `"notes/alpha.md"`; a binary attachment
                 returns a summary of size and renames instead of a patch.
-            since_sha: A commit sha to diff from, e.g. from get_history; at least 4 hex
+            since_sha: A commit SHA to diff from, such as from get_history; at least 4 hex
                 digits.
             since_timestamp: An ISO 8601 time; diffs from the latest commit at or before
                 it.
@@ -310,7 +311,7 @@ def register(mcp: FastMCP) -> None:
             - When per_commit=True:
                 - commits (list[dict]): Per-commit entries, newest-first.
                   Each contains:
-                    - sha (str): Full commit SHA.
+                    - `sha` (str): Full commit SHA.
                     - short_sha (str): Abbreviated SHA.
                     - timestamp (str): ISO 8601 author timestamp.
                     - message (str): First line of commit message.
@@ -359,7 +360,7 @@ def register(mcp: FastMCP) -> None:
         With direction "both" the pull runs first, and a failed pull skips the push.
 
         Args:
-            direction: "pull", "push" or "both" (default).
+            direction: `pull`, `push` or `both` (default).
             dry_run: Report what a pull would do without changing anything; the push
                 leg reports applied false without contacting the remote.
 
@@ -367,29 +368,48 @@ def register(mcp: FastMCP) -> None:
             Dict with the following fields:
 
             - direction (str): The requested direction, echoed back.
-            - head_sha (str): Local HEAD SHA after the operation.  May
+            - head_sha (str): Local HEAD SHA after the operation. May
               differ from the pre-call HEAD when the pull leg advanced
               the branch.
-            - branch (str): Current branch name (from
-              ``git rev-parse --abbrev-ref HEAD``).
-            - pull (dict | None): Payload from the pull leg, or ``None``
-              when ``direction='push'``.  Contains ``applied``,
-              ``fast_forward``, ``commits_pulled``, ``from_sha``,
-              ``to_sha``, optional ``reason`` and ``conflict_files``.
-              In ``dry_run`` mode also includes
-              ``would_apply: bool``.
-            - push (dict | None): Payload from the push leg, or ``None``
-              when ``direction='pull'`` or when the pull leg failed in
-              ``direction='both'``.  Contains ``applied``,
-              ``commits_pushed``, ``remote_sha_before``,
-              ``remote_sha_after``, optional ``reason`` and ``hint``.
-            - dry_run (bool): Only present when ``dry_run=True`` was
-              passed.
+            - branch (str): Current branch name, or `"HEAD"` when the
+              checkout is detached.
+            - pull (dict | None): Payload from the pull leg, or `None`
+              when direction is `"push"`. Contains:
+
+              - applied (bool): true when the pull ran or there was nothing
+                to bring in.
+              - fast_forward (bool): true for a clean fast-forward.
+              - commits_pulled (int): commits brought in. It is 0 when the
+                pull rebased or resolved conflicts with sibling files, even
+                though HEAD moved; compare from_sha and to_sha to see that.
+              - from_sha (str), to_sha (str): HEAD before and after the pull.
+              - reason (str, optional): `"fetch_failed"`, `"no_remote"`,
+                `"non_fast_forward_with_conflicts"`, `"rebased"`,
+                `"conflicts_resolved_with_siblings"` (conflict_files lists the
+                sibling files), `"conflict_resolution_failed"` (either HEAD
+                did not move, or the rebase completed and HEAD moved but
+                committing the sibling files failed), or, on a dry run only,
+                `"diverged"`.
+              - conflict_files (list[str], optional): the `.conflict-mcp-*`
+                sibling files written when the pull resolved conflicts.
+              - would_apply (bool, dry run only): true when a real pull
+                would change HEAD.
+              - reindex_failed (bool, optional) and reindex_hint (str,
+                optional): present when the search index could not be
+                refreshed after the pull, so search serves stale results
+                until the next reindex.
+
+            - push (dict | None): Payload from the push leg, or `None`
+              when direction is `"pull"` or when the pull leg failed with
+              direction `"both"`. Contains applied, commits_pushed,
+              remote_sha_before, remote_sha_after, and an optional reason
+              (`"dry_run_unsupported"`, `"no_remote"`, `"non_fast_forward"` or
+              `"push_failed"`) and hint.
+            - dry_run (bool): Only present when dry_run was true.
 
         Raises:
-            ValueError: When the underlying strategy is not a managed
-                :class:`~markdown_vault_mcp.git.Syncer` (i.e. the deployment is not
-                wired with ``MARKDOWN_VAULT_MCP_GIT_REPO_URL``).
+            InvalidRequestError: If the vault is not synced with a remote, so
+                git_sync has nothing to do.
         """
         strategy = _resolve_managed_strategy(vault)
         git_root = strategy.resolve_force_repo()

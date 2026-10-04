@@ -58,65 +58,61 @@ extra_css:
 
 plugins:
   - search
+  # Keeps a moved page's old URL working. The entries above the project
+  # block are the template's own moves; a project that moves one of its
+  # pages adds `old-page.md: new-page.md` inside the block.
+  - redirects:
+      redirect_maps:
+        configuration.md: reference/configuration.md
+        configuration-generator.md: reference/configuration-generator.md
+        tools/index.md: reference/tools/index.md
+        prompts.md: reference/prompts.md
+        guides/security-model.md: security-model.md
+        installation.md: get-started/installation.md
+        deployment/claude-desktop.md: get-started/claude-desktop.md
+        deployment/docker.md: deploy/docker.md
+        guides/authentication.md: deploy/authentication.md
+        deployment/oidc.md: deploy/oidc.md
+        deployment/release-process.md: contribute/release-process.md
+        deployment/template-updates.md: contribute/template-updates.md
+        deployment/repository-protection.md: contribute/repository-protection.md
+        deployment/integration-branches.md: contribute/integration-branches.md
+        # PROJECT-REDIRECTS-START — this project's moved pages; kept across copier update
+        guides/claude-desktop.md: get-started/claude-desktop.md
+        guides/claude-code-plugin.md: get-started/claude-code.md
+        guides/docker.md: deploy/docker.md
+        deployment/index.md: deploy/index.md
+        deployment/systemd.md: deploy/systemd.md
+        guides/oidc-providers.md: deploy/oidc-providers.md
+        guides/mcp-apps.md: deploy/mcp-apps.md
+        guides/transfer-links.md: deploy/transfer-links.md
+        guides/index.md: use/index.md
+        guides/embeddings.md: use/embeddings.md
+        guides/git-integration.md: use/git-integration.md
+        guides/obsidian-everywhere.md: use/obsidian-everywhere.md
+        guides/okf.md: use/okf.md
+        guides/para.md: use/para.md
+        guides/research-workflows.md: use/research-workflows.md
+        guides/zettelkasten.md: use/zettelkasten.md
+        api/config.md: reference/api/config.md
+        api/exceptions.md: reference/api/exceptions.md
+        api/facets.md: reference/api/facets.md
+        api/git.md: reference/api/git.md
+        api/providers.md: reference/api/providers.md
+        api/types.md: reference/api/types.md
+        api/vault.md: reference/api/vault.md
+        cli.md: reference/cli.md
+        resources.md: reference/resources.md
+        # PROJECT-REDIRECTS-END
   # Generates llms.txt + llms-full.txt for the README badge.
-  # Sections mirror `nav:` below — keep them aligned when customising
-  # (both blocks are sentinel-protected so customise both as a unit).
-  # `guides/*.md` and `deployment/*.md` use globs deliberately so new pages
-  # in those directories are auto-indexed without a sections-list update.
+  # The sections are filled from `nav:` at build time by
+  # scripts/llmstxt_sections_hook.py (registered under `hooks:`): one section
+  # per top-level nav entry, pages outside the nav joining the section of a
+  # nav page in their directory, descriptions from each page's `description:`
+  # front matter. Nothing to keep in step by hand.
   - llmstxt:
       full_output: llms-full.txt
-      sections:
-        # PROJECT-LLMSTXT-SECTIONS-START — keep aligned with `nav:` below;
-        # kept across copier update.
-        Getting Started:
-          - index.md: Overview — features, quick start, and project links
-          - installation.md: Installation from PyPI, uv, source, or Docker
-          - configuration.md: All environment variables with types and defaults
-          - configuration-generator.md: In-browser generator for config, Docker, and systemd artifacts
-          - cli.md: CLI reference — serve, index, search, reindex, and subpath mounts
-        Guides:
-          - guides/index.md: Guide overview — which guide to read
-          - guides/git-integration.md: Git modes — managed, unmanaged (commit-only), and no-git
-          - guides/claude-desktop.md: Claude Desktop setup (read-only, git write, semantic search)
-          - guides/docker.md: Docker deployment (basic, git write, bearer token, OIDC)
-          - guides/embeddings.md: Embedding providers (Ollama, sentence-transformers, OpenAI)
-          - guides/authentication.md: Authentication modes — bearer token, OIDC, and troubleshooting
-          - guides/security-model.md: The shared security model — data access, outbound requests, and credentials
-          - guides/oidc-providers.md: OIDC provider setup (Authelia, Keycloak, Google, GitHub via broker)
-          - guides/obsidian-everywhere.md: Reference architecture for desktop + mobile + Claude on one vault
-          - guides/research-workflows.md: Research workflows (seed → ground → absorb → interconnect → produce, with optional scholar-mcp integration)
-          - guides/zettelkasten.md: Zettelkasten workflow (fleeting → literature → permanent notes, MOCs, graph navigation)
-          - guides/para.md: PARA workflow (Projects/Areas/Resources/Archive with triage, kickoff, and weekly review prompts)
-          - guides/okf.md: Open Knowledge Format (OKF) support and migrating a vault into the format
-          - guides/mcp-apps.md: MCP Apps — Context Card, Graph Explorer, Vault Browser, and Note Preview views
-          - guides/transfer-links.md: One-time transfer links — capability-URL download and upload without inflating LLM context
-          - guides/claude-code-plugin.md: Claude Code plugin — install via /plugin marketplace
-        MCP Interface:
-          - tools/index.md: MCP tools with parameters and examples (search, read, write, link graph, MCP Apps)
-          - resources.md: MCP resources with URI patterns (config, stats, tags, folders, toc, similar, recent, ui)
-          - prompts.md: All 6 MCP prompts with workflow descriptions
-        Deployment:
-          - deployment/index.md: Deployment overview
-          - deployment/docker.md: Docker Compose, Traefik, volumes, UID/GID, image tags
-          - deployment/systemd.md: systemd service — package install, manual install, security hardening
-          - deployment/claude-desktop.md: Claude Desktop configuration reference
-          - deployment/oidc.md: OIDC authentication setup with Authelia
-          - deployment/release-process.md: Branch-aware release model — channels, release branches, merge-back
-          - deployment/repository-protection.md: Repository rulesets — per-branch posture and bypass model
-          - deployment/template-updates.md: Working through a copier template update pull request
-        Python API:
-          - api/vault.md: Vault class API reference
-          - api/facets.md: Reader/Writer/Graph/Index facet API reference
-          - api/git.md: GitWriteStrategy API reference
-          - api/config.md: Configuration loading API reference
-          - api/providers.md: Embedding provider API reference
-          - api/types.md: All data types returned by the Vault API
-          - api/exceptions.md: All exceptions raised by the library
-        # Character-class prefix excludes the unversioned staging page while
-        # auto-indexing each canonical minor page.
-        Release Notes:
-          - releases/[0-9]*.[0-9]*.md
-        # PROJECT-LLMSTXT-SECTIONS-END
+      sections: {}
   - mkdocstrings:
       handlers:
         python:
@@ -148,57 +144,92 @@ markdown_extensions:
   - attr_list
   - md_in_html
 
+hooks:
+  - scripts/llmstxt_sections_hook.py
+
 nav:
-  # PROJECT-NAV-START — replace with your real navigation; kept across copier
-  # update. Keep aligned with the `llmstxt` plugin's sentinel-protected
-  # `sections:` block above.
-  - Home: index.md
-  - Getting Started:
-      - Installation: installation.md
-      - Configuration: configuration.md
-      - Configuration Generator: configuration-generator.md
-      - CLI Reference: cli.md
-  - Guides:
-      - Overview: guides/index.md
-      - Git Integration: guides/git-integration.md
-      - Claude Desktop: guides/claude-desktop.md
-      - Docker: guides/docker.md
-      - Embeddings: guides/embeddings.md
-      - Authentication: guides/authentication.md
-      - Security Model: guides/security-model.md
-      - OIDC Providers: guides/oidc-providers.md
-      - Obsidian Everywhere: guides/obsidian-everywhere.md
-      - Research Workflows: guides/research-workflows.md
-      - Zettelkasten: guides/zettelkasten.md
-      - PARA: guides/para.md
-      - Open Knowledge Format: guides/okf.md
-      - MCP Apps: guides/mcp-apps.md
-      - Transfer Links: guides/transfer-links.md
-      - Claude Code Plugin: guides/claude-code-plugin.md
-  - MCP Interface:
-      - Tools: tools/index.md
-      - Resources: resources.md
-      - Prompts: prompts.md
-  - Deployment:
-      - Overview: deployment/index.md
-      - Docker: deployment/docker.md
-      - systemd: deployment/systemd.md
-      - Claude Desktop: deployment/claude-desktop.md
-      - OIDC Authentication: deployment/oidc.md
-      - Release Process: deployment/release-process.md
-      - Template Updates: deployment/template-updates.md
-      - Repository Protection: deployment/repository-protection.md
-      - Integration Branches: deployment/integration-branches.md
-  - Python API:
-      - Vault: api/vault.md
-      - Facets: api/facets.md
-      - Git Integration: api/git.md
-      - Configuration: api/config.md
-      - Embedding Providers: api/providers.md
-      - Types: api/types.md
-      - Exceptions: api/exceptions.md
+  - Overview: index.md
+  - Security model: security-model.md
+  - Get started:
+      - Overview: get-started/index.md
+      - Claude Desktop: get-started/claude-desktop.md
+      - Claude Code: get-started/claude-code.md
+      - A remote server: get-started/http-client.md
+      - Installation: get-started/installation.md
+      # PROJECT-NAV-GET-STARTED-START — this server's first-run pages; kept across copier update
+      # PROJECT-NAV-GET-STARTED-END
+  - Deploy:
+      - Overview: deploy/index.md
+      - Docker: deploy/docker.md
+      - systemd and packages: deploy/systemd.md
+      - Authentication: deploy/authentication.md
+      - OIDC: deploy/oidc.md
+      - OIDC providers: deploy/oidc-providers.md
+      - Reverse proxy: deploy/reverse-proxy.md
+      - MCP Apps: deploy/mcp-apps.md
+      - Transfer links: deploy/transfer-links.md
+      # PROJECT-NAV-DEPLOY-START — this server's deployment additions; kept across copier update
+      # PROJECT-NAV-DEPLOY-END
+  - Use:
+      - Overview: use/index.md
+      # PROJECT-NAV-USE-START — this server's how-tos and explanations (docs/use/); kept across copier update
+      - Embeddings: use/embeddings.md
+      - Git integration: use/git-integration.md
+      - Vault explorer: use/vault-explorer.md
+      - Obsidian everywhere: use/obsidian-everywhere.md
+      - Open Knowledge Format: use/okf.md
+      - PARA: use/para.md
+      - Zettelkasten: use/zettelkasten.md
+      - Research workflows: use/research-workflows.md
+      # PROJECT-NAV-USE-END
+  # Reference is generated from the code by scripts/gen_reference.py; a fact
+  # on these pages changes at its source (docstring, annotation, CLI help).
+  - Reference:
+      - Configuration: reference/configuration.md
+      - Configuration generator: reference/configuration-generator.md
+      - Tools:
+          - Overview: reference/tools/index.md
+          # GENERATED-NAV-TOOLS-START — one entry per tool group; written by scripts/gen_reference.py
+          - Reader: reference/tools/reader.md
+          - Graph: reference/tools/graph.md
+          - Indexing: reference/tools/indexing.md
+          - Writer: reference/tools/writer.md
+          - Git: reference/tools/git.md
+          - Vault app tools: reference/tools/vault_app_tools.md
+          - Server info: reference/tools/server_info.md
+          - Transfer: reference/tools/transfer.md
+          - Summarize: reference/tools/summarize.md
+          - Jobs: reference/tools/jobs.md
+          # GENERATED-NAV-TOOLS-END
+      - Resources: reference/resources.md
+      - Prompts: reference/prompts.md
+      - Command line: reference/cli.md
+      # PROJECT-NAV-REFERENCE-START — resources, CLI, API reference (docs/reference/api/); kept across copier update
+      - Python API:
+          - Vault: reference/api/vault.md
+          - Facets: reference/api/facets.md
+          - Git integration: reference/api/git.md
+          - Configuration: reference/api/config.md
+          - Embedding providers: reference/api/providers.md
+          - Types: reference/api/types.md
+          - Exceptions: reference/api/exceptions.md
+      # PROJECT-NAV-REFERENCE-END
   # Landing page only, deliberately: per-minor pages stay out of nav so a new
   # release never needs a nav edit (mkdocs treats not-in-nav pages as INFO,
   # so `--strict` stays green); the landing page and search link them.
-  - Release Notes: releases/index.md
-  # PROJECT-NAV-END
+  - Upgrade:
+      - Overview: upgrade/index.md
+      - Release notes: releases/index.md
+      # PROJECT-NAV-UPGRADE-START — kept across copier update
+      # PROJECT-NAV-UPGRADE-END
+  - Contribute:
+      - Overview: contribute/index.md
+      - Documentation structure: contribute/docs-structure.md
+      - Release process: contribute/release-process.md
+      - Template updates: contribute/template-updates.md
+      - Repository protection: contribute/repository-protection.md
+      - Integration branches: contribute/integration-branches.md
+      # PROJECT-NAV-CONTRIBUTE-START — kept across copier update
+      # PROJECT-NAV-CONTRIBUTE-END
+  # PROJECT-NAV-UNSORTED-START — entries the nav migration could not place; move each into a section above
+  # PROJECT-NAV-UNSORTED-END

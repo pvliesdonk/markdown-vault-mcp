@@ -1,282 +1,90 @@
-<!-- DOMAIN-START -->
+<!-- DOMAIN-README-BADGES-START -->
 <p align="center">
   <img src="assets/icon.svg" alt="Markdown Vault MCP logo" width="128" height="128">
 </p>
-<!-- DOMAIN-END -->
+<!-- DOMAIN-README-BADGES-END -->
 
 # Markdown Vault MCP
 
 <!-- mcp-name: io.github.pvliesdonk/markdown-vault-mcp -->
 
-[![CI](https://github.com/pvliesdonk/markdown-vault-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/pvliesdonk/markdown-vault-mcp/actions/workflows/ci.yml) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=pvliesdonk_markdown-vault-mcp&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=pvliesdonk_markdown-vault-mcp) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=pvliesdonk_markdown-vault-mcp&metric=coverage)](https://sonarcloud.io/summary/new_code?id=pvliesdonk_markdown-vault-mcp) [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pvliesdonk_markdown-vault-mcp&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=pvliesdonk_markdown-vault-mcp) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=pvliesdonk_markdown-vault-mcp&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=pvliesdonk_markdown-vault-mcp) [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=pvliesdonk_markdown-vault-mcp&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=pvliesdonk_markdown-vault-mcp) [![PyPI](https://img.shields.io/pypi/v/markdown-vault-mcp)](https://pypi.org/project/markdown-vault-mcp/) [![Python](https://img.shields.io/pypi/pyversions/markdown-vault-mcp)](https://pypi.org/project/markdown-vault-mcp/) [![License](https://img.shields.io/github/license/pvliesdonk/markdown-vault-mcp)](LICENSE) [![Docker](https://img.shields.io/github/v/release/pvliesdonk/markdown-vault-mcp?label=ghcr.io&logo=docker)](https://github.com/pvliesdonk/markdown-vault-mcp/pkgs/container/markdown-vault-mcp) [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://pvliesdonk.github.io/markdown-vault-mcp/) [![llms.txt](https://img.shields.io/badge/llms.txt-available-brightgreen)](https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt) [![Template](https://img.shields.io/badge/dynamic/yaml?url=https://raw.githubusercontent.com/pvliesdonk/markdown-vault-mcp/main/.copier-answers.yml&query=%24._commit&label=template)](https://github.com/pvliesdonk/fastmcp-server-template)
+[![CI](https://github.com/pvliesdonk/markdown-vault-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/pvliesdonk/markdown-vault-mcp/actions/workflows/ci.yml) [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=pvliesdonk_markdown-vault-mcp&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=pvliesdonk_markdown-vault-mcp) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=pvliesdonk_markdown-vault-mcp&metric=coverage)](https://sonarcloud.io/summary/new_code?id=pvliesdonk_markdown-vault-mcp) [![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=pvliesdonk_markdown-vault-mcp&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=pvliesdonk_markdown-vault-mcp) [![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=pvliesdonk_markdown-vault-mcp&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=pvliesdonk_markdown-vault-mcp) [![PyPI](https://img.shields.io/pypi/v/markdown-vault-mcp)](https://pypi.org/project/markdown-vault-mcp/) [![Python](https://img.shields.io/pypi/pyversions/markdown-vault-mcp)](https://pypi.org/project/markdown-vault-mcp/) [![License](https://img.shields.io/github/license/pvliesdonk/markdown-vault-mcp)](LICENSE) [![Docker](https://img.shields.io/github/v/release/pvliesdonk/markdown-vault-mcp?label=ghcr.io&logo=docker)](https://github.com/pvliesdonk/markdown-vault-mcp/pkgs/container/markdown-vault-mcp) [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://pvliesdonk.github.io/markdown-vault-mcp/) [![llms.txt](https://img.shields.io/badge/llms.txt-available-brightgreen)](https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt) [![Template](https://img.shields.io/badge/dynamic/yaml?url=https://raw.githubusercontent.com/pvliesdonk/markdown-vault-mcp/main/.copier-answers.yml&query=%24._commit&label=template)](https://github.com/pvliesdonk/fastmcp-server-template)
 
 Generic markdown vault MCP with hybrid search
 
-**[Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/)** | **[Config wizard](https://pvliesdonk.github.io/markdown-vault-mcp/latest/configuration-generator/)** | **[PyPI](https://pypi.org/project/markdown-vault-mcp/)** | **[Docker](https://github.com/pvliesdonk/markdown-vault-mcp/pkgs/container/markdown-vault-mcp)**
+**[Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/)** | **[Config wizard](https://pvliesdonk.github.io/markdown-vault-mcp/latest/reference/configuration-generator/)** | **[PyPI](https://pypi.org/project/markdown-vault-mcp/)** | **[Docker](https://github.com/pvliesdonk/markdown-vault-mcp/pkgs/container/markdown-vault-mcp)**
 
-## Features
+<!-- DOMAIN-README-PITCH-START -->
+Give Claude, or any MCP client, a folder of Markdown notes to search, read and write. An Obsidian vault works as it is.
 
-<!-- DOMAIN-START -->
-- **Hybrid search**: SQLite FTS5 keyword search (BM25, porter stemming) and semantic search (FastEmbed, Ollama, OpenAI, or Voyage AI embeddings, plus any OpenAI-compatible endpoint via `OPENAI_BASE_URL`), fused with Reciprocal Rank Fusion; diversity-aware ranking returns sentence-scale snippets with full-section recovery via `read(path, section=heading)`. See the [Embeddings guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/embeddings/), including the [recipe for OpenAI-compatible endpoints](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/embeddings/#openai-compatible-endpoints).
-- **Frontmatter-aware indexing**: YAML frontmatter fields become filterable and searchable, with optional required-field enforcement and adaptive heading-level chunking for long documents.
-- **Write operations**: the write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are registered by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`; writes update the index automatically, per-folder `_conventions.md` authoring rules are surfaced to LLM clients at write time, and attachments (PDFs, images, and other non-markdown files) are read/write too.
-- **Incremental reindexing**: hash-based change detection with boot-time reconciliation; the vector index converges to the reconciled chunk set, and parse-pipeline upgrades rebuild the index once automatically.
-- **Git integration**: optional auto-commit (one commit per write tool call) with deferred push, plus a pull loop or a GitHub or GitLab push webhook for external changes; history and diff tools read the log back. An overwriting `write` returns the revision holding the content it replaced, and `read(path, revision=sha)` reads a note back at that revision, so an overwrite is recoverable from the client that made it. When the clone stops reaching its remote, every write result carries a `remote` warning saying the content is committed locally only, and the log marks the transition rather than repeating each cycle. See the [Git integration guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/git-integration/).
-- **OKF-aware**: recognizes [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundles and annotates results with each note's type, lifecycle status, staleness, and trust tier, plus conformance audit and migration tooling. Static bearer writes use tool provenance; human review through a bearer credential requires confirmation with `okf_verify` in `elicit` mode. See the [OKF guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/okf/).
-- **MCP surface**: 34 LLM-visible tools, 9 resources, and 8 prompt templates, plus browser-based MCP Apps views and one-time transfer links. Full references: [Tools](https://pvliesdonk.github.io/markdown-vault-mcp/latest/tools/), [Resources](https://pvliesdonk.github.io/markdown-vault-mcp/latest/resources/), [Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/latest/prompts/), [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/mcp-apps/), [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/transfer-links/), [CLI](https://pvliesdonk.github.io/markdown-vault-mcp/latest/cli/).
+- **Hybrid search.** Keyword search with SQLite FTS5 and, once an embedding provider is configured, search by meaning, fused by Reciprocal Rank Fusion. Results are short snippets; `read` fetches the whole section. See [Embeddings](docs/use/embeddings.md).
+- **Frontmatter as data.** YAML frontmatter fields become search filters, and long notes are split at their headings.
+- **Careful writes.** The write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are on by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`. Replacing a file takes the etag from reading it, and per-folder `_conventions.md` rules reach the client as it writes.
+- **Git.** Optional commit per write with a delayed push, pull or webhook sync, and history and diffs; an overwritten note can be read back at the revision it replaced. See [Git integration](docs/use/git-integration.md).
+- **Links.** Backlinks, outlinks, broken links and the path between two notes, for wikilinks and Markdown links alike, with interactive views in clients that render [MCP Apps](docs/deploy/mcp-apps.md).
+- **Open Knowledge Format.** OKF bundles are recognized, and results carry each note's type, status and trust tier. See [OKF](docs/use/okf.md).
 
-Overwrite protection is enabled by default. Before replacing an existing file
-with `write` or `fetch`, read that destination and pass its etag as `if_match`.
-New files need no etag. Transfer upload links require a
-new destination because they have no `if_match` option. Set
-`MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=false` to allow blind overwrites;
-see the [transfer guide](docs/guides/transfer-links.md#upload-walkthrough).
+The [tools reference](docs/reference/tools/index.md) lists every tool. The same engine is a Python library: see the [Vault API](docs/reference/api/vault.md).
+<!-- DOMAIN-README-PITCH-END -->
 
-Python integrations use `VaultSettings` for configuration. See the
-[Vault API](docs/api/vault.md#migrating-from-4x) for the migration from the
-removed 4.x constructor keywords and the
-[configuration API](docs/api/config.md#migrating-from-4x) for typed assembly.
-The [Git API](docs/api/git.md#migrating-from-4x) covers removal of the deprecated
-strategy claim keywords and the keyword-only LFS and repository options.
-<!-- DOMAIN-END -->
+## Does it fit?
 
-## What you can do with it
+What the server can reach, what it changes and who gets in is set out in the [security model](docs/security-model.md); the block below says who it serves and where it stops.
 
-<!-- DOMAIN-START -->
-With this server mounted in Claude, you can:
+<!-- DOMAIN-README-FIT-START -->
+It suits one person or a small team who keep notes as Markdown files and want Claude to search them, follow their links and write back into them, on their own machine or as a shared server. It reaches the vault folder, plus only what you configure: a git remote, an embedding or summarizing model, and the URLs a `fetch` call names.
 
-- **Capture a URL as a note.** "Fetch <url>, summarize as a Resource note under `3-Resources/`, and link any existing notes on the topic." Claude composes `fetch` + `search` + `write`.
-- **Research a topic into your vault.** "Research product security regulations, compare them, and create a set of interlinked notes: one per regulation, plus a map-of-content." Claude composes web-search tools (client-side) + `write` with wikilinks. See the [Research workflows guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/research-workflows/) for the full loop.
-- **Distill today's thinking.** "Summarize today's conversations into Inbox notes." Claude.ai only; uses `conversation_search` + `recent_chats` + `write`. The [`para-capture-chats`](examples/para/prompts/para-capture-chats.md) prompt is the one-click version.
-- **Find missing links.** Fire the [`propose-links`](https://pvliesdonk.github.io/markdown-vault-mcp/latest/prompts/#propose-links) prompt from the `+` menu: it scans recently modified notes and proposes links between notes that aren't yet connected, writing them on confirmation.
-- **Split or merge captures.** "Split this Inbox note into two." / "Merge this into `<existing note>` instead of duplicating." Claude composes `read` + `write` + `delete`.
+What it assumes:
 
-The vault needs no external scheduler or separate capture app: it sits behind your conversations and absorbs their output.
-<!-- DOMAIN-END -->
+- **One vault per server.** Several vaults take one server each, for now ([#1232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232)); give each a `MARKDOWN_VAULT_MCP_SERVER_NAME`.
+- **Markdown is what gets searched.** Other files, such as PDFs and images, can be read and written as attachments, but their contents are not indexed yet ([#1234](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1234)).
+- **Embeddings live in memory.** Search by meaning holds every vector at 4 bytes × chunks × dimensions: about 70 MB for 23,000 chunks at 768 dimensions, about 900 MiB at ten times that and 1,024 dimensions. Memory, not query time, is the first limit ([#1377](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1377)).
+- **State sits on local disk.** The index and embeddings are files, and by default the server keeps a change-tracking file in a `.markdown_vault_mcp/` folder inside the vault, read-only mode included. `MARKDOWN_VAULT_MCP_STATE_PATH` moves it.
 
-<!-- ===== TEMPLATE-OWNED SECTIONS BELOW — DO NOT EDIT; CHANGES WILL BE OVERWRITTEN ON COPIER UPDATE ===== -->
-
-## Installation
-
-### From PyPI
-
-```bash
-pip install markdown-vault-mcp
-```
-
-If you add optional extras via the `PROJECT-EXTRAS-START` / `PROJECT-EXTRAS-END` sentinels in `pyproject.toml`, document them below:
-
-<!-- DOMAIN-START -->
-```bash
-pip install markdown-vault-mcp[mcp]             # FastMCP server
-pip install markdown-vault-mcp[embeddings-api]  # Ollama/OpenAI embeddings via API
-pip install markdown-vault-mcp[embeddings]      # FastEmbed local embeddings
-pip install markdown-vault-mcp[file-watcher]    # watchdog-based external-change watcher
-pip install markdown-vault-mcp[all]             # MCP + FastEmbed + API embeddings
-```
-
-For the Claude Code plugin channel (`/plugin install markdown-vault-mcp@pvliesdonk`) and all other install routes, see the [Installation guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/installation/) and the [Claude Code plugin guide](https://pvliesdonk.github.io/markdown-vault-mcp/latest/guides/claude-code-plugin/).
-<!-- DOMAIN-END -->
-
-### From source
-
-```bash
-git clone https://github.com/pvliesdonk/markdown-vault-mcp.git
-cd markdown-vault-mcp
-uv sync --all-extras --all-groups
-```
-
-### Docker
-
-```bash
-docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:latest
-```
-
-To run the newest merged code instead of the newest release, use the rolling `edge` tag. It is rebuilt on every merge to `main` and carries no version identity. See [Image tags](docs/deployment/docker.md#image-tags) for the full tag list.
-
-```bash
-docker pull ghcr.io/pvliesdonk/markdown-vault-mcp:edge
-```
-
-A `compose.yml` ships at the repo root and runs as-is: copy `.env.example` to `.env`, then `docker compose up -d`. It publishes port 8000 on the host and assumes no reverse proxy; [Docker Compose](docs/deployment/docker.md#docker-compose) covers the configuration split, the domain sentinel blocks, and a Traefik overlay.
-
-To attach a remote Python debugger (development only; the protocol is unauthenticated), see [Remote debugging](docs/deployment/docker.md#remote-debugging).
-
-### Linux packages (.deb / .rpm)
-
-Download `.deb` or `.rpm` packages from the [GitHub Releases](https://github.com/pvliesdonk/markdown-vault-mcp/releases) page. Both install a hardened systemd unit; env configuration is sourced from `/etc/markdown-vault-mcp/env` (copy from the shipped `/etc/markdown-vault-mcp/env.example`).
-
-### Claude Desktop (.mcpb bundle)
-
-Download the `.mcpb` bundle from the [GitHub Releases](https://github.com/pvliesdonk/markdown-vault-mcp/releases) page and double-click to install, or run:
-
-```bash
-mcpb install markdown-vault-mcp-<version>.mcpb
-```
-
-Claude Desktop prompts for required env vars via a GUI wizard, with no manual JSON editing needed.
-
-For manual Claude Desktop configuration and setup options, see [Claude Desktop deployment](docs/deployment/claude-desktop.md).
-
-## Release channels
-
-Artifacts ship on three channels. Each row lists exactly what that channel publishes.
-
-| Channel | Version identity | Artifacts |
-|---|---|---|
-| `edge` (rolling) | None; the commit is the identity | Docker image `:edge` rebuilt on every merge to `main`; `.mcpb` bundle as the `mcpb-bundle-edge` workflow artifact; Claude Code plugin `.zip` as the `plugin-zip-edge` artifact; rolling `unstable` docs version. It leaves no git tag, GitHub release, or PyPI entry behind. |
-| Pre-release | `vX.Y.Z-rc.N`, computed and reviewed in its release pull request | PyPI (as the pre-release `X.Y.ZrcN`); GitHub release with wheels, `sdist`, `.deb`/`.rpm` packages, `.mcpb` bundle, plugin `.zip`, and SBOM attached; Docker image under its immutable `vX.Y.Z-rc.N` tag plus the ordering-aware rolling `rc` tag. Skips the plugin marketplace, the MCP registry, and the docs deploy. |
-| Stable | `vX.Y.Z` | Everything: PyPI, Docker (version tag plus ordering-aware `latest` / `vX` / `vX.Y`), `.deb`/`.rpm`, GitHub release assets (wheels, `sdist`, `.mcpb` bundle, plugin `.zip`, SBOM), plugin marketplace and MCP registry entries (when the release is the newest stable), versioned docs with an ordering-aware `latest` alias. |
-
-Pre-releases reach PyPI so that a candidate's `.mcpb` bundle installs: the bundle points at PyPI rather than carrying the code. Ordinary installers never see them, because a PEP 440 resolver skips pre-releases unless the requirement pins one or you pass `--pre`. Ask for a candidate by name with `pip install markdown-vault-mcp==X.Y.ZrcN`. PyPI spells it in the PEP 440 canonical form, while tags use SemVer. Rolling pointers are ordering-aware, so a patch release cut from an old `release/X.Y` branch never moves `latest`-style tags back to older content, and a candidate for an already-released version never moves `rc`. See [Release process](docs/deployment/release-process.md) for the full model.
+Reach for something else for a corpus of hundreds of thousands of chunks (a vector database behind a retrieval pipeline), for mostly scanned or office documents (a document management system with text recognition), or for many users who must not see each other's notes (a multi-tenant knowledge platform): every caller the server admits gets every tool it exposes.
+<!-- DOMAIN-README-FIT-END -->
 
 ## Quick start
 
-```bash
-markdown-vault-mcp serve                                # stdio transport
-markdown-vault-mcp serve --transport http --port 8000   # streamable HTTP
+Pick the client you use. Each line installs the released version; the [Get started](docs/get-started/index.md) tutorials carry on from there.
+
+**Claude Desktop.** Download the `.mcpb` bundle from the [releases page](https://github.com/pvliesdonk/markdown-vault-mcp/releases) and open it with Claude Desktop (or **Settings** › **Extensions** › **Advanced settings** › **Install Extension…**). Claude Desktop asks for the required settings itself. [Tutorial](docs/get-started/claude-desktop.md).
+
+**Claude Code.** Two commands inside Claude Code; the second asks for a scope. [Tutorial](docs/get-started/claude-code.md).
+
+```text
+/plugin marketplace add pvliesdonk/claude-plugins
+/plugin install markdown-vault-mcp@pvliesdonk
 ```
 
-For library usage (embedding the domain logic without the MCP transport), import from the `markdown_vault_mcp` package directly. See the project's domain modules under `src/markdown_vault_mcp/` for entry points.
+**A client that runs a command** (stdio). To register it in Claude Code, see the [Claude Code](docs/get-started/claude-code.md) tutorial.
 
-### Server info
+```bash
+uv tool install "markdown-vault-mcp"
+markdown-vault-mcp serve
+```
 
-The server registers a built-in `get_server_info` tool (via `fastmcp_pvl_core.register_server_info_tool`) so operators can confirm the deployed version with a single MCP call. The default response carries `server_name`, `server_version`, and `core_version`. Servers that talk to a remote upstream wire upstream version reporting inside the `DOMAIN-UPSTREAM-START` / `DOMAIN-UPSTREAM-END` sentinel in `src/markdown_vault_mcp/server.py`; see [`tool-registration`](.agents/skills/tool-registration/SKILL.md#server-info-tool-get_server_info) for the wiring pattern.
+**A server for remote clients** (streamable HTTP). [A remote server](docs/get-started/http-client.md) connects the clients.
 
-### Health
+```bash
+docker run --rm -p 8000:8000 --env-file .env ghcr.io/pvliesdonk/markdown-vault-mcp:latest
+```
 
-The server serves `/health` (liveness, a static `200`) and `/health/ready` (readiness, `503` when a backing store or a domain check fails) outside the MCP mount and outside auth, via `fastmcp_pvl_core.register_health_routes`. `compose.yml` probes the first. Domain readiness checks go in the `health_checks` dict in `src/markdown_vault_mcp/server.py`; see [Docker deployment](docs/deployment/docker.md#health) for the routes, the mount-path rule, and `MARKDOWN_VAULT_MCP_HEALTH_DETAIL`.
+A `compose.yml` ships at the repository root and runs as-is: copy `.env.example` to `.env`, then `docker compose up -d`. [Deploy](docs/deploy/index.md) covers authentication, OIDC, a reverse proxy and system packages (`.deb`/`.rpm` on the releases page). The server answers `/health` and `/health/ready` outside the MCP mount, and its `get_server_info` tool reports the running version.
+
+<!-- DOMAIN-README-EXTRAS-START -->
+The plain package covers keyword search, the write tools and git. Search by meaning, the file watcher and the `summarize` tool need extras; `[all]` installs every one:
+
+```bash
+uv tool install "markdown-vault-mcp[all]"
+```
+
+The Docker image, the `.mcpb` bundle and the Claude Code plugin already include them. [Installation](docs/get-started/installation.md#notes-for-this-server) lists each extra.
+<!-- DOMAIN-README-EXTRAS-END -->
 
 ## Configuration
 
-The most common environment variables, shared across all
-`fastmcp-pvl-core`-based services:
-
-<!-- GENERATED-ENV-TABLE-CORE-START — generated by scripts/gen_config_surface.py; do not edit -->
-| Variable | Default | Description |
-|---|---|---|
-| `MARKDOWN_VAULT_MCP_KV_STORE_URL` | `file:///data/state` | Persistent-state backend URL shared by every pvl-core subsystem that needs state. `memory://` is in-process and lost on restart; `file:///path` persists on one server; `redis://`, `dynamodb://` and `mongodb://` each need their matching extra. When unset, defaults to `file:///data/state` (the volume family Docker images mount), or to `memory://` (with a warning) on a host where that directory is not usable. |
-| `MARKDOWN_VAULT_MCP_LOG_LEVEL` | `INFO` | Log level for every logger in the process, FastMCP's included (DEBUG / INFO / WARNING / ERROR / CRITICAL). The -v CLI flag overrides to DEBUG. The unprefixed FASTMCP_LOG_LEVEL still works for one major version and logs a deprecation warning. |
-| `MARKDOWN_VAULT_MCP_LOG_FORMAT` | (none) | Log rendering. rich is one colour event key=value line per record, for a terminal; json is one JSON object per record, for a collector. Unset picks rich when stderr is a terminal and json everywhere else, so a container or journald gets JSON with no configuration. |
-<!-- GENERATED-ENV-TABLE-CORE-END -->
-
-This table and the one under [Domain configuration](#domain-configuration)
-are curated subsets. The complete generated reference, with every variable
-the server reads, is the [configuration reference](docs/configuration.md);
-`.env.example` lists the same surface in copy-paste form.
-
-## Authentication
-
-Callers authenticate via a bearer token or OIDC (mutually exclusive). See the [Authentication guide](docs/guides/authentication.md) for setup, mapped multi-subject tokens, OIDC, and troubleshooting.
-
-## Post-scaffold checklist
-
-After `copier copy` and `gh repo create --push`:
-
-1. **Fill in the DOMAIN blocks** (every section marked with a `DOMAIN` sentinel comment) in this README and in `AGENTS.md`. The `GENERATED-ENV-TABLE-*` regions are not DOMAIN blocks; the config generator owns them and rewrites them on every run.
-2. Configure GitHub secrets (see below).
-3. Install dev + docs tooling: `uv sync --all-extras --all-groups`.
-4. Install pre-commit hooks: `uv run pre-commit install`.
-5. Run the gate locally: `uv run pytest -x -q && uv run ruff check --fix . && uv run ruff format . && uv run mypy src/ tests/`.
-6. Push the first commit. CI should be green.
-
-## GitHub secrets
-
-CI workflows reference two required repository secrets and one optional Claude token. Configure them via **Settings → Secrets and variables → Actions** or with `gh secret set`:
-
-| Secret | Used by | How to generate |
-|---|---|---|
-| `RELEASE_TOKEN` | `release-prepare.yml`, `release.yml`, `copier-update.yml`, `renovate.yml`, `bootstrap.yml` | Fine-grained PAT at <https://github.com/settings/personal-access-tokens/new> with `contents: write`, `pull_requests: write`, and `administration: write` (bootstrap applies the repository rulesets, auto-merge, the security settings, and the About block). Must belong to a repository admin: the shipped rulesets grant bypass to the admin role, and the release tag + GitHub release that knope creates after a release pull request merges rely on it (pull requests the token opens also need it so their CI runs). Scoped to this repo. |
-| `SONAR_TOKEN` | `ci.yml` | <https://sonarcloud.io>: after importing the repository, open its **Administration → Analysis Method** page. Turn Automatic Analysis off there first, because SonarQube Cloud refuses a CI scan while it is on; choosing GitHub Actions then shows the token. Until the secret exists, CI skips the scan. |
-| `CLAUDE_CODE_OAUTH_TOKEN` | `claude.yml` | Optional. Run `claude setup-token` locally and configure this only for `@claude` or opted-in automatic review. |
-
-```bash
-gh secret set RELEASE_TOKEN
-gh secret set SONAR_TOKEN
-# Optional: enables @claude and opted-in automatic review.
-gh secret set CLAUDE_CODE_OAUTH_TOKEN
-```
-
-> Dependency updates are handled by **Renovate** (`renovate.yml`), which reuses
-> `RELEASE_TOKEN`. It maintains `uv.lock` and auto-merges patch/minor bumps once
-> the `CI Success` check is green; `bootstrap.yml` enables auto-merge, applies
-> the repository rulesets (`.github/rulesets/`), turns on private
-> vulnerability reporting and Dependabot alerts, and fills the repository's
-> About block (description, website, topics) from `pyproject.toml` on first
-> push. See
-> [Repository Protection](docs/deployment/repository-protection.md) for the
-> per-branch posture, bypass model, and security settings. GitHub Actions are updated in the copier
-> template and arrive via `copier update`, not per-repo.
-
-`GITHUB_TOKEN` is auto-provided; no action needed.
-
-## Local development
-
-The PR gate (matches CI):
-
-```bash
-uv run pytest -x -q                                  # tests
-uv run ruff check --fix . && uv run ruff format .    # lint + format
-uv run mypy src/ tests/                              # type-check
-```
-
-Pre-commit runs a subset of the gate on each commit; see `.pre-commit-config.yaml` for details, or [`AGENTS.md`](AGENTS.md) for the full Hard PR Acceptance Gates.
-
-CI requires tests to pass on Python 3.11 through 3.14. Python 3.14 also collects
-branch coverage and enforces the 80% total and patch coverage thresholds.
-To reproduce that test command, run
-`uv run --python 3.14 pytest --cov --cov-report=xml --durations=20`.
-
-## Troubleshooting
-
-### Moving a scaffolded project
-
-`uv sync` creates `.venv/bin/*` scripts with absolute shebangs pointing at the venv Python. If you move the repo after scaffolding (`mv /old/path /new/path`), `uv run pytest` fails with `ModuleNotFoundError: No module named 'fastmcp'` because the stale shebang resolves to a different interpreter than the venv's site-packages.
-
-**Fix:**
-
-```bash
-rm -rf .venv
-uv sync --all-extras --all-groups
-```
-
-`uv run python -m pytest` also works as a one-shot workaround (bypasses the stale entry-script shim).
-
-### `uv.lock` refresh after `copier update`
-
-When `copier update` introduces new dependencies (such as a new extra added to `pyproject.toml.jinja`), the CI install step runs `uv sync --locked`, which fails against a stale lockfile. Run `uv lock` locally and commit the refreshed `uv.lock` alongside accepting the copier-update PR.
-
-CI installs with `--locked` (and the review workflow with `--frozen`) so no job ever rewrites `uv.lock` in its own workspace: a job that re-locks hides the drift it just repaired, and a dirty workspace breaks any later `git checkout` in the same job. Lockfile drift then shows up as a red install step with a clear message, not as a silent mutation.
-
-## Contributing
-
-`CONTRIBUTING.md` holds the rules for issues and pull requests, and where a
-fix belongs: `fastmcp-pvl-core` for library code, the template for
-template-owned files, this repository for anything inside its `DOMAIN-*` /
-`CONFIG-*` / `PROJECT-*` blocks. `AGENTS.md` carries the conventions and
-gates; the skills under `.agents/skills/` carry the task procedures, among
-them `self-reviewing` (local self-review before a pull request),
-`writing-release-notes` (release notes),
-`applying-template-updates` (the weekly template update pull request) and
-`authoring-issues-prs` (filing). The release procedure is in
-[docs/deployment/release-process.md](docs/deployment/release-process.md);
-the template update procedure in
-[docs/deployment/template-updates.md](docs/deployment/template-updates.md).
-`SECURITY.md` says how to report a vulnerability privately, and what to
-expect after.
-
-## Links
-
-- [Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/)
-- [llms.txt](https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt)
-- [FastMCP](https://gofastmcp.com)
-- [fastmcp-pvl-core](https://pypi.org/project/fastmcp-pvl-core/)
-
-<!-- ===== TEMPLATE-OWNED SECTIONS END ===== -->
-
-## Domain configuration
-
-The variables this project features as its entry points (domain variables use the `MARKDOWN_VAULT_MCP_` prefix):
+Everything is configured through environment variables with the `MARKDOWN_VAULT_MCP_` prefix. The ones most installs set:
 
 <!-- GENERATED-ENV-TABLE-DOMAIN-START — generated by scripts/gen_config_surface.py; do not edit -->
 | Variable | Default | Required | Description |
@@ -291,18 +99,32 @@ The variables this project features as its entry points (domain variables use th
 | `MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_BASE_URL` | (none) | No | OpenAI-compatible endpoint base URL for the summarize tool; setting it enables the tool even without an API key. The bare OPENAI_BASE_URL routes traffic only when a key already enables the feature. |
 <!-- GENERATED-ENV-TABLE-DOMAIN-END -->
 
-This is a curated subset: a field appears here when its `tags` metadata includes `readme`. Every domain variable is documented in the [configuration reference](docs/configuration.md), grouped the same way the config wizard presents them.
+Every variable the server reads, the shared ones included, is in the [configuration reference](docs/reference/configuration.md); `.env.example` lists the same surface in copy-paste form, and the [config wizard](https://pvliesdonk.github.io/markdown-vault-mcp/latest/reference/configuration-generator/) writes one for your deployment.
 
-Domain-config fields are composed inside `src/markdown_vault_mcp/config.py` between the `CONFIG-FIELDS-START` / `CONFIG-FIELDS-END` sentinels; env reads go through `fastmcp_pvl_core.env(_ENV_PREFIX, "SUFFIX", default)` so naming stays consistent, and field invariants go in `__post_init__` between the `CONFIG-VALIDATE-START` / `CONFIG-VALIDATE-END` sentinels. Each field's `metadata` `help`, `tags`, and `wizard` group generate the reference tables directly, so keep them accurate and complete.
+## Documentation
 
-## Key design decisions
+- [Security model](docs/security-model.md): what the server can reach, what it changes and who gets in.
+- [Get started](docs/get-started/index.md): a first success with your client.
+- [Deploy](docs/deploy/index.md): Docker, authentication, OIDC, reverse proxy.
+- [Use](docs/use/index.md): the features, for real tasks.
+- [Reference](docs/reference/configuration.md): configuration, [tools](docs/reference/tools/index.md), resources, prompts, command line.
+- [Upgrade](docs/upgrade/index.md): release channels, and what an upgrade changes for your clients and your data.
+- [Contribute](docs/contribute/index.md): local development, secrets, where a fix belongs; `CONTRIBUTING.md` and `SECURITY.md` at the root.
 
-<!-- DOMAIN-START -->
+## Design decisions
+
+<!-- DOMAIN-README-DESIGN-START -->
 - **Document identity is the relative path** with `.md` extension; frontmatter is optional by default (`REQUIRED_FIELDS` opts into enforcement).
 - **Hybrid search uses Reciprocal Rank Fusion** over the FTS5 and vector result lists, with diversity-aware ranking capping chunks per document.
 - **Tool semantics mirror Claude Code's Read/Write/Edit patterns**, so LLM clients drive the vault with habits they already have.
-- **The library is synchronous**; the MCP layer wraps calls in `asyncio.to_thread()`. File writes return after saving, while index updates run in the background. Index-dependent mutations wait for prior writes; see [index freshness](docs/api/vault.md#index-freshness-after-writes).
+- **The library is synchronous**; the MCP layer wraps calls in `asyncio.to_thread()`. File writes return after saving, while index updates run in the background. Index-dependent mutations wait for prior writes; see [index freshness](docs/reference/api/vault.md#index-freshness-after-writes).
 - **Indexing is hash-based**: unchanged files are never re-parsed, and any change to how stored rows derive from a note's bytes bumps `INDEX_SEMANTICS_VERSION` so deployed vaults rebuild themselves once on upgrade.
 
 The full decision log lives in the [design document](docs/design/design.md).
-<!-- DOMAIN-END -->
+<!-- DOMAIN-README-DESIGN-END -->
+
+## Links
+
+- [Documentation](https://pvliesdonk.github.io/markdown-vault-mcp/) and its [llms.txt](https://pvliesdonk.github.io/markdown-vault-mcp/latest/llms.txt)
+- [FastMCP](https://gofastmcp.com) and [fastmcp-pvl-core](https://pypi.org/project/fastmcp-pvl-core/), which this server is built on
+- [fastmcp-server-template](https://github.com/pvliesdonk/fastmcp-server-template), which generated this repository

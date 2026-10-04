@@ -1,6 +1,6 @@
 # PARA Examples
 
-Ready-made templates and prompts for a [PARA](../../docs/guides/para.md) (Projects, Areas, Resources, Archive) workflow with markdown-vault-mcp.
+Ready-made templates and prompts for a [PARA](../../docs/use/para.md) (Projects, Areas, Resources, Archive) workflow with markdown-vault-mcp.
 
 ## Templates
 
@@ -14,7 +14,7 @@ Five note templates covering the PARA lifecycle:
 
 ## Conventions
 
-Sample per-folder [convention files](../../docs/guides/para.md#folder-conventions) that encode PARA's linking directionality — copy them into the matching vault folders:
+Sample per-folder [convention files](../../docs/use/para.md#folder-conventions) that encode PARA's linking directionality — copy them into the matching vault folders:
 
 - **`conventions/_conventions.md`** — vault-root rules (heading style, frontmatter hygiene)
 - **`conventions/3-Resources/_conventions.md`** — resources are self-contained; no links out to projects
@@ -99,12 +99,12 @@ The server does not enforce this layout. The prompts suggest these paths when th
 These templates work as-is inside an [OKF](../okf/README.md) bundle. Two things to know:
 
 - The inbox template now carries `type: Capture`, so quick captures are OKF-conformant from the start; triage assigns the real type. The other templates already set a `type` (`project` / `area` / `resource`).
-- PARA uses `status` for workflow state (`active`, `archived`); OKF uses `status` for lifecycle (`draft`, `stable`, `deprecated`). If you declare the vault an OKF bundle — add `okf_version: "0.2"` to the root `index.md` — move PARA's workflow state to its own key so the two meanings don't collide. See [Using PARA with OKF](../../docs/guides/para.md#using-para-with-okf).
+- PARA uses `status` for workflow state (`active`, `archived`); OKF uses `status` for lifecycle (`draft`, `stable`, `deprecated`). If you declare the vault an OKF bundle — add `okf_version: "0.2"` to the root `index.md` — move PARA's workflow state to its own key so the two meanings don't collide. See [Using PARA with OKF](../../docs/use/para.md#using-para-with-okf).
 
 ## See Also
 
-- **PARA Guide**: [`docs/guides/para.md`](../../docs/guides/para.md) — comprehensive walkthrough
+- **PARA Guide**: [`docs/use/para.md`](../../docs/use/para.md) — comprehensive walkthrough
 - **OKF pack**: [`examples/okf/`](../okf/README.md) — declare and enforce the Open Knowledge Format on this vault
-- **MCP Tools Reference**: [`docs/tools/index.md`](../../docs/tools/index.md) — all available tools
+- **MCP Tools Reference**: [`docs/reference/tools/index.md`](../../docs/reference/tools/index.md) — all available tools
 - **Design Document**: [`docs/design/design.md`](../../docs/design/design.md) — linking system and search algorithms
-- **Zettelkasten alternative**: [`docs/guides/zettelkasten.md`](../../docs/guides/zettelkasten.md) — for idea-centric knowledge management
+- **Zettelkasten alternative**: [`docs/use/zettelkasten.md`](../../docs/use/zettelkasten.md) — for idea-centric knowledge management

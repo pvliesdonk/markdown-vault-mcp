@@ -1,4 +1,4 @@
-"""Pin the FastMCP discovery-route behaviour ``docs/deployment/oidc.md`` states.
+"""Pin the FastMCP discovery-route behaviour ``docs/deploy/oidc.md`` states.
 
 Template-owned. The "One document still collides" admonition in that page
 tells operators that proxy mode serves authorization-server metadata at the
@@ -62,7 +62,7 @@ def test_proxy_mode_serves_authorization_server_metadata_at_the_host_root() -> N
     assert _status(app, ROOT_FORM) == 200
     assert _status(app, PATH_AWARE_FORM) == 404, (
         "FastMCP now serves the RFC 8414 path-aware form: reword the "
-        "'One document still collides' admonition in docs/deployment/oidc.md"
+        "'One document still collides' admonition in docs/deploy/oidc.md"
     )
 
 
@@ -71,5 +71,5 @@ def test_fastmcp_still_builds_the_unmounted_path_aware_override() -> None:
 
     assert PATH_AWARE_FORM in routes, (
         "OAuthProvider.get_well_known_routes() no longer builds the "
-        "path-aware form docs/deployment/oidc.md names"
+        "path-aware form docs/deploy/oidc.md names"
     )

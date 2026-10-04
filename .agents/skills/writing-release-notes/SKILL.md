@@ -230,6 +230,24 @@ A list of tools shipped is the failure mode, not the deliverable.
 
 ### Upgrade / breaking-changes section
 
+The Upgrading section opens the page, directly after the summary block and
+before the themes: an upgrader reads it first and may read nothing else.
+It carries the steps the release needs, each conditional on what the reader
+runs ("if you run the shipped `compose.yml`…"), and then three fixed lines
+in this order, each with its "none" answer, because readers look for them
+there and "none" is an answer they need too:
+
+- `**Clients:**` what a connected client has to do, or that nothing is
+  needed beyond reconnecting (the client re-discovers the surface).
+- `**State:**` what is kept and what is rebuilt or moved (an index, a
+  volume path, a file format), with the step when there is one.
+- `**Security posture:**` what changed in what the server exposes, accepts
+  or trusts (an auth default, a new unauthenticated route, a write tool on
+  by default), or "none".
+
+`docs/upgrade/index.md` (template-owned) tells readers to expect exactly
+these three lines; keep the labels verbatim.
+
 Do **not** trust `!` markers or `BREAKING CHANGE:` footers — trials found
 them wrong in both directions. Derive the section from the actual surfaces
 between `PREV` and `RANGE_END`, read through the API — you have no local
@@ -268,20 +286,30 @@ markers each occur exactly once, and the summary is non-empty:
     <!-- notes-range-end: <commit SHA> -->
 
     <!-- RELEASE-SUMMARY NEXT START -->
-    One concise user-facing summary.
+    One concise user-facing summary, ending with a pointer to Upgrading.
     <!-- RELEASE-SUMMARY NEXT END -->
+
+    ## Upgrading
+
+    The steps this release needs, each conditional on what the reader runs;
+    then the three fixed lines (see the Upgrade section rules):
+
+    **Clients:** …
+    **State:** …
+    **Security posture:** …
 
     ## <theme>
 
     Evidence-linked narrative.
 
-    ## Upgrading
-
-    Migration guidance, when needed.
-
-Canonical pages remain one page per minor series. `refresh-known-target` and
-`backfill/redraft` preserve exact `<!-- RELEASE-SUMMARY vX.Y.Z START -->` and
-`END` markers. Patch entries remain inside `<!-- PATCH-RELEASES-START -->` and
+Canonical pages remain one page per minor series. A canonical page opens
+with `description:` and `kind: how-to` front matter, which promotion writes
+on a new page and the docs structure check asks for; its title (`# 3.2`)
+is the first line after it. `next.md` has no front matter. A page promoted
+before this convention may have none: add it, and promotion keeps it.
+`refresh-known-target` and `backfill/redraft` preserve exact
+`<!-- RELEASE-SUMMARY vX.Y.Z START -->` and `END` markers. Patch entries
+remain inside `<!-- PATCH-RELEASES-START -->` and
 `<!-- PATCH-RELEASES-END -->`, oldest first, with undated headings such as
 `## v3.2.1`. Git tags and GitHub releases are the release-date authority.
 

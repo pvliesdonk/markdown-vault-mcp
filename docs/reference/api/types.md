@@ -1,0 +1,112 @@
+---
+description: "The data types the Vault API returns."
+kind: reference
+---
+
+# Types
+
+All data types returned by the `Vault` API are importable from the `markdown_vault_mcp.types` module.
+
+```python { .fragment }
+from markdown_vault_mcp.types import NoteContent, GroupedResult, SectionHit, NoteContext
+```
+
+## Document Types
+
+<!-- vale off -->
+::: markdown_vault_mcp.types.NoteContent
+
+::: markdown_vault_mcp.types.RevisionContent
+
+::: markdown_vault_mcp.types.NoteInfo
+
+::: markdown_vault_mcp.types.ParsedNote
+
+::: markdown_vault_mcp.types.Chunk
+<!-- vale on -->
+
+## Search & Link Types
+
+<!-- vale off -->
+::: markdown_vault_mcp.types.SearchResult
+
+::: markdown_vault_mcp.types.SectionHit
+
+::: markdown_vault_mcp.types.GroupedResult
+
+::: markdown_vault_mcp.types.FTSResult
+
+::: markdown_vault_mcp.types.BacklinkInfo
+
+::: markdown_vault_mcp.types.OutlinkInfo
+
+::: markdown_vault_mcp.types.BrokenLinkInfo
+
+::: markdown_vault_mcp.types.LinkInfo
+
+::: markdown_vault_mcp.types.NoteContext
+
+::: markdown_vault_mcp.types.MostLinkedNote
+<!-- vale on -->
+
+## Operation Results
+
+<!-- vale off -->
+::: markdown_vault_mcp.types.WriteResult
+
+::: markdown_vault_mcp.types.EditResult
+
+::: markdown_vault_mcp.types.DeleteResult
+
+::: markdown_vault_mcp.types.RenameResult
+
+::: markdown_vault_mcp.types.IndexStats
+
+::: markdown_vault_mcp.types.ReindexResult
+
+::: markdown_vault_mcp.types.VaultStats
+
+::: markdown_vault_mcp.types.ChangeSet
+<!-- vale on -->
+
+## Attachment Types
+
+<!-- vale off -->
+::: markdown_vault_mcp.types.AttachmentContent
+
+::: markdown_vault_mcp.types.AttachmentInfo
+<!-- vale on -->
+
+## Git Types
+
+<!-- vale off -->
+::: markdown_vault_mcp.types.HistoryEntry
+
+::: markdown_vault_mcp.types.CommitDiff
+<!-- vale on -->
+
+## Callbacks
+
+**`WriteOperation`**
+
+Type alias for the kind of write operation reported to callbacks. `WriteCallback` and the `op` argument below both reference it.
+
+```python { .fragment }
+WriteOperation = Literal["write", "edit", "delete", "rename"]
+```
+
+**`WriteCallback`**
+
+Type alias for the `on_write` callback passed to `Vault`. Called after each successful write operation.
+
+```python { .fragment }
+WriteCallback = Callable[[Path, str, WriteOperation], None]
+```
+
+Arguments received by the callback:
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `path` | `Path` | Absolute path of the modified file |
+| `content` | `str` | New file content (empty string for binary attachments and deletes) |
+| `op` | `WriteOperation` | Which write operation fired (see `WriteOperation` above) |

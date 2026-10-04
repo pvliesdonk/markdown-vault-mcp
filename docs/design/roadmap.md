@@ -50,7 +50,7 @@ integration consumes that contract, and both paths have an installation and
 upgrade story. The outcome does not require a particular distribution layout.
 
 `evidenced` — [#1436][1436] records the missing declared and guarded library
-surface. The existing [API documentation](../api/vault.md) describes library
+surface. The existing [API documentation](../reference/api/vault.md) describes library
 construction; that does not establish complete support for a consumer outside
 the MCP server's lifecycle. The reported downstream indexing/search use case
 provides a concrete consumer for the research.
@@ -227,11 +227,29 @@ measurement the epic's "Done when" names and the evidence the template's
 review skill distils. The standalone accuracy bugs from round 1 were fixed on
 the old site first, because they misled readers then.
 
-`derived` — Unknown: whether the migrated site clears every round-1 blocker
-class, or whether some class needs a second template change. Resolved by
-round 2 ([#1685](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1685)),
-which has an appetite; a blocker that survives is a finding about the
-direction, filed under [#1665][1665].
+`evidenced` — Round 2 ([#1685](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1685),
+read at `369e4917` on the integration branch, 4 October 2026) did not meet the
+epic's "Done when": blockers fell from 21 to 11 across the eight walks, three
+walks still ended in a `misled` or `absent` blocker, the evaluator decided over
+its tolerance, and the audit found 15 `non-domain-in-mvm` units and no
+`domain-undesignated` one. No round-1 standalone bug recurred as a blocker. The
+walks, counts and audit are in the round-2 comments on [#1272][1272]. Six of the
+blockers were template defects, fixed in template v11.1.4; one was resolved by
+adopting it.
+
+`stated` — The owner ruled on the remaining four, which were filed as
+documentation bugs: "The blockers are not documentation problems: the
+underlying issues must be addressed, but that is not 1690" (4 October 2026).
+
+`derived` — They left the epic for `013 surfaced-fixes`, the nearest cut for
+behaviour work; the ruling names no package. So the migration's final pull
+request merges with round 2's
+measurement on record, and [#1665][1665] stays open: its "Done when" is
+unchanged and not yet met. Unknown: which of round 2's remaining items (the
+evaluator's overrun, the published and unpublished `non-domain-in-mvm` units,
+the seven `unclear` ones) the epic must still answer before a third
+measurement. Resolved by the owner's ruling on the open list in the round-2
+summary on [#1272][1272]; not knowing does not change the order of `013`.
 
 ### Other ambitions remain available
 
@@ -261,7 +279,7 @@ membership. The exact version is computed from what lands.
 `evidenced` — Major intent accounts for the template/FastMCP adoption already
 recorded in [commit 2c7d46e5][template-adoption]. The already-announced library
 removals ([#1225][1225], [#1236][1236]) and
-[operator default change](../configuration.md#write-safety) were checked against
+[operator default change](../reference/configuration.md#write-safety) were checked against
 stable behavior during
 this reconciliation; their original next-major deferral is the reason to group
 them here. Other former `v5` wishes do not acquire a release commitment.
@@ -277,6 +295,18 @@ whether a split is warranted and whether existing installations and imports can
 remain compatible. Reclassify the package as major if the chosen transition breaks
 the preceding stable operator or library contract. Do not promise either a split
 or a minor version before that assessment.
+
+`stated` — **[011 reader-shaped-docs](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/18)**
+carries the documentation migration ([#1665][1665]) and the template epic it
+adopts, as one cut (28 September 2026).
+
+`stated` — **[013 surfaced-fixes](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/19)
+(patch)** holds the code defects the migration surfaced, as their own cut after
+`011` (4 October 2026).
+
+`derived` — Round 2's four remaining blockers joined `013` as behaviour work;
+§ Reader-shaped documentation has the ruling that took them out of the
+migration.
 
 ### Follow-up slices after `020`
 
@@ -454,6 +484,12 @@ against a superproject holding one submodule (git 2.55.0); the findings are the
 `derived` — Neither epic joins a package yet; § Vaults with git submodules
 argues the order.
 
+### 28 September 2026 — chart reader-shaped documentation
+
+`derived` — Added § Reader-shaped documentation after [#1272][1272]'s round-1 review.
+The template epic precedes this repository's migration epic; neither joins a
+package yet.
+
 ### 2 October 2026 — refine the documentation migration
 
 `derived` — Template v11.1.0 shipped the structure, so [#1665][1665] is
@@ -461,11 +497,14 @@ refined: adoption, then one feature per section, then round 2 as the
 measurement. The ordering argument above is restated accordingly; the
 "Done when" is unchanged.
 
-### 28 September 2026 — chart reader-shaped documentation
+### 4 October 2026 — record round 2 of the documentation review
 
-`derived` — Added § Reader-shaped documentation after [#1272][1272]'s round-1 review.
-The template epic precedes this repository's migration epic; neither joins a
-package yet.
+`derived` — Round 2 resolved § Reader-shaped documentation's unknown: the
+migrated site does not yet meet the epic's "Done when". The owner ruled the
+remaining blockers out of the migration's final pull request; they joined
+`013 surfaced-fixes` as behaviour work, and the epic stays open on an unchanged
+"Done when". Added `011` and `013` to § Packages, which did
+not list them.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859

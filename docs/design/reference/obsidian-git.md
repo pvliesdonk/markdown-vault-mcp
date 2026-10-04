@@ -100,7 +100,7 @@ line-author views, and submodules.
   #229 and #231: the plugin commits often and independently, and a
   same-file edit on both sides conflicts on rebase); `okf.py`'s
   `build_log_markdown`, which renders commit subjects; the guide
-  `docs/guides/obsidian-everywhere.md` §Limitations; the OKF ownership
+  `docs/use/obsidian-everywhere.md` §Limitations; the OKF ownership
   design work under epic #1425.
 
 ## Claims
@@ -306,7 +306,7 @@ pull path rebases where the plugin's default merges, and its resolver
 saves a sibling where the plugin writes a conflict note; those are two
 tools' policies on one repository, not a departure from the plugin's
 contract. The guide's description of the divergence case
-(`docs/guides/obsidian-everywhere.md`, "Limitations & troubleshooting")
+(`docs/use/obsidian-everywhere.md`, "Limitations & troubleshooting")
 is consistent with the claims above.
 
 ## Not covered

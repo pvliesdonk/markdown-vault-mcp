@@ -73,15 +73,15 @@ def _register_browse(mcp: FastMCP, app_uri: str) -> None:
         list_documents or get_context for content.
 
         Args:
-            path: Note to open on, e.g. "Journal/2024-01-15.md"; omit to start from the
+            path: Note to open on, such as `"Journal/2024-01-15.md"`; omit to start from the
                 whole vault.
-            view: "context" for a note's relationships, "graph" for the link graph,
-                "browse" for the file tree, or "note" for the note itself; omit for
-                "context" with a path and "browse" without.
+            view: `"context"` for a note's relationships, `"graph"` for the link graph,
+                `"browse"` for the file tree, or `"note"` for the note itself; omit for
+                `"context"` with a path and `"browse"` without.
 
         Returns:
             - path (str | None): The requested note path, or null if none given.
-            - view (str): The active view ("context", "graph", "browse", or "note").
+            - view (str): The active view (`"context"`, `"graph"`, `"browse"`, or `"note"`).
             - summary (str): Text summary of vault or note state for non-Apps clients.
         """
         effective_view = view or ("context" if path else "browse")
@@ -137,16 +137,16 @@ def _register_context(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
     ) -> dict[str, Any]:
         """Return the full NoteContext for a note (app-only).
 
-        Called by the SPA context card view via ``app.callServerTool()``.
+        Called by the SPA context card view via `app.callServerTool()`.
         Not visible to the LLM.
 
         Args:
-            path: Relative note path (e.g. ``"Journal/2024-01-15.md"``).
+            path: Relative note path (such as `"Journal/2024-01-15.md"`).
 
         Returns:
             Dict with path, title, folder, frontmatter, modified_at, backlinks,
-            outlinks, similar, folder_notes, and tags — see 'get_context' for
-            field details. Returns {"error": "..."} if the note is not found.
+            outlinks, similar, folder_notes, and tags; see 'get_context' for
+            field details. Returns `{"error": "..."}` if the note is not found.
         """
         try:
             ctx = await asyncio.to_thread(vault.reader.get_context, path)
@@ -178,11 +178,11 @@ def _register_context(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         data.
 
         Args:
-            path: Path of the note, e.g. "Journal/2024-01-15.md".
+            path: Path of the note, such as `"Journal/2024-01-15.md"`.
 
         Returns:
             - path (str): The note path.
-            - view (str): Always "context".
+            - view (str): Always `"context"`.
             - summary (str): Text summary with backlink, outlink, and similarity counts.
         """
         try:
@@ -238,7 +238,7 @@ def _register_graph(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
     ) -> dict[str, Any]:
         """Return the link neighborhood of a note as a node/edge graph (app-only).
 
-        Called by the SPA graph view via ``app.callServerTool()``.
+        Called by the SPA graph view via `app.callServerTool()`.
         Not visible to the LLM.
 
         Args:
@@ -249,7 +249,7 @@ def _register_graph(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
                 silently omitted when unavailable).
             max_nodes: Soft cap on returned node count (default 200). BFS
                 and any semantic expansion both stop once the cap is hit;
-                the response sets ``truncated=True``. Bounds dense-vault
+                the response sets `truncated=True`. Bounds dense-vault
                 depth=2 traversals that would otherwise bog down vis-network.
 
         Returns:
@@ -259,10 +259,10 @@ def _register_graph(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
 
               - id (str): Unique identifier for the node.
               - label (str): Display name for the node.
-              - group (str): "note" or "orphan".
+              - group (str): `"note"` or `"orphan"`.
               - folder (str): Parent folder path.
               - backlink_count (int): Number of inbound links.
-              - note_type (str, optional): The note's OKF ``type``
+              - note_type (str, optional): The note's OKF `type`
                 frontmatter value; present only on an active OKF
                 bundle for notes that declare one.
 
@@ -270,9 +270,9 @@ def _register_graph(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
 
               - from (str): Source node ID.
               - to (str): Target node ID.
-              - type (str): "markdown", "wikilink", "reference", or "semantic".
+              - type (str): `"markdown"`, `"wikilink"`, `"reference"`, or `"semantic"`.
 
-            - truncated (bool): True when BFS hit the ``max_nodes`` cap.
+            - truncated (bool): True when BFS hit the `max_nodes` cap.
         """
         view = await asyncio.to_thread(
             vault.graph.get_neighborhood,
@@ -316,10 +316,10 @@ def _register_graph(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
 
               - id (str): Unique identifier for the node.
               - label (str): Display name for the node.
-              - group (str): "hub" or "note".
+              - group (str): `"hub"` or `"note"`.
               - folder (str): Parent folder path.
               - backlink_count (int): Number of inbound links.
-              - note_type (str, optional): The note's OKF ``type``
+              - note_type (str, optional): The note's OKF `type`
                 frontmatter value; present only on an active OKF
                 bundle for notes that declare one.
 
@@ -327,7 +327,7 @@ def _register_graph(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
 
               - from (str): Source node ID.
               - to (str): Target node ID.
-              - type (str): "markdown", "wikilink", or "reference".
+              - type (str): `"markdown"`, `"wikilink"`, or `"reference"`.
         """
         view = await asyncio.to_thread(vault.graph.get_hub_graph, limit=limit)
         return _graph_view_payload(view, include_truncated=False)
@@ -356,7 +356,7 @@ def _register_browser(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
     ) -> dict[str, Any]:
         """List folders and notes in a vault directory (app-only).
 
-        Called by the SPA browser view via ``app.callServerTool()``.
+        Called by the SPA browser view via `app.callServerTool()`.
         Not visible to the LLM.
 
         Args:
@@ -371,7 +371,7 @@ def _register_browser(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
 
               - path (str): Relative path of the note.
               - title (str): Document title.
-              - kind (str): "note" or "attachment".
+              - kind (str): `"note"` or `"attachment"`.
         """
         docs = await asyncio.to_thread(
             vault.reader.list_documents, folder=folder, include_attachments=True
@@ -425,7 +425,7 @@ def _register_browser(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
     ) -> dict[str, Any] | None:
         """Read a note's full content for preview rendering (app-only).
 
-        Called by the SPA browser view via ``app.callServerTool()``.
+        Called by the SPA browser view via `app.callServerTool()`.
         Not visible to the LLM.
 
         Args:
@@ -469,7 +469,7 @@ def _register_browser(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
     ) -> list[dict[str, Any]]:
         """Search the vault (app-only).
 
-        Called by the SPA browser search bar via ``app.callServerTool()``.
+        Called by the SPA browser search bar via `app.callServerTool()`.
         Not visible to the LLM.
 
         Args:
@@ -480,7 +480,7 @@ def _register_browser(mcp: FastMCP, app_uri: str, tool_meta: ToolMeta) -> None:
         Returns:
             List of result dicts, each with path (str), title (str),
             snippet (str, first 200 chars of matched chunk), and
-            score (float). Returns [{"error": "..."}] on search failure.
+            score (float). Returns `[{"error": "..."}]` on search failure.
         """
         try:
             results = await asyncio.to_thread(

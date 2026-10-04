@@ -540,7 +540,7 @@ files:
 
   examples/oidc.env:
     kind: env
-    header: "OIDC authentication example. See docs/guides/authentication.md for setup."
+    header: "OIDC authentication example. See docs/deploy/authentication.md for setup."
     commented: false
     sections:
       - {title: null, tags: [oidc]}
@@ -549,7 +549,7 @@ files:
   docs/javascripts/config-wizard/wizard-spec.json:
     kind: wizard
 
-  docs/guides/authentication.md:
+  docs/deploy/authentication.md:
     kind: splice
     regions:
       - id: OIDC-REQUIRED
@@ -561,7 +561,7 @@ files:
         required: false
         columns: [variable, default, description]
 
-  docs/deployment/oidc.md:
+  docs/deploy/oidc.md:
     kind: splice
     regions:
       - id: OIDC-REQUIRED
@@ -581,9 +581,9 @@ files:
   # to keep here). Section order mirrors .env.example; Persistence is
   # declared before Background tasks for the same TASKS_URL reason noted
   # there. The surrounding prose is hand-authored in
-  # docs/configuration.md.jinja — per-section intros are the place for the
+  # docs/reference/configuration.md.jinja — per-section intros are the place for the
   # conceptual explanations a table cell cannot carry.
-  docs/configuration.md:
+  docs/reference/configuration.md:
     kind: splice
     claim_once: true
     complete: true
@@ -644,24 +644,20 @@ files:
       # A deliberately curated landing-page subset, not the full surface —
       # `readme` is a hand-picked tag on a handful of vars, not a
       # section-wide selector like the env-file `tags:` above. Do not widen
-      # it to cover more ground; that is what docs/configuration.md (the
-      # complete generated reference) and `.env.example` are for. The
-      # provenance split keeps the two regions disjoint: a domain field
-      # tagged `readme` lands in the Domain region below, never here.
-      - id: CORE
-        tags: [readme]
-        provenance: [core, template, external]
-        columns: [variable, default, description]
+      # it to cover more ground; that is what docs/reference/configuration.md (the
+      # complete generated reference) and `.env.example` are for. Only the
+      # project's own fields appear: the shared (core) variables live in the
+      # reference, which the README links (#717).
       # The project's own curated subset: a downstream features a domain
       # field on the landing page by adding `readme` to that field's `tags`
-      # metadata. The full domain surface lives in docs/configuration.md's
+      # metadata. The full domain surface lives in docs/reference/configuration.md's
       # REF-DOMAIN region; this region deliberately does NOT dump it — a
       # README table with dozens of rows stops being an entry point.
       - id: DOMAIN
         tags: [readme]
         provenance: [domain]
         columns: [variable, default, required, description]
-        empty_note: "_No variables are featured here yet. Add `readme` to a config field's `tags` metadata to feature it; the [configuration reference](docs/configuration.md) lists every variable._"
+        empty_note: "_No variables are featured here yet. Add `readme` to a config field's `tags` metadata to feature it; the [configuration reference](docs/reference/configuration.md) lists every variable._"
 
   # JSON has no comment syntax, so there is nowhere for a GENERATED-* marker
   # pair to live. This kind splices structurally instead: each declared

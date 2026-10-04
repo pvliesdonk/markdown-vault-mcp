@@ -304,46 +304,46 @@ def register(mcp: FastMCP) -> None:
         created as needed.
 
         Args:
-            path: Path in the vault, e.g. "Journal/note.md" or "assets/photo.png"; the
+            path: Path in the vault, such as `"Journal/note.md"` or `"assets/photo.png"`; the
                 extension decides between note and attachment.
             content: The note's Markdown body, without frontmatter.
-            frontmatter: The note's frontmatter, e.g. {"title": "My Note", "tags":
-                ["draft"]}.
+            frontmatter: The note's frontmatter, such as
+                `{"title": "My Note", "tags": ["draft"]}`.
             content_base64: An attachment's bytes, base64-encoded; for paths not ending
                 in .md.
             if_match: Etag from read, to replace an existing file; omit for a new file.
 
         Returns:
-            Dict with path (str) and created (bool — true if new file,
+            Dict with path (str) and created (bool: true if new file,
             false if overwrite). On a git-backed vault, an overwrite also
             carries 'previous_revision': the commit holding the content this
             write just replaced. Read it back with
             read(path, revision=<that sha>), then write it again with if_match
             set to the etag from a plain read(path). The key is absent when no
-            commit provably holds the replaced content — a create, no git, or
+            commit provably holds the replaced content: a create, no git, or
             content that was never committed (which git cannot recover at all).
             For .md files, may include 'conventions':
             the user's authoring conventions for the target folder
             (root-first list of {folder, path, content}). When present,
-            verify the note you just wrote complies — e.g. self-containment
-            or linking-direction rules — and issue a follow-up 'edit' if it
+            verify the note you just wrote complies, such as with self-containment
+            or linking-direction rules, and issue a follow-up 'edit' if it
             does not. To check conventions *before* writing, call
             'get_conventions(path)'.
 
-        Supports split (write several new notes from one source) and merge
-        (extend an existing note with content from another) when composed with
-        ``read`` and ``delete``.
+            - remote (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
 
         Raises:
             ValueError: If content_base64 is missing/invalid for
                 attachments, or the content exceeds
-                ``MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB``.
-            MCPError: If if_match is provided and the file has been
+                `MARKDOWN_VAULT_MCP_MAX_ATTACHMENT_SIZE_MB`.
+            `MCPError`: If if_match is provided and the file has been
                 modified, or if_match is supplied for a file that does not
                 yet exist (ConcurrentModificationError). Also when the server
-                runs with ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`` (default)
+                runs with `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default)
                 and path already exists while no if_match is supplied
-                (DocumentExistsError) — use 'edit' or 'append' instead, or
+                (DocumentExistsError); use 'edit' or 'append' instead, or
                 read the file first and pass its etag as if_match.
         """
         if not is_note(path):
@@ -410,12 +410,12 @@ def register(mcp: FastMCP) -> None:
         line_end: int | None = None,
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Replace text in an existing note: an exact old_text, a range of lines, or an
-        old_text within a range of lines.
+        """Replace text in an existing note, chosen by an exact old_text, by a range of
+        lines, or by an old_text within a range of lines.
 
         Read the note first for its current text. When old_text has no
         exact match, a unique match after normalising Unicode, dashes, quotes and
-        whitespace is used and reported as match_type "normalized".
+        whitespace is used and reported as match_type `"normalized"`.
 
         Args:
             path: Path of the note.
@@ -432,19 +432,23 @@ def register(mcp: FastMCP) -> None:
         Returns:
             - **path** (str): path of the edited document.
             - **replacements** (int): always 1.
-            - **match_type** (str): ``'exact'`` or ``'normalized'``.
+            - **match_type** (str): `'exact'` or `'normalized'`.
             - **conventions** (list, optional): the user's authoring
               conventions for the note's folder (root-first list of
               {folder, path, content}). When present, verify the edited
               note complies and issue a follow-up 'edit' if it does not.
+            - **remote** (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
 
         Raises:
             ValueError: If parameter combination is invalid, or line
                 numbers are out of range.
             EditConflictError: If old_text is not found or appears more
-                than once.
+                than once; a not-found error may name the closest line and the
+                first differing character.
             DocumentNotFoundError: If no file exists at the given path.
-            MCPError: If if_match is provided and the file has been modified
+            `MCPError`: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
         try:
@@ -499,7 +503,7 @@ def register(mcp: FastMCP) -> None:
         a paragraph or section.
 
         Args:
-            path: Path of the note, e.g. "Journal/2026.md".
+            path: Path of the note, such as `"Journal/2026.md"`.
             content: Non-empty text to add after everything the note holds.
             if_match: Etag from read; the text is then added only to that version. Omit
                 to append regardless.
@@ -514,12 +518,15 @@ def register(mcp: FastMCP) -> None:
               conventions for the note's folder (root-first list of
               {folder, path, content}). When present, verify the appended
               content complies and issue a follow-up 'edit' if it does not.
+            - **remote** (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
 
         Raises:
             ValueError: If content is empty.
             DocumentNotFoundError: If no file exists at the given path and
                 create_if_missing is false.
-            MCPError: If if_match is provided and the file has been modified
+            `MCPError`: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
         with write_identity_scope():
@@ -561,12 +568,13 @@ def register(mcp: FastMCP) -> None:
         Returns:
             Dict with path (str) of the deleted file.
 
-        Typically called after a split or merge to remove the source note once
-        its content has been relocated.
+            - remote (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
 
         Raises:
             DocumentNotFoundError: If no file exists at the given path.
-            MCPError: If if_match is provided and the file has been modified
+            `MCPError`: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
         # Bind the caller's Principal so the delete commit is attributed
@@ -602,8 +610,8 @@ def register(mcp: FastMCP) -> None:
         For a note, always pass update_links=True. Parent folders are created as needed.
 
         Args:
-            old_path: Current path, e.g. "drafts/idea.md" or "assets/old.png".
-            new_path: New path, e.g. "projects/idea.md", where nothing exists yet.
+            old_path: Current path, such as `"drafts/idea.md"` or `"assets/old.png"`.
+            new_path: New path, such as `"projects/idea.md"`, where nothing exists yet.
             if_match: Etag from read of old_path; omit when renaming several linked
                 notes together.
             update_links: Rewrite links to old_path in other notes so they point at
@@ -616,12 +624,21 @@ def register(mcp: FastMCP) -> None:
             Carries hint (str) only when update_links was requested for an
             attachment, saying why nothing was rewritten.
 
+            - remote (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
+
         Raises:
             DocumentNotFoundError: If old_path does not exist.
             DocumentExistsError: If new_path already exists.
             ValueError: If the path fails traversal validation.
-            MCPError: If if_match is provided and the file has been modified
+            `MCPError`: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
+            TimeoutError: With update_links on a note, if writes queued before the
+                call have not reached the index within 60 seconds; nothing is
+                changed.
+            IndexUnavailableError: With update_links on a note, if the index build
+                failed; nothing is changed.
         """
         # Bind the caller's Principal so the rename commit (and any link-
         # rewrite commits) are attributed (#1218); no OKF intent — the
@@ -663,22 +680,35 @@ def register(mcp: FastMCP) -> None:
         """Move a folder and everything under it to a new location, rewriting every link
         into it across the vault: rename for a whole folder.
 
-        Links that could not be rewritten are listed in failed_links.
+        Notes whose links could not be rewritten are listed in failed_links.
 
         Args:
-            old_dir: Folder to move, e.g. "drafts".
-            new_dir: Destination folder, e.g. "archive/2026"; an existing folder is
+            old_dir: Folder to move, such as `"drafts"`.
+            new_dir: Destination folder, such as `"archive/2026"`; an existing folder is
                 merged into.
 
         Returns:
-            Dict with old_dir (str), new_dir (str), files_moved (int),
-            updated_links (int), and failed_links (list[str]).
+            Dict with old_dir (str), new_dir (str), files_moved (int) and
+            updated_links (int), plus:
+
+            - failed_links (list[str]): paths of notes whose links could not be
+              rewritten; the move itself stands.
+            - remote (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
 
         Raises:
-            DocumentNotFoundError: If old_dir is missing, not a folder, or empty.
-            DocumentExistsError: If any destination file already exists.
+            DocumentNotFoundError: If no non-empty folder exists at old_dir.
+            DocumentExistsError: If any destination file already exists; nothing
+                is moved.
             ValueError: If a path fails traversal validation or the two paths
                 are nested.
+            ToolError: If a file error on the server interrupts the move, so some
+                files may already be under new_dir; call reindex so search
+                matches the files.
+            TimeoutError: If writes queued before the call have not reached the index
+                within 60 seconds; nothing is changed.
+            IndexUnavailableError: If the index build failed; nothing is changed.
         """
         # Bind the caller's Principal so every per-file commit of the move is
         # attributed (#1218); no OKF intent — the enricher's actor for the
@@ -734,54 +764,56 @@ def register(mcp: FastMCP) -> None:
         then pass the path to other tools.
 
         Args:
-            url: An http or https URL on the public internet. Redirects are followed, so
+            url: An HTTP or HTTPS URL on the public internet. Redirects are followed, so
                 check final_url in the result when the source host matters.
-            path: Destination path, e.g. "notes/report.md" or "assets/diagram.png"; .md
+            path: Destination path, such as `"notes/report.md"` or `"assets/diagram.png"`; .md
                 saves a note, anything else an attachment.
-            frontmatter: Frontmatter for a note, e.g. {"title": "Report", "source":
-                "https://example.org/report"}.
+            frontmatter: Frontmatter for a note, such as
+                `{"title": "Report", "source": "https://example.org/report"}`.
             if_match: Etag from read, to replace an existing file; omit for a new file.
             timeout_s: Download timeout in seconds (default 30); raise it for a large
                 file from a slow host.
 
         Returns:
             Dict with:
+
             - path (str): vault path of the written file
             - created (bool): true if new file, false if overwrite
             - content_length (int): bytes downloaded
             - content_type (str or null): Content-Type from the response
-            - final_url (str): the URL the bytes actually came from — equal
-              to ``url`` when nothing redirected, otherwise the last hop.
-              Userinfo is stripped; the query string is not, so do not log
+            - final_url (str): the URL the bytes actually came from: equal
+              to `url` when nothing redirected, otherwise the last hop.
+              A user name or password in the URL is stripped; the query string is not, so do not log
               it verbatim
             - conventions (list, optional; .md only): the user's authoring
               conventions for the target folder (root-first list of
               {folder, path, content}). When present, verify the saved note
               complies and issue a follow-up 'edit' if it does not.
-
-        Primary building block for URL-to-note capture flows: call ``fetch`` to
-        retrieve the source, summarize via the LLM, and ``write`` the result
-        as a new note.
+            - remote (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
 
         Raises:
             DocumentExistsError: If the server runs with
-                ``MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true`` (default) and *path*
+                `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING=true` (default) and *path*
                 already exists while no *if_match* is supplied. The save
-                routes through the same guarded ``write`` /
-                ``write_attachment`` path as the write tools, so read the
+                routes through the same guarded `write` /
+                `write_attachment` path as the write tools, so read the
                 existing note first and pass its etag as *if_match* to
                 replace it deliberately, or fetch to a fresh path.
-            InvalidRequestError: If the URL scheme is not http/https, the
-                host is blocked or cannot be resolved (on the supplied URL or
-                on any redirect hop), the download exceeds the size limit, or
-                the response cannot be decoded.
+            InvalidRequestError: If the URL scheme is not http/https, the host
+                is not publicly routable (private, loopback, link-local,
+                carrier-grade NAT and reserved ranges are refused) or cannot be
+                resolved, checked on the supplied URL and on every redirect hop,
+                the download exceeds the size limit, or the response cannot be
+                decoded.
             ToolError: If the remote site answers a non-2xx status (retry
                 later for a 5xx, check the URL otherwise; the message never
-                names the URL) or redirects past httpx's ``max_redirects``.
-            httpx.HTTPStatusError: For a 429, passed to ``tool_boundary``,
-                which answers "retry later".
-            httpx.TransportError: On a timeout or a failed connection;
-                propagates to ``tool_boundary``.
+                names the URL) or redirects more times than the client allows.
+            `httpx.HTTPStatusError`: On a 429; `tool_boundary` turns it into a
+                `"retry later"` answer.
+            `httpx.TransportError`: On a timeout or a failed connection; it
+                propagates to `tool_boundary`.
         """
         # Attachment size cap only: markdown notes are not size-limited, and
         # a non-positive configured cap disables the limit. `capped` derives
@@ -919,12 +951,30 @@ def register(mcp: FastMCP) -> None:
         changes nothing already converted.
 
         Args:
-            folder: Only notes in this folder and below, e.g. "guides"; omit for the
+            folder: Only notes in this folder and below, such as `"guides"`; omit for the
                 whole vault.
 
         Returns:
-            Dict with files_changed, links_converted, links_skipped, and
-            notes_scanned.
+            Dict with:
+
+            - files_changed (int): notes rewritten.
+            - links_converted (int): wikilinks turned into Markdown links.
+            - links_skipped (int): wikilinks left as they are because the target
+              is not in the vault.
+            - notes_scanned (int): notes examined.
+            - remote (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
+
+            An attachment embed such as `![[pic.png]]` is not a link, so it is
+            left as it is and not counted.
+
+        Raises:
+            TimeoutError: If writes queued before the call have not reached the index
+                within 60 seconds; nothing is changed.
+            IndexUnavailableError: If the index build failed; nothing is changed.
+            DocumentUnreadableError: If a note it rewrites cannot be read; notes
+                converted before it keep their changes.
         """
         # The suppression lives on the transform itself (#1401), so the
         # library facade and this tool get the same mechanical write.
@@ -947,17 +997,35 @@ def register(mcp: FastMCP) -> None:
         folder: str = "",
         vault: Vault = Depends(get_vault),
     ) -> dict[str, Any]:
-        """Write a folder's Open Knowledge Format index.md: a link to each note with its
-        description, replacing the old listing and keeping its frontmatter.
+        """Write a folder's Open Knowledge Format index.md: a link to each note directly
+        in it with its description, and one to each subfolder's index.md, replacing
+        the old listing and keeping its frontmatter.
 
         Subfolders without an index.md get one too.
 
         Args:
-            folder: Folder to index, e.g. "guides"; omit for the bundle root.
+            folder: Folder to index, such as `"guides"`; omit for the bundle root.
 
         Returns:
-            Dict with path, entries (count), frontmatter_preserved (bool),
-            and created (subfolder index.md paths written).
+            Dict with:
+
+            - path (str): the index.md written.
+            - entries (int): notes and subfolder links listed.
+            - frontmatter_preserved (bool): true when the file already had
+              frontmatter, which is kept; false when it had none, though the
+              fields the vault requires are still added.
+            - created (list[str]): index.md files written for subfolders that
+              had none, outermost first.
+            - remote (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
+
+        Raises:
+            TimeoutError: If writes queued before the call have not reached the index
+                within 60 seconds; nothing is changed.
+            IndexUnavailableError: If the index build failed; nothing is changed.
+            DocumentUnreadableError: If the folder's index.md exists but cannot be
+                read; it is left untouched.
         """
         result = await asyncio.to_thread(vault.writer.okf_generate_index, folder=folder)
         return attach_remote_health(vault, asdict(result))
@@ -981,15 +1049,25 @@ def register(mcp: FastMCP) -> None:
         """Create a folder's Open Knowledge Format log.md from the git history of the
         notes under it, one dated section per day, newest first.
 
-        It never replaces an existing log.md. A vault without git history gets an empty
-        log.
+        It never replaces an existing log.md. It covers the 100 most recent commits. A
+        vault without git history gets an empty log.
 
         Args:
-            folder: Folder to write log.md in, whose history it covers, e.g. "guides";
+            folder: Folder to write log.md in, whose history it covers, such as `"guides"`;
                 omit for the bundle root and the whole vault's history.
 
         Returns:
-            Dict with path, commits (count), and dates (distinct-day count).
+            Dict with path (str), commits (int) and dates (int, the number of
+            distinct days), plus:
+
+            - remote (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
+
+        Raises:
+            ToolError: If log.md already exists in the folder; nothing is written.
+            DocumentUnreadableError: If log.md exists but cannot be read; it is left
+                untouched.
         """
         try:
             result = await asyncio.to_thread(vault.writer.okf_seed_log, folder=folder)
@@ -1027,17 +1105,22 @@ def register(mcp: FastMCP) -> None:
         Returns:
             On the modern protocol's first round, an input request asking the
             client for human confirmation. After confirmation, a dict with:
+
             - `path`: the verified note.
             - `verifier`: the `human:<subject>` actor recorded.
             - `verified_count`: the number of verification entries after the
               append.
+            - remote (dict, optional): present only while the vault's git clone
+              cannot reach its remote, with state, reason, since and detail; the
+              change is committed locally only.
 
         Raises:
-            ToolError: If the mode's confirmation gate is not satisfied (no
-                elicitation support / declined under `elicit`, or no
-                authenticated identity under `trust-auth`), the note does not
-                exist, or the note changed since it was read (a concurrent
-                write — retry the verification).
+            ToolError: If the mode's confirmation gate is not met, or the note
+                changed since it was read; call okf_verify again to attest the
+                current text. Under `elicit` the gate needs a client that can
+                ask the user, and the user's confirmation; under `trust-auth`,
+                an authenticated identity.
+            DocumentNotFoundError: If the note does not exist.
         """
         subject_or_request = await _resolve_verify_mode_subject(
             mode=config.okf_verify, ctx=ctx, path=path
