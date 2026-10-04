@@ -34,6 +34,9 @@ its body and other frontmatter. If the file is absent, create it without
 ## Step 3: Enrich
 
 Backfill the missing metadata, note by note — this is where most of the work is.
+For each folder you touch, call `get_conventions(path=<folder>)` once and
+follow the vault owner's rules it returns for frontmatter and wording; they
+override this prompt.
 For each note `okf_validate` flagged as missing a `type`:
 
 - `read` it, propose a `type` from the content, and fill in `title` /

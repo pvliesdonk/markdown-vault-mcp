@@ -10,7 +10,7 @@ arguments:
 icons: summarize
 ---
 
-You are producing a faithful summary of multiple notes from a markdown vault. Only the vault's read tools (`get_toc`, `list_documents`, `read`) are needed; never write.
+You are producing a faithful summary of multiple notes from a markdown vault. Only the vault's read tools (`get_conventions`, `get_toc`, `list_documents`, `read`) are needed; never write.
 
 Target: $paths
 Focus: "$focus" (empty means a general summary; otherwise steer every step toward it)
@@ -27,7 +27,8 @@ Enumerate and partition the target set before reading any note:
 
 1. Split the target list ($paths) on commas into individual entries.
 2. Keep each entry ending in `.md` as a single note path. Treat any other entry as a folder prefix and call `get_toc(path=<entry>)`; folder mode returns `{path, notes, truncated}` where each note carries `path`, `title`, `headings`, and `content_chars` (the note body's character count, frontmatter excluded). When `truncated` is true the listing is incomplete — retry with a higher cap (`get_toc(path=<entry>, max_notes=<comfortably above the expected count>)`) or call `list_documents(folder=<entry>)`, which lists the entire subtree without a cap; never plan from a truncated listing, since notes sorted past the cutoff would be silently omitted.
-3. De-duplicate, keep the enumeration order, and pack the note paths into batches against a size budget rather than a fixed note count: add notes to a batch until their combined `content_chars` reaches roughly 40,000, then start the next one. A batch of many stubs is fine; two or three long notes may fill a batch on their own. Cap a batch at about 20 notes even when they are tiny, so one mapper is never handed an unwieldy path list. If `content_chars` is `0` for every note the index predates the field, so fall back to batches of about 8 notes and use heading counts as a rough size proxy.
+3. Call `get_conventions(path=<entry>)` for each entry and keep the few lines that say how those notes are organised and what their fields mean; they go to every mapper below.
+4. De-duplicate, keep the enumeration order, and pack the note paths into batches against a size budget rather than a fixed note count: add notes to a batch until their combined `content_chars` reaches roughly 40,000, then start the next one. A batch of many stubs is fine; two or three long notes may fill a batch on their own. Cap a batch at about 20 notes even when they are tiny, so one mapper is never handed an unwieldy path list. If `content_chars` is `0` for every note the index predates the field, so fall back to batches of about 8 notes and use heading counts as a rough size proxy.
 
 The plan is path lists plus a total note count, nothing more. Delegate this step to a subagent when you can; the toc is compact (paths, titles, and headings, never bodies), so doing it yourself is also fine. If the plan spans hundreds of notes, report the count and confirm scope with the user before continuing.
 
@@ -36,6 +37,8 @@ The plan is path lists plus a total note count, nothing more. Delegate this step
 Apply these instructions to every batch, plus its path list:
 
 > You summarize notes from a markdown vault. Call `read(path=...)` for each assigned path. The notes provided are one part of a larger collection; other parts are summarized separately. Produce a detailed partial summary of these notes that preserves concrete specifics, and reference each note by its path (e.g. `folder/note.md`) so the partial summaries can be combined without losing attribution. Be faithful to the notes and do not invent details. If a note is unreadable, skip it and name it at the end. You may `read` a directly referenced note when needed to resolve an otherwise-unclear reference, but summarize only your assigned batch. Output only the partial summary — no meta-commentary.
+
+Append the conventions lines from Step 1: "Read the notes the way these vault conventions describe them: <conventions>".
 
 If a focus was given, append: "Focus specifically on: $focus".
 
@@ -59,6 +62,6 @@ Present the final summary, then a short coverage note: how many notes were summa
 
 ## Constraints
 
-- Read-only: `get_toc`, `list_documents`, and `read` are the only vault tools this recipe needs. Never write.
+- Read-only: `get_conventions`, `get_toc`, `list_documents`, and `read` are the only vault tools this recipe needs. Never write.
 - Path attribution must survive every stage: plan → partial summaries → final summary.
 - Never paste note bodies into the final answer or retain them past their batch.

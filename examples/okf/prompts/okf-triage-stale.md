@@ -24,7 +24,9 @@ Combine the two lists, de-duplicating by path.
 
 ## Step 2: Assess each note
 
-For each, `read(path=<note>)` and decide a disposition:
+For each, `read(path=<note>)` and decide a disposition. Call
+`get_conventions(path=<its folder>)` once per folder and keep every proposed
+change within the vault owner's rules it returns:
 
 - **Refresh** — still relevant but out of date. Propose the specific edits and a
   new `stale_after`.

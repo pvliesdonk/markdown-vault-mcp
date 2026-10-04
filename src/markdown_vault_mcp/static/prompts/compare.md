@@ -9,7 +9,7 @@ arguments:
     required: true
 icons: read
 ---
-Call `read` for both '$path1' and '$path2'. Use the `content` field from each result for comparison. Present your comparison covering:
+Call `read` for both '$path1' and '$path2', and `get_conventions` for each of the two paths. Use the `content` field from each result for comparison, and read the notes the way the vault owner's conventions describe them (what their folders hold, what their fields mean). Present your comparison covering:
 - What both documents agree on
 - Where they differ or contradict
 - Information present in one but absent from the other

@@ -2,12 +2,16 @@
 description: "Kick off a project note: define outcome and deadline, then resurface related Resources, Areas, and past Archived projects"
 arguments:
   - name: path
-    description: "Vault-relative path to the project note (e.g., '1-Projects/ship-v2.md')"
+    description: "Vault-relative path to the project note (e.g., 'Projects/ship-v2.md')"
     required: true
 tags: ["write"]
 ---
 
 You are helping kick off a project in a PARA vault. Process `$path`.
+
+## Step 0: Read the vault's conventions
+
+Call `get_conventions(path='$path')`. Note the folders the vault owner's conventions name for resources, areas and the archive (`<resources>`, `<areas>`, `<archive>` below), and any rules for the project's folder; those rules override this prompt. Where the conventions name no such folder, classify by frontmatter `type` instead of by folder in Step 4; do not assume a folder name.
 
 ## Step 1: Verify the project is well-defined
 
@@ -35,13 +39,13 @@ Run two queries to gather context the user may not have linked yet:
 
 ## Step 4: Classify results into three buckets
 
-For each result, classify using the folder prefix when available (fast path), otherwise by a targeted `search` with `filters={"type": "resource"}` etc.:
+For each result, classify by the folder prefix the conventions name (fast path), otherwise by a targeted `search` with `filters={"type": "resource"}` etc.:
 
-- **Relevant Resources** — from `3-Resources/` or `type=resource`
-- **Similar past Projects (archived)** — from `4-Archive/` or `type=project status=archived`
-- **Linkable Areas** — from `2-Areas/` or `type=area`
+- **Relevant Resources** — from `<resources>` or `type=resource`
+- **Similar past Projects (archived)** — from `<archive>` or `type=project status=archived`
+- **Linkable Areas** — from `<areas>` or `type=area`
 
-Prefer folder-prefix classification (one step) over per-note reads (N steps) when the vault follows the canonical layout.
+Prefer folder-prefix classification (one step) over per-note reads (N steps) when the conventions name the folders.
 
 ## Step 5: Propose links
 

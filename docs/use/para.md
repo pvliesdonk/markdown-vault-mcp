@@ -34,7 +34,7 @@ The four PARA prompts and five templates this guide uses are example files in th
 }
 ```
 
-The built-in prompts stay available beside the PARA ones; a file named like a built-in prompt replaces it. The four PARA prompts write to the vault, so a read-only server doesn't list them. They assume the folder names and frontmatter fields set out below. For a vault that names them differently, edit the prompt files; they are plain Markdown.
+The built-in prompts stay available beside the PARA ones; a file named like a built-in prompt replaces it. The four PARA prompts write to the vault, so a read-only server doesn't list them. They read the vault's [folder conventions](#folder-conventions) for which folder is the inbox, the projects, the areas, the resources and the archive, and ask you for any folder the conventions don't name.
 
 ## Vault Setup
 
@@ -54,7 +54,7 @@ vault/
 
 The numeric prefixes (`0-`, `1-`, `…`) keep the buckets sorting in the canonical PARA order in any file explorer. `0-Inbox/` is added because triage is a named workflow step and deserves a dedicated location: notes land here first and move out once they are classified.
 
-**The server does not enforce this layout.** You can flatten it, rename folders, or skip folders entirely and rely on the `type` and `status` frontmatter fields to drive queries. The prompts shipped with this pack assume the canonical layout but fall back to asking you when they encounter a different structure.
+**The server does not enforce this layout.** You can flatten it, rename folders, or skip folders entirely and rely on the `type` and `status` frontmatter fields to drive queries. The prompts shipped with this pack take the folder names from the root `_conventions.md` (the sample in `examples/para/conventions/` lists the layout above) and ask you for any the file doesn't name.
 
 ### Frontmatter schemas
 
@@ -206,8 +206,11 @@ backlinks pane) recover the project→resource references from the resource's
 side, so the resource never needs to mention the projects that cite it.
 
 A root-level `_conventions.md` holds vault-wide rules (heading style, tag
-hygiene); nested files add to it. The built-in `propose-links` prompt reads
-these conventions and skips or reverses link proposals they forbid.
+hygiene) and names the folder for each PARA bucket; nested files add to it.
+Every shipped prompt reads these conventions: the PARA prompts take their
+folders from them, the built-in `propose-links` prompt skips or reverses link
+proposals they forbid, and the read-only prompts use them to interpret the
+notes.
 
 Each convention file reaches the client whole up to 32,768 characters. A longer
 file is cut there, ends with a note telling the client to `read` the file for
