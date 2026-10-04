@@ -97,6 +97,22 @@ async def test_transfer_tools_carry_title_hints_and_icons(tmp_path: Path) -> Non
         assert tool.icons
 
 
+@pytest.mark.parametrize(("okf_mode", "offered"), [("auto", True), ("off", False)])
+async def test_download_description_names_okf_bundle_refs(
+    tmp_path: Path, okf_mode: str, offered: bool
+) -> None:
+    """The model learns the bundle refs from the description, only where they work."""
+    config = replace(
+        _config(tmp_path, base_url="https://mcp.example.com"), okf_mode=okf_mode
+    )
+    server = make_server(transport="http", config=config)
+    async with Client(server) as client:
+        tools = {t.name: t for t in await client.list_tools()}
+    description = tools["create_download_link"].description or ""
+    assert ("okf-bundle" in description) is offered
+    assert ("okf-bundle:projects" in description) is offered
+
+
 async def test_create_upload_link_hidden_in_read_only(tmp_path: Path) -> None:
     """create_upload_link carries pvl-core's ``write`` tag, so read-only mode
     (``mcp.disable(tags={"write"})``) must hide it while download stays."""

@@ -158,6 +158,14 @@ def _register_transfer(mcp: FastMCP, config: ProjectConfig, transport: str) -> N
         download_note=(
             "For this server, ref is a vault-relative path to an existing "
             "note (a .md file) or attachment."
+            # The bundle refs work only where the sink accepts them (#1695).
+            + (
+                ""
+                if config.content.okf_mode == "off"
+                else " Or pass okf-bundle for the whole vault as an Open "
+                "Knowledge Format bundle (a zip); prefix a folder path with "
+                "okf-bundle: (okf-bundle:projects) for one folder."
+            )
         ),
         upload_note=(
             "ref is a vault-relative path for a note (.md) or an allowed "
