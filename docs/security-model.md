@@ -58,6 +58,7 @@ Some routes answer anyone who can reach the port, with authentication on or off:
 - **TLS.** The server speaks plain HTTP. Terminate TLS at a reverse proxy in front of it.
 - **Exposure.** Which interfaces and networks can reach the port. [Ports](deploy/docker.md#ports) covers the published port of the Docker deployment.
 - **Secrets.** Bearer tokens, OIDC client secrets and the credentials the tools use live in the environment or in files you control. Anyone who can read them can act as the server.
+- **Token lifetimes.** Under OIDC, a leaked access or ID token stays usable until it expires, because the server checks expiry and signature but not revocation; a refresh token stays usable until it expires or you revoke it at the provider. The lifetimes you set on the provider are that exposure window; [Authentication](deploy/authentication.md#what-works-today) gives the trade-off.
 - **The debugger port.** A debug build's debugger port grants code execution to anyone who reaches it; see [Remote debugging](deploy/docker.md#remote-debugging).
 
 ## Host and Origin validation

@@ -63,6 +63,8 @@ kind: how-to
 | `docs/releases/` | this project | the per-release notes |
 | `docs/design/`, apart from the pages the template renders there | this project | internal design notes, unpublished |
 
+A fix to a template page, outside its sentinel blocks, goes to `pvliesdonk/fastmcp-server-template`. The page's source there is at the same path with `.jinja` appended, such as `docs/deploy/docker.md.jinja` for `docs/deploy/docker.md`; a page without a `.jinja` source, such as this one, is copied as it stands. A generated region or page changes at its source in this project's code, never on the page.
+
 When this project moves one of its own pages, it adds the old and new paths to the redirects map in `mkdocs.yml`, so the published URL keeps working. An entry left under Unsorted at the end of `nav:` hasn't found its section yet.
 
 A sentinel designates a place, not the knowledge in it. Non-domain text inside a `DOMAIN-*` block still belongs to the template.

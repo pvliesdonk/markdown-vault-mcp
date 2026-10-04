@@ -232,6 +232,8 @@ In `oidc-proxy` mode the proxy re-validates the upstream token on every request,
 - `refresh_token: '30d'`: for the clients that refresh
 - Permit `offline_access` for the registered client; the server advertises it by default, so a client that honours the advertised scopes requests it. Where the client may not hold that scope, narrow what the server advertises with `MARKDOWN_VAULT_MCP_OIDC_ADVERTISED_SCOPES` rather than letting the authorization request fail
 
+What a longer lifetime costs is how long a leaked token stays usable. The server checks an access or ID token's signature, issuer and expiry against the provider's published keys; it does not ask the provider whether the token was revoked since. A token copied from a client's storage or a log works for its remaining lifetime (up to 8 hours with the values above), even after the user is disabled or the session revoked at the provider. A refresh token is checked by the provider each time it is used, so revoking it there takes effect at the next refresh; until then it lets its holder mint new access tokens for up to 30 days. Choose lifetimes you would accept as that exposure window, and keep them shorter where re-authenticating during a session is acceptable.
+
 ### Tracking
 
 - [anthropics/claude-code#7744](https://github.com/anthropics/claude-code/issues/7744): `offline_access` scope never requested (closed, not planned)

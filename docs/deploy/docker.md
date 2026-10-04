@@ -7,10 +7,21 @@ kind: how-to
 
 ## Quick start
 
+In a clone of the repository:
+
 ```bash
 cp .env.example .env
 docker compose up -d
 ```
+
+Without a clone, fetch the two files from a release tag into an empty directory first, replacing `vX.Y.Z` with the release you run:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/pvliesdonk/markdown-vault-mcp/vX.Y.Z/compose.yml
+curl -fsSLO https://raw.githubusercontent.com/pvliesdonk/markdown-vault-mcp/vX.Y.Z/.env.example
+```
+
+[The service](#the-service) shows what `compose.yml` runs, if you want to read it before starting it or adapt it to an existing Compose setup.
 
 The server listens on port 8000 with HTTP transport, published on the host as `127.0.0.1:8000:8000`, so only the host itself can connect. No reverse proxy, TLS terminator, or external network is assumed. Authentication is off, since every auth variable in `.env.example` is commented out; [Ports](#ports) covers serving other machines.
 
@@ -23,6 +34,14 @@ Apply a later edit with `docker compose up -d`, which recreates the container wi
 ## Docker Compose
 
 `compose.yml` is a working deployment, not an illustration. It is re-rendered on every `copier update`, so fixes and new defaults reach it; edit it inside the sentinel blocks described below and your changes survive.
+
+### The service
+
+This is `compose.yml` as this version of the documentation ships it, including any entries this project adds in its sentinel blocks:
+
+```yaml
+--8<-- "compose.yml"
+```
 
 ### Upgrading the image
 
@@ -40,7 +59,7 @@ docker compose up -d
 The split matters, because two files can set the same variable:
 
 - **`.env` holds the server's configuration.** `compose.yml` reads it with `env_file:`. `.env.example` is generated from the server's own config surface and lists every variable with its default and a one-line description, so it is both the checklist and the place to edit. [Configuration](../reference/configuration.md) carries the full reference.
-- **`compose.yml`'s `environment:` block holds only what the file itself determines.** Currently that is `FASTMCP_HOME`, which points at the state volume the file mounts. Values here override `.env`, so a knob set in both places takes the value from `compose.yml`, which is rarely what an operator editing `.env` expects.
+- **`compose.yml`'s `environment:` block holds only what the deployment itself determines**, such as paths on the volumes the file mounts. The template's own entry is `FASTMCP_HOME`, which points at the state volume. This project may add more in its `DOMAIN-COMPOSE-ENVIRONMENT` block ([The service](#the-service) shows the block as shipped). Values here override `.env`, so a knob set in both places takes the value from `compose.yml`, which is rarely what an operator editing `.env` expects.
 
 The `env_file:` entry is marked `required: false`, so a checkout with no `.env` still starts on defaults. That form needs Compose 2.24.0 or newer; on an older engine, either upgrade or replace the entry with plain `env_file: .env` and make sure the file exists.
 

@@ -223,15 +223,31 @@ means the release comes from before it started, or waits.
 ## Where to send fixes
 
 - **Library-level fix** (anything you'd change in `fastmcp_pvl_core`): open a
-  PR on `pvliesdonk/fastmcp-pvl-core`. After merge + release, bump
-  `fastmcp-pvl-core` in this project's `pyproject.toml`. Copier update alone
-  won't pick it up unless the template's version constraint in
-  `pyproject.toml.jinja` is also bumped.
+  PR on `pvliesdonk/fastmcp-pvl-core`. The package lives under
+  `src/fastmcp_pvl_core/` there: a name imported from `fastmcp_pvl_core` is
+  re-exported by its `__init__.py` and implemented in a private module named
+  for its area (`_auth.py`, `_config.py`, `_health.py`, …), with its tests
+  in `tests/test_<area>*.py`. After merge + release, how this project picks
+  the release up depends on the `fastmcp-pvl-core` constraint in
+  `pyproject.toml`. That line is template-owned (it sits above the
+  `PROJECT-DEPS` block), so a hand edit there is drift: the conformance
+  report flags it, and the next template change to the line conflicts with
+  it. The step depends on the release:
+
+  - a release the constraint already admits: run
+    `uv lock --upgrade-package fastmcp-pvl-core` and commit `uv.lock`, which
+    this project owns;
+  - a release outside it (a fix that needs a higher floor, or the next
+    major): the template's constraint in `pyproject.toml.jinja` is bumped
+    by a template PR, and this project gets it on its next `copier update`.
 - **Template-level fix** (anything template-owned: `Dockerfile`, workflows,
-  `server.py` skeleton, `AGENTS.md` sections): open a PR on
-  `pvliesdonk/fastmcp-server-template`. After merge + release, this project
-  gets the fix on the next weekly `copier update` cron, or dispatch the
-  workflow manually.
+  `server.py` skeleton, `AGENTS.md` sections, template documentation pages):
+  open a PR on `pvliesdonk/fastmcp-server-template`. A rendered file's
+  source is at the same path there with `.jinja` appended
+  (`docs/deploy/docker.md` comes from `docs/deploy/docker.md.jinja`), or
+  at the same path unchanged for a file the template copies verbatim, such
+  as this one. After merge + release, this project gets the fix on the next
+  weekly `copier update` cron, or dispatch the workflow manually.
 - **Domain-only fix** (anything inside a `DOMAIN-*`, `CONFIG-*`, or
   `PROJECT-*` sentinel block, `tools.py`, `resources.py`, `prompts.py`,
   `domain.py`, `tests/`): PR on this repo directly.
