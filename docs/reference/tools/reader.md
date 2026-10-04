@@ -73,6 +73,7 @@ otherwise.
 **Outcomes and errors**
 
 - EmbeddingsNotConfiguredError: If mode is `"semantic"` or `"hybrid"` and no embedding provider is configured (a `ValueError` subclass).
+- InvalidRequestError: If `chunks_per_file` is below 1.
 
 <!-- DOMAIN-EXAMPLE-search-START -->
 Find craft notes on a topic, two sections per note:
