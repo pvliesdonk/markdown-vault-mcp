@@ -682,7 +682,8 @@ class ProjectConfig:
         default="markdown-vault-mcp",
         metadata={
             "help": (
-                "Git committer name for auto-commits; set this in Docker "
+                "Git committer name for auto-commits, and the author name "
+                "too unless an OIDC claim supplies one; set this in Docker "
                 "where git config user.name is empty."
             ),
             "tags": ("git",),
@@ -692,7 +693,10 @@ class ProjectConfig:
     git_commit_email: str = field(
         default="noreply@markdown-vault-mcp",
         metadata={
-            "help": "Git committer email for auto-commits.",
+            "help": (
+                "Git committer email for auto-commits, and the author email "
+                "too unless an OIDC claim supplies one."
+            ),
             "tags": ("git",),
             "wizard": {"group": "Git sync"},
         },
@@ -701,9 +705,9 @@ class ProjectConfig:
         default=None,
         metadata={
             "help": (
-                "OIDC claim key used as the commit author name (e.g. name); "
-                "overrides GIT_COMMIT_NAME per request when an OIDC token is "
-                "present. The claim is resolved when the tool call arrives "
+                "OIDC claim key used as the commit author name (e.g. name) "
+                "when an OIDC token is present; the committer stays "
+                "GIT_COMMIT_NAME. The claim is resolved when the tool call arrives "
                 "and carried to the background commit, so it applies on "
                 "every write. A configured claim the token does not carry "
                 "is reported once at WARNING and the static identity is used."
@@ -717,8 +721,8 @@ class ProjectConfig:
         metadata={
             "help": (
                 "OIDC claim key used as the commit author email (e.g. "
-                "email); overrides GIT_COMMIT_EMAIL per request when an OIDC "
-                "token is present. Resolved and carried the same way as the "
+                "email) when an OIDC token is present; the committer stays "
+                "GIT_COMMIT_EMAIL. Resolved and carried the same way as the "
                 "name claim."
             ),
             "tags": ("git",),

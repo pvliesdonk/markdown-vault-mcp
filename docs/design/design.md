@@ -4560,8 +4560,8 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_GIT_TOKEN` | Token/password for HTTPS git auth | disabled |
 | `MARKDOWN_VAULT_MCP_GIT_PULL_INTERVAL_S` | Seconds between ff-only pull ticks | `600` |
 | `MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S` | Seconds of idle before git push (0 = push on shutdown only) | `30` |
-| `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | Committer name for auto-commits | `markdown-vault-mcp` |
-| `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | Committer email for auto-commits | `noreply@markdown-vault-mcp` |
+| `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME` | Committer name for auto-commits; also the author name when no OIDC claim supplies one | `markdown-vault-mcp` |
+| `MARKDOWN_VAULT_MCP_GIT_COMMIT_EMAIL` | Committer email for auto-commits; also the author email when no OIDC claim supplies one | `noreply@markdown-vault-mcp` |
 | `MARKDOWN_VAULT_MCP_GIT_LFS` | Run `git lfs pull` on startup to resolve LFS pointer files | `true` |
 | `MARKDOWN_VAULT_MCP_BEARER_TOKEN` | Static bearer token for simple auth; clients send `Authorization: Bearer <token>` | none |
 | `MARKDOWN_VAULT_MCP_BASE_URL` | Server's public URL, required for OIDC auth and MCP Apps domain computation (such as `https://mcp.example.com`) | none |
