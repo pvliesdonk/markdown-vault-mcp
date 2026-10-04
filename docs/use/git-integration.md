@@ -80,6 +80,8 @@ recovered.
 
 Use managed mode when the server should fully own git synchronization.
 
+The examples on this page give `MARKDOWN_VAULT_MCP_SOURCE_DIR` as the server sees it. With the shipped `compose.yml`, set it to the vault's path on the host instead; [Docker](../deploy/docker.md#the-vault) explains why.
+
 ```bash
 MARKDOWN_VAULT_MCP_SOURCE_DIR=/data/vault
 MARKDOWN_VAULT_MCP_READ_ONLY=false

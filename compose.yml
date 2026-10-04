@@ -39,7 +39,7 @@ services:
       - service-data:/data/service
       - state-data:/data/state
       # DOMAIN-COMPOSE-VOLUMES-START — project mounts; kept across copier update
-      - ${MARKDOWN_VAULT_MCP_SOURCE_DIR:?Set MARKDOWN_VAULT_MCP_SOURCE_DIR}:/data/vault
+      - ${MARKDOWN_VAULT_MCP_SOURCE_DIR:-./vault}:/data/vault
       # DOMAIN-COMPOSE-VOLUMES-END
     environment:
       # Determined by this file, not an operator knob: points the server at

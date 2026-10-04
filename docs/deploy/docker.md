@@ -230,7 +230,7 @@ When the helper is invoked but `debugpy` isn't installed (say, someone sets `DEB
 <!-- DOMAIN-DOCKER-EXTRA-START -->
 ### The vault
 
-Set `MARKDOWN_VAULT_MCP_SOURCE_DIR` in `.env` before the first `docker compose up -d`, to the vault's path on the host. This server's `compose.yml` mounts that path at `/data/vault` and tells the server inside to use `/data/vault`. The one variable is a host path to Compose and a container path to the server. While it is unset Compose stops with `Set MARKDOWN_VAULT_MCP_SOURCE_DIR`, and `.env.example` ships it commented out. The files under `examples/` set it to a container path; change it to the host path when you use one of them with Compose.
+Set `MARKDOWN_VAULT_MCP_SOURCE_DIR` in `.env` to the vault's path on the host. This server's `compose.yml` mounts that path at `/data/vault` and tells the server inside to use `/data/vault`, so the one variable is a host path to Compose and a container path to the server. Left unset, as `.env.example` ships it, Compose mounts `./vault` beside `compose.yml`: an empty vault, enough for a first try. The files under `examples/` carry a host path; replace it with your own.
 
 The write tools are on by default; `MARKDOWN_VAULT_MCP_READ_ONLY=true` makes a search-only server. Read-only still writes one change-tracking file into the vault, under `.markdown_vault_mcp/`, unless `MARKDOWN_VAULT_MCP_STATE_PATH` points elsewhere.
 
