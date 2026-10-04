@@ -4,7 +4,7 @@ Templates and prompts for authoring an [Open Knowledge Format](https://github.co
 (OKF) bundle with markdown-vault-mcp. Copy the pieces you want into your vault
 and prompt folders; nothing here is loaded automatically.
 
-See the [OKF guide](../../docs/guides/okf.md) for the full picture (detection,
+See the [OKF guide](../../docs/use/okf.md) for the full picture (detection,
 the trust model, the migration ratchet, the enforced write layer, and export).
 
 ## What OKF is, in one paragraph

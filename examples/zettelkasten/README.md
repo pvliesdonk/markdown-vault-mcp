@@ -1,6 +1,6 @@
 # Zettelkasten Examples
 
-Ready-made templates and prompt for a [Zettelkasten](../../docs/guides/zettelkasten.md) workflow with markdown-vault-mcp.
+Ready-made templates and prompt for a [Zettelkasten](../../docs/use/zettelkasten.md) workflow with markdown-vault-mcp.
 
 ## Templates
 
@@ -66,12 +66,12 @@ export MARKDOWN_VAULT_MCP_INDEX_PATH=/path/to/vault/.vault/index.db
 
 ## Using with OKF
 
-These templates work as-is inside an [OKF](../okf/README.md) bundle: every one already sets a `type` (`fleeting` / `literature` / `permanent` / `moc`), so a vault built from them passes `okf_validate` from the first note. To turn OKF on, add `okf_version: "0.2"` to the root `index.md`. Zettelkasten leans on links and tags rather than a lifecycle `status`, so there is no `status` collision to resolve; add OKF's `sources` and `status` fields to literature and permanent notes if you want provenance and lifecycle tracking. See [Using Zettelkasten with OKF](../../docs/guides/zettelkasten.md#using-zettelkasten-with-okf).
+These templates work as-is inside an [OKF](../okf/README.md) bundle: every one already sets a `type` (`fleeting` / `literature` / `permanent` / `moc`), so a vault built from them passes `okf_validate` from the first note. To turn OKF on, add `okf_version: "0.2"` to the root `index.md`. Zettelkasten leans on links and tags rather than a lifecycle `status`, so there is no `status` collision to resolve; add OKF's `sources` and `status` fields to literature and permanent notes if you want provenance and lifecycle tracking. See [Using Zettelkasten with OKF](../../docs/use/zettelkasten.md#using-zettelkasten-with-okf).
 
 ## See Also
 
-- **Zettelkasten Guide**: [`docs/guides/zettelkasten.md`](../../docs/guides/zettelkasten.md) — comprehensive walkthrough
+- **Zettelkasten Guide**: [`docs/use/zettelkasten.md`](../../docs/use/zettelkasten.md) — comprehensive walkthrough
 - **OKF pack**: [`examples/okf/`](../okf/README.md) — declare and enforce the Open Knowledge Format on this vault
-- **MCP Tools Reference**: [`docs/tools/index.md`](../../docs/tools/index.md) — all available tools
+- **MCP Tools Reference**: [`docs/reference/tools/index.md`](../../docs/reference/tools/index.md) — all available tools
 - **Design Document**: [`docs/design/design.md`](../../docs/design/design.md) — linking system and search algorithms
-- **PARA alternative**: [`docs/guides/para.md`](../../docs/guides/para.md) — for action-oriented Projects/Areas/Resources/Archive workflows
+- **PARA alternative**: [`docs/use/para.md`](../../docs/use/para.md) — for action-oriented Projects/Areas/Resources/Archive workflows

@@ -287,10 +287,14 @@ bare `OPENAI_BASE_URL` only routes summarization when a key already enables it.
 
 Without a summarization backend, clients summarize with their own model
 through the `summarize-subtree` prompt. With one, the `summarize` tool does it
-in one call, and the prompt points clients at it. The tool spares the client's
-model, but the backend is billed separately, which matters when a subscription
-already covers the client. Neither route is more private by nature: a local
-backend can disclose less than a hosted client model.
+in one call, and the prompt points clients at it. The tool costs the client's
+context nothing, while the prompt route has the client's model read every note,
+in subagents where the client has them so the bodies stay out of the
+conversation. The backend is billed separately, which matters when a
+subscription already covers the client. Neither route is more private by
+nature: a local backend can disclose less than a hosted client model. The
+backend receives the notes' text as sent, while a subagent running the prompt
+can follow a link mid-summary to resolve a reference.
 
 Long `summarize`, `reindex`, and `build_embeddings` calls use protocol-native
 background tasks when the client supports them. Other clients receive an inline
