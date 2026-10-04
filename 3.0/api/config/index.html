@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
     
     
       
@@ -1845,7 +1845,7 @@
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span><span class="p">,</span> <span class="n">VaultConfig</span>
 
-<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;/path/to/vault&quot;</span>
+<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"MARKDOWN_VAULT_MCP_SOURCE_DIR"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"/path/to/vault"</span>
 <span class="n">config</span> <span class="o">=</span> <span class="n">VaultConfig</span><span class="o">.</span><span class="n">from_env</span><span class="p">()</span>
 <span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span><span class="o">**</span><span class="n">config</span><span class="o">.</span><span class="n">to_vault_kwargs</span><span class="p">())</span>
 </code></pre></div>
@@ -1858,7 +1858,7 @@
 
 
 <h2 id="markdown_vault_mcp.config.VaultConfig" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">VaultConfig</span><span class="p">(</span><span class="n">source_dir</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="s1">&#39;markdown-vault-mcp&#39;</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git</span><span class="o">=</span><span class="n">GitConfig</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="n">IndexingConfig</span><span class="p">(),</span> <span class="n">embeddings</span><span class="o">=</span><span class="n">EmbeddingsConfig</span><span class="p">(),</span> <span class="n">search</span><span class="o">=</span><span class="n">SearchConfig</span><span class="p">(),</span> <span class="n">sync</span><span class="o">=</span><span class="n">SyncConfig</span><span class="p">(),</span> <span class="n">content</span><span class="o">=</span><span class="n">ContentConfig</span><span class="p">(),</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">disable_apps_ui</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">())</span></code>
+              <code class="highlight language-python"><span class="n">VaultConfig</span><span class="p">(</span><span class="n">source_dir</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">server_name</span><span class="o">=</span><span class="s1">'markdown-vault-mcp'</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git</span><span class="o">=</span><span class="n">GitConfig</span><span class="p">(),</span> <span class="n">indexing</span><span class="o">=</span><span class="n">IndexingConfig</span><span class="p">(),</span> <span class="n">embeddings</span><span class="o">=</span><span class="n">EmbeddingsConfig</span><span class="p">(),</span> <span class="n">search</span><span class="o">=</span><span class="n">SearchConfig</span><span class="p">(),</span> <span class="n">sync</span><span class="o">=</span><span class="n">SyncConfig</span><span class="p">(),</span> <span class="n">content</span><span class="o">=</span><span class="n">ContentConfig</span><span class="p">(),</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">disable_apps_ui</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">())</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -2320,7 +2320,7 @@ or if a search-ranking env var is non-numeric or out of range.</p>
     </table>
         <p>Example::</p>
 <div class="highlight"><pre><span></span><code>import os
-os.environ[&quot;MARKDOWN_VAULT_MCP_SOURCE_DIR&quot;] = &quot;/home/user/vault&quot;
+os.environ["MARKDOWN_VAULT_MCP_SOURCE_DIR"] = "/home/user/vault"
 config = VaultConfig.from_env()
 vault = Vault(**config.to_vault_kwargs())
 </code></pre></div>
