@@ -1537,8 +1537,13 @@ name (`ContentConfig.conventions_file`, env
 root-level file applies vault-wide and nested files *add to* (never replace)
 their ancestors. Content is free-form markdown; a YAML frontmatter block, if
 present, is stripped before transport (fallback to raw text on parse errors).
-Each entry is truncated to a fixed cap (4000 chars) so a pathological file
-cannot flood tool results.
+Each entry is truncated to a fixed cap (32,768 chars) so a pathological file
+cannot flood tool results. A conventions file is an agent-instruction file, so
+the cap is the largest such file an agent host loads whole (Codex truncates its
+`AGENTS.md` chain at 32 KiB); the original 4,000 chars, about 60 lines, cut
+ordinary files mid-rule (#1722). A truncated entry ends with a marker naming the
+convention file to `read` for the rest, and the first truncation of each file
+logs `conventions_truncated` at WARNING.
 
 **Resolution.** `conventions.py::ConventionsResolver` is pure disk I/O with
 zero index coupling: `for_path(path)` walks the ancestor chain root-first
