@@ -134,6 +134,7 @@ freelist
 frontmatter
 FSEvents
 fullscreen
+get_broken_links
 get_job_result
 git
 globals
@@ -236,6 +237,7 @@ unmanaged
 unparseable
 unpushed
 unqueued
+unresolved_links
 unsourced
 unsynced
 untyped

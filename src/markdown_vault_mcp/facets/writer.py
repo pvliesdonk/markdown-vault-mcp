@@ -10,7 +10,7 @@ Part of the ``vault.py`` facade decomposition (#576); reached via the
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeVar
 
 from markdown_vault_mcp.okf import OKF_RESERVED_FILENAMES
 from markdown_vault_mcp.utils import folder_of, is_note
@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp._okf_convention import ConventionMaintainer
     from markdown_vault_mcp.managers.document import DocumentManager
+    from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
     from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
     from markdown_vault_mcp.okf import (
         OkfConvertResult,
@@ -34,6 +35,8 @@ if TYPE_CHECKING:
         RenameResult,
         WriteResult,
     )
+
+_R = TypeVar("_R", "WriteResult", "EditResult")
 
 
 def _is_reserved(path: str) -> bool:
@@ -51,6 +54,7 @@ class WriterFacet:
         okf_migrate: OkfMigrationManager | None = None,
         convention_maintainer: ConventionMaintainer | None = None,
         previous_revision: Callable[[str], str | None] | None = None,
+        link_reporter: UnresolvedLinkReporter | None = None,
     ) -> None:
         """Hold the managers the write operations delegate to.
 
@@ -71,11 +75,39 @@ class WriterFacet:
                 write path (OKF link conversion rewrites thousands of notes in
                 one call), and a git probe per file there would spend several
                 subprocesses each on a result nobody reads.
+            link_reporter: Answers ``report_unresolved_links=True`` on
+                :meth:`write`, :meth:`edit` and :meth:`append` (#1725).
+                ``None`` (the default) makes such a call raise
+                :exc:`RuntimeError`.
         """
         self._doc_mgr = doc_mgr
         self._okf_migrate = okf_migrate
         self._convention_maintainer = convention_maintainer
         self._previous_revision = previous_revision
+        self._link_reporter = link_reporter
+
+    def _with_link_report(
+        self, path: str, report: bool, mutate: Callable[[], _R]
+    ) -> _R:
+        """Run *mutate*, then set the links it added that do not resolve.
+
+        The note's links are read before and after *mutate* under one hold of
+        the write lock, so neither snapshot can see another writer's change.
+        The index refresh the report needs runs after the lock is released.
+        """
+        if not report:
+            return mutate()
+        if self._link_reporter is None:
+            raise RuntimeError("Unresolved-link reporter is not configured")
+        reporter = self._link_reporter
+        # Refuse a read-only vault before reading the note, as the write would.
+        self._doc_mgr.ensure_writable()
+        with self._doc_mgr.write_scope():
+            before = reporter.note_links(path)
+            result = mutate()
+            after = reporter.note_links(path)
+        result.unresolved_links = reporter.introduced(path, before, after)
+        return result
 
     def _migrate(self) -> OkfMigrationManager:
         """Return the migration manager or raise if it was not wired."""
@@ -123,6 +155,8 @@ class WriterFacet:
         content: str,
         frontmatter: dict[str, Any] | None = None,
         if_match: str | None = None,
+        *,
+        report_unresolved_links: bool = False,
     ) -> WriteResult:
         """Create or overwrite a document.
 
@@ -137,6 +171,8 @@ class WriterFacet:
                 provided, the write is only performed if the current file hash
                 matches this value, preventing overwrites of concurrent
                 modifications.  Pass ``None`` (default) to skip the check.
+            report_unresolved_links: When ``True``, wait for the index to take
+                in the write and set the result's ``unresolved_links`` (#1725).
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.  On an overwrite of
@@ -153,19 +189,24 @@ class WriterFacet:
                 already exists while no *if_match* is supplied.
             InvalidRequestError: If *path* escapes the source directory.
         """
+
         # Read before writing: the auto-commit is asynchronous, so afterwards
         # the note's newest commit may already be this write's own.  Both steps
         # hold the vault's (re-entrant) write lock, so no other writer can
         # change which note occupies the path in between — otherwise the
         # breadcrumb could name a commit belonging to a note this write did
         # not replace.
-        with self._doc_mgr.write_scope():
-            breadcrumb = self._breadcrumb_for(path)
-            result = self._doc_mgr.write(
-                path, content, frontmatter=frontmatter, if_match=if_match
-            )
-            if not result.created:
-                result.previous_revision = breadcrumb
+        def mutate() -> WriteResult:
+            with self._doc_mgr.write_scope():
+                breadcrumb = self._breadcrumb_for(path)
+                result = self._doc_mgr.write(
+                    path, content, frontmatter=frontmatter, if_match=if_match
+                )
+                if not result.created:
+                    result.previous_revision = breadcrumb
+            return result
+
+        result = self._with_link_report(path, report_unresolved_links, mutate)
         if self._convention_maintainer is not None:
             self._convention_maintainer.maintain(path, "write")
         return result
@@ -196,6 +237,8 @@ class WriterFacet:
         if_match: str | None = None,
         line_start: int | None = None,
         line_end: int | None = None,
+        *,
+        report_unresolved_links: bool = False,
     ) -> EditResult:
         """Patch a section of a document.
 
@@ -212,6 +255,8 @@ class WriterFacet:
                 :meth:`WriterFacet.write`.
             line_start: 1-based start line for line-range mode.
             line_end: 1-based end line (inclusive) for line-range mode.
+            report_unresolved_links: When ``True``, wait for the index to take
+                in the edit and set the result's ``unresolved_links`` (#1725).
 
         Returns:
             :class:`~markdown_vault_mcp.types.EditResult`.
@@ -225,13 +270,17 @@ class WriterFacet:
             DocumentNotFoundError: If the file does not exist.
             InvalidRequestError: If *path* escapes the source directory.
         """
-        result = self._doc_mgr.edit(
+        result = self._with_link_report(
             path,
-            old_text=old_text,
-            new_text=new_text,
-            if_match=if_match,
-            line_start=line_start,
-            line_end=line_end,
+            report_unresolved_links,
+            lambda: self._doc_mgr.edit(
+                path,
+                old_text=old_text,
+                new_text=new_text,
+                if_match=if_match,
+                line_start=line_start,
+                line_end=line_end,
+            ),
         )
         if self._convention_maintainer is not None:
             self._convention_maintainer.maintain(path, "edit")
@@ -244,6 +293,7 @@ class WriterFacet:
         if_match: str | None = None,
         *,
         create_if_missing: bool = False,
+        report_unresolved_links: bool = False,
     ) -> WriteResult:
         """Append text to the end of a document without reading it first (#980).
 
@@ -257,6 +307,9 @@ class WriterFacet:
                 :meth:`WriterFacet.write`.
             create_if_missing: When ``True``, create a missing document with
                 *content* as its body instead of raising.
+            report_unresolved_links: When ``True``, wait for the index to take
+                in the append and set the result's ``unresolved_links``
+                (#1725).
 
         Returns:
             :class:`~markdown_vault_mcp.types.WriteResult`.
@@ -270,11 +323,15 @@ class WriterFacet:
             InvalidRequestError: If *content* is empty or *path* escapes the
                 source directory.
         """
-        result = self._doc_mgr.append(
+        result = self._with_link_report(
             path,
-            content,
-            if_match=if_match,
-            create_if_missing=create_if_missing,
+            report_unresolved_links,
+            lambda: self._doc_mgr.append(
+                path,
+                content,
+                if_match=if_match,
+                create_if_missing=create_if_missing,
+            ),
         )
         if self._convention_maintainer is not None:
             self._convention_maintainer.maintain(path, "edit")

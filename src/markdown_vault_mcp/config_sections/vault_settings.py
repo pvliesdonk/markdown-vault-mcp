@@ -63,6 +63,12 @@ class VaultSettings:
             existing file without an *if_match* etag raises
             :exc:`~markdown_vault_mcp.exceptions.DocumentExistsError`
             (default ``False``, i.e. writes overwrite unconditionally).
+        report_unresolved_links: When ``True``, the ``write`` / ``edit`` /
+            ``append`` MCP tools add ``unresolved_links`` to their response:
+            the links the call added that ``get_broken_links`` reports
+            (default ``False``, #1725).  Read by the tool layer through
+            :attr:`~markdown_vault_mcp.vault.Vault.report_unresolved_links`;
+            library callers ask per call instead.
         state_path: Path to the hash-state JSON file used by
             :class:`~markdown_vault_mcp.tracker.ChangeTracker`.  Defaults to
             ``{source_dir}/.markdown_vault_mcp/state.json``.
@@ -139,6 +145,7 @@ class VaultSettings:
     embeddings_path: Path | None = None
     read_only: bool = True
     write_protect_existing: bool = False
+    report_unresolved_links: bool = False
     state_path: Path | None = None
     indexed_frontmatter_fields: Sequence[str] | None = None
     required_frontmatter: Sequence[str] | None = None
@@ -205,6 +212,7 @@ class VaultSettings:
             embeddings_path=config.indexing.embeddings_path,
             read_only=config.read_only,
             write_protect_existing=config.write_protect_existing,
+            report_unresolved_links=config.report_unresolved_links,
             state_path=config.indexing.state_path,
             indexed_frontmatter_fields=config.indexing.indexed_frontmatter_fields,
             required_frontmatter=config.indexing.required_frontmatter,

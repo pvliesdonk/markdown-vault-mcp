@@ -28,6 +28,7 @@ src/markdown_vault_mcp/
   managers/
     __init__.py        -- package aggregator: re-exports DocumentManager/IndexManager/LinkManager/SearchManager
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
+    link_report.py     -- UnresolvedLinkReporter: the unresolved links one write/edit/append added, read back from the index rows get_broken_links uses (#1725); internal collaborator, not re-exported
     search.py          -- SearchManager: keyword/semantic/hybrid search, list, context, stats
     index.py           -- IndexManager: build_index, reindex, dirty-path FTS refresh; delegates embeddings to the composed EmbeddingsManager (#1157)
     embeddings.py      -- EmbeddingsManager: vector lifecycle — cold build, convergence, inline embed, deferred flush, status (#1157); internal collaborator, not re-exported

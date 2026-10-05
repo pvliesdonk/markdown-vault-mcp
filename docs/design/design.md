@@ -2121,6 +2121,7 @@ class WriteResult:
     path: str
     created: bool                     # True if new file, False if overwrite
     previous_revision: str | None = None  # commit holding the replaced content (#1137)
+    unresolved_links: list[str] | None = None  # set only on request (#1725)
 
 @dataclass
 class RevisionContent:
@@ -2136,6 +2137,7 @@ class EditResult:
     path: str
     replacements: int                 # always 1 (enforced by edit semantics)
     match_type: str = "exact"         # "exact" or "normalized"
+    unresolved_links: list[str] | None = None  # set only on request (#1725)
 
 @dataclass
 class DeleteResult:
@@ -3116,6 +3118,48 @@ would persist as bare basenames (such as `Target.md`), leaving them as
 false-positive broken outlinks and invisible to backlink queries against
 the full document path (such as `notes/Target.md`).
 
+### Write-Time Unresolved-Link Report (#1725)
+
+A writer that guesses a link target wrongly finds out only when someone runs
+`get_broken_links`. By then it no longer has the context to fix the link. With
+`MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`, the `write`, `edit` and
+`append` tools add `unresolved_links` to their response. It lists the target,
+as written, of each link the call added that does not resolve. The setting is
+off by default, and then no response changes.
+
+**One definition of "unresolved".** The report does not resolve links itself.
+`UnresolvedLinkReporter` (`managers/link_report.py`) waits for the index to
+take in the write (`IndexWriteCoordinator.prepare_index_read`). It then reads
+the note's rows back with `get_outlinks` and keeps the rows whose target is
+not in `documents_live`. That is the predicate `get_broken_links` uses, on the
+same rows, after the same resolution: path stem, then `aliases`. The warning
+and the lint therefore cannot disagree. Resolution is unchanged: a frontmatter
+`name` field resolves nothing, as in Obsidian.
+
+**Only links the call added.** The note's links are parsed with
+`extract_links` before and after the mutation, under one hold of the write
+lock. A link counts as new when its `(link_type, raw_target)` was not in the
+note before the call. A link the note already held is never reported again,
+so an edit to an old note does not repeat its old broken links. The "after"
+set also limits the report to this call's text, so a later writer's link is
+never reported as this call's. A note that could not be read before the call
+counts as holding no links, so its unresolved links are reported, not hidden.
+
+**When the check cannot run.** The write has already landed when the report
+runs, so a failed check never fails the call: a retry would repeat a write
+that succeeded. If the index has not finished its first build, or the refresh
+fails or times out, `unresolved_links` is `null` and a WARNING records the
+reason. The tools keep the null key, because there it means "not checked",
+which an absent key would hide.
+
+**Scope.** The report is a per-call keyword on `WriterFacet.write`, `edit`
+and `append` (`report_unresolved_links`). Only the three tools pass the
+setting through. `fetch` and the upload route write through the same facet
+and never wait on the refresh for a report nobody reads. An attachment write
+carries no report, because attachments have no `links` rows. A note the
+index does not hold (excluded, or skipped for its frontmatter) has no rows,
+so it reports `[]`, as `get_broken_links` reports nothing for it.
+
 ### Graph Traversal
 
 The `links` table is a directed graph where notes are nodes and links are edges.
@@ -3207,7 +3251,7 @@ root already owns:
 | Facet | Surface | Collaborators |
 |-|-|-|
 | ``ReaderFacet`` | search, read, read_revision, get_metadata, list, folders, tags, toc, recent, similar, context, stats, history, diff, read_attachment | ``SearchManager``, ``DocumentManager``, ``GitQueryManager``, ``require_built`` |
-| ``WriterFacet`` | write, edit, append, delete, rename, write_attachment | ``DocumentManager``, ``previous_revision`` resolver (#1137) |
+| ``WriterFacet`` | write, edit, append, delete, rename, write_attachment | ``DocumentManager``, ``previous_revision`` resolver (#1137), ``UnresolvedLinkReporter`` (#1725) |
 | ``GraphFacet`` | backlinks, outlinks, broken_links, orphans, most_linked, connection_path, neighborhood/hub graph views (#880) | ``LinkManager``, ``SearchManager``, ``require_built`` |
 | ``IndexFacet`` | build/reindex/embeddings (sync + async), readiness, writer status, embeddings_status | ``IndexWriteCoordinator`` (public subset only), ``IndexManager`` (embeddings_status) |
 
@@ -4555,6 +4599,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_SOURCE_DIR` | Path to markdown files; when absent the server starts but every tool fails naming this variable (managed git clones into it) | `/data/vault` |
 | `MARKDOWN_VAULT_MCP_READ_ONLY` | Hide the write tools | `false` |
 | `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied; set `false` to allow blind overwrites | `true` |
+| `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS` | Add `unresolved_links` to `write` / `edit` / `append` responses: the links the call added that `get_broken_links` reports | `false` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | Embeddings directory | disabled |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | Comma-separated frontmatter fields to index into `document_tags` | none |

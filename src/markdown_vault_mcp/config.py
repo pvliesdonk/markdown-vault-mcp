@@ -155,6 +155,19 @@ class ProjectConfig:
             "tags": ("vault", "readme"),
         },
     )
+    report_unresolved_links: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Set to true to have write, edit and append list, under "
+                "unresolved_links, the target of each link the call added "
+                "that get_broken_links reports. Links the note already held "
+                "are left out. Off by default, leaving those responses "
+                "unchanged."
+            ),
+            "tags": ("vault", "readme"),
+        },
+    )
     disable_apps_ui: bool = field(
         default=False,
         metadata={
@@ -1155,6 +1168,9 @@ class ProjectConfig:
             read_only=to_bool(env(_ENV_PREFIX, "READ_ONLY"), default=False),
             write_protect_existing=to_bool(
                 env(_ENV_PREFIX, "WRITE_PROTECT_EXISTING"), default=True
+            ),
+            report_unresolved_links=to_bool(
+                env(_ENV_PREFIX, "REPORT_UNRESOLVED_LINKS"), default=False
             ),
             disable_apps_ui=to_bool(env(_ENV_PREFIX, "DISABLE_APPS_UI"), default=False),
             index_path=opt_path(env(_ENV_PREFIX, "INDEX_PATH")),
