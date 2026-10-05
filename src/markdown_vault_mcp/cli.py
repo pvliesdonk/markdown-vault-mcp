@@ -302,15 +302,15 @@ def search(
     # whenever this shell's settings differ from the ones it was built with.
     configured_index = ProjectConfig.from_env().indexing.index_path
     in_memory = configured_index is None or str(configured_index) == ":memory:"
+    # Only a valid vector mode embeds: a mistyped one must fail in the search
+    # below before a paid provider has embedded the vault (#1708).
+    by_meaning = mode in ("semantic", "hybrid")
     vault = _build_vault(
-        source_dir,
-        None,
-        scratch_state=in_memory,
-        in_memory_vectors=mode != "keyword",
+        source_dir, None, scratch_state=in_memory, in_memory_vectors=by_meaning
     )
     if in_memory:
         vault.index.build_index()
-        if mode != "keyword":
+        if by_meaning:
             _embed_in_memory(vault)
     results = vault.reader.search(
         query,

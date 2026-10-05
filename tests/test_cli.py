@@ -1091,6 +1091,33 @@ def test_keyword_search_never_resolves_the_provider(
     assert counting.built == 0
 
 
+def test_mistyped_mode_embeds_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invalid mode fails before a provider is paid to embed the vault."""
+    counting = _embedding_cli_env(tmp_path, monkeypatch, None)
+
+    result = runner.invoke(app, ["search", "-m", "sematic", "world"])
+
+    assert counting.calls == 0
+    assert result.exit_code != 0
+
+
+@pytest.mark.parametrize("command", ["index", "reindex"])
+def test_batch_commands_embed_into_a_configured_embeddings_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """EMBEDDINGS_PATH keeps the vectors, so the batch commands embed into it."""
+    shared = tmp_path / "shared" / "embeddings"
+    counting = _embedding_cli_env(tmp_path, monkeypatch, shared)
+
+    result = runner.invoke(app, [command])
+
+    assert result.exit_code == 0, result.output
+    assert counting.calls > 0
+    assert shared.with_suffix(".npy").is_file()
+
+
 def test_search_never_builds_an_on_disk_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
