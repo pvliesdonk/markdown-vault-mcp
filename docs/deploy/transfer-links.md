@@ -64,5 +64,7 @@ An upload link names a vault path for a note or an allowed attachment. While `MA
 |---|---|
 | `409` | Also: the destination exists by now, created after the link was minted or by an earlier upload through the same link. Retrying doesn't help. |
 | `410` | The file, or the bundle folder, was removed after the link was minted. |
+| `415` | The uploaded note is not UTF-8 text. The link stays usable; upload the note again as UTF-8. |
+| `422` | The vault refused the uploaded note: with [OKF](../use/okf.md) enforced writes on, its frontmatter must parse. The link stays usable for a corrected body. |
 | `503` | The vault is shutting down. Retry; the link is kept. |
 <!-- DOMAIN-TRANSFER-EXTRA-END -->

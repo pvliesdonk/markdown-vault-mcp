@@ -164,3 +164,25 @@ async def test_upload_conflict_returns_409(
         assert response.status_code == 200
         assert response.json() == {"path": path, "bytes": len(b"replacement")}
         assert (tmp_path / path).read_bytes() == b"replacement"
+
+
+async def test_upload_not_utf8_returns_415_and_keeps_the_link(tmp_path: Path) -> None:
+    """A note body that is not UTF-8 is the client's to fix, not a server fault."""
+    server = make_server(
+        transport="http",
+        config=_config(tmp_path, base_url="https://mcp.example.com"),
+    )
+    async with (
+        Client(server) as client,
+        AsyncClient(transport=ASGITransport(app=server.http_app())) as http,
+    ):
+        result = await client.call_tool("create_upload_link", {"ref": "new.md"})
+        url = result.data["url"]
+
+        response = await http.post(url, content=b"\xff\xfe\xfa")
+        assert response.status_code == 415
+        assert not (tmp_path / "new.md").exists()
+
+        response = await http.post(url, content=b"# Fixed\n")
+        assert response.status_code == 200
+        assert (tmp_path / "new.md").read_bytes() == b"# Fixed\n"

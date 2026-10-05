@@ -262,9 +262,34 @@ async def test_write_note_strips_bom(sink: VaultTransferSink, vault: Vault) -> N
     assert note.content.startswith("# BOM")
 
 
-async def test_write_note_invalid_utf8_raises(sink: VaultTransferSink) -> None:
-    with pytest.raises(UnicodeDecodeError):
+async def test_write_note_invalid_utf8_is_415(
+    sink: VaultTransferSink, source_dir: Path
+) -> None:
+    with pytest.raises(TransferSinkError) as exc:
         await sink.write("bad.md", b"\xff\xfe\x00garbage")
+    assert exc.value.status_code == 415
+    assert not (source_dir / "bad.md").exists()
+
+
+async def test_write_note_refused_by_vault_is_422(
+    config: ProjectConfig, source_dir: Path
+) -> None:
+    (source_dir / "index.md").write_text(
+        "---\nokf_version: '0.2'\n---\n# Bundle\n", encoding="utf-8"
+    )
+    config = replace(config, okf_mode="on", okf_write=True)
+    vault = Vault(
+        source_dir=config.source_dir,
+        settings=VaultSettings.from_project_config(config),
+    )
+    try:
+        sink = VaultTransferSink(config, vault_provider=lambda: vault)
+        with pytest.raises(TransferSinkError) as exc:
+            await sink.write("broken.md", b"---\ntitle: [unclosed\n---\n# x\n")
+        assert exc.value.status_code == 422
+        assert not (source_dir / "broken.md").exists()
+    finally:
+        vault.close()
 
 
 async def test_write_vault_unavailable_raises_503(config: ProjectConfig) -> None:

@@ -1891,7 +1891,7 @@ upload, the fully-read (size-capped) body.
   is read via `vault.reader.read_attachment()` and served with its MIME type.
   The whole file is materialised in memory (no HTTP range support).
 - **Upload** (`write(handle, body)`): a `.md` body is decoded as UTF-8 (BOM
-  stripped) and written via `vault.writer.write()`; other extensions are
+  stripped; a body that does not decode answers 415) and written via `vault.writer.write()`; other extensions are
   written via `vault.writer.write_attachment()`. The write updates the FTS
   index and fires the git-commit callback. Upload handles carry no `if_match`;
   with overwrite protection enabled, uploads require a new file. The normal
@@ -1918,6 +1918,14 @@ mounted (the ref-counted session lifespan cleared the singleton) raises
 validated at mint time but has since been removed raises
 `TransferResourceGoneError` (**410 Gone**). On upload, `DocumentExistsError` is
 translated to `TransferSinkError(409)` (**409 Conflict**), preserving the file.
+The rest of an upload the uploader must change answers 4xx too (#1696), so a
+client's mistake never reads as a server fault: a note body that is not UTF-8
+is **415 Unsupported Media Type** (RFC 9110 §15.5.16 covers a format problem
+found "as a result of inspecting the data directly"), and an
+`InvalidRequestError` from the write path, such as a frontmatter block the OKF
+enforced-write layer cannot parse, is **422 Unprocessable Content**. pvl-core's
+route logs only the status and class, so the sink logs the reason itself
+(`transfer_upload_refused`, INFO).
 The route releases the token reservation on these errors without extending its
 expiry; another upload will still conflict while the destination exists. Any
 other failure still maps to 500. See the versioned
