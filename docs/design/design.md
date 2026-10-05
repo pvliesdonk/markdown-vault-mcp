@@ -1857,6 +1857,10 @@ vault-relative path. Wiring lives in `_server_wiring.py`, which `server.py`'s
 DOMAIN-WIRING block calls; it calls `register_transfer_routes(mcp, config.server, config.transfer, sink=…,
 validate=…)` and passes the two optional `download_note` / `upload_note`
 strings that add vault-specific context to the generic tool descriptions.
+The download note names the `okf-bundle` and `okf-bundle:<folder>` refs only
+when `OKF_MODE` is not `off`, the same condition under which the sink accepts
+them, so the model learns the bundle export where it works and nowhere else
+(#1695).
 
 #### Trust model
 
