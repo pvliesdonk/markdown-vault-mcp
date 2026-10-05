@@ -195,6 +195,8 @@ The reverse-linking rule costs nothing: `get_backlinks` (and Obsidian's backlink
 
 A root-level `_conventions.md` holds vault-wide rules (heading style, tag hygiene); nested files add to it. The built-in `propose-links` prompt reads these conventions and skips or reverses link proposals they forbid.
 
+Each convention file reaches the client whole up to 32,768 characters. A longer file is cut there, ends with a note telling the client to `read` the file for the rest, and the server logs `conventions_truncated` once for it.
+
 ## Workflow
 
 Whole-note replacements in these workflows read the current destination and pass its etag as `write`'s `if_match`. New notes omit `if_match`. A source or template read does not supply the destination's etag. If a write fails, report it and stop any dependent delete or rename.

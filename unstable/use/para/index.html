@@ -3450,6 +3450,9 @@ side, so the resource never needs to mention the projects that cite it.</p>
 <p>A root-level <code>_conventions.md</code> holds vault-wide rules (heading style, tag
 hygiene); nested files add to it. The built-in <code>propose-links</code> prompt reads
 these conventions and skips or reverses link proposals they forbid.</p>
+<p>Each convention file reaches the client whole up to 32,768 characters. A longer
+file is cut there, ends with a note telling the client to <code>read</code> the file for
+the rest, and the server logs <code>conventions_truncated</code> once for it.</p>
 <h2 id="workflow">Workflow<a class="headerlink" href="#workflow" title="Permanent link">&para;</a></h2>
 <p>Whole-note replacements in these workflows read the current destination and
 pass its etag as <code>write</code>'s <code>if_match</code>. New notes omit <code>if_match</code>. A source or
