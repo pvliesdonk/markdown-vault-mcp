@@ -30,7 +30,7 @@ Enumerate and partition the target set before reading any note:
 3. Call `get_conventions(path=<entry>)` for each entry and keep the few lines that say how those notes are organised and what their fields mean; they go to every mapper below.
 4. De-duplicate, keep the enumeration order, and pack the note paths into batches against a size budget rather than a fixed note count: add notes to a batch until their combined `content_chars` reaches roughly 40,000, then start the next one. A batch of many stubs is fine; two or three long notes may fill a batch on their own. Cap a batch at about 20 notes even when they are tiny, so one mapper is never handed an unwieldy path list. If `content_chars` is `0` for every note the index predates the field, so fall back to batches of about 8 notes and use heading counts as a rough size proxy.
 
-The plan is path lists plus a total note count, nothing more. Delegate this step to a subagent when you can; the toc is compact (paths, titles, and headings, never bodies), so doing it yourself is also fine. If the plan spans hundreds of notes, report the count and confirm scope with the user before continuing.
+The plan is path lists, a total note count and the conventions lines, nothing more. Delegate this step to a subagent when you can; the toc is compact (paths, titles, and headings, never bodies), so doing it yourself is also fine. If the plan spans hundreds of notes, report the count and confirm scope with the user before continuing.
 
 ## Step 2: Map (one partial summary per batch)
 
