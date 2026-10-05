@@ -103,7 +103,7 @@ Create a new note from one of the vault's templates.
 | `template_name` | no | Template to use, such as `"meeting-notes.md"`; leave empty to choose from the list. |
 
 <!-- DOMAIN-EXAMPLE-create_from_template-START -->
-`create_from_template` with `template_name="meeting.md"` reads `_templates/meeting.md`. It asks for the values it needs and a path for the new note, then writes it. It asks before replacing an existing file. Leave `template_name` empty to choose from the folder's list. `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` moves the templates folder; the [PARA](../use/para.md#using-templates) and [Zettelkasten](../use/zettelkasten.md#using-templates) pages come with template sets.
+`create_from_template` with `template_name="meeting.md"` reads `_templates/meeting.md`. It asks for the values it needs, proposes a path in the folder the vault's conventions name for it (or asks for one when they name none), then writes it. It asks before replacing an existing file. Leave `template_name` empty to choose from the folder's list. `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` moves the templates folder; the [PARA](../use/para.md#using-templates) and [Zettelkasten](../use/zettelkasten.md#using-templates) pages come with template sets.
 <!-- DOMAIN-EXAMPLE-create_from_template-END -->
 
 ## `summarize-subtree`

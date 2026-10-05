@@ -1608,14 +1608,16 @@ ones).
    text entirely, including this sentence, while
    `MARKDOWN_VAULT_MCP_INSTRUCTIONS_EXTRA` appends and keeps it.
 5. `config://vault` reports `conventions_file` and `convention_folders`.
-6. Every shipped prompt (the built-ins in `static/prompts/` and the example
+6. Every shipped prompt (the built-ins in `static/prompts/`, the
+   `create_from_template` prompt built in `prompts.py`, and the example
    packs) calls `get_conventions` and treats the conventions as overriding
    its own defaults (#1709). A prompt that writes calls it before writing and
    takes the folders it needs from it; where the conventions name none, it
    asks the user rather than assuming a folder name. A read-only prompt uses
    the conventions to interpret the notes it reports on. The example PARA
    root `_conventions.md` names the layout so the pack has something to read.
-   `tests/test_prompts.py` fails a prompt file without `get_conventions`, and
+   `tests/test_prompts.py` fails a prompt file without `get_conventions`
+   (`tests/test_server.py` pins `create_from_template`), and
    one that calls a write tool without the `write` tag that read-only mode
    hides (#1717).
 

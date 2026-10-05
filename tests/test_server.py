@@ -3070,6 +3070,8 @@ class TestPrompts:
         assert "meeting.md" in text
         assert "`read`" in text
         assert "`write`" in text
+        # The target folder comes from the vault's conventions (#1709).
+        assert "get_conventions" in text
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_create_from_template_prompt_sanitizes_template_name(self) -> None:
