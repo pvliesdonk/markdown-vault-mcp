@@ -813,10 +813,12 @@ unbuilt index: bucket-1 hits disk directly; bucket-2 queries
 whatever is currently in the index (empty on cold start). So the CLI
 `search` command calls `build_index()` before it queries when its index is
 in memory (`INDEX_PATH` unset or `:memory:`), since that index starts empty,
-and keeps the build's change tracking and vectors in memory even when
-`STATE_PATH` or `EMBEDDINGS_PATH` is set, since those files may be a running
-server's (#1691, #1708). A semantic or hybrid query on such an index embeds
-the vault first, in memory, when a provider is configured. An on-disk index is
+and keeps the build's change tracking in memory even when `STATE_PATH` is
+set, since that file may be a running server's (#1691). Vectors at
+`EMBEDDINGS_PATH` are used as stored, never embedded again; with no
+`EMBEDDINGS_PATH` and a provider configured, a semantic or hybrid query on
+such an index embeds the vault first, in memory (#1708). `index` and
+`reindex` skip embedding when no file would keep the vectors. An on-disk index is
 only read: it may belong to a running server, and `build_index()`
 rebuilds an index whose recorded provenance differs from the caller's
 settings, so a shell with other settings would rebuild it under the server.

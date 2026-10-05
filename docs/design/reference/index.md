@@ -90,18 +90,5 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   external-content-only restriction. Read before touching `_delete_document`,
   `_insert_sections`, or any `notes_fts` DELETE/INSERT in `fts_index.py`.
 
-- [MCPB bundle variable substitution](mcpb-variable-substitution.md) —
-  which `${...}` tokens an MCP Bundle host replaces in `mcp_config` and in
-  `user_config` defaults (defaults are not substituted by the library), the
-  default-versus-stored merge, `platform_overrides` env replacement in 2.1.2,
-  the unreleased validator rejecting `${HOME}`, and the absence of a
-  per-extension data directory. Read before `packaging/mcpb/manifest.json.in`.
-- [Claude Code plugin variable substitution](claude-code-plugin-variables.md) —
-  `${CLAUDE_PLUGIN_ROOT}`/`${CLAUDE_PLUGIN_DATA}`, plain `${VAR}` and
-  `${VAR:-default}`, and `${user_config.*}` in a plugin's `.mcp.json`, how
-  `userConfig` defaults and saved values reach the server, and the data
-  directory's lifecycle. Read before `.claude-plugin/plugin/.mcp.json` or
-  `plugin.json`.
-
 See the [research log](log.md) for completed research passes. Add project
 references here as they are written.

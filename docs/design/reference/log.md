@@ -1,28 +1,5 @@
 # Reference research log
 
-## 2026-10-05
-
-- Added [MCPB bundle variable substitution](mcpb-variable-substitution.md),
-  checked against MANIFEST.md and `src/shared/config.ts` at the v2.1.2 tag
-  and main (70fe3b34), main's `src/node/validate.ts`, and mcpb issues
-  #217, #250, #251 and PR #221, #252, with a node probe calling
-  `getMcpConfigForManifest` from `@anthropic-ai/mcpb@2.1.2`. Found that the
-  library never substitutes variables inside a `user_config` default, that a
-  new optional field gets the manifest default on an existing install, that
-  a required field's default never satisfies the required check, that 2.1.2
-  replaces the base `env` when a platform override sets `env`, and that
-  main's unreleased validator rejects `${HOME}` in `mcp_config` despite the
-  spec listing it. Claude Desktop's own `systemDirs` keys stay unverified.
-  Next review: 2027-04-05.
-- Added [Claude Code plugin variable substitution](claude-code-plugin-variables.md),
-  checked against the plugin manifest, components, loading, CLI, MCP and
-  settings reference pages and the CHANGELOG, with a probe plugin on Claude
-  Code 2.1.288 (Linux). Found that `${CLAUDE_PLUGIN_DATA}` and `${HOME}`
-  expand in `env`, that a `userConfig` default is not scanned for
-  `${CLAUDE_PLUGIN_DATA}` but is for `${HOME}`, that `${VAR:-default}` does
-  not nest, and that an unsaved option takes the manifest's current default.
-  Windows `${HOME}` stays unverified. Next review: 2027-04-05.
-
 ## 2026-09-26
 
 - Added [GitHub and git behaviour behind integration branches](github-integration-branches.md),

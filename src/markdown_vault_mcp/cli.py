@@ -145,7 +145,8 @@ def _build_vault(
     source_dir: str | None = None,
     index_path: str | None = None,
     *,
-    scratch: bool = False,
+    scratch_state: bool = False,
+    in_memory_vectors: bool = False,
 ) -> Vault:
     """Build a synchronous Vault from env vars + optional CLI overrides.
 
@@ -158,10 +159,13 @@ def _build_vault(
         source_dir: Overrides ``{PREFIX}_SOURCE_DIR`` when given (set into the
             environment before ``ProjectConfig.from_env()`` reads it).
         index_path: Overrides the resolved SQLite index path when given.
-        scratch: Keep the change-tracking state and the vectors in memory,
-            ignoring ``STATE_PATH`` and ``EMBEDDINGS_PATH``, for a one-shot
-            in-memory index that must not overwrite a running server's files
-            (#1691, #1708).
+        scratch_state: Keep the change-tracking state in memory, ignoring
+            ``STATE_PATH``, for a one-shot in-memory index whose state must
+            not overwrite a running server's (#1691).
+        in_memory_vectors: Keep the embedding provider when no file would
+            keep the vectors (no ``EMBEDDINGS_PATH`` and no on-disk index),
+            so they are embedded in memory. Off by default: a batch command
+            would pay the provider for vectors it then throws away (#1708).
 
     Returns:
         A constructed :class:`~markdown_vault_mcp.vault.Vault` (index not built).
@@ -193,12 +197,15 @@ def _build_vault(
     settings = to_vault_settings(config, instances=instances)
     if index_path:
         settings = dataclasses.replace(settings, index_path=Path(index_path))
-    if scratch:
-        settings = dataclasses.replace(settings, state_path=None, embeddings_path=None)
+    if scratch_state:
+        settings = dataclasses.replace(settings, state_path=None)
+    embedding_provider = instances.embedding_provider
+    if not in_memory_vectors and settings.effective_embeddings_path() is None:
+        embedding_provider = None
     return Vault(
         source_dir=config.source_dir,
         settings=settings,
-        embedding_provider=instances.embedding_provider,
+        embedding_provider=embedding_provider,
         summarizer=instances.summarizer,
         git_strategy=instances.git_strategy,
         on_write=instances.on_write,
@@ -217,6 +224,7 @@ def index(
 ) -> None:
     """Build the full-text search index."""
     from markdown_vault_mcp._http_logging import quiet_http_loggers
+    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 
     quiet_http_loggers()
     vault = _build_vault(source_dir, index_path)
@@ -224,28 +232,6 @@ def index(
     typer.echo(
         f"Indexed {stats.documents_indexed} documents, {stats.chunks_indexed} chunks"
     )
-    _embed_kept_vectors(vault, force=force)
-
-
-def _embed_kept_vectors(vault: Vault, *, force: bool = False) -> None:
-    """Bring the vectors up to date, unless nothing would keep them.
-
-    Without an embeddings path the vectors live in memory and end with this
-    command, so embedding them would cost the provider for nothing (#1708).
-
-    Args:
-        vault: The vault the command built.
-        force: Re-embed every chunk instead of converging.
-    """
-    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
-
-    status = vault.index.embeddings_status()
-    if status["available"] and status["path"] is None:
-        typer.echo(
-            "Embeddings skipped: without an index or embeddings path they "
-            "would not be kept."
-        )
-        return
     try:
         n = vault.index.build_embeddings(force=force)
         typer.echo(f"Embedded {n} chunks")
@@ -253,17 +239,17 @@ def _embed_kept_vectors(vault: Vault, *, force: bool = False) -> None:
         pass  # embeddings not configured
 
 
-def _build_scratch_embeddings(vault: Vault) -> None:
-    """Embed an in-memory index for one search by meaning, when a provider is set.
+def _embed_in_memory(vault: Vault) -> None:
+    """Embed the vault for one search by meaning when no file keeps the vectors.
+
+    Vectors that ``EMBEDDINGS_PATH`` or an on-disk index keep are only read:
+    building them here would write files a running server may share (#1708).
 
     Args:
-        vault: A vault built with ``scratch=True``.
+        vault: A vault whose in-memory index is already built.
     """
-    import contextlib
-
-    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
-
-    with contextlib.suppress(EmbeddingsNotConfiguredError):
+    status = vault.index.embeddings_status()
+    if status["available"] and status["path"] is None:
         vault.index.build_embeddings()
 
 
@@ -292,17 +278,18 @@ def search(
 
     quiet_http_loggers()
     # An in-memory index is empty until built, so build it, keeping its state
-    # and vectors in memory too: STATE_PATH and EMBEDDINGS_PATH may be a
-    # running server's (#1691, #1708). An on-disk index is only read:
-    # build_index() would rebuild a server's index whenever this shell's
-    # settings differ from the ones it was built with.
+    # in memory too: STATE_PATH may be a running server's (#1691). An on-disk
+    # index is only read: build_index() would rebuild a server's index
+    # whenever this shell's settings differ from the ones it was built with.
     configured_index = ProjectConfig.from_env().indexing.index_path
     in_memory = configured_index is None or str(configured_index) == ":memory:"
-    vault = _build_vault(source_dir, None, scratch=in_memory)
+    vault = _build_vault(
+        source_dir, None, scratch_state=in_memory, in_memory_vectors=True
+    )
     if in_memory:
         vault.index.build_index()
         if mode != "keyword":
-            _build_scratch_embeddings(vault)
+            _embed_in_memory(vault)
     results = vault.reader.search(
         query,
         limit=limit,
@@ -338,6 +325,7 @@ def reindex(
 ) -> None:
     """Incrementally reindex the vault."""
     from markdown_vault_mcp._http_logging import quiet_http_loggers
+    from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 
     quiet_http_loggers()
     vault = _build_vault(source_dir, index_path)
@@ -351,8 +339,11 @@ def reindex(
         f"{result.deleted} deleted, {result.unchanged} unchanged, "
         f"{result.skipped} skipped"
     )
-    # build_embeddings converges the vectors to the FTS chunks (#665).
-    _embed_kept_vectors(vault)
+    try:
+        n = vault.index.build_embeddings()  # converges vectors to FTS chunks (#665)
+        typer.echo(f"Embedded {n} chunks")
+    except EmbeddingsNotConfiguredError:
+        pass  # embeddings not configured
 
 
 # DOMAIN-COMMANDS-END

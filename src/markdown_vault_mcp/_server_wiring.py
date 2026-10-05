@@ -34,11 +34,14 @@ def wire_domain(mcp: FastMCP, config: ProjectConfig, transport: str) -> None:
     _hand_off_to_service(config, transport)
     _contribute_identity(mcp, config)
 
+    # The provider is resolved later, in the lifespan, so this line can only
+    # say what the configuration asks for; the provider's own load logs
+    # whether it came up (#1708).
     logger.info(
         "vault_startup mode=%s vault=%s embeddings=%s",
         "read-only" if config.read_only else "read-write",
         config.source_dir,
-        "enabled"
+        "configured"
         if config.indexing.embeddings_path or (config.embeddings.provider or "").strip()
         else "disabled",
     )

@@ -497,6 +497,8 @@ class TestVaultInstancesProvider:
         [
             ("openai", ImportError("missing dep")),
             ("openai", RuntimeError("boom")),
+            ("fastembed", ValueError("unsupported model")),
+            ("fastembed", OSError("model download failed")),
             ("bogus", None),
         ],
     )

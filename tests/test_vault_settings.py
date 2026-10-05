@@ -214,17 +214,6 @@ class TestStateLocation:
         assert (tmp_path / "state" / "index.db.state.json").is_file()
         assert sorted(p.name for p in root.rglob("*")) == ["a.md"]
 
-    def test_index_folder_is_created(self, tmp_path: Path) -> None:
-        """A packaged default may point into a folder not made yet (#1708)."""
-        root = self._vault_with_note(tmp_path)
-        index = tmp_path / "data" / "markdown-vault-mcp" / "index.db"
-        vault = Vault(source_dir=root, settings=VaultSettings(index_path=index))
-        try:
-            vault.index.build_index()
-        finally:
-            vault.close()
-        assert index.is_file()
-
     def test_legacy_state_folder_is_reported_not_read(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:

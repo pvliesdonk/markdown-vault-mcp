@@ -425,6 +425,9 @@ Regardless of which provider you choose:
 - The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider is configured, whether or not the build has run. The build has caught up once [`get_index_status`](../reference/tools/indexing.md#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
 - Use `mode="hybrid"` in search for best results; it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.
 
+!!! note "A provider without EMBEDDINGS_PATH starts embedding on upgrade"
+    Before this behavior, a provider set without `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` was ignored and the server searched by keyword only. After the upgrade such a deployment embeds the whole vault once, which a paid provider bills, and rebuilds its keyword index once in the background, as it does after any model change. If that provider fails to load, the server logs `embedding_provider_load_failed` and keeps searching by keyword only.
+
 !!! note "Large vaults"
     The initial embedding build uses two levels of batching to keep memory bounded:
 

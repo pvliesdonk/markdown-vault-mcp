@@ -383,13 +383,6 @@ class Vault:
         db_path: Path | str = (
             self._index_path if self._index_path is not None else ":memory:"
         )
-        if str(db_path) != ":memory:":
-            # SQLite creates the file but not its folder; a packaged default
-            # may point into one not made yet (#1708). The vector sidecars and
-            # the state file create theirs on first save.
-            from pathlib import Path
-
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._fts = FTSIndex(
             db_path=db_path,
             indexed_frontmatter_fields=self._indexed_frontmatter_fields or None,

@@ -230,44 +230,34 @@ def _resolve_embedding_provider(config: ProjectConfig) -> EmbeddingProvider | No
 
     An explicitly configured provider is resolved on its own; auto-detection
     runs only when the storage path in ``config.indexing`` is set
-    (cross-section coupling, #1708).  An unrecognised provider name raises
-    ConfigurationError from the resolver and propagates unchanged.
+    (cross-section coupling, #1708).  With that path set, an explicit
+    provider that fails to load (an unrecognised name included) raises;
+    without it, the failure is logged and the server runs keyword-only.
 
     Args:
         config: The served project configuration.
 
     Returns:
-        The provider, or ``None`` (unconfigured, or auto-detection failed).
+        The provider, or ``None`` (unconfigured, auto-detection failed, or an
+        explicit provider without ``EMBEDDINGS_PATH`` failed to load).
 
     Raises:
         ConfigurationError: If an explicitly configured provider fails to
-            load while ``EMBEDDINGS_PATH`` is set. Without it the failure is
-            logged at WARNING and keyword search carries on (#1708).
+            load while ``EMBEDDINGS_PATH`` is set.
     """
     explicit_provider = (config.embeddings.provider or "").strip()
-    # An explicit provider turns semantic search on by itself (#1708);
-    # auto-detection still waits for a storage path, so an install that merely
-    # has a backend importable never starts embedding at every start.
-    if not explicit_provider and config.indexing.embeddings_path is None:
-        return None
+    if config.indexing.embeddings_path is None:
+        # An explicit provider turns semantic search on by itself (#1708);
+        # auto-detection still waits for a storage path, so an install that
+        # merely has a backend importable never starts embedding at startup.
+        if not explicit_provider:
+            return None
+        return _load_provider_or_keyword_only(config, explicit_provider)
     try:
         from markdown_vault_mcp import providers as _providers
 
         return _providers.get_embedding_provider(config)
-    except (ImportError, RuntimeError, ConfigurationError) as exc:
-        if explicit_provider and config.indexing.embeddings_path is None:
-            # Before #1708 a provider without EMBEDDINGS_PATH was never
-            # loaded, so a broken one cost nothing; it must not stop a server
-            # that starts today. Keyword search carries on.
-            logger.warning(
-                "embedding_provider_load_failed provider=%s error=%s "
-                "outcome=keyword_only",
-                explicit_provider,
-                exc,
-            )
-            return None
-        if isinstance(exc, ConfigurationError):
-            raise
+    except (ImportError, RuntimeError) as exc:
         if explicit_provider:
             # The operator explicitly chose a backend; a load failure is
             # a configuration error that must surface, not silently fall
@@ -281,6 +271,38 @@ def _resolve_embedding_provider(config: ProjectConfig) -> EmbeddingProvider | No
         # Semantic search is disabled until the operator sets
         # MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER to require a specific backend.
         logger.warning("embedding_provider_autodetect_failed", exc_info=True)
+        return None
+
+
+def _load_provider_or_keyword_only(
+    config: ProjectConfig, explicit_provider: str
+) -> EmbeddingProvider | None:
+    """Load an explicit provider configured without ``EMBEDDINGS_PATH``.
+
+    Before #1708 such a provider was never loaded, so a broken one cost
+    nothing. A failure to load it now must not stop a server that starts
+    today: it is logged and keyword search carries on.
+
+    Args:
+        config: The served project configuration.
+        explicit_provider: The configured provider name.
+
+    Returns:
+        The provider, or ``None`` when it fails to load.
+    """
+    try:
+        from markdown_vault_mcp import providers as _providers
+
+        return _providers.get_embedding_provider(config)
+    # Broad by design: provider constructors raise heterogeneous types (an
+    # unknown name, a missing extra, an unsupported model, a failed model
+    # download), and any of them must leave the server starting (#1708).
+    except Exception as exc:
+        logger.warning(
+            "embedding_provider_load_failed provider=%s error=%s outcome=keyword_only",
+            explicit_provider,
+            exc,
+        )
         return None
 
 
