@@ -123,8 +123,47 @@ class TestForPath:
         resolver = ConventionsResolver(tmp_path, "_conventions.md")
         entries = resolver.for_path("")
         assert len(entries) == 1
-        assert entries[0].content.endswith("[truncated]")
-        assert len(entries[0].content) < _MAX_ENTRY_CHARS + 100
+        body, marker = entries[0].content.split("\n… ", 1)
+        assert body == "x" * _MAX_ENTRY_CHARS
+        assert marker == (
+            f"[truncated at {_MAX_ENTRY_CHARS} characters; "
+            "read _conventions.md for the rest]"
+        )
+
+    def test_content_at_cap_not_truncated(self, tmp_path: Path) -> None:
+        (tmp_path / "_conventions.md").write_text(
+            "x" * _MAX_ENTRY_CHARS, encoding="utf-8"
+        )
+        resolver = ConventionsResolver(tmp_path, "_conventions.md")
+        assert resolver.for_path("")[0].content == "x" * _MAX_ENTRY_CHARS
+
+    def test_instruction_file_length_not_truncated(self, tmp_path: Path) -> None:
+        # A 200-line conventions file, Claude Code's target for an
+        # always-loaded instruction file, arrives whole (#1722).
+        raw = "\n".join(f"- Rule {i}: " + "w" * 70 for i in range(200))
+        (tmp_path / "_conventions.md").write_text(raw, encoding="utf-8")
+        resolver = ConventionsResolver(tmp_path, "_conventions.md")
+        assert resolver.for_path("")[0].content == raw
+
+    def test_truncation_warns_once_per_file(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        nested = tmp_path / "1-Projects"
+        nested.mkdir()
+        for folder in (tmp_path, nested):
+            (folder / "_conventions.md").write_text(
+                "x" * (_MAX_ENTRY_CHARS + 1), encoding="utf-8"
+            )
+        resolver = ConventionsResolver(tmp_path, "_conventions.md")
+        with caplog.at_level("WARNING", logger="markdown_vault_mcp.conventions"):
+            resolver.for_path("1-Projects")
+            resolver.for_path("1-Projects/note.md")
+        warned = [
+            r.args[0]  # type: ignore[index]
+            for r in caplog.records
+            if r.msg.startswith("conventions_truncated")
+        ]
+        assert warned == ["_conventions.md", "1-Projects/_conventions.md"]
 
     def test_custom_filename(self, tmp_path: Path) -> None:
         (tmp_path / "AGENTS.md").write_text("Agent rules.", encoding="utf-8")

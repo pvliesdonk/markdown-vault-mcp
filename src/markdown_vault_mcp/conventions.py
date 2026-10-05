@@ -39,9 +39,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Cap on transported convention text per file so a pathological conventions
-# file cannot flood tool results.
-_MAX_ENTRY_CHARS = 4000
-_TRUNCATION_MARKER = "\n… [truncated]"
+# file cannot flood tool results. A conventions file is an agent-instruction
+# file, so the cap is sized to the largest an agent host loads whole: Codex
+# truncates its AGENTS.md chain at 32 KiB, and Claude Code's 200-line target
+# fits well inside it (#1722).
+_MAX_ENTRY_CHARS = 32768
+# Result text: tells the model the entry is incomplete and where the rest is.
+_TRUNCATION_MARKER = "\n… [truncated at {limit} characters; read {path} for the rest]"
 
 # Read cap (characters): bounds I/O and frontmatter parsing, not just the
 # transported string — a runaway multi-MB file named like a conventions file
@@ -94,6 +98,9 @@ class ConventionsResolver:
         self._source_dir = source_dir
         self._filename = filename
         self._exclude_patterns = list(exclude_patterns or [])
+        # Convention files already reported as truncated, so the warning is
+        # logged once per file rather than on every write result.
+        self._truncation_warned: set[str] = set()
 
     @property
     def enabled(self) -> bool:
@@ -214,10 +221,36 @@ class ConventionsResolver:
             # breaking the whole chain (valid ancestor files still apply).
             logger.debug("conventions_read_failed path=%s", rel, exc_info=True)
             return None
-        content = self._strip_frontmatter(raw, rel)
-        if len(content) > _MAX_ENTRY_CHARS:
-            content = content[:_MAX_ENTRY_CHARS] + _TRUNCATION_MARKER
+        content = self._truncate(self._strip_frontmatter(raw, rel), rel)
         return ConventionEntry(folder=folder, path=rel, content=content)
+
+    def _truncate(self, content: str, rel: str) -> str:
+        """Cap *content* at :data:`_MAX_ENTRY_CHARS`, marking where it was cut.
+
+        The first truncation of each file logs a warning, so an operator
+        learns that part of their conventions does not reach the client.
+
+        Args:
+            content: Convention body with frontmatter stripped.
+            rel: Vault-relative path of the convention file.
+
+        Returns:
+            *content* unchanged when within the cap; otherwise its first
+            :data:`_MAX_ENTRY_CHARS` characters followed by a marker naming
+            *rel* as the place to read the full text.
+        """
+        if len(content) <= _MAX_ENTRY_CHARS:
+            return content
+        if rel not in self._truncation_warned:
+            self._truncation_warned.add(rel)
+            logger.warning(
+                "conventions_truncated path=%s chars=%d limit=%d",
+                rel,
+                len(content),
+                _MAX_ENTRY_CHARS,
+            )
+        marker = _TRUNCATION_MARKER.format(limit=_MAX_ENTRY_CHARS, path=rel)
+        return content[:_MAX_ENTRY_CHARS] + marker
 
     @staticmethod
     def _strip_frontmatter(raw: str, rel: str) -> str:
