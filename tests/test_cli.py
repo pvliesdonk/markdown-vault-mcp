@@ -6,6 +6,7 @@ import json
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from markdown_vault_mcp.cli import _ENV_PREFIX, _build_vault, app
@@ -13,7 +14,6 @@ from markdown_vault_mcp.cli import _ENV_PREFIX, _build_vault, app
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import pytest
     from typer.testing import Result
 
 runner = CliRunner()
@@ -952,6 +952,76 @@ def test_reindex_against_real_vault(
 
     assert result.exit_code == 0, result.output
     assert "Reindex" in result.output
+
+
+def test_search_without_index_path_finds_notes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``search`` with an in-memory index builds it before querying (#1691)."""
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.delenv(f"{_ENV_PREFIX}_INDEX_PATH", raising=False)
+    monkeypatch.delenv(f"{_ENV_PREFIX}_STATE_PATH", raising=False)
+
+    result = runner.invoke(app, ["search", "--json", "world"])
+
+    assert result.exit_code == 0, result.output
+    assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
+    # The in-memory build keeps its state in memory: a server sharing the
+    # vault keeps its own change tracking (#1693).
+    assert sorted(p.name for p in vault_dir.rglob("*")) == ["a.md"]
+
+
+@pytest.mark.parametrize("index_path", [None, ":memory:"])
+def test_search_in_memory_leaves_a_shared_state_file_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, index_path: str | None
+) -> None:
+    """An explicit STATE_PATH may be a running server's; search keeps its own."""
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    state = tmp_path / "state.json"
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_STATE_PATH", str(state))
+    if index_path is None:
+        monkeypatch.delenv(f"{_ENV_PREFIX}_INDEX_PATH", raising=False)
+    else:
+        monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", index_path)
+
+    result = runner.invoke(app, ["search", "--json", "world"])
+
+    assert result.exit_code == 0, result.output
+    assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
+    assert not state.exists()
+
+
+def test_search_never_builds_an_on_disk_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An on-disk index may be a running server's; search only reads it (#1691)."""
+    from markdown_vault_mcp.facets.index import IndexFacet
+
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "fts.db"))
+    assert runner.invoke(app, ["index"]).exit_code == 0
+
+    calls: list[bool] = []
+
+    def _record(*_args: object, **_kwargs: object) -> None:
+        calls.append(True)
+
+    monkeypatch.setattr(IndexFacet, "build_index", _record)
+    result = runner.invoke(app, ["search", "--json", "world"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == []
+    assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
 
 
 # ---------------------------------------------------------------------------
