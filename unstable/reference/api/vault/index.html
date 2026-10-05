@@ -3478,7 +3478,8 @@ existing file without an <em>if_match</em> etag raises
               <div class="doc-md-description">
                 <p>Path to the hash-state JSON file used by
 :class:<code>~markdown_vault_mcp.tracker.ChangeTracker</code>.  Defaults to
-<code>{source_dir}/.markdown_vault_mcp/state.json</code>.</p>
+<code>{index file name}.state.json</code> beside <code>index_path</code>, and to
+memory when the index is; never inside the vault (#1693).</p>
               </div>
             </td>
           </tr>
@@ -4111,7 +4112,10 @@ metacharacters (which would invert the exclusion).</p>
 
     <div class="doc doc-contents ">
 
-        <p>Return the hash-state path, defaulting under the vault root.</p>
+        <p>Return the hash-state path, defaulting beside the index (#1693).</p>
+<p>The state records which notes the index holds, so it lives with the
+index and never inside the vault: with no on-disk index there is
+nothing for a state file to describe, and the state stays in memory.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -4134,8 +4138,8 @@ metacharacters (which would invert the exclusion).</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>The vault root, used when no explicit <code>state_path</code>
-is configured.</p>
+                <p>The vault root. Unused since the default left the
+vault (#1693); kept so existing calls keep working.</p>
               </div>
             </td>
             <td>
@@ -4157,21 +4161,31 @@ is configured.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="pathlib.Path">Path</span></code>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>The explicit <code>state_path</code>, or</p>
+                <p>The explicit <code>state_path</code>; else <code>{index file name}.state.json</code></p>
               </div>
             </td>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><span title="pathlib.Path">Path</span></code>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p><code>{source_dir}/.markdown_vault_mcp/state.json</code>.</p>
+                <p>beside an on-disk <code>index_path</code>; else <code>None</code>, meaning in memory</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>(no <code>index_path</code>, or SQLite's <code>:memory:</code>).</p>
               </div>
             </td>
           </tr>

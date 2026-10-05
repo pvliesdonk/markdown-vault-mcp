@@ -2802,7 +2802,7 @@ where.exe<span class="w"> </span>markdown-vault-mcp<span class="w">    </span><s
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
-<p><code>MARKDOWN_VAULT_MCP_EXCLUDE</code> keeps an Obsidian vault's settings folder and trash out of the results. Read-only covers the tools, not the folder: the server still keeps a small change-tracking file in a <code>.markdown_vault_mcp/</code> folder inside the vault, unless <code>MARKDOWN_VAULT_MCP_STATE_PATH</code> names a path elsewhere. The search index lives in memory and is rebuilt at each start; set <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> to a file outside the vault to keep it between starts.</p>
+<p><code>MARKDOWN_VAULT_MCP_EXCLUDE</code> keeps an Obsidian vault's settings folder and trash out of the results. The server writes nothing into the vault for itself. The search index lives in memory and is rebuilt at each start; set <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> to a file outside the vault to keep it between starts, and the server keeps its change-tracking file beside it.</p>
 <p>The first task, after the check in step 4:</p>
 <blockquote>
 <p>Search my vault for notes about <a topic you have written about>, and summarize what they say.</p>

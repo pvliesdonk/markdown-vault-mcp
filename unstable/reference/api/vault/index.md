@@ -167,20 +167,23 @@ Raises:
 
 ### `effective_state_path(source_dir)`
 
-Return the hash-state path, defaulting under the vault root.
+Return the hash-state path, defaulting beside the index (#1693).
+
+The state records which notes the index holds, so it lives with the index and never inside the vault: with no on-disk index there is nothing for a state file to describe, and the state stays in memory.
 
 Parameters:
 
-| Name         | Type   | Description                                                     | Default    |
-| ------------ | ------ | --------------------------------------------------------------- | ---------- |
-| `source_dir` | `Path` | The vault root, used when no explicit state_path is configured. | *required* |
+| Name         | Type   | Description                                                                                           | Default    |
+| ------------ | ------ | ----------------------------------------------------------------------------------------------------- | ---------- |
+| `source_dir` | `Path` | The vault root. Unused since the default left the vault (#1693); kept so existing calls keep working. | *required* |
 
 Returns:
 
-| Type   | Description                                  |
-| ------ | -------------------------------------------- |
-| `Path` | The explicit state_path, or                  |
-| `Path` | {source_dir}/.markdown_vault_mcp/state.json. |
+| Type   | Description |
+| ------ | ----------- |
+| \`Path | None\`      |
+| \`Path | None\`      |
+| \`Path | None\`      |
 
 ## `Vault(*, source_dir, settings=None, embedding_provider=None, summarizer=None, git_strategy=None, on_write=None, chunk_strategy='heading')`
 

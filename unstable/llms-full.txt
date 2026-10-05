@@ -208,7 +208,7 @@ The server needs one setting: `MARKDOWN_VAULT_MCP_SOURCE_DIR`, the absolute path
 }
 ```
 
-`MARKDOWN_VAULT_MCP_EXCLUDE` keeps an Obsidian vault's settings folder and trash out of the results. Read-only covers the tools, not the folder: the server still keeps a small change-tracking file in a `.markdown_vault_mcp/` folder inside the vault, unless `MARKDOWN_VAULT_MCP_STATE_PATH` names a path elsewhere. The search index lives in memory and is rebuilt at each start; set `MARKDOWN_VAULT_MCP_INDEX_PATH` to a file outside the vault to keep it between starts.
+`MARKDOWN_VAULT_MCP_EXCLUDE` keeps an Obsidian vault's settings folder and trash out of the results. The server writes nothing into the vault for itself. The search index lives in memory and is rebuilt at each start; set `MARKDOWN_VAULT_MCP_INDEX_PATH` to a file outside the vault to keep it between starts, and the server keeps its change-tracking file beside it.
 
 The first task, after the check in step 4:
 
@@ -841,7 +841,7 @@ When the helper is invoked but `debugpy` isn't installed (say, someone sets `DEB
 
 Set `MARKDOWN_VAULT_MCP_SOURCE_DIR` in `.env` to the vault's path on the host. This server's `compose.yml` mounts that path at `/data/vault` and tells the server inside to use `/data/vault`, so the one variable is a host path to Compose and a container path to the server. Left unset, as `.env.example` ships it, Compose mounts `./vault` beside `compose.yml`: an empty vault, enough for a first try. The files under `examples/` carry a host path; replace it with your own.
 
-The write tools are on by default; `MARKDOWN_VAULT_MCP_READ_ONLY=true` makes a search-only server. Read-only still writes one change-tracking file into the vault, under `.markdown_vault_mcp/`, unless `MARKDOWN_VAULT_MCP_STATE_PATH` points elsewhere.
+The write tools are on by default; `MARKDOWN_VAULT_MCP_READ_ONLY=true` makes a search-only server. The server keeps its own state on the `state-data` volume, so the vault mount can be read-only.
 
 ### What `/data/state` holds
 
@@ -971,7 +971,7 @@ MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH=/var/lib/markdown-vault-mcp/embeddings/embedd
 MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR=/var/lib/markdown-vault-mcp/fastembed
 ```
 
-- **The vault must be writable, even read-only.** The server keeps a change-tracking file in the vault's `.markdown_vault_mcp/` folder unless `MARKDOWN_VAULT_MCP_STATE_PATH` points elsewhere. A vault outside the state directory needs its own `ReadWritePaths=` drop-in, as above. `ProtectHome=yes` keeps `/home` from the service. A vault under `/srv`, like the one in the drop-in above, stays clear of it.
+- **A writable vault outside the state directory needs its own `ReadWritePaths=` drop-in**, as above. The server's change-tracking file sits beside the index in the state directory, not in the vault. `ProtectHome=yes` keeps `/home` from the service. A vault under `/srv`, like the one in the drop-in above, stays clear of it.
 - **Without `INDEX_PATH`** the index lives in memory and is rebuilt at every start.
 - **Without `FASTEMBED_CACHE_DIR`** FastEmbed keeps its model in the temporary directory. The unit's `PrivateTmp=yes` discards that at every stop, so the model downloads again at each start.
 
@@ -4507,7 +4507,7 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 | Variable                               | Default | Required | Description                                                                                                                                                                                                                                                                          |
 | -------------------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH`        | (none)  | No       | Path to the SQLite FTS5 index file; unset keeps the index in memory. Set it for persistence across restarts.                                                                                                                                                                         |
-| `MARKDOWN_VAULT_MCP_STATE_PATH`        | (none)  | No       | Path to the change-tracking state file. Defaults to {SOURCE_DIR}/.markdown_vault_mcp/state.json.                                                                                                                                                                                     |
+| `MARKDOWN_VAULT_MCP_STATE_PATH`        | (none)  | No       | Path to the change-tracking state file. Defaults to INDEX_PATH plus .state.json (index.db.state.json beside index.db); without INDEX_PATH the state is kept in memory. Never written into the vault by default.                                                                      |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`   | (none)  | No       | Path to the numpy embeddings file; required to enable semantic search.                                                                                                                                                                                                               |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS`    | (none)  | No       | Comma-separated frontmatter fields promoted to the tag index for structured filtering. Changing it cold-rebuilds the index once on next startup; SEARCHABLE_FIELDS inherits this value when unset.                                                                                   |
 | `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`   | (none)  | No       | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index.                                                                                                                                                                    |
@@ -6704,20 +6704,23 @@ Raises:
 
 ### `effective_state_path(source_dir)`
 
-Return the hash-state path, defaulting under the vault root.
+Return the hash-state path, defaulting beside the index (#1693).
+
+The state records which notes the index holds, so it lives with the index and never inside the vault: with no on-disk index there is nothing for a state file to describe, and the state stays in memory.
 
 Parameters:
 
-| Name         | Type   | Description                                                     | Default    |
-| ------------ | ------ | --------------------------------------------------------------- | ---------- |
-| `source_dir` | `Path` | The vault root, used when no explicit state_path is configured. | *required* |
+| Name         | Type   | Description                                                                                           | Default    |
+| ------------ | ------ | ----------------------------------------------------------------------------------------------------- | ---------- |
+| `source_dir` | `Path` | The vault root. Unused since the default left the vault (#1693); kept so existing calls keep working. | *required* |
 
 Returns:
 
-| Type   | Description                                  |
-| ------ | -------------------------------------------- |
-| `Path` | The explicit state_path, or                  |
-| `Path` | {source_dir}/.markdown_vault_mcp/state.json. |
+| Type   | Description |
+| ------ | ----------- |
+| \`Path | None\`      |
+| \`Path | None\`      |
+| \`Path | None\`      |
 
 ## `Vault(*, source_dir, settings=None, embedding_provider=None, summarizer=None, git_strategy=None, on_write=None, chunk_strategy='heading')`
 
@@ -9644,7 +9647,7 @@ An upgrade never rewrites your notes. What it can touch is the state the server 
 
 - **The text index.** The index records how it was built: the version of the rules that turn notes into index rows, the embedding model, and the indexing settings (title field, searchable and indexed frontmatter fields, chunk size override, attachment extensions). When any of these differs at start, the server rebuilds the index once and logs `index_provenance_changed` naming what changed. A release that changes those rules says so on its **State** line.
 - **The embeddings.** A rebuild of the text index keeps them: only a note whose sections came out different is embedded again.
-- **Where that state lives.** Under Docker Compose, on the `state-data` volume at `/data/state`. On a package install, wherever the environment file's `MARKDOWN_VAULT_MCP_INDEX_PATH` and `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` point ([systemd](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/systemd/index.md)). A command that a desktop client starts keeps the index in memory unless `MARKDOWN_VAULT_MCP_INDEX_PATH` is set, so it rebuilds at every start anyway. The change-tracking file sits in the vault's `.markdown_vault_mcp/` folder unless `MARKDOWN_VAULT_MCP_STATE_PATH` moves it.
+- **Where that state lives.** Under Docker Compose, on the `state-data` volume at `/data/state`. On a package install, wherever the environment file's `MARKDOWN_VAULT_MCP_INDEX_PATH` and `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` point ([systemd](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/deploy/systemd/index.md)). A command that a desktop client starts keeps the index in memory unless `MARKDOWN_VAULT_MCP_INDEX_PATH` is set, so it rebuilds at every start anyway. The change-tracking file sits beside the index, or in memory without one, unless `MARKDOWN_VAULT_MCP_STATE_PATH` names a path. Earlier releases defaulted it to a `.markdown_vault_mcp/` folder inside the vault. On the first start after the upgrade the server copies that file beside the index, so nothing is indexed or embedded again, and logs `legacy_state_file_unused` while the folder is there; delete it once the new file exists.
 
 # Release Notes
 

@@ -74,7 +74,7 @@ The server needs one setting: `MARKDOWN_VAULT_MCP_SOURCE_DIR`, the absolute path
 }
 ```
 
-`MARKDOWN_VAULT_MCP_EXCLUDE` keeps an Obsidian vault's settings folder and trash out of the results. Read-only covers the tools, not the folder: the server still keeps a small change-tracking file in a `.markdown_vault_mcp/` folder inside the vault, unless `MARKDOWN_VAULT_MCP_STATE_PATH` names a path elsewhere. The search index lives in memory and is rebuilt at each start; set `MARKDOWN_VAULT_MCP_INDEX_PATH` to a file outside the vault to keep it between starts.
+`MARKDOWN_VAULT_MCP_EXCLUDE` keeps an Obsidian vault's settings folder and trash out of the results. The server writes nothing into the vault for itself. The search index lives in memory and is rebuilt at each start; set `MARKDOWN_VAULT_MCP_INDEX_PATH` to a file outside the vault to keep it between starts, and the server keeps its change-tracking file beside it.
 
 The first task, after the check in step 4:
 

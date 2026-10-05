@@ -2914,7 +2914,7 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>daemon-reload
 <span class="nv">MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR</span><span class="o">=</span>/var/lib/markdown-vault-mcp/fastembed
 </code></pre></div>
 <ul>
-<li><strong>The vault must be writable, even read-only.</strong> The server keeps a change-tracking file in the vault's <code>.markdown_vault_mcp/</code> folder unless <code>MARKDOWN_VAULT_MCP_STATE_PATH</code> points elsewhere. A vault outside the state directory needs its own <code>ReadWritePaths=</code> drop-in, as above. <code>ProtectHome=yes</code> keeps <code>/home</code> from the service. A vault under <code>/srv</code>, like the one in the drop-in above, stays clear of it.</li>
+<li><strong>A writable vault outside the state directory needs its own <code>ReadWritePaths=</code> drop-in</strong>, as above. The server's change-tracking file sits beside the index in the state directory, not in the vault. <code>ProtectHome=yes</code> keeps <code>/home</code> from the service. A vault under <code>/srv</code>, like the one in the drop-in above, stays clear of it.</li>
 <li><strong>Without <code>INDEX_PATH</code></strong> the index lives in memory and is rebuilt at every start.</li>
 <li><strong>Without <code>FASTEMBED_CACHE_DIR</code></strong> FastEmbed keeps its model in the temporary directory. The unit's <code>PrivateTmp=yes</code> discards that at every stop, so the model downloads again at each start.</li>
 </ul>
