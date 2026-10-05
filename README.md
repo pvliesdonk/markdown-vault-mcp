@@ -39,7 +39,7 @@ What it assumes:
 - **One vault per server.** Several vaults take one server each, for now ([#1232](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232)); give each a `MARKDOWN_VAULT_MCP_SERVER_NAME`.
 - **Markdown is what gets searched.** Other files, such as PDFs and images, can be read and written as attachments, but their contents are not indexed yet ([#1234](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1234)).
 - **Embeddings live in memory.** Search by meaning holds every vector at 4 bytes × chunks × dimensions: about 70 MB for 23,000 chunks at 768 dimensions, about 900 MiB at ten times that and 1,024 dimensions. Memory, not query time, is the first limit ([#1377](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1377)).
-- **State sits on local disk.** The index and embeddings are files, and by default the server keeps a change-tracking file in a `.markdown_vault_mcp/` folder inside the vault, read-only mode included. `MARKDOWN_VAULT_MCP_STATE_PATH` moves it.
+- **State sits on local disk.** The index and embeddings are files, and the change-tracking file sits beside the index, never inside the vault. Without `MARKDOWN_VAULT_MCP_INDEX_PATH`, the index and that file stay in memory and are rebuilt at each start.
 
 Reach for something else for a corpus of hundreds of thousands of chunks (a vector database behind a retrieval pipeline), for mostly scanned or office documents (a document management system with text recognition), or for many users who must not see each other's notes (a multi-tenant knowledge platform): every caller the server admits gets every tool it exposes.
 <!-- DOMAIN-README-FIT-END -->

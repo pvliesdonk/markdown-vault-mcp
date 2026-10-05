@@ -71,7 +71,7 @@ class TestConstructorContract:
             with pytest.raises(ReadOnlyError):
                 vault.writer.write("note.md", "body")
             assert vault._chunk_strategy.chunk_overlap_words == 0
-            assert vault._state_path == tmp_path / ".markdown_vault_mcp" / "state.json"
+            assert vault._state_path is None
         finally:
             vault.close()
 
@@ -126,13 +126,164 @@ class TestSettingsDerivations:
 
     def test_effective_state_path_prefers_explicit(self, tmp_path: Path) -> None:
         explicit = tmp_path / "elsewhere" / "s.json"
+        settings = VaultSettings(state_path=explicit, index_path=tmp_path / "i.db")
+        assert settings.effective_state_path(tmp_path) == explicit
+
+    def test_effective_state_path_sits_beside_the_index(self, tmp_path: Path) -> None:
+        settings = VaultSettings(index_path=tmp_path / "state" / "index.db")
         assert (
-            VaultSettings(state_path=explicit).effective_state_path(tmp_path)
-            == explicit
+            settings.effective_state_path(tmp_path)
+            == tmp_path / "state" / "index.db.state.json"
         )
-        assert (
-            VaultSettings().effective_state_path(tmp_path)
-            == tmp_path / ".markdown_vault_mcp" / "state.json"
+
+    def test_effective_state_path_is_none_for_a_memory_index(
+        self, tmp_path: Path
+    ) -> None:
+        settings = VaultSettings(index_path=Path(":memory:"))
+        assert settings.effective_state_path(tmp_path) is None
+
+    def test_effective_state_path_is_none_without_an_index(
+        self, tmp_path: Path
+    ) -> None:
+        assert VaultSettings().effective_state_path(tmp_path) is None
+
+
+class TestStateLocation:
+    """The vault folder holds only the owner's files by default (#1693)."""
+
+    @staticmethod
+    def _vault_with_note(tmp_path: Path) -> Path:
+        root = tmp_path / "vault"
+        root.mkdir()
+        (root / "a.md").write_text("# Hello\n\nworld of notes\n", encoding="utf-8")
+        return root
+
+    @pytest.mark.parametrize("read_only", [True, False])
+    def test_index_build_writes_nothing_into_the_vault(
+        self, tmp_path: Path, read_only: bool
+    ) -> None:
+        root = self._vault_with_note(tmp_path)
+        vault = Vault(source_dir=root, settings=VaultSettings(read_only=read_only))
+        try:
+            vault.index.build_index()
+            vault.index.reindex()
+        finally:
+            vault.close()
+        assert sorted(p.name for p in root.rglob("*")) == ["a.md"]
+
+    def test_state_file_sits_beside_the_index(self, tmp_path: Path) -> None:
+        root = self._vault_with_note(tmp_path)
+        index = tmp_path / "state" / "index.db"
+        index.parent.mkdir()
+        vault = Vault(source_dir=root, settings=VaultSettings(index_path=index))
+        try:
+            vault.index.build_index()
+        finally:
+            vault.close()
+        assert (tmp_path / "state" / "index.db.state.json").is_file()
+        assert sorted(p.name for p in root.rglob("*")) == ["a.md"]
+
+    def test_legacy_state_folder_is_reported_not_read(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        root = self._vault_with_note(tmp_path)
+        legacy = root / ".markdown_vault_mcp" / "state.json"
+        legacy.parent.mkdir()
+        legacy.write_text("{}", encoding="utf-8")
+        with caplog.at_level("INFO", logger="markdown_vault_mcp.vault"):
+            vault = Vault(source_dir=root, settings=VaultSettings())
+            vault.close()
+        assert legacy.read_text(encoding="utf-8") == "{}"
+        assert any(
+            r.message.startswith("legacy_state_file_unused") for r in caplog.records
+        )
+
+    def test_legacy_state_seeds_the_new_location_once(self, tmp_path: Path) -> None:
+        """An upgrade keeps its change tracking: no full re-parse (#1693)."""
+        root = self._vault_with_note(tmp_path)
+        index = tmp_path / "state" / "index.db"
+        index.parent.mkdir()
+        legacy = root / ".markdown_vault_mcp" / "state.json"
+        before = Vault(
+            source_dir=root,
+            settings=VaultSettings(index_path=index, state_path=legacy),
+        )
+        try:
+            before.index.build_index()
+        finally:
+            before.close()
+
+        after = Vault(source_dir=root, settings=VaultSettings(index_path=index))
+        try:
+            after.index.build_index()
+            result = after.index.reindex()
+        finally:
+            after.close()
+
+        assert (result.added, result.modified, result.unchanged) == (0, 0, 1)
+        assert (tmp_path / "state" / "index.db.state.json").read_bytes() == (
+            legacy.read_bytes()
+        )
+
+    def test_legacy_location_spelled_differently_is_not_reported(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        root = self._vault_with_note(tmp_path)
+        legacy = root / ".markdown_vault_mcp" / "state.json"
+        legacy.parent.mkdir()
+        legacy.write_text("{}", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        relative = Path("vault/.markdown_vault_mcp/../.markdown_vault_mcp/state.json")
+        with caplog.at_level("INFO", logger="markdown_vault_mcp.vault"):
+            vault = Vault(source_dir=root, settings=VaultSettings(state_path=relative))
+            vault.close()
+        assert not any(
+            r.message.startswith("legacy_state_file_unused") for r in caplog.records
+        )
+
+    def test_failed_legacy_copy_is_reported_and_leaves_no_partial_file(
+        self,
+        tmp_path: Path,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import shutil
+
+        root = self._vault_with_note(tmp_path)
+        legacy = root / ".markdown_vault_mcp" / "state.json"
+        legacy.parent.mkdir()
+        legacy.write_text("{}", encoding="utf-8")
+        index = tmp_path / "state" / "index.db"
+        index.parent.mkdir()
+
+        def _full_disk(*_args: object, **_kwargs: object) -> None:
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(shutil, "copyfile", _full_disk)
+        with caplog.at_level("WARNING", logger="markdown_vault_mcp.vault"):
+            vault = Vault(source_dir=root, settings=VaultSettings(index_path=index))
+            vault.close()
+        assert any(
+            r.message.startswith("legacy_state_file_copy_failed")
+            for r in caplog.records
+        )
+        assert sorted(p.name for p in index.parent.iterdir()) == ["index.db"]
+
+    def test_legacy_location_chosen_explicitly_is_not_reported(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        root = self._vault_with_note(tmp_path)
+        legacy = root / ".markdown_vault_mcp" / "state.json"
+        legacy.parent.mkdir()
+        legacy.write_text("{}", encoding="utf-8")
+        with caplog.at_level("INFO", logger="markdown_vault_mcp.vault"):
+            vault = Vault(source_dir=root, settings=VaultSettings(state_path=legacy))
+            vault.close()
+        assert not any(
+            r.message.startswith("legacy_state_file_unused") for r in caplog.records
         )
 
 

@@ -390,7 +390,7 @@ starting points live under `examples/`: `obsidian-readonly.env`,
 | Variable | Default | Required | Description |
 |---|---|---|---|
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | (none) | No | Path to the SQLite FTS5 index file; unset keeps the index in memory. Set it for persistence across restarts. |
-| `MARKDOWN_VAULT_MCP_STATE_PATH` | (none) | No | Path to the change-tracking state file. Defaults to {SOURCE_DIR}/.markdown_vault_mcp/state.json. |
+| `MARKDOWN_VAULT_MCP_STATE_PATH` | (none) | No | Path to the change-tracking state file. Defaults to INDEX_PATH plus .state.json (index.db.state.json beside index.db); without INDEX_PATH the state is kept in memory. Never written into the vault by default. |
 | `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | (none) | No | Path to the numpy embeddings file; required to enable semantic search. |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | (none) | No | Comma-separated frontmatter fields promoted to the tag index for structured filtering. Changing it cold-rebuilds the index once on next startup; SEARCHABLE_FIELDS inherits this value when unset. |
 | `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS` | (none) | No | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index. |

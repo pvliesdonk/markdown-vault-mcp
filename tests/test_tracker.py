@@ -37,6 +37,11 @@ def _write_md(directory: Path, name: str, content: str = "# Hello\n") -> Path:
     return path
 
 
+def _sha(path: Path) -> str:
+    """Return the SHA256 hex digest of *path*'s bytes."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _make_note(path: str, content_hash: str) -> ParsedNote:
     """Create a minimal ParsedNote with the given path and hash.
 
@@ -189,6 +194,34 @@ class TestUpdateStatePersists:
         changes = tracker2.detect_changes(vault)
         assert changes.added == []
         assert changes.unchanged == 1
+
+
+class TestInMemoryState:
+    """With no state path the tracker keeps its state in memory (#1693)."""
+
+    def test_state_survives_between_scans_without_a_file(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        md = _write_md(vault, "mem.md")
+        tracker = ChangeTracker(None)
+
+        tracker.update_state([_make_note("mem.md", _sha(md))])
+        changes = tracker.detect_changes(vault)
+
+        assert changes.added == []
+        assert changes.unchanged == 1
+        assert sorted(p.name for p in tmp_path.rglob("*")) == ["mem.md", "vault"]
+
+    def test_reset_forgets_the_state(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        md = _write_md(vault, "mem.md")
+        tracker = ChangeTracker(None)
+        tracker.update_state([_make_note("mem.md", _sha(md))])
+
+        tracker.reset()
+
+        assert tracker.detect_changes(vault).added == ["mem.md"]
 
 
 class TestReset:

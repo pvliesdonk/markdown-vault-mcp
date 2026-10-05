@@ -24,10 +24,16 @@ if TYPE_CHECKING:
 
     from markdown_vault_mcp.config import ProjectConfig
 
-#: Default state-file location under the vault root, shared with
-#: ``markdown_vault_mcp.vault`` (which re-exports both names).
+#: Where the state file defaulted to before #1693, under the vault root.
+#: Nothing writes there now; ``Vault`` copies a leftover file into the new
+#: location when that is missing, and reports it at each start while present.
+#: ``markdown_vault_mcp.vault`` re-exports both names.
 _DEFAULT_STATE_SUBDIR = ".markdown_vault_mcp"
 _DEFAULT_STATE_FILENAME = "state.json"
+#: Suffix of the default state file beside the index: ``index.db`` gives
+#: ``index.db.state.json``. The whole file name, so ``notes.db`` and
+#: ``notes.sqlite`` in one directory never share a state file.
+_DEFAULT_STATE_SUFFIX = ".state.json"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -65,7 +71,8 @@ class VaultSettings:
             (default ``False``, i.e. writes overwrite unconditionally).
         state_path: Path to the hash-state JSON file used by
             :class:`~markdown_vault_mcp.tracker.ChangeTracker`.  Defaults to
-            ``{source_dir}/.markdown_vault_mcp/state.json``.
+            ``{index file name}.state.json`` beside ``index_path``, and to
+            memory when the index is; never inside the vault (#1693).
         indexed_frontmatter_fields: Frontmatter keys whose values are
             promoted to the ``document_tags`` table for structured filtering.
         required_frontmatter: If provided, documents missing any listed field
@@ -308,17 +315,27 @@ class VaultSettings:
             f"**/{self.conventions_file}",
         ]
 
-    def effective_state_path(self, source_dir: Path) -> Path:
-        """Return the hash-state path, defaulting under the vault root.
+    def effective_state_path(self, source_dir: Path) -> Path | None:
+        """Return the hash-state path, defaulting beside the index (#1693).
+
+        The state records which notes the index holds, so it lives with the
+        index and never inside the vault: with no on-disk index there is
+        nothing for a state file to describe, and the state stays in memory.
 
         Args:
-            source_dir: The vault root, used when no explicit ``state_path``
-                is configured.
+            source_dir: The vault root. Unused since the default left the
+                vault (#1693); kept so existing calls keep working.
 
         Returns:
-            The explicit ``state_path``, or
-            ``{source_dir}/.markdown_vault_mcp/state.json``.
+            The explicit ``state_path``; else ``{index file name}.state.json``
+            beside an on-disk ``index_path``; else ``None``, meaning in memory
+            (no ``index_path``, or SQLite's ``:memory:``).
         """
+        del source_dir
         if self.state_path is not None:
             return self.state_path
-        return source_dir / _DEFAULT_STATE_SUBDIR / _DEFAULT_STATE_FILENAME
+        if self.index_path is not None and str(self.index_path) != ":memory:":
+            return self.index_path.with_name(
+                f"{self.index_path.name}{_DEFAULT_STATE_SUFFIX}"
+            )
+        return None

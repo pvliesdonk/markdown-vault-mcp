@@ -318,15 +318,9 @@ class Service:
             # state file on every run, and a watch on its dir would re-trigger
             # the watcher into a self-feedback loop (#830). .git is protected
             # too so local git-write commits don't storm reindexes.
-            from markdown_vault_mcp.vault import _DEFAULT_STATE_SUBDIR
-
-            state_dir = (
-                config.indexing.state_path.parent
-                if config.indexing.state_path is not None
-                else config.source_dir / _DEFAULT_STATE_SUBDIR
-            )
-            internal_dirs = [config.source_dir / ".git", state_dir]
+            internal_dirs = [config.source_dir / ".git"]
             for extra in (
+                settings.effective_state_path(config.source_dir),
                 config.indexing.index_path,
                 config.indexing.embeddings_path,
             ):
