@@ -815,7 +815,9 @@ whatever is currently in the index (empty on cold start). So the CLI
 in memory (`INDEX_PATH` unset or `:memory:`), since that index starts empty,
 and keeps the build's change tracking in memory even when `STATE_PATH` is
 set, since that file may be a running server's (#1691). Vectors at
-`EMBEDDINGS_PATH` are used as stored, never embedded again; with no
+`EMBEDDINGS_PATH` are loaded, not embedded for the query, though an
+incompatible or corrupt sidecar is still rebuilt in place, as the server
+rebuilds it; with no
 `EMBEDDINGS_PATH` and a provider configured, a semantic or hybrid query on
 such an index embeds the vault first, in memory (#1708). `index` and
 `reindex` skip embedding when no file would keep the vectors. An on-disk index is

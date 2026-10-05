@@ -162,10 +162,11 @@ def _build_vault(
         scratch_state: Keep the change-tracking state in memory, ignoring
             ``STATE_PATH``, for a one-shot in-memory index whose state must
             not overwrite a running server's (#1691).
-        in_memory_vectors: Keep the embedding provider when no file would
-            keep the vectors (no ``EMBEDDINGS_PATH`` and no on-disk index),
-            so they are embedded in memory. Off by default: a batch command
-            would pay the provider for vectors it then throws away (#1708).
+        in_memory_vectors: Resolve the embedding provider even when no file
+            would keep the vectors (no ``EMBEDDINGS_PATH`` and no on-disk
+            index), so they are embedded in memory. Off by default: the
+            provider is then never resolved, since a batch command would pay
+            it for vectors it throws away (#1708).
 
     Returns:
         A constructed :class:`~markdown_vault_mcp.vault.Vault` (index not built).
@@ -193,23 +194,41 @@ def _build_vault(
     if problem is not None:
         typer.echo(f"ERROR: configuration error: {problem[1]}", err=True)
         raise typer.Exit(code=1)
+    if not in_memory_vectors and not _vectors_kept(config, index_path):
+        # Nothing would keep the vectors, so drop the provider before it is
+        # resolved: FastEmbed would load, or download, its model for nothing.
+        config = dataclasses.replace(config, embedding_provider=None)
     instances = to_vault_instances(config)
     settings = to_vault_settings(config, instances=instances)
     if index_path:
         settings = dataclasses.replace(settings, index_path=Path(index_path))
     if scratch_state:
         settings = dataclasses.replace(settings, state_path=None)
-    embedding_provider = instances.embedding_provider
-    if not in_memory_vectors and settings.effective_embeddings_path() is None:
-        embedding_provider = None
     return Vault(
         source_dir=config.source_dir,
         settings=settings,
-        embedding_provider=embedding_provider,
+        embedding_provider=instances.embedding_provider,
         summarizer=instances.summarizer,
         git_strategy=instances.git_strategy,
         on_write=instances.on_write,
     )
+
+
+def _vectors_kept(config: ProjectConfig, index_path: str | None) -> bool:
+    """Report whether a file would keep the vectors this command embeds.
+
+    Args:
+        config: The configuration the command read.
+        index_path: The ``--index-path`` override, if given.
+
+    Returns:
+        ``True`` when ``EMBEDDINGS_PATH`` is set or the index is on disk,
+        where the vectors default beside it (#1708).
+    """
+    if config.indexing.embeddings_path is not None:
+        return True
+    index = index_path or config.indexing.index_path
+    return index is not None and str(index) != ":memory:"
 
 
 @app.command()
@@ -284,7 +303,10 @@ def search(
     configured_index = ProjectConfig.from_env().indexing.index_path
     in_memory = configured_index is None or str(configured_index) == ":memory:"
     vault = _build_vault(
-        source_dir, None, scratch_state=in_memory, in_memory_vectors=True
+        source_dir,
+        None,
+        scratch_state=in_memory,
+        in_memory_vectors=mode != "keyword",
     )
     if in_memory:
         vault.index.build_index()

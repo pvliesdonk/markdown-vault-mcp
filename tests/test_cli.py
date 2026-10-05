@@ -1000,8 +1000,9 @@ def test_search_in_memory_leaves_a_shared_state_file_alone(
 
 
 class _CountingProvider(MockEmbeddingProvider):
-    """Mock provider counting embed calls, to tell an embedding run apart."""
+    """Mock provider counting resolutions and embed calls."""
 
+    built = 0
     calls = 0
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -1015,8 +1016,13 @@ def _embedding_cli_env(
     """One-note vault, in-memory index, explicit provider; returns its class."""
     import markdown_vault_mcp.providers as providers_mod
 
-    counting = type("_Counting", (_CountingProvider,), {"calls": 0})
-    monkeypatch.setattr(providers_mod, "get_embedding_provider", lambda _c: counting())
+    counting = type("_Counting", (_CountingProvider,), {"built": 0, "calls": 0})
+
+    def _resolve(_config: object) -> _CountingProvider:
+        counting.built += 1
+        return counting()
+
+    monkeypatch.setattr(providers_mod, "get_embedding_provider", _resolve)
     vault_dir = tmp_path / "vault"
     vault_dir.mkdir()
     (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
@@ -1069,7 +1075,20 @@ def test_batch_commands_skip_embeddings_nothing_would_keep(
 
     assert result.exit_code == 0, result.output
     assert "Embedded" not in result.output
-    assert counting.calls == 0
+    assert counting.built == 0
+
+
+def test_keyword_search_never_resolves_the_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A keyword query on an in-memory index needs no vectors, so no model."""
+    counting = _embedding_cli_env(tmp_path, monkeypatch, None)
+
+    result = runner.invoke(app, ["search", "--json", "world"])
+
+    assert result.exit_code == 0, result.output
+    assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
+    assert counting.built == 0
 
 
 def test_search_never_builds_an_on_disk_index(
