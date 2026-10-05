@@ -3348,7 +3348,11 @@ kwargs):
   `EMBEDDING_PROVIDER` is resolved without a path, while auto-detection
   still waits for `EMBEDDINGS_PATH`, so an install that merely has a backend
   importable or an API key set never starts embedding, and paying, at every
-  start.
+  start. Such a provider was never loaded before #1708, so if it fails to
+  load the server logs `embedding_provider_load_failed` at WARNING and runs
+  keyword-only rather than stop a deployment that started before; with
+  `EMBEDDINGS_PATH` set, a failed explicit provider still raises
+  `ConfigurationError`.
 - `state_path=None`: defaults to `{index file name}.state.json` beside `index_path`,
   or to memory without one (#1693).
 
