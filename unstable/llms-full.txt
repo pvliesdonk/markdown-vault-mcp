@@ -6189,7 +6189,7 @@ Create a download URL for a file; returns url and `expires_in_s`.
 
 Use it to hand a file to the user or another program instead of returning its bytes in a tool result.
 
-For this server, ref is a vault-relative path to an existing note (a .md file) or attachment.
+For this server, ref is a vault-relative path to an existing note (a .md file) or attachment. Or pass okf-bundle for the whole vault as an Open Knowledge Format bundle (a zip); prefix a folder path with okf-bundle: (okf-bundle:projects) for one folder.
 
 **Parameters**
 
