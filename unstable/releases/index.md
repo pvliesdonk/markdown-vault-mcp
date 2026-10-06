@@ -2,6 +2,7 @@
 
 Each minor release series gets one page here telling its story: what changed, why it matters, and how to adopt it. Patch releases add a versioned section to their series page, so a series stays one linkable document. The commit-level record lives in the repository's `CHANGELOG.md`; each GitHub release links back to its page here. A page's Upgrading section answers three questions on fixed lines, **Clients**, **State** and **Security posture**; the [Upgrade](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/upgrade/index.md) page says what each answers.
 
+- [5.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/5.1/index.md)
 - [5.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/5.0/index.md)
 - [4.2](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.2/index.md)
 - [4.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.1/index.md)

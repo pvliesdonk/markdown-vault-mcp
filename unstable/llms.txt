@@ -79,6 +79,7 @@
 - [4.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.1/index.md): Release notes for the 4.1 series, with the steps to upgrade to it.
 - [4.2](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/4.2/index.md): Release notes for the 4.2 series, with the steps to upgrade to it.
 - [5.0](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/5.0/index.md): Release notes for the 5.0 series, with the steps to upgrade to it.
+- [5.1](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/releases/5.1/index.md): Release notes for the 5.1 series, with the steps to upgrade to it.
 
 ## Contribute
 
