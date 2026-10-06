@@ -4,14 +4,14 @@ arguments:
   - name: path
     description: "Vault-relative path of the note to process (e.g., 'Notes/my-idea.md')"
     required: true
-tags: []
+tags: ["write"]
 ---
 
 You are helping build a Zettelkasten vault. Process the note at `$path`.
 
 ## Step 1: Read and understand the note
 
-Call `read(path='$path')`. Identify:
+Call `read(path='$path')` and `get_conventions(path='$path')`. The conventions are the vault owner's rules for this folder (how notes link, where MOCs live); they override this prompt. Identify:
 - The central claim or idea
 - Key terms and concepts
 - Note type (fleeting, literature, permanent, or MOC)
@@ -39,7 +39,7 @@ For each suggestion, state: what the other note is about, why the connection is 
 
 ## Step 5: Check for MOC opportunity
 
-If `get_most_linked()` shows that `$path` is already highly linked, or if you found 5+ related permanent notes in Step 3, suggest creating a MOC using the `moc` template via `create_from_template(template_name='moc')`.
+If `get_most_linked()` shows that `$path` is already highly linked, or if you found 5+ related permanent notes in Step 3, suggest creating a MOC using the `moc` template via `create_from_template(template_name='moc')`, in the folder the conventions name for MOCs. If they name none, ask the user where it goes.
 
 ## Constraints
 

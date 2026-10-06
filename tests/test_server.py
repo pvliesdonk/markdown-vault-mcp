@@ -3019,8 +3019,11 @@ class TestPrompts:
         assert "`write`" in text
         # The derived ${topic_slug} is substituted end-to-end (#788): no literal
         # placeholder remains and the slug appears in the target path.
-        assert "Research/horror-fiction.md" in text
+        assert "<folder>/horror-fiction.md" in text
         assert "${topic_slug}" not in text
+        # The folder comes from the vault's conventions, not a fixed name (#1709).
+        assert "get_conventions" in text
+        assert "Research/" not in text
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_discuss_prompt(self) -> None:
@@ -3067,6 +3070,8 @@ class TestPrompts:
         assert "meeting.md" in text
         assert "`read`" in text
         assert "`write`" in text
+        # The target folder comes from the vault's conventions (#1709).
+        assert "get_conventions" in text
 
     @pytest.mark.usefixtures("_mcp_env_writable")
     async def test_create_from_template_prompt_sanitizes_template_name(self) -> None:

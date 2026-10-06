@@ -398,13 +398,13 @@ The prompt calls `list_documents(folder=<templates_folder>)` to enumerate templa
 
 The `zettelkasten` prompt, an example file in the same folder (`prompts/zettelkasten.md`), guides you through connecting a note to your vault in five steps:
 
-1. **Read and understand**: extract the central claim
+1. **Read and understand**: extract the central claim; the folder's [conventions](../reference/tools/reader.md#get_conventions) come with it and take precedence over the prompt's own suggestions
 2. **Survey the neighborhood**: see existing backlinks and similar notes
 3. **Discover broader connections**: search for related permanent notes
 4. **Suggest links**: present new connections with context
-5. **Check for MOC opportunity**: flag if a new MOC would help
+5. **Check for MOC opportunity**: flag if a new MOC would help, in the folder the conventions name for MOCs, or ask you where it goes
 
-**Load the prompt:** point `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` at the `prompts/` folder by its absolute path. Keeping that folder outside the vault keeps the prompt file out of search results. The built-in prompts stay available beside it. [Running a prompt](../reference/prompts.md#running-a-prompt) covers how each client offers prompts.
+**Load the prompt:** point `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` at the `prompts/` folder by its absolute path. Keeping that folder outside the vault keeps the prompt file out of search results. The built-in prompts stay available beside it. The prompt edits notes, so a read-only server doesn't list it. [Running a prompt](../reference/prompts.md#running-a-prompt) covers how each client offers prompts.
 
 **Use the prompt:**
 

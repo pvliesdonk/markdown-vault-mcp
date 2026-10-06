@@ -10,6 +10,7 @@ Tests cover:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -1217,3 +1218,46 @@ class TestRegisterPromptsPerPromptGuard:
         assert "summarize" not in names
         # A sibling built-in (registered via the real _build_prompt_fn) survives.
         assert "related" in names
+
+
+# ---------------------------------------------------------------------------
+# Every shipped prompt reads the vault's conventions (#1709)
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_PROMPT_FILES = sorted(
+    [
+        *(_REPO_ROOT / "examples").glob("*/prompts/*.md"),
+        *(_REPO_ROOT / "src" / "markdown_vault_mcp" / "static" / "prompts").glob(
+            "*.md"
+        ),
+    ]
+)
+# A call to a tool that creates, changes or moves a note.
+_WRITES = re.compile(
+    r"`(?:write|edit|append|rename|create_from_template)`"
+    r"|\b(?:write|edit|append|rename|create_from_template)\("
+)
+
+
+def _ids(path: Path) -> str:
+    return f"{path.parent.parent.name}/{path.name}"
+
+
+def test_prompt_files_are_found() -> None:
+    assert len(_PROMPT_FILES) >= 10
+
+
+@pytest.mark.parametrize("prompt", _PROMPT_FILES, ids=_ids)
+def test_every_prompt_reads_the_conventions(prompt: Path) -> None:
+    """Where a vault has conventions, every shipped prompt uses them (#1709)."""
+    assert "get_conventions" in prompt.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("prompt", _PROMPT_FILES, ids=_ids)
+def test_a_prompt_that_writes_is_tagged_write(prompt: Path) -> None:
+    """Read-only servers hide write prompts by the tag (#1717)."""
+    text = prompt.read_text(encoding="utf-8")
+    body = text.split("---", 2)[2]
+    if _WRITES.search(body):
+        assert re.search(r"^tags:.*write|^  - write$", text, re.MULTILINE)

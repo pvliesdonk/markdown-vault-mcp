@@ -16,7 +16,7 @@ Five note templates covering the PARA lifecycle:
 
 Sample per-folder [convention files](../../docs/use/para.md#folder-conventions) that encode PARA's linking directionality — copy them into the matching vault folders:
 
-- **`conventions/_conventions.md`** — vault-root rules (heading style, frontmatter hygiene)
+- **`conventions/_conventions.md`** — vault-root rules (heading style, frontmatter hygiene) and the folder layout the PARA prompts read; rename the folders there to match your vault
 - **`conventions/3-Resources/_conventions.md`** — resources are self-contained; no links out to projects
 - **`conventions/1-Projects/_conventions.md`** — projects link one-way to resources
 

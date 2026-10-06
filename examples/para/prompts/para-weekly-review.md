@@ -2,22 +2,26 @@
 description: "Run the PARA weekly review: list active projects, flag stale ones, audit areas, identify archive candidates, and write a dated review note"
 arguments:
   - name: review_path
-    description: "Where to write the review note. Defaults to '3-Resources/reviews/<YYYY-WW>.md'."
+    description: "Where to write the review note. Defaults to 'reviews/<YYYY-WW>.md' inside the resources folder the vault's conventions name."
     required: false
 tags: ["write"]
 ---
 
-You are running a PARA weekly review. Produce a dated review note at `$review_path` (default: `3-Resources/reviews/<current-ISO-week>.md`).
+You are running a PARA weekly review. Produce a dated review note at `$review_path` (default: `<resources>/reviews/<current-ISO-week>.md`).
+
+## Step 0: Read the vault's folder layout
+
+Call `get_conventions(path='')`. The vault owner's root conventions say which folders hold the projects, areas, resources and archive; use those folders wherever this prompt says `<projects>`, `<areas>`, `<resources>` or `<archive>`. If the conventions name no folder for a role this prompt needs, ask the user for it now, before anything else, rather than assuming a name. Before writing into a folder, call `get_conventions(path=<that folder>)` and follow its rules as well; the owner's conventions override this prompt.
 
 ## Step 1: Determine the review path
 
-Use `$review_path` if provided, otherwise build it as `3-Resources/reviews/<current-ISO-week>.md` (e.g., `3-Resources/reviews/2026-W17.md`). Do not create the file yet — Step 6 does that.
+Use `$review_path` if provided, otherwise build it as `<resources>/reviews/<current-ISO-week>.md` (e.g., `Resources/reviews/2026-W17.md`). Do not create the file yet — Step 6 does that.
 
 ## Step 2: Enumerate active projects with modification times
 
-Call `list_documents(folder='1-Projects')`. The response includes `frontmatter` and `modified_at` (a Unix timestamp in seconds) for each note. Filter client-side for notes where `frontmatter.status == 'active'`.
+Call `list_documents(folder=<projects>)`. The response includes `frontmatter` and `modified_at` (a Unix timestamp in seconds) for each note. Filter client-side for notes where `frontmatter.status == 'active'`.
 
-Fallback for non-canonical vault layouts: call `list_documents()` (no folder) and filter for `frontmatter.type == 'project' and frontmatter.status == 'active'`. Note: if the vault is very large, prefer passing the canonical folder to reduce the payload and the model's context usage.
+If the user said in Step 0 that projects are not kept in one folder, call `list_documents()` (no folder) and filter for `frontmatter.type == 'project' and frontmatter.status == 'active'`. On a large vault, prefer a folder: it keeps the payload and your context small.
 
 Record for each active project: path, title, `frontmatter.deadline`, `modified_at`.
 
@@ -34,7 +38,7 @@ Collect these as "Stale projects".
 
 ## Step 4: Area audit
 
-Call `list_documents(folder='2-Areas')` and filter for `frontmatter.status == 'active'`.
+Call `list_documents(folder=<areas>)` and filter for `frontmatter.status == 'active'`.
 
 For each active Area, count projects referencing it via the indexed `area` frontmatter field. Use the active projects list you already have from Step 2: `count = len([p for p in active_projects if p.frontmatter.get('area') == area.title])`.
 
@@ -44,7 +48,7 @@ Flag any Area with **zero** active projects as a candidate for archive or reasse
 
 Collect:
 
-- Projects with `status=completed` still in `1-Projects/` (should be moved to `4-Archive/`)
+- Projects with `status=completed` still in `<projects>` (should be moved to `<archive>`)
 - Projects that are stale for 30+ days (user may want to archive or revive)
 
 ## Step 6: Write the review note
@@ -69,7 +73,7 @@ Ask the user which archive candidates they want to move. For each confirmed cand
 
 1. `read(path=<project>)` to get the current body, frontmatter, and etag.
 2. `write(path=<project>, content=<body>, frontmatter=<frontmatter with status='archived' and archived_at=<today>>, if_match=<etag from that read>)` — this is cleaner than a targeted `edit` for multi-field frontmatter updates.
-3. Only after the write succeeds, `rename(old_path, '4-Archive/<basename>', update_links=True)` to move it to the archive folder. If the write conflicts, skip the rename and report the conflict; do not retry with a blind overwrite.
+3. Only after the write succeeds, `rename(old_path, '<archive>/<basename>', update_links=True)` to move it to the archive folder. If the write conflicts, skip the rename and report the conflict; do not retry with a blind overwrite.
 
 ## Constraints
 

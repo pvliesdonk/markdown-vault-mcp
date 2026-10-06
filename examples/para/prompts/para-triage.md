@@ -2,16 +2,20 @@
 description: "Triage an Inbox note (or any untyped note) into a Project, Area, or Resource"
 arguments:
   - name: path
-    description: "Vault-relative path to a note or folder. Defaults to '0-Inbox/' if empty. Examples: '0-Inbox/my-note.md', '0-Inbox/'"
+    description: "Vault-relative path to a note or folder. Defaults to the inbox folder the vault's conventions name. Examples: 'Inbox/my-note.md', 'Inbox/'"
     required: false
 tags: ["write"]
 ---
 
-You are helping triage notes into a PARA vault. Process `$path` (default: `0-Inbox/`).
+You are helping triage notes into a PARA vault. Process `$path` (default: the `<inbox>` folder).
+
+## Step 0: Read the vault's folder layout
+
+Call `get_conventions(path='')`. The vault owner's root conventions say which folders hold the inbox, projects, areas and resources; use those folders wherever this prompt says `<inbox>`, `<projects>`, `<areas>` or `<resources>`. If the conventions name no folder for a role this prompt needs, ask the user for it now, before anything else, rather than assuming a name. Before writing into a folder, call `get_conventions(path=<that folder>)` and follow its rules as well; the owner's conventions override this prompt.
 
 ## Step 1: Load the note(s)
 
-If `$path` is empty or ends with `/`, treat it as a folder (default: `0-Inbox`). Call `list_documents(folder=<'$path' with any trailing `/` stripped, or '0-Inbox' if empty>)` and iterate over each note. Example: `$path='0-Inbox/'` → call `list_documents(folder='0-Inbox')`. If `$path` is a single note path (ends with `.md`), skip to Step 2.
+If `$path` is empty or ends with `/`, treat it as a folder (default: `<inbox>`). Call `list_documents(folder=<'$path' with any trailing `/` stripped, or `<inbox>` if empty>)` and iterate over each note. Example: `$path='Inbox/'` → call `list_documents(folder='Inbox')`. If `$path` is a single note path (ends with `.md`), skip to Step 2.
 
 ## Step 2: Read and extract the central intent
 
@@ -40,8 +44,8 @@ If the note is ambiguous between buckets, **ask the user** — do not guess.
 
 **For a classification:**
 
-- Proposed target path (`1-Projects/<slug>.md`, `2-Areas/<slug>.md`, `3-Resources/<slug>.md`)
-- Proposed frontmatter block (type, status=active, any other relevant fields pre-filled from the note body)
+- Proposed target path (`<projects>/<slug>.md`, `<areas>/<slug>.md`, `<resources>/<slug>.md`), named the way the target folder's conventions ask
+- Proposed frontmatter block (type, status=active, any field the conventions require, and other relevant fields pre-filled from the note body)
 
 **For a split:** list the two (or more) target notes with their individual paths and frontmatter, then treat each as its own triage in Step 5.
 
@@ -66,5 +70,5 @@ If a write or delete conflicts, stop processing that note and report its current
 ## Constraints
 
 - Do NOT rename or edit without explicit user confirmation.
-- If the user has a non-canonical folder layout (no `1-Projects/` etc.), ask where the note should go rather than hard-coding.
+- Never assume a folder name the conventions do not give; ask (Step 0).
 - When in doubt between Project and Area, ask: "Is there a concrete 'done' state?" Yes → Project. No → Area.

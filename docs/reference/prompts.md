@@ -34,14 +34,14 @@ Summarize a vault document with structured coverage of main topics and key point
 
 ## `research`
 
-Search the vault for a topic and save what the best matches say as a new note under Research/.
+Search the vault for a topic and save what the best matches say as a new research note.
 
 | Argument | Required | Description |
 |---|---|---|
 | `topic` | yes | The topic to research. |
 
 <!-- DOMAIN-EXAMPLE-research-START -->
-`research` with `topic="Product security regulations"` searches this vault only, not the web: hybrid search, or keyword search without embeddings. It reads the three to five best matches and writes `Research/product-security-regulations.md` with `tags: [research]` and a link to each source. It never overwrites: if that path exists it picks another name, and with no matches it writes nothing.
+`research` with `topic="Product security regulations"` searches this vault only, not the web: hybrid search, or keyword search without embeddings. It reads the three to five best matches and writes `product-security-regulations.md`, with `tags: [research]` and a link to each source, in the folder the vault's conventions name for research notes; it asks you for a folder when they name none. It never overwrites: if that path exists it picks another name, and with no matches it writes nothing.
 <!-- DOMAIN-EXAMPLE-research-END -->
 
 ## `discuss`
@@ -103,7 +103,7 @@ Create a new note from one of the vault's templates.
 | `template_name` | no | Template to use, such as `"meeting-notes.md"`; leave empty to choose from the list. |
 
 <!-- DOMAIN-EXAMPLE-create_from_template-START -->
-`create_from_template` with `template_name="meeting.md"` reads `_templates/meeting.md`. It asks for the values it needs and a path for the new note, then writes it. It asks before replacing an existing file. Leave `template_name` empty to choose from the folder's list. `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` moves the templates folder; the [PARA](../use/para.md#using-templates) and [Zettelkasten](../use/zettelkasten.md#using-templates) pages come with template sets.
+`create_from_template` with `template_name="meeting.md"` reads `_templates/meeting.md`. It asks for the values it needs, proposes a path in the folder the vault's conventions name for it (or asks for one when they name none), then writes it. It asks before replacing an existing file. Leave `template_name` empty to choose from the folder's list. `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` moves the templates folder; the [PARA](../use/para.md#using-templates) and [Zettelkasten](../use/zettelkasten.md#using-templates) pages come with template sets.
 <!-- DOMAIN-EXAMPLE-create_from_template-END -->
 
 ## `summarize-subtree`

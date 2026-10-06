@@ -5,12 +5,16 @@ arguments:
     description: "Time window to cover. Examples: 'today', 'this week', 'since 2026-04-15'. Defaults to 'today'."
     required: false
   - name: target_folder
-    description: "Vault folder for the inbox notes. Defaults to '0-Inbox'."
+    description: "Vault folder for the inbox notes. Defaults to the inbox folder the vault's conventions name."
     required: false
 tags: ["write"]
 ---
 
 You are capturing recent chat conversations into a PARA vault's Inbox for later triage. The vault is a downstream beneficiary of conversations you've already had; this prompt bridges that gap in one pass.
+
+## Step 0: Read the vault's conventions
+
+If `$target_folder` is empty, call `get_conventions(path='')` and use the inbox folder the vault owner's root conventions name; if they name none, ask the user which folder to use before going further. Then call `get_conventions(path=<target folder>)` and follow its rules for file names and frontmatter; the owner's conventions override this prompt.
 
 ## Step 1: Check your chat-history tools
 
@@ -46,8 +50,8 @@ For each topic, extract:
 
 Before writing, present the proposed notes to the user:
 
-- **Path:** `$target_folder/<slug>.md` (default folder: `0-Inbox`); one note per topic
-- **Frontmatter:** `{title: "<title>", tags: [], created: "<today's ISO date>"}` — no `type` field; Inbox is untyped by convention, triage assigns the type later
+- **Path:** `<target folder>/<slug>.md`, the folder from Step 0; one note per topic
+- **Frontmatter:** `{title: "<title>", tags: [], created: "<today's ISO date>"}` plus any field the folder's conventions require — no `type` field unless they ask for one; triage assigns the type later
 - **Body:** the distilled summary, in the user's voice, with any URLs from the source conversations preserved as links
 
 ## Step 5: Write on confirmation
@@ -56,7 +60,7 @@ On user confirmation, call `write(path=..., content=..., frontmatter=...)` for e
 
 ## Step 6: Suggest next action
 
-After writing, suggest running the `para-triage` prompt on `$target_folder` to classify the new notes into Projects / Areas / Resources.
+After writing, suggest running the `para-triage` prompt on the target folder to classify the new notes into Projects / Areas / Resources.
 
 ## Constraints
 
@@ -64,5 +68,5 @@ After writing, suggest running the `para-triage` prompt on `$target_folder` to c
 - If no chat-history tools are available in the client, stop — do not fabricate content from the current conversation's context alone.
 - Capture ideas, decisions, references, and action items — not transient Q&A or debugging.
 - One topic per note. Resist the urge to write a single daily-log mega-note.
-- Use `$target_folder` as the target folder (default `0-Inbox`); strip any trailing `/`.
+- Use `$target_folder` as the target folder when given (strip any trailing `/`), otherwise the inbox folder from Step 0.
 - Preserve the user's voice. These are their ideas from their conversations — write in first person where natural.
