@@ -2688,8 +2688,9 @@ that "A vault that does not want this sees no change in behaviour."</p>
 off by default, and then the three responses are exactly as in 5.0. When
 it is on, each response carries <code>unresolved_links</code>. It lists the target,
 as written, of each link the call added that <code>get_broken_links</code> would
-report, once each and in document order. Links the note already held are
-left out, so an old broken link is not repeated on every edit. <code>[]</code> means
+report, once each: inline links first, then reference links, then
+wikilinks, each kind in the order it appears. Links the note already held
+are left out, so an old broken link is not repeated on every edit. <code>[]</code> means
 every new link resolves. <code>null</code> means the check could not run: the
 first index build is still going, or the refresh failed or timed out. The write
 still succeeds and the server logs <code>unresolved_link_check_skipped</code>.
