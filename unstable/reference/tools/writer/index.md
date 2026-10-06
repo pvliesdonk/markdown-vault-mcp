@@ -26,6 +26,7 @@ Use edit for targeted changes and append to add to the end. Parent folders are c
 
 Dict with path (str) and created (bool: true if new file, false if overwrite). On a git-backed vault, an overwrite also carries '`previous_revision`': the commit holding the content this write just replaced. Read it back with read(path, revision=), then write it again with `if_match` set to the etag from a plain read(path). The key is absent when no commit provably holds the replaced content: a create, no git, or content that was never committed (which git cannot recover at all). For .md files, may include 'conventions': the user's authoring conventions for the target folder (root-first list of {folder, path, content}). When present, verify the note you just wrote complies, such as with self-containment or linking-direction rules, and issue a follow-up 'edit' if it does not. To check conventions *before* writing, call '`get_conventions`(path)'.
 
+- `unresolved_links` (list[str] or null, optional): present only for a .md path, when the server runs with `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target, as written, of each link this write added that `get_broken_links` reports; links the note already held are left out. An empty list means every new link resolves; null means the index could not be checked this time.
 - remote (dict, optional): present only while the vault's git clone cannot reach its remote, with state, reason, since and detail; the change is committed locally only.
 
 **Outcomes and errors**
@@ -58,6 +59,7 @@ Read the note first for its current text. When `old_text` has no exact match, a 
 - **replacements** (int): always 1.
 - **`match_type`** (str): `'exact'` or `'normalized'`.
 - **conventions** (list, optional): the user's authoring conventions for the note's folder (root-first list of {folder, path, content}). When present, verify the edited note complies and issue a follow-up 'edit' if it does not.
+- **`unresolved_links`** (list[str] or null, optional): present only when the server runs with `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target, as written, of each link this edit added that `get_broken_links` reports; links the note already held are left out. An empty list means every new link resolves; null means the index could not be checked this time.
 - **remote** (dict, optional): present only while the vault's git clone cannot reach its remote, with state, reason, since and detail; the change is committed locally only.
 
 **Outcomes and errors**
@@ -89,6 +91,7 @@ Prefer it over edit when the change only adds at the end, such as a log entry. T
 - **path** (str): path of the document.
 - **created** (bool): true only when `create_if_missing` created a new note.
 - **conventions** (list, optional): the user's authoring conventions for the note's folder (root-first list of {folder, path, content}). When present, verify the appended content complies and issue a follow-up 'edit' if it does not.
+- **`unresolved_links`** (list[str] or null, optional): present only when the server runs with `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target, as written, of each link this append added that `get_broken_links` reports; links the note already held are left out. An empty list means every new link resolves; null means the index could not be checked this time.
 - **remote** (dict, optional): present only while the vault's git clone cannot reach its remote, with state, reason, since and detail; the change is committed locally only.
 
 **Outcomes and errors**

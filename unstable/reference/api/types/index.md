@@ -246,29 +246,31 @@ Attributes:
 
 ## Operation Results
 
-## `WriteResult(path, created, previous_revision=None)`
+## `WriteResult(path, created, previous_revision=None, unresolved_links=None)`
 
 Result of a write operation.
 
 Attributes:
 
-| Name                | Type   | Description                                                   |
-| ------------------- | ------ | ------------------------------------------------------------- |
-| `path`              | `str`  | Relative path of the document that was written.               |
-| `created`           | `bool` | True if the document was newly created; False if overwritten. |
-| `previous_revision` | \`str  | None\`                                                        |
+| Name                | Type        | Description                                                   |
+| ------------------- | ----------- | ------------------------------------------------------------- |
+| `path`              | `str`       | Relative path of the document that was written.               |
+| `created`           | `bool`      | True if the document was newly created; False if overwritten. |
+| `previous_revision` | \`str       | None\`                                                        |
+| `unresolved_links`  | \`list[str] | None\`                                                        |
 
-## `EditResult(path, replacements, match_type='exact')`
+## `EditResult(path, replacements, match_type='exact', unresolved_links=None)`
 
 Result of an edit operation.
 
 Attributes:
 
-| Name           | Type  | Description                                                                                            |
-| -------------- | ----- | ------------------------------------------------------------------------------------------------------ |
-| `path`         | `str` | Relative path of the document that was edited.                                                         |
-| `replacements` | `int` | Number of text replacements made (always 1 for exact match).                                           |
-| `match_type`   | `str` | How the replacement was found: "exact" (verbatim match) or "normalized" (whitespace-normalised match). |
+| Name               | Type        | Description                                                                                            |
+| ------------------ | ----------- | ------------------------------------------------------------------------------------------------------ |
+| `path`             | `str`       | Relative path of the document that was edited.                                                         |
+| `replacements`     | `int`       | Number of text replacements made (always 1 for exact match).                                           |
+| `match_type`       | `str`       | How the replacement was found: "exact" (verbatim match) or "normalized" (whitespace-normalised match). |
+| `unresolved_links` | \`list[str] | None\`                                                                                                 |
 
 ## `DeleteResult(path)`
 

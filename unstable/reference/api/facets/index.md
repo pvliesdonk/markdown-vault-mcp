@@ -446,7 +446,7 @@ Delegates to :meth:`DocumentManager.read_attachment`.
 
 Create, edit, append, delete, rename, and attachment writes.
 
-## `WriterFacet(doc_mgr, *, okf_migrate=None, convention_maintainer=None, previous_revision=None)`
+## `WriterFacet(doc_mgr, *, okf_migrate=None, convention_maintainer=None, previous_revision=None, link_reporter=None)`
 
 Document-mutation operations, backed by :class:`DocumentManager`.
 
@@ -454,12 +454,13 @@ Hold the managers the write operations delegate to.
 
 Parameters:
 
-| Name                    | Type                   | Description                                          | Default                                                                                                                                                   |
-| ----------------------- | ---------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `doc_mgr`               | `DocumentManager`      | The shared :class:DocumentManager owned by the root. | *required*                                                                                                                                                |
-| `okf_migrate`           | \`OkfMigrationManager  | None\`                                               | The OKF migration manager (#963); None leaves the okf\_\* migration methods unavailable.                                                                  |
-| `convention_maintainer` | \`ConventionMaintainer | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit. |
-| `previous_revision`     | \`Callable\[[str], str | None\]                                               | None\`                                                                                                                                                    |
+| Name                    | Type                     | Description                                          | Default                                                                                                                                                   |
+| ----------------------- | ------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doc_mgr`               | `DocumentManager`        | The shared :class:DocumentManager owned by the root. | *required*                                                                                                                                                |
+| `okf_migrate`           | \`OkfMigrationManager    | None\`                                               | The OKF migration manager (#963); None leaves the okf\_\* migration methods unavailable.                                                                  |
+| `convention_maintainer` | \`ConventionMaintainer   | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit. |
+| `previous_revision`     | \`Callable\[[str], str   | None\]                                               | None\`                                                                                                                                                    |
+| `link_reporter`         | \`UnresolvedLinkReporter | None\`                                               | Answers report_unresolved_links=True on :meth:write, :meth:edit and :meth:append (#1725). None (the default) makes such a call raise :exc:RuntimeError.   |
 
 ### `okf_convert_links(*, folder=None)`
 
@@ -509,7 +510,7 @@ Returns:
 | ---- | -------------- | ------------------------------------------- |
 | `An` | `OkfLogResult` | class:~markdown_vault_mcp.okf.OkfLogResult. |
 
-### `write(path, content, frontmatter=None, if_match=None)`
+### `write(path, content, frontmatter=None, if_match=None, *, report_unresolved_links=False)`
 
 Create or overwrite a document.
 
@@ -517,12 +518,13 @@ Creates intermediate directories as needed. If *frontmatter* is provided, it is 
 
 Parameters:
 
-| Name          | Type             | Description                                     | Default                                                                                                                                                                                                                                      |
-| ------------- | ---------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`        | `str`            | Relative document path (e.g. "notes/topic.md"). | *required*                                                                                                                                                                                                                                   |
-| `content`     | `str`            | Markdown body (excluding frontmatter).          | *required*                                                                                                                                                                                                                                   |
-| `frontmatter` | \`dict[str, Any] | None\`                                          | Optional frontmatter dict serialised as a YAML header.                                                                                                                                                                                       |
-| `if_match`    | \`str            | None\`                                          | Optional etag from a previous :meth:ReaderFacet.read call. When provided, the write is only performed if the current file hash matches this value, preventing overwrites of concurrent modifications. Pass None (default) to skip the check. |
+| Name                      | Type             | Description                                                                                       | Default                                                                                                                                                                                                                                      |
+| ------------------------- | ---------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                    | `str`            | Relative document path (e.g. "notes/topic.md").                                                   | *required*                                                                                                                                                                                                                                   |
+| `content`                 | `str`            | Markdown body (excluding frontmatter).                                                            | *required*                                                                                                                                                                                                                                   |
+| `frontmatter`             | \`dict[str, Any] | None\`                                                                                            | Optional frontmatter dict serialised as a YAML header.                                                                                                                                                                                       |
+| `if_match`                | \`str            | None\`                                                                                            | Optional etag from a previous :meth:ReaderFacet.read call. When provided, the write is only performed if the current file hash matches this value, preventing overwrites of concurrent modifications. Pass None (default) to skip the check. |
+| `report_unresolved_links` | `bool`           | When True, wait for the index to take in the write and set the result's unresolved_links (#1725). | `False`                                                                                                                                                                                                                                      |
 
 Returns:
 
@@ -542,7 +544,7 @@ Raises:
 | `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
 | `InvalidRequestError`         | If path escapes the source directory.                                                                                         |
 
-### `edit(path, old_text=None, new_text='', if_match=None, line_start=None, line_end=None)`
+### `edit(path, old_text=None, new_text='', if_match=None, line_start=None, line_end=None, *, report_unresolved_links=False)`
 
 Patch a section of a document.
 
@@ -550,14 +552,15 @@ Replaces the first occurrence of *old_text* with *new_text*, or replaces the lin
 
 Parameters:
 
-| Name         | Type  | Description                                         | Default                                                                                         |
-| ------------ | ----- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `path`       | `str` | Relative document path.                             | *required*                                                                                      |
-| `old_text`   | \`str | None\`                                              | Exact text to replace (must occur exactly once). Mutually exclusive with line_start / line_end. |
-| `new_text`   | `str` | Replacement text (may be empty to delete old_text). | `''`                                                                                            |
-| `if_match`   | \`str | None\`                                              | Optional etag for optimistic concurrency; see :meth:WriterFacet.write.                          |
-| `line_start` | \`int | None\`                                              | 1-based start line for line-range mode.                                                         |
-| `line_end`   | \`int | None\`                                              | 1-based end line (inclusive) for line-range mode.                                               |
+| Name                      | Type   | Description                                                                                      | Default                                                                                         |
+| ------------------------- | ------ | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `path`                    | `str`  | Relative document path.                                                                          | *required*                                                                                      |
+| `old_text`                | \`str  | None\`                                                                                           | Exact text to replace (must occur exactly once). Mutually exclusive with line_start / line_end. |
+| `new_text`                | `str`  | Replacement text (may be empty to delete old_text).                                              | `''`                                                                                            |
+| `if_match`                | \`str  | None\`                                                                                           | Optional etag for optimistic concurrency; see :meth:WriterFacet.write.                          |
+| `line_start`              | \`int  | None\`                                                                                           | 1-based start line for line-range mode.                                                         |
+| `line_end`                | \`int  | None\`                                                                                           | 1-based end line (inclusive) for line-range mode.                                               |
+| `report_unresolved_links` | `bool` | When True, wait for the index to take in the edit and set the result's unresolved_links (#1725). | `False`                                                                                         |
 
 Returns:
 
@@ -575,7 +578,7 @@ Raises:
 | `DocumentNotFoundError`       | If the file does not exist.                         |
 | `InvalidRequestError`         | If path escapes the source directory.               |
 
-### `append(path, content, if_match=None, *, create_if_missing=False)`
+### `append(path, content, if_match=None, *, create_if_missing=False, report_unresolved_links=False)`
 
 Append text to the end of a document without reading it first (#980).
 
@@ -583,12 +586,13 @@ A newline is inserted between the existing content and *content* when the file d
 
 Parameters:
 
-| Name                | Type   | Description                                                                       | Default                                                                |
-| ------------------- | ------ | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `path`              | `str`  | Relative document path.                                                           | *required*                                                             |
-| `content`           | `str`  | Text to append (must be non-empty).                                               | *required*                                                             |
-| `if_match`          | \`str  | None\`                                                                            | Optional etag for optimistic concurrency; see :meth:WriterFacet.write. |
-| `create_if_missing` | `bool` | When True, create a missing document with content as its body instead of raising. | `False`                                                                |
+| Name                      | Type   | Description                                                                                        | Default                                                                |
+| ------------------------- | ------ | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `path`                    | `str`  | Relative document path.                                                                            | *required*                                                             |
+| `content`                 | `str`  | Text to append (must be non-empty).                                                                | *required*                                                             |
+| `if_match`                | \`str  | None\`                                                                                             | Optional etag for optimistic concurrency; see :meth:WriterFacet.write. |
+| `create_if_missing`       | `bool` | When True, create a missing document with content as its body instead of raising.                  | `False`                                                                |
+| `report_unresolved_links` | `bool` | When True, wait for the index to take in the append and set the result's unresolved_links (#1725). | `False`                                                                |
 
 Returns:
 

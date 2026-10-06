@@ -6575,7 +6575,7 @@ type.</p>
 
 
 <h2 id="markdown_vault_mcp.facets.writer.WriterFacet" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">WriterFacet</span><span class="p">(</span><span class="n">doc_mgr</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">okf_migrate</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">convention_maintainer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">previous_revision</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">WriterFacet</span><span class="p">(</span><span class="n">doc_mgr</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">okf_migrate</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">convention_maintainer</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">previous_revision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">link_reporter</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.writer.WriterFacet" class="headerlink" title="Permanent link">&para;</a></h2>
 
@@ -6670,6 +6670,25 @@ deliberately: that class is also the server's own maintenance
 write path (OKF link conversion rewrites thousands of notes in
 one call), and a git probe per file there would spend several
 subprocesses each on a result nobody reads.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>link_reporter</code>
+            </td>
+            <td>
+                  <code><span title="markdown_vault_mcp.managers.link_report.UnresolvedLinkReporter">UnresolvedLinkReporter</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Answers <code>report_unresolved_links=True</code> on
+:meth:<code>write</code>, :meth:<code>edit</code> and :meth:<code>append</code> (#1725).
+<code>None</code> (the default) makes such a call raise
+:exc:<code>RuntimeError</code>.</p>
               </div>
             </td>
             <td>
@@ -6921,7 +6940,7 @@ whole vault.</p>
 
 
 <h3 id="markdown_vault_mcp.facets.writer.WriterFacet.write" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">write</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">if_match</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">write</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">if_match</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">report_unresolved_links</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.writer.WriterFacet.write" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -7011,6 +7030,23 @@ modifications.  Pass <code>None</code> (default) to skip the check.</p>
                   <code>None</code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>report_unresolved_links</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When <code>True</code>, wait for the index to take
+in the write and set the result's <code>unresolved_links</code> (#1725).</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -7026,7 +7062,7 @@ modifications.  Pass <code>None</code> (default) to skip the check.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None, unresolved_links=None)
 
   
       dataclass
@@ -7040,7 +7076,7 @@ modifications.  Pass <code>None</code> (default) to skip the check.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None, unresolved_links=None)
 
   
       dataclass
@@ -7054,7 +7090,7 @@ modifications.  Pass <code>None</code> (default) to skip the check.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None, unresolved_links=None)
 
   
       dataclass
@@ -7068,7 +7104,7 @@ modifications.  Pass <code>None</code> (default) to skip the check.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None, unresolved_links=None)
 
   
       dataclass
@@ -7148,7 +7184,7 @@ already exists while no <em>if_match</em> is supplied.</p>
 
 
 <h3 id="markdown_vault_mcp.facets.writer.WriterFacet.edit" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">edit</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">old_text</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">new_text</span><span class="o">=</span><span class="s1">''</span><span class="p">,</span> <span class="n">if_match</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">line_start</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">line_end</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">edit</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">old_text</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">new_text</span><span class="o">=</span><span class="s1">''</span><span class="p">,</span> <span class="n">if_match</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">line_start</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">line_end</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">report_unresolved_links</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.writer.WriterFacet.edit" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -7270,6 +7306,23 @@ Mutually exclusive with <em>line_start</em> / <em>line_end</em>.</p>
                   <code>None</code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>report_unresolved_links</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When <code>True</code>, wait for the index to take
+in the edit and set the result's <code>unresolved_links</code> (#1725).</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -7285,7 +7338,7 @@ Mutually exclusive with <em>line_start</em> / <em>line_end</em>.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="EditResult(path, replacements, match_type='exact')
+                  <code><a class="autorefs autorefs-internal" title="EditResult(path, replacements, match_type='exact', unresolved_links=None)
 
   
       dataclass
@@ -7374,7 +7427,7 @@ not match.</p>
 
 
 <h3 id="markdown_vault_mcp.facets.writer.WriterFacet.append" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">append</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">if_match</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">create_if_missing</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">append</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">content</span><span class="p">,</span> <span class="n">if_match</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">create_if_missing</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">report_unresolved_links</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
 <a href="#markdown_vault_mcp.facets.writer.WriterFacet.append" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -7463,6 +7516,24 @@ when the file does not already end with one.</p>
                   <code>False</code>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>report_unresolved_links</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When <code>True</code>, wait for the index to take
+in the append and set the result's <code>unresolved_links</code>
+(#1725).</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -7478,7 +7549,7 @@ when the file does not already end with one.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None, unresolved_links=None)
 
   
       dataclass
@@ -8077,7 +8148,7 @@ partially moved with the index unchanged; reindex recovers.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None)
+                  <code><a class="autorefs autorefs-internal" title="WriteResult(path, created, previous_revision=None, unresolved_links=None)
 
   
       dataclass

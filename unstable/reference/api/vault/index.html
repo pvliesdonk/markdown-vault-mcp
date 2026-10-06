@@ -2234,6 +2234,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.report_unresolved_links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        report_unresolved_links
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.vault.Vault.max_attachment_size_mb" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3162,6 +3173,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.vault.Vault.report_unresolved_links" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        report_unresolved_links
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.vault.Vault.max_attachment_size_mb" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3377,7 +3399,7 @@
 
 
 <h2 id="markdown_vault_mcp.config_sections.vault_settings.VaultSettings" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">VaultSettings</span><span class="p">(</span><span class="n">index_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embeddings_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">write_protect_existing</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">state_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">indexed_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">required_frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_pull_interval_s</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exclude_patterns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">attachment_extensions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_attachment_size_mb</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_note_read_bytes</span><span class="o">=</span><span class="mi">262144</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">length_downweight_alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">default_search_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">max_chunk_words</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">max_chunk_chars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_chunk_chars_override</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_overlap_words</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">summarize_max_notes</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">summarize_max_input_chars</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span> <span class="n">title_field</span><span class="o">=</span><span class="s1">'title'</span><span class="p">,</span> <span class="n">searchable_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embed_context</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">embedding_batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">folder_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fts_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">conventions_file</span><span class="o">=</span><span class="s1">'_conventions.md'</span><span class="p">,</span> <span class="n">okf_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">okf_write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">VaultSettings</span><span class="p">(</span><span class="n">index_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embeddings_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">write_protect_existing</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">report_unresolved_links</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">state_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">indexed_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">required_frontmatter</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_pull_interval_s</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">exclude_patterns</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">attachment_extensions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_attachment_size_mb</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_note_read_bytes</span><span class="o">=</span><span class="mi">262144</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">length_downweight_alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">default_search_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">max_chunk_words</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">max_chunk_chars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_chunk_chars_override</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_overlap_words</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">summarize_max_notes</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">summarize_max_input_chars</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span> <span class="n">title_field</span><span class="o">=</span><span class="s1">'title'</span><span class="p">,</span> <span class="n">searchable_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embed_context</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">embedding_batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">folder_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fts_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">conventions_file</span><span class="o">=</span><span class="s1">'_conventions.md'</span><span class="p">,</span> <span class="n">okf_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">okf_write</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -3466,6 +3488,22 @@ an independent breaking change to the public library interface.</p>
 existing file without an <em>if_match</em> etag raises
 :exc:<code>~markdown_vault_mcp.exceptions.DocumentExistsError</code>
 (default <code>False</code>, i.e. writes overwrite unconditionally).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.report_unresolved_links">report_unresolved_links</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>When <code>True</code>, the <code>write</code> / <code>edit</code> /
+<code>append</code> MCP tools add <code>unresolved_links</code> to their response:
+the links the call added that <code>get_broken_links</code> reports
+(default <code>False</code>, #1725).  Read by the tool layer through
+:attr:<code>~markdown_vault_mcp.vault.Vault.report_unresolved_links</code>;
+library callers ask per call instead.</p>
               </div>
             </td>
           </tr>
@@ -3874,7 +3912,7 @@ only when a remote is configured (repo URL or token), else <code>0</code>.</p>
                 <code>config</code>
             </td>
             <td>
-                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=DEFAULT_SOURCE_DIR, read_only=False, write_protect_existing=True, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, boot_reindex=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())
+                  <code><a class="autorefs autorefs-internal" title="ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=DEFAULT_SOURCE_DIR, read_only=False, write_protect_existing=True, report_unresolved_links=False, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, boot_reindex=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())
 
   
       dataclass
@@ -3925,7 +3963,7 @@ which resolves the provider and threads this automatically.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
-                  <code><a class="autorefs autorefs-internal" title="VaultSettings(index_path=None, embeddings_path=None, read_only=True, write_protect_existing=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)
+                  <code><a class="autorefs autorefs-internal" title="VaultSettings(index_path=None, embeddings_path=None, read_only=True, write_protect_existing=False, report_unresolved_links=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)
 
   
       dataclass
@@ -4314,7 +4352,7 @@ defaults remain independent of the server's operator defaults.</p>
                 <code>settings</code>
             </td>
             <td>
-                  <code><a class="autorefs autorefs-internal" title="VaultSettings(index_path=None, embeddings_path=None, read_only=True, write_protect_existing=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)
+                  <code><a class="autorefs autorefs-internal" title="VaultSettings(index_path=None, embeddings_path=None, read_only=True, write_protect_existing=False, report_unresolved_links=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)
 
   
       dataclass
@@ -4656,6 +4694,31 @@ incremental index paths actually enforce.</p>
     <div class="doc doc-contents ">
 
         <p>The vault's root directory.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="markdown_vault_mcp.vault.Vault.report_unresolved_links" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">report_unresolved_links</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.vault.Vault.report_unresolved_links" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Whether the write tools report the unresolved links a write added.</p>
+<p>Read by the <code>write</code> / <code>edit</code> / <code>append</code> MCP tools, which pass it
+as <code>report_unresolved_links</code> to the writer facet (#1725).  The vault
+library itself reports only when a call asks.</p>
 
     </div>
 

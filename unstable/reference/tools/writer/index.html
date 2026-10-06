@@ -2906,6 +2906,13 @@ or linking-direction rules, and issue a follow-up 'edit' if it
 does not. To check conventions <em>before</em> writing, call
 '<code>get_conventions</code>(path)'.</p>
 <ul>
+<li><code>unresolved_links</code> (list[str] or null, optional): present only
+  for a .md path, when the server runs with
+  <code>MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true</code>. The target,
+  as written, of each link this write added that
+  <code>get_broken_links</code> reports; links the note already held are left
+  out. An empty list means every new link resolves; null means
+  the index could not be checked this time.</li>
 <li>remote (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
   change is committed locally only.</li>
@@ -2984,6 +2991,13 @@ whitespace is used and reported as <code>match_type</code> <code>"normalized"</c
   conventions for the note's folder (root-first list of
   {folder, path, content}). When present, verify the edited
   note complies and issue a follow-up 'edit' if it does not.</li>
+<li><strong><code>unresolved_links</code></strong> (list[str] or null, optional): present only
+  when the server runs with
+  <code>MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true</code>. The target,
+  as written, of each link this edit added that <code>get_broken_links</code>
+  reports; links the note already held are left out. An empty list
+  means every new link resolves; null means the index could not be
+  checked this time.</li>
 <li><strong>remote</strong> (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
   change is committed locally only.</li>
@@ -3051,6 +3065,13 @@ a paragraph or section.</p>
   conventions for the note's folder (root-first list of
   {folder, path, content}). When present, verify the appended
   content complies and issue a follow-up 'edit' if it does not.</li>
+<li><strong><code>unresolved_links</code></strong> (list[str] or null, optional): present only
+  when the server runs with
+  <code>MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true</code>. The target,
+  as written, of each link this append added that
+  <code>get_broken_links</code> reports; links the note already held are left
+  out. An empty list means every new link resolves; null means the
+  index could not be checked this time.</li>
 <li><strong>remote</strong> (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
   change is committed locally only.</li>

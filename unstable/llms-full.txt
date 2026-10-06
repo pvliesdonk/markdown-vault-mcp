@@ -4462,11 +4462,12 @@ For HTTP authentication, a static bearer token is the simplest option. OIDC conf
 
 Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made starting points live under `examples/`: `obsidian-readonly.env`, `obsidian-readwrite.env`, `obsidian-oidc.env`, and `ifcraftcorpus.env`.
 
-| Variable                                    | Default       | Required | Description                                                                                                                                                                                                                                                                         |
-| ------------------------------------------- | ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MARKDOWN_VAULT_MCP_SOURCE_DIR`             | `/data/vault` | No       | Path to the markdown vault directory. When it does not exist, or the server cannot access it, the server starts but every tool fails with a message saying which until it is fixed (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+. |
-| `MARKDOWN_VAULT_MCP_READ_ONLY`              | `false`       | No       | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf\_\* tools, create_upload_link) and serve a search-only vault.                                                                                                       |
-| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | `true`        | No       | Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites.                              |
+| Variable                                     | Default       | Required | Description                                                                                                                                                                                                                                                                         |
+| -------------------------------------------- | ------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKDOWN_VAULT_MCP_SOURCE_DIR`              | `/data/vault` | No       | Path to the markdown vault directory. When it does not exist, or the server cannot access it, the server starts but every tool fails with a message saying which until it is fixed (managed git mode clones into it). Symbolic links inside the vault are followed on Python 3.13+. |
+| `MARKDOWN_VAULT_MCP_READ_ONLY`               | `false`       | No       | Set to true to hide the write tools (write, edit, append, delete, rename, move_folder, fetch, git_sync, the okf\_\* tools, create_upload_link) and serve a search-only vault.                                                                                                       |
+| `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING`  | `true`        | No       | Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites.                              |
+| `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS` | `false`       | No       | Set to true to have write, edit and append list, under unresolved_links, the target of each link the call added that get_broken_links reports. Links the note already held are left out. Off by default, leaving those responses unchanged.                                         |
 
 ### Embeddings
 
@@ -5472,6 +5473,7 @@ Use edit for targeted changes and append to add to the end. Parent folders are c
 
 Dict with path (str) and created (bool: true if new file, false if overwrite). On a git-backed vault, an overwrite also carries '`previous_revision`': the commit holding the content this write just replaced. Read it back with read(path, revision=), then write it again with `if_match` set to the etag from a plain read(path). The key is absent when no commit provably holds the replaced content: a create, no git, or content that was never committed (which git cannot recover at all). For .md files, may include 'conventions': the user's authoring conventions for the target folder (root-first list of {folder, path, content}). When present, verify the note you just wrote complies, such as with self-containment or linking-direction rules, and issue a follow-up 'edit' if it does not. To check conventions *before* writing, call '`get_conventions`(path)'.
 
+- `unresolved_links` (list[str] or null, optional): present only for a .md path, when the server runs with `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target, as written, of each link this write added that `get_broken_links` reports; links the note already held are left out. An empty list means every new link resolves; null means the index could not be checked this time.
 - remote (dict, optional): present only while the vault's git clone cannot reach its remote, with state, reason, since and detail; the change is committed locally only.
 
 **Outcomes and errors**
@@ -5504,6 +5506,7 @@ Read the note first for its current text. When `old_text` has no exact match, a 
 - **replacements** (int): always 1.
 - **`match_type`** (str): `'exact'` or `'normalized'`.
 - **conventions** (list, optional): the user's authoring conventions for the note's folder (root-first list of {folder, path, content}). When present, verify the edited note complies and issue a follow-up 'edit' if it does not.
+- **`unresolved_links`** (list[str] or null, optional): present only when the server runs with `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target, as written, of each link this edit added that `get_broken_links` reports; links the note already held are left out. An empty list means every new link resolves; null means the index could not be checked this time.
 - **remote** (dict, optional): present only while the vault's git clone cannot reach its remote, with state, reason, since and detail; the change is committed locally only.
 
 **Outcomes and errors**
@@ -5535,6 +5538,7 @@ Prefer it over edit when the change only adds at the end, such as a log entry. T
 - **path** (str): path of the document.
 - **created** (bool): true only when `create_if_missing` created a new note.
 - **conventions** (list, optional): the user's authoring conventions for the note's folder (root-first list of {folder, path, content}). When present, verify the appended content complies and issue a follow-up 'edit' if it does not.
+- **`unresolved_links`** (list[str] or null, optional): present only when the server runs with `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target, as written, of each link this append added that `get_broken_links` reports; links the note already held are left out. An empty list means every new link resolves; null means the index could not be checked this time.
 - **remote** (dict, optional): present only while the vault's git clone cannot reach its remote, with state, reason, since and detail; the change is committed locally only.
 
 **Outcomes and errors**
@@ -6604,7 +6608,7 @@ Link conversion, index generation, rename with `update_links=True`, and folder m
 
 ## API Reference
 
-## `VaultSettings(index_path=None, embeddings_path=None, read_only=True, write_protect_existing=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)`
+## `VaultSettings(index_path=None, embeddings_path=None, read_only=True, write_protect_existing=False, report_unresolved_links=False, state_path=None, indexed_frontmatter_fields=None, required_frontmatter=None, git_pull_interval_s=0, exclude_patterns=None, attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, default_search_mode='auto', max_chunk_words=400, max_chunk_chars=None, max_chunk_chars_override=None, chunk_overlap_words=0, summarize_max_notes=50, summarize_max_input_chars=200000, title_field='title', searchable_frontmatter_fields=None, embed_context=False, embedding_batch_size=4, folder_weights=None, fts_weights=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False)`
 
 Config-derived construction settings for a :class:`~markdown_vault_mcp.vault.Vault`.
 
@@ -6618,6 +6622,7 @@ Attributes:
 | `embeddings_path`               | \`Path             | None\`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `read_only`                     | `bool`             | When True (default), write operations raise :exc:~markdown_vault_mcp.exceptions.ReadOnlyError. This library default deliberately stays True even though the server's MARKDOWN_VAULT_MCP_READ_ONLY now defaults to False (#1113). They are separate tiers: the operator default is a product decision about what an installed server should do, while this one is a fail-safe for a downstream Python consumer who constructs a Vault without naming the argument. Keeping it costs nothing — the server path always passes the value explicitly through to_vault_settings — and moving it would be an independent breaking change to the public library interface. |
 | `write_protect_existing`        | `bool`             | When True, a write that would overwrite an existing file without an if_match etag raises :exc:~markdown_vault_mcp.exceptions.DocumentExistsError (default False, i.e. writes overwrite unconditionally).                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `report_unresolved_links`       | `bool`             | When True, the write / edit / append MCP tools add unresolved_links to their response: the links the call added that get_broken_links reports (default False, #1725). Read by the tool layer through :attr:~markdown_vault_mcp.vault.Vault.report_unresolved_links; library callers ask per call instead.                                                                                                                                                                                                                                                                                                                                                          |
 | `state_path`                    | \`Path             | None\`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `indexed_frontmatter_fields`    | \`Sequence[str]    | None\`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `required_frontmatter`          | \`Sequence[str]    | None\`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
@@ -6791,6 +6796,12 @@ Contains the configured patterns plus the conventions-file patterns derived in `
 ### `source_dir`
 
 The vault's root directory.
+
+### `report_unresolved_links`
+
+Whether the write tools report the unresolved links a write added.
+
+Read by the `write` / `edit` / `append` MCP tools, which pass it as `report_unresolved_links` to the writer facet (#1725). The vault library itself reports only when a call asks.
 
 ### `max_attachment_size_mb`
 
@@ -7357,7 +7368,7 @@ Delegates to :meth:`DocumentManager.read_attachment`.
 
 Create, edit, append, delete, rename, and attachment writes.
 
-## `WriterFacet(doc_mgr, *, okf_migrate=None, convention_maintainer=None, previous_revision=None)`
+## `WriterFacet(doc_mgr, *, okf_migrate=None, convention_maintainer=None, previous_revision=None, link_reporter=None)`
 
 Document-mutation operations, backed by :class:`DocumentManager`.
 
@@ -7365,12 +7376,13 @@ Hold the managers the write operations delegate to.
 
 Parameters:
 
-| Name                    | Type                   | Description                                          | Default                                                                                                                                                   |
-| ----------------------- | ---------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `doc_mgr`               | `DocumentManager`      | The shared :class:DocumentManager owned by the root. | *required*                                                                                                                                                |
-| `okf_migrate`           | \`OkfMigrationManager  | None\`                                               | The OKF migration manager (#963); None leaves the okf\_\* migration methods unavailable.                                                                  |
-| `convention_maintainer` | \`ConventionMaintainer | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit. |
-| `previous_revision`     | \`Callable\[[str], str | None\]                                               | None\`                                                                                                                                                    |
+| Name                    | Type                     | Description                                          | Default                                                                                                                                                   |
+| ----------------------- | ------------------------ | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `doc_mgr`               | `DocumentManager`        | The shared :class:DocumentManager owned by the root. | *required*                                                                                                                                                |
+| `okf_migrate`           | \`OkfMigrationManager    | None\`                                               | The OKF migration manager (#963); None leaves the okf\_\* migration methods unavailable.                                                                  |
+| `convention_maintainer` | \`ConventionMaintainer   | None\`                                               | The OKF enforced-write convention maintainer (#964); None (the default, and whenever OKF_WRITE is off) disables log.md / index.md upkeep on write / edit. |
+| `previous_revision`     | \`Callable\[[str], str   | None\]                                               | None\`                                                                                                                                                    |
+| `link_reporter`         | \`UnresolvedLinkReporter | None\`                                               | Answers report_unresolved_links=True on :meth:write, :meth:edit and :meth:append (#1725). None (the default) makes such a call raise :exc:RuntimeError.   |
 
 ### `okf_convert_links(*, folder=None)`
 
@@ -7420,7 +7432,7 @@ Returns:
 | ---- | -------------- | ------------------------------------------- |
 | `An` | `OkfLogResult` | class:~markdown_vault_mcp.okf.OkfLogResult. |
 
-### `write(path, content, frontmatter=None, if_match=None)`
+### `write(path, content, frontmatter=None, if_match=None, *, report_unresolved_links=False)`
 
 Create or overwrite a document.
 
@@ -7428,12 +7440,13 @@ Creates intermediate directories as needed. If *frontmatter* is provided, it is 
 
 Parameters:
 
-| Name          | Type             | Description                                     | Default                                                                                                                                                                                                                                      |
-| ------------- | ---------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`        | `str`            | Relative document path (e.g. "notes/topic.md"). | *required*                                                                                                                                                                                                                                   |
-| `content`     | `str`            | Markdown body (excluding frontmatter).          | *required*                                                                                                                                                                                                                                   |
-| `frontmatter` | \`dict[str, Any] | None\`                                          | Optional frontmatter dict serialised as a YAML header.                                                                                                                                                                                       |
-| `if_match`    | \`str            | None\`                                          | Optional etag from a previous :meth:ReaderFacet.read call. When provided, the write is only performed if the current file hash matches this value, preventing overwrites of concurrent modifications. Pass None (default) to skip the check. |
+| Name                      | Type             | Description                                                                                       | Default                                                                                                                                                                                                                                      |
+| ------------------------- | ---------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                    | `str`            | Relative document path (e.g. "notes/topic.md").                                                   | *required*                                                                                                                                                                                                                                   |
+| `content`                 | `str`            | Markdown body (excluding frontmatter).                                                            | *required*                                                                                                                                                                                                                                   |
+| `frontmatter`             | \`dict[str, Any] | None\`                                                                                            | Optional frontmatter dict serialised as a YAML header.                                                                                                                                                                                       |
+| `if_match`                | \`str            | None\`                                                                                            | Optional etag from a previous :meth:ReaderFacet.read call. When provided, the write is only performed if the current file hash matches this value, preventing overwrites of concurrent modifications. Pass None (default) to skip the check. |
+| `report_unresolved_links` | `bool`           | When True, wait for the index to take in the write and set the result's unresolved_links (#1725). | `False`                                                                                                                                                                                                                                      |
 
 Returns:
 
@@ -7453,7 +7466,7 @@ Raises:
 | `DocumentExistsError`         | If write protection is enabled and path already exists while no if_match is supplied.                                         |
 | `InvalidRequestError`         | If path escapes the source directory.                                                                                         |
 
-### `edit(path, old_text=None, new_text='', if_match=None, line_start=None, line_end=None)`
+### `edit(path, old_text=None, new_text='', if_match=None, line_start=None, line_end=None, *, report_unresolved_links=False)`
 
 Patch a section of a document.
 
@@ -7461,14 +7474,15 @@ Replaces the first occurrence of *old_text* with *new_text*, or replaces the lin
 
 Parameters:
 
-| Name         | Type  | Description                                         | Default                                                                                         |
-| ------------ | ----- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `path`       | `str` | Relative document path.                             | *required*                                                                                      |
-| `old_text`   | \`str | None\`                                              | Exact text to replace (must occur exactly once). Mutually exclusive with line_start / line_end. |
-| `new_text`   | `str` | Replacement text (may be empty to delete old_text). | `''`                                                                                            |
-| `if_match`   | \`str | None\`                                              | Optional etag for optimistic concurrency; see :meth:WriterFacet.write.                          |
-| `line_start` | \`int | None\`                                              | 1-based start line for line-range mode.                                                         |
-| `line_end`   | \`int | None\`                                              | 1-based end line (inclusive) for line-range mode.                                               |
+| Name                      | Type   | Description                                                                                      | Default                                                                                         |
+| ------------------------- | ------ | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `path`                    | `str`  | Relative document path.                                                                          | *required*                                                                                      |
+| `old_text`                | \`str  | None\`                                                                                           | Exact text to replace (must occur exactly once). Mutually exclusive with line_start / line_end. |
+| `new_text`                | `str`  | Replacement text (may be empty to delete old_text).                                              | `''`                                                                                            |
+| `if_match`                | \`str  | None\`                                                                                           | Optional etag for optimistic concurrency; see :meth:WriterFacet.write.                          |
+| `line_start`              | \`int  | None\`                                                                                           | 1-based start line for line-range mode.                                                         |
+| `line_end`                | \`int  | None\`                                                                                           | 1-based end line (inclusive) for line-range mode.                                               |
+| `report_unresolved_links` | `bool` | When True, wait for the index to take in the edit and set the result's unresolved_links (#1725). | `False`                                                                                         |
 
 Returns:
 
@@ -7486,7 +7500,7 @@ Raises:
 | `DocumentNotFoundError`       | If the file does not exist.                         |
 | `InvalidRequestError`         | If path escapes the source directory.               |
 
-### `append(path, content, if_match=None, *, create_if_missing=False)`
+### `append(path, content, if_match=None, *, create_if_missing=False, report_unresolved_links=False)`
 
 Append text to the end of a document without reading it first (#980).
 
@@ -7494,12 +7508,13 @@ A newline is inserted between the existing content and *content* when the file d
 
 Parameters:
 
-| Name                | Type   | Description                                                                       | Default                                                                |
-| ------------------- | ------ | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `path`              | `str`  | Relative document path.                                                           | *required*                                                             |
-| `content`           | `str`  | Text to append (must be non-empty).                                               | *required*                                                             |
-| `if_match`          | \`str  | None\`                                                                            | Optional etag for optimistic concurrency; see :meth:WriterFacet.write. |
-| `create_if_missing` | `bool` | When True, create a missing document with content as its body instead of raising. | `False`                                                                |
+| Name                      | Type   | Description                                                                                        | Default                                                                |
+| ------------------------- | ------ | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `path`                    | `str`  | Relative document path.                                                                            | *required*                                                             |
+| `content`                 | `str`  | Text to append (must be non-empty).                                                                | *required*                                                             |
+| `if_match`                | \`str  | None\`                                                                                             | Optional etag for optimistic concurrency; see :meth:WriterFacet.write. |
+| `create_if_missing`       | `bool` | When True, create a missing document with content as its body instead of raising.                  | `False`                                                                |
+| `report_unresolved_links` | `bool` | When True, wait for the index to take in the append and set the result's unresolved_links (#1725). | `False`                                                                |
 
 Returns:
 
@@ -8497,7 +8512,7 @@ Keep collaborator overrides on the corresponding `Vault` keyword arguments.
 
 ## API Reference
 
-## `ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=DEFAULT_SOURCE_DIR, read_only=False, write_protect_existing=True, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, boot_reindex=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
+## `ProjectConfig(server=ServerConfig(), server_name=_default_server_name(), source_dir=DEFAULT_SOURCE_DIR, read_only=False, write_protect_existing=True, report_unresolved_links=False, disable_apps_ui=False, index_path=None, state_path=None, embeddings_path=None, indexed_fields=None, required_fields=None, exclude=None, title_field='title', searchable_fields=None, templates_folder='_templates', prompts_folder=None, conventions_file='_conventions.md', okf_mode='auto', okf_write=False, okf_verify='elicit', attachment_extensions=None, max_attachment_size_mb=1.0, max_note_read_bytes=262144, default_search_mode='auto', chunks_per_file=2, snippet_words=200, length_downweight_alpha=0.25, max_chunk_words=400, max_chunk_chars=None, chunk_overlap_words=40, folder_weights=None, fts_weights=None, embedding_provider=None, ollama_host='http://localhost:11434', openai_api_key=None, voyage_api_key=None, voyage_model='voyage-4', ollama_model='nomic-embed-text', ollama_cpu_only=False, openai_base_url='https://api.openai.com/v1', openai_embedding_model='text-embedding-3-small', fastembed_model='BAAI/bge-small-en-v1.5', fastembed_cache_dir=None, embed_context=False, embed_timeout_s=30.0, embedding_batch_size=4, git_repo_url=None, git_token=None, git_username='x-access-token', git_pull_interval_s=600, git_push_delay_s=30.0, git_commit_name='markdown-vault-mcp', git_commit_email='noreply@markdown-vault-mcp', git_commit_name_claim=None, git_commit_email_claim=None, git_lfs=True, file_watcher=True, file_watcher_debounce_s=2.0, file_watcher_root_floor=True, boot_reindex=True, github_webhook_secret=None, gitlab_webhook_signing_token=None, gitlab_webhook_secret_token=None, summarize_provider=None, summarize_openai_api_key=None, summarize_openai_base_url=None, summarize_openai_model='gpt-5-mini', summarize_max_tokens=8192, summarize_max_notes=50, summarize_max_input_chars=200000, summarize_timeout=120.0, transfer=TransferConfig(), jobs=JobsConfig())`
 
 Domain config for Markdown Vault MCP. Compose — don't inherit.
 
@@ -9264,29 +9279,31 @@ Attributes:
 
 ## Operation Results
 
-## `WriteResult(path, created, previous_revision=None)`
+## `WriteResult(path, created, previous_revision=None, unresolved_links=None)`
 
 Result of a write operation.
 
 Attributes:
 
-| Name                | Type   | Description                                                   |
-| ------------------- | ------ | ------------------------------------------------------------- |
-| `path`              | `str`  | Relative path of the document that was written.               |
-| `created`           | `bool` | True if the document was newly created; False if overwritten. |
-| `previous_revision` | \`str  | None\`                                                        |
+| Name                | Type        | Description                                                   |
+| ------------------- | ----------- | ------------------------------------------------------------- |
+| `path`              | `str`       | Relative path of the document that was written.               |
+| `created`           | `bool`      | True if the document was newly created; False if overwritten. |
+| `previous_revision` | \`str       | None\`                                                        |
+| `unresolved_links`  | \`list[str] | None\`                                                        |
 
-## `EditResult(path, replacements, match_type='exact')`
+## `EditResult(path, replacements, match_type='exact', unresolved_links=None)`
 
 Result of an edit operation.
 
 Attributes:
 
-| Name           | Type  | Description                                                                                            |
-| -------------- | ----- | ------------------------------------------------------------------------------------------------------ |
-| `path`         | `str` | Relative path of the document that was edited.                                                         |
-| `replacements` | `int` | Number of text replacements made (always 1 for exact match).                                           |
-| `match_type`   | `str` | How the replacement was found: "exact" (verbatim match) or "normalized" (whitespace-normalised match). |
+| Name               | Type        | Description                                                                                            |
+| ------------------ | ----------- | ------------------------------------------------------------------------------------------------------ |
+| `path`             | `str`       | Relative path of the document that was edited.                                                         |
+| `replacements`     | `int`       | Number of text replacements made (always 1 for exact match).                                           |
+| `match_type`       | `str`       | How the replacement was found: "exact" (verbatim match) or "normalized" (whitespace-normalised match). |
+| `unresolved_links` | \`list[str] | None\`                                                                                                 |
 
 ## `DeleteResult(path)`
 

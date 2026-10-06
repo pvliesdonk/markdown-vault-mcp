@@ -5395,7 +5395,7 @@ exactly one section (chunks_per_file=1 by default).</p>
 
 
 <h2 id="markdown_vault_mcp.types.WriteResult" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">WriteResult</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">created</span><span class="p">,</span> <span class="n">previous_revision</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">WriteResult</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">created</span><span class="p">,</span> <span class="n">previous_revision</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">unresolved_links</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -5468,6 +5468,25 @@ vault writer can change which note occupies the path in between.</p>
               </div>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.WriteResult.unresolved_links">unresolved_links</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Set only when the caller asked for the link report
+(<code>report_unresolved_links=True</code> on
+:meth:<code>~markdown_vault_mcp.facets.writer.WriterFacet.write</code> or
+:meth:<code>~markdown_vault_mcp.facets.writer.WriterFacet.append</code>).
+The target, as written, of each link this call added to the note
+that <code>get_broken_links</code> reports as broken; links the note held
+before the call are left out.  <code>[]</code> when every new link
+resolves; <code>None</code> when the report was not asked for, or the index
+could not be brought up to date to answer it.</p>
+              </div>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -5505,7 +5524,7 @@ vault writer can change which note occupies the path in between.</p>
 
 
 <h2 id="markdown_vault_mcp.types.EditResult" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">EditResult</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">replacements</span><span class="p">,</span> <span class="n">match_type</span><span class="o">=</span><span class="s1">'exact'</span><span class="p">)</span></code>
+              <code class="highlight language-python"><span class="n">EditResult</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">replacements</span><span class="p">,</span> <span class="n">match_type</span><span class="o">=</span><span class="s1">'exact'</span><span class="p">,</span> <span class="n">unresolved_links</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
@@ -5561,6 +5580,20 @@ vault writer can change which note occupies the path in between.</p>
             <td>
               <div class="doc-md-description">
                 <p>How the replacement was found: <code>"exact"</code> (verbatim match) or <code>"normalized"</code> (whitespace-normalised match).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.EditResult.unresolved_links">unresolved_links</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Set only when the caller asked for the link report
+(<code>report_unresolved_links=True</code> on
+:meth:<code>~markdown_vault_mcp.facets.writer.WriterFacet.edit</code>); the
+same contract as :attr:<code>WriteResult.unresolved_links</code>.</p>
               </div>
             </td>
           </tr>
