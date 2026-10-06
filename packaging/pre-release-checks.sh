@@ -44,7 +44,8 @@ jq -e --arg v "$plugin_version" '
 
 # Vault-specific mcpb screen invariants on the rendered manifest inside
 # the packed bundle: the required vault picker is wired, and the
-# ${DOCUMENTS} host placeholder survived the render.
+# ${DOCUMENTS} host placeholder survived the render. What the host does with
+# it: docs/design/reference/mcpb-variable-substitution.md.
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 unzip -q "$BUNDLE" -d "$work"
