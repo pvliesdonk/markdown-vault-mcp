@@ -72,15 +72,18 @@ class UnresolvedLinkReporter:
         return (self._source_dir / path).relative_to(self._source_dir).as_posix()
 
     def note_links(self, path: str) -> list[LinkKey]:
-        """Return the links the note at *path* holds on disk, in document order.
+        """Return the links the note at *path* holds on disk, grouped by kind.
 
         Args:
             path: Vault-relative note path.
 
         Returns:
-            One key per link.  ``[]`` when no note is at *path*, or when it
-            cannot be read, decoded or its frontmatter parsed — the indexer
-            skips such a note, so it holds no links ``get_broken_links`` sees.
+            One key per link: inline links, then reference links, then
+            wikilinks, each kind in document order (the order
+            ``extract_links`` returns).  ``[]`` when no note is at *path*, or
+            when it cannot be read, decoded or its frontmatter parsed — the
+            indexer skips such a note, so it holds no links
+            ``get_broken_links`` sees.
         """
         abs_path = validate_path(path, self._source_dir)
         try:
@@ -113,9 +116,10 @@ class UnresolvedLinkReporter:
                 as this write's.
 
         Returns:
-            Each unresolved target as written, once, in document order;
-            ``[]`` when every new link resolves.  ``None`` when the index
-            could not be brought up to date, so the check did not run.
+            Each unresolved target as written, once, in :meth:`note_links`
+            order (grouped by link kind); ``[]`` when every new link
+            resolves.  ``None`` when the index could not be brought up to
+            date, so the check did not run.
         """
         if not self._is_queryable():
             logger.warning(
