@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from markdown_vault_mcp.types import WriteResult
+    from markdown_vault_mcp.types import EditResult, WriteResult
 
 import httpx
 from fastmcp import Context, FastMCP
@@ -258,8 +258,10 @@ async def _resolve_verify_mode_subject(
     return resolve_verify_subject()
 
 
-def _write_payload(result: WriteResult) -> dict[str, Any]:
-    """Serialise a write result, dropping a breadcrumb that is not there.
+def _write_payload(
+    result: WriteResult | EditResult, *, link_report: bool = False
+) -> dict[str, Any]:
+    """Serialise a write or edit result, dropping keys that carry nothing.
 
     ``previous_revision`` is only ever set by an overwriting ``write`` on a
     git-backed vault whose replaced content is provably in a commit (#1137).
@@ -267,10 +269,17 @@ def _write_payload(result: WriteResult) -> dict[str, Any]:
     ``write_attachment``, ``fetch`` — leaves it ``None``, and a permanently
     null key on those responses spends client context on nothing.  Absent says
     "no route back" just as well as null does, without the noise.
+
+    ``unresolved_links`` is kept only when the call asked for the link report
+    (*link_report*, #1725), and then kept even as null: there, null says the
+    check could not run, which an absent key would hide.  Every other
+    response stays exactly as it was before the report existed.
     """
     data = asdict(result)
     if data.get("previous_revision") is None:
         data.pop("previous_revision", None)
+    if not link_report:
+        data.pop("unresolved_links", None)
     return data
 
 
@@ -330,6 +339,13 @@ def register(mcp: FastMCP) -> None:
             does not. To check conventions *before* writing, call
             'get_conventions(path)'.
 
+            - unresolved_links (list[str] or null, optional): present only
+              for a .md path, when the server runs with
+              `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target,
+              as written, of each link this write added that
+              get_broken_links reports; links the note already held are left
+              out. An empty list means every new link resolves; null means
+              the index could not be checked this time.
             - remote (dict, optional): present only while the vault's git clone
               cannot reach its remote, with state, reason, since and detail; the
               change is committed locally only.
@@ -377,6 +393,7 @@ def register(mcp: FastMCP) -> None:
         # OKF_WRITE is on; both values ride contextvars into the to_thread
         # worker, where the enricher runs and the dispatcher snapshots the
         # principal for the git commit.
+        report = vault.report_unresolved_links
         with write_identity_scope():
             result = await asyncio.to_thread(
                 vault.writer.write,
@@ -384,9 +401,11 @@ def register(mcp: FastMCP) -> None:
                 content,
                 frontmatter=frontmatter,
                 if_match=if_match,
+                report_unresolved_links=report,
             )
+        payload = _write_payload(result, link_report=report)
         return attach_remote_health(
-            vault, await attach_conventions(vault, _write_payload(result), path)
+            vault, await attach_conventions(vault, payload, path)
         )
 
     @mcp.tool(
@@ -437,6 +456,13 @@ def register(mcp: FastMCP) -> None:
               conventions for the note's folder (root-first list of
               {folder, path, content}). When present, verify the edited
               note complies and issue a follow-up 'edit' if it does not.
+            - **unresolved_links** (list[str] or null, optional): present only
+              when the server runs with
+              `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target,
+              as written, of each link this edit added that get_broken_links
+              reports; links the note already held are left out. An empty list
+              means every new link resolves; null means the index could not be
+              checked this time.
             - **remote** (dict, optional): present only while the vault's git clone
               cannot reach its remote, with state, reason, since and detail; the
               change is committed locally only.
@@ -451,6 +477,7 @@ def register(mcp: FastMCP) -> None:
             `MCPError`: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
+        report = vault.report_unresolved_links
         try:
             with write_identity_scope():
                 result = await asyncio.to_thread(
@@ -461,9 +488,11 @@ def register(mcp: FastMCP) -> None:
                     if_match=if_match,
                     line_start=line_start,
                     line_end=line_end,
+                    report_unresolved_links=report,
                 )
+            payload = _write_payload(result, link_report=report)
             return attach_remote_health(
-                vault, await attach_conventions(vault, asdict(result), path)
+                vault, await attach_conventions(vault, payload, path)
             )
         except EditConflictError as exc:
             parts = [str(exc)]
@@ -518,6 +547,13 @@ def register(mcp: FastMCP) -> None:
               conventions for the note's folder (root-first list of
               {folder, path, content}). When present, verify the appended
               content complies and issue a follow-up 'edit' if it does not.
+            - **unresolved_links** (list[str] or null, optional): present only
+              when the server runs with
+              `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target,
+              as written, of each link this append added that
+              get_broken_links reports; links the note already held are left
+              out. An empty list means every new link resolves; null means the
+              index could not be checked this time.
             - **remote** (dict, optional): present only while the vault's git clone
               cannot reach its remote, with state, reason, since and detail; the
               change is committed locally only.
@@ -529,6 +565,7 @@ def register(mcp: FastMCP) -> None:
             `MCPError`: If if_match is provided and the file has been modified
                 (ConcurrentModificationError).
         """
+        report = vault.report_unresolved_links
         with write_identity_scope():
             result = await asyncio.to_thread(
                 vault.writer.append,
@@ -536,9 +573,11 @@ def register(mcp: FastMCP) -> None:
                 content,
                 if_match=if_match,
                 create_if_missing=create_if_missing,
+                report_unresolved_links=report,
             )
+        payload = _write_payload(result, link_report=report)
         return attach_remote_health(
-            vault, await attach_conventions(vault, _write_payload(result), path)
+            vault, await attach_conventions(vault, payload, path)
         )
 
     @mcp.tool(

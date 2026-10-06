@@ -311,6 +311,41 @@ class TestWriteProtectExisting:
         assert settings.write_protect_existing is True
 
 
+class TestReportUnresolvedLinks:
+    """Cover the MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS env-var path (#1725)."""
+
+    def test_default_is_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+        monkeypatch.delenv("MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS", raising=False)
+        assert ProjectConfig.from_env().report_unresolved_links is False
+
+    def test_direct_config_default_is_false(self) -> None:
+        config = ProjectConfig(source_dir=Path("/tmp/vault"))
+        assert config.report_unresolved_links is False
+
+    def test_true_variants(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for val in ("true", "1", "yes", "on", "TRUE"):
+            monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+            monkeypatch.setenv("MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS", val)
+            config = ProjectConfig.from_env()
+            assert config.report_unresolved_links is True, f"Expected True for {val!r}"
+
+    def test_false_variants(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for val in ("false", "0", "no", "off", ""):
+            monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", "/tmp/vault")
+            monkeypatch.setenv("MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS", val)
+            config = ProjectConfig.from_env()
+            assert config.report_unresolved_links is False, (
+                f"Expected False for {val!r}"
+            )
+
+    def test_reaches_vault_settings(self) -> None:
+        settings = to_vault_settings(
+            ProjectConfig(source_dir=Path("/tmp/vault"), report_unresolved_links=True)
+        )
+        assert settings.report_unresolved_links is True
+
+
 class TestLoadConfig:
     def test_unset_source_dir_takes_the_documented_default(
         self, monkeypatch: pytest.MonkeyPatch

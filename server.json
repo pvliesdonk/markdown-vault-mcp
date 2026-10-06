@@ -122,6 +122,12 @@
           "default": "true"
         },
         {
+          "name": "MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS",
+          "description": "Set to true to have write, edit and append list, under unresolved_links, the target of each link the call added that get_broken_links reports. Links the note already held are left out. Off by default, leaving those responses unchanged.",
+          "format": "boolean",
+          "default": "false"
+        },
+        {
           "name": "MARKDOWN_VAULT_MCP_DISABLE_APPS_UI",
           "description": "Hide the MCP Apps UI tools (browse_vault, show_context) from the tool listing for clients that do not render MCP Apps panels.",
           "format": "boolean",
@@ -718,6 +724,12 @@
           "description": "Refuse a write that would overwrite an existing file when no if_match etag is supplied. Deliberate replacement still works: read the file first, then pass if_match. Unaffected: edit, append, delete, rename. Set to false to allow blind overwrites.",
           "format": "boolean",
           "default": "true"
+        },
+        {
+          "name": "MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS",
+          "description": "Set to true to have write, edit and append list, under unresolved_links, the target of each link the call added that get_broken_links reports. Links the note already held are left out. Off by default, leaving those responses unchanged.",
+          "format": "boolean",
+          "default": "false"
         },
         {
           "name": "MARKDOWN_VAULT_MCP_DISABLE_APPS_UI",

@@ -358,11 +358,21 @@ class WriteResult:
 
             The probe and the write share the vault's write lock, so no other
             vault writer can change which note occupies the path in between.
+        unresolved_links: Set only when the caller asked for the link report
+            (``report_unresolved_links=True`` on
+            :meth:`~markdown_vault_mcp.facets.writer.WriterFacet.write` or
+            :meth:`~markdown_vault_mcp.facets.writer.WriterFacet.append`).
+            The target, as written, of each link this call added to the note
+            that ``get_broken_links`` reports as broken; links the note held
+            before the call are left out.  ``[]`` when every new link
+            resolves; ``None`` when the report was not asked for, or the index
+            could not be brought up to date to answer it.
     """
 
     path: str
     created: bool
     previous_revision: str | None = None
+    unresolved_links: list[str] | None = None
 
 
 @dataclass
@@ -373,11 +383,16 @@ class EditResult:
         path: Relative path of the document that was edited.
         replacements: Number of text replacements made (always 1 for exact match).
         match_type: How the replacement was found: ``"exact"`` (verbatim match) or ``"normalized"`` (whitespace-normalised match).
+        unresolved_links: Set only when the caller asked for the link report
+            (``report_unresolved_links=True`` on
+            :meth:`~markdown_vault_mcp.facets.writer.WriterFacet.edit`); the
+            same contract as :attr:`WriteResult.unresolved_links`.
     """
 
     path: str
     replacements: int
     match_type: str = "exact"
+    unresolved_links: list[str] | None = None
 
 
 @dataclass

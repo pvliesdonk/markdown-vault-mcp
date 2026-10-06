@@ -285,6 +285,7 @@ class Vault:
         self._embedding_batch_size = settings.embedding_batch_size
         self._read_only = settings.read_only
         self._write_protect_existing = settings.write_protect_existing
+        self._report_unresolved_links = settings.report_unresolved_links
         # OKF detection (disk probe, index-independent). When read semantics
         # are active at construction time, the OKF scalar keys join the
         # effective indexed-field set so `document_tags` carries them; the
@@ -554,6 +555,7 @@ class Vault:
             settings: The resolved construction settings (the OKF write
                 toggle gates the convention maintainer).
         """
+        from markdown_vault_mcp.managers.link_report import UnresolvedLinkReporter
         from markdown_vault_mcp.managers.okf_migrate import OkfMigrationManager
 
         # Facets (#604): thin views over the shared managers/coordinator, exposed via the reader/writer/graph/index accessors.
@@ -603,6 +605,13 @@ class Vault:
             # git-query manager's answer — bound here rather than handing the
             # write facet the store itself.
             previous_revision=self._git_query_mgr.committed_revision,
+            link_reporter=UnresolvedLinkReporter(
+                fts=self._fts,
+                source_dir=self._source_dir,
+                attachment_extensions=self._attachment_extensions,
+                is_queryable=self._coordinator.is_queryable,
+                refresh_index=self._coordinator.prepare_index_read,
+            ),
         )
         self._graph_facet = GraphFacet(
             link_mgr=self._link_mgr,
@@ -711,6 +720,16 @@ class Vault:
     def source_dir(self) -> Path:
         """The vault's root directory."""
         return self._source_dir
+
+    @property
+    def report_unresolved_links(self) -> bool:
+        """Whether the write tools report the unresolved links a write added.
+
+        Read by the ``write`` / ``edit`` / ``append`` MCP tools, which pass it
+        as ``report_unresolved_links`` to the writer facet (#1725).  The vault
+        library itself reports only when a call asks.
+        """
+        return self._report_unresolved_links
 
     @property
     def max_attachment_size_mb(self) -> float:

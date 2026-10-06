@@ -51,6 +51,13 @@ or linking-direction rules, and issue a follow-up 'edit' if it
 does not. To check conventions *before* writing, call
 '`get_conventions`(path)'.
 
+- `unresolved_links` (list[str] or null, optional): present only
+  for a .md path, when the server runs with
+  `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target,
+  as written, of each link this write added that
+  `get_broken_links` reports; links the note already held are left
+  out. An empty list means every new link resolves; null means
+  the index could not be checked this time.
 - remote (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
   change is committed locally only.
@@ -95,6 +102,13 @@ whitespace is used and reported as `match_type` `"normalized"`.
   conventions for the note's folder (root-first list of
   {folder, path, content}). When present, verify the edited
   note complies and issue a follow-up 'edit' if it does not.
+- **`unresolved_links`** (list[str] or null, optional): present only
+  when the server runs with
+  `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target,
+  as written, of each link this edit added that `get_broken_links`
+  reports; links the note already held are left out. An empty list
+  means every new link resolves; null means the index could not be
+  checked this time.
 - **remote** (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
   change is committed locally only.
@@ -138,6 +152,13 @@ a paragraph or section.
   conventions for the note's folder (root-first list of
   {folder, path, content}). When present, verify the appended
   content complies and issue a follow-up 'edit' if it does not.
+- **`unresolved_links`** (list[str] or null, optional): present only
+  when the server runs with
+  `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. The target,
+  as written, of each link this append added that
+  `get_broken_links` reports; links the note already held are left
+  out. An empty list means every new link resolves; null means the
+  index could not be checked this time.
 - **remote** (dict, optional): present only while the vault's git clone
   cannot reach its remote, with state, reason, since and detail; the
   change is committed locally only.
