@@ -108,6 +108,8 @@ files:
   packaging/mcpb/manifest.json.in:
     # Anchored so the Claude Code plugin screen below reuses the identical
     # field set — one curation, two install channels (#1040/#1041).
+    # How the host substitutes ${...} in these defaults:
+    # docs/design/reference/mcpb-variable-substitution.md
     fields: &vault_screen_fields
       "{PREFIX}_SOURCE_DIR":
         id: source_dir
@@ -177,7 +179,8 @@ files:
       # placeholder Claude Code does not substitute, so the plugin's
       # required directory picker ships without a default. The explicit
       # null keeps the generator from falling back to the config field's
-      # own Path default (template#341).
+      # own Path default (template#341). Sourced in
+      # docs/design/reference/claude-code-plugin-variables.md.
       "{PREFIX}_SOURCE_DIR":
         id: source_dir
         title: "Vault directory"

@@ -213,10 +213,13 @@ Pins: no test in this repository asserts any claim below yet.
 
 ## Where this project departs from the subject
 
-None recorded. The project's `${DOCUMENTS}/Vault` default and the
-pre-release check that the placeholder survives rendering
-(`packaging/pre-release-checks.sh`) rely on the spec's default-variable list,
-which the library does not implement for optional fields (see above).
+The project's required `source_dir` field ships a `${DOCUMENTS}/Vault`
+default, and `packaging/pre-release-checks.sh` asserts that the placeholder
+survives rendering. Both rely on the spec's default-variable list. The
+library substitutes no variable inside a default, and a required field's
+default never satisfies the required check (see above), so the default
+helps only as a pre-fill in the install dialog. Whether Claude Desktop
+resolves it before storing it is [unverified].
 
 ## Not covered
 
