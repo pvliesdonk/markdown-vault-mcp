@@ -85,7 +85,7 @@ class IndexManager:
         tracker: Hash-based change tracker for incremental reindexing.
         source_dir: Absolute path to the vault root directory.
         embeddings_path: Base path for ``.npy`` / ``.json`` sidecar files.
-            ``None`` disables embedding support.
+            ``None`` keeps the vectors in memory (#1708).
         embedding_provider: Provider used to generate embeddings.
         chunk_strategy: Strategy for splitting documents into chunks.
         exclude_patterns: Glob patterns for paths to exclude from indexing.
@@ -432,7 +432,6 @@ class IndexManager:
             stale_paths
             and vectors is None
             and self._embeddings.embedding_provider is not None
-            and self._embeddings.embeddings_path is not None
         ):
             self._load_vectors()
             vectors = self._get_vectors()
@@ -523,9 +522,8 @@ class IndexManager:
         purged, vectors = self._purge_stale_excluded(
             self._get_vectors(), keep_paths=indexed_paths
         )
-        embeddings_path = self._embeddings.embeddings_path
-        if purged and vectors is not None and embeddings_path is not None:
-            vectors.save(embeddings_path)
+        if purged and vectors is not None:
+            self._embeddings.persist(vectors)
 
         # A bulk purge (e.g. exclude patterns newly configured on an
         # existing index, issue #255) leaves dead FTS5 segments behind;
@@ -723,9 +721,8 @@ class IndexManager:
         vector_index_changed = bool(
             indexed_added or indexed_modified or changes.deleted or stale_excluded
         )
-        embeddings_path = self._embeddings.embeddings_path
-        if vectors is not None and embeddings_path is not None and vector_index_changed:
-            vectors.save(embeddings_path)
+        if vectors is not None and vector_index_changed:
+            self._embeddings.persist(vectors)
 
         # Re-resolve vault-wide wikilinks.
         self._fts.resolve_vault_wikilinks()
@@ -871,7 +868,7 @@ class IndexManager:
             else:
                 indexed_modified += 1
 
-            if vectors is not None and self._embeddings.embeddings_path is not None:
+            if vectors is not None:
                 outcome = self._embed_note_inline(vectors, note)
                 if outcome == _EMBED_KEPT:
                     embed_kept += 1
@@ -918,8 +915,8 @@ class IndexManager:
             already-converged index).
 
         Raises:
-            EmbeddingsNotConfiguredError: If ``embedding_provider`` or
-                ``embeddings_path`` is not configured.
+            EmbeddingsNotConfiguredError: If ``embedding_provider`` is not
+                configured.
         """
         return self._embeddings.build_embeddings(force=force)
 

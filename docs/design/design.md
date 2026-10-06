@@ -814,7 +814,13 @@ whatever is currently in the index (empty on cold start). So the CLI
 `search` command calls `build_index()` before it queries when its index is
 in memory (`INDEX_PATH` unset or `:memory:`), since that index starts empty,
 and keeps the build's change tracking in memory even when `STATE_PATH` is
-set, since that file may be a running server's (#1691). An on-disk index is
+set, since that file may be a running server's (#1691). Vectors at
+`EMBEDDINGS_PATH` are loaded, not embedded for the query, though an
+incompatible or corrupt sidecar is still rebuilt in place, as the server
+rebuilds it; with no
+`EMBEDDINGS_PATH` and a provider configured, a semantic or hybrid query on
+such an index embeds the vault first, in memory (#1708). `index` and
+`reindex` skip embedding when no file would keep the vectors. An on-disk index is
 only read: it may belong to a running server, and `build_index()`
 rebuilds an index whose recorded provenance differs from the caller's
 settings, so a shell with other settings would rebuild it under the server.
@@ -1107,7 +1113,7 @@ operator learns why the note was left out.
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match |
-| `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` or `embeddings_path` configured. A subclass of `InvalidRequestError`, so still a `ValueError` |
+| `EmbeddingsNotConfiguredError` | `build_embeddings()`, `search()` (semantic/hybrid mode) | No `embedding_provider` configured. A subclass of `InvalidRequestError`, so still a `ValueError` |
 | `SummarizeTimeoutError` | `summarize()` | The summarization backend outran its per-request budget; the caller can ask for less. A subclass of `InvalidRequestError` and of `RuntimeError`, the type a timeout had before (#1608) |
 | `NoteTooLargeError` | `read()` | A whole-note read is over `max_note_read_bytes`; the caller can read by section. A subclass of `InvalidRequestError`, with its own type so `summarize()` can report the skip's reason (#1637) |
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
@@ -3380,7 +3386,19 @@ class Vault:
 kwargs):
 - `index_path=None`: index is created in-memory (`:memory:` SQLite). If
   provided, persisted to disk.
-- `embeddings_path=None`: semantic search is disabled.
+- `embeddings_path=None`: the sidecars default to `{index name}-embeddings`,
+  the name's dots made dashes (`index-db-embeddings.npy` beside `index.db`)
+  so `Path.with_suffix` cannot cut it at a dot (#819),
+  or the vectors are held in memory without one. Semantic search follows the
+  embedding provider alone (#1708). On the server, an explicit
+  `EMBEDDING_PROVIDER` is resolved without a path, while auto-detection
+  still waits for `EMBEDDINGS_PATH`, so an install that merely has a backend
+  importable or an API key set never starts embedding, and paying, at every
+  start. Such a provider was never loaded before #1708, so if it fails to
+  load the server logs `embedding_provider_load_failed` at WARNING and runs
+  keyword-only rather than stop a deployment that started before; with
+  `EMBEDDINGS_PATH` set, a failed explicit provider still raises
+  `ConfigurationError`.
 - `state_path=None`: defaults to `{index file name}.state.json` beside `index_path`,
   or to memory without one (#1693).
 
@@ -4627,7 +4645,7 @@ For MCP server deployment:
 | `MARKDOWN_VAULT_MCP_WRITE_PROTECT_EXISTING` | Refuse a `write` over an existing file when no `if_match` is supplied; set `false` to allow blind overwrites | `true` |
 | `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS` | Add `unresolved_links` to `write` / `edit` / `append` responses: the links the call added that `get_broken_links` reports | `false` |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH` | SQLite index path | in-memory |
-| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | Embeddings directory | disabled |
+| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` | Embeddings sidecar base path | beside `INDEX_PATH`, else in memory |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS` | Comma-separated frontmatter fields to index into `document_tags` | none |
 | `MARKDOWN_VAULT_MCP_TITLE_FIELD` | Frontmatter field used as the document title | `title` |
 | `MARKDOWN_VAULT_MCP_SEARCHABLE_FIELDS` | Comma-separated frontmatter fields indexed into the FTS `summary` column | defaults to `INDEXED_FIELDS` |

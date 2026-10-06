@@ -10,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from markdown_vault_mcp.cli import _ENV_PREFIX, _build_vault, app
+from tests.conftest import MockEmbeddingProvider
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -996,6 +997,125 @@ def test_search_in_memory_leaves_a_shared_state_file_alone(
     assert result.exit_code == 0, result.output
     assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
     assert not state.exists()
+
+
+class _CountingProvider(MockEmbeddingProvider):
+    """Mock provider counting resolutions and embed calls."""
+
+    built = 0
+    calls = 0
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        type(self).calls += 1
+        return super().embed(texts)
+
+
+def _embedding_cli_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, embeddings_path: Path | None
+) -> type[_CountingProvider]:
+    """One-note vault, in-memory index, explicit provider; returns its class."""
+    import markdown_vault_mcp.providers as providers_mod
+
+    counting = type("_Counting", (_CountingProvider,), {"built": 0, "calls": 0})
+
+    def _resolve(_config: object) -> _CountingProvider:
+        counting.built += 1
+        return counting()
+
+    monkeypatch.setattr(providers_mod, "get_embedding_provider", _resolve)
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.delenv(f"{_ENV_PREFIX}_INDEX_PATH", raising=False)
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
+    if embeddings_path is None:
+        monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", raising=False)
+    else:
+        monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", str(embeddings_path))
+    return counting
+
+
+def test_search_by_meaning_on_an_in_memory_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With nothing to keep the vectors, semantic search embeds in memory."""
+    counting = _embedding_cli_env(tmp_path, monkeypatch, None)
+
+    result = runner.invoke(app, ["search", "--json", "-m", "semantic", "world"])
+
+    assert result.exit_code == 0, result.output
+    assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
+    assert counting.calls > 0
+    assert sorted(p.name for p in tmp_path.rglob("*")) == ["a.md", "vault"]
+
+
+def test_search_reads_a_configured_embeddings_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """EMBEDDINGS_PATH vectors are only read, never re-embedded or written."""
+    shared = tmp_path / "shared" / "embeddings"
+    counting = _embedding_cli_env(tmp_path, monkeypatch, shared)
+
+    result = runner.invoke(app, ["search", "--json", "-m", "semantic", "world"])
+
+    assert result.exit_code == 0, result.output
+    assert counting.calls == 0
+    assert not shared.parent.exists()
+
+
+@pytest.mark.parametrize("command", ["index", "reindex"])
+def test_batch_commands_skip_embeddings_nothing_would_keep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """Without an index or embeddings path, embedding would be paid for nothing."""
+    counting = _embedding_cli_env(tmp_path, monkeypatch, None)
+
+    result = runner.invoke(app, [command])
+
+    assert result.exit_code == 0, result.output
+    assert "Embedded" not in result.output
+    assert counting.built == 0
+
+
+def test_keyword_search_never_resolves_the_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A keyword query on an in-memory index needs no vectors, so no model."""
+    counting = _embedding_cli_env(tmp_path, monkeypatch, None)
+
+    result = runner.invoke(app, ["search", "--json", "world"])
+
+    assert result.exit_code == 0, result.output
+    assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
+    assert counting.built == 0
+
+
+def test_mistyped_mode_embeds_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An invalid mode fails before a provider is paid to embed the vault."""
+    counting = _embedding_cli_env(tmp_path, monkeypatch, None)
+
+    result = runner.invoke(app, ["search", "-m", "sematic", "world"])
+
+    assert counting.calls == 0
+    assert result.exit_code != 0
+
+
+@pytest.mark.parametrize("command", ["index", "reindex"])
+def test_batch_commands_embed_into_a_configured_embeddings_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    """EMBEDDINGS_PATH keeps the vectors, so the batch commands embed into it."""
+    shared = tmp_path / "shared" / "embeddings"
+    counting = _embedding_cli_env(tmp_path, monkeypatch, shared)
+
+    result = runner.invoke(app, [command])
+
+    assert result.exit_code == 0, result.output
+    assert counting.calls > 0
+    assert shared.with_suffix(".npy").is_file()
 
 
 def test_search_never_builds_an_on_disk_index(

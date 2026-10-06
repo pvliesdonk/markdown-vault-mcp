@@ -208,7 +208,11 @@ class ProjectConfig:
         default=None,
         metadata={
             "help": (
-                "Path to the numpy embeddings file; required to enable semantic search."
+                "Base path for the embeddings files. Defaults beside "
+                "INDEX_PATH (index-db-embeddings.npy and .json beside "
+                "index.db); without INDEX_PATH the vectors are kept in "
+                "memory and rebuilt at each start. "
+                "Setting it also lets the provider be auto-detected."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -518,8 +522,10 @@ class ProjectConfig:
         default=None,
         metadata={
             "help": (
-                "Embedding provider: openai, voyage, ollama, or fastembed. "
-                "Unset auto-detects from the environment (never voyage). Any "
+                "Embedding provider: openai, voyage, ollama, or fastembed; "
+                "setting it turns on search by meaning. Unset auto-detects "
+                "from the environment (never voyage), but only when "
+                "EMBEDDINGS_PATH is set. Any "
                 "OpenAI-compatible endpoint works with openai plus "
                 "OPENAI_BASE_URL; see the embeddings guide."
             ),

@@ -146,6 +146,7 @@ def _build_vault(
     index_path: str | None = None,
     *,
     scratch_state: bool = False,
+    in_memory_vectors: bool = False,
 ) -> Vault:
     """Build a synchronous Vault from env vars + optional CLI overrides.
 
@@ -161,6 +162,11 @@ def _build_vault(
         scratch_state: Keep the change-tracking state in memory, ignoring
             ``STATE_PATH``, for a one-shot in-memory index whose state must
             not overwrite a running server's (#1691).
+        in_memory_vectors: Resolve the embedding provider even when no file
+            would keep the vectors (no ``EMBEDDINGS_PATH`` and no on-disk
+            index), so they are embedded in memory. Off by default: the
+            provider is then never resolved, since a batch command would pay
+            it for vectors it throws away (#1708).
 
     Returns:
         A constructed :class:`~markdown_vault_mcp.vault.Vault` (index not built).
@@ -188,6 +194,10 @@ def _build_vault(
     if problem is not None:
         typer.echo(f"ERROR: configuration error: {problem[1]}", err=True)
         raise typer.Exit(code=1)
+    if not in_memory_vectors and not _vectors_kept(config, index_path):
+        # Nothing would keep the vectors, so drop the provider before it is
+        # resolved: FastEmbed would load, or download, its model for nothing.
+        config = dataclasses.replace(config, embedding_provider=None)
     instances = to_vault_instances(config)
     settings = to_vault_settings(config, instances=instances)
     if index_path:
@@ -202,6 +212,23 @@ def _build_vault(
         git_strategy=instances.git_strategy,
         on_write=instances.on_write,
     )
+
+
+def _vectors_kept(config: ProjectConfig, index_path: str | None) -> bool:
+    """Report whether a file would keep the vectors this command embeds.
+
+    Args:
+        config: The configuration the command read.
+        index_path: The ``--index-path`` override, if given.
+
+    Returns:
+        ``True`` when ``EMBEDDINGS_PATH`` is set or the index is on disk,
+        where the vectors default beside it (#1708).
+    """
+    if config.indexing.embeddings_path is not None:
+        return True
+    index = index_path or config.indexing.index_path
+    return index is not None and str(index) != ":memory:"
 
 
 @app.command()
@@ -229,6 +256,20 @@ def index(
         typer.echo(f"Embedded {n} chunks")
     except EmbeddingsNotConfiguredError:
         pass  # embeddings not configured
+
+
+def _embed_in_memory(vault: Vault) -> None:
+    """Embed the vault for one search by meaning when no file keeps the vectors.
+
+    Vectors that ``EMBEDDINGS_PATH`` or an on-disk index keep are only read:
+    building them here would write files a running server may share (#1708).
+
+    Args:
+        vault: A vault whose in-memory index is already built.
+    """
+    status = vault.index.embeddings_status()
+    if status["available"] and status["path"] is None:
+        vault.index.build_embeddings()
 
 
 @app.command()
@@ -261,9 +302,16 @@ def search(
     # whenever this shell's settings differ from the ones it was built with.
     configured_index = ProjectConfig.from_env().indexing.index_path
     in_memory = configured_index is None or str(configured_index) == ":memory:"
-    vault = _build_vault(source_dir, None, scratch_state=in_memory)
+    # Only a valid vector mode embeds: a mistyped one must fail in the search
+    # below before a paid provider has embedded the vault (#1708).
+    by_meaning = mode in ("semantic", "hybrid")
+    vault = _build_vault(
+        source_dir, None, scratch_state=in_memory, in_memory_vectors=by_meaning
+    )
     if in_memory:
         vault.index.build_index()
+        if by_meaning:
+            _embed_in_memory(vault)
     results = vault.reader.search(
         query,
         limit=limit,

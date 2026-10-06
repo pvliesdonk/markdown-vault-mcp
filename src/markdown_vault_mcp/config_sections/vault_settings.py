@@ -34,6 +34,13 @@ _DEFAULT_STATE_FILENAME = "state.json"
 #: ``index.db.state.json``. The whole file name, so ``notes.db`` and
 #: ``notes.sqlite`` in one directory never share a state file.
 _DEFAULT_STATE_SUFFIX = ".state.json"
+#: Suffix of the default embeddings base beside the index. The base is the
+#: index file name with its dots made dashes: ``index.db`` gives
+#: ``index-db-embeddings``, whose sidecars are ``index-db-embeddings.npy`` and
+#: ``.json``. Dot-free, so ``Path.with_suffix`` adds to the whole name instead
+#: of cutting it at a dot (#819), and built from the whole name, so
+#: ``notes.db`` and ``notes.sqlite`` never share vectors.
+_DEFAULT_EMBEDDINGS_SUFFIX = "-embeddings"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -51,8 +58,11 @@ class VaultSettings:
             an in-memory database that is discarded when the object is
             collected.
         embeddings_path: Base path for the ``{path}.npy`` and
-            ``{path}.json`` sidecar files.  ``None`` (default) means
-            semantic search is disabled.
+            ``{path}.json`` sidecar files.  ``None`` (default) puts them
+            beside ``index_path`` as ``{index name}-embeddings`` (dots made
+            dashes: ``index-db-embeddings``), or keeps
+            the vectors in memory without an index path (#1708). Semantic
+            search is on whenever ``Vault`` is given an embedding provider.
         read_only: When ``True`` (default), write operations raise
             :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
 
@@ -322,6 +332,22 @@ class VaultSettings:
             self.conventions_file,
             f"**/{self.conventions_file}",
         ]
+
+    def effective_embeddings_path(self) -> Path | None:
+        """Return the embeddings sidecar base, defaulting beside the index (#1708).
+
+        Returns:
+            The explicit ``embeddings_path``; else ``{index name}-embeddings``
+            with the name's dots made dashes,
+            beside an on-disk ``index_path``; else ``None``, meaning the
+            vectors are held in memory and rebuilt at each start.
+        """
+        if self.embeddings_path is not None:
+            return self.embeddings_path
+        if self.index_path is not None and str(self.index_path) != ":memory:":
+            base_name = self.index_path.name.replace(".", "-")
+            return self.index_path.with_name(f"{base_name}{_DEFAULT_EMBEDDINGS_SUFFIX}")
+        return None
 
     def effective_state_path(self, source_dir: Path) -> Path | None:
         """Return the hash-state path, defaulting beside the index (#1693).

@@ -121,7 +121,7 @@ class EditConflictError(MarkdownMCPError):
 
 
 class EmbeddingsNotConfiguredError(InvalidRequestError):
-    """Raised when an embeddings operation runs without a provider/path configured.
+    """Raised when an embeddings operation runs without a provider configured.
 
     Embeddings are opt-in and off by default, so a vault without them is a
     choice the operator made, not a broken configuration: the caller must

@@ -142,6 +142,37 @@ class TestSettingsDerivations:
         settings = VaultSettings(index_path=Path(":memory:"))
         assert settings.effective_state_path(tmp_path) is None
 
+    def test_effective_embeddings_path_prefers_explicit(self, tmp_path: Path) -> None:
+        explicit = tmp_path / "vectors" / "emb"
+        settings = VaultSettings(embeddings_path=explicit, index_path=tmp_path / "i.db")
+        assert settings.effective_embeddings_path() == explicit
+
+    @pytest.mark.parametrize(
+        ("index_name", "sidecar"),
+        [
+            ("index.db", "index-db-embeddings.npy"),
+            ("my.vault.sqlite", "my-vault-sqlite-embeddings.npy"),
+            ("notes.sqlite", "notes-sqlite-embeddings.npy"),
+        ],
+    )
+    def test_effective_embeddings_path_sits_beside_the_index(
+        self, tmp_path: Path, index_name: str, sidecar: str
+    ) -> None:
+        settings = VaultSettings(index_path=tmp_path / "state" / index_name)
+        base = settings.effective_embeddings_path()
+        assert base is not None
+        assert base.parent == tmp_path / "state"
+        # The sidecars derive with with_suffix, which must neither cut the
+        # name at a dot (#819) nor let two indexes share a sidecar.
+        assert base.with_suffix(".npy").name == sidecar
+
+    def test_effective_embeddings_path_is_none_for_a_memory_index(self) -> None:
+        settings = VaultSettings(index_path=Path(":memory:"))
+        assert settings.effective_embeddings_path() is None
+
+    def test_effective_embeddings_path_is_none_without_an_index(self) -> None:
+        assert VaultSettings().effective_embeddings_path() is None
+
     def test_effective_state_path_is_none_without_an_index(
         self, tmp_path: Path
     ) -> None:
@@ -271,6 +302,70 @@ class TestStateLocation:
             for r in caplog.records
         )
         assert sorted(p.name for p in index.parent.iterdir()) == ["index.db"]
+
+    def test_embeddings_without_an_index_stay_in_memory(self, tmp_path: Path) -> None:
+        from tests.conftest import MockEmbeddingProvider
+
+        root = self._vault_with_note(tmp_path)
+        vault = Vault(
+            source_dir=root,
+            settings=VaultSettings(),
+            embedding_provider=MockEmbeddingProvider(),
+        )
+        try:
+            vault.index.build_index()
+            assert vault.index.build_embeddings() > 0
+            hits = vault.reader.search("world of notes", mode="semantic")
+        finally:
+            vault.close()
+        assert [h.path for h in hits] == ["a.md"]
+        assert sorted(p.name for p in tmp_path.rglob("*")) == ["a.md", "vault"]
+
+    def test_in_memory_embeddings_before_the_first_build(self, tmp_path: Path) -> None:
+        from tests.conftest import MockEmbeddingProvider
+
+        root = self._vault_with_note(tmp_path)
+        vault = Vault(
+            source_dir=root,
+            settings=VaultSettings(),
+            embedding_provider=MockEmbeddingProvider(),
+        )
+        try:
+            vault.index.build_index()
+            status = vault.index.embeddings_status()
+            hits = vault.reader.search("world of notes", mode="semantic")
+            # A reader must not install the shared slot: a build running on
+            # the writer thread would lose its vectors to the empty index.
+            installed = vault._vectors
+        finally:
+            vault.close()
+        assert status == {
+            "available": True,
+            "provider": "MockEmbeddingProvider",
+            "chunk_count": 0,
+            "path": None,
+        }
+        assert hits == []
+        assert installed is None
+
+    def test_embeddings_sidecar_sits_beside_the_index(self, tmp_path: Path) -> None:
+        from tests.conftest import MockEmbeddingProvider
+
+        root = self._vault_with_note(tmp_path)
+        index = tmp_path / "state" / "index.db"
+        index.parent.mkdir()
+        vault = Vault(
+            source_dir=root,
+            settings=VaultSettings(index_path=index),
+            embedding_provider=MockEmbeddingProvider(),
+        )
+        try:
+            vault.index.build_index()
+            vault.index.build_embeddings()
+        finally:
+            vault.close()
+        assert (tmp_path / "state" / "index-db-embeddings.npy").is_file()
+        assert sorted(p.name for p in root.rglob("*")) == ["a.md"]
 
     def test_legacy_location_chosen_explicitly_is_not_reported(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture

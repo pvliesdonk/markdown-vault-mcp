@@ -77,7 +77,7 @@ class EmbeddingsManager:
         fts: The FTS index queried as the source of truth for what to embed.
         source_dir: Absolute path to the vault root directory.
         embeddings_path: Base path for ``.npy`` / ``.json`` sidecar files.
-            ``None`` disables embedding support.
+            ``None`` keeps the vectors in memory (#1708).
         embedding_provider: Provider used to generate embeddings.
         chunk_strategy: Strategy for splitting documents into chunks.
         get_vectors: Callback returning the current
@@ -136,8 +136,20 @@ class EmbeddingsManager:
 
     @property
     def embeddings_path(self) -> Path | None:
-        """Base path for the vector sidecar files (``None`` when disabled)."""
+        """Base path for the vector sidecar files (``None`` when held in memory)."""
         return self._embeddings_path
+
+    def persist(self, vectors: VectorStore) -> None:
+        """Save *vectors* to the sidecar files, or keep them in memory only.
+
+        Without an embeddings path the vectors live for this process and are
+        rebuilt at the next start (#1708).
+
+        Args:
+            vectors: The vector index to save.
+        """
+        if self._embeddings_path is not None:
+            vectors.save(self._embeddings_path)
 
     @property
     def embedding_provider(self) -> EmbeddingProvider | None:
@@ -223,7 +235,7 @@ class EmbeddingsManager:
 
     def _require_vectors(self) -> None:
         """Raise :class:`EmbeddingsNotConfiguredError` if embeddings are unconfigured."""
-        if self._embedding_provider is None or self._embeddings_path is None:
+        if self._embedding_provider is None:
             raise EmbeddingsNotConfiguredError(
                 "Embeddings are not enabled on this server, so there is nothing "
                 "to build or query; search with mode='keyword' instead."
@@ -347,16 +359,26 @@ class EmbeddingsManager:
 
         Raises:
             RuntimeError: If called without a prior ``_require_vectors()``
-                (``_embedding_provider`` or ``_embeddings_path`` is ``None``).
+                (``_embedding_provider`` is ``None``).
             ValueError: If a self-heal rebuild fails to produce a usable index.
         """
         vectors = self._get_vectors()
         if vectors is not None:
             return vectors
-        if self._embeddings_path is None or self._embedding_provider is None:
+        if self._embedding_provider is None:
             raise RuntimeError(
                 "_require_vectors() must be called before _load_vectors()"
             )
+        if self._embeddings_path is None:
+            # Nothing on disk to load: start empty, filled by build_embeddings.
+            from markdown_vault_mcp.vector_index import VectorIndex
+
+            empty = VectorIndex(
+                self._embedding_provider,
+                embed_text_format=self._embed_builder.format_token(),
+            )
+            self._set_vectors(empty)
+            return empty
         return load_or_self_heal(
             embeddings_path=self._embeddings_path,
             embedding_provider=self._embedding_provider,
@@ -496,15 +518,15 @@ class EmbeddingsManager:
             embedded chunks — a fully converged index returns ``0``.
 
         Raises:
-            EmbeddingsNotConfiguredError: If ``embedding_provider`` or
-                ``embeddings_path`` is not configured. A ``ValueError``
+            EmbeddingsNotConfiguredError: If ``embedding_provider`` is not
+                configured. A ``ValueError``
                 subclass, so callers may catch either; narrow to it to let
                 genuine internal ``ValueError``s surface (#774).
         """
         self._require_vectors()
 
         # _require_vectors() guarantees these are not None.
-        if self._embeddings_path is None or self._embedding_provider is None:
+        if self._embedding_provider is None:
             raise RuntimeError(
                 "_require_vectors() must be called before build_embeddings()"
             )
@@ -537,7 +559,7 @@ class EmbeddingsManager:
         embedded = self._embed_cold_build_batches(vectors, texts, meta)
 
         if embedded > 0:
-            vectors.save(self._embeddings_path)
+            self.persist(vectors)
             logger.info("build_embeddings_saved chunks=%d", embedded)
         elif total > 0:
             # Every batch was skipped (e.g. provider down for the whole build,
@@ -557,7 +579,7 @@ class EmbeddingsManager:
                 "build_embeddings_empty_not_authoritative outcome=no_vectors_saved"
             )
         else:
-            vectors.save(self._embeddings_path)
+            self.persist(vectors)
             logger.info("build_embeddings_saved_empty_index")
         return embedded
 
@@ -741,7 +763,7 @@ class EmbeddingsManager:
             index).
         """
         # build_embeddings() ran _require_vectors() before dispatching here.
-        if self._embeddings_path is None or self._embedding_provider is None:
+        if self._embedding_provider is None:
             raise RuntimeError(
                 "_require_vectors() must be called before _converge_embeddings()"
             )
@@ -758,7 +780,7 @@ class EmbeddingsManager:
             removed += vectors.delete_by_path(path)
 
         if added or removed:
-            vectors.save(self._embeddings_path)
+            self.persist(vectors)
 
         if failed:
             logger.warning(
@@ -987,12 +1009,13 @@ class EmbeddingsManager:
 
         Returns:
             Dict with keys ``provider``, ``chunk_count``, ``path``,
-            ``available``.
+            ``available``. ``path`` is ``None`` when the vectors are held in
+            memory (#1708).
 
         Raises:
             OSError: If a sidecar file cannot be statted (#1625).
         """
-        if self._embedding_provider is None or self._embeddings_path is None:
+        if self._embedding_provider is None:
             return {
                 "available": False,
                 "provider": None,
@@ -1004,7 +1027,7 @@ class EmbeddingsManager:
         count = 0
         if vectors is not None:
             count = vectors.count
-        else:
+        elif self._embeddings_path is not None:
             # Derive sidecar paths the way VectorIndex.load/save do
             # (Path.with_suffix), so an EMBEDDINGS_PATH that carries an
             # extension resolves to the real files instead of {path}.npy.npy
@@ -1033,7 +1056,7 @@ class EmbeddingsManager:
             "available": True,
             "provider": type(self._embedding_provider).__name__,
             "chunk_count": count,
-            "path": str(self._embeddings_path),
+            "path": str(self._embeddings_path) if self._embeddings_path else None,
         }
 
     # ------------------------------------------------------------------
@@ -1065,7 +1088,7 @@ class EmbeddingsManager:
         Args:
             paths: Paths to re-embed (relative to source_dir).
         """
-        if self._embeddings_path is None or self._embedding_provider is None:
+        if self._embedding_provider is None:
             return
         if not paths:
             return
@@ -1091,7 +1114,7 @@ class EmbeddingsManager:
                 vectors.add_vectors(entry_vecs, entry_meta)
         # Save even when all rows were already current: a prior save may have
         # failed after updating memory, and this retry must persist those rows.
-        vectors.save(self._embeddings_path)
+        self.persist(vectors)
         logger.debug("deferred_embeddings_flushed paths=%d", len(paths))
 
     def _pre_embed_dirty_paths(
