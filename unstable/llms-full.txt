@@ -2085,7 +2085,7 @@ The one addition is vendor-specific and reached only through a named provider: [
 
 Changing only the base URL is invisible to the index
 
-The vector sidecar records the provider name, the model name, and how that provider embeds, and a mismatch on startup re-embeds the vault automatically. Under this recipe the first two stay `openai` and your configured model string no matter which vendor serves them, and the third is always empty, so aiming `OPENAI_BASE_URL` at a different vendor while keeping the same model name goes undetected: vectors from two different models end up in one index, and search quality degrades quietly. Force the rebuild yourself by deleting the two sidecar files beside `EMBEDDINGS_PATH` (the `.npy` matrix and the `.json` metadata) and restarting.
+The vector sidecar records the provider name, the model name, and how that provider embeds, and a mismatch on startup re-embeds the vault automatically. Under this recipe the first two stay `openai` and your configured model string no matter which vendor serves them, and the third is always empty, so aiming `OPENAI_BASE_URL` at a different vendor while keeping the same model name goes undetected: vectors from two different models end up in one index, and search quality degrades quietly. Force the rebuild yourself by deleting the two sidecar files (the `.npy` matrix and the `.json` metadata, at `EMBEDDINGS_PATH` or beside the index) and restarting.
 
 Unknown context length falls back to a 1500-character chunk cap
 
@@ -2121,10 +2121,15 @@ Set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` explicitly to avoid surprises when y
 
 Regardless of which provider you choose:
 
-- **`MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` is required** to enable semantic search. Without it, only keyword search is available.
-- Embeddings are built automatically on first startup when a provider is configured. Subsequent starts load the persisted index from disk and only process changed files.
-- The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider and a vector path are configured, whether or not the build has run. The build has caught up once [`get_index_status`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/indexing/#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
+- **Setting `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` turns search by meaning on.** Left unset, the provider is auto-detected only when `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` is set.
+- **Where the vectors live.** At `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when set, otherwise beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (`index-db-embeddings.npy` and `.json` beside `index.db`). With neither set, they are held in memory and every note is embedded again at each start, which a paid provider bills each time. The Claude Desktop bundle and the Claude Code plugin set no index path yet, so a provider picked on their install screen embeds again at each Claude Desktop launch or Claude Code session ([#1728](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728)).
+- Embeddings are built automatically on first startup when a provider is configured. Later starts load the stored vectors and only process changed files.
+- The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider is configured, whether or not the build has run. The build has caught up once [`get_index_status`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/indexing/#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
 - Use `mode="hybrid"` in search for best results; it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.
+
+A provider without EMBEDDINGS_PATH starts embedding on upgrade
+
+Before this behavior, a provider set without `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` was ignored and the server searched by keyword only. After the upgrade such a deployment embeds the whole vault once, which a paid provider bills, and rebuilds its keyword index once in the background, as it does after any model change. If that provider fails to load, the server logs `embedding_provider_load_failed` and keeps searching by keyword only.
 
 Large vaults
 
@@ -4471,24 +4476,24 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 
 ### Embeddings
 
-| Variable                                    | Default                     | Required | Description                                                                                                                                                                                                                                                              |
-| ------------------------------------------- | --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `OLLAMA_HOST`                               | `http://localhost:11434`    | No       | Ollama server URL for the ollama embedding provider. Bare (not MARKDOWN_VAULT_MCP\_-prefixed), matching the Ollama ecosystem convention.                                                                                                                                 |
-| `OPENAI_API_KEY`                            | (none)                      | No       | OpenAI API key for the openai embedding provider, and the fallback key for the summarize tool when MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY is unset. Bare (not MARKDOWN_VAULT_MCP\_-prefixed), matching the OpenAI ecosystem convention.                             |
-| `VOYAGE_API_KEY`                            | (none)                      | No       | Voyage AI API key for the voyage embedding provider. Bare (not MARKDOWN_VAULT_MCP\_-prefixed), matching the OPENAI_API_KEY / OLLAMA_HOST convention. Setting it never auto-selects the provider; choose it explicitly with MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage. |
-| `OPENAI_BASE_URL`                           | (none)                      | No       | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_BASE_URL (embeddings). For the summarize tool it only routes traffic when an API key already enables the feature; it never enables summarize by itself.                                                                      |
-| `OPENAI_EMBEDDING_MODEL`                    | (none)                      | No       | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL.                                                                                                                                                                                                             |
-| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER`     | (none)                      | No       | Embedding provider: openai, voyage, ollama, or fastembed. Unset auto-detects from the environment (never voyage). Any OpenAI-compatible endpoint works with openai plus OPENAI_BASE_URL; see the embeddings guide.                                                       |
-| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL`           | `nomic-embed-text`          | No       | Ollama embedding model name.                                                                                                                                                                                                                                             |
-| `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY`        | `false`                     | No       | Force Ollama to embed on CPU only.                                                                                                                                                                                                                                       |
-| `MARKDOWN_VAULT_MCP_VOYAGE_MODEL`           | `voyage-4`                  | No       | Voyage AI embedding model name.                                                                                                                                                                                                                                          |
-| `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL`        | `https://api.openai.com/v1` | No       | OpenAI-compatible API base URL for embeddings; the bare OPENAI_BASE_URL is honoured as a fallback.                                                                                                                                                                       |
-| `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small`    | No       | OpenAI-compatible embedding model name; the bare OPENAI_EMBEDDING_MODEL is honoured as a fallback.                                                                                                                                                                       |
-| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL`        | `BAAI/bge-small-en-v1.5`    | No       | FastEmbed model name.                                                                                                                                                                                                                                                    |
-| `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR`    | (none)                      | No       | FastEmbed model cache directory (in Docker, stored under /data/state/fastembed).                                                                                                                                                                                         |
-| `MARKDOWN_VAULT_MCP_EMBED_CONTEXT`          | `false`                     | No       | Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup.                                                                                                        |
-| `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S`        | `30.0`                      | No       | Per-request wall-clock budget in seconds for a single embedding HTTP call (OpenAI/Ollama). The local FastEmbed backend runs in-process with no network call and ignores this. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out.       |
-| `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE`   | `4`                         | No       | Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips.                                                                                                         |
+| Variable                                    | Default                     | Required | Description                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------- | --------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OLLAMA_HOST`                               | `http://localhost:11434`    | No       | Ollama server URL for the ollama embedding provider. Bare (not MARKDOWN_VAULT_MCP\_-prefixed), matching the Ollama ecosystem convention.                                                                                                                                                        |
+| `OPENAI_API_KEY`                            | (none)                      | No       | OpenAI API key for the openai embedding provider, and the fallback key for the summarize tool when MARKDOWN_VAULT_MCP_SUMMARIZE_OPENAI_API_KEY is unset. Bare (not MARKDOWN_VAULT_MCP\_-prefixed), matching the OpenAI ecosystem convention.                                                    |
+| `VOYAGE_API_KEY`                            | (none)                      | No       | Voyage AI API key for the voyage embedding provider. Bare (not MARKDOWN_VAULT_MCP\_-prefixed), matching the OPENAI_API_KEY / OLLAMA_HOST convention. Setting it never auto-selects the provider; choose it explicitly with MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER=voyage.                        |
+| `OPENAI_BASE_URL`                           | (none)                      | No       | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_BASE_URL (embeddings). For the summarize tool it only routes traffic when an API key already enables the feature; it never enables summarize by itself.                                                                                             |
+| `OPENAI_EMBEDDING_MODEL`                    | (none)                      | No       | Bare fallback for MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL.                                                                                                                                                                                                                                    |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER`     | (none)                      | No       | Embedding provider: openai, voyage, ollama, or fastembed; setting it turns on search by meaning. Unset auto-detects from the environment (never voyage), but only when EMBEDDINGS_PATH is set. Any OpenAI-compatible endpoint works with openai plus OPENAI_BASE_URL; see the embeddings guide. |
+| `MARKDOWN_VAULT_MCP_OLLAMA_MODEL`           | `nomic-embed-text`          | No       | Ollama embedding model name.                                                                                                                                                                                                                                                                    |
+| `MARKDOWN_VAULT_MCP_OLLAMA_CPU_ONLY`        | `false`                     | No       | Force Ollama to embed on CPU only.                                                                                                                                                                                                                                                              |
+| `MARKDOWN_VAULT_MCP_VOYAGE_MODEL`           | `voyage-4`                  | No       | Voyage AI embedding model name.                                                                                                                                                                                                                                                                 |
+| `MARKDOWN_VAULT_MCP_OPENAI_BASE_URL`        | `https://api.openai.com/v1` | No       | OpenAI-compatible API base URL for embeddings; the bare OPENAI_BASE_URL is honoured as a fallback.                                                                                                                                                                                              |
+| `MARKDOWN_VAULT_MCP_OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small`    | No       | OpenAI-compatible embedding model name; the bare OPENAI_EMBEDDING_MODEL is honoured as a fallback.                                                                                                                                                                                              |
+| `MARKDOWN_VAULT_MCP_FASTEMBED_MODEL`        | `BAAI/bge-small-en-v1.5`    | No       | FastEmbed model name.                                                                                                                                                                                                                                                                           |
+| `MARKDOWN_VAULT_MCP_FASTEMBED_CACHE_DIR`    | (none)                      | No       | FastEmbed model cache directory (in Docker, stored under /data/state/fastembed).                                                                                                                                                                                                                |
+| `MARKDOWN_VAULT_MCP_EMBED_CONTEXT`          | `false`                     | No       | Enrich embedding input with the note title, chunk heading, and (first chunk) searchable-field values. Flipping it re-embeds the whole vault once on next startup.                                                                                                                               |
+| `MARKDOWN_VAULT_MCP_EMBED_TIMEOUT_S`        | `30.0`                      | No       | Per-request wall-clock budget in seconds for a single embedding HTTP call (OpenAI/Ollama). The local FastEmbed backend runs in-process with no network call and ignores this. CPU-only or large-model workloads may need 60-120 s; raise this if batches time out.                              |
+| `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE`   | `4`                         | No       | Number of chunks sent per embedding request. Smaller batches shorten each request (useful under a tight timeout on slow models) at the cost of more round-trips.                                                                                                                                |
 
 ### Timeouts
 
@@ -4509,7 +4514,7 @@ Boolean values accept `true`, `1`, or `yes` case-insensitively. Ready-made start
 | -------------------------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `MARKDOWN_VAULT_MCP_INDEX_PATH`        | (none)  | No       | Path to the SQLite FTS5 index file; unset keeps the index in memory. Set it for persistence across restarts.                                                                                                                                                                         |
 | `MARKDOWN_VAULT_MCP_STATE_PATH`        | (none)  | No       | Path to the change-tracking state file. Defaults to INDEX_PATH plus .state.json (index.db.state.json beside index.db); without INDEX_PATH the state is kept in memory. Never written into the vault by default.                                                                      |
-| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`   | (none)  | No       | Path to the numpy embeddings file; required to enable semantic search.                                                                                                                                                                                                               |
+| `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH`   | (none)  | No       | Base path for the embeddings files. Defaults beside INDEX_PATH (index-db-embeddings.npy and .json beside index.db); without INDEX_PATH the vectors are kept in memory and rebuilt at each start. Setting it also lets the provider be auto-detected.                                 |
 | `MARKDOWN_VAULT_MCP_INDEXED_FIELDS`    | (none)  | No       | Comma-separated frontmatter fields promoted to the tag index for structured filtering. Changing it cold-rebuilds the index once on next startup; SEARCHABLE_FIELDS inherits this value when unset.                                                                                   |
 | `MARKDOWN_VAULT_MCP_REQUIRED_FIELDS`   | (none)  | No       | Comma-separated frontmatter fields required on every document; documents missing any are excluded from the index.                                                                                                                                                                    |
 | `MARKDOWN_VAULT_MCP_EXCLUDE`           | (none)  | No       | Comma-separated glob patterns excluded from scanning (.obsidian/**,.trash/**).                                                                                                                                                                                                       |
@@ -5353,10 +5358,10 @@ None.
 
 Dict with the following fields:
 
-- available (bool): True when an embedding provider and a vector index path are configured, even before the first build finishes. It does not say the embeddings are complete; `get_index_status` does.
+- available (bool): True when an embedding provider is configured, even before the first build finishes. It does not say the embeddings are complete; `get_index_status` does.
 - provider (str | None): Provider class name when configured (such as `"OllamaProvider"`), or null if not configured.
 - `chunk_count` (int): Number of chunks currently in the vector index.
-- path (str | None): Vector index file path when persisted, or null.
+- path (str | None): Vector index file path when persisted, or null when the vectors are held in memory or not configured.
 
 ## `get_index_status`
 
@@ -6488,7 +6493,7 @@ Summarize a folder or a set of notes with your own model, in batches that keep n
 
 # Command line
 
-`serve` runs the server. `index`, `search` and `reindex` work on the vault and its index directly and need no running server. They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `index` and `reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) is configured. Without an index path, `search` indexes the vault in memory for that one query and touches no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names. With one, it only reads the stored index, which `index` and `reindex` keep current; it never rebuilds an index a running server may share.
+`serve` runs the server. `index`, `search` and `reindex` work on the vault and its index directly and need no running server. They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `index` and `reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) is configured and an index or embeddings path keeps them. Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set, `--mode semantic` or `hybrid` with an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/embeddings/index.md) configured embeds the whole vault for the query, which a paid provider bills each time. With an index path, `search` only reads the stored index and its vectors, which `index` and `reindex` keep current; it never rebuilds an index a running server may share.
 
 Generic markdown vault MCP with hybrid search
 
@@ -6707,6 +6712,19 @@ Raises:
 | ------------ | --------------------------------------------------------------------------------------- |
 | `ValueError` | If conventions_file contains fnmatch metacharacters (which would invert the exclusion). |
 
+### `effective_embeddings_path()`
+
+Return the embeddings sidecar base, defaulting beside the index (#1708).
+
+Returns:
+
+| Type   | Description |
+| ------ | ----------- |
+| \`Path | None\`      |
+| \`Path | None\`      |
+| \`Path | None\`      |
+| \`Path | None\`      |
+
 ### `effective_state_path(source_dir)`
 
 Return the hash-state path, defaulting beside the index (#1693).
@@ -6743,15 +6761,15 @@ Callers must invoke :meth:`IndexFacet.build_index` before bucket-3 relational/FT
 
 Parameters:
 
-| Name                 | Type                | Description                           | Default                                                                                              |
-| -------------------- | ------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `source_dir`         | `Path`              | Root directory of the markdown vault. | *required*                                                                                           |
-| `settings`           | \`VaultSettings     | None\`                                | Configuration settings. None uses VaultSettings().                                                   |
-| `embedding_provider` | \`EmbeddingProvider | None\`                                | Provider used to generate embeddings; required when settings.embeddings_path is set.                 |
-| `summarizer`         | \`Summarizer        | None\`                                | Optional summarization backend. Without one the :attr:summarizer accessor raises.                    |
-| `git_strategy`       | \`VersionedStore    | None\`                                | Optional strategy for background Git tasks, started via :meth:start.                                 |
-| `on_write`           | \`WriteCallback     | None\`                                | Callback invoked after successful writes; see :obj:~markdown_vault_mcp.types.WriteCallback.          |
-| `chunk_strategy`     | \`str               | ChunkStrategy\`                       | "heading" (default), "whole", or a custom :class:~markdown_vault_mcp.scanner.ChunkStrategy instance. |
+| Name                 | Type                | Description                           | Default                                                                                                                                                                                     |
+| -------------------- | ------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source_dir`         | `Path`              | Root directory of the markdown vault. | *required*                                                                                                                                                                                  |
+| `settings`           | \`VaultSettings     | None\`                                | Configuration settings. None uses VaultSettings().                                                                                                                                          |
+| `embedding_provider` | \`EmbeddingProvider | None\`                                | Provider used to generate embeddings; semantic search is on whenever one is given. Its vectors persist beside the index, or at settings.embeddings_path, and stay in memory without either. |
+| `summarizer`         | \`Summarizer        | None\`                                | Optional summarization backend. Without one the :attr:summarizer accessor raises.                                                                                                           |
+| `git_strategy`       | \`VersionedStore    | None\`                                | Optional strategy for background Git tasks, started via :meth:start.                                                                                                                        |
+| `on_write`           | \`WriteCallback     | None\`                                | Callback invoked after successful writes; see :obj:~markdown_vault_mcp.types.WriteCallback.                                                                                                 |
+| `chunk_strategy`     | \`str               | ChunkStrategy\`                       | "heading" (default), "whole", or a custom :class:~markdown_vault_mcp.scanner.ChunkStrategy instance.                                                                                        |
 
 ### `reader`
 
@@ -7010,9 +7028,9 @@ Returns:
 
 Raises:
 
-| Type                           | Description                                                                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------------- |
-| `EmbeddingsNotConfiguredError` | If mode is "semantic" or "hybrid" but no embedding provider or embeddings path is configured. |
+| Type                           | Description                                                                |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `EmbeddingsNotConfiguredError` | If mode is "semantic" or "hybrid" but no embedding provider is configured. |
 
 ### `read(path, *, section=None)`
 
@@ -7949,10 +7967,10 @@ Returns:
 
 Raises:
 
-| Type                           | Description                                                                |
-| ------------------------------ | -------------------------------------------------------------------------- |
-| `IndexUnavailableError`        | If :meth:IndexFacet.build_index has not been called.                       |
-| `EmbeddingsNotConfiguredError` | If embedding_provider or embeddings_path is unset (a ValueError subclass). |
+| Type                           | Description                                             |
+| ------------------------------ | ------------------------------------------------------- |
+| `IndexUnavailableError`        | If :meth:IndexFacet.build_index has not been called.    |
+| `EmbeddingsNotConfiguredError` | If embedding_provider is unset (a ValueError subclass). |
 
 ### `build_index_async(*, force=False)`
 

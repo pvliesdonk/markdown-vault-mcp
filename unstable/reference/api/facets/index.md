@@ -88,9 +88,9 @@ Returns:
 
 Raises:
 
-| Type                           | Description                                                                                   |
-| ------------------------------ | --------------------------------------------------------------------------------------------- |
-| `EmbeddingsNotConfiguredError` | If mode is "semantic" or "hybrid" but no embedding provider or embeddings path is configured. |
+| Type                           | Description                                                                |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| `EmbeddingsNotConfiguredError` | If mode is "semantic" or "hybrid" but no embedding provider is configured. |
 
 ### `read(path, *, section=None)`
 
@@ -1027,10 +1027,10 @@ Returns:
 
 Raises:
 
-| Type                           | Description                                                                |
-| ------------------------------ | -------------------------------------------------------------------------- |
-| `IndexUnavailableError`        | If :meth:IndexFacet.build_index has not been called.                       |
-| `EmbeddingsNotConfiguredError` | If embedding_provider or embeddings_path is unset (a ValueError subclass). |
+| Type                           | Description                                             |
+| ------------------------------ | ------------------------------------------------------- |
+| `IndexUnavailableError`        | If :meth:IndexFacet.build_index has not been called.    |
+| `EmbeddingsNotConfiguredError` | If embedding_provider is unset (a ValueError subclass). |
 
 ### `build_index_async(*, force=False)`
 

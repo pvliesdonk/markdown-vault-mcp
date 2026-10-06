@@ -2693,14 +2693,14 @@
 <p><strong>Returns</strong></p>
 <p>Dict with the following fields:</p>
 <ul>
-<li>available (bool): True when an embedding provider and a vector
-  index path are configured, even before the first build finishes.
-  It does not say the embeddings are complete; <code>get_index_status</code>
-  does.</li>
+<li>available (bool): True when an embedding provider is
+  configured, even before the first build finishes. It does not
+  say the embeddings are complete; <code>get_index_status</code> does.</li>
 <li>provider (str | None): Provider class name when configured
   (such as <code>"OllamaProvider"</code>), or null if not configured.</li>
 <li><code>chunk_count</code> (int): Number of chunks currently in the vector index.</li>
-<li>path (str | None): Vector index file path when persisted, or null.</li>
+<li>path (str | None): Vector index file path when persisted, or
+  null when the vectors are held in memory or not configured.</li>
 </ul>
 <!-- DOMAIN-EXAMPLE-embeddings_status-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

@@ -166,6 +166,19 @@ Raises:
 | ------------ | --------------------------------------------------------------------------------------- |
 | `ValueError` | If conventions_file contains fnmatch metacharacters (which would invert the exclusion). |
 
+### `effective_embeddings_path()`
+
+Return the embeddings sidecar base, defaulting beside the index (#1708).
+
+Returns:
+
+| Type   | Description |
+| ------ | ----------- |
+| \`Path | None\`      |
+| \`Path | None\`      |
+| \`Path | None\`      |
+| \`Path | None\`      |
+
 ### `effective_state_path(source_dir)`
 
 Return the hash-state path, defaulting beside the index (#1693).
@@ -202,15 +215,15 @@ Callers must invoke :meth:`IndexFacet.build_index` before bucket-3 relational/FT
 
 Parameters:
 
-| Name                 | Type                | Description                           | Default                                                                                              |
-| -------------------- | ------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `source_dir`         | `Path`              | Root directory of the markdown vault. | *required*                                                                                           |
-| `settings`           | \`VaultSettings     | None\`                                | Configuration settings. None uses VaultSettings().                                                   |
-| `embedding_provider` | \`EmbeddingProvider | None\`                                | Provider used to generate embeddings; required when settings.embeddings_path is set.                 |
-| `summarizer`         | \`Summarizer        | None\`                                | Optional summarization backend. Without one the :attr:summarizer accessor raises.                    |
-| `git_strategy`       | \`VersionedStore    | None\`                                | Optional strategy for background Git tasks, started via :meth:start.                                 |
-| `on_write`           | \`WriteCallback     | None\`                                | Callback invoked after successful writes; see :obj:~markdown_vault_mcp.types.WriteCallback.          |
-| `chunk_strategy`     | \`str               | ChunkStrategy\`                       | "heading" (default), "whole", or a custom :class:~markdown_vault_mcp.scanner.ChunkStrategy instance. |
+| Name                 | Type                | Description                           | Default                                                                                                                                                                                     |
+| -------------------- | ------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source_dir`         | `Path`              | Root directory of the markdown vault. | *required*                                                                                                                                                                                  |
+| `settings`           | \`VaultSettings     | None\`                                | Configuration settings. None uses VaultSettings().                                                                                                                                          |
+| `embedding_provider` | \`EmbeddingProvider | None\`                                | Provider used to generate embeddings; semantic search is on whenever one is given. Its vectors persist beside the index, or at settings.embeddings_path, and stay in memory without either. |
+| `summarizer`         | \`Summarizer        | None\`                                | Optional summarization backend. Without one the :attr:summarizer accessor raises.                                                                                                           |
+| `git_strategy`       | \`VersionedStore    | None\`                                | Optional strategy for background Git tasks, started via :meth:start.                                                                                                                        |
+| `on_write`           | \`WriteCallback     | None\`                                | Callback invoked after successful writes; see :obj:~markdown_vault_mcp.types.WriteCallback.                                                                                                 |
+| `chunk_strategy`     | \`str               | ChunkStrategy\`                       | "heading" (default), "whole", or a custom :class:~markdown_vault_mcp.scanner.ChunkStrategy instance.                                                                                        |
 
 ### `reader`
 

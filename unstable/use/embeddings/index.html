@@ -3608,8 +3608,8 @@ third is always empty, so aiming <code>OPENAI_BASE_URL</code> at a different ven
 while keeping the same model name goes undetected: vectors from two
 different models end up in one index, and search quality degrades
 quietly. Force the rebuild yourself by deleting the two sidecar files
-beside <code>EMBEDDINGS_PATH</code> (the <code>.npy</code> matrix and the <code>.json</code> metadata)
-and restarting.</p>
+(the <code>.npy</code> matrix and the <code>.json</code> metadata, at <code>EMBEDDINGS_PATH</code> or
+beside the index) and restarting.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">Unknown context length falls back to a 1500-character chunk cap</p>
@@ -3654,11 +3654,16 @@ reach.</p>
 <h2 id="common-to-all-providers">Common to all providers<a class="headerlink" href="#common-to-all-providers" title="Permanent link">&para;</a></h2>
 <p>Regardless of which provider you choose:</p>
 <ul>
-<li><strong><code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> is required</strong> to enable semantic search. Without it, only keyword search is available.</li>
-<li>Embeddings are built automatically on first startup when a provider is configured. Subsequent starts load the persisted index from disk and only process changed files.</li>
-<li>The build runs in the background. <code>embeddings_status</code> reports <code>available: true</code> as soon as a provider and a vector path are configured, whether or not the build has run. The build has caught up once <a href="../../reference/tools/indexing/#get_index_status"><code>get_index_status</code></a> shows <code>status</code> as <code>"queryable"</code>, <code>queue_depth</code> as <code>0</code>, <code>in_flight</code> as <code>null</code>, and <code>dirty_paths</code> and <code>dirty_embeddings</code> as <code>0</code>.</li>
+<li><strong>Setting <code>MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER</code> turns search by meaning on.</strong> Left unset, the provider is auto-detected only when <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> is set.</li>
+<li><strong>Where the vectors live.</strong> At <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> when set, otherwise beside <code>MARKDOWN_VAULT_MCP_INDEX_PATH</code> (<code>index-db-embeddings.npy</code> and <code>.json</code> beside <code>index.db</code>). With neither set, they are held in memory and every note is embedded again at each start, which a paid provider bills each time. The Claude Desktop bundle and the Claude Code plugin set no index path yet, so a provider picked on their install screen embeds again at each Claude Desktop launch or Claude Code session (<a href="https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728">#1728</a>).</li>
+<li>Embeddings are built automatically on first startup when a provider is configured. Later starts load the stored vectors and only process changed files.</li>
+<li>The build runs in the background. <code>embeddings_status</code> reports <code>available: true</code> as soon as a provider is configured, whether or not the build has run. The build has caught up once <a href="../../reference/tools/indexing/#get_index_status"><code>get_index_status</code></a> shows <code>status</code> as <code>"queryable"</code>, <code>queue_depth</code> as <code>0</code>, <code>in_flight</code> as <code>null</code>, and <code>dirty_paths</code> and <code>dirty_embeddings</code> as <code>0</code>.</li>
 <li>Use <code>mode="hybrid"</code> in search for best results; it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.</li>
 </ul>
+<div class="admonition note">
+<p class="admonition-title">A provider without EMBEDDINGS_PATH starts embedding on upgrade</p>
+<p>Before this behavior, a provider set without <code>MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH</code> was ignored and the server searched by keyword only. After the upgrade such a deployment embeds the whole vault once, which a paid provider bills, and rebuilds its keyword index once in the background, as it does after any model change. If that provider fails to load, the server logs <code>embedding_provider_load_failed</code> and keeps searching by keyword only.</p>
+</div>
 <div class="admonition note">
 <p class="admonition-title">Large vaults</p>
 <p>The initial embedding build uses two levels of batching to keep memory bounded:</p>

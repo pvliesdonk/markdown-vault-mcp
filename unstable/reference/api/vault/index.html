@@ -2107,6 +2107,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_embeddings_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        effective_embeddings_path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_state_path" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3046,6 +3057,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_embeddings_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        effective_embeddings_path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_state_path" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3451,8 +3473,11 @@ collected.</p>
             <td>
               <div class="doc-md-description">
                 <p>Base path for the <code>{path}.npy</code> and
-<code>{path}.json</code> sidecar files.  <code>None</code> (default) means
-semantic search is disabled.</p>
+<code>{path}.json</code> sidecar files.  <code>None</code> (default) puts them
+beside <code>index_path</code> as <code>{index name}-embeddings</code> (dots made
+dashes: <code>index-db-embeddings</code>), or keeps
+the vectors in memory without an index path (#1708). Semantic
+search is on whenever <code>Vault</code> is given an embedding provider.</p>
               </div>
             </td>
           </tr>
@@ -4142,6 +4167,77 @@ metacharacters (which would invert the exclusion).</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_embeddings_path" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">effective_embeddings_path</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_embeddings_path" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the embeddings sidecar base, defaulting beside the index (#1708).</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The explicit <code>embeddings_path</code>; else <code>{index name}-embeddings</code></p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>with the name's dots made dashes,</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>beside an on-disk <code>index_path</code>; else <code>None</code>, meaning the</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>vectors are held in memory and rebuilt at each start.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="markdown_vault_mcp.config_sections.vault_settings.VaultSettings.effective_state_path" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">effective_state_path</span><span class="p">(</span><span class="n">source_dir</span><span class="p">)</span></code>
 
@@ -4376,8 +4472,10 @@ defaults remain independent of the server's operator defaults.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Provider used to generate embeddings; required
-when <code>settings.embeddings_path</code> is set.</p>
+                <p>Provider used to generate embeddings; semantic
+search is on whenever one is given. Its vectors persist beside
+the index, or at <code>settings.embeddings_path</code>, and stay in
+memory without either.</p>
               </div>
             </td>
             <td>
