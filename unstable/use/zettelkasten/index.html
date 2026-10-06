@@ -3442,13 +3442,13 @@ Hard problems we keep solving:
 <h2 id="using-the-zettelkasten-prompt">Using the Zettelkasten Prompt<a class="headerlink" href="#using-the-zettelkasten-prompt" title="Permanent link">&para;</a></h2>
 <p>The <code>zettelkasten</code> prompt, an example file in the same folder (<code>prompts/zettelkasten.md</code>), guides you through connecting a note to your vault in five steps:</p>
 <ol>
-<li><strong>Read and understand</strong>: extract the central claim</li>
+<li><strong>Read and understand</strong>: extract the central claim; the folder's <a href="../../reference/tools/reader/#get_conventions">conventions</a> come with it and take precedence over the prompt's own suggestions</li>
 <li><strong>Survey the neighborhood</strong>: see existing backlinks and similar notes</li>
 <li><strong>Discover broader connections</strong>: search for related permanent notes</li>
 <li><strong>Suggest links</strong>: present new connections with context</li>
-<li><strong>Check for MOC opportunity</strong>: flag if a new MOC would help</li>
+<li><strong>Check for MOC opportunity</strong>: flag if a new MOC would help, in the folder the conventions name for MOCs, or ask you where it goes</li>
 </ol>
-<p><strong>Load the prompt:</strong> point <code>MARKDOWN_VAULT_MCP_PROMPTS_FOLDER</code> at the <code>prompts/</code> folder by its absolute path. Keeping that folder outside the vault keeps the prompt file out of search results. The built-in prompts stay available beside it. <a href="../../reference/prompts/#running-a-prompt">Running a prompt</a> covers how each client offers prompts.</p>
+<p><strong>Load the prompt:</strong> point <code>MARKDOWN_VAULT_MCP_PROMPTS_FOLDER</code> at the <code>prompts/</code> folder by its absolute path. Keeping that folder outside the vault keeps the prompt file out of search results. The built-in prompts stay available beside it. The prompt edits notes, so a read-only server doesn't list it. <a href="../../reference/prompts/#running-a-prompt">Running a prompt</a> covers how each client offers prompts.</p>
 <p><strong>Use the prompt:</strong></p>
 <div class="highlight"><pre><span></span><code>In Claude, call: zettelkasten(path='Notes/my-idea.md')
 </code></pre></div>

@@ -2863,7 +2863,7 @@ The four PARA prompts and five templates this guide uses are example files in th
 }
 ```
 
-The built-in prompts stay available beside the PARA ones; a file named like a built-in prompt replaces it. The four PARA prompts write to the vault, so a read-only server doesn't list them. They assume the folder names and frontmatter fields set out below. For a vault that names them differently, edit the prompt files; they are plain Markdown.
+The built-in prompts stay available beside the PARA ones; a file named like a built-in prompt replaces it. The four PARA prompts write to the vault, so a read-only server doesn't list them. They read the vault's [folder conventions](#folder-conventions) for which folder is the inbox, the projects, the areas, the resources and the archive, and ask you for any folder the conventions don't name.
 
 ## Vault Setup
 
@@ -2883,7 +2883,7 @@ vault/
 
 The numeric prefixes (`0-`, `1-`, `…`) keep the buckets sorting in the canonical PARA order in any file explorer. `0-Inbox/` is added because triage is a named workflow step and deserves a dedicated location: notes land here first and move out once they are classified.
 
-**The server does not enforce this layout.** You can flatten it, rename folders, or skip folders entirely and rely on the `type` and `status` frontmatter fields to drive queries. The prompts shipped with this pack assume the canonical layout but fall back to asking you when they encounter a different structure.
+**The server does not enforce this layout.** You can flatten it, rename folders, or skip folders entirely and rely on the `type` and `status` frontmatter fields to drive queries. The prompts shipped with this pack take the folder names from the root `_conventions.md` (the sample in `examples/para/conventions/` lists the layout above) and ask you for any the file doesn't name.
 
 ### Frontmatter schemas
 
@@ -3026,7 +3026,7 @@ and next actions here — do not duplicate reference content from
 
 The reverse-linking rule costs nothing: `get_backlinks` (and Obsidian's backlinks pane) recover the project→resource references from the resource's side, so the resource never needs to mention the projects that cite it.
 
-A root-level `_conventions.md` holds vault-wide rules (heading style, tag hygiene); nested files add to it. The built-in `propose-links` prompt reads these conventions and skips or reverses link proposals they forbid.
+A root-level `_conventions.md` holds vault-wide rules (heading style, tag hygiene) and names the folder for each PARA bucket; nested files add to it. Every shipped prompt reads these conventions: the PARA prompts take their folders from them, the built-in `propose-links` prompt skips or reverses link proposals they forbid, and the read-only prompts use them to interpret the notes.
 
 Each convention file reaches the client whole up to 32,768 characters. A longer file is cut there, ends with a note telling the client to `read` the file for the rest, and the server logs `conventions_truncated` once for it.
 
@@ -3753,13 +3753,13 @@ The prompt calls `list_documents(folder=<templates_folder>)` to enumerate templa
 
 The `zettelkasten` prompt, an example file in the same folder (`prompts/zettelkasten.md`), guides you through connecting a note to your vault in five steps:
 
-1. **Read and understand**: extract the central claim
+1. **Read and understand**: extract the central claim; the folder's [conventions](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/reader/#get_conventions) come with it and take precedence over the prompt's own suggestions
 1. **Survey the neighborhood**: see existing backlinks and similar notes
 1. **Discover broader connections**: search for related permanent notes
 1. **Suggest links**: present new connections with context
-1. **Check for MOC opportunity**: flag if a new MOC would help
+1. **Check for MOC opportunity**: flag if a new MOC would help, in the folder the conventions name for MOCs, or ask you where it goes
 
-**Load the prompt:** point `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` at the `prompts/` folder by its absolute path. Keeping that folder outside the vault keeps the prompt file out of search results. The built-in prompts stay available beside it. [Running a prompt](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/prompts/#running-a-prompt) covers how each client offers prompts.
+**Load the prompt:** point `MARKDOWN_VAULT_MCP_PROMPTS_FOLDER` at the `prompts/` folder by its absolute path. Keeping that folder outside the vault keeps the prompt file out of search results. The built-in prompts stay available beside it. The prompt edits notes, so a read-only server doesn't list it. [Running a prompt](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/prompts/#running-a-prompt) covers how each client offers prompts.
 
 **Use the prompt:**
 
@@ -6424,13 +6424,13 @@ Summarize a vault document with structured coverage of main topics and key point
 
 ## `research`
 
-Search the vault for a topic and save what the best matches say as a new note under Research/.
+Search the vault for a topic and save what the best matches say as a new research note.
 
 | Argument | Required | Description            |
 | -------- | -------- | ---------------------- |
 | `topic`  | yes      | The topic to research. |
 
-`research` with `topic="Product security regulations"` searches this vault only, not the web: hybrid search, or keyword search without embeddings. It reads the three to five best matches and writes `Research/product-security-regulations.md` with `tags: [research]` and a link to each source. It never overwrites: if that path exists it picks another name, and with no matches it writes nothing.
+`research` with `topic="Product security regulations"` searches this vault only, not the web: hybrid search, or keyword search without embeddings. It reads the three to five best matches and writes `product-security-regulations.md`, with `tags: [research]` and a link to each source, in the folder the vault's conventions name for research notes; it asks you for a folder when they name none. It never overwrites: if that path exists it picks another name, and with no matches it writes nothing.
 
 ## `discuss`
 
@@ -6478,7 +6478,7 @@ Create a new note from one of the vault's templates.
 | --------------- | -------- | ----------------------------------------------------------------------------------- |
 | `template_name` | no       | Template to use, such as `"meeting-notes.md"`; leave empty to choose from the list. |
 
-`create_from_template` with `template_name="meeting.md"` reads `_templates/meeting.md`. It asks for the values it needs and a path for the new note, then writes it. It asks before replacing an existing file. Leave `template_name` empty to choose from the folder's list. `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` moves the templates folder; the [PARA](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/para/#using-templates) and [Zettelkasten](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/zettelkasten/#using-templates) pages come with template sets.
+`create_from_template` with `template_name="meeting.md"` reads `_templates/meeting.md`. It asks for the values it needs, proposes a path in the folder the vault's conventions name for it (or asks for one when they name none), then writes it. It asks before replacing an existing file. Leave `template_name` empty to choose from the folder's list. `MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER` moves the templates folder; the [PARA](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/para/#using-templates) and [Zettelkasten](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/use/zettelkasten/#using-templates) pages come with template sets.
 
 ## `summarize-subtree`
 

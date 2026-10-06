@@ -3318,7 +3318,7 @@
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>The built-in prompts stay available beside the PARA ones; a file named like a built-in prompt replaces it. The four PARA prompts write to the vault, so a read-only server doesn't list them. They assume the folder names and frontmatter fields set out below. For a vault that names them differently, edit the prompt files; they are plain Markdown.</p>
+<p>The built-in prompts stay available beside the PARA ones; a file named like a built-in prompt replaces it. The four PARA prompts write to the vault, so a read-only server doesn't list them. They read the vault's <a href="#folder-conventions">folder conventions</a> for which folder is the inbox, the projects, the areas, the resources and the archive, and ask you for any folder the conventions don't name.</p>
 <h2 id="vault-setup">Vault Setup<a class="headerlink" href="#vault-setup" title="Permanent link">&para;</a></h2>
 <h3 id="recommended-folder-structure">Recommended folder structure<a class="headerlink" href="#recommended-folder-structure" title="Permanent link">&para;</a></h3>
 <p>A canonical PARA vault with markdown-vault-mcp uses five top-level folders plus a templates folder:</p>
@@ -3331,7 +3331,7 @@
   _templates/     # pointed at by MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER
 </code></pre></div>
 <p>The numeric prefixes (<code>0-</code>, <code>1-</code>, <code>…</code>) keep the buckets sorting in the canonical PARA order in any file explorer. <code>0-Inbox/</code> is added because triage is a named workflow step and deserves a dedicated location: notes land here first and move out once they are classified.</p>
-<p><strong>The server does not enforce this layout.</strong> You can flatten it, rename folders, or skip folders entirely and rely on the <code>type</code> and <code>status</code> frontmatter fields to drive queries. The prompts shipped with this pack assume the canonical layout but fall back to asking you when they encounter a different structure.</p>
+<p><strong>The server does not enforce this layout.</strong> You can flatten it, rename folders, or skip folders entirely and rely on the <code>type</code> and <code>status</code> frontmatter fields to drive queries. The prompts shipped with this pack take the folder names from the root <code>_conventions.md</code> (the sample in <code>examples/para/conventions/</code> lists the layout above) and ask you for any the file doesn't name.</p>
 <h3 id="frontmatter-schemas">Frontmatter schemas<a class="headerlink" href="#frontmatter-schemas" title="Permanent link">&para;</a></h3>
 <p>PARA has four note shapes. Each uses a distinct frontmatter block. The templates in <code>examples/para/templates/</code> provide these exactly:</p>
 <p><strong>Inbox:</strong> untyped quick capture. Triage assigns the <code>type</code> later.</p>
@@ -3448,8 +3448,11 @@ and next actions here — do not duplicate reference content from
 backlinks pane) recover the project→resource references from the resource's
 side, so the resource never needs to mention the projects that cite it.</p>
 <p>A root-level <code>_conventions.md</code> holds vault-wide rules (heading style, tag
-hygiene); nested files add to it. The built-in <code>propose-links</code> prompt reads
-these conventions and skips or reverses link proposals they forbid.</p>
+hygiene) and names the folder for each PARA bucket; nested files add to it.
+Every shipped prompt reads these conventions: the PARA prompts take their
+folders from them, the built-in <code>propose-links</code> prompt skips or reverses link
+proposals they forbid, and the read-only prompts use them to interpret the
+notes.</p>
 <p>Each convention file reaches the client whole up to 32,768 characters. A longer
 file is cut there, ends with a note telling the client to <code>read</code> the file for
 the rest, and the server logs <code>conventions_truncated</code> once for it.</p>

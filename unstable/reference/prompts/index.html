@@ -2825,7 +2825,7 @@
 <!-- DOMAIN-EXAMPLE-summarize-END -->
 
 <h2 id="research"><code>research</code><a class="headerlink" href="#research" title="Permanent link">&para;</a></h2>
-<p>Search the vault for a topic and save what the best matches say as a new note under Research/.</p>
+<p>Search the vault for a topic and save what the best matches say as a new research note.</p>
 <table>
 <thead>
 <tr>
@@ -2843,7 +2843,7 @@
 </tbody>
 </table>
 <!-- DOMAIN-EXAMPLE-research-START -->
-<p><code>research</code> with <code>topic="Product security regulations"</code> searches this vault only, not the web: hybrid search, or keyword search without embeddings. It reads the three to five best matches and writes <code>Research/product-security-regulations.md</code> with <code>tags: [research]</code> and a link to each source. It never overwrites: if that path exists it picks another name, and with no matches it writes nothing.</p>
+<p><code>research</code> with <code>topic="Product security regulations"</code> searches this vault only, not the web: hybrid search, or keyword search without embeddings. It reads the three to five best matches and writes <code>product-security-regulations.md</code>, with <code>tags: [research]</code> and a link to each source, in the folder the vault's conventions name for research notes; it asks you for a folder when they name none. It never overwrites: if that path exists it picks another name, and with no matches it writes nothing.</p>
 <!-- DOMAIN-EXAMPLE-research-END -->
 
 <h2 id="discuss"><code>discuss</code><a class="headerlink" href="#discuss" title="Permanent link">&para;</a></h2>
@@ -2963,7 +2963,7 @@
 </tbody>
 </table>
 <!-- DOMAIN-EXAMPLE-create_from_template-START -->
-<p><code>create_from_template</code> with <code>template_name="meeting.md"</code> reads <code>_templates/meeting.md</code>. It asks for the values it needs and a path for the new note, then writes it. It asks before replacing an existing file. Leave <code>template_name</code> empty to choose from the folder's list. <code>MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER</code> moves the templates folder; the <a href="../../use/para/#using-templates">PARA</a> and <a href="../../use/zettelkasten/#using-templates">Zettelkasten</a> pages come with template sets.</p>
+<p><code>create_from_template</code> with <code>template_name="meeting.md"</code> reads <code>_templates/meeting.md</code>. It asks for the values it needs, proposes a path in the folder the vault's conventions name for it (or asks for one when they name none), then writes it. It asks before replacing an existing file. Leave <code>template_name</code> empty to choose from the folder's list. <code>MARKDOWN_VAULT_MCP_TEMPLATES_FOLDER</code> moves the templates folder; the <a href="../../use/para/#using-templates">PARA</a> and <a href="../../use/zettelkasten/#using-templates">Zettelkasten</a> pages come with template sets.</p>
 <!-- DOMAIN-EXAMPLE-create_from_template-END -->
 
 <h2 id="summarize-subtree"><code>summarize-subtree</code><a class="headerlink" href="#summarize-subtree" title="Permanent link">&para;</a></h2>
