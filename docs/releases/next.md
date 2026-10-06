@@ -31,11 +31,14 @@ Read [Upgrading](#upgrading) if you set an embedding provider.
    ([#1708](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1708)).
    The shipped `compose.yml` sets both paths and is not affected.
 2. **If you never set `MARKDOWN_VAULT_MCP_STATE_PATH`:** nothing is
-   required. The first start copies the change-tracking file out of the
-   vault's `.markdown_vault_mcp/` folder to its new place beside the index,
-   and logs `legacy_state_file_unused` at each start while the old folder
-   is there. Delete the folder once you have seen the copy; to keep the
-   old location instead, set `MARKDOWN_VAULT_MCP_STATE_PATH` to it
+   required. With `MARKDOWN_VAULT_MCP_INDEX_PATH` set, the first start
+   copies the change-tracking file out of the vault's
+   `.markdown_vault_mcp/` folder to its new place beside the index.
+   Without it, the state is held in memory and the old folder is simply
+   no longer used. Either way the server logs `legacy_state_file_unused`
+   at each start while the folder is there, and the folder is then safe
+   to delete. To keep the old location instead, set
+   `MARKDOWN_VAULT_MCP_STATE_PATH` to it
    ([#1693](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1693)).
 3. **If you run the shipped `compose.yml`:** check that `.env` still sets
    `MARKDOWN_VAULT_MCP_SOURCE_DIR`. In 5.0 Compose refused to start
@@ -45,8 +48,7 @@ Read [Upgrading](#upgrading) if you set an embedding provider.
 
 **Clients:** nothing to do beyond reconnecting. No tool, prompt or argument
 was renamed or removed. A client picks up the changed prompt text and tool
-descriptions when it reconnects; claude.ai keeps the old ones until then.
-On a read-only server the example `zettelkasten` prompt is no longer
+descriptions when it reconnects after the restart. On a read-only server the example `zettelkasten` prompt is no longer
 listed.
 
 **State:** kept. The text index is not rebuilt: the rules that turn notes
@@ -77,8 +79,9 @@ also wrote the change. Their
 [issue](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1725)
 puts it this way: "The writer only finds out later, if someone runs
 `get_broken_links`", and "This matters most when an LLM writes the
-note." Of their own vault it reports that "On 2026-09-30, 19 of the 29
-cross-references written that day were broken at write time." It asks
+note." From "one vault served by this server" it reports that "On
+2026-09-30, 19 of the 29 cross-references written that day were broken at
+write time." It asks
 that "A vault that does not want this sees no change in behaviour."
 
 Turn it on with `MARKDOWN_VAULT_MCP_REPORT_UNRESOLVED_LINKS=true`. It is
@@ -133,8 +136,9 @@ vault"
 ([#1693](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1693)).
 It now defaults beside the index as `index.db.state.json`, or into memory
 when there is no index path, where it loses nothing because an in-memory
-index is rebuilt at every start anyway. The file format is unchanged and
-the old file is copied over on the first start (Upgrading step 2;
+index is rebuilt at every start anyway. The file format is unchanged, and
+with an index path the old file is copied over on the first start
+(Upgrading step 2;
 [#1721](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1721)).
 [What an upgrade of this server touches](../upgrade/index.md) describes
 where each kind of state lives.
@@ -198,8 +202,10 @@ These published instructions were wrong in 5.0 and are corrected:
 - The `read` reference left out `etag`, which the write tools take as
   `if_match`, and `edit` promised line numbers that `read` never shows
   ([#1662](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1662)).
-- `get_index_status` was documented with 4 of its 11 keys, and nothing
-  said what a finished build looks like
+- `get_index_status` was documented without most of the fields other
+  pages told readers to watch, `embeddings_status` reported `available:
+  true` before the build finished, and nothing said what a finished build
+  looks like
   ([#1663](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1663)).
 - The 5.0 upgrade notes put server state on the wrong volume and left
   `MARKDOWN_VAULT_MCP_SOURCE_DIR` and client action unresolved; the
@@ -227,7 +233,8 @@ These published instructions were wrong in 5.0 and are corrected:
   committer. It sets the commit author; the committer stays
   `MARKDOWN_VAULT_MCP_GIT_COMMIT_NAME`. Only the text changed
   ([#1716](https://github.com/pvliesdonk/markdown-vault-mcp/pull/1716)).
-- `get_server_info` gains a `protocol` block with the supported and
-  negotiated MCP versions and the client's name and version, and each
-  request's start log line names them too, from fastmcp-pvl-core 10.2.0
+- `get_server_info` gains a `protocol` block with the MCP versions the
+  server supports, the protocol version in use and the client's name and
+  version, and each request's start log line names the protocol version
+  and client too, from fastmcp-pvl-core 10.2.0
   ([pvl-core#420](https://github.com/pvliesdonk/fastmcp-pvl-core/pull/420)).
