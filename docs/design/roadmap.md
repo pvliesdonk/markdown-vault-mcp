@@ -33,10 +33,64 @@ the earlier OKF-foundations preference.
 [#1313][1313] and OKF epic [#1425][1425], broken into smaller packages
 (13 September 2026). Neither epic is intended as a single release cut.
 
+`stated` — "The next package would be the 015 incremental-embeddings package
+and any relevant bugs and high priority bugs" (6 October 2026, while finishing
+the 5.1.0 release).
+
+`derived` — So `015` comes before `020`. The 13 September selection above still
+sets what `020` delivers; only its position has moved.
+
 `derived` — Correctness work establishes whether the storage and link behavior
 that later curation relies on can be trusted. Git reliability supports both;
 an alternate backend is one possible improvement, not a prerequisite for OKF.
 These are preferences for selecting work, not a total order over all issues.
+
+### Sustainable embedding storage and search
+
+`evidenced` — [Epic #1499][1499] freezes the outcome: "An operator can sustain
+small incremental edits without repeatedly persisting the whole vector corpus,
+operate semantic search within a documented memory and latency envelope, and
+upgrade or recover without losing compatible embeddings unnecessarily." The
+measurement behind it is on [#1497][1497]: 517 full sidecar saves and at least
+13.5 GiB of logical sidecar writes in eight hours on a deployed vault.
+[#1368][1368] holds the vault-scale measurements that [#1370][1370] and
+[#1377][1377] build on.
+
+`evidenced` — Research [#1501][1501] and [#1502][1502] supplied the evidence, and
+refinement [#1500][1500] chose the delivery: ordinary SQLite as canonical storage
+with bounded-memory exact NumPy search for the built-in backend, and
+PostgreSQL/pgvector as the one service backend. [#1501][1501] records the owner's
+correction that no first cut or persistence-only release was requested;
+[#1499][1499] records that PostgreSQL is an agent recommendation, not an
+owner-stated engine choice.
+
+`derived` — Order inside the package follows the native dependencies. Research
+[#1508][1508] comes before the lifecycle contract [#1503][1503], because it is
+cheap and decides whether that contract can also serve the database-owned
+content of [#1474][1474] without delivering it here. Built-in persistence
+([#1497][1497]) and the PostgreSQL integration ([#1504][1504]) build on the
+contract; bounded-memory search ([#1377][1377]) follows #1497; migration and
+recovery ([#1505][1505]) follow both backends. Qualification ([#1506][1506])
+comes last, because it measures the assembled system and decides default
+activation and the release kind.
+
+`stated` — The owner approved the triage proposal for `015` with "Add to 015"
+(6 October 2026): [#1730][1730], [#1733][1733] and [#1728][1728] on the index
+and embedding paths, and [#1564][1564], [#1542][1542], [#1480][1480] and
+[#1492][1492] for their severity. For [#1734][1734]: "we'll do #1734 first"
+(6 October 2026).
+
+`derived` — These bugs do not depend on the storage transition, so they can land
+while its features are still not ready. [#1728][1728] waits on the template's
+packaged-install seam
+([fastmcp-server-template#781](https://github.com/pvliesdonk/fastmcp-server-template/issues/781)).
+[#1734][1734] ships in the 5.1.0 cut instead, because 5.1.0 widens the exposure
+it describes.
+
+`derived` — Batched provider requests ([#1496][1496]) and the embedding cost of
+generated OKF files ([#1498][1498]) come from the same measurement run. They sit
+under #1499 with no package: the "Done when" does not need them, and #1498 first
+needs a decision on whether reserved files need search by meaning at all.
 
 ### First-class library
 
@@ -150,9 +204,10 @@ comes first because it stops data loss on its own; content currency ([#1565][156
 ([#1566][1566]) follow and can ship independently. [Epic #1562][1562] (writes)
 carries only its refinement task ([#1567][1567]), blocked by those three: a
 two-repository write path is shaped against a working read-only layout, and its
-detached-HEAD and credential questions stay unknowns until then. Neither epic
-is committed to a package; membership waits for the owner's selection against
-`015` and `020`.
+detached-HEAD and credential questions stay unknowns until then. The read-only
+slice is packaged as `025` and the write epic as `060`, both after `020`. The
+refusal ([#1564][1564]) moved ahead into `015` on 6 October 2026, because it
+stops data loss on its own (§ Sustainable embedding storage and search).
 
 ### Versioned vaults without Git
 
@@ -251,6 +306,11 @@ the seven `unclear` ones) the epic must still answer before a third
 measurement. Resolved by the owner's ruling on the open list in the round-2
 summary on [#1272][1272]; not knowing does not change the order of `013`.
 
+`evidenced` — [#1665][1665] was closed as completed on 6 October 2026, together
+with the `011` milestone, with no closing comment. The index does not record
+whether its "Done when" was judged met or the remaining round-2 items were
+dropped; the unknown above stays open until the owner says which.
+
 ### Other ambitions remain available
 
 `derived` — Vault creation ([#1245][1245]) deserves a mechanism decision before
@@ -259,9 +319,10 @@ committing the scaffold or its walkthrough. The recorded
 from possible refreshes of shared method packs. It supplies a useful boundary,
 not a reason to commit every proposed creation mechanism to one release.
 
-`derived` — Multi-vault hosting, per-user permissions, non-Markdown content,
-attachment graphs and storage scaling remain independent ambitions, represented
-by [#1232][1232], [#1233][1233], [#1234][1234], [#1359][1359] and [#1377][1377].
+`derived` — Multi-vault hosting, per-user permissions, non-Markdown content
+and attachment graphs remain independent ambitions, represented by
+[#1232][1232], [#1233][1233], [#1234][1234] and [#1359][1359]. Storage scaling
+([#1377][1377]) is now part of `015`.
 No platform-wide release is implied by their proximity in the backlog. Refine
 the concrete need before creating additional epics or packages. Documentation,
 maintenance and infrastructure issues likewise remain actionable wishes without
@@ -284,6 +345,35 @@ stable behavior during
 this reconciliation; their original next-major deferral is the reason to group
 them here. Other former `v5` wishes do not acquire a release commitment.
 
+`stated` — **[011 reader-shaped-docs](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/18)**
+carries the documentation migration ([#1665][1665]) and the template epic it
+adopts, as one cut (28 September 2026).
+
+`stated` — **[013 surfaced-fixes](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/19)
+(patch)** holds the code defects the migration surfaced, as their own cut after
+`011` (4 October 2026).
+
+`derived` — Round 2's four remaining blockers joined `013` as behaviour work;
+§ Reader-shaped documentation has the ruling that took them out of the
+migration.
+
+`stated` — "Reopened already and we'll do #1734 first" (6 October 2026),
+after the triage found `011` and `013` closed before the stable 5.1.0 cut.
+
+`derived` — The release workflow closes the lowest open package at a stable cut.
+With `011` and `013` closed, the 5.1.0 promotion would have consumed `015` and
+returned its open members to the backlog. Reopening `013` makes 5.1.0 consume
+it, carrying [#1734][1734].
+
+`evidenced` — **[015 incremental-embeddings](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/14)
+(minor, conditional)** ships the built-in backend and one service backend
+together, with incremental persistence, bounded-memory exact retrieval,
+compatible migration and recovery, and a validated operating envelope (its
+milestone description). Minor intent holds only if the v5.0.0 operator and
+library contracts survive with an automatic compatible upgrade; [#1506][1506]
+owns that assessment. § Sustainable embedding storage and search has the
+argument.
+
 `stated` — **[020 first-class-library](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/13)**
 delivers the owner's selected next outcome: supported library use with proper
 documentation, centered on [#1436][1436]. Research and refinement belong to this
@@ -296,17 +386,17 @@ remain compatible. Reclassify the package as major if the chosen transition brea
 the preceding stable operator or library contract. Do not promise either a split
 or a minor version before that assessment.
 
-`stated` — **[011 reader-shaped-docs](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/18)**
-carries the documentation migration ([#1665][1665]) and the template epic it
-adopts, as one cut (28 September 2026).
+`derived` — `020` follows `015` (§ Constraints and direction). The embedding
+research informs its storage, lifecycle and installation expectations without
+blocking the library research, which can run concurrently.
 
-`stated` — **[013 surfaced-fixes](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/19)
-(patch)** holds the code defects the migration surfaced, as their own cut after
-`011` (4 October 2026).
+`derived` — **[025 submodules-read](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/15)
+(minor)** follows `020` with the read-only submodule epic [#1561][1561], less the
+refusal that moved to `015`.
 
-`derived` — Round 2's four remaining blockers joined `013` as behaviour work;
-§ Reader-shaped documentation has the ruling that took them out of the
-migration.
+`derived` — **[060 submodules-write](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/16)
+(minor, provisional)** ships the writable-submodule epic [#1562][1562] atomically,
+refined after `025` lands. § Vaults with git submodules has the argument.
 
 ### Follow-up slices after `020`
 
@@ -361,8 +451,6 @@ verified implementation findings.
 
 | Question | Resolved by | Consequence for order |
 | --- | --- | --- |
-| Where does service-token identity acquire human authorship, and does review authorization share the problem? | [#1463][1463], including its upstream-routing check | Resolve in the correctness cut; do not assume credentials prove authorship or prescribe a replacement actor here. |
-| Which index consumers can see stale state after a successful write? | [#1464][1464] | Establish the affected contract before building more curation on immediate reads. |
 | Does first-class library support require separate vault and MCP PyPI distributions, and would that require a breaking migration? | [Research #1473][1473] | Resolve before library delivery refinement and the final compatibility classification of `020`; flag any necessary groundwork before `010`. |
 | What documentation and consumer validation make the library independently adoptable? | [Refinement #1472][1472], using [#1436][1436] and the research verdict | The package must deliver a supported consumer experience, not only a list of public names. |
 | How should Obsidian lookup coexist with source-relative links? | The compatibility decision in [#1383][1383] | Leave this defect outside the cut until its desired semantics are settled; the choice is not supplied by its old priority proposal. |
@@ -374,7 +462,8 @@ verified implementation findings.
 | Does the Paper experience meet its original outcome, including the implications of the mobile report? | [Refinement #1469][1469], considering [#859][859] | Check acceptance before closing the epic; no dependency on the first cut. |
 | Which creation mechanism meets the agreed boundary? | [#1245][1245] | Decide before committing the scaffold and walkthrough. |
 | Do attachment graph nodes require non-Markdown search admission? | Scope decision in [#1359][1359], with [#1234][1234] | Not knowing does not change the first cut or OKF foundation refinement; no speculative dependency is created. |
-| Is a deployed vault constrained enough to justify a new vector-storage strategy? | [#1377][1377], informed by [#1368][1368] | Not knowing does not change the first cut. Establish the need before committing a storage technology. |
+| Can one storage contract serve file-backed vaults and database-owned content without delivering the latter? | [Research #1508][1508] | Resolve before [#1503][1503]'s design is approved; [#1475][1475] consumes the verdict. |
+| Does the built-in backend stay within a documented memory and latency envelope on every supported install route, including SQLite builds without the WAL-reset fix? | [#1506][1506] | Decides default activation and the release kind of `015`; the storage features can proceed before it. |
 | Does keeping a submodule current on pull need an operator switch, and what happens when the submodule tree is dirty? | [#1565][1565], under [refinement #1563][1563] | Decide before committing the read-only slice to a cut; the refusal in [#1564][1564] does not depend on it. |
 | Which branch and credentials does a writable submodule use, given the detached HEAD `submodule update` leaves and a remote of its own? | [Refinement #1567][1567] | Not knowing does not change the read-only slice; do not shape the write path before it lands. |
 | How does the docs migration interact with the `020 first-class-library` package's documentation work? | [Refinement #1666][1666] of [#1665][1665], with [#1436][1436] | Not knowing does not change the template-first order; decide at refinement whether library docs move with `020` or with the migration. |
@@ -506,6 +595,20 @@ remaining blockers out of the migration's final pull request; they joined
 "Done when". Added `011` and `013` to § Packages, which did
 not list them.
 
+### 6 October 2026 — record `015` and the packages after 5.1.0
+
+`stated` — The owner named `015` as the next package with the relevant and
+high-priority bugs, approved the triage's additions to it, reopened `013` and
+put [#1734][1734] first (§ Constraints and direction, § Packages).
+
+`derived` — Added § Sustainable embedding storage and search, which [#1499][1499]
+and the `015` milestone already pointed at but which had never landed. Listed
+`015`, `025` and `060` under § Packages in ordinal order. Corrected § Vaults with
+git submodules, which said neither epic had a package. Replaced the
+vector-storage unknown, which [#1368][1368] and the `015` refinement answered,
+with `015`'s open questions; removed the service-token and stale-read rows,
+closed by [#1481][1481] and [#1482][1482]. Recorded [#1665][1665]'s closure.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
 [1225]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1225
@@ -534,8 +637,6 @@ not list them.
 [1443]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1443
 [1444]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1444
 [1462]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1462
-[1463]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1463
-[1464]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1464
 [1467]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1467
 [1468]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1468
 [1469]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1469
@@ -545,8 +646,25 @@ not list them.
 [1474]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1474
 [1475]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1475
 [1476]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1476
+[1480]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1480
+[1481]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/1481
+[1482]: https://github.com/pvliesdonk/markdown-vault-mcp/pull/1482
+[1492]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1492
+[1496]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1496
+[1497]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1497
+[1498]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1498
+[1499]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1499
+[1500]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1500
+[1501]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1501
+[1502]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1502
+[1503]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1503
+[1504]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1504
+[1505]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1505
+[1506]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1506
+[1508]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1508
 [1532]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1532
 [1535]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1535
+[1542]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1542
 [1544]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1544
 [1551]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1551
 [1556]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1556
@@ -559,5 +677,9 @@ not list them.
 [1567]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1567
 [1665]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1665
 [1666]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1666
+[1728]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728
+[1730]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1730
+[1733]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1733
+[1734]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1734
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
