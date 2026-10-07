@@ -254,6 +254,19 @@ implementation tickets alone do not establish it. The mobile defect
 [#859][859] remains a separate report whose relationship to acceptance must be
 assessed. This check need not delay vault correctness or bundle foundations.
 
+`stated` — "i want a new roadmap package 030 that collects all currently open
+issues around the MCP app" (7 October 2026).
+
+`derived` — `030 mcp-app` therefore carries the refinement ([#1469][1469]) and
+every open issue on the app and its tools: the mobile display defect
+([#859][859]), the runtime font dependency ([#1198][1198]), the app tools'
+error outcomes ([#1640][1640]), and the SonarCloud reliability findings in the
+SPA ([#1750][1750], [#1753][1753], [#1754][1754]). The epic itself carries no
+milestone: only its acceptance check is open, and that check is what `030`
+commits. Doing the refinement in the same cut as the fixes lets it decide
+whether [#859][859] belongs to the epic's outcome with the fix in view, rather
+than before it.
+
 ### Reader-shaped documentation
 
 `stated` — Domain documentation lives only in places the template designates
@@ -394,6 +407,13 @@ blocking the library research, which can run concurrently.
 (minor)** follows `020` with the read-only submodule epic [#1561][1561], less the
 refusal that moved to `015`.
 
+`stated` — **[030 mcp-app](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/20)**
+collects the open MCP app issues as one cut (7 October 2026).
+
+`derived` — **Minor intent**, because [#1198][1198] is a feature; the rest are
+defects and decay. The owner set the ordinal, which places it after `025` and
+before `060`. § Usable vault views has the argument.
+
 `derived` — **[060 submodules-write](https://github.com/pvliesdonk/markdown-vault-mcp/milestone/16)
 (minor, provisional)** ships the writable-submodule epic [#1562][1562] atomically,
 refined after `025` lands. § Vaults with git submodules has the argument.
@@ -459,7 +479,7 @@ verified implementation findings.
 | Which backend compatibility cases remain unpinned? | [#1307][1307] and [refinement #1468][1468] | Learn from the shared scenarios before delivering the optional backend. |
 | What makes both file-authoritative/database-history and database-authoritative vault modes viable, and which database fits each? | [Research #1476][1476], then [refinement #1475][1475] | Resolve scope before committing database delivery; feed relevant consequences into the library and shared-interface work without an automatic blocker on `020` or libgit2. |
 | Which replication failures justify refusing writes? | [#1293][1293], then the decision in [#1299][1299] | Observe before committing refusal semantics. |
-| Does the Paper experience meet its original outcome, including the implications of the mobile report? | [Refinement #1469][1469], considering [#859][859] | Check acceptance before closing the epic; no dependency on the first cut. |
+| Does the Paper experience meet its original outcome, including the implications of the mobile report? | [Refinement #1469][1469], considering [#859][859] | Answer inside `030`, before closing the epic. |
 | Which creation mechanism meets the agreed boundary? | [#1245][1245] | Decide before committing the scaffold and walkthrough. |
 | Do attachment graph nodes require non-Markdown search admission? | Scope decision in [#1359][1359], with [#1234][1234] | Not knowing does not change the first cut or OKF foundation refinement; no speculative dependency is created. |
 | Can one storage contract serve file-backed vaults and database-owned content without delivering the latter? | [Research #1508][1508] | Resolve before [#1503][1503]'s design is approved; [#1475][1475] consumes the verdict. |
@@ -609,8 +629,18 @@ vector-storage unknown, which [#1368][1368] and the `015` refinement answered,
 with `015`'s open questions; removed the service-token and stale-read rows,
 closed by [#1481][1481] and [#1482][1482]. Recorded [#1665][1665]'s closure.
 
+### 7 October 2026 — package the MCP app work as `030`
+
+`stated` — The owner asked for a package `030` collecting every open MCP app
+issue (§ Usable vault views).
+
+`derived` — Created `030 mcp-app` with [#1469][1469] and the six open app
+issues, including three filed from the SonarCloud reliability review that day.
+Listed it under § Packages and moved the Paper-acceptance unknown into it.
+
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
+[1198]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1198
 [1225]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1225
 [1232]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1232
 [1233]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1233
@@ -675,11 +705,15 @@ closed by [#1481][1481] and [#1482][1482]. Recorded [#1665][1665]'s closure.
 [1565]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1565
 [1566]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1566
 [1567]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1567
+[1640]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1640
 [1665]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1665
 [1666]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1666
 [1728]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728
 [1730]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1730
 [1733]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1733
 [1734]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1734
+[1750]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1750
+[1753]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1753
+[1754]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1754
 [creation-decision]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/1245#issuecomment-5475514917
 [template-adoption]: https://github.com/pvliesdonk/markdown-vault-mcp/commit/2c7d46e56e16a958a9d085a65ff582b8de885a31
