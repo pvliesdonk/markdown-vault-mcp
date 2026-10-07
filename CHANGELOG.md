@@ -22,6 +22,29 @@ Narrative, rationale, and upgrade guidance live in
 
 <!-- version list -->
 
+## 5.1.0 (2026-10-07)
+
+### Features
+
+- write, edit and append can report the links they add that do not resolve (#1727)
+
+### Bug Fixes
+
+- published examples and references that mislead readers (#1671)
+- the Docker quick start starts, with ./vault as the vault until one is set (#1707)
+- the OIDC commit-claim help text says the claim sets the author, not the committer
+- the OIDC commit-claim help text says the claim sets the author, not the committer (#1716)
+- an upload the vault refuses answers 415 or 422, not 500
+- an upload the vault refuses answers 415 or 422, not 500 (#1718)
+- the download-link description names the okf-bundle refs where OKF is on (#1720)
+- conventions files reach the client whole up to 32 KiB, not 4,000 characters (#1723)
+- the state file defaults beside the index, never into the vault (#1721)
+- the search command builds an in-memory index before it queries (#1726)
+- a configured embedding provider turns on search by meaning without EMBEDDINGS_PATH (#1731)
+- every shipped prompt reads the vault's conventions (#1732)
+- a CLI search never rebuilds the stored vectors a server may share (#1757)
+- a CLI search writes nothing to an index a server may share (#1759)
+
 ## 5.1.0-rc.2 (2026-10-07)
 
 ### Features
