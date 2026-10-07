@@ -671,8 +671,9 @@ class FTSIndex:
     def _init_schema(self, conn: sqlite3.Connection) -> None:
         """Run DDL, migrations, and WAL on the primary connection.
 
-        Called exactly once per ``FTSIndex`` instance, on the constructing
-        thread. Per-thread opens do NOT call this method — they only apply
+        Called exactly once per writable ``FTSIndex`` instance, on the
+        constructing thread; a read-only one skips it (#1758). Per-thread
+        opens do NOT call this method — they only apply
         pragmas, since DDL and WAL are persisted in the DB header.
         """
         conn.executescript(_SCHEMA_SQL)

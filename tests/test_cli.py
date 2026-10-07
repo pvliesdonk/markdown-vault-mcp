@@ -1210,6 +1210,34 @@ def test_search_leaves_an_on_disk_index_unchanged(
     assert _index_dump(db) == before
 
 
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
+def test_search_by_meaning_reads_a_shared_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """Stored vectors beside a read-only index answer, and the index stays as it was."""
+    import markdown_vault_mcp.providers as providers_mod
+
+    monkeypatch.setattr(
+        providers_mod, "get_embedding_provider", lambda _c: MockEmbeddingProvider()
+    )
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    db = tmp_path / "index.db"
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(db))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
+    monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", raising=False)
+    assert runner.invoke(app, ["index"]).exit_code == 0
+    before = _index_dump(db)
+
+    result = runner.invoke(app, ["search", "--json", "-m", mode, "world"])
+
+    assert result.exit_code == 0, result.output
+    assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
+    assert _index_dump(db) == before
+
+
 def test_search_without_the_index_file_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
