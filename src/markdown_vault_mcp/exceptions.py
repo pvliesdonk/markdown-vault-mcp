@@ -142,7 +142,7 @@ class VectorIndexUnusableError(MarkdownMCPError, ValueError):
 
     Raised by the vector loader instead of rebuilding an incompatible or
     corrupt sidecar when the caller supplied no rebuild, as a vault built
-    with ``rebuild_unusable_vectors=False`` does (#1734). Chained from the
+    with ``owns_index_files=False`` does (#1734). Chained from the
     load error, whose text it carries. A fault of stored state, not of the
     request, so not an :class:`InvalidRequestError`. A :class:`ValueError`,
     like the "Failed to rebuild vector index" error a rebuild that leaves no

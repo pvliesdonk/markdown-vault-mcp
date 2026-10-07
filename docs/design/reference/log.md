@@ -1,5 +1,17 @@
 # Reference research log
 
+## 2026-10-07
+
+- Added [SQLite read-only connections, WAL and FTS5's persisted rank](sqlite-read-only-connections.md),
+  checked against sqlite.org's WAL, URI and FTS5 pages, with probes on
+  SQLite 3.50.4 (Python stdlib). Found that `mode=ro` reads a WAL database
+  whose `-wal`/`-shm` files are gone when the directory is writable, and
+  fails when it is not; that it refuses every write and never creates a
+  missing file; that re-writing FTS5's `'rank'` option bumps the structure
+  cookie even when unchanged; and that an already-open connection ranks with
+  a rank another connection commits. When a connection re-reads `%_config`
+  is not documented. Next review: 2027-04-07.
+
 ## 2026-10-05
 
 - Added [MCPB bundle variable substitution](mcpb-variable-substitution.md),

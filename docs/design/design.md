@@ -356,7 +356,11 @@ configuring structured filters activates it too:
    (`INSERT INTO notes_fts(notes_fts, rank) VALUES('rank', 'bm25(...)')`)
    at init, so every `f.rank` read — including the snippet re-query — ranks
    consistently. All-`1.0`/unset writes the default `bm25()` back
-   (idempotent reset).
+   (idempotent reset). The weights live in the index, not the process: a
+   connection already open ranks with a new value as soon as it is
+   committed, so only the index's owner writes them, and a read-only open
+   ranks with the stored ones (#1758; see
+   `reference/sqlite-read-only-connections.md`).
 4. **Folder ranking boost** (`MARKDOWN_VAULT_MCP_FOLDER_WEIGHTS`). Positive
    scores are scaled by the deepest matching folder-prefix weight in all
    three search modes, immediately before per-file grouping (post-RRF and
@@ -814,12 +818,17 @@ whatever is currently in the index (empty on cold start). So the CLI
 `search` command calls `build_index()` before it queries when its index is
 in memory (`INDEX_PATH` unset or `:memory:`), since that index starts empty,
 and keeps the build's change tracking in memory even when `STATE_PATH` is
-set, since that file may be a running server's (#1691). Vectors on disk
-(at `EMBEDDINGS_PATH`, or beside an on-disk index) are loaded, not
-embedded for the query, and are only read: the CLI builds its `Vault`
-with `rebuild_unusable_vectors=False`, so a sidecar that does not fit its
-provider, or is corrupt, ends the search with an error instead of being
-rebuilt under a server that may share it (#1734); with no
+set, since that file may be a running server's (#1691). The CLI builds
+its `Vault` with `owns_index_files=False`, so the index files on disk are
+only read. An on-disk index opens on a SQLite `mode=ro` connection with no
+schema setup, so the search commits nothing, not even the rank weights,
+and a missing index file is reported rather than created (#1758). Vectors
+on disk (at `EMBEDDINGS_PATH`, or beside an on-disk index) are loaded, not
+embedded for the query: a sidecar that does not fit its provider, or is
+corrupt, ends the search with an error instead of being rebuilt under a
+server that may share it (#1734). The CLI reads the index at the schema
+its owner wrote; an index older than this version's migrations is not
+migrated from the CLI. With no
 `EMBEDDINGS_PATH` and a provider configured, a semantic or hybrid query on
 such an index embeds the vault first, in memory (#1708). `index` and
 `reindex` skip embedding when no file would keep the vectors. An on-disk index is
@@ -1122,7 +1131,7 @@ operator learns why the note was left out.
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
 | `DocumentUnreadableError` | `read()`, revision reads | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. At a revision: invalid UTF-8, or a Git LFS pointer in place of the note. The cause is chained (#1608) |
 | `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
-| `VectorIndexUnusableError` | `search()` (semantic/hybrid mode), `get_similar()` | The stored vectors do not fit the embedding provider, or are corrupt, and the vault was built with `rebuild_unusable_vectors=False`, so they are left as they are instead of rebuilt; only the CLI `search` builds one so. The load error is chained. A `ValueError`, like the error a rebuild that leaves no index raises, so `get_context()` still leaves its similar notes out instead of failing (#1734) |
+| `VectorIndexUnusableError` | `search()` (semantic/hybrid mode), `get_similar()` | The stored vectors do not fit the embedding provider, or are corrupt, and the vault was built with `owns_index_files=False`, so they are left as they are instead of rebuilt; only the CLI `search` builds one so. The load error is chained. A `ValueError`, like the error a rebuild that leaves no index raises, so `get_context()` still leaves its similar notes out instead of failing (#1734) |
 
 `build_embeddings()` processes chunks in bounded batches (configurable via
 `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE`, default 4) to avoid pathological
@@ -3330,7 +3339,7 @@ above.
 Construction passes keyword-only ``source_dir`` plus an optional frozen
 ``VaultSettings`` (``config_sections/vault_settings.py``), carrying all 32
 configuration knobs and one switch only a library caller sets,
-``rebuild_unusable_vectors`` (the CLI ``search`` turns it off, #1734). The five collaborators — ``embedding_provider``,
+``owns_index_files`` (the CLI ``search`` turns it off, #1734, #1758). The five collaborators — ``embedding_provider``,
 ``summarizer``, ``git_strategy``, ``on_write``, and ``chunk_strategy`` — remain
 explicit keywords. Omitting ``settings`` or passing ``None`` constructs
 ``VaultSettings()``. The library defaults remain read-only with no chunk

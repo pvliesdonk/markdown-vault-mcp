@@ -371,7 +371,8 @@ class Vault:
         self._summarize_max_input_chars = settings.summarize_max_input_chars
         # Beside the index, or in memory without one; never in the vault (#1693).
         self._state_path = settings.effective_state_path(self._source_dir)
-        _adopt_legacy_state_file(self._source_dir, self._state_path)
+        if settings.owns_index_files:
+            _adopt_legacy_state_file(self._source_dir, self._state_path)
 
     def _build_managers(self, settings: VaultSettings) -> None:
         """Construct the index/tracker sub-modules and the manager layer.
@@ -389,6 +390,8 @@ class Vault:
             indexed_frontmatter_fields=self._indexed_frontmatter_fields or None,
             searchable_frontmatter_fields=self._searchable_frontmatter_fields or None,
             fts_weights=settings.fts_weights,
+            # Another process's index is only read; an in-memory one is ours.
+            read_only=not settings.owns_index_files and str(db_path) != ":memory:",
         )
         self._tracker = ChangeTracker(self._state_path)
 
@@ -481,7 +484,7 @@ class Vault:
             # Without it a search raises instead (#1734).
             rebuild_embeddings=(
                 self._coordinator.rebuild_embeddings
-                if settings.rebuild_unusable_vectors
+                if settings.owns_index_files
                 else None
             ),
             chunks_per_file=settings.chunks_per_file,

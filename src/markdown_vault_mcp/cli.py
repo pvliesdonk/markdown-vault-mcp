@@ -138,6 +138,8 @@ def serve(
 from typing import TYPE_CHECKING  # noqa: E402
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from markdown_vault_mcp.exceptions import VectorIndexUnusableError
     from markdown_vault_mcp.vault import Vault
 
@@ -148,7 +150,7 @@ def _build_vault(
     *,
     scratch_state: bool = False,
     in_memory_vectors: bool = False,
-    read_only_vectors: bool = False,
+    shared_files: bool = False,
 ) -> Vault:
     """Build a synchronous Vault from env vars + optional CLI overrides.
 
@@ -169,9 +171,10 @@ def _build_vault(
             index), so they are embedded in memory. Off by default: the
             provider is then never resolved, since a batch command would pay
             it for vectors it throws away (#1708).
-        read_only_vectors: Never rebuild an incompatible or corrupt vector
-            sidecar: a search raises instead, since the sidecar may be a
-            running server's (#1734).
+        shared_files: Leave the index files on disk as they are, since a
+            running server may own them: an on-disk index opens read-only
+            (#1758) and an unusable vector sidecar makes a search raise
+            instead of being rebuilt (#1734).
 
     Returns:
         A constructed :class:`~markdown_vault_mcp.vault.Vault` (index not built).
@@ -209,8 +212,8 @@ def _build_vault(
         settings = dataclasses.replace(settings, index_path=Path(index_path))
     if scratch_state:
         settings = dataclasses.replace(settings, state_path=None)
-    if read_only_vectors:
-        settings = dataclasses.replace(settings, rebuild_unusable_vectors=False)
+    if shared_files:
+        settings = dataclasses.replace(settings, owns_index_files=False)
     return Vault(
         source_dir=config.source_dir,
         settings=settings,
@@ -304,6 +307,29 @@ def _unusable_vectors_message(exc: VectorIndexUnusableError) -> str:
     )
 
 
+def _require_index_file(index_path: Path) -> None:
+    """Refuse a search of an on-disk index that has not been built.
+
+    The index is opened read-only, which cannot create it; creating it here
+    would write a file a server may be about to own (#1758).
+
+    Args:
+        index_path: The configured ``INDEX_PATH``.
+
+    Raises:
+        typer.Exit: With code 1 when no file is at the path.
+    """
+    from markdown_vault_mcp.utils.fs import path_exists
+
+    if not path_exists(index_path):
+        typer.echo(
+            f"ERROR: no index at {index_path}. Build it with index, or start "
+            "the server that owns it.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def search(
     query: str = typer.Argument(..., help="Search query."),
@@ -332,9 +358,12 @@ def search(
     # An in-memory index is empty until built, so build it, keeping its state
     # in memory too: STATE_PATH may be a running server's (#1691). An on-disk
     # index is only read: build_index() would rebuild a server's index
-    # whenever this shell's settings differ from the ones it was built with.
+    # whenever this shell's settings differ from the ones it was built with,
+    # and even opening it for writing commits the rank weights (#1758).
     configured_index = ProjectConfig.from_env().indexing.index_path
     in_memory = configured_index is None or str(configured_index) == ":memory:"
+    if configured_index is not None and not in_memory:
+        _require_index_file(configured_index)
     # Only a valid vector mode embeds: a mistyped one must fail in the search
     # below before a paid provider has embedded the vault (#1708).
     by_meaning = mode in ("semantic", "hybrid")
@@ -346,7 +375,7 @@ def search(
         None,
         scratch_state=in_memory,
         in_memory_vectors=by_meaning,
-        read_only_vectors=True,
+        shared_files=True,
     )
     if in_memory:
         vault.index.build_index()

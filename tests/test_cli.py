@@ -1165,6 +1165,119 @@ def test_search_leaves_an_unusable_shared_sidecar_alone(
     assert [p.read_bytes() for p in sidecars] == before
 
 
+def _index_dump(db: Path) -> list[str]:
+    """Every row and schema statement of an index, through a read-only open."""
+    import sqlite3
+
+    conn = sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True)
+    try:
+        return list(conn.iterdump())
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("cli_weights", ["title:5", "title:2", None])
+def test_search_leaves_an_on_disk_index_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cli_weights: str | None
+) -> None:
+    """Opening a server's index commits nothing, whatever this shell's weights (#1758)."""
+    import sqlite3
+
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    db = tmp_path / "index.db"
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(db))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_FTS_WEIGHTS", "title:5")
+    assert runner.invoke(app, ["index"]).exit_code == 0
+    if cli_weights is None:
+        monkeypatch.delenv(f"{_ENV_PREFIX}_FTS_WEIGHTS")
+    else:
+        monkeypatch.setenv(f"{_ENV_PREFIX}_FTS_WEIGHTS", cli_weights)
+    before = _index_dump(db)
+    server = sqlite3.connect(db)  # stands in for the server's open connection
+    try:
+        version = server.execute("PRAGMA data_version").fetchone()[0]
+
+        result = runner.invoke(app, ["search", "--json", "world"])
+
+        assert server.execute("PRAGMA data_version").fetchone()[0] == version
+    finally:
+        server.close()
+    assert result.exit_code == 0, result.output
+    assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
+    assert _index_dump(db) == before
+
+
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
+def test_search_by_meaning_reads_a_shared_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    """Stored vectors beside a read-only index answer, and the index stays as it was."""
+    import markdown_vault_mcp.providers as providers_mod
+
+    monkeypatch.setattr(
+        providers_mod, "get_embedding_provider", lambda _c: MockEmbeddingProvider()
+    )
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    db = tmp_path / "index.db"
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(db))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
+    monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", raising=False)
+    assert runner.invoke(app, ["index"]).exit_code == 0
+    before = _index_dump(db)
+
+    result = runner.invoke(app, ["search", "--json", "-m", mode, "world"])
+
+    assert result.exit_code == 0, result.output
+    assert [r["path"] for r in json.loads(result.stdout)] == ["a.md"]
+    assert _index_dump(db) == before
+
+
+def test_search_without_the_index_file_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing on-disk index is reported, not created under a server (#1758)."""
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    db = tmp_path / "index.db"
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(db))
+
+    result = runner.invoke(app, ["search", "world"])
+
+    assert result.exit_code == 1
+    assert f"ERROR: no index at {db}" in result.stderr
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["vault"]
+
+
+def test_search_leaves_a_legacy_state_file_where_it_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seeding a server's state file from the pre-#1693 copy is the server's job."""
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "index.db"))
+    assert runner.invoke(app, ["index"]).exit_code == 0
+    state = tmp_path / "index.db.state.json"
+    legacy = vault_dir / ".markdown_vault_mcp" / "state.json"
+    legacy.parent.mkdir()
+    legacy.write_bytes(state.read_bytes())
+    state.unlink()
+
+    result = runner.invoke(app, ["search", "world"])
+
+    assert result.exit_code == 0, result.output
+    assert not state.exists()
+
+
 def test_search_never_builds_an_on_disk_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
