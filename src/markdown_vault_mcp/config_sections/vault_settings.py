@@ -48,7 +48,8 @@ class VaultSettings:
     """Config-derived construction settings for a :class:`~markdown_vault_mcp.vault.Vault`.
 
     One field per configuration knob, preserving the names, types, and
-    defaults of the constructor keywords removed in #1225. Construct
+    defaults of the constructor keywords removed in #1225, plus
+    ``rebuild_unusable_vectors``, which only a library caller sets. Construct
     directly for library use, or from a served config via
     :meth:`from_project_config` /
     :func:`~markdown_vault_mcp.config_sections._assembly.to_vault_settings`.
@@ -63,6 +64,14 @@ class VaultSettings:
             dashes: ``index-db-embeddings``), or keeps
             the vectors in memory without an index path (#1708). Semantic
             search is on whenever ``Vault`` is given an embedding provider.
+        rebuild_unusable_vectors: When ``True`` (default), a search that
+            finds the vector sidecar incompatible with the embedding provider
+            or corrupt rebuilds it in place. ``False`` leaves the sidecar
+            alone and the search raises
+            :exc:`~markdown_vault_mcp.vector_index.VectorIndexUnusableError`,
+            for a process that reads files another one owns, such as the CLI
+            ``search`` reading a running server's index (#1734). A library
+            setting with no configuration knob behind it.
         read_only: When ``True`` (default), write operations raise
             :exc:`~markdown_vault_mcp.exceptions.ReadOnlyError`.
 
@@ -160,6 +169,7 @@ class VaultSettings:
 
     index_path: Path | None = None
     embeddings_path: Path | None = None
+    rebuild_unusable_vectors: bool = True
     read_only: bool = True
     write_protect_existing: bool = False
     report_unresolved_links: bool = False

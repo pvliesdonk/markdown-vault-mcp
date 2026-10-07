@@ -1118,6 +1118,53 @@ def test_batch_commands_embed_into_a_configured_embeddings_path(
     assert shared.with_suffix(".npy").is_file()
 
 
+@pytest.mark.parametrize("embeddings_path", [True, False], ids=["set", "default"])
+@pytest.mark.parametrize("fault", ["other-provider", "corrupt"])
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
+def test_search_leaves_an_unusable_shared_sidecar_alone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    embeddings_path: bool,
+    fault: str,
+    mode: str,
+) -> None:
+    """A sidecar beside an on-disk index may be a server's; search never rebuilds it."""
+    import markdown_vault_mcp.providers as providers_mod
+
+    dim = {"value": 32}
+    monkeypatch.setattr(
+        providers_mod,
+        "get_embedding_provider",
+        lambda _config: MockEmbeddingProvider(dim["value"]),
+    )
+    vault_dir = tmp_path / "vault"
+    vault_dir.mkdir()
+    (vault_dir / "a.md").write_text("# Hello\n\nworld of notes\n")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_INDEX_PATH", str(tmp_path / "index.db"))
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_PROVIDER", "fastembed")
+    if embeddings_path:
+        monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", str(tmp_path / "emb"))
+    else:
+        monkeypatch.delenv(f"{_ENV_PREFIX}_EMBEDDINGS_PATH", raising=False)
+    assert runner.invoke(app, ["index"]).exit_code == 0
+    if fault == "corrupt":
+        next(tmp_path.glob("*.npy")).write_bytes(b"")
+    else:
+        dim["value"] = 16
+    sidecars = sorted(tmp_path.glob("*.npy")) + sorted(tmp_path.glob("*.json"))
+    sidecars = [p for p in sidecars if not p.name.endswith(".state.json")]
+    before = [p.read_bytes() for p in sidecars]
+
+    result = runner.invoke(app, ["search", "-m", mode, "world"])
+
+    assert result.exit_code == 1
+    assert "ERROR: cannot search by meaning" in result.stderr
+    remedy = "embedding settings" if fault == "other-provider" else "run index"
+    assert remedy in result.stderr
+    assert [p.read_bytes() for p in sidecars] == before
+
+
 def test_search_never_builds_an_on_disk_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

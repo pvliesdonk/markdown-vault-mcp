@@ -814,10 +814,12 @@ whatever is currently in the index (empty on cold start). So the CLI
 `search` command calls `build_index()` before it queries when its index is
 in memory (`INDEX_PATH` unset or `:memory:`), since that index starts empty,
 and keeps the build's change tracking in memory even when `STATE_PATH` is
-set, since that file may be a running server's (#1691). Vectors at
-`EMBEDDINGS_PATH` are loaded, not embedded for the query, though an
-incompatible or corrupt sidecar is still rebuilt in place, as the server
-rebuilds it; with no
+set, since that file may be a running server's (#1691). Vectors on disk
+(at `EMBEDDINGS_PATH`, or beside an on-disk index) are loaded, not
+embedded for the query, and are only read: the CLI builds its `Vault`
+with `rebuild_unusable_vectors=False`, so a sidecar that does not fit its
+provider, or is corrupt, ends the search with an error instead of being
+rebuilt under a server that may share it (#1734); with no
 `EMBEDDINGS_PATH` and a provider configured, a semantic or hybrid query on
 such an index embeds the vault first, in memory (#1708). `index` and
 `reindex` skip embedding when no file would keep the vectors. An on-disk index is
@@ -3324,8 +3326,9 @@ above.
 #### Settings-only construction (#1225)
 
 Construction passes keyword-only ``source_dir`` plus an optional frozen
-``VaultSettings`` (``config_sections/vault_settings.py``), carrying all 31
-configuration knobs. The five collaborators — ``embedding_provider``,
+``VaultSettings`` (``config_sections/vault_settings.py``), carrying all 32
+configuration knobs and one switch only a library caller sets,
+``rebuild_unusable_vectors`` (the CLI ``search`` turns it off, #1734). The five collaborators — ``embedding_provider``,
 ``summarizer``, ``git_strategy``, ``on_write``, and ``chunk_strategy`` — remain
 explicit keywords. Omitting ``settings`` or passing ``None`` constructs
 ``VaultSettings()``. The library defaults remain read-only with no chunk

@@ -172,7 +172,10 @@ class SearchManager:
             Invoked by ``_load_vectors`` on any unrecoverable sidecar fault —
             an embedding-identity mismatch (provider, model, or provider
             variant), an embedding-text format mismatch, a row-count
-            mismatch, or a truncated/zero-byte/incomplete sidecar.
+            mismatch, or a truncated/zero-byte/incomplete sidecar. ``None``
+            leaves the sidecar alone and the search raises
+            :exc:`~markdown_vault_mcp.vector_index.VectorIndexUnusableError`
+            (#1734).
         folder_weights: Folder-prefix score multipliers applied to every
             search mode just before file grouping.  ``None`` disables the
             boost.
@@ -210,7 +213,7 @@ class SearchManager:
         self._attachment_extensions = attachment_extensions
         self._link_manager = link_manager
         self._okf = okf_detector
-        self._rebuild_embeddings = rebuild_embeddings or (lambda: None)
+        self._rebuild_embeddings = rebuild_embeddings
         self._chunks_per_file = chunks_per_file
         self._snippet_words = snippet_words
         self._length_downweight_alpha = length_downweight_alpha
@@ -330,6 +333,8 @@ class SearchManager:
         Raises:
             RuntimeError: If called without a prior ``_require_vectors()``
                 (``_embedding_provider`` is ``None``).
+            VectorIndexUnusableError: If the sidecar is unusable and this
+                manager has no ``rebuild_embeddings``.
             ValueError: If a self-heal rebuild fails to produce a usable index.
         """
         if self._vectors is not None:

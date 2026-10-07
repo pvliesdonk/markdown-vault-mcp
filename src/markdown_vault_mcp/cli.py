@@ -139,6 +139,7 @@ from typing import TYPE_CHECKING  # noqa: E402
 
 if TYPE_CHECKING:
     from markdown_vault_mcp.vault import Vault
+    from markdown_vault_mcp.vector_index import VectorIndexUnusableError
 
 
 def _build_vault(
@@ -147,6 +148,7 @@ def _build_vault(
     *,
     scratch_state: bool = False,
     in_memory_vectors: bool = False,
+    read_only_vectors: bool = False,
 ) -> Vault:
     """Build a synchronous Vault from env vars + optional CLI overrides.
 
@@ -167,6 +169,9 @@ def _build_vault(
             index), so they are embedded in memory. Off by default: the
             provider is then never resolved, since a batch command would pay
             it for vectors it throws away (#1708).
+        read_only_vectors: Never rebuild an incompatible or corrupt vector
+            sidecar: a search raises instead, since the sidecar may be a
+            running server's (#1734).
 
     Returns:
         A constructed :class:`~markdown_vault_mcp.vault.Vault` (index not built).
@@ -204,6 +209,8 @@ def _build_vault(
         settings = dataclasses.replace(settings, index_path=Path(index_path))
     if scratch_state:
         settings = dataclasses.replace(settings, state_path=None)
+    if read_only_vectors:
+        settings = dataclasses.replace(settings, rebuild_unusable_vectors=False)
     return Vault(
         source_dir=config.source_dir,
         settings=settings,
@@ -272,6 +279,28 @@ def _embed_in_memory(vault: Vault) -> None:
         vault.index.build_embeddings()
 
 
+def _unusable_vectors_message(exc: VectorIndexUnusableError) -> str:
+    """Explain why search refused stored vectors, and what to do instead.
+
+    Args:
+        exc: The refusal; its cause tells a provider mismatch from damage.
+
+    Returns:
+        The ``ERROR:`` line for stderr.
+    """
+    from markdown_vault_mcp.vector_index import VectorIndexCompatibilityError
+
+    if isinstance(exc.__cause__, VectorIndexCompatibilityError):
+        remedy = "Search with the embedding settings that built them"
+    else:
+        remedy = "To rebuild them, run index with the server's settings"
+    return (
+        f"ERROR: cannot search by meaning: {exc} The vectors are left as they "
+        f"are, since a running server may use them. {remedy}, or search with "
+        "--mode keyword."
+    )
+
+
 @app.command()
 def search(
     query: str = typer.Argument(..., help="Search query."),
@@ -294,6 +323,7 @@ def search(
     from typing import cast
 
     from markdown_vault_mcp._http_logging import quiet_http_loggers
+    from markdown_vault_mcp.vector_index import VectorIndexUnusableError
 
     quiet_http_loggers()
     # An in-memory index is empty until built, so build it, keeping its state
@@ -305,19 +335,30 @@ def search(
     # Only a valid vector mode embeds: a mistyped one must fail in the search
     # below before a paid provider has embedded the vault (#1708).
     by_meaning = mode in ("semantic", "hybrid")
+    # Vectors on disk are only read too: a server rebuilds a sidecar that
+    # does not fit its provider, and one in another shell's would rebuild it
+    # under the server (#1734).
     vault = _build_vault(
-        source_dir, None, scratch_state=in_memory, in_memory_vectors=by_meaning
+        source_dir,
+        None,
+        scratch_state=in_memory,
+        in_memory_vectors=by_meaning,
+        read_only_vectors=True,
     )
     if in_memory:
         vault.index.build_index()
         if by_meaning:
             _embed_in_memory(vault)
-    results = vault.reader.search(
-        query,
-        limit=limit,
-        mode=cast("Literal['keyword', 'semantic', 'hybrid']", mode),
-        folder=folder,
-    )
+    try:
+        results = vault.reader.search(
+            query,
+            limit=limit,
+            mode=cast("Literal['keyword', 'semantic', 'hybrid']", mode),
+            folder=folder,
+        )
+    except VectorIndexUnusableError as exc:
+        typer.echo(_unusable_vectors_message(exc), err=True)
+        raise typer.Exit(code=1) from exc
     if json_output:
         typer.echo(json.dumps([asdict(r) for r in results], indent=2))
     else:

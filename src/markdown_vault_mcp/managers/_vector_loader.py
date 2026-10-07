@@ -30,7 +30,7 @@ def load_or_self_heal(
     embedding_provider: EmbeddingProvider,
     get_vectors: Callable[[], VectorStore | None],
     set_vectors: Callable[[VectorStore], None],
-    rebuild: Callable[[], object],
+    rebuild: Callable[[], object] | None,
     logger: logging.Logger,
     embed_text_format: str = "v1",
 ) -> VectorStore:
@@ -43,9 +43,10 @@ def load_or_self_heal(
     incompatible, corrupt, or incomplete sidecar
     (``VectorIndexCompatibilityError``, ``VectorIndexCorruptError``,
     ``json.JSONDecodeError``/``ValueError``, ``EOFError``,
-    ``FileNotFoundError``) it calls ``rebuild`` and re-reads the slot. A vault
-    with no persisted index cold-builds an empty one. Environmental errors
-    (e.g. ``PermissionError``) are not caught and propagate.
+    ``FileNotFoundError``) it calls ``rebuild`` and re-reads the slot, or,
+    when ``rebuild`` is ``None``, raises and leaves the files as they are. A
+    vault with no persisted index cold-builds an empty one. Environmental
+    errors (e.g. ``PermissionError``) are not caught and propagate.
 
     Args:
         embeddings_path: Base path for the sidecar files; the ``.npy``/``.json``
@@ -54,7 +55,8 @@ def load_or_self_heal(
         get_vectors: Reads the caller's cached index slot (``None`` if empty).
         set_vectors: Writes a loaded/empty index into the caller's slot.
         rebuild: Zero-arg callback that rebuilds embeddings from scratch and
-            repopulates the slot.
+            repopulates the slot. ``None`` forbids the rebuild: the sidecar
+            may belong to another process, such as a running server (#1734).
         logger: The caller's logger, so records are attributed to the calling
             manager's module.
         embed_text_format: The current embedding-text format token (see
@@ -73,6 +75,8 @@ def load_or_self_heal(
         hold (#1230).
 
     Raises:
+        VectorIndexUnusableError: If the sidecar is incompatible or corrupt
+            and ``rebuild`` is ``None``; chained from the load error.
         ValueError: If a self-heal rebuild completes but leaves the slot empty.
         Exception: Any exception raised by the ``rebuild`` callback is logged
             at ERROR and re-raised unchanged.
@@ -87,9 +91,10 @@ def load_or_self_heal(
         VectorIndex,
         VectorIndexCompatibilityError,
         VectorIndexCorruptError,
+        VectorIndexUnusableError,
     )
 
-    def _run_rebuild() -> None:
+    def _run_rebuild(rebuild: Callable[[], object]) -> None:
         """Run the rebuild callback; if it raises, log at ERROR and re-raise the original exception without wrapping.
 
         Ties a rebuild failure (e.g. provider/FTS error inside the rebuild)
@@ -128,8 +133,10 @@ def load_or_self_heal(
             )
             logger.info("Loaded vector index from %s", embeddings_path)
         except VectorIndexCompatibilityError as exc:
+            if rebuild is None:
+                raise VectorIndexUnusableError(str(exc)) from exc
             logger.warning("%s Rebuilding embeddings.", exc, exc_info=True)
-            _run_rebuild()
+            _run_rebuild(rebuild)
             # An empty-but-populated index is accepted, not an error: the
             # degraded "every batch failed" case is surfaced by
             # IndexManager.build_embeddings' build_embeddings_all_batches_failed warning
@@ -163,13 +170,17 @@ def load_or_self_heal(
             # Deliberately NOT broad OSError: PermissionError / disk-IO errors
             # are environmental — a destructive rebuild would be futile and mask
             # the real problem, so they must propagate.
+            if rebuild is None:
+                raise VectorIndexUnusableError(
+                    f"Corrupt or incomplete vector index at {embeddings_path}: {exc}."
+                ) from exc
             logger.warning(
                 "vector_index_corrupt_rebuilding path=%s error=%s",
                 embeddings_path,
                 exc,
                 exc_info=True,
             )
-            _run_rebuild()
+            _run_rebuild(rebuild)
             if get_vectors() is None:
                 raise ValueError(
                     "Failed to rebuild vector index after a corrupt sidecar."

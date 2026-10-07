@@ -10,6 +10,7 @@ from markdown_vault_mcp.vector_index import (
     VectorIndex,
     VectorIndexCompatibilityError,
     VectorIndexCorruptError,
+    VectorIndexUnusableError,
 )
 from tests.conftest import MockEmbeddingProvider
 
@@ -396,3 +397,35 @@ def test_compat_rebuild_that_raises_is_logged_then_propagates(
         r.name == _LOGGER_NAME and "vector_index_rebuild_failed" in r.getMessage()
         for r in caplog.records
     )
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [VectorIndexCompatibilityError("stored model 'a'"), EOFError("No data left")],
+    ids=["incompatible", "corrupt"],
+)
+def test_without_rebuild_an_unusable_sidecar_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: Exception
+) -> None:
+    """With no rebuild callback the fault is raised, naming the cause (#1734)."""
+    provider = MockEmbeddingProvider()
+    base = tmp_path / "embeddings"
+    (tmp_path / "embeddings.npy").touch()
+
+    def boom(*_a: object, **_k: object) -> VectorIndex:
+        raise fault
+
+    monkeypatch.setattr(VectorIndex, "load", boom)
+    box, get, set_ = _slot()
+
+    with pytest.raises(VectorIndexUnusableError, match=str(fault)) as info:
+        load_or_self_heal(
+            embeddings_path=base,
+            embedding_provider=provider,
+            get_vectors=get,
+            set_vectors=set_,
+            rebuild=None,
+            logger=_LOG,
+        )
+    assert info.value.__cause__ is fault
+    assert box["v"] is None

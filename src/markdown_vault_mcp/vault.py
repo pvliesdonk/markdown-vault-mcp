@@ -478,7 +478,12 @@ class Vault:
             # VectorIndexCompatibilityError fires (embedding model upgrade).  The
             # coordinator routes it through the writer thread, preserving the
             # single-owner invariant (#559): only the writer thread mutates indexes.
-            rebuild_embeddings=self._coordinator.rebuild_embeddings,
+            # Without it a search raises instead (#1734).
+            rebuild_embeddings=(
+                self._coordinator.rebuild_embeddings
+                if settings.rebuild_unusable_vectors
+                else None
+            ),
             chunks_per_file=settings.chunks_per_file,
             snippet_words=settings.snippet_words,
             length_downweight_alpha=settings.length_downweight_alpha,
