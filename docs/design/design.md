@@ -814,10 +814,12 @@ whatever is currently in the index (empty on cold start). So the CLI
 `search` command calls `build_index()` before it queries when its index is
 in memory (`INDEX_PATH` unset or `:memory:`), since that index starts empty,
 and keeps the build's change tracking in memory even when `STATE_PATH` is
-set, since that file may be a running server's (#1691). Vectors at
-`EMBEDDINGS_PATH` are loaded, not embedded for the query, though an
-incompatible or corrupt sidecar is still rebuilt in place, as the server
-rebuilds it; with no
+set, since that file may be a running server's (#1691). Vectors on disk
+(at `EMBEDDINGS_PATH`, or beside an on-disk index) are loaded, not
+embedded for the query, and are only read: the CLI builds its `Vault`
+with `rebuild_unusable_vectors=False`, so a sidecar that does not fit its
+provider, or is corrupt, ends the search with an error instead of being
+rebuilt under a server that may share it (#1734); with no
 `EMBEDDINGS_PATH` and a provider configured, a semantic or hybrid query on
 such an index embeds the vault first, in memory (#1708). `index` and
 `reindex` skip embedding when no file would keep the vectors. An on-disk index is
@@ -1063,6 +1065,7 @@ Two-layer model:
 | `ConcurrentModificationError` | Refresh, then retry |
 | `DocumentUnreadableError` | The server failed |
 | `IndexUnavailableError` | The server failed |
+| `VectorIndexUnusableError` | The server failed |
 
 For `read_attachment()` and `attachment_size()`, an attachment whose `stat` or
 read the file system refuses is a plain `ValueError`, never "not found": absence is judged from `stat()`, not
@@ -1119,6 +1122,7 @@ operator learns why the note was left out.
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
 | `DocumentUnreadableError` | `read()`, revision reads | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. At a revision: invalid UTF-8, or a Git LFS pointer in place of the note. The cause is chained (#1608) |
 | `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
+| `VectorIndexUnusableError` | `search()` (semantic/hybrid mode), `get_similar()` | The stored vectors do not fit the embedding provider, or are corrupt, and the vault was built with `rebuild_unusable_vectors=False`, so they are left as they are instead of rebuilt; only the CLI `search` builds one so. The load error is chained. A `ValueError`, like the error a rebuild that leaves no index raises, so `get_context()` still leaves its similar notes out instead of failing (#1734) |
 
 `build_embeddings()` processes chunks in bounded batches (configurable via
 `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE`, default 4) to avoid pathological
@@ -3324,8 +3328,9 @@ above.
 #### Settings-only construction (#1225)
 
 Construction passes keyword-only ``source_dir`` plus an optional frozen
-``VaultSettings`` (``config_sections/vault_settings.py``), carrying all 31
-configuration knobs. The five collaborators — ``embedding_provider``,
+``VaultSettings`` (``config_sections/vault_settings.py``), carrying all 32
+configuration knobs and one switch only a library caller sets,
+``rebuild_unusable_vectors`` (the CLI ``search`` turns it off, #1734). The five collaborators — ``embedding_provider``,
 ``summarizer``, ``git_strategy``, ``on_write``, and ``chunk_strategy`` — remain
 explicit keywords. Omitting ``settings`` or passing ``None`` constructs
 ``VaultSettings()``. The library defaults remain read-only with no chunk
