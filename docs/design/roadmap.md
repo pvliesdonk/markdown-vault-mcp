@@ -74,6 +74,21 @@ recovery ([#1505][1505]) follow both backends. Qualification ([#1506][1506])
 comes last, because it measures the assembled system and decides default
 activation and the release kind.
 
+`evidenced` — Research [#1508][1508] answered the contract question
+([verdict](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1508#issuecomment-6045346424)).
+One source and publication contract serves file-backed vaults and
+database-owned content without delivering the latter, and `015` needs only
+its embedding side. Embeddings read the keyword index rather than the source.
+They ask the source one question, whether a note is present, absent or
+unavailable. Each published document carries a revision token compared only
+for equality. Enumerating sources and discovering changes without a working
+tree stays with [#1474][1474] through [#1476][1476]. The verdict found no
+change of scope for `015`.
+
+`stated` — For embedding work that a newer revision has overtaken, the owner
+chose conditional replacement, re-reading the source on conflict, over one
+writer per store: "A" (7 October 2026, answering the verdict's option (a)).
+
 `stated` — The owner approved the triage proposal for `015` with "Add to 015"
 (6 October 2026): [#1730][1730], [#1733][1733] and [#1728][1728] on the index
 and embedding paths, and [#1564][1564], [#1542][1542], [#1480][1480] and
@@ -482,7 +497,6 @@ verified implementation findings.
 | Does the Paper experience meet its original outcome, including the implications of the mobile report? | [Refinement #1469][1469], considering [#859][859] | Answer inside `030`, before closing the epic. |
 | Which creation mechanism meets the agreed boundary? | [#1245][1245] | Decide before committing the scaffold and walkthrough. |
 | Do attachment graph nodes require non-Markdown search admission? | Scope decision in [#1359][1359], with [#1234][1234] | Not knowing does not change the first cut or OKF foundation refinement; no speculative dependency is created. |
-| Can one storage contract serve file-backed vaults and database-owned content without delivering the latter? | [Research #1508][1508] | Resolve before [#1503][1503]'s design is approved; [#1475][1475] consumes the verdict. |
 | Does the built-in backend stay within a documented memory and latency envelope on every supported install route, including SQLite builds without the WAL-reset fix? | [#1506][1506] | Decides default activation and the release kind of `015`; the storage features can proceed before it. |
 | Does keeping a submodule current on pull need an operator switch, and what happens when the submodule tree is dirty? | [#1565][1565], under [refinement #1563][1563] | Decide before committing the read-only slice to a cut; the refusal in [#1564][1564] does not depend on it. |
 | Which branch and credentials does a writable submodule use, given the detached HEAD `submodule update` leaves and a remote of its own? | [Refinement #1567][1567] | Not knowing does not change the read-only slice; do not shape the write path before it lands. |
@@ -637,6 +651,13 @@ issue (§ Usable vault views).
 `derived` — Created `030 mcp-app` with [#1469][1469] and the six open app
 issues, including three filed from the SonarCloud reliability review that day.
 Listed it under § Packages and moved the Paper-acceptance unknown into it.
+
+### 7 October 2026 — record the [#1508][1508] verdict
+
+`derived` — The research closed the storage-contract unknown, so its row
+left the open questions. § Sustainable embedding storage and search records
+the verdict and the owner's choice on obsolete work. The order inside `015`
+is unchanged: [#1503][1503] comes next, with its source-facing part settled.
 
 [809]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/809
 [859]: https://github.com/pvliesdonk/markdown-vault-mcp/issues/859
