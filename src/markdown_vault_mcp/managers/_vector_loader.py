@@ -4,8 +4,9 @@ Both :class:`~markdown_vault_mcp.managers.embeddings.EmbeddingsManager`
 (composed into :class:`~markdown_vault_mcp.managers.index.IndexManager`,
 #1157) and :class:`~markdown_vault_mcp.managers.search.SearchManager` load the
 same shared :class:`~markdown_vault_mcp.vector_index.VectorIndex` from disk and
-self-heal a corrupt or incompatible sidecar by rebuilding. This module holds
-that one routine so the logic lives in a single place.
+self-heal a corrupt or incompatible sidecar by rebuilding, unless the caller
+forbids the rebuild (#1734). This module holds that one routine so the logic
+lives in a single place.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.exceptions import VectorIndexUnusableError
 from markdown_vault_mcp.utils.fs import path_exists
 
 if TYPE_CHECKING:
@@ -91,7 +93,6 @@ def load_or_self_heal(
         VectorIndex,
         VectorIndexCompatibilityError,
         VectorIndexCorruptError,
-        VectorIndexUnusableError,
     )
 
     def _run_rebuild(rebuild: Callable[[], object]) -> None:

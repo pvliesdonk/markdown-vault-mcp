@@ -5,12 +5,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from markdown_vault_mcp.exceptions import VectorIndexUnusableError
 from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.vector_index import (
     VectorIndex,
     VectorIndexCompatibilityError,
     VectorIndexCorruptError,
-    VectorIndexUnusableError,
 )
 from tests.conftest import MockEmbeddingProvider
 

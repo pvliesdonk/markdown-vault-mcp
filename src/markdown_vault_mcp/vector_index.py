@@ -42,18 +42,6 @@ class VectorIndexCorruptError(RuntimeError):
     """
 
 
-class VectorIndexUnusableError(ValueError):
-    """A persisted index cannot be used, and the caller may not rebuild it.
-
-    Raised by the vector loader instead of rebuilding an incompatible or
-    corrupt sidecar when the caller supplied no rebuild, as a vault built
-    with ``rebuild_unusable_vectors=False`` does (#1734). Chained from the
-    load error, whose text it carries. A :class:`ValueError` because the
-    same path raised one, "Failed to rebuild vector index", before this
-    class existed, and callers such as ``get_context`` catch that.
-    """
-
-
 def _check_persisted_identity(
     *,
     path: Path,

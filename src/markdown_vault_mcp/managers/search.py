@@ -174,7 +174,7 @@ class SearchManager:
             variant), an embedding-text format mismatch, a row-count
             mismatch, or a truncated/zero-byte/incomplete sidecar. ``None``
             leaves the sidecar alone and the search raises
-            :exc:`~markdown_vault_mcp.vector_index.VectorIndexUnusableError`
+            :exc:`~markdown_vault_mcp.exceptions.VectorIndexUnusableError`
             (#1734).
         folder_weights: Folder-prefix score multipliers applied to every
             search mode just before file grouping.  ``None`` disables the

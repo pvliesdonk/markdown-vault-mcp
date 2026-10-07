@@ -137,6 +137,21 @@ class EmbeddingsNotConfiguredError(InvalidRequestError):
     """
 
 
+class VectorIndexUnusableError(MarkdownMCPError, ValueError):
+    """A persisted vector index cannot be used, and the caller may not rebuild it.
+
+    Raised by the vector loader instead of rebuilding an incompatible or
+    corrupt sidecar when the caller supplied no rebuild, as a vault built
+    with ``rebuild_unusable_vectors=False`` does (#1734). Chained from the
+    load error, whose text it carries. A fault of stored state, not of the
+    request, so not an :class:`InvalidRequestError`. A :class:`ValueError`,
+    like the "Failed to rebuild vector index" error a rebuild that leaves no
+    index raises, so ``get_context`` still leaves its similar notes out
+    instead of failing. Defined here rather than beside its
+    siblings in ``vector_index`` so catching it does not import numpy.
+    """
+
+
 class SummarizeTimeoutError(InvalidRequestError, RuntimeError):
     """Raised when a summarization request outruns its per-request budget.
 

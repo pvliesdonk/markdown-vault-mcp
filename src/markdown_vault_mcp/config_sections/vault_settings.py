@@ -68,7 +68,7 @@ class VaultSettings:
             finds the vector sidecar incompatible with the embedding provider
             or corrupt rebuilds it in place. ``False`` leaves the sidecar
             alone and the search raises
-            :exc:`~markdown_vault_mcp.vector_index.VectorIndexUnusableError`,
+            :exc:`~markdown_vault_mcp.exceptions.VectorIndexUnusableError`,
             for a process that reads files another one owns, such as the CLI
             ``search`` reading a running server's index (#1734). A library
             setting with no configuration knob behind it.

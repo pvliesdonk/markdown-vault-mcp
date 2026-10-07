@@ -1065,6 +1065,7 @@ Two-layer model:
 | `ConcurrentModificationError` | Refresh, then retry |
 | `DocumentUnreadableError` | The server failed |
 | `IndexUnavailableError` | The server failed |
+| `VectorIndexUnusableError` | The server failed |
 
 For `read_attachment()` and `attachment_size()`, an attachment whose `stat` or
 read the file system refuses is a plain `ValueError`, never "not found": absence is judged from `stat()`, not
@@ -1121,6 +1122,7 @@ operator learns why the note was left out.
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
 | `DocumentUnreadableError` | `read()`, revision reads | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. At a revision: invalid UTF-8, or a Git LFS pointer in place of the note. The cause is chained (#1608) |
 | `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
+| `VectorIndexUnusableError` | `search()` (semantic/hybrid mode), `get_similar()` | The stored vectors do not fit the embedding provider, or are corrupt, and the vault was built with `rebuild_unusable_vectors=False`, so they are left as they are instead of rebuilt; only the CLI `search` builds one so. The load error is chained. A `ValueError`, like the error a rebuild that leaves no index raises, so `get_context()` still leaves its similar notes out instead of failing (#1734) |
 
 `build_embeddings()` processes chunks in bounded batches (configurable via
 `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE`, default 4) to avoid pathological

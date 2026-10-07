@@ -138,8 +138,8 @@ def serve(
 from typing import TYPE_CHECKING  # noqa: E402
 
 if TYPE_CHECKING:
+    from markdown_vault_mcp.exceptions import VectorIndexUnusableError
     from markdown_vault_mcp.vault import Vault
-    from markdown_vault_mcp.vector_index import VectorIndexUnusableError
 
 
 def _build_vault(
@@ -293,7 +293,10 @@ def _unusable_vectors_message(exc: VectorIndexUnusableError) -> str:
     if isinstance(exc.__cause__, VectorIndexCompatibilityError):
         remedy = "Search with the embedding settings that built them"
     else:
-        remedy = "To rebuild them, run index with the server's settings"
+        remedy = (
+            "To rebuild them, run index with the settings that built them "
+            "while no server uses them"
+        )
     return (
         f"ERROR: cannot search by meaning: {exc} The vectors are left as they "
         f"are, since a running server may use them. {remedy}, or search with "
@@ -323,7 +326,7 @@ def search(
     from typing import cast
 
     from markdown_vault_mcp._http_logging import quiet_http_loggers
-    from markdown_vault_mcp.vector_index import VectorIndexUnusableError
+    from markdown_vault_mcp.exceptions import VectorIndexUnusableError
 
     quiet_http_loggers()
     # An in-memory index is empty until built, so build it, keeping its state
