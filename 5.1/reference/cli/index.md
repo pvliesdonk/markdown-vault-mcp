@@ -1,0 +1,52 @@
+# Command line
+
+`serve` runs the server. `index`, `search` and `reindex` work on the vault and its index directly and need no running server. They read the same `MARKDOWN_VAULT_MCP_*` settings as `serve`, and `--source-dir` and `--index-path` override the vault and index locations. `index` and `reindex` also bring the embeddings up to date when an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/embeddings/index.md) is configured and an index or embeddings path keeps them. Without an index path, `search` indexes the vault in memory for that one query and writes no file, not even one `MARKDOWN_VAULT_MCP_STATE_PATH` names, and loads the vectors stored at `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` instead of embedding the vault for the query. With neither path set, `--mode semantic` or `hybrid` with an [embedding provider](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/embeddings/index.md) configured embeds the whole vault for the query, which a paid provider bills each time. With an index path, `search` only reads the stored index and its vectors, which `index` and `reindex` keep current; it never rebuilds an index a running server may share, and writes nothing to it. It ranks with the `MARKDOWN_VAULT_MCP_FTS_WEIGHTS` stored in the index, not the shell's, and stops with an error when no index is at the path. Stored vectors are never rebuilt either: when they were built with other embedding settings than the shell's, or are damaged, `--mode semantic` or `hybrid` stops with an error and leaves them as they are.
+
+Generic markdown vault MCP with hybrid search
+
+## `markdown-vault-mcp serve`
+
+Run the MCP server.
+
+| Option        | Env var | Default | Description                                                               |
+| ------------- | ------- | ------- | ------------------------------------------------------------------------- |
+| `--transport` |         | stdio   | MCP transport (stdio / http / sse).                                       |
+| `--host`      |         |         | Bind host (http only; default: $`MARKDOWN_VAULT_MCP_HOST` or 127.0.0.1).  |
+| `--port`      |         |         | Bind port (http only; default: $`MARKDOWN_VAULT_MCP_PORT` or 8000).       |
+| `--http-path` |         |         | Mount path (http only, default: $`MARKDOWN_VAULT_MCP_HTTP_PATH` or /mcp). |
+
+## `markdown-vault-mcp index`
+
+Build the full-text search index.
+
+| Option         | Env var | Default | Description                                                             |
+| -------------- | ------- | ------- | ----------------------------------------------------------------------- |
+| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).    |
+| `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`). |
+| `--force`      |         | False   | Drop and rebuild the index from scratch.                                |
+
+## `markdown-vault-mcp search`
+
+Search the vault.
+
+| Argument | Description   |
+| -------- | ------------- |
+| `QUERY`  | Search query. |
+
+| Option         | Env var | Default | Description                                                          |
+| -------------- | ------- | ------- | -------------------------------------------------------------------- |
+| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`). |
+| `-n`           |         | 10      | Max results (default: 10).                                           |
+| `-m`           |         | keyword | keyword / semantic / hybrid (default: keyword).                      |
+| `--folder`     |         |         | Restrict to folder.                                                  |
+| `--json`       |         | False   | Output results as JSON.                                              |
+
+## `markdown-vault-mcp reindex`
+
+Incrementally reindex the vault.
+
+| Option         | Env var | Default | Description                                                                                                                                                                                       |
+| -------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--source-dir` |         |         | Path to markdown vault (overrides $`MARKDOWN_VAULT_MCP_SOURCE_DIR`).                                                                                                                              |
+| `--index-path` |         |         | Path to SQLite index file (overrides $`MARKDOWN_VAULT_MCP_INDEX_PATH`).                                                                                                                           |
+| `--force`      |         | False   | Drop the index and re-parse every file, ignoring change detection. An upgrade that changes extraction rebuilds by itself on the next run; use this only for an index you have reason to distrust. |

@@ -1,0 +1,92 @@
+# markdown-vault-mcp
+
+> Generic markdown vault MCP with hybrid search
+
+## Overview
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/index.md): What Markdown Vault MCP is, what it does, and where to start reading.
+
+## Security model
+
+- [Security model](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/security-model/index.md): What the server protects, what it can reach, and what stays the operator's responsibility.
+
+## Get started
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/get-started/index.md): Pick your client and reach a first working call with Markdown Vault MCP.
+- [Claude Desktop](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/get-started/claude-desktop/index.md): Connect Claude Desktop to Markdown Vault MCP on your machine and make a first, read-only call.
+- [Claude Code](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/get-started/claude-code/index.md): Run Markdown Vault MCP inside Claude Code through its plugin, or connect Claude Code to a server that already runs.
+- [A remote server](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/get-started/http-client/index.md): Connect claude.ai, Claude Code or another client to a Markdown Vault MCP server that runs somewhere else.
+- [Installation](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/get-started/installation/index.md): Every way to install Markdown Vault MCP, by where it runs, with a check of what you installed.
+
+## Deploy
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/deploy/index.md): Run Markdown Vault MCP for real: Docker or a system package, authentication, OIDC and its providers, a reverse proxy.
+- [Docker](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/deploy/docker/index.md): Run the server with Docker Compose, locally or behind a reverse proxy.
+- [systemd and packages](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/deploy/systemd/index.md): Run Markdown Vault MCP as a systemd service from the .deb or .rpm package, from the environment file to upgrades.
+- [Authentication](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/deploy/authentication/index.md): Choose and configure an authentication mode for an HTTP deployment.
+- [OIDC](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/deploy/oidc/index.md): Which OIDC mode to run and how to configure it: the server as a resource server, or as the provider's registered client.
+- [OIDC providers](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/deploy/oidc-providers/index.md): Register Markdown Vault MCP with Authelia, Keycloak or Google, or sign in through GitHub via a broker, and see which OIDC mode each allows.
+- [Reverse proxy](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/deploy/reverse-proxy/index.md): Put Markdown Vault MCP behind a reverse proxy: TLS, its own hostname or a path prefix, and the routing rules OAuth discovery needs.
+- [MCP Apps](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/deploy/mcp-apps/index.md): What an MCP App of Markdown Vault MCP is, which clients render it, and the one setting an operator may need.
+- [Transfer links](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/deploy/transfer-links/index.md): One-time download and upload links: how a client uses them, and what the operator configures and exposes.
+
+## Use
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/index.md): How to use this server's features for real tasks, and why they behave as they do.
+- [Embeddings](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/embeddings/index.md): Choose and configure an embedding provider for search by meaning: FastEmbed, Ollama, OpenAI-compatible endpoints or Voyage.
+- [Git integration](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/git-integration/index.md): Choose a git mode for the vault, configure commits, pushes and pulls, and read history back.
+- [Vault explorer](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/vault-explorer/index.md): What the vault explorer shows in a client that renders MCP Apps, and how to open each view.
+- [Obsidian everywhere](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/obsidian-everywhere/index.md): Keep one Obsidian vault on desktop, mobile and Claude, with git as the source of truth.
+- [Open Knowledge Format](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/okf/index.md): How the server recognizes an Open Knowledge Format bundle, what it adds to results, and the tools that audit and migrate one.
+- [PARA](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/para/index.md): Run a PARA vault (Projects, Areas, Resources, Archive) with this server: folders, frontmatter, prompts and the capture-to-archive loop.
+- [Zettelkasten](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/zettelkasten/index.md): Run a Zettelkasten with this server: atomic notes, links, and finding connections.
+- [Research workflows](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/use/research-workflows/index.md): Use the vault and Claude for research: seed, ground, absorb, interconnect and produce.
+
+## Reference
+
+- [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/configuration/index.md): Every environment variable the server reads, with its type, default and effect.
+- [Configuration generator](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/configuration-generator/index.md): Generate a configuration for your deployment in the browser.
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/index.md): Every tool this server registers, by group.
+- [Reader](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/reader/index.md): Reference for the Reader group of tools.
+- [Graph](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/graph/index.md): Reference for the Graph group of tools.
+- [Indexing](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/indexing/index.md): Reference for the Indexing group of tools.
+- [Writer](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/writer/index.md): Reference for the Writer group of tools.
+- [Git](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/git/index.md): Reference for the Git group of tools.
+- [Vault app tools](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/vault_app_tools/index.md): Reference for the Vault app tools group of tools.
+- [Server info](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/server_info/index.md): Reference for the Server info group of tools.
+- [Transfer](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/transfer/index.md): Reference for the Transfer group of tools.
+- [Summarize](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/summarize/index.md): Reference for the Summarize group of tools.
+- [Jobs](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/tools/jobs/index.md): Reference for the Jobs group of tools.
+- [Resources](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/resources/index.md): The resources and resource templates this server serves.
+- [Prompts](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/prompts/index.md): The prompt templates this server offers to MCP clients.
+- [Command line](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/cli/index.md): The `markdown-vault-mcp` command line: commands, options and their environment variables.
+- [Vault](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/api/vault/index.md): The Vault class, the library's entry point, and how to construct and configure it.
+- [Facets](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/api/facets/index.md): The reader, writer, graph and index facets that carry the library's operations.
+- [Git integration](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/api/git/index.md): The git module: commit strategies, history and diffs for a vault under git.
+- [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/api/config/index.md): The configuration module: loading settings from environment variables into typed dataclasses.
+- [Embedding providers](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/api/providers/index.md): The embedding providers the library supports, and how one is chosen.
+- [Types](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/api/types/index.md): The data types the Vault API returns.
+- [Exceptions](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/reference/api/exceptions/index.md): The exceptions the library raises, and what each one means.
+
+## Upgrade
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/upgrade/index.md): The step for your channel, what a new release changes for your clients and your state, and where a release page answers those questions.
+- [Release notes](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/releases/index.md): Release notes for each minor series, with the steps to upgrade.
+- [1.x](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/releases/1.x/index.md): Release notes for the 1.x line, with the steps to upgrade to it.
+- [3.0](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/releases/3.0/index.md): Release notes for the 3.0 series, with the steps to upgrade to it.
+- [3.1](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/releases/3.1/index.md): Release notes for the 3.1 series, with the steps to upgrade to it.
+- [4.0](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/releases/4.0/index.md): Release notes for the 4.0 series, with the steps to upgrade to it.
+- [4.1](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/releases/4.1/index.md): Release notes for the 4.1 series, with the steps to upgrade to it.
+- [4.2](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/releases/4.2/index.md): Release notes for the 4.2 series, with the steps to upgrade to it.
+- [5.0](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/releases/5.0/index.md): Release notes for the 5.0 series, with the steps to upgrade to it.
+- [5.1](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/releases/5.1/index.md): Release notes for the 5.1 series, with the steps to upgrade to it.
+
+## Contribute
+
+- [Overview](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/contribute/index.md): Set up a clone of Markdown Vault MCP to contribute, and learn where a fix belongs.
+- [Documentation structure](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/contribute/docs-structure/index.md): Where each piece of documentation belongs, and who owns it.
+- [Release process](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/contribute/release-process/index.md): How a release is cut, published and promoted.
+- [Template updates](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/contribute/template-updates/index.md): How to work through a template update pull request.
+- [Repository protection](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/contribute/repository-protection/index.md): The branch and tag rules that decide what a release can ship from.
+- [Integration branches](https://pvliesdonk.github.io/markdown-vault-mcp/5.1/contribute/integration-branches/index.md): How to run an epic on an integration branch and bring it to main in one pull request.
+
