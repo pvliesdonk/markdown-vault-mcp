@@ -33,6 +33,11 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   (#1350, #1358: the tie-break, aliases never resolving, markdown destinations
   looked up vault-wide, what Obsidian writes). Read before `scanner.py`
   wikilink extraction or `fts_index.py` resolution.
+- [SQLite read-only connections, WAL and FTS5's persisted rank](sqlite-read-only-connections.md) —
+  what a `mode=ro` connection reads and refuses on a WAL database, how a
+  path becomes a URI, and why FTS5's rank weights belong to the file and
+  reach every open connection (#1758). Read before opening the index
+  read-only or changing how `FTS_WEIGHTS` is stored.
 - [CommonMark and GitHub Flavored Markdown](commonmark-gfm.md) — line endings,
   paragraph boundaries, link and reference grammar, code spans and fences, the
   #1334 decision table. Read before any regex in `scanner.py`.

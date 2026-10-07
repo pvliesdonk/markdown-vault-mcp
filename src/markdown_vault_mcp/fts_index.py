@@ -569,6 +569,17 @@ def _pick_wikilink_candidate(candidates: list[str], source_path: str) -> str:
     return min(own_folder or candidates, key=lambda p: (len(p), p))
 
 
+def _skip_schema(_conn: sqlite3.Connection) -> None:
+    """Stand in for ``FTSIndex._init_schema`` on a read-only open.
+
+    Every statement there writes, or can, and a ``mode=ro`` connection
+    refuses all of them (#1758).
+
+    Args:
+        _conn: The primary connection, left untouched.
+    """
+
+
 class FTSIndex:
     """SQLite FTS5 index providing BM25 search and tag filtering.
 
@@ -610,6 +621,12 @@ class FTSIndex:
             ``summary``; missing keys default to ``1.0``).  Persisted into
             the FTS5 rank configuration at init; ``None`` or all-``1.0``
             resets to the default ``bm25()``.
+        read_only: Open an existing database file read-only, for a process
+            that reads an index another one owns (#1758). SQLite refuses
+            every write, so the schema setup, migrations and rank
+            persistence are skipped and the index ranks with the weights
+            stored in it; a write method raises ``sqlite3.OperationalError``.
+            The file must exist and be at this version's schema.
     """
 
     # notes_fts column order — bm25() weight argument order must match.
@@ -622,6 +639,7 @@ class FTSIndex:
         *,
         searchable_frontmatter_fields: list[str] | None = None,
         fts_weights: dict[str, float] | None = None,
+        read_only: bool = False,
     ) -> None:
         self._db_path = db_path
         self._indexed_fields: list[str] = indexed_frontmatter_fields or []
@@ -644,8 +662,11 @@ class FTSIndex:
         # close registry, and the BaseException-hardened bootstrap live in
         # the extracted SqliteConnectionRegistry (#760). Schema DDL and the
         # shared-cache probe stay FTSIndex-owned and run via callbacks.
-        self._registry = SqliteConnectionRegistry(db_path)
-        self._registry.open_primary(self._init_schema, self._probe_shared_cache)
+        self._registry = SqliteConnectionRegistry(db_path, read_only=read_only)
+        self._registry.open_primary(
+            _skip_schema if read_only else self._init_schema,
+            self._probe_shared_cache,
+        )
 
     def _init_schema(self, conn: sqlite3.Connection) -> None:
         """Run DDL, migrations, and WAL on the primary connection.

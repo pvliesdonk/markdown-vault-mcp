@@ -1931,3 +1931,50 @@ class TestContentChars:
             pytest.raises(sqlite3.OperationalError, match="disk I/O error"),
         ):
             FTSIndex(str(db))
+
+
+class TestReadOnly:
+    """A read-only open leaves another process's index as it is (#1758)."""
+
+    @staticmethod
+    def _built(db: Path) -> None:
+        idx = FTSIndex(db, fts_weights={"title": 5.0})
+        idx.upsert_note(make_note("dragons.md", title="Dragons"))
+        idx.close()
+
+    @staticmethod
+    def _rank(db: Path) -> str:
+        conn = sqlite3.connect(db)
+        try:
+            row = conn.execute(
+                "SELECT v FROM notes_fts_config WHERE k='rank'"
+            ).fetchone()
+        finally:
+            conn.close()
+        return str(row[0])
+
+    def test_reads_with_the_stored_weights_and_refuses_writes(
+        self, tmp_path: Path
+    ) -> None:
+        db = tmp_path / "a dir?#" / "index.db"
+        db.parent.mkdir()
+        self._built(db)
+
+        idx = FTSIndex(db, fts_weights={}, read_only=True)
+        try:
+            assert [r.path for r in idx.search("dragons")] == ["dragons.md"]
+            with pytest.raises(sqlite3.OperationalError, match="readonly"):
+                idx.upsert_note(make_note("other.md"))
+        finally:
+            idx.close()
+        assert self._rank(db) == "bm25(1, 5, 1, 1, 1, 1)"
+
+    def test_missing_file_is_not_created(self, tmp_path: Path) -> None:
+        db = tmp_path / "index.db"
+        with pytest.raises(sqlite3.OperationalError):
+            FTSIndex(db, read_only=True)
+        assert not db.exists()
+
+    def test_in_memory_cannot_be_read_only(self) -> None:
+        with pytest.raises(ValueError, match="in-memory"):
+            FTSIndex(":memory:", read_only=True)

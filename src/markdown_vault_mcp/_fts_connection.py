@@ -22,11 +22,11 @@ import sqlite3
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -109,20 +109,41 @@ def retry_on_locked(method: Callable[..., _T]) -> Callable[..., _T]:
     return wrapper
 
 
-def resolve_connect_uri(db_path: Path | str) -> tuple[str, bool, bool]:
+def resolve_connect_uri(
+    db_path: Path | str, *, read_only: bool = False
+) -> tuple[str, bool, bool]:
     """Resolve a db_path into (connect_string, uses_uri, is_memory).
 
     For ``":memory:"`` returns a shared-cache URI unique to this call so that
     every per-thread ``sqlite3.connect()`` joins the same in-memory database
     (required for the per-thread connection model — see #519). For file paths
-    returns the path string directly.
+    returns the path string directly, or with *read_only* a ``mode=ro`` URI,
+    on which SQLite refuses every write (#1758); see
+    ``docs/design/reference/sqlite-read-only-connections.md``.
 
     The shared-cache URI is unique per registry instance (uuid4 token) so
     distinct in-process vaults do not collide.
+
+    Args:
+        db_path: Database file path, or ``":memory:"``.
+        read_only: Open a database file read-only.
+
+    Returns:
+        The connect string, whether it is a URI, and whether it is in memory.
+
+    Raises:
+        ValueError: If *read_only* is asked of an in-memory database, which
+            would start empty and could never be filled.
     """
     if str(db_path) == ":memory:":
+        if read_only:
+            raise ValueError("An in-memory index cannot be opened read-only.")
         token = uuid.uuid4().hex
         return f"file:fts_{token}?mode=memory&cache=shared", True, True
+    if read_only:
+        # as_uri() percent-encodes "?", "#" and spaces, which SQLite decodes
+        # in a URI path; a hand-built "file:{path}" would cut the path at "?".
+        return f"{Path(db_path).resolve().as_uri()}?mode=ro", True, False
     return str(db_path), False, False
 
 
@@ -141,14 +162,23 @@ class SqliteConnectionRegistry:
             shared-cache in-memory database.
         owner_name: Class name used in the closed-error message so callers
             see the facade they actually hold.
+        read_only: Open the database file read-only (``mode=ro``).
     """
 
-    def __init__(self, db_path: Path | str, *, owner_name: str = "FTSIndex") -> None:
+    def __init__(
+        self,
+        db_path: Path | str,
+        *,
+        owner_name: str = "FTSIndex",
+        read_only: bool = False,
+    ) -> None:
         self.db_path = db_path
         self._owner_name = owner_name
         # Resolve URI (translates ``:memory:`` to a shared-cache URI so that
         # per-thread opens see the same in-memory DB).
-        self.connect_uri, self.uses_uri, self.is_memory = resolve_connect_uri(db_path)
+        self.connect_uri, self.uses_uri, self.is_memory = resolve_connect_uri(
+            db_path, read_only=read_only
+        )
         # Thread-safety state — see #519 and docs/design/design.md.
         self.local = threading.local()
         self.all_conns: list[sqlite3.Connection] = []
