@@ -169,7 +169,6 @@ class VaultSettings:
 
     index_path: Path | None = None
     embeddings_path: Path | None = None
-    rebuild_unusable_vectors: bool = True
     read_only: bool = True
     write_protect_existing: bool = False
     report_unresolved_links: bool = False
@@ -200,6 +199,7 @@ class VaultSettings:
     conventions_file: str | None = "_conventions.md"
     okf_mode: str = "auto"
     okf_write: bool = False
+    rebuild_unusable_vectors: bool = True
 
     @classmethod
     def from_project_config(
