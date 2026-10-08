@@ -233,9 +233,11 @@ class Vault:
         summarizer: Optional summarization backend. Without one the
             :attr:`summarizer` accessor raises.
         git_strategy: Optional strategy for background Git tasks, started
-            via :meth:`start`.
+            via :meth:`start` and stopped via :meth:`stop`. Injected, so
+            :meth:`close` leaves closing it to the caller (#1765).
         on_write: Callback invoked after successful writes; see
-            :obj:`~markdown_vault_mcp.types.WriteCallback`.
+            :obj:`~markdown_vault_mcp.types.WriteCallback`. Injected, so
+            :meth:`close` leaves closing it to the caller (#1765).
         chunk_strategy: ``"heading"`` (default), ``"whole"``, or a custom
             :class:`~markdown_vault_mcp.scanner.ChunkStrategy` instance.
     """
@@ -911,10 +913,14 @@ class Vault:
         self._write_callback.end_scope(scope)
 
     def close(self) -> None:
-        """Release resources held by the vault.
+        """Release what the vault opened.
 
-        Flushes deferred embeddings and pending write callbacks, then
-        closes the SQLite connection and git strategy.
+        Drains the index writer (deferred embeddings included) and the
+        pending write callbacks, then closes the SQLite connection. The
+        collaborators passed to the constructor (``git_strategy``,
+        ``on_write``, ``embedding_provider``, ``summarizer``) belong to
+        whoever built them and are not closed here (#1765): close them
+        after the vault, so a flushed push follows the drained commits.
         """
         # 0. Close the coordinator FIRST: it joins the legacy background-build
         # thread (whose worker submits to the writer) and THEN closes the
@@ -927,20 +933,11 @@ class Vault:
         # 1. Deferred embedding updates are flushed by the IndexWriter
         # before its close() returns; no further flush needed here (#559).
 
-        # 2. Drain the write-callback queue (git commits).
+        # 2. Drain the write-callback queue (git commits). The callback
+        # itself is its owner's to close (#1765).
         self._write_callback.close(timeout=30.0)
 
-        # 3. Close git strategy (flush push, etc.).
-        if self._git_strategy is not None:
-            self._git_strategy.close()
-        if (
-            self._on_write is not None
-            and self._on_write is not self._git_strategy
-            and hasattr(self._on_write, "close")
-        ):
-            self._on_write.close()
-
-        # 4. Close SQLite.
+        # 3. Close SQLite.
         self._fts.close()
 
     # ------------------------------------------------------------------
