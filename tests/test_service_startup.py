@@ -75,3 +75,54 @@ async def test_missing_directory_marks_the_singleton_unavailable(
         await service.stop()
     with pytest.raises(RuntimeError):
         get_vault_singleton()
+
+
+async def test_stop_closes_the_collaborators_it_built_after_the_vault(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Service.stop() closes what to_vault_instances built, once, after the vault (#1765)."""
+    import dataclasses
+
+    from markdown_vault_mcp import domain as domain_mod
+
+    class ClosingSpy:
+        def __init__(self, inner: object) -> None:
+            self._inner = inner
+            self.closed = 0
+
+        def close(self) -> None:
+            self.closed += 1
+            self._inner.close()  # type: ignore[attr-defined]
+
+        def __call__(self, *args: object, **kwargs: object) -> object:
+            # on_write is called on writes; dunder lookup bypasses __getattr__.
+            return self._inner(*args, **kwargs)  # type: ignore[operator]
+
+        def __getattr__(self, name: str) -> object:
+            return getattr(self._inner, name)
+
+    spies: list[ClosingSpy] = []
+    real = domain_mod.to_vault_instances
+
+    def spied(config: ProjectConfig) -> object:
+        instances = real(config)
+        spy = ClosingSpy(instances.git_strategy)
+        spies.append(spy)
+        return dataclasses.replace(instances, git_strategy=spy, on_write=spy)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(domain_mod, "to_vault_instances", spied)
+
+    service = Service(ProjectConfig(source_dir=tmp_path))
+    await service.start()
+    await service.stop()
+
+    assert [spy.closed for spy in spies] == [1]
+
+
+async def test_stop_without_a_vault_has_nothing_to_close(tmp_path: Path) -> None:
+    """A start() that built no vault leaves stop() with no collaborators to close (#1765)."""
+    service = Service(ProjectConfig(source_dir=tmp_path / "missing"))
+    await service.start()
+    assert service.startup_error is not None
+
+    await service.stop()  # must not raise
