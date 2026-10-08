@@ -38,7 +38,8 @@ under it.
 ## Consequences
 
 - A library caller that relied on `Vault.close()` closing its git strategy
-  must close it itself, after the vault, or leave a push thread running.
+  must close it itself, after the vault, or the final push never flushes.
+  `Vault.close()` still stops the pull loop it started.
 - The ordering is fixed: vault first (drains commits), then the strategy
   (flushes the push).
 - Later breaks in the same package (the vector protocols, #1767) follow the

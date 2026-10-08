@@ -1920,6 +1920,55 @@ class TestConcurrentWrites:
         assert on_write.fired == 1
         assert on_write.closed is False
 
+    def test_close_stops_the_pull_loop_it_started_without_closing_the_strategy(
+        self, vault_path: Path
+    ) -> None:
+        """close() stops what start() started; the strategy stays open for its owner (#1765)."""
+
+        class DummyGitStrategy:
+            def __init__(self) -> None:
+                self.stopped = False
+                self.closed = False
+
+            def set_commit_observer(self, observer: object) -> None:
+                self.commit_observer = observer
+
+            def set_write_quiescer(
+                self, *, pause_writes: object, drain_writes: object
+            ) -> None:
+                self.quiescer = (pause_writes, drain_writes)
+
+            def start(
+                self,
+                *,
+                repo_path: Path,
+                pull_interval_s: int,
+                on_tick: object,
+            ) -> None:
+                self.started = (repo_path, pull_interval_s, on_tick)
+
+            def stop(self) -> None:
+                self.stopped = True
+
+            def close(self) -> None:
+                self.closed = True
+
+            def sync_once(self, _repo_path: Path) -> bool:
+                return False
+
+        git_strategy = DummyGitStrategy()
+        col = Vault(
+            source_dir=vault_path,
+            settings=VaultSettings(read_only=False, git_pull_interval_s=60),
+            git_strategy=git_strategy,  # type: ignore[arg-type]
+        )
+        col.start()
+
+        col.close()
+
+        assert git_strategy.stopped is True
+        assert git_strategy.closed is False
+
     def test_sync_from_remote_before_index_calls_sync_once(
         self, vault_path: Path
     ) -> None:

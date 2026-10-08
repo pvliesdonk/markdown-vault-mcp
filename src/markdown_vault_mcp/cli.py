@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, NamedTuple
+from typing import Literal
 
 import typer
 from fastmcp_pvl_core import (
@@ -135,7 +135,7 @@ def serve(
 # surface template-owned. Module-level ``TYPE_CHECKING`` guards are fine — they
 # are erased at runtime.
 
-from typing import TYPE_CHECKING  # noqa: E402
+from typing import TYPE_CHECKING, NamedTuple  # noqa: E402
 
 if TYPE_CHECKING:
     from pathlib import Path

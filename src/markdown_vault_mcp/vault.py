@@ -915,14 +915,19 @@ class Vault:
     def close(self) -> None:
         """Release what the vault opened.
 
-        Drains the index writer (deferred embeddings included) and the
-        pending write callbacks, then closes the SQLite connection. The
+        Stops the pull loop :meth:`start` started, drains the index writer
+        (deferred embeddings included) and the pending write callbacks,
+        then closes the SQLite connection. The
         collaborators passed to the constructor (``git_strategy``,
         ``on_write``, ``embedding_provider``, ``summarizer``) belong to
         whoever built them and are not closed here (#1765): close them
         after the vault, so a flushed push follows the drained commits.
         """
-        # 0. Close the coordinator FIRST: it joins the legacy background-build
+        # 0. Stop the pull loop start() launched: its ticks call back into
+        # this vault, and the strategy object itself stays its owner's (#1765).
+        self.stop()
+
+        # 1. Close the coordinator: it joins the legacy background-build
         # thread (whose worker submits to the writer) and THEN closes the
         # single-owner IndexWriter, draining pending jobs.  Must precede the
         # FTS close below — the writer's drain touches FTS (#576).  The
@@ -930,14 +935,14 @@ class Vault:
         if hasattr(self, "_coordinator"):
             self._coordinator.close(timeout=30.0)
 
-        # 1. Deferred embedding updates are flushed by the IndexWriter
+        # 2. Deferred embedding updates are flushed by the IndexWriter
         # before its close() returns; no further flush needed here (#559).
 
-        # 2. Drain the write-callback queue (git commits). The callback
+        # 3. Drain the write-callback queue (git commits). The callback
         # itself is its owner's to close (#1765).
         self._write_callback.close(timeout=30.0)
 
-        # 3. Close SQLite.
+        # 4. Close SQLite.
         self._fts.close()
 
     # ------------------------------------------------------------------

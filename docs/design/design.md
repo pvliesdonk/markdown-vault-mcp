@@ -1884,7 +1884,7 @@ Vault(...)
   → build_embeddings()                # build vector index (when configured)
   → start()                           # launch background pull loop
   → zero or more read/write operations
-  → close()                           # drain writes, release SQLite
+  → close()                           # stop pull loop, drain writes, release SQLite
   (owner) → VaultInstances.close()    # flush git: the collaborators are the owner's
 ```
 
