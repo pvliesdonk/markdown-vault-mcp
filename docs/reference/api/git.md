@@ -31,8 +31,9 @@ vault = Vault(
 # Writes are now auto-committed and pushed
 vault.writer.write("notes/new.md", "Hello world")
 
-# Clean up on shutdown
+# Clean up on shutdown: the vault first, then the strategy you built
 vault.close()
+strategy.close()
 ```
 
 ## Migrating from 4.x

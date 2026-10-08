@@ -45,6 +45,10 @@ print(note.content)
 vault.close()
 ```
 
+## Ownership
+
+`close()` releases what the vault opened: its index, its writer thread and the write-callback queue. The collaborators you pass in (`embedding_provider`, `summarizer`, `git_strategy`, `on_write`) stay yours. Close them after the vault, so a git push flush follows the drained commits.
+
 ## Migrating from 4.x
 
 The 31 configuration keywords on `Vault` have been removed. Move each value to the same-named field on `VaultSettings`. Replace `Vault(source_dir=root, read_only=False, index_path=index)` with:
