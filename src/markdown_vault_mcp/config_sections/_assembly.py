@@ -203,7 +203,8 @@ class VaultInstances:
     in settings-first construction (#1158), plus the *resolved* pull
     interval, which is a property of the git assembly (only sync-enabled
     modes run the pull loop) rather than a raw config read — the config
-    default is 600 even on non-git vaults.
+    default is 600 even on non-git vaults. :meth:`close` releases them after
+    the vault (#1765).
 
     Attributes:
         embedding_provider: Resolved embedding provider, or ``None`` when
@@ -223,6 +224,25 @@ class VaultInstances:
     git_strategy: GitWriteStrategy
     on_write: WriteCallback | None
     git_pull_interval_s: int
+
+    def close(self) -> None:
+        """Close the collaborators this assembly constructed.
+
+        The vault closes only what it opens (#1765), so whoever built these
+        closes them, after the vault: a flushed push then follows the
+        drained commits. ``on_write`` is the git strategy by default and is
+        skipped when it is that same object. A collaborator without
+        ``close()`` (every embedding provider today) needs none. Each call
+        closes each collaborator once more; the strategy's own ``close()``
+        is idempotent, so a repeated call is harmless.
+        """
+        self.git_strategy.close()
+        for resource in (self.on_write, self.embedding_provider, self.summarizer):
+            if resource is None or resource is self.git_strategy:
+                continue
+            close = getattr(resource, "close", None)
+            if close is not None:
+                close()
 
 
 def _resolve_embedding_provider(config: ProjectConfig) -> EmbeddingProvider | None:
