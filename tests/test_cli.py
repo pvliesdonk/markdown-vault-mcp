@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from markdown_vault_mcp.cli import _ENV_PREFIX, _build_vault, app
+from markdown_vault_mcp.cli import _ENV_PREFIX, _build_vault, _BuiltVault, app
 from tests.conftest import MockEmbeddingProvider
 
 if TYPE_CHECKING:
@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from typer.testing import Result
 
 runner = CliRunner()
+
+
+def _built(vault: MagicMock) -> _BuiltVault:
+    """Wrap a mock vault the way _build_vault returns one, with mock collaborators."""
+    return _BuiltVault(vault, MagicMock())
 
 
 # ---------------------------------------------------------------------------
@@ -501,7 +506,7 @@ def test_build_vault_exclude_patterns_from_env(
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
     monkeypatch.setenv(f"{_ENV_PREFIX}_EXCLUDE", "**/*.log.md,.obsidian/**")
 
-    result = _build_vault()
+    result = _build_vault().vault
     assert isinstance(result, Vault)
     # Configured patterns plus the derived folder-conventions excludes.
     assert result._exclude_patterns == [
@@ -523,7 +528,7 @@ def test_build_vault_attachment_fields_from_env(
     monkeypatch.setenv(f"{_ENV_PREFIX}_ATTACHMENT_EXTENSIONS", "pdf,png,jpg")
     monkeypatch.setenv(f"{_ENV_PREFIX}_MAX_ATTACHMENT_SIZE_MB", "25")
 
-    result = _build_vault()
+    result = _build_vault().vault
     assert result._attachment_extensions == ("pdf", "png", "jpg")
     assert result._max_attachment_size_mb == 25.0
 
@@ -538,7 +543,7 @@ def test_build_vault_index_path_override(
     custom_index = tmp_path / "custom.sqlite"
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
 
-    result = _build_vault(index_path=str(custom_index))
+    result = _build_vault(index_path=str(custom_index)).vault
     assert result._index_path == custom_index
 
 
@@ -556,7 +561,7 @@ def test_build_vault_exclude_patterns_are_functional(
     monkeypatch.setenv(f"{_ENV_PREFIX}_SOURCE_DIR", str(vault_dir))
     monkeypatch.setenv(f"{_ENV_PREFIX}_EXCLUDE", "**/*.log.md,.obsidian/**")
 
-    vault = _build_vault()
+    vault = _build_vault().vault
     assert vault._doc_mgr._is_path_excluded("sessions/2026-04-09/chat.log.md") is True
     assert vault._doc_mgr._is_path_excluded(".obsidian/workspace.json.md") is True
     assert vault._doc_mgr._is_path_excluded("notes/alpha.md") is False
@@ -576,7 +581,7 @@ def test_index_prints_stats() -> None:
     mock_stats.chunks_indexed = 128
     mock_vault.index.build_index.return_value = mock_stats
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["index"])
 
     assert result.exit_code == 0, result.output
@@ -594,12 +599,31 @@ def test_index_force_propagates() -> None:
     mock_vault.index.build_index.return_value = mock_stats
     mock_vault.index.build_embeddings.return_value = 30
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["index", "--force"])
 
     assert result.exit_code == 0, result.output
     mock_vault.index.build_index.assert_called_once_with(force=True)
     mock_vault.index.build_embeddings.assert_called_once_with(force=True)
+
+
+def test_index_closes_the_vault_then_its_collaborators_even_on_failure() -> None:
+    """A command closes what _build_vault built, vault first, also when it fails (#1765)."""
+    mock_vault = MagicMock()
+    mock_vault.index.build_index.side_effect = RuntimeError("boom")
+    instances = MagicMock()
+    order = MagicMock()
+    order.attach_mock(mock_vault.close, "vault_close")
+    order.attach_mock(instances.close, "instances_close")
+
+    with patch(
+        "markdown_vault_mcp.cli._build_vault",
+        return_value=_BuiltVault(mock_vault, instances),
+    ):
+        result = runner.invoke(app, ["index"])
+
+    assert result.exit_code != 0
+    assert [c[0] for c in order.mock_calls] == ["vault_close", "instances_close"]
 
 
 def test_index_builds_embeddings_when_configured() -> None:
@@ -611,7 +635,7 @@ def test_index_builds_embeddings_when_configured() -> None:
     mock_vault.index.build_index.return_value = mock_stats
     mock_vault.index.build_embeddings.return_value = 20
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["index"])
 
     assert result.exit_code == 0, result.output
@@ -632,7 +656,7 @@ def test_index_swallows_embeddings_not_configured_error() -> None:
         "not configured"
     )
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["index"])
 
     assert result.exit_code == 0, result.output
@@ -651,7 +675,7 @@ def test_index_surfaces_internal_valueerror_from_embeddings() -> None:
         "Failed to load vector index after _load_vectors()"
     )
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["index"])
 
     assert result.exit_code != 0
@@ -672,7 +696,7 @@ def test_search_text_output() -> None:
     mock_vault = MagicMock()
     mock_vault.reader.search.return_value = [mock_result]
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["search", "test"])
 
     assert result.exit_code == 0, result.output
@@ -698,7 +722,7 @@ def test_search_json_output() -> None:
     mock_vault = MagicMock()
     mock_vault.reader.search.return_value = [sr]
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["search", "test", "--json"])
 
     assert result.exit_code == 0, result.output
@@ -737,7 +761,7 @@ def test_search_json_multiple_results() -> None:
     mock_vault = MagicMock()
     mock_vault.reader.search.return_value = results
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["search", "alpha", "--json"])
 
     assert result.exit_code == 0, result.output
@@ -753,7 +777,7 @@ def test_search_json_empty_results() -> None:
     mock_vault = MagicMock()
     mock_vault.reader.search.return_value = []
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["search", "nothing", "--json"])
 
     assert result.exit_code == 0, result.output
@@ -766,7 +790,7 @@ def test_search_passes_options() -> None:
     mock_vault = MagicMock()
     mock_vault.reader.search.return_value = []
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(
             app,
             ["search", "query", "-n", "5", "-m", "semantic", "--folder", "Journal"],
@@ -795,7 +819,7 @@ def test_reindex_prints_stats() -> None:
     mock_vault = MagicMock()
     mock_vault.index.reindex.return_value = mock_result
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["reindex"])
 
     assert result.exit_code == 0, result.output
@@ -814,7 +838,7 @@ def test_reindex_calls_build_index_first() -> None:
     mock_result.unchanged = mock_result.skipped = 0
     mock_vault.index.reindex.return_value = mock_result
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["reindex"])
 
     assert result.exit_code == 0, result.output
@@ -831,7 +855,7 @@ def test_reindex_force_drops_and_rebuilds() -> None:
     mock_result.unchanged = mock_result.skipped = 0
     mock_vault.index.reindex.return_value = mock_result
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["reindex", "--force"])
 
     assert result.exit_code == 0, result.output
@@ -846,7 +870,7 @@ def test_reindex_without_force_keeps_warm_restart() -> None:
     mock_result.unchanged = mock_result.skipped = 0
     mock_vault.index.reindex.return_value = mock_result
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["reindex"])
 
     assert result.exit_code == 0, result.output
@@ -863,7 +887,7 @@ def test_reindex_builds_embeddings_when_configured() -> None:
     mock_vault.index.reindex.return_value = mock_result
     mock_vault.index.build_embeddings.return_value = 10
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["reindex"])
 
     assert result.exit_code == 0, result.output
@@ -885,7 +909,7 @@ def test_reindex_swallows_embeddings_not_configured_error() -> None:
         "not configured"
     )
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["reindex"])
 
     assert result.exit_code == 0, result.output
@@ -905,7 +929,7 @@ def test_reindex_surfaces_internal_valueerror_from_embeddings() -> None:
         "Failed to load vector index after _load_vectors()"
     )
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["reindex"])
 
     assert result.exit_code != 0
@@ -922,7 +946,7 @@ def test_reindex_never_forces_embedding_rebuild() -> None:
     mock_vault.index.reindex.return_value = mock_result
     mock_vault.index.build_embeddings.return_value = 4
 
-    with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+    with patch("markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)):
         result = runner.invoke(app, ["reindex"])
 
     assert result.exit_code == 0, result.output
@@ -1329,7 +1353,9 @@ def test_verbose_enables_debug_logging(monkeypatch: pytest.MonkeyPatch) -> None:
         mock_stats.documents_indexed = 0
         mock_stats.chunks_indexed = 0
         mock_vault.index.build_index.return_value = mock_stats
-        with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        with patch(
+            "markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)
+        ):
             runner.invoke(app, ["-v", "index"])
         assert root.getEffectiveLevel() == logging.DEBUG
     finally:
@@ -1359,7 +1385,9 @@ def test_default_level_pins_httpx_httpcore_to_warning(
     httpx_log.setLevel(logging.NOTSET)
     httpcore_log.setLevel(logging.NOTSET)
     try:
-        with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        with patch(
+            "markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)
+        ):
             runner.invoke(app, ["index"])
         assert httpx_log.level == logging.WARNING
         assert httpcore_log.level == logging.WARNING
@@ -1390,7 +1418,9 @@ def test_verbose_resets_httpx_httpcore_to_follow_root(
     httpx_log.setLevel(logging.WARNING)
     httpcore_log.setLevel(logging.WARNING)
     try:
-        with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        with patch(
+            "markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)
+        ):
             runner.invoke(app, ["-v", "index"])
         assert httpx_log.level == logging.NOTSET
         assert httpcore_log.level == logging.NOTSET
@@ -1414,7 +1444,9 @@ def test_root_handler_added_when_none_exist(monkeypatch: pytest.MonkeyPatch) -> 
     original_handlers = root.handlers[:]
     root.handlers.clear()
     try:
-        with patch("markdown_vault_mcp.cli._build_vault", return_value=mock_vault):
+        with patch(
+            "markdown_vault_mcp.cli._build_vault", return_value=_built(mock_vault)
+        ):
             runner.invoke(app, ["index"])
         assert len(root.handlers) >= 1
     finally:
