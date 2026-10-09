@@ -54,6 +54,24 @@ outside the vault or a heading the document does not have. It is also a
 ::: markdown_vault_mcp.exceptions.ReadOnlyError
 <!-- vale on -->
 
+## Store open outcomes
+
+Opening a store fails in one of five ways, each its own subclass of `StoreOpenError`. None of them means the store is empty: a vault that cannot open its store never builds over it.
+
+<!-- vale off -->
+::: markdown_vault_mcp.exceptions.StoreOpenError
+
+::: markdown_vault_mcp.exceptions.StoreNotConfiguredError
+
+::: markdown_vault_mcp.exceptions.StoreUnavailableError
+
+::: markdown_vault_mcp.exceptions.StoreIncompatibleError
+
+::: markdown_vault_mcp.exceptions.StoreUnsupportedSchemaError
+
+::: markdown_vault_mcp.exceptions.StoreCorruptError
+<!-- vale on -->
+
 ## Configuration Errors
 
 `markdown_vault_mcp.exceptions.ConfigurationError` is re-exported from

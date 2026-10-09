@@ -3958,6 +3958,47 @@ predicates in `utils/content_kind.py`. Check both — several consumers wanting
 different subsets, and a real backend-swap need — before adding a protocol
 here.
 
+### The storage contract (#1766, #1503)
+
+Decision: every store, whichever family, is opened by a named backend and
+owes its owner the same lifecycle. The generic parts live in
+`interfaces.py`, `types.py` and `exceptions.py`; backends and their registry
+live under `stores/`.
+
+- **`StoreBackend`**: a factory with its own configuration;
+  `open(location, identity, *, owns_files)` returns the store. The registry
+  (`stores/registry.py`) maps `(family, name)` to a factory, so `sqlite` can
+  name a keyword backend now and a vector backend later (#1497).
+- **Open outcomes**: `StoreNotConfiguredError`, `StoreUnavailableError`,
+  `StoreIncompatibleError`, `StoreUnsupportedSchemaError`,
+  `StoreCorruptError`, all `StoreOpenError`. None is read as an empty store;
+  only corrupt may lead to a self-heal, and only when the vault owns the
+  files. For the SQLite keyword backend, *not configured* and *incompatible
+  identity* are unreachable: no location means in memory, and a keyword
+  store has no identity.
+- **`StoreLifecycle`**: `close()` (idempotent; use after close raises) and
+  `checkpoint()` (a no-op in memory or read-only). Whoever opened a store
+  closes it (decision 30).
+- **`schema_version`**: a layout marker in the FTS `meta` table, written on
+  init and checked before any DDL on writable and read-only opens alike. It
+  is not `index_semantics_version`: that one records how rows derive from
+  note bytes and bumps once per release; this one changes only with the
+  table layout.
+- **Revision tokens and `SourceProbe`**: a `RevisionToken` is opaque and
+  compared only for equality (the keyword index's `content_hash` is the
+  file-backed one); a `PublicationOutcome` is `published` or `conflict`;
+  `SourceProbe.probe(path)` answers `SourceState`: present with a token,
+  absent, or unavailable. The embedding reconciler (#1768) consumes them;
+  #1474 supplies the database-backed probe.
+
+Why: #1497, #1504 and #1474 each need the same answers about opening,
+failing, owning and identifying a store, and #1508 showed the embedding
+side could not tell an unavailable source from a deleted one. One contract,
+stated once, is cheaper than three that drift.
+
+Bounds: the vector facets (`VectorReader`, `VectorPublisher`,
+`EmbeddingIdentity`) are #1767's; the file-backed `SourceProbe` is #1768's.
+
 ### `providers.py`: Embedding Providers
 
 Copied from ifcraftcorpus, adapted:
@@ -5878,3 +5919,4 @@ Later decisions (2026-10-08, #1503):
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
 | 30 | Resource ownership | The vault closes what it opens; the caller closes what it injects (#1765). Applies to every store backend. | A store or strategy shared with another consumer must not be closed under it; one rule for every injected collaborator, stated in `docs/decisions/0001`. |
+| 31 | Store open outcomes | Five typed outcomes under `StoreOpenError`; only corrupt may self-heal, only when the vault owns the files; none reads as empty (#1766). | An unreachable or unknown store rebuilt as empty is how a server overwrites another process's index; the type says what the operator can do about it. |
