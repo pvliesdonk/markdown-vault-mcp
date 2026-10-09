@@ -91,7 +91,7 @@ src/markdown_vault_mcp/
   config.py            -- template-owned skeleton: flat metadata-carrying ProjectConfig fields + section-view properties + from_env, all inside CONFIG-* sentinels (#900, #952)
   config_sections/
     __init__.py          -- package aggregator: re-exports the seven section configs (Content/Embeddings/Git/Indexing/Search/Summarize/Sync) + VaultSettings
-    _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (#1225), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952)
+    _assembly.py         -- domain config-assembly kept out of template-owned config.py: to_vault_settings/to_vault_instances (#1225), derive_max_chunk_chars, git-strategy builder, from_env value resolvers (#900, #952); VaultInstances.close() closes the collaborators it built, after the vault (#1765)
     vault_settings.py    -- VaultSettings: frozen config-derived Vault construction settings + pure effective_* derivations (#1158)
     _helpers.py          -- shared env-reading helpers for the sections' from_env classmethods (no config.py import)
     content.py           -- ContentConfig: attachment/read limits, template/prompt folders, conventions file

@@ -1859,7 +1859,7 @@ call (#1625).
 
 ### Lifecycle: Vault.close()
 
-`Vault.close()` must be called on shutdown to release resources:
+`Vault.close()` must be called on shutdown to release what the vault opened:
 
 1. Closes the :class:`~markdown_vault_mcp.indexing.IndexWriter` first (30 s
    drain timeout). The writer drains any pending jobs, including the
@@ -1867,8 +1867,13 @@ call (#1625).
    upserts and embedding flushes complete before downstream resources tear
    down (#559). Legacy background builds use this same queue (#1483).
 2. Drains the background write-callback queue (waits for pending git commits).
-3. Closes the `GitWriteStrategy` (flushes and pushes pending commits).
-4. Closes the SQLite database connection.
+3. Closes the SQLite database connection.
+
+It closes only what it opened (#1765, decision 30). The collaborators passed
+to the constructor (`git_strategy`, `on_write`, `embedding_provider`,
+`summarizer`) belong to whoever built them, and that owner closes them after
+the vault, so a flushed push follows the drained commits. The server and the
+CLI do this through `VaultInstances.close()`.
 
 The full lifecycle contract is:
 
@@ -1879,7 +1884,8 @@ Vault(...)
   → build_embeddings()                # build vector index (when configured)
   → start()                           # launch background pull loop
   → zero or more read/write operations
-  → close()                           # stop pull loop, flush git, release SQLite
+  → close()                           # stop pull loop, drain writes, release SQLite
+  (owner) → VaultInstances.close()    # flush git: the collaborators are the owner's
 ```
 
 `stop()` may also be called independently to pause the pull loop without closing
@@ -1889,9 +1895,9 @@ loop was never started.
 In the MCP server, this lifecycle is orchestrated by the `Service` in
 `domain.py` (start/stop/close), which the template-owned `_server_deps.py`
 lifespan scaffold constructs and drives; the lifespan's `finally` block calls
-`Service.stop()`, which calls `close()` (#902/#910). Callers using `Vault` as a
-Python library must call `close()` explicitly (or use it as a context manager if
-one is added in future).
+`Service.stop()`, which calls `close()` and then `VaultInstances.close()`
+(#902/#910, #1765). Callers using `Vault` as a Python library must call
+`close()` explicitly, then close the collaborators they passed in.
 
 ### One-Time Transfer Links (pvl-core `register_transfer_routes`)
 
@@ -5070,7 +5076,9 @@ In managed/legacy push-enabled modes, `GitWriteStrategy` commits per **tool
 call** and defers push to a background timer
 (`MARKDOWN_VAULT_MCP_GIT_PUSH_DELAY_S`, default 30 s). After the idle period
 elapses with no writes, all accumulated local commits are pushed in a single
-`git push`. On shutdown, `Vault.close()` flushes any pending push.
+`git push`. On shutdown the strategy's owner closes it (`VaultInstances.close()`
+in the server and CLI), which flushes any pending push; `Vault.close()` has
+drained the commits first (#1765).
 
 **Commit scoping (#1264)**: the commit boundary is the MCP tool call, not the
 file. One call that writes 2,595 files produces one commit, where per-file
@@ -5270,8 +5278,8 @@ rather than on the concrete class:
 - `VersionedStore` — all of them, which is what `Vault` holds.
 
 `GitWriteStrategy` remains the single object implementing all of them, and is
-still wired as both `git_strategy` and `on_write`; `Vault.close()` compares
-the two by identity to avoid closing one object twice. Splitting into separate
+still wired as both `git_strategy` and `on_write`; `VaultInstances.close()`
+compares the two by identity to avoid closing one object twice (#1765). Splitting into separate
 *objects* is deliberately not done — the collaborators share one lock, and
 that identity check depends on there being one object.
 
@@ -5864,3 +5872,9 @@ Later decision (2026-09-24, #1581):
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
 | 29 | `SOURCE_DIR` unset or absent | `from_env` resolves an unset or blank variable to the documented default `/data/vault`; `Service.start` builds no vault when the directory does not exist (managed git mode excepted, its bootstrap clones into it), logs `vault_directory_missing`, and every accessor fails with a message naming the variable. A directory whose stat is refused is reported apart, as `vault_directory_unreadable` with a "cannot be accessed" message (`source_dir_problem`, #1625). The CLI and the server share the same resolution. | The invariant belongs to the vault, not to configuration: a vault needs its directory to *operate*, and whether the directory's name comes from the environment or from the default (`/data/vault`, the container mount) is immaterial — the value is real either way, so `Required: No` with that default is the truth and `require_source_dir`'s refusal of an unset variable (#34) was a proxy for the wrong condition. Starting and operating are different: constructing the server and running its lifespan must not depend on the filesystem, because a unit test of the tool surface builds and starts a server with no vault at all; operating the vault does, so the check lives where the vault is used and names the variable. A wrong path used to crash the lifespan with a raw `FileNotFoundError` from the file watcher; the named failure at use is stricter, not laxer. Nothing here concerns the template. |
+
+Later decisions (2026-10-08, #1503):
+
+| # | Topic | Decision | Rationale |
+|-|-|-|-|
+| 30 | Resource ownership | The vault closes what it opens; the caller closes what it injects (#1765). Applies to every store backend. | A store or strategy shared with another consumer must not be closed under it; one rule for every injected collaborator, stated in `docs/decisions/0001`. |

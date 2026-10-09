@@ -12,6 +12,7 @@ import pytest
 from markdown_vault_mcp.config import ProjectConfig
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.config_sections._assembly import (
+    VaultInstances,
     to_vault_instances,
     to_vault_settings,
 )
@@ -449,6 +450,57 @@ class TestAssemblyBridges:
             assert vault._index_path == tmp_path / "cli.db"
         finally:
             vault.close()
+
+    def test_close_closes_each_constructed_collaborator_once(self) -> None:
+        """close() closes the strategy once, even when it is also on_write (#1765)."""
+
+        class Closeable:
+            def __init__(self) -> None:
+                self.closed = 0
+
+            def close(self) -> None:
+                self.closed += 1
+
+        git = Closeable()
+        provider = Closeable()
+        instances = VaultInstances(
+            embedding_provider=provider,  # type: ignore[arg-type]
+            summarizer=object(),  # type: ignore[arg-type]  # no close(): skipped
+            git_strategy=git,  # type: ignore[arg-type]
+            on_write=git,  # type: ignore[arg-type]  # same object as the strategy
+            git_pull_interval_s=0,
+        )
+
+        instances.close()
+
+        assert git.closed == 1
+        assert provider.closed == 1
+
+    def test_close_closes_a_distinct_on_write_and_is_repeatable(self) -> None:
+        """A separate on_write with close() is closed; a second close() is harmless."""
+
+        class Closeable:
+            def __init__(self) -> None:
+                self.closed = 0
+
+            def close(self) -> None:
+                self.closed += 1
+
+        git = Closeable()
+        on_write = Closeable()
+        instances = VaultInstances(
+            embedding_provider=None,
+            summarizer=None,
+            git_strategy=git,  # type: ignore[arg-type]
+            on_write=on_write,  # type: ignore[arg-type]
+            git_pull_interval_s=0,
+        )
+
+        instances.close()
+        instances.close()
+
+        assert git.closed == 2
+        assert on_write.closed == 2
 
 
 class TestServiceStart:

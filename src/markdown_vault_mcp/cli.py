@@ -135,13 +135,30 @@ def serve(
 # surface template-owned. Module-level ``TYPE_CHECKING`` guards are fine — they
 # are erased at runtime.
 
-from typing import TYPE_CHECKING  # noqa: E402
+from typing import TYPE_CHECKING, NamedTuple  # noqa: E402
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from markdown_vault_mcp.config_sections._assembly import VaultInstances
     from markdown_vault_mcp.exceptions import VectorIndexUnusableError
     from markdown_vault_mcp.vault import Vault
+
+
+class _BuiltVault(NamedTuple):
+    """A vault a command built, with the collaborators built for it (#1765)."""
+
+    vault: Vault
+    instances: VaultInstances
+
+    def close(self) -> None:
+        """Close the vault, then the collaborators it was given.
+
+        The vault closes only what it opened; the git strategy closes last,
+        so its push flush follows the drained commits.
+        """
+        self.vault.close()
+        self.instances.close()
 
 
 def _build_vault(
@@ -151,7 +168,7 @@ def _build_vault(
     scratch_state: bool = False,
     in_memory_vectors: bool = False,
     shared_files: bool = False,
-) -> Vault:
+) -> _BuiltVault:
     """Build a synchronous Vault from env vars + optional CLI overrides.
 
     Uses the same settings-first ``to_vault_settings`` / ``to_vault_instances``
@@ -177,7 +194,9 @@ def _build_vault(
             instead of being rebuilt (#1734).
 
     Returns:
-        A constructed :class:`~markdown_vault_mcp.vault.Vault` (index not built).
+        The constructed :class:`~markdown_vault_mcp.vault.Vault` (index not
+        built) with the collaborators built for it; call ``close()`` on the
+        pair when done.
     """
     import dataclasses
     import os
@@ -214,13 +233,16 @@ def _build_vault(
         settings = dataclasses.replace(settings, state_path=None)
     if shared_files:
         settings = dataclasses.replace(settings, owns_index_files=False)
-    return Vault(
-        source_dir=config.source_dir,
-        settings=settings,
-        embedding_provider=instances.embedding_provider,
-        summarizer=instances.summarizer,
-        git_strategy=instances.git_strategy,
-        on_write=instances.on_write,
+    return _BuiltVault(
+        Vault(
+            source_dir=config.source_dir,
+            settings=settings,
+            embedding_provider=instances.embedding_provider,
+            summarizer=instances.summarizer,
+            git_strategy=instances.git_strategy,
+            on_write=instances.on_write,
+        ),
+        instances,
     )
 
 
@@ -256,16 +278,20 @@ def index(
     from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 
     quiet_http_loggers()
-    vault = _build_vault(source_dir, index_path)
-    stats = vault.index.build_index(force=force)
-    typer.echo(
-        f"Indexed {stats.documents_indexed} documents, {stats.chunks_indexed} chunks"
-    )
+    built = _build_vault(source_dir, index_path)
     try:
-        n = vault.index.build_embeddings(force=force)
-        typer.echo(f"Embedded {n} chunks")
-    except EmbeddingsNotConfiguredError:
-        pass  # embeddings not configured
+        stats = built.vault.index.build_index(force=force)
+        typer.echo(
+            f"Indexed {stats.documents_indexed} documents, "
+            f"{stats.chunks_indexed} chunks"
+        )
+        try:
+            n = built.vault.index.build_embeddings(force=force)
+            typer.echo(f"Embedded {n} chunks")
+        except EmbeddingsNotConfiguredError:
+            pass  # embeddings not configured
+    finally:
+        built.close()
 
 
 def _embed_in_memory(vault: Vault) -> None:
@@ -370,27 +396,30 @@ def search(
     # Vectors on disk are only read too: a server rebuilds a sidecar that
     # does not fit its provider, and one in another shell's would rebuild it
     # under the server (#1734).
-    vault = _build_vault(
+    built = _build_vault(
         source_dir,
         None,
         scratch_state=in_memory,
         in_memory_vectors=by_meaning,
         shared_files=True,
     )
-    if in_memory:
-        vault.index.build_index()
-        if by_meaning:
-            _embed_in_memory(vault)
     try:
-        results = vault.reader.search(
-            query,
-            limit=limit,
-            mode=cast("Literal['keyword', 'semantic', 'hybrid']", mode),
-            folder=folder,
-        )
-    except VectorIndexUnusableError as exc:
-        typer.echo(_unusable_vectors_message(exc), err=True)
-        raise typer.Exit(code=1) from exc
+        if in_memory:
+            built.vault.index.build_index()
+            if by_meaning:
+                _embed_in_memory(built.vault)
+        try:
+            results = built.vault.reader.search(
+                query,
+                limit=limit,
+                mode=cast("Literal['keyword', 'semantic', 'hybrid']", mode),
+                folder=folder,
+            )
+        except VectorIndexUnusableError as exc:
+            typer.echo(_unusable_vectors_message(exc), err=True)
+            raise typer.Exit(code=1) from exc
+    finally:
+        built.close()
     if json_output:
         typer.echo(json.dumps([asdict(r) for r in results], indent=2))
     else:
@@ -423,22 +452,27 @@ def reindex(
     from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 
     quiet_http_loggers()
-    vault = _build_vault(source_dir, index_path)
-    # reindex() needs a built index (#525); build_index() is a cheap no-op when
-    # the index is already populated (a SQL row-count check, no filesystem scan)
-    # and the recorded build provenance still matches this process (#1124).
-    vault.index.build_index(force=force)
-    result = vault.index.reindex()
-    typer.echo(
-        f"Reindex: {result.added} added, {result.modified} modified, "
-        f"{result.deleted} deleted, {result.unchanged} unchanged, "
-        f"{result.skipped} skipped"
-    )
+    built = _build_vault(source_dir, index_path)
     try:
-        n = vault.index.build_embeddings()  # converges vectors to FTS chunks (#665)
-        typer.echo(f"Embedded {n} chunks")
-    except EmbeddingsNotConfiguredError:
-        pass  # embeddings not configured
+        # reindex() needs a built index (#525); build_index() is a cheap no-op
+        # when the index is already populated (a SQL row-count check, no
+        # filesystem scan) and the recorded build provenance still matches
+        # this process (#1124).
+        built.vault.index.build_index(force=force)
+        result = built.vault.index.reindex()
+        typer.echo(
+            f"Reindex: {result.added} added, {result.modified} modified, "
+            f"{result.deleted} deleted, {result.unchanged} unchanged, "
+            f"{result.skipped} skipped"
+        )
+        try:
+            # Converges vectors to FTS chunks (#665).
+            n = built.vault.index.build_embeddings()
+            typer.echo(f"Embedded {n} chunks")
+        except EmbeddingsNotConfiguredError:
+            pass  # embeddings not configured
+    finally:
+        built.close()
 
 
 # DOMAIN-COMMANDS-END

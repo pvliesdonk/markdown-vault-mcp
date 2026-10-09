@@ -29,6 +29,7 @@ from markdown_vault_mcp.vault import Vault
 
 if TYPE_CHECKING:
     from markdown_vault_mcp._file_watcher import VaultFileWatcher
+    from markdown_vault_mcp.config_sections._assembly import VaultInstances
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,8 @@ class Service:
         self._config = config or _pending_config or ProjectConfig.from_env()
         self._transport = transport if transport is not None else _pending_transport
         self._vault: Vault | None = None
+        # The collaborators start() built for the vault; closed after it (#1765).
+        self._instances: VaultInstances | None = None
         self._file_watcher: VaultFileWatcher | None = None
         # Why start() built no vault: the message every accessor raises with
         # until the operator fixes the deployment and restarts.
@@ -205,6 +208,7 @@ class Service:
         # travel as one VaultSettings; the constructed collaborators stay
         # explicit keywords, resolved once into VaultInstances.
         instances = to_vault_instances(config)
+        self._instances = instances
         settings = to_vault_settings(config, instances=instances)
         if instances.embedding_provider is not None:
             logger.info(
@@ -342,7 +346,7 @@ class Service:
             logger.info("file_watcher_disabled reason=other_cadence_source_active")
 
     async def stop(self) -> None:
-        """Stop the file watcher and close the Vault."""
+        """Stop the file watcher, close the Vault, then close the collaborators built for it."""
         if self._file_watcher is not None:
             self._file_watcher.stop()
         # Clear the singleton before closing so any in-flight HTTP handler gets a
@@ -350,6 +354,11 @@ class Service:
         set_vault_singleton(None)
         if self._vault is not None:
             self._vault.close()
+        # The vault closed what it opened; its collaborators are ours (#1765).
+        # Closing the git strategy last flushes the push behind the drained commits.
+        if self._instances is not None:
+            self._instances.close()
+            self._instances = None
         logger.info("vault_shut_down")
 
 

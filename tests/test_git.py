@@ -930,8 +930,8 @@ class TestConfigIntegration:
 
 
 class TestVaultCloseWiresStrategy:
-    def test_vault_close_calls_strategy_close(self, tmp_path: Path) -> None:
-        """Vault.close() calls on_write.close() if available."""
+    def test_vault_close_leaves_on_write_to_its_owner(self, tmp_path: Path) -> None:
+        """Vault.close() never closes an injected on_write; its owner does (#1765)."""
         from markdown_vault_mcp.vault import Vault
 
         closed = []
@@ -955,7 +955,7 @@ class TestVaultCloseWiresStrategy:
         )
         col.close()
 
-        assert closed == [True]
+        assert closed == []
 
 
 class TestTokenRedactionInLogs:
