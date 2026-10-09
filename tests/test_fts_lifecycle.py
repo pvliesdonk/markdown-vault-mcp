@@ -60,6 +60,23 @@ class TestSchemaVersion:
         # Refusing must not touch the stored marker.
         assert _read_schema_version(db) == str(FTSIndex.SCHEMA_VERSION + 1)
 
+    def test_an_older_marker_is_brought_to_the_current_version(
+        self, tmp_path: Path
+    ) -> None:
+        db = tmp_path / "index.db"
+        FTSIndex(db_path=db).close()
+        _set_schema_version(db, "0")
+        FTSIndex(db_path=db).close()  # a writable open migrates and re-stamps
+        assert _read_schema_version(db) == str(FTSIndex.SCHEMA_VERSION)
+
+    def test_a_read_only_open_of_a_file_that_is_not_an_index_is_refused(
+        self, tmp_path: Path
+    ) -> None:
+        db = tmp_path / "empty.db"
+        db.write_bytes(b"")  # SQLite opens an empty file as an empty database
+        with pytest.raises(StoreUnsupportedSchemaError, match="not a built index"):
+            FTSIndex(db_path=db, read_only=True)
+
     def test_a_garbled_marker_is_refused(self, tmp_path: Path) -> None:
         db = tmp_path / "index.db"
         FTSIndex(db_path=db).close()

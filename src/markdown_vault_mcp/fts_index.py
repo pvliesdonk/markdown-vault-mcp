@@ -626,10 +626,10 @@ class FTSIndex:
             The file must exist and be at this version's schema.
     """
 
-    # notes_fts column order — bm25() weight argument order must match.
     #: The layout this code writes and the highest it reads (#1766).
     SCHEMA_VERSION = 1
 
+    # notes_fts column order — bm25() weight argument order must match.
     _FTS_COLUMNS = ("path", "title", "folder", "heading", "content", "summary")
 
     def __init__(
@@ -675,16 +675,29 @@ class FTSIndex:
         Runs before any DDL on a writable open and as the whole bootstrap of
         a read-only one, where every statement of :meth:`_init_schema`
         writes and a ``mode=ro`` connection refuses them (#1758). An index
-        without the marker predates it and reads as the current layout.
+        without the marker predates it and reads as the current layout; a
+        file without a ``meta`` table at all is not an index, which a
+        writable open fixes by creating the layout and a read-only one
+        refuses.
 
         Raises:
             StoreUnsupportedSchemaError: If the stored marker is above
-                :attr:`SCHEMA_VERSION` or is not an integer.
+                :attr:`SCHEMA_VERSION` or is not an integer, or the file has
+                no layout and the open is read-only.
         """
         has_meta = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
         ).fetchone()
         if has_meta is None:
+            if self._read_only:
+                # A writable open creates the layout next; a read-only one
+                # cannot, so a file without it is not an index to search.
+                raise StoreUnsupportedSchemaError(
+                    f"Index at {self._db_path} is not a built index: it has no "
+                    "meta table, and a read-only open cannot create one.",
+                    backend="sqlite",
+                    location=str(self._db_path),
+                )
             return
         row = conn.execute(
             "SELECT value FROM meta WHERE key = ?", (_META_SCHEMA_VERSION_KEY,)
@@ -795,7 +808,9 @@ class FTSIndex:
                     result[0] if result else "no result",
                 )
         conn.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES(?, ?)",
+            # REPLACE, not IGNORE: a writable open has passed the "not newer"
+            # check and run every migration, so the index is at this layout.
+            "INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)",
             (_META_SCHEMA_VERSION_KEY, str(self.SCHEMA_VERSION)),
         )
         conn.commit()

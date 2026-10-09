@@ -5,7 +5,7 @@ kind: reference
 
 # Storage
 
-Every store the vault uses, keyword today and vector from 6.0, is opened by a named backend and closed by whoever opened it. The protocols are importable from `markdown_vault_mcp.interfaces`, the value types from `markdown_vault_mcp.types`, the backends from their modules under `markdown_vault_mcp.stores`.
+Every store the vault uses is opened by a named backend and closed by whoever opened it. The protocols are importable from `markdown_vault_mcp.interfaces`, the value types from `markdown_vault_mcp.types`, the backends from their modules under `markdown_vault_mcp.stores`.
 
 ```python { .fragment }
 from markdown_vault_mcp.interfaces import StoreBackend, StoreLifecycle, SourceProbe
