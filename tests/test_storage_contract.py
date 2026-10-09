@@ -51,3 +51,43 @@ class TestStoreOpenOutcomes:
         assert isinstance(exc, MarkdownMCPError)
         assert (exc.backend, exc.location) == ("sqlite", "/tmp/index.db")
         assert str(exc) == "why"
+
+
+class TestProtocols:
+    def test_a_fake_lifecycle_satisfies_store_lifecycle(self) -> None:
+        from markdown_vault_mcp.interfaces import StoreLifecycle
+
+        class Fake:
+            def close(self) -> None: ...
+
+            def checkpoint(self) -> None: ...
+
+        assert isinstance(Fake(), StoreLifecycle)
+        assert not isinstance(object(), StoreLifecycle)
+
+    def test_a_fake_backend_satisfies_store_backend(self) -> None:
+        from markdown_vault_mcp.interfaces import StoreBackend
+
+        class Fake:
+            family = "keyword"
+            name = "fake"
+
+            def open(  # a protocol fake, never called
+                self,
+                _location: object,
+                _identity: object | None = None,
+                *,
+                _owns_files: bool = True,
+            ) -> object:
+                return self
+
+        assert isinstance(Fake(), StoreBackend)
+
+    def test_a_fake_probe_satisfies_source_probe(self) -> None:
+        from markdown_vault_mcp.interfaces import SourceProbe
+
+        class Fake:
+            def probe(self, path: str) -> SourceState:  # noqa: ARG002
+                return SourceState("absent")
+
+        assert isinstance(Fake(), SourceProbe)
