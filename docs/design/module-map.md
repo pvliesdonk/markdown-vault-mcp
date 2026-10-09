@@ -41,6 +41,10 @@ src/markdown_vault_mcp/
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
     _vector_loader.py  -- shared load-or-self-heal routine for the vector sidecar (#736)
+  stores/
+    __init__.py        -- store backends package; exports nothing, import a backend from its module (#1766)
+    registry.py        -- the (family, name) registry of backend factories: register_backend/get_backend/backend_names (#1766)
+    sqlite_keyword.py  -- SqliteKeywordBackend: opens FTSIndex, classifies SQLite failures as unavailable or corrupt (#1766)
   indexing/
     __init__.py        -- package aggregator: re-exports IndexWriteCoordinator, IndexWriter + writer job dataclasses, ReadinessState
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners

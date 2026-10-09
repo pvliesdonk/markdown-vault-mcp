@@ -563,3 +563,43 @@ class TestServiceStart:
         finally:
             await service.stop()
             set_vault_singleton(None)
+
+
+class TestIndexOpensThroughTheRegistry:
+    """The vault opens its keyword index through the store registry (#1766)."""
+
+    def test_an_unopenable_index_raises_the_typed_outcome(self, tmp_path: Path) -> None:
+        from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+        blocker = tmp_path / "blocker"
+        blocker.write_text("not a directory")
+        with pytest.raises(StoreUnavailableError):
+            Vault(
+                source_dir=tmp_path,
+                settings=VaultSettings(index_path=blocker / "index.db"),
+            )
+
+    def test_a_corrupt_index_raises_corrupt_and_is_left_alone(
+        self, tmp_path: Path
+    ) -> None:
+        from markdown_vault_mcp.exceptions import StoreCorruptError
+
+        index = tmp_path / "index.db"
+        junk = b"not sqlite " * 64
+        index.write_bytes(junk)
+        with pytest.raises(StoreCorruptError):
+            Vault(source_dir=tmp_path, settings=VaultSettings(index_path=index))
+        assert index.read_bytes() == junk
+
+    def test_in_memory_index_is_writable_when_files_are_not_owned(
+        self, tmp_path: Path
+    ) -> None:
+        # The CLI search path with shared_files=True and no index path (#1758).
+        vault = Vault(
+            source_dir=tmp_path,
+            settings=VaultSettings(owns_index_files=False),
+        )
+        try:
+            vault.index.build_index()
+        finally:
+            vault.close()
