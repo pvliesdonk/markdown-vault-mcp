@@ -46,7 +46,10 @@ from markdown_vault_mcp._fts_connection import (
     retry_on_sqlite_locked as _retry_on_sqlite_locked,
 )
 from markdown_vault_mcp.embed_text import fields_text as _fields_text
-from markdown_vault_mcp.exceptions import DocumentNotFoundError
+from markdown_vault_mcp.exceptions import (
+    DocumentNotFoundError,
+    StoreUnsupportedSchemaError,
+)
 from markdown_vault_mcp.types import (
     FTSResult,
     ParsedNote,
@@ -270,6 +273,11 @@ _META_INDEX_SEMANTICS_KEY = "index_semantics_version"
 # pre-#1535 database. Written once by :meth:`_migrate_fts_rowid_map` and read
 # on every boot to short-circuit a redundant backfill pass.
 _META_FTS_ROWID_MAP_BACKFILLED_KEY = "fts_rowid_map_backfilled"
+#: Layout marker of the SQLite index (#1766). A version this code does not
+#: know is refused at open, writable or read-only, before any DDL runs. It
+#: is distinct from ``index_semantics_version``, which records how rows were
+#: derived from note bytes and follows its own once-per-release rule.
+_META_SCHEMA_VERSION_KEY = "schema_version"
 
 #: Current version of the parse-to-row pipeline whose output is stored in the
 #: index (link extraction, chunk boundaries, tag/alias/heading derivation).
@@ -569,17 +577,6 @@ def _pick_wikilink_candidate(candidates: list[str], source_path: str) -> str:
     return min(own_folder or candidates, key=lambda p: (len(p), p))
 
 
-def _skip_schema(_conn: sqlite3.Connection) -> None:
-    """Stand in for ``FTSIndex._init_schema`` on a read-only open.
-
-    Every statement there writes, or can, and a ``mode=ro`` connection
-    refuses all of them (#1758).
-
-    Args:
-        _conn: The primary connection, left untouched.
-    """
-
-
 class FTSIndex:
     """SQLite FTS5 index providing BM25 search and tag filtering.
 
@@ -630,6 +627,9 @@ class FTSIndex:
     """
 
     # notes_fts column order — bm25() weight argument order must match.
+    #: The layout this code writes and the highest it reads (#1766).
+    SCHEMA_VERSION = 1
+
     _FTS_COLUMNS = ("path", "title", "folder", "heading", "content", "summary")
 
     def __init__(
@@ -647,6 +647,7 @@ class FTSIndex:
             searchable_frontmatter_fields or ()
         )
         self._fts_weights: dict[str, float] = dict(fts_weights or {})
+        self._read_only = read_only
         # SearchConfig validates fts_weights keys, but direct FTSIndex/Vault
         # construction bypasses it; an unknown column is silently ignored by
         # _persist_rank_config (get(col, 1.0)). Warn so a typo'd column
@@ -664,9 +665,53 @@ class FTSIndex:
         # shared-cache probe stay FTSIndex-owned and run via callbacks.
         self._registry = SqliteConnectionRegistry(db_path, read_only=read_only)
         self._registry.open_primary(
-            _skip_schema if read_only else self._init_schema,
+            self._check_schema_version if read_only else self._init_schema,
             self._probe_shared_cache,
         )
+
+    def _check_schema_version(self, conn: sqlite3.Connection) -> None:
+        """Refuse an index whose layout this code does not know (#1766).
+
+        Runs before any DDL on a writable open and as the whole bootstrap of
+        a read-only one, where every statement of :meth:`_init_schema`
+        writes and a ``mode=ro`` connection refuses them (#1758). An index
+        without the marker predates it and reads as the current layout.
+
+        Raises:
+            StoreUnsupportedSchemaError: If the stored marker is above
+                :attr:`SCHEMA_VERSION` or is not an integer.
+        """
+        has_meta = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'"
+        ).fetchone()
+        if has_meta is None:
+            return
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key = ?", (_META_SCHEMA_VERSION_KEY,)
+        ).fetchone()
+        if row is None:
+            return
+        try:
+            stored: int | None = int(row[0])
+        except (TypeError, ValueError):
+            stored = None
+        if stored is None or stored > self.SCHEMA_VERSION:
+            raise StoreUnsupportedSchemaError(
+                f"Index at {self._db_path} has schema_version {row[0]!r}; "
+                f"this version reads up to {self.SCHEMA_VERSION}.",
+                backend="sqlite",
+                location=str(self._db_path),
+            )
+
+    def checkpoint(self) -> None:
+        """Fold the WAL into the main file so a copy of it is complete (#1766).
+
+        A no-op in memory and on a read-only open, where SQLite would refuse
+        the checkpoint anyway.
+        """
+        if self._registry.is_memory or self._read_only:
+            return
+        self._conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     def _init_schema(self, conn: sqlite3.Connection) -> None:
         """Run DDL, migrations, and WAL on the primary connection.
@@ -676,6 +721,7 @@ class FTSIndex:
         opens do NOT call this method — they only apply
         pragmas, since DDL and WAL are persisted in the DB header.
         """
+        self._check_schema_version(conn)
         conn.executescript(_SCHEMA_SQL)
         try:
             conn.execute(
@@ -748,6 +794,10 @@ class FTSIndex:
                     "wal_mode_not_enabled result=%s impact=concurrent_reads_may_block",
                     result[0] if result else "no result",
                 )
+        conn.execute(
+            "INSERT OR IGNORE INTO meta(key, value) VALUES(?, ?)",
+            (_META_SCHEMA_VERSION_KEY, str(self.SCHEMA_VERSION)),
+        )
         conn.commit()
 
     def _migrate_tombstone_columns(
