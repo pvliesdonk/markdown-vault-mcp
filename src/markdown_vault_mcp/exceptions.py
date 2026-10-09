@@ -274,3 +274,47 @@ class IndexUnavailableError(MarkdownMCPError):
     def __init__(self, message: str, *, reason: IndexUnavailableReason) -> None:
         super().__init__(message)
         self.reason: IndexUnavailableReason = reason
+
+
+class StoreOpenError(MarkdownMCPError):
+    """Opening a store failed in a way its backend could classify (#1766).
+
+    One subclass per outcome. None of them means "empty store": a caller
+    that cannot open its store never cold-builds over it. Only
+    :class:`StoreCorruptError` may lead to a self-heal, and only when the
+    vault owns the files.
+
+    Attributes:
+        backend: The registry name of the backend that refused.
+        location: The location it was asked to open, as given.
+    """
+
+    def __init__(self, message: str, *, backend: str, location: str) -> None:
+        super().__init__(message)
+        self.backend = backend
+        self.location = location
+
+
+class StoreNotConfiguredError(StoreOpenError):
+    """The backend needs a location or service that is not configured."""
+
+
+class StoreUnavailableError(StoreOpenError):
+    """The store exists, or may, but cannot be reached now.
+
+    A service that is down, a volume that is not mounted, a parent that is
+    not a directory, a permission that is refused. Possibly transient; never
+    a reason to rebuild.
+    """
+
+
+class StoreIncompatibleError(StoreOpenError):
+    """The store holds data for a different identity than the one asked for."""
+
+
+class StoreUnsupportedSchemaError(StoreOpenError):
+    """The store's layout is newer than, or unknown to, this version."""
+
+
+class StoreCorruptError(StoreOpenError):
+    """The store's bytes are not a store of this backend's kind."""
