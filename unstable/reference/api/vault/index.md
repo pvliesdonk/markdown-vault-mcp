@@ -40,6 +40,10 @@ print(note.content)
 vault.close()
 ```
 
+## Ownership
+
+`close()` releases what the vault opened: its index, its writer thread and the write-callback queue. The collaborators you pass in (`embedding_provider`, `summarizer`, `git_strategy`, `on_write`) stay yours. Close them after the vault, so a git push flush follows the drained commits.
+
 ## Migrating from 4.x
 
 The 31 configuration keywords on `Vault` have been removed. Move each value to the same-named field on `VaultSettings`. Replace `Vault(source_dir=root, read_only=False, index_path=index)` with:
@@ -222,8 +226,8 @@ Parameters:
 | `settings`           | \`VaultSettings     | None\`                                | Configuration settings. None uses VaultSettings().                                                                                                                                          |
 | `embedding_provider` | \`EmbeddingProvider | None\`                                | Provider used to generate embeddings; semantic search is on whenever one is given. Its vectors persist beside the index, or at settings.embeddings_path, and stay in memory without either. |
 | `summarizer`         | \`Summarizer        | None\`                                | Optional summarization backend. Without one the :attr:summarizer accessor raises.                                                                                                           |
-| `git_strategy`       | \`VersionedStore    | None\`                                | Optional strategy for background Git tasks, started via :meth:start.                                                                                                                        |
-| `on_write`           | \`WriteCallback     | None\`                                | Callback invoked after successful writes; see :obj:~markdown_vault_mcp.types.WriteCallback.                                                                                                 |
+| `git_strategy`       | \`VersionedStore    | None\`                                | Optional strategy for background Git tasks, started via :meth:start and stopped via :meth:stop. Injected, so :meth:close leaves closing it to the caller (#1765).                           |
+| `on_write`           | \`WriteCallback     | None\`                                | Callback invoked after successful writes; see :obj:~markdown_vault_mcp.types.WriteCallback. Injected, so :meth:close leaves closing it to the caller (#1765).                               |
 | `chunk_strategy`     | \`str               | ChunkStrategy\`                       | "heading" (default), "whole", or a custom :class:~markdown_vault_mcp.scanner.ChunkStrategy instance.                                                                                        |
 
 ### `reader`
@@ -389,6 +393,6 @@ Parameters:
 
 ### `close()`
 
-Release resources held by the vault.
+Release what the vault opened.
 
-Flushes deferred embeddings and pending write callbacks, then closes the SQLite connection and git strategy.
+Stops the pull loop :meth:`start` started, drains the index writer (deferred embeddings included) and the pending write callbacks, then closes the SQLite connection. The collaborators passed to the constructor (`git_strategy`, `on_write`, `embedding_provider`, `summarizer`) belong to whoever built them and are not closed here (#1765): close them after the vault, so a flushed push follows the drained commits.

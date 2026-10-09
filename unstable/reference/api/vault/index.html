@@ -2018,6 +2018,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ownership
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#migrating-from-4x" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2968,6 +2979,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ownership" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ownership
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#migrating-from-4x" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3398,6 +3420,8 @@
 <span class="nb">print</span><span class="p">(</span><span class="n">note</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 </code></pre></div>
+<h2 id="ownership">Ownership<a class="headerlink" href="#ownership" title="Permanent link">&para;</a></h2>
+<p><code>close()</code> releases what the vault opened: its index, its writer thread and the write-callback queue. The collaborators you pass in (<code>embedding_provider</code>, <code>summarizer</code>, <code>git_strategy</code>, <code>on_write</code>) stay yours. Close them after the vault, so a git push flush follows the drained commits.</p>
 <h2 id="migrating-from-4x">Migrating from 4.x<a class="headerlink" href="#migrating-from-4x" title="Permanent link">&para;</a></h2>
 <p>The 31 configuration keywords on <code>Vault</code> have been removed. Move each value to the same-named field on <code>VaultSettings</code>. Replace <code>Vault(source_dir=root, read_only=False, index_path=index)</code> with:</p>
 <div class="fragment highlight"><pre><span></span><code><span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span>
@@ -4532,7 +4556,8 @@ memory without either.</p>
             <td>
               <div class="doc-md-description">
                 <p>Optional strategy for background Git tasks, started
-via :meth:<code>start</code>.</p>
+via :meth:<code>start</code> and stopped via :meth:<code>stop</code>. Injected, so
+:meth:<code>close</code> leaves closing it to the caller (#1765).</p>
               </div>
             </td>
             <td>
@@ -4549,7 +4574,8 @@ via :meth:<code>start</code>.</p>
             <td>
               <div class="doc-md-description">
                 <p>Callback invoked after successful writes; see
-:obj:<code>~markdown_vault_mcp.types.WriteCallback</code>.</p>
+:obj:<code>~markdown_vault_mcp.types.WriteCallback</code>. Injected, so
+:meth:<code>close</code> leaves closing it to the caller (#1765).</p>
               </div>
             </td>
             <td>
@@ -5335,9 +5361,14 @@ that call fired, and the dispatcher flushes it in order.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Release resources held by the vault.</p>
-<p>Flushes deferred embeddings and pending write callbacks, then
-closes the SQLite connection and git strategy.</p>
+        <p>Release what the vault opened.</p>
+<p>Stops the pull loop :meth:<code>start</code> started, drains the index writer
+(deferred embeddings included) and the pending write callbacks,
+then closes the SQLite connection. The
+collaborators passed to the constructor (<code>git_strategy</code>,
+<code>on_write</code>, <code>embedding_provider</code>, <code>summarizer</code>) belong to
+whoever built them and are not closed here (#1765): close them
+after the vault, so a flushed push follows the drained commits.</p>
 
 
     </div>

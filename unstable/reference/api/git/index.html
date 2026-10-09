@@ -3199,8 +3199,9 @@
 <span class="c1"># Writes are now auto-committed and pushed</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">writer</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">"notes/new.md"</span><span class="p">,</span> <span class="s2">"Hello world"</span><span class="p">)</span>
 
-<span class="c1"># Clean up on shutdown</span>
+<span class="c1"># Clean up on shutdown: the vault first, then the strategy you built</span>
 <span class="n">vault</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<span class="n">strategy</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 </code></pre></div>
 <h2 id="migrating-from-4x">Migrating from 4.x<a class="headerlink" href="#migrating-from-4x" title="Permanent link">&para;</a></h2>
 <p><code>GitWriteStrategy</code> no longer accepts <code>commit_name_claim</code> or <code>commit_email_claim</code>. Remove these constructor arguments. The remaining <code>git_lfs</code> and <code>repo_path</code> options must now be passed by keyword, so old positional claim arguments cannot silently become LFS or repository settings:</p>
@@ -5311,11 +5312,10 @@ or is a Git LFS pointer.</p>
 default <code>push_delay_s=0</code>, commits happen per-write but push only
 fires when :meth:<code>~GitWriteStrategy.close</code> or
 :meth:<code>~GitWriteStrategy.flush</code> is called.</p>
-<p>When used via :class:<code>~markdown_vault_mcp.vault.Vault</code>,
-<code>Vault.close()</code> automatically calls the strategy's
-<code>close()</code>, so pushes flush on shutdown.  Callers using this
-as a bare <code>WriteCallback</code> must retain a reference and call
-<code>close()</code> explicitly.</p>
+<p>Whoever builds the strategy owns it: retain a reference and call
+<code>close()</code> after <code>Vault.close()</code>, so the final push flushes behind
+the drained commits. <code>Vault.close()</code> stops the pull loop it started
+but never closes the strategy (#1765).</p>
 <p>.. deprecated::
     Prefer :class:<code>GitWriteStrategy</code> directly for access to
     :meth:<code>~GitWriteStrategy.flush</code> and :meth:<code>~GitWriteStrategy.close</code>.</p>

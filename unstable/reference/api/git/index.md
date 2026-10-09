@@ -26,8 +26,9 @@ vault = Vault(
 # Writes are now auto-committed and pushed
 vault.writer.write("notes/new.md", "Hello world")
 
-# Clean up on shutdown
+# Clean up on shutdown: the vault first, then the strategy you built
 vault.close()
+strategy.close()
 ```
 
 ## Migrating from 4.x
@@ -434,7 +435,7 @@ Create a :class:`GitWriteStrategy` callback.
 
 Convenience wrapper around :class:`GitWriteStrategy`. With the default `push_delay_s=0`, commits happen per-write but push only fires when :meth:`~GitWriteStrategy.close` or :meth:`~GitWriteStrategy.flush` is called.
 
-When used via :class:`~markdown_vault_mcp.vault.Vault`, `Vault.close()` automatically calls the strategy's `close()`, so pushes flush on shutdown. Callers using this as a bare `WriteCallback` must retain a reference and call `close()` explicitly.
+Whoever builds the strategy owns it: retain a reference and call `close()` after `Vault.close()`, so the final push flushes behind the drained commits. `Vault.close()` stops the pull loop it started but never closes the strategy (#1765).
 
 .. deprecated:: Prefer :class:`GitWriteStrategy` directly for access to :meth:`~GitWriteStrategy.flush` and :meth:`~GitWriteStrategy.close`.
 
