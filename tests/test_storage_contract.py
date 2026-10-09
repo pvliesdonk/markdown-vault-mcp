@@ -91,3 +91,34 @@ class TestProtocols:
                 return SourceState("absent")
 
         assert isinstance(Fake(), SourceProbe)
+
+
+class TestRegistry:
+    def test_the_sqlite_keyword_backend_is_registered(self) -> None:
+        from markdown_vault_mcp.stores.registry import backend_names, get_backend
+        from markdown_vault_mcp.stores.sqlite_keyword import SqliteKeywordBackend
+
+        assert get_backend("keyword", "sqlite") is SqliteKeywordBackend
+        assert "sqlite" in backend_names("keyword")
+
+    def test_an_unknown_name_lists_the_known_ones(self) -> None:
+        from markdown_vault_mcp.stores import sqlite_keyword  # noqa: F401
+        from markdown_vault_mcp.stores.registry import get_backend
+
+        with pytest.raises(LookupError, match=r"keyword.*nope.*sqlite"):
+            get_backend("keyword", "nope")
+
+    def test_registering_a_different_factory_under_a_taken_key_is_refused(
+        self,
+    ) -> None:
+        from markdown_vault_mcp.stores.registry import register_backend
+        from markdown_vault_mcp.stores.sqlite_keyword import SqliteKeywordBackend
+
+        register_backend("keyword", "sqlite", SqliteKeywordBackend)  # same: fine
+        with pytest.raises(ValueError, match="already registered"):
+            register_backend("keyword", "sqlite", object)  # type: ignore[arg-type]
+
+    def test_families_do_not_collide(self) -> None:
+        from markdown_vault_mcp.stores.registry import backend_names
+
+        assert "sqlite" not in backend_names("vector")
