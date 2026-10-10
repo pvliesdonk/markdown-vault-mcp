@@ -573,11 +573,9 @@ class TestIndexOpensThroughTheRegistry:
 
         blocker = tmp_path / "blocker"
         blocker.write_text("not a directory")
+        settings = VaultSettings(index_path=blocker / "index.db")
         with pytest.raises(StoreUnavailableError):
-            Vault(
-                source_dir=tmp_path,
-                settings=VaultSettings(index_path=blocker / "index.db"),
-            )
+            Vault(source_dir=tmp_path, settings=settings)
 
     def test_a_corrupt_index_raises_corrupt_and_is_left_alone(
         self, tmp_path: Path
@@ -587,8 +585,9 @@ class TestIndexOpensThroughTheRegistry:
         index = tmp_path / "index.db"
         junk = b"not sqlite " * 64
         index.write_bytes(junk)
+        settings = VaultSettings(index_path=index)
         with pytest.raises(StoreCorruptError):
-            Vault(source_dir=tmp_path, settings=VaultSettings(index_path=index))
+            Vault(source_dir=tmp_path, settings=settings)
         assert index.read_bytes() == junk
 
     def test_in_memory_index_is_writable_when_files_are_not_owned(

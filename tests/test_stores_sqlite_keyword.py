@@ -66,15 +66,17 @@ class TestOpenOutcomes:
             store.close()
 
     def test_an_identity_is_refused_for_a_keyword_store(self, tmp_path: Path) -> None:
+        backend = SqliteKeywordBackend()
         with pytest.raises(ValueError, match="identity"):
-            SqliteKeywordBackend().open(tmp_path / "index.db", identity={"x": "y"})
+            backend.open(tmp_path / "index.db", identity={"x": "y"})
 
     def test_a_parent_that_is_a_file_is_unavailable(self, tmp_path: Path) -> None:
         blocker = tmp_path / "blocker"
         blocker.write_text("not a directory")
         location = blocker / "index.db"
+        backend = SqliteKeywordBackend()
         with pytest.raises(StoreUnavailableError) as info:
-            SqliteKeywordBackend().open(location)
+            backend.open(location)
         assert info.value.backend == "sqlite"
         assert info.value.location == str(location)
         assert str(location) in str(info.value)
@@ -86,8 +88,9 @@ class TestOpenOutcomes:
         location = tmp_path / "index.db"
         junk = b"definitely not sqlite " * 64
         location.write_bytes(junk)
+        backend = SqliteKeywordBackend()
         with pytest.raises(StoreCorruptError) as info:
-            SqliteKeywordBackend().open(location)
+            backend.open(location)
         assert info.value.location == str(location)
         assert location.read_bytes() == junk
 
@@ -100,8 +103,9 @@ class TestOpenOutcomes:
         )
         conn.commit()
         conn.close()
+        backend = SqliteKeywordBackend()
         with pytest.raises(StoreUnsupportedSchemaError):
-            SqliteKeywordBackend().open(location, owns_files=False)
+            backend.open(location, owns_files=False)
 
     def test_backend_configuration_reaches_the_index(self, tmp_path: Path) -> None:
         backend = SqliteKeywordBackend(
