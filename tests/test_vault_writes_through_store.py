@@ -5,17 +5,23 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+import pytest
+
 from markdown_vault_mcp.config_sections import VaultSettings
+from markdown_vault_mcp.exceptions import ReadOnlyError
 from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
-from markdown_vault_mcp.types import EmbeddingIdentity
+from markdown_vault_mcp.types import (
+    ANY_TOKEN,
+    DocumentRows,
+    EmbeddingIdentity,
+    VectorRow,
+)
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
 from tests.fixtures.vectors import metadata_by_path, write_legacy_sidecar
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
     from markdown_vault_mcp.interfaces import EmbeddingStore
 
@@ -197,15 +203,21 @@ class TestUpgradingFromALegacySidecar:
             provider=provider,
         )
         provider.calls = 0
+        legacy_matrix = tmp_path / "index-db-embeddings.npy"
         vault = _vault(tmp_path, provider)
         try:
             vault.index.build_index()
             assert vault.index.build_embeddings() == 0
             assert provider.calls == 0
+            vault._vectors.checkpoint()  # type: ignore[union-attr]
+            assert legacy_matrix.exists()  # nothing changed, nothing saved
+            (tmp_path / "vault" / "alpha.md").write_text("# Alpha\n\nQuinces now.\n")
+            vault.index.reindex()
         finally:
             vault.close()
         names = sorted(p.name for p in tmp_path.glob("index-db-embeddings*"))
-        assert "index-db-embeddings.npy" in names  # nothing changed, nothing saved
+        assert "index-db-embeddings.json" in names
+        assert "index-db-embeddings.npy" not in names  # the first change moved it
 
 
 class TestPurges:
@@ -238,3 +250,100 @@ class TestPurges:
             vault.close()
         reopened = _reopened(tmp_path, MockEmbeddingProvider())
         assert sorted(metadata_by_path(reopened)) == ["alpha.md"]
+
+
+class _ModelB(MockEmbeddingProvider):
+    @property
+    def model_name(self) -> str:
+        return "model-b"
+
+
+class TestAnInjectedStoreOfAnotherModel:
+    def test_reindex_writes_nothing_into_it(self, tmp_path: Path) -> None:
+        model_a = EmbeddingIdentity.of(MockEmbeddingProvider(), "v1")
+        store = NumpySidecarBackend().open(None, model_a)
+        store.replace_document(
+            DocumentRows("old.md", None, [VectorRow([1.0] + [0.0] * 31, {})]),
+            expected_token=ANY_TOKEN,
+        )
+        vault = Vault(
+            source_dir=_source(tmp_path),
+            settings=VaultSettings(index_path=tmp_path / "index.db", read_only=False),
+            embedding_provider=_ModelB(),
+            vector_store=store,
+        )
+        try:
+            vault.index.build_index()
+            (tmp_path / "vault" / "alpha.md").write_text("# Alpha\n\nQuinces now.\n")
+            (tmp_path / "vault" / "gamma.md").write_text("# Gamma\n\nGlass.\n")
+            vault.index.reindex()
+            assert sorted(store.tokens()) == ["old.md"]
+            assert store.identity == model_a
+        finally:
+            vault.close()
+            store.close()
+
+
+class TestAProcessThatDoesNotOwnTheFiles:
+    def test_a_forced_rebuild_is_refused_before_embedding(self, tmp_path: Path) -> None:
+        provider = _Switchable()
+        writer = _vault(tmp_path, provider)
+        try:
+            writer.index.build_index()
+            writer.index.build_embeddings()
+        finally:
+            writer.close()
+        before = {p.name: p.read_bytes() for p in tmp_path.glob("index-db-embeddings*")}
+        provider.calls = 0
+        reader = _vault(tmp_path, provider, owns_index_files=False)
+        try:
+            reader.index.build_index()
+            with pytest.raises(ReadOnlyError):
+                reader.index.build_embeddings(force=True)
+        finally:
+            reader.close()
+        assert provider.calls == 0
+        after = {p.name: p.read_bytes() for p in tmp_path.glob("index-db-embeddings*")}
+        assert after == before
+
+
+class TestRebuildingBeforeAnyRead:
+    def test_a_failed_forced_rebuild_keeps_serving_the_stored_rows(
+        self, tmp_path: Path
+    ) -> None:
+        provider = _Switchable()
+        writer = _vault(tmp_path, provider)
+        try:
+            writer.index.build_index()
+            writer.index.build_embeddings()
+        finally:
+            writer.close()
+        provider.fail = True
+        vault = _vault(tmp_path, provider)
+        try:
+            vault.index.build_index()
+            assert vault.index.build_embeddings(force=True) == 0
+            assert sorted(metadata_by_path(_stored(vault))) == ["alpha.md", "beta.md"]
+        finally:
+            vault.close()
+
+
+class TestFloat32:
+    def test_a_batch_that_overflows_float32_is_skipped_alone(
+        self, tmp_path: Path
+    ) -> None:
+        class Overflowing(MockEmbeddingProvider):
+            def embed(self, texts: list[str]) -> list[list[float]]:
+                vectors = super().embed(texts)
+                return [
+                    [1e39, *v[1:]] if "Apples" in t else v
+                    for t, v in zip(texts, vectors, strict=True)
+                ]
+
+        vault = _vault(tmp_path, Overflowing(), embedding_batch_size=1)
+        try:
+            vault.index.build_index()
+            assert vault.index.build_embeddings() == 1
+            assert sorted(metadata_by_path(_stored(vault))) == ["beta.md"]
+        finally:
+            vault.close()

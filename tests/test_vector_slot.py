@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from markdown_vault_mcp.exceptions import (
+    ReadOnlyError,
     StoreUnavailableError,
     VectorIndexUnusableError,
 )
@@ -337,15 +338,45 @@ class TestWritingThroughTheSlot:
         assert slot.rebuild_target() is store
         assert store.count == 1
 
-    def test_an_unopened_owned_store_rebuilds_into_a_fresh_one(
+    def test_an_unopened_owned_store_is_opened_as_the_rebuild_target(
         self, tmp_path: Path
     ) -> None:
         _persist_with(tmp_path / "vec", IDENTITY)
         slot = _slot(tmp_path / "vec")
         target = slot.rebuild_target()
+        assert target.count == 1
+        assert slot.current() is target
+
+    def test_a_store_that_will_not_open_rebuilds_into_a_fresh_one(
+        self, tmp_path: Path
+    ) -> None:
+        (tmp_path / "vec.json").write_text("{not json")
+        slot = _slot(tmp_path / "vec")
+        target = slot.rebuild_target()
         assert target.count == 0
         assert slot.current() is target
-        assert (tmp_path / "vec.json").exists()
+        assert (tmp_path / "vec.json").read_text() == "{not json"
+
+    def test_a_process_that_does_not_own_the_files_may_not_rebuild(
+        self, tmp_path: Path
+    ) -> None:
+        _persist_with(tmp_path / "vec", IDENTITY)
+        before = sorted(p.name for p in tmp_path.iterdir())
+        slot = _slot(tmp_path / "vec", owns_files=False)
+        with pytest.raises(ReadOnlyError):
+            slot.rebuild_target()
+        with pytest.raises(ReadOnlyError):
+            slot.fresh()
+        assert sorted(p.name for p in tmp_path.iterdir()) == before
+
+    def test_writable_current_skips_a_store_of_another_model(self) -> None:
+        other = NumpySidecarBackend().open(
+            None, EmbeddingIdentity("mock", "other-model", "", "v1", 3)
+        )
+        assert _slot(None, store=other).writable_current() is None
+        same = NumpySidecarBackend().open(None, IDENTITY)
+        assert _slot(None, store=same).writable_current() is same
+        assert _slot(None).writable_current() is None
 
     def test_a_dimension_rebuild_does_not_publish_into_the_old_store(
         self, tmp_path: Path

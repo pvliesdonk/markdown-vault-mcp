@@ -14,11 +14,13 @@ injected store is the caller's: never rebuilt on a fault, never closed.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import logging
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import (
+    ReadOnlyError,
     StoreCorruptError,
     StoreIncompatibleError,
     VectorIndexUnusableError,
@@ -190,7 +192,11 @@ class VectorStoreSlot:
         An owned slot opens a fresh store over the location and drops the
         old object without closing it, so its unsaved rows are not written
         over the rebuild. An injected store is emptied in place.
+
+        Raises:
+            ReadOnlyError: If this process does not own the store's files.
         """
+        self._refuse_unowned()
         if self._injected and self._store is not None:
             self._store.publish_generation(self.identity, [])
             return self._store
@@ -208,6 +214,44 @@ class VectorStoreSlot:
     def _answers(self, store: EmbeddingStore) -> bool:
         """Whether *store*'s rows answer this provider's queries: the same identity."""
         return store.identity == self.identity
+
+    def _same_space(self, store: EmbeddingStore) -> bool:
+        """Whether *store* was embedded by this provider's model and format.
+
+        The dimension is left out: it may need a network probe, and a vector
+        of another dimension is refused by the store anyway.
+        """
+        held, wanted = store.identity, self._open_identity()
+        return (held.provider, held.model, held.variant, held.text_format) == (
+            wanted.provider,
+            wanted.model,
+            wanted.variant,
+            wanted.text_format,
+        )
+
+    def writable_current(self) -> EmbeddingStore | None:
+        """Return the installed store if this provider may write to it, else ``None``.
+
+        Opens nothing and asks the provider for nothing: the reindex path
+        writes only into a store already open, and never into one embedded
+        by another model.
+        """
+        store = self._store
+        if store is None or not self._same_space(store):
+            return None
+        return store
+
+    def _refuse_unowned(self) -> None:
+        """Refuse to create or replace files this process does not own.
+
+        Raises:
+            ReadOnlyError: If the store is on disk, not injected, and not owned.
+        """
+        if self._location is not None and not self._owns_files and not self._injected:
+            raise ReadOnlyError(
+                "This process does not own the vector store's files; rebuild "
+                "the embeddings in the process that owns them."
+            )
 
     def _mismatch(self, store: EmbeddingStore) -> str:
         """Say which embeddings *store* holds and which the provider makes."""
@@ -252,13 +296,25 @@ class VectorStoreSlot:
     def rebuild_target(self) -> EmbeddingStore:
         """Return the store a full rebuild publishes into.
 
-        The installed store, when its rows answer this provider's queries:
-        the rebuild publishes one generation into it at the end, so readers
-        keep its rows meanwhile and a rebuild that embeds nothing leaves
-        them. Otherwise :meth:`fresh`: a fresh store over the location for an
-        owned slot (the old files survive until the rebuild publishes), the
-        injected store emptied in place.
+        The store (opened first if need be), when its rows answer this
+        provider's queries: the rebuild publishes one generation into it at
+        the end, so readers keep its rows meanwhile and a rebuild that embeds
+        nothing leaves them. Otherwise :meth:`fresh`: a fresh store over the
+        location for an owned slot (the old files survive until the rebuild
+        publishes), the injected store emptied in place.
+
+        Raises:
+            ReadOnlyError: If this process does not own the store's files.
+            StoreOpenError: If the store is unavailable or of an unsupported
+                schema.
         """
+        self._refuse_unowned()
+        if self._store is None:
+            # A store that will not open is rebuilt into a fresh one below.
+            with contextlib.suppress(
+                StoreCorruptError, StoreIncompatibleError, VectorIndexUnusableError
+            ):
+                self.get(rebuild=None)
         if self._store is not None and self._answers(self._store):
             return self._store
         return self.fresh()

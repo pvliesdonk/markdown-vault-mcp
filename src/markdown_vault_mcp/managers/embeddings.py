@@ -17,6 +17,7 @@ import logging
 import math
 import stat as stat_module
 import time
+from array import array
 from collections import Counter
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -98,7 +99,8 @@ class EmbeddingsManager:
             empty-build check's source walk.
         vector_slot: Opens, rebuilds and describes the vector store. ``None``
             with a provider builds a numpy store over ``embeddings_path``
-            (in memory when that is ``None``), owned by this manager.
+            (in memory when that is ``None``), owned by this manager and
+            never closed: every write site checkpoints what it changes.
     """
 
     def __init__(
@@ -344,8 +346,8 @@ class EmbeddingsManager:
         return not stat_module.S_ISREG(st.st_mode)
 
     def _loaded_store(self) -> EmbeddingStore | None:
-        """Return the open store, opening nothing."""
-        return self._slot.current() if self._slot is not None else None
+        """Return the open store if this provider may write to it, opening nothing."""
+        return self._slot.writable_current() if self._slot is not None else None
 
     def _open_store(self) -> EmbeddingStore:
         """Open (installing) the store for writing.
@@ -631,8 +633,9 @@ class EmbeddingsManager:
         for start in range(0, total, self._embedding_batch_size):
             end = min(start + self._embedding_batch_size, total)
             try:
-                batch = provider.embed(texts[start:end])
-                _check_batch(batch, dimension, end - start)
+                batch = _float32_batch(
+                    provider.embed(texts[start:end]), dimension, end - start
+                )
                 kept = [
                     VectorRow(vector, dict(m))
                     for vector, m in zip(batch, meta[start:end], strict=True)
@@ -980,7 +983,7 @@ class EmbeddingsManager:
                 **no_store,
             }
 
-        vectors = self._loaded_store()
+        vectors = self._slot.current() if self._slot is not None else None
         count = 0
         if vectors is not None:
             count = vectors.count
@@ -1170,8 +1173,15 @@ def _source_root_available(source_dir: Path) -> bool:
         return False
 
 
-def _check_batch(vectors: list[list[float]], dimension: int, expected: int) -> None:
-    """Refuse a batch the store would refuse, before it is kept.
+def _float32_batch(
+    vectors: list[list[float]], dimension: int, expected: int
+) -> list[array[float]]:
+    """Pack a batch as float32, refusing what the store would refuse.
+
+    A cold build holds every row until it publishes, so rows are kept at the
+    store's precision rather than as Python floats, which cost eight times
+    the memory. The checks run on the packed values: a value too large for
+    float32 becomes infinite there.
 
     Raises:
         ValueError: If the count, a dimension or a value is wrong.
@@ -1180,14 +1190,18 @@ def _check_batch(vectors: list[list[float]], dimension: int, expected: int) -> N
         raise ValueError(
             f"The provider returned {len(vectors)} vectors for {expected} texts."
         )
+    packed: list[array[float]] = []
     for vector in vectors:
         if len(vector) != dimension:
             raise ValueError(
                 f"Embedding dimension mismatch: the store holds dimension "
                 f"{dimension}, a vector has {len(vector)}."
             )
-        if not all(math.isfinite(x) for x in vector):
-            raise ValueError("Embedding values must be finite; a vector holds NaN.")
+        row = array("f", vector)
+        if not all(math.isfinite(x) for x in row):
+            raise ValueError("Embedding values must be finite in float32.")
+        packed.append(row)
+    return packed
 
 
 def _documents(rows: list[VectorRow]) -> list[DocumentRows]:
