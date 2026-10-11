@@ -392,3 +392,33 @@ class TestANonOwningProcessReading:
             )
         finally:
             reader.close()
+
+
+class TestAProviderThatIsDown:
+    def test_reindex_beside_an_injected_store_still_indexes_keywords(
+        self, tmp_path: Path
+    ) -> None:
+        class Down(MockEmbeddingProvider):
+            @property
+            def dimension(self) -> int:
+                raise ConnectionError("provider down")
+
+            def embed(self, texts: list[str]) -> list[list[float]]:  # noqa: ARG002
+                raise ConnectionError("provider down")
+
+        store = NumpySidecarBackend().open(
+            None, EmbeddingIdentity.of(MockEmbeddingProvider(), "v1")
+        )
+        vault = Vault(
+            source_dir=_source(tmp_path),
+            settings=VaultSettings(read_only=False),  # held in memory
+            embedding_provider=Down(),
+            vector_store=store,
+        )
+        try:
+            vault.index.build_index()
+            (tmp_path / "vault" / "gamma.md").write_text("# Gamma\n\nGlass.\n")
+            assert vault.index.reindex().added == 1
+        finally:
+            vault.close()
+            store.close()

@@ -219,12 +219,15 @@ class VectorStoreSlot:
         The dimension is left out: it may need a network probe, and a vector
         of another dimension is refused by the store anyway.
         """
-        held, wanted = store.identity, self._open_identity()
+        provider = self._provider
+        if provider is None:
+            return False
+        held = store.identity
         return (held.provider, held.model, held.variant, held.text_format) == (
-            wanted.provider,
-            wanted.model,
-            wanted.variant,
-            wanted.text_format,
+            provider.provider_name,
+            provider.model_name,
+            provider.provider_variant,
+            self._text_format,
         )
 
     def writable_current(self) -> EmbeddingStore | None:
