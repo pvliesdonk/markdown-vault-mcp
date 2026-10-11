@@ -20,19 +20,21 @@ from typing import TYPE_CHECKING, Any
 
 from fastmcp import Client
 
-from markdown_vault_mcp.managers._legacy_vector_writes import LegacyVectorWrites
+from markdown_vault_mcp.types import ANY_TOKEN
 from markdown_vault_mcp.vault import Vault, VaultSettings
-from markdown_vault_mcp.vector_index import VectorIndex
 from tests.conftest import (
     MockEmbeddingProvider,
     _parse_tool_data,
     wait_for_mcp_writer_drain,
 )
+from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
+
+    from markdown_vault_mcp.interfaces import EmbeddingStore
 
 
 def _make_vault_dir(tmp_path: Path, n_docs: int = 3) -> Path:
@@ -71,8 +73,8 @@ def _boot(vault_dir: Path, tmp_path: Path, provider: MockEmbeddingProvider) -> V
 
 def _stored(
     tmp_path: Path, provider: MockEmbeddingProvider, *, writable: bool = False
-) -> LegacyVectorWrites:
-    """The store a booted vault wrote at ``tmp_path / "vectors"``, read the old way.
+) -> EmbeddingStore:
+    """The store a booted vault wrote at ``tmp_path / "vectors"``.
 
     Opened with the default text format, which is what ``_boot``'s vault uses.
     """
@@ -84,7 +86,7 @@ def _stored(
     store = NumpySidecarBackend().open(
         tmp_path / "vectors", identity, owns_files=writable
     )
-    return LegacyVectorWrites(store, provider)
+    return store
 
 
 def _track_embeds(provider: MockEmbeddingProvider) -> list[list[str]]:
@@ -182,7 +184,7 @@ class TestBootEmbeddingConvergence:
         v1.close()
 
         doomed = _stored(tmp_path, provider)
-        doomed_chunks = len(doomed.chunks_by_path()["note_2.md"])
+        doomed_chunks = len(metadata_by_path(doomed)["note_2.md"])
         assert doomed_chunks > 0
 
         (vault_dir / "note_2.md").unlink()
@@ -199,7 +201,7 @@ class TestBootEmbeddingConvergence:
         v2.close()
 
         persisted = _stored(tmp_path, provider)
-        assert "note_2.md" not in persisted.chunks_by_path()
+        assert "note_2.md" not in metadata_by_path(persisted)
 
     def test_boot_refreshes_vectors_for_documents_modified_while_down(
         self, tmp_path: Path
@@ -227,7 +229,7 @@ class TestBootEmbeddingConvergence:
         v2.close()
 
         persisted = _stored(tmp_path, provider)
-        by_path = persisted.chunks_by_path()
+        by_path = metadata_by_path(persisted)
         assert all("gardening" in r["content"] for r in by_path["note_1.md"])
         # No stale vector metadata for the old content remains anywhere.
         all_rows = [r for rows in by_path.values() for r in rows]
@@ -258,7 +260,7 @@ class TestBootEmbeddingConvergence:
         persisted = _stored(tmp_path, provider)
         vec_lines = {
             (r["content"], r["start_line"])
-            for r in persisted.chunks_by_path()["note_1.md"]
+            for r in metadata_by_path(persisted)["note_1.md"]
         }
         assert vec_lines == fts_lines
 
@@ -279,10 +281,13 @@ class TestBootEmbeddingConvergence:
         # Corrupt the sidecar the way the old code path did: drop some
         # documents' vectors while FTS keeps them.
         vectors = _stored(tmp_path, provider, writable=True)
-        dropped = vectors.delete_by_path("note_0.md")
-        dropped += vectors.delete_by_path("note_3.md")
+        dropped = len(vectors.rows_for("note_0.md")) + len(
+            vectors.rows_for("note_3.md")
+        )
+        vectors.remove_document("note_0.md", expected_token=ANY_TOKEN)
+        vectors.remove_document("note_3.md", expected_token=ANY_TOKEN)
         assert dropped > 0
-        vectors.store.close()
+        vectors.close()
 
         calls = _track_embeds(provider)
         v2 = _boot(vault_dir, tmp_path, provider)
@@ -294,7 +299,7 @@ class TestBootEmbeddingConvergence:
         v2.close()
 
         persisted = _stored(tmp_path, provider)
-        by_path = persisted.chunks_by_path()
+        by_path = metadata_by_path(persisted)
         assert "note_0.md" in by_path
         assert "note_3.md" in by_path
 
@@ -364,7 +369,7 @@ class TestBootEmbeddingConvergence:
         v2.close()
 
         persisted = _stored(tmp_path, provider)
-        rows = persisted.chunks_by_path()["note_1.md"]
+        rows = metadata_by_path(persisted)["note_1.md"]
         # The stale (pre-modification) vectors are still searchable rather
         # than deleted-without-replacement.
         assert any("Original body 1" in r["content"] for r in rows)
@@ -502,21 +507,33 @@ class TestAccessors:
         assert all(r["is_first_chunk"] is False for r in multi_rows[1:])
 
     def test_vector_chunks_by_path_groups_copies(self) -> None:
+        from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+        from markdown_vault_mcp.types import DocumentRows, EmbeddingIdentity, VectorRow
+
         provider = MockEmbeddingProvider()
-        index = VectorIndex(provider)
+        index = NumpySidecarBackend().open(None, EmbeddingIdentity.of(provider, "v1"))
         meta = [
             {"path": "a.md", "title": "A", "content": "one"},
             {"path": "b.md", "title": "B", "content": "two"},
             {"path": "a.md", "title": "A", "content": "three"},
         ]
-        index.add(["one", "two", "three"], meta)
+        vectors = provider.embed(["one", "two", "three"])
+        for path in ("a.md", "b.md"):
+            rows = [
+                VectorRow(v, m)
+                for v, m in zip(vectors, meta, strict=True)
+                if m["path"] == path
+            ]
+            index.replace_document(
+                DocumentRows(path, None, rows), expected_token=ANY_TOKEN
+            )
 
-        grouped = index.chunks_by_path()
+        grouped = metadata_by_path(index)
         assert sorted(grouped) == ["a.md", "b.md"]
         assert [r["content"] for r in grouped["a.md"]] == ["one", "three"]
         # Returned rows are copies — mutating them must not corrupt the index.
         grouped["a.md"][0]["content"] = "mutated"
-        assert index.chunks_by_path()["a.md"][0]["content"] == "one"
+        assert metadata_by_path(index)["a.md"][0]["content"] == "one"
 
 
 # ---------------------------------------------------------------------------
@@ -572,7 +589,7 @@ class TestPreambleConvergence:
         try:
             embedded = [t for batch in calls for t in batch]
             assert any("new summary" in t for t in embedded)
-            rows = v2._vectors.chunks_by_path()["doc.md"]
+            rows = metadata_by_path(v2._vectors)["doc.md"]
             assert rows[0]["preamble"] == "new summary"
         finally:
             v2.close()

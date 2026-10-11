@@ -68,7 +68,7 @@ class TestTheVaultUsesTheNumpyStore:
             status = vault.index.embeddings_status()
             assert status["backend"] == "numpy"
             assert status["identity"]["model"] == "mock-dim-32"
-            assert status["generation"] == 0
+            assert status["generation"] == 1  # the cold build publishes
         finally:
             vault.close()
 

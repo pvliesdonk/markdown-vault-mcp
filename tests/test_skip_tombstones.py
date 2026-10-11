@@ -610,9 +610,8 @@ def test_all_tombstone_vault_warm_restarts(
 
 def test_empty_build_not_authoritative_without_tombstone(tmp_path: Path) -> None:
     """An absentee with neither row nor tombstone vetoes the empty save."""
-    from markdown_vault_mcp.vector_index import VectorIndex
     from tests.conftest import MockEmbeddingProvider
-    from tests.test_managers_index import _make_index_mgr
+    from tests.test_managers_index import _make_index_mgr, _stored
 
     vault = tmp_path / "vault"
     vault.mkdir()
@@ -627,10 +626,10 @@ def test_empty_build_not_authoritative_without_tombstone(tmp_path: Path) -> None
     )
     mgr.build_index()
     assert mgr.build_embeddings() == 1
-    assert VectorIndex.load(embeddings_path, provider).count == 1
+    assert _stored(embeddings_path, provider).count == 1
 
     # Build gap: the row (and any tombstone) vanish while the source stays.
     fts.delete_by_path("note.md")
     assert mgr.build_embeddings(force=True) == 0
-    # The empty index must NOT reach disk — the old vector survives.
-    assert VectorIndex.load(embeddings_path, provider).count == 1
+    # No empty generation is published: the old vector survives on disk.
+    assert _stored(embeddings_path, provider).count == 1

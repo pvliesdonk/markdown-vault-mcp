@@ -33,27 +33,10 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.interfaces import (
         EmbeddingStore,
         VectorBackend,
-        VectorStore,
     )
     from markdown_vault_mcp.providers import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
-
-
-@dataclasses.dataclass(frozen=True)
-class VectorStoreAccess:
-    """The vault's store as the embeddings writer reaches it, until #1778.
-
-    Attributes:
-        open: Opens the store for writing, rebuilding an owned one that will
-            not open.
-        fresh: Installs an empty store to rebuild into.
-        describe: Backend, identity and generation for ``embeddings_status``.
-    """
-
-    open: Callable[[], VectorStore]
-    fresh: Callable[[], VectorStore]
-    describe: Callable[[], dict[str, Any]]
 
 
 class VectorStoreSlot:

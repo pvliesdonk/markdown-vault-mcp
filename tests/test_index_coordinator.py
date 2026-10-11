@@ -25,8 +25,6 @@ from markdown_vault_mcp.vault import VaultSettings
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from markdown_vault_mcp.vector_index import VectorIndex
-
 
 def make_coordinator(
     tmp_path: Path,
@@ -50,7 +48,6 @@ def make_coordinator(
         db_path=db, searchable_frontmatter_fields=list(searchable_fields) or None
     )
     tracker = ChangeTracker(tmp_path / ".state.json")
-    holder: dict[str, VectorIndex | None] = {"v": None}
     index_mgr = IndexManager(
         fts=fts,
         tracker=tracker,
@@ -64,8 +61,6 @@ def make_coordinator(
         attachment_extensions=(
             None if attachment_extensions is None else list(attachment_extensions)
         ),
-        get_vectors=lambda: holder["v"],
-        set_vectors=lambda v: holder.__setitem__("v", v),
         embed_model_name=embed_model_name,
         max_chunk_chars_override=max_chunk_chars_override,
         title_field=title_field,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,13 +14,24 @@ from markdown_vault_mcp.vault import VaultSettings
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from markdown_vault_mcp.interfaces import EmbeddingStore
+
 from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.managers.index import IndexManager
 from markdown_vault_mcp.providers import EmbeddingProvider
 from markdown_vault_mcp.scanner import HeadingChunker
+from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
 from markdown_vault_mcp.tracker import ChangeTracker
-from markdown_vault_mcp.types import IndexStats, ReindexResult
+from markdown_vault_mcp.types import (
+    ANY_TOKEN,
+    DocumentRows,
+    EmbeddingIdentity,
+    IndexStats,
+    ReindexResult,
+    VectorRow,
+)
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.vectors import metadata_by_path
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -62,11 +73,32 @@ def index_vault(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _stored(base: Path, provider: EmbeddingProvider) -> EmbeddingStore:
+    """Open the vectors on disk at *base*, as a fresh process would."""
+    return NumpySidecarBackend().open(base, EmbeddingIdentity.of(provider, "v1"))
+
+
+def _all_metadata(store: EmbeddingStore) -> list[dict[str, Any]]:
+    """Every stored row's metadata, in path order."""
+    return [m for rows in metadata_by_path(store).values() for m in rows]
+
+
+class _LoadedStore:
+    """The manager's open vector store, read the way the old holder dict was."""
+
+    def __init__(self, mgr: IndexManager) -> None:
+        self._mgr = mgr
+
+    def __getitem__(self, key: str) -> EmbeddingStore | None:
+        assert key == "vectors"
+        return self._mgr._embeddings._loaded_store()
+
+
 def _make_index_mgr(
     vault: Path,
     state_dir: Path,
     **overrides,
-) -> tuple[IndexManager, FTSIndex, dict]:
+) -> tuple[IndexManager, FTSIndex, _LoadedStore]:
     """Build an IndexManager with default wiring.
 
     Returns (index_mgr, fts, vectors_holder) so tests can inspect state.
@@ -81,22 +113,21 @@ def _make_index_mgr(
     )
     # Accept-and-discard write_lock for callers that still pass it.
     overrides.pop("write_lock", None)
-    vectors_holder: dict = {"vectors": None}
     defaults = {
         "fts": fts,
         "tracker": tracker,
         "source_dir": vault,
         "chunk_strategy": HeadingChunker(),
-        "get_vectors": lambda: vectors_holder["vectors"],
-        "set_vectors": lambda v: vectors_holder.__setitem__("vectors", v),
     }
     defaults.update(overrides)
     mgr = IndexManager(**defaults)
-    return mgr, fts, vectors_holder
+    return mgr, fts, _LoadedStore(mgr)
 
 
 @pytest.fixture()
-def index_mgr(index_vault: Path, tmp_path: Path) -> tuple[IndexManager, FTSIndex, dict]:
+def index_mgr(
+    index_vault: Path, tmp_path: Path
+) -> tuple[IndexManager, FTSIndex, _LoadedStore]:
     """Build an IndexManager from the test vault."""
     return _make_index_mgr(index_vault, tmp_path)
 
@@ -566,14 +597,11 @@ class TestSkipStateMemory:
         """Build an IndexManager wired with a mock embedding provider."""
         from tests.conftest import MockEmbeddingProvider
 
-        holder: dict = {"vectors": None}
-        mgr, _fts, _ = _make_index_mgr(
+        mgr, _fts, holder = _make_index_mgr(
             vault,
             state_dir,
             embeddings_path=state_dir / "embeddings",
             embedding_provider=MockEmbeddingProvider(),
-            get_vectors=lambda: holder["vectors"],
-            set_vectors=lambda v: holder.__setitem__("vectors", v),
         )
         return mgr, holder
 
@@ -591,11 +619,11 @@ class TestSkipStateMemory:
         vectors = holder["vectors"]
         assert vectors is not None
 
-        vectors.save = MagicMock(wraps=vectors.save)  # type: ignore[method-assign]
+        vectors.checkpoint = MagicMock(wraps=vectors.checkpoint)  # type: ignore[method-assign]
         result = mgr.reindex()
 
         assert (result.added, result.modified, result.deleted) == (0, 0, 0)
-        vectors.save.assert_not_called()
+        vectors.checkpoint.assert_not_called()
 
     def test_real_change_reindex_saves_vectors(
         self, index_vault: Path, tmp_path: Path
@@ -607,7 +635,7 @@ class TestSkipStateMemory:
         vectors = holder["vectors"]
         assert vectors is not None
 
-        vectors.save = MagicMock(wraps=vectors.save)  # type: ignore[method-assign]
+        vectors.checkpoint = MagicMock(wraps=vectors.checkpoint)  # type: ignore[method-assign]
         (index_vault / "alpha.md").write_text(
             "---\ntitle: Alpha\n---\n# Alpha\n\nChanged body content.\n",
             encoding="utf-8",
@@ -615,7 +643,7 @@ class TestSkipStateMemory:
         result = mgr.reindex()
 
         assert result.modified == 1
-        vectors.save.assert_called_once()
+        vectors.checkpoint.assert_called_once()
 
     def test_stale_excluded_reindex_saves_vectors(
         self, index_vault: Path, tmp_path: Path
@@ -634,7 +662,7 @@ class TestSkipStateMemory:
         vectors = holder["vectors"]
         assert vectors is not None
 
-        vectors.save = MagicMock(wraps=vectors.save)  # type: ignore[method-assign]
+        vectors.checkpoint = MagicMock(wraps=vectors.checkpoint)  # type: ignore[method-assign]
         # Exclude a note that is already indexed; the file remains on disk so
         # the tracker reports no add/modify/delete — only the stale-excluded
         # purge mutates the vector index.
@@ -642,7 +670,7 @@ class TestSkipStateMemory:
         result = mgr.reindex()
 
         assert (result.added, result.modified, result.deleted) == (0, 0, 0)
-        vectors.save.assert_called_once()
+        vectors.checkpoint.assert_called_once()
 
     def test_deletion_only_reindex_saves_vectors(
         self, index_vault: Path, tmp_path: Path
@@ -659,13 +687,13 @@ class TestSkipStateMemory:
         vectors = holder["vectors"]
         assert vectors is not None
 
-        vectors.save = MagicMock(wraps=vectors.save)  # type: ignore[method-assign]
+        vectors.checkpoint = MagicMock(wraps=vectors.checkpoint)  # type: ignore[method-assign]
         (index_vault / "beta.md").unlink()
         result = mgr.reindex()
 
         assert (result.added, result.modified) == (0, 0)
         assert result.deleted == 1
-        vectors.save.assert_called_once()
+        vectors.checkpoint.assert_called_once()
 
     def test_inline_embed_timeout_does_not_abort_reindex(
         self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -685,7 +713,7 @@ class TestSkipStateMemory:
         vectors = holder["vectors"]
         assert vectors is not None
         # Old vectors exist for alpha.md before the edit.
-        assert "alpha.md" in vectors.chunks_by_path()
+        assert "alpha.md" in metadata_by_path(vectors)
 
         # Arm the provider to time out on every embed call from now on.
         def _boom(_texts: list[str]) -> list[list[float]]:
@@ -711,7 +739,7 @@ class TestSkipStateMemory:
 
         # The stale vectors for alpha.md are kept (not dropped) so semantic
         # search stays usable until convergence re-embeds them.
-        assert "alpha.md" in vectors.chunks_by_path()
+        assert "alpha.md" in metadata_by_path(vectors)
 
         # A provider failure is caught before mutation, so the aggregate log
         # accurately reports the vectors as kept — not dropped (#935).
@@ -735,7 +763,7 @@ class TestSkipStateMemory:
         mgr.build_embeddings()
         vectors = holder["vectors"]
         assert vectors is not None
-        assert "alpha.md" in vectors.chunks_by_path()
+        assert "alpha.md" in metadata_by_path(vectors)
 
         # A parsed note with no embeddable chunks.
         note = ParsedNote(
@@ -749,7 +777,7 @@ class TestSkipStateMemory:
         failed = mgr._embed_note_inline(vectors, note)
 
         assert failed == 0
-        assert "alpha.md" not in vectors.chunks_by_path()
+        assert "alpha.md" not in metadata_by_path(vectors)
 
     def test_embed_note_inline_without_provider_is_noop(
         self, index_vault: Path, tmp_path: Path
@@ -767,7 +795,7 @@ class TestSkipStateMemory:
         mgr.build_embeddings()
         vectors = holder["vectors"]
         assert vectors is not None
-        assert "alpha.md" in vectors.chunks_by_path()
+        assert "alpha.md" in metadata_by_path(vectors)
 
         mgr._embeddings._embedding_provider = None
         note = ParsedNote(
@@ -782,20 +810,19 @@ class TestSkipStateMemory:
 
         assert failed == 0
         # Untouched: the guard returned before any delete/add.
-        assert "alpha.md" in vectors.chunks_by_path()
+        assert "alpha.md" in metadata_by_path(vectors)
 
     def test_inline_embed_dimension_mismatch_does_not_abort_reindex(
         self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         """A dimension mismatch on one note skips it, not the whole loop (#935).
 
-        ``add_vectors`` raises ``ValueError`` when a note's fresh vectors do
-        not match the dimension of the vectors already in the index. That
-        must skip only the offending note — the FTS refresh still commits and
-        every other document's vectors survive — rather than propagating out
-        of ``reindex()``. Because ``delete_by_path`` runs before the mismatch
-        is raised, the note's own vectors are *removed*, so the aggregate log
-        must report them as dropped, not kept.
+        The store refuses a note's fresh vectors when they do not match the
+        dimension of the vectors already in it. That must skip only the
+        offending note — the FTS refresh still commits — rather than
+        propagating out of ``reindex()``. The store changes nothing on a
+        refusal, so the note keeps its old vectors (#1778) and the aggregate
+        log reports them as kept.
         """
         mgr, holder = self._mgr_with_embeddings(index_vault, tmp_path)
         mgr.build_index()
@@ -805,7 +832,7 @@ class TestSkipStateMemory:
         # The vault has several docs; the others keep the index at dim 32 so a
         # dim-16 re-embed of alpha.md is a genuine mismatch (not an empty-index
         # reset that would accept any dimension).
-        before = vectors.chunks_by_path()
+        before = metadata_by_path(vectors)
         assert {"alpha.md", "beta.md"} <= set(before)
 
         # Return a differently-dimensioned vector for every embed from now on.
@@ -819,7 +846,7 @@ class TestSkipStateMemory:
             encoding="utf-8",
         )
 
-        # Must NOT raise even though add_vectors rejects the mismatched batch.
+        # Must NOT raise even though the store rejects the mismatched rows.
         with caplog.at_level(logging.WARNING):
             result = mgr.reindex()
         assert result.modified == 1
@@ -830,16 +857,12 @@ class TestSkipStateMemory:
         )
         assert "Edited body." in alpha_text
 
-        # Only alpha.md's vectors were disturbed; every other doc survives.
-        after = vectors.chunks_by_path()
-        assert "beta.md" in after
-        assert "alpha.md" not in after
+        # No vectors were disturbed: alpha.md keeps its old rows (#1778).
+        assert metadata_by_path(vectors) == before
 
-        # The aggregate log reports the removed vectors accurately — dropped,
-        # not "kept" (#935).
+        # The aggregate log reports the vectors as kept (#935).
         messages = [r.getMessage() for r in caplog.records]
-        assert any("reindex_inline_embed_dropped_docs" in m for m in messages)
-        assert not any("reindex_inline_embed_failed_docs" in m for m in messages)
+        assert any("reindex_inline_embed_failed_docs" in m for m in messages)
 
 
 # ---------------------------------------------------------------------------
@@ -863,14 +886,11 @@ class TestBuildEmbeddings:
 
         provider = MockEmbeddingProvider()
         embeddings_path = tmp_path / "embeddings"
-        vectors_holder: dict = {"vectors": None}
-        mgr, _fts, _ = _make_index_mgr(
+        mgr, _fts, vectors_holder = _make_index_mgr(
             index_vault,
             tmp_path,
             embeddings_path=embeddings_path,
             embedding_provider=provider,
-            get_vectors=lambda: vectors_holder["vectors"],
-            set_vectors=lambda v: vectors_holder.__setitem__("vectors", v),
         )
         mgr.build_index()
         count = mgr.build_embeddings()
@@ -883,27 +903,24 @@ class TestBuildEmbeddings:
         """A dim mismatch on one doc skips it, not the whole converge (#935).
 
         Convergence embeds per document and mutates the index per document;
-        an ``add_vectors`` dimension mismatch must skip just the offending
-        document (counted as dropped, retried next run) while every other
+        a dimension mismatch the store refuses must skip just the offending
+        document (its vectors kept, retried next run) while every other
         document still converges — not abort ``build_embeddings``.
         """
         from tests.conftest import MockEmbeddingProvider
 
         provider = MockEmbeddingProvider()
-        holder: dict = {"vectors": None}
-        mgr, _fts, _ = _make_index_mgr(
+        mgr, _fts, holder = _make_index_mgr(
             index_vault,
             tmp_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=provider,
-            get_vectors=lambda: holder["vectors"],
-            set_vectors=lambda v: holder.__setitem__("vectors", v),
         )
         mgr.build_index()
         mgr.build_embeddings()
         vectors = holder["vectors"]
         assert vectors is not None
-        assert {"alpha.md", "beta.md"} <= set(vectors.chunks_by_path())
+        assert {"alpha.md", "beta.md"} <= set(metadata_by_path(vectors))
 
         # Edit alpha.md and rebuild the FTS index so alpha's chunk signature
         # diverges from its stored vectors — making it the sole refresh path
@@ -925,14 +942,12 @@ class TestBuildEmbeddings:
             added = mgr.build_embeddings()
         assert added == 0
 
-        after = vectors.chunks_by_path()
+        after = metadata_by_path(vectors)
         assert "beta.md" in after
-        assert "alpha.md" not in after
+        assert "alpha.md" in after  # the refused document keeps its rows (#1778)
 
-        # alpha's vectors were removed by delete_by_path before the mismatch,
-        # so the aggregate log reports them as dropped, not kept (#935).
         messages = [r.getMessage() for r in caplog.records]
-        assert any("build_embeddings_converge_dropped_chunks" in m for m in messages)
+        assert any("build_embeddings_converge_failed_chunks" in m for m in messages)
 
     def test_progress_logging_throttled_and_per_batch_at_debug(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -949,14 +964,11 @@ class TestBuildEmbeddings:
         )
         (vault / "big.md").write_text(f"# Big\n\n{body}\n", encoding="utf-8")
 
-        holder: dict = {"vectors": None}
-        mgr, _fts, _ = _make_index_mgr(
+        mgr, _fts, _holder = _make_index_mgr(
             vault,
             tmp_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=MockEmbeddingProvider(),
-            get_vectors=lambda: holder["vectors"],
-            set_vectors=lambda v: holder.__setitem__("vectors", v),
         )
         mgr.build_index()
         with caplog.at_level(
@@ -1007,15 +1019,12 @@ class TestBuildEmbeddings:
         vault.mkdir()
         body = "\n".join(f"## S{i}\n\nbody {i}.\n" for i in range(20))
         (vault / "big.md").write_text(f"# Big\n\n{body}\n", encoding="utf-8")
-        holder = {"vectors": None}
         embeddings_path = tmp_path / "embeddings"
         mgr, _fts, _ = _make_index_mgr(
             vault,
             tmp_path,
             embeddings_path=embeddings_path,
             embedding_provider=FlakyProvider(),
-            get_vectors=lambda: holder["vectors"],
-            set_vectors=lambda v: holder.__setitem__("vectors", v),
         )
         mgr.build_index()
         with caplog.at_level(
@@ -1041,15 +1050,12 @@ class TestBuildEmbeddings:
             "---\ntitle: Fine\n---\n# Bad\n\nOriginal valid content.\n",
             encoding="utf-8",
         )
-        holder = {"vectors": None}
         embeddings_path = tmp_path / "embeddings"
         mgr, _fts, _ = _make_index_mgr(
             vault,
             tmp_path,
             embeddings_path=embeddings_path,
             embedding_provider=MockEmbeddingProvider(),
-            get_vectors=lambda: holder["vectors"],
-            set_vectors=lambda v: holder.__setitem__("vectors", v),
         )
         # Both notes index fine with valid frontmatter → both land in FTS.
         mgr.build_index()
@@ -1083,7 +1089,6 @@ class TestBuildEmbeddings:
     ) -> None:
         """An authoritative empty rebuild replaces stale on-disk vectors."""
         from markdown_vault_mcp.managers import index as index_module
-        from markdown_vault_mcp.vector_index import VectorIndex
 
         vault = tmp_path / "vault"
         vault.mkdir()
@@ -1091,24 +1096,21 @@ class TestBuildEmbeddings:
         note.write_text("# Note\n\nBody.\n", encoding="utf-8")
         embeddings_path = tmp_path / "embeddings"
         provider = MockEmbeddingProvider()
-        holder: dict = {"vectors": None}
-        mgr, _fts, _ = _make_index_mgr(
+        mgr, _fts, _holder = _make_index_mgr(
             vault,
             tmp_path,
             embeddings_path=embeddings_path,
             embedding_provider=provider,
-            get_vectors=lambda: holder["vectors"],
-            set_vectors=lambda vectors: holder.__setitem__("vectors", vectors),
         )
         mgr.build_index()
         assert mgr.build_embeddings() == 1
-        assert VectorIndex.load(embeddings_path, provider).count == 1
+        assert _stored(embeddings_path, provider).count == 1
 
         # An unreadable source is not authoritative while its live FTS row
         # still exists: the re-parse fails, so keep its last good vector.
         note.write_text("---\ntitle: [unclosed\n---\nbody", encoding="utf-8")
         assert mgr.build_embeddings(force=True) == 0
-        assert VectorIndex.load(embeddings_path, provider).count == 1
+        assert _stored(embeddings_path, provider).count == 1
 
         # A forced FTS rebuild tombstones the malformed source (#1129).
         mgr.build_index(force=True)
@@ -1124,20 +1126,20 @@ class TestBuildEmbeddings:
         with monkeypatch.context() as patch:
             patch.setattr(index_module, "iter_markdown_files", incomplete_walk)
             assert mgr.build_embeddings(force=True) == 0
-            assert VectorIndex.load(embeddings_path, provider).count == 1
+            assert _stored(embeddings_path, provider).count == 1
 
         # With the walk intact, the absentee now carries a tombstone, so the
         # empty build IS authoritative (#1129): the unparseable file stops
         # serving its stale vector, mirroring the FTS stale-row fix.
         assert mgr.build_embeddings(force=True) == 0
-        assert VectorIndex.load(embeddings_path, provider).count == 0
+        assert _stored(embeddings_path, provider).count == 0
 
         # A successful parse with no embeddable text is likewise
         # authoritative: the empty index reaches disk.
         note.write_text("---\ntitle: Note\n---\n", encoding="utf-8")
         mgr.build_index(force=True)
         assert mgr.build_embeddings(force=True) == 0
-        assert VectorIndex.load(embeddings_path, provider).count == 0
+        assert _stored(embeddings_path, provider).count == 0
 
     def test_build_embeddings_all_batches_fail_escalates(self, tmp_path, caplog):
         """Every batch failing returns 0, saves nothing, warns loudly (#649)."""
@@ -1153,15 +1155,12 @@ class TestBuildEmbeddings:
         vault.mkdir()
         body = "\n".join(f"## S{i}\n\nbody {i}.\n" for i in range(12))
         (vault / "big.md").write_text(f"# Big\n\n{body}\n", encoding="utf-8")
-        holder = {"vectors": None}
         embeddings_path = tmp_path / "embeddings"
         mgr, _fts, _ = _make_index_mgr(
             vault,
             tmp_path,
             embeddings_path=embeddings_path,
             embedding_provider=DeadProvider(),
-            get_vectors=lambda: holder["vectors"],
-            set_vectors=lambda v: holder.__setitem__("vectors", v),
         )
         mgr.build_index()
         with caplog.at_level(
@@ -1193,7 +1192,6 @@ class TestConvergeStaleConfirmation:
     @staticmethod
     def _embedded_pair(tmp_path: Path):
         """Vault with good.md + bad.md indexed and embedded; returns wiring."""
-        from markdown_vault_mcp.vector_index import VectorIndex
 
         vault = tmp_path / "vault"
         vault.mkdir()
@@ -1213,7 +1211,7 @@ class TestConvergeStaleConfirmation:
         )
         mgr.build_index()
         assert mgr.build_embeddings() == 2
-        assert set(VectorIndex.load(embeddings_path, provider).chunks_by_path()) == {
+        assert set(metadata_by_path(_stored(embeddings_path, provider))) == {
             "good.md",
             "bad.md",
         }
@@ -1221,9 +1219,8 @@ class TestConvergeStaleConfirmation:
 
     @staticmethod
     def _sidecar_paths(embeddings_path: Path, provider) -> set[str]:
-        from markdown_vault_mcp.vector_index import VectorIndex
 
-        return set(VectorIndex.load(embeddings_path, provider).chunks_by_path())
+        return set(metadata_by_path(_stored(embeddings_path, provider)))
 
     def test_unparseable_source_reclaims_via_tombstone(self, tmp_path: Path) -> None:
         """A parse-failure skip is tombstoned (#1129), so its vectors reclaim.
@@ -1359,7 +1356,6 @@ class TestConvergeStaleConfirmation:
 
     def test_missing_frontmatter_skip_still_reclaims(self, tmp_path: Path) -> None:
         """A deliberate required-frontmatter skip is authoritative."""
-        from markdown_vault_mcp.vector_index import VectorIndex
 
         vault = tmp_path / "vault"
         vault.mkdir()
@@ -1385,9 +1381,7 @@ class TestConvergeStaleConfirmation:
         (vault / "bad.md").write_text("# Bad\n\nBad body.\n", encoding="utf-8")
         mgr.build_index(force=True)
         mgr.build_embeddings()
-        assert set(VectorIndex.load(embeddings_path, provider).chunks_by_path()) == {
-            "good.md"
-        }
+        assert set(metadata_by_path(_stored(embeddings_path, provider))) == {"good.md"}
 
     def test_note_without_embeddable_text_still_reclaims(self, tmp_path: Path) -> None:
         """A note that parses to no embeddable text loses its vectors (#930/#1087)."""
@@ -1425,246 +1419,160 @@ class TestConvergeStaleConfirmation:
 
 
 # ---------------------------------------------------------------------------
-# _load_vectors self-heal of a corrupt/incomplete sidecar
+# _open_store self-heal of a corrupt or incomplete store
 # ---------------------------------------------------------------------------
 
 
-class TestLoadVectorsSelfHeal:
-    """A corrupt/incomplete vector sidecar must rebuild instead of wedging boot.
+class TestOpenStoreSelfHeal:
+    """A corrupt or incomplete vector store rebuilds instead of wedging boot.
 
-    An interrupted save can leave a truncated or zero-byte sidecar; before the
-    self-heal the corrupt file propagated out of ``_load_vectors`` and kept
-    semantic search down until a manual rebuild. These tests pin the broadened
-    catch — ``(json.JSONDecodeError, ValueError, EOFError, FileNotFoundError)``
-    route to the same ``force=True`` rebuild — while confirming environmental
-    errors (``PermissionError`` / generic ``OSError``) still propagate.
+    An interrupted persist can leave a truncated commit file or matrix; the
+    slot treats every such state as *corrupt* and, on a store this manager
+    owns, rebuilds through ``build_embeddings(force=True)``. An unavailable
+    store (a refused read) propagates without a rebuild (#1778).
     """
+
+    _SLOT_LOGGER = "markdown_vault_mcp.managers._vector_slot"
 
     def _build_persisted_index(
         self, vault: Path, state_dir: Path
-    ) -> tuple[IndexManager, dict, Path, Path]:
-        """Build an index + embeddings and return (mgr, holder, npy, json).
+    ) -> tuple[IndexManager, _LoadedStore, Path, Path]:
+        """Build an index + embeddings and return (mgr, holder, matrix, json).
 
-        After this helper the sidecars exist on disk and the in-memory cache
-        is cleared, so a subsequent ``_load_vectors()`` re-reads from disk.
+        After this helper the store's files exist on disk and the slot is
+        cleared, so a subsequent ``_open_store()`` re-reads them.
         """
-        from tests.conftest import MockEmbeddingProvider
-
         embeddings_path = state_dir / "embeddings"
-        holder: dict = {"vectors": None}
-        mgr, _fts, _ = _make_index_mgr(
+        mgr, _fts, holder = _make_index_mgr(
             vault,
             state_dir,
             embeddings_path=embeddings_path,
             embedding_provider=MockEmbeddingProvider(),
-            get_vectors=lambda: holder["vectors"],
-            set_vectors=lambda v: holder.__setitem__("vectors", v),
         )
         mgr.build_index()
         mgr.build_embeddings()
         assert holder["vectors"] is not None
-        # Drop the cache so _load_vectors() re-reads the sidecars from disk.
-        holder["vectors"] = None
+        slot = mgr._embeddings._slot
+        assert slot is not None
+        slot.replace(None)
 
-        npy_path = embeddings_path.with_suffix(".npy")
         json_path = embeddings_path.with_suffix(".json")
-        assert npy_path.exists() and json_path.exists()
-        return mgr, holder, npy_path, json_path
+        (matrix_path,) = state_dir.glob("embeddings.m*.npy")
+        assert json_path.exists()
+        return mgr, holder, matrix_path, json_path
+
+    def _assert_rebuilt(
+        self, mgr: IndexManager, holder: _LoadedStore, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger=self._SLOT_LOGGER):
+            result = mgr._embeddings._open_store()
+        assert result is holder["vectors"]
+        assert result.count >= 4  # a usable, repopulated store
+        assert any(
+            "vector_store_rebuild_started" in r.getMessage() for r in caplog.records
+        )
 
     def test_corrupt_json_triggers_rebuild(
         self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A truncated .json with a valid .npy rebuilds rather than propagating."""
-        mgr, holder, _npy, json_path = self._build_persisted_index(
+        mgr, holder, _matrix, json_path = self._build_persisted_index(
             index_vault, tmp_path
         )
         json_path.write_text('{"rows": [{"path"', encoding="utf-8")
+        self._assert_rebuilt(mgr, holder, caplog)
 
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp.managers.index"
-        ):
-            result = mgr._load_vectors()
-
-        assert result is holder["vectors"]
-        assert result.count >= 4  # a usable, repopulated index
-        assert any(
-            "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
-        )
-
-    def test_zero_byte_npy_triggers_rebuild(
+    def test_zero_byte_matrix_triggers_rebuild(
         self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A zero-byte .npy raises EOFError from numpy — must rebuild, not propagate.
-
-        EOFError is neither a ValueError nor an OSError, so it has to be named
-        explicitly in the catch; this is the canonical interrupted-save residue.
-        """
-        mgr, holder, npy_path, _json = self._build_persisted_index(
+        mgr, holder, matrix_path, _json = self._build_persisted_index(
             index_vault, tmp_path
         )
-        npy_path.write_bytes(b"")  # truncate to zero bytes
+        matrix_path.write_bytes(b"")  # the canonical interrupted-write residue
+        self._assert_rebuilt(mgr, holder, caplog)
 
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp.managers.index"
-        ):
-            result = mgr._load_vectors()
-
-        assert result is holder["vectors"]
-        assert result.count >= 4
-        assert any(
-            "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
-        )
-
-    def test_garbage_npy_triggers_rebuild(
+    def test_garbage_matrix_triggers_rebuild(
         self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A garbage (non-numpy) .npy raises ValueError — must rebuild."""
-        mgr, holder, npy_path, _json = self._build_persisted_index(
+        mgr, holder, matrix_path, _json = self._build_persisted_index(
             index_vault, tmp_path
         )
-        npy_path.write_bytes(b"this is not a numpy array at all")
+        matrix_path.write_bytes(b"this is not a numpy array at all")
+        self._assert_rebuilt(mgr, holder, caplog)
 
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp.managers.index"
-        ):
-            result = mgr._load_vectors()
-
-        assert result is holder["vectors"]
-        assert result.count >= 4
-        assert any(
-            "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
-        )
-
-    def test_missing_json_with_present_npy_triggers_rebuild(
-        self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    def test_a_matrix_without_its_commit_file_opens_empty(
+        self, index_vault: Path, tmp_path: Path
     ) -> None:
-        """A missing .json while the .npy exists (incomplete pair) rebuilds.
+        """No commit file means nothing was committed: an empty store, no rebuild.
 
-        With the .npy-exists guard satisfied, the FileNotFoundError raised when
-        VectorIndex.load opens the absent .json can only mean an incomplete pair
-        — so a rebuild is the correct response.
+        A numbered matrix without the JSON naming it is what an interrupted
+        first persist leaves; the next persist sweeps it.
         """
-        mgr, holder, _npy, json_path = self._build_persisted_index(
+        mgr, _holder, _matrix, json_path = self._build_persisted_index(
             index_vault, tmp_path
         )
         json_path.unlink()
-
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp.managers.index"
-        ):
-            result = mgr._load_vectors()
-
-        assert result is holder["vectors"]
-        assert result.count >= 4
-        assert any(
-            "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
-        )
+        assert mgr._embeddings._open_store().count == 0
 
     def test_row_count_mismatch_triggers_rebuild(
         self, index_vault: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """A valid pair whose .json drops rows (count mismatch) rebuilds.
-
-        This is the residue of a crash between the two atomic sidecar
-        replaces: both files parse, but embeddings rows != metadata rows.
-        VectorIndex.load raises VectorIndexCorruptError (a RuntimeError,
-        caught by its explicit entry in the self-heal tuple), which routes
-        to a force rebuild.
-        """
+        """Rows and matrix that disagree (a torn write) rebuild."""
         import json as _json
 
-        mgr, holder, _npy, json_path = self._build_persisted_index(
+        mgr, holder, _matrix, json_path = self._build_persisted_index(
             index_vault, tmp_path
         )
         payload = _json.loads(json_path.read_text(encoding="utf-8"))
-        # Drop the last metadata row, leaving more embedding rows than metadata.
         payload["rows"] = payload["rows"][:-1]
         json_path.write_text(_json.dumps(payload), encoding="utf-8")
+        self._assert_rebuilt(mgr, holder, caplog)
 
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp.managers.index"
-        ):
-            result = mgr._load_vectors()
+    def test_an_unavailable_store_propagates_without_rebuild(
+        self, index_vault: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A refused read is not damage: rebuilding would mask the real fault."""
+        from markdown_vault_mcp.exceptions import StoreUnavailableError
 
-        assert result is holder["vectors"]
-        assert result.count >= 4  # repopulated, internally consistent
-        assert result.count == result._embeddings.shape[0]  # parity restored
-        assert any(
-            "vector_index_corrupt_rebuilding" in r.getMessage() for r in caplog.records
+        mgr, _holder, _matrix, _json = self._build_persisted_index(
+            index_vault, tmp_path
         )
 
-    def test_permission_error_propagates_without_rebuild(
-        self, index_vault: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """An environmental OSError on load must propagate, not trigger a rebuild.
+        def refused(*_args: object, **_kwargs: object) -> EmbeddingStore:
+            raise StoreUnavailableError(
+                "read denied", backend="numpy", location=str(tmp_path)
+            )
 
-        PermissionError is an OSError but not one of the corruption types, so it
-        is deliberately left out of the catch: a destructive rebuild would be
-        futile against a disk/permission fault and would mask the real problem.
-        """
-        from markdown_vault_mcp.vector_index import VectorIndex
-
-        mgr, _holder, _npy, _json = self._build_persisted_index(index_vault, tmp_path)
-
-        def boom(*_args: object, **_kwargs: object) -> VectorIndex:
-            raise PermissionError("read denied")
-
-        monkeypatch.setattr(VectorIndex, "load", boom)
+        monkeypatch.setattr(NumpySidecarBackend, "open", refused)
         rebuild_calls: list[bool] = []
-        original_build = mgr._embeddings.build_embeddings
+        monkeypatch.setattr(
+            mgr._embeddings,
+            "build_embeddings",
+            lambda **_kw: rebuild_calls.append(True) or 0,
+        )
+        with pytest.raises(StoreUnavailableError, match="read denied"):
+            mgr._embeddings._open_store()
+        assert rebuild_calls == []
 
-        def tracking_build(*args: object, **kwargs: object) -> int:
-            rebuild_calls.append(True)
-            return original_build(*args, **kwargs)  # type: ignore[arg-type]
-
-        # The self-heal rebuild is issued by the composed EmbeddingsManager
-        # (#1157), so track the call on the collaborator instance.
-        monkeypatch.setattr(mgr._embeddings, "build_embeddings", tracking_build)
-
-        with pytest.raises(PermissionError, match="read denied"):
-            mgr._load_vectors()
-        assert rebuild_calls == []  # no rebuild attempted
-
-    def test_missing_index_cold_builds_without_rebuild_loop(
+    def test_missing_store_opens_empty_without_rebuild(
         self, index_vault: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A fully-missing index (.npy absent) takes the cold-build path, not rebuild.
-
-        The .npy-exists guard must still steer a never-built vault to an empty
-        VectorIndex rather than a force rebuild — verify the broadened catch did
-        not disturb that branch.
-        """
-        from markdown_vault_mcp.vector_index import VectorIndex
-        from tests.conftest import MockEmbeddingProvider
-
+        """A never-built vault opens an empty store; no rebuild is attempted."""
         embeddings_path = tmp_path / "embeddings"
-        holder: dict = {"vectors": None}
-        mgr, _fts, _ = _make_index_mgr(
+        mgr, _fts, _holder = _make_index_mgr(
             index_vault,
             tmp_path,
             embeddings_path=embeddings_path,
             embedding_provider=MockEmbeddingProvider(),
-            get_vectors=lambda: holder["vectors"],
-            set_vectors=lambda v: holder.__setitem__("vectors", v),
         )
-        # No build_embeddings() call — sidecars never written.
-        assert not embeddings_path.with_suffix(".npy").exists()
-
         rebuild_calls: list[bool] = []
-        original_build = mgr._embeddings.build_embeddings
-
-        def tracking_build(*args: object, **kwargs: object) -> int:
-            rebuild_calls.append(True)
-            return original_build(*args, **kwargs)  # type: ignore[arg-type]
-
-        # The self-heal rebuild is issued by the composed EmbeddingsManager
-        # (#1157), so track the call on the collaborator instance.
-        monkeypatch.setattr(mgr._embeddings, "build_embeddings", tracking_build)
-        result = mgr._load_vectors()
-
-        assert isinstance(result, VectorIndex)
-        assert result.count == 0  # empty cold-build index
-        assert rebuild_calls == []  # cold path, not a rebuild
+        monkeypatch.setattr(
+            mgr._embeddings,
+            "build_embeddings",
+            lambda **_kw: rebuild_calls.append(True) or 0,
+        )
+        result = mgr._embeddings._open_store()
+        assert result.count == 0
+        assert rebuild_calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -1710,27 +1618,20 @@ class TestEmbeddingsStatus:
         resolve to the real files, not ``{base}.npy.npy`` (which would misreport
         0). Guards the previously-untested extension-carrying disk path (#836).
         """
-        from markdown_vault_mcp.vector_index import VectorIndex
-        from tests.conftest import MockEmbeddingProvider
-
         provider = MockEmbeddingProvider()
         base = tmp_path / "embeddings.npy"
-        vi = VectorIndex(provider)
-        vi.add(
-            ["hello world"],
-            [
-                {
-                    "path": "a.md",
-                    "title": "A",
-                    "folder": "",
-                    "heading": None,
-                    "content": "hello world",
-                }
-            ],
+        written = _stored(base, provider)
+        written.replace_document(
+            DocumentRows(
+                "a.md",
+                None,
+                [VectorRow(provider.embed(["hello world"])[0], {"path": "a.md"})],
+            ),
+            expected_token=ANY_TOKEN,
         )
-        vi.save(base)
+        written.close()
 
-        # get_vectors defaults to None (unbuilt), forcing the disk-read branch.
+        # Nothing opened yet: the status reads the count from disk.
         mgr, _, holder = _make_index_mgr(
             index_vault,
             tmp_path,
@@ -1839,7 +1740,7 @@ class TestProcessDirtyPaths:
         )
         mgr.build_index()
         mgr.flush_dirty_embeddings({"alpha.md", "beta.md"})
-        holder["vectors"].save(embeddings_path)
+        holder["vectors"].checkpoint()
 
         # Same index, alpha.md now excluded: build purges FTS AND vectors.
         mgr2, _, holder2 = _make_index_mgr(
@@ -1854,7 +1755,7 @@ class TestProcessDirtyPaths:
         assert fts.get_note("alpha.md") is None
         vectors = holder2["vectors"]
         assert vectors is not None  # loaded because stale rows existed
-        assert all(m["path"] != "alpha.md" for m in vectors._metadata)
+        assert all(m["path"] != "alpha.md" for m in _all_metadata(vectors))
 
         # A follow-up manager with the same exclusion but nothing stale
         # must NOT load the sidecar just because patterns are configured.
@@ -1918,7 +1819,7 @@ class TestFlushDirtyEmbeddingsWithSnapshot:
         mgr.build_index()
         mgr.flush_dirty_embeddings(set())
         # No-op: nothing should change
-        assert vectors_holder["vectors"] is None  # _load_vectors was not called
+        assert vectors_holder["vectors"] is None  # the store was not opened
 
     def test_excluded_path_gets_no_vectors_and_purges_stale_ones(
         self, index_vault, tmp_path
@@ -1939,7 +1840,7 @@ class TestFlushDirtyEmbeddingsWithSnapshot:
         mgr.flush_dirty_embeddings({"_conventions.md", "alpha.md"})
         vectors = vectors_holder["vectors"]
         assert vectors is not None
-        paths_with_vectors = {m["path"] for m in vectors._metadata}
+        paths_with_vectors = {m["path"] for m in _all_metadata(vectors)}
         assert "alpha.md" in paths_with_vectors
         assert "_conventions.md" not in paths_with_vectors
 
@@ -1962,7 +1863,7 @@ class TestFlushDirtyEmbeddingsWithSnapshot:
         mgr.flush_dirty_embeddings({"alpha.md"})
         vectors = vectors_holder["vectors"]
         assert vectors is not None
-        alpha_before = [m for m in vectors._metadata if m["path"] == "alpha.md"]
+        alpha_before = [m for m in _all_metadata(vectors) if m["path"] == "alpha.md"]
         assert alpha_before, "fixture should produce alpha.md vectors on first flush"
 
         # Now monkeypatch parse_note to raise for any path so the next flush
@@ -1977,7 +1878,7 @@ class TestFlushDirtyEmbeddingsWithSnapshot:
         mgr.flush_dirty_embeddings({"alpha.md"})
 
         # Vectors for alpha.md must still be present.
-        alpha_after = [m for m in vectors._metadata if m["path"] == "alpha.md"]
+        alpha_after = [m for m in _all_metadata(vectors) if m["path"] == "alpha.md"]
         assert alpha_after == alpha_before, (
             "parse failure must not delete existing vectors for the path"
         )
@@ -2013,9 +1914,9 @@ def test_start_line_propagated_to_vector_metadata(tmp_path):
     col.index.build_index()
     col.index.build_embeddings()
 
-    # Inspect the underlying VectorIndex metadata directly.
+    # Inspect the stored metadata directly.
     assert col._vectors is not None
-    metas = [m for rows in col._vectors.chunks_by_path().values() for m in rows]
+    metas = [m for rows in metadata_by_path(col._vectors).values() for m in rows]
     assert metas, "vector index should have rows for the test note"
     assert all("start_line" in m for m in metas), (
         f"every metadata row must carry start_line; got keys {set(metas[0])}"
@@ -2323,7 +2224,7 @@ def _enriched_vault(tmp_path: Path) -> Path:
 
 def _enriched_mgr(
     vault: Path, tmp_path: Path, provider: _CapturingProvider
-) -> tuple[IndexManager, FTSIndex, dict]:
+) -> tuple[IndexManager, FTSIndex, _LoadedStore]:
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
 
     builder = EmbedTextBuilder(embed_context=True, searchable_fields=("summary",))
@@ -2352,7 +2253,7 @@ class TestEmbedTextEnrichment:
         assert provider.texts == [
             "Enriched Doc\nA crisp summary.\n\n# Enriched Doc\n\nplain chunk body"
         ]
-        rows = holder["vectors"].chunks_by_path()["doc.md"]
+        rows = metadata_by_path(holder["vectors"])["doc.md"]
         assert rows[0]["preamble"] == "A crisp summary."
         # Displayed content stays the raw chunk text.
         assert rows[0]["content"] == "# Enriched Doc\n\nplain chunk body"
@@ -2375,7 +2276,7 @@ class TestEmbedTextEnrichment:
         assert provider.texts == [
             "Enriched Doc\nA crisp summary.\n\n# Enriched Doc\n\nedited chunk body"
         ]
-        rows = holder["vectors"].chunks_by_path()["doc.md"]
+        rows = metadata_by_path(holder["vectors"])["doc.md"]
         assert rows[0]["preamble"] == "A crisp summary."
 
     def test_flush_dirty_embeds_enriched_text(self, tmp_path: Path) -> None:
@@ -2395,7 +2296,7 @@ class TestEmbedTextEnrichment:
         assert provider.texts == [
             "Enriched Doc\nUpdated summary.\n\n# Enriched Doc\n\nplain chunk body"
         ]
-        rows = holder["vectors"].chunks_by_path()["doc.md"]
+        rows = metadata_by_path(holder["vectors"])["doc.md"]
         assert rows[0]["preamble"] == "Updated summary."
 
     def test_default_builder_embeds_raw_content(self, tmp_path: Path) -> None:
@@ -2434,16 +2335,13 @@ class TestEmbeddingBatchSize:
         """A 5-chunk note is sliced into [2, 2, 1] with embedding_batch_size=2."""
         from markdown_vault_mcp.types import Chunk, ParsedNote
 
-        holder: dict = {"vectors": None}
         provider = _RecordingProvider()
-        mgr, _fts, _ = _make_index_mgr(
+        mgr, _fts, holder = _make_index_mgr(
             index_vault,
             tmp_path,
             embeddings_path=tmp_path / "embeddings",
             embedding_provider=provider,
             embedding_batch_size=2,
-            get_vectors=lambda: holder["vectors"],
-            set_vectors=lambda v: holder.__setitem__("vectors", v),
         )
         mgr.build_index()
         mgr.build_embeddings()
@@ -2571,7 +2469,7 @@ class TestBodyLessNotesAreNotEmbedded:
             if "reindex_inline_embed_failed_docs" in r.getMessage()
         ]
         # Its now-stale vectors are dropped rather than left behind.
-        assert "real.md" not in holder["vectors"].chunks_by_path()
+        assert "real.md" not in metadata_by_path(holder["vectors"])
 
     def test_repeated_convergence_does_no_work(self, tmp_path: Path) -> None:
         """The signature-drift regression guard.

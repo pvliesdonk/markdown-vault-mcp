@@ -47,6 +47,7 @@ from markdown_vault_mcp.utils.text import (
 )
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import wait_for_writer_drain
+from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -317,7 +318,7 @@ class TestBuildIndex:
         vec_paths1 = [
             m["path"]
             for m in [
-                m for rows in col1._vectors.chunks_by_path().values() for m in rows
+                m for rows in metadata_by_path(col1._vectors).values() for m in rows
             ]
         ]
         assert ".claude/test.md" in vec_paths1
@@ -341,7 +342,7 @@ class TestBuildIndex:
         vec_paths2 = [
             m["path"]
             for m in [
-                m for rows in col2._vectors.chunks_by_path().values() for m in rows
+                m for rows in metadata_by_path(col2._vectors).values() for m in rows
             ]
         ]
         assert ".claude/test.md" not in vec_paths2
@@ -402,7 +403,7 @@ class TestBuildIndex:
         vec_paths1 = [
             m["path"]
             for m in [
-                m for rows in col1._vectors.chunks_by_path().values() for m in rows
+                m for rows in metadata_by_path(col1._vectors).values() for m in rows
             ]
         ]
         assert ".claude/test.md" in vec_paths1
@@ -428,7 +429,7 @@ class TestBuildIndex:
         vec_paths2 = [
             m["path"]
             for m in [
-                m for rows in col2._vectors.chunks_by_path().values() for m in rows
+                m for rows in metadata_by_path(col2._vectors).values() for m in rows
             ]
         ]
         assert ".claude/test.md" not in vec_paths2

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.vault import Vault, VaultSettings
+from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -375,7 +376,7 @@ def test_failed_refresh_does_not_starve_healthy_embeddings(
                     m["path"]
                     for m in [
                         m
-                        for rows in col._vectors.chunks_by_path().values()
+                        for rows in metadata_by_path(col._vectors).values()
                         for m in rows
                     ]
                 }

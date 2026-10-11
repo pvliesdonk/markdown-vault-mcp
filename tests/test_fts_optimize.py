@@ -101,14 +101,11 @@ def _make_index_mgr(
         Tuple of (manager, fts index).
     """
     fts = overrides.pop("fts", None) or FTSIndex(db_path=":memory:")
-    vectors_holder: dict = {"vectors": None}
     defaults: dict = {
         "fts": fts,
         "tracker": ChangeTracker(state_dir / ".state" / "state.json"),
         "source_dir": vault,
         "chunk_strategy": HeadingChunker(),
-        "get_vectors": lambda: vectors_holder["vectors"],
-        "set_vectors": lambda v: vectors_holder.__setitem__("vectors", v),
     }
     defaults.update(overrides)
     return IndexManager(**defaults), fts

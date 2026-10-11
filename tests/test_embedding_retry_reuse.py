@@ -9,6 +9,7 @@ import pytest
 from markdown_vault_mcp.indexing import FlushDirtyEmbeddings
 from markdown_vault_mcp.vault import Vault, VaultSettings
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -108,17 +109,17 @@ def test_failed_save_retries_without_reembedding(
     col, provider = seeded
     (col.source_dir / "note.md").write_text(_CONTENT.replace("Body", "Changed"))
     assert col._vectors is not None
-    original = col._vectors.save
+    original = col._vectors.checkpoint
     saves = 0
 
-    def fail_once(path: Path) -> None:
+    def fail_once() -> None:
         nonlocal saves
         saves += 1
         if saves == 1:
             raise OSError("save failed")
-        original(path)
+        original()
 
-    monkeypatch.setattr(col._vectors, "save", fail_once)
+    monkeypatch.setattr(col._vectors, "checkpoint", fail_once)
     with pytest.raises(OSError, match="save failed"):
         _flush(col)
     _flush(col)
@@ -134,11 +135,11 @@ def test_deleted_and_recreated_note_is_embedded_again(
     note.unlink()
     _flush(col)
     assert col._vectors is not None
-    assert "note.md" not in col._vectors.chunks_by_path()
+    assert "note.md" not in metadata_by_path(col._vectors)
     note.write_text(_CONTENT)
     _flush(col)
     assert provider.calls == 1
-    assert "note.md" in col._vectors.chunks_by_path()
+    assert "note.md" in metadata_by_path(col._vectors)
 
 
 def test_persisted_vectors_are_reused_after_reload(
@@ -149,7 +150,7 @@ def test_persisted_vectors_are_reused_after_reload(
     _flush(col)
     assert provider.calls == 0
     assert col._vectors is not None
-    assert "note.md" in col._vectors.chunks_by_path()
+    assert "note.md" in metadata_by_path(col._vectors)
 
 
 @pytest.mark.parametrize(
@@ -167,7 +168,7 @@ def test_vector_load_failure_retains_pending_updates(
         raise error
 
     with monkeypatch.context() as patch:
-        patch.setattr(manager, "_load_vectors", fail_load)
+        patch.setattr(manager, "_open_store", fail_load)
         with pytest.raises(type(error), match=str(error)):
             _flush(col)
         assert col.index.get_index_status()["dirty_embeddings"] == 1
@@ -190,7 +191,7 @@ def test_all_parse_failures_do_not_load_vectors(
         pytest.fail("failed parsing must not load or rebuild the vector index")
 
     monkeypatch.setattr(module, "parse_note", fail_parse)
-    monkeypatch.setattr(col._index_mgr._embeddings, "_load_vectors", forbidden_load)
+    monkeypatch.setattr(col._index_mgr._embeddings, "_open_store", forbidden_load)
     _flush(col)
     assert provider.calls == 0
 
@@ -205,7 +206,7 @@ def test_recoverable_provider_failure_preserves_rows(
 ) -> None:
     col, provider = seeded
     assert col._vectors is not None
-    before = col._vectors.chunks_by_path()
+    before = metadata_by_path(col._vectors)
     (col.source_dir / "note.md").write_text(_CONTENT.replace("Body", "Changed"))
 
     def fail_embed(_texts: list[str]) -> list[list[float]]:
@@ -214,7 +215,7 @@ def test_recoverable_provider_failure_preserves_rows(
     with monkeypatch.context() as patch:
         patch.setattr(provider, "embed", fail_embed)
         _flush(col)
-        assert col._vectors.chunks_by_path() == before
+        assert metadata_by_path(col._vectors) == before
     _flush(col)
     assert provider.calls == 1
     _flush(col)
@@ -230,4 +231,4 @@ def test_empty_note_removes_vectors_without_provider_call(
     _flush(col)
     assert provider.calls == 0
     assert col._vectors is not None
-    assert "note.md" not in col._vectors.chunks_by_path()
+    assert "note.md" not in metadata_by_path(col._vectors)

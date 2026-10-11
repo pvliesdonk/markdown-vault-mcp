@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from markdown_vault_mcp.managers.search import _group_by_path
 from markdown_vault_mcp.types import GroupedResult, SectionHit
 from markdown_vault_mcp.vault import VaultSettings
+from tests.fixtures.vectors import metadata_by_path
 
 
 def test_section_hit_fields():
@@ -215,7 +216,7 @@ def test_sabsa_repro_one_reference_doc_dedups_target_chunks(tmp_path):
     # the adaptive chunker has drifted and the test should be updated.
     long_chunks = [
         m
-        for m in [m for rows in col._vectors.chunks_by_path().values() for m in rows]
+        for m in [m for rows in metadata_by_path(col._vectors).values() for m in rows]
         if m["path"] == "long.md"
     ]
     assert len(long_chunks) >= 2, (

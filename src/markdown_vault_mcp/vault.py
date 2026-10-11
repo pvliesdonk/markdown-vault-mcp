@@ -42,7 +42,7 @@ from markdown_vault_mcp.facets import (
 )
 from markdown_vault_mcp.indexing import IndexWriteCoordinator
 from markdown_vault_mcp.indexing.head_reconciler import IndexHeadReconciler
-from markdown_vault_mcp.managers._vector_slot import VectorStoreAccess, VectorStoreSlot
+from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
 from markdown_vault_mcp.okf import (
     OkfAuditReport,
     OkfDetector,
@@ -71,7 +71,6 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.git import PullResult, VersionedStore
     from markdown_vault_mcp.indexing.head_reconciler import ReconcileOutcome
     from markdown_vault_mcp.interfaces import EmbeddingStore, VectorBackend
-    from markdown_vault_mcp.managers._legacy_vector_writes import LegacyVectorWrites
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.summarizer import Summarizer
     from markdown_vault_mcp.types import (
@@ -477,11 +476,10 @@ class Vault:
             attachment_extensions=self._attachment_extensions,
             max_note_read_bytes=self._max_note_read_bytes,
         )
-        # 2. IndexManager (needs fts, tracker — NOT search_mgr)
-        #    get_vectors/set_vectors use late-binding lambdas that capture
-        #    self._search_mgr; they are only called at runtime after all
-        #    managers are constructed.  No write_lock — the IndexWriter
-        #    thread is the sole mutator of indices (#559).
+        # 2. IndexManager (needs fts, tracker, the vector slot — NOT search_mgr)
+        #    The slot is built first and shared with SearchManager, so both
+        #    see one store.  No write_lock — the IndexWriter thread is the
+        #    sole mutator of indices (#559).
         self._vector_slot = self._build_vector_slot(settings)
         self._index_mgr = IndexManager(
             fts=self._fts,
@@ -493,21 +491,7 @@ class Vault:
             exclude_patterns=self._exclude_patterns,
             required_frontmatter=self._required_frontmatter,
             indexed_frontmatter_fields=self._indexed_frontmatter_fields,
-            # Late-binding closures: self._search_mgr is assigned below and
-            # only accessed at call-time, not during IndexManager.__init__.
-            get_vectors=lambda: self._vector_slot.legacy(),
-            set_vectors=lambda v: self._vector_slot.replace_any(v),
-            store_access=VectorStoreAccess(
-                open=lambda: self._vector_slot.legacy_get(
-                    rebuild=(
-                        (lambda: self._index_mgr.build_embeddings(force=True))
-                        if settings.owns_index_files
-                        else None
-                    )
-                ),
-                fresh=lambda: self._vector_slot.legacy_fresh(),
-                describe=self._vector_slot.describe,
-            ),
+            vector_slot=self._vector_slot,
             embed_model_name=self._embed_model_name,
             max_chunk_chars_override=self._max_chunk_chars_override,
             title_field=self._title_field,
@@ -1025,13 +1009,13 @@ class Vault:
         self._coordinator.require_built()
 
     @property
-    def _vectors(self) -> LegacyVectorWrites | None:
-        """Bridge property: the write paths' view of the vault's vector store."""
-        return self._vector_slot.legacy()
+    def _vectors(self) -> EmbeddingStore | None:
+        """The open vector store, or ``None`` (a test hook)."""
+        return self._vector_slot.current()
 
     @_vectors.setter
-    def _vectors(self, value: object) -> None:
-        self._vector_slot.replace_any(value)
+    def _vectors(self, value: EmbeddingStore | None) -> None:
+        self._vector_slot.replace(value)
 
     # ------------------------------------------------------------------
     # Path validation helpers

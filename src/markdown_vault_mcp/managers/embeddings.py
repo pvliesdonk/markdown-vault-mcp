@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import stat as stat_module
 import time
 from collections import Counter
@@ -24,8 +25,8 @@ import yaml
 from markdown_vault_mcp.embed_text import is_embeddable
 from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
 from markdown_vault_mcp.fts_index import _derive_folder
-from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
 from markdown_vault_mcp.scanner import parse_note
+from markdown_vault_mcp.types import ANY_TOKEN, DocumentRows, VectorRow
 from markdown_vault_mcp.utils import is_note
 from markdown_vault_mcp.utils.fs import could_be_regular_file, is_directory, path_exists
 
@@ -34,8 +35,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.embed_text import EmbedTextBuilder
-    from markdown_vault_mcp.interfaces import KeywordIndex, VectorStore
-    from markdown_vault_mcp.managers._vector_slot import VectorStoreAccess
+    from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordIndex
+    from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.scanner import ChunkStrategy
     from markdown_vault_mcp.types import ParsedNote
@@ -48,13 +49,12 @@ logger = logging.getLogger(__name__)
 _EMBEDDING_BATCH_SIZE = 4
 
 # Disposition codes returned by EmbeddingsManager._embed_note_inline so the
-# caller can log an accurate aggregate: a provider failure is caught before the
-# index is touched (old vectors kept), whereas a dimension mismatch is caught
-# after delete_by_path has run (old vectors removed) — the two must not share a
-# "vectors kept" message (#935).
+# caller can log an accurate aggregate (#935). A provider failure and a vector
+# the store refuses both leave the note's rows untouched (#1778).
 _EMBED_OK = 0  # embedded (or nothing to embed)
-_EMBED_KEPT = 1  # provider failed before mutation — existing vectors preserved
-_EMBED_DROPPED = 2  # dimension mismatch after delete — existing vectors removed
+_EMBED_KEPT = (
+    1  # the note's existing vectors were kept: provider failed or write refused
+)
 
 
 _PreparedEmbedding = tuple[
@@ -81,10 +81,6 @@ class EmbeddingsManager:
             ``None`` keeps the vectors in memory (#1708).
         embedding_provider: Provider used to generate embeddings.
         chunk_strategy: Strategy for splitting documents into chunks.
-        get_vectors: Callback returning the current
-            :class:`~markdown_vault_mcp.interfaces.VectorStore` (or
-            ``None``).
-        set_vectors: Callback to set the vector index on the owner.
         title_field: Frontmatter key consulted first when resolving document
             titles; threaded to every ``parse_note`` call.
         embed_text_builder: Shared
@@ -100,9 +96,9 @@ class EmbeddingsManager:
         discover_candidates: Injected source-tree discovery (the owner's
             ``_discover_indexable_candidates``), used by the authoritative
             empty-build check's source walk.
-        store_access: Opens, refreshes and describes the vault's store;
-            ``None`` keeps the sidecar loader and an in-memory
-            ``VectorIndex``, for managers built without a vault.
+        vector_slot: Opens, rebuilds and describes the vector store. ``None``
+            with a provider builds a numpy store over ``embeddings_path``
+            (in memory when that is ``None``), owned by this manager.
     """
 
     def __init__(
@@ -113,28 +109,34 @@ class EmbeddingsManager:
         embeddings_path: Path | None,
         embedding_provider: EmbeddingProvider | None,
         chunk_strategy: ChunkStrategy,
-        get_vectors: Callable[[], VectorStore | None],
-        set_vectors: Callable[[VectorStore | None], None],
         title_field: str,
         embed_text_builder: EmbedTextBuilder,
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
         is_path_excluded: Callable[[str], bool],
         discover_candidates: Callable[..., list[tuple[Path, str]]],
-        store_access: VectorStoreAccess | None = None,
+        vector_slot: VectorStoreSlot | None = None,
     ) -> None:
         self._fts = fts
         self._source_dir = source_dir
         self._embeddings_path = embeddings_path
         self._embedding_provider = embedding_provider
         self._chunk_strategy = chunk_strategy
-        self._get_vectors = get_vectors
-        self._set_vectors = set_vectors
         self._title_field = title_field
         self._embed_builder = embed_text_builder
         self._embedding_batch_size = embedding_batch_size
         self._is_path_excluded = is_path_excluded
         self._discover_candidates = discover_candidates
-        self._store_access = store_access
+        if vector_slot is None and embedding_provider is not None:
+            from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
+            from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+
+            vector_slot = VectorStoreSlot(
+                backend=NumpySidecarBackend(),
+                location=embeddings_path,
+                provider=embedding_provider,
+                text_format=embed_text_builder.format_token(),
+            )
+        self._slot = vector_slot
 
     # ------------------------------------------------------------------
     # Shared-path accessors (read by IndexManager's FTS pipeline)
@@ -144,18 +146,6 @@ class EmbeddingsManager:
     def embeddings_path(self) -> Path | None:
         """Base path for the vector sidecar files (``None`` when held in memory)."""
         return self._embeddings_path
-
-    def persist(self, vectors: VectorStore) -> None:
-        """Save *vectors* to the sidecar files, or keep them in memory only.
-
-        Without an embeddings path the vectors live for this process and are
-        rebuilt at the next start (#1708).
-
-        Args:
-            vectors: The vector index to save.
-        """
-        if self._embeddings_path is not None:
-            vectors.save(self._embeddings_path)
 
     @property
     def embedding_provider(self) -> EmbeddingProvider | None:
@@ -353,55 +343,36 @@ class EmbeddingsManager:
             return False
         return not stat_module.S_ISREG(st.st_mode)
 
-    def _load_vectors(self) -> VectorStore:
-        """Load or return the cached vector store, self-healing corrupt sidecars.
+    def _loaded_store(self) -> EmbeddingStore | None:
+        """Return the open store, opening nothing."""
+        return self._slot.current() if self._slot is not None else None
 
-        Delegates to
-        :func:`markdown_vault_mcp.managers._vector_loader.load_or_self_heal`;
-        see there for the full self-heal contract.
+    def _open_store(self) -> EmbeddingStore:
+        """Open (installing) the store for writing.
+
+        An owned store that is corrupt or of another identity is rebuilt
+        through :meth:`build_embeddings`.
 
         Returns:
-            The loaded :class:`~markdown_vault_mcp.interfaces.VectorStore`.
+            The writable store.
 
         Raises:
-            RuntimeError: If called without a prior ``_require_vectors()``
-                (``_embedding_provider`` is ``None``).
-            ValueError: If a self-heal rebuild fails to produce a usable index.
+            RuntimeError: If called without a prior ``_require_vectors()``.
         """
-        vectors = self._get_vectors()
-        if vectors is not None:
-            return vectors
-        if self._embedding_provider is None:
-            raise RuntimeError(
-                "_require_vectors() must be called before _load_vectors()"
-            )
-        if self._store_access is not None:
-            return self._store_access.open()
-        if self._embeddings_path is None:
-            # Nothing on disk to load: start empty, filled by build_embeddings.
-            from markdown_vault_mcp.vector_index import VectorIndex
-
-            empty = VectorIndex(
-                self._embedding_provider,
-                embed_text_format=self._embed_builder.format_token(),
-            )
-            self._set_vectors(empty)
-            return empty
-        return load_or_self_heal(
-            embeddings_path=self._embeddings_path,
-            embedding_provider=self._embedding_provider,
-            get_vectors=self._get_vectors,
-            set_vectors=self._set_vectors,
-            rebuild=lambda: self.build_embeddings(force=True),
-            logger=logger,
-            embed_text_format=self._embed_builder.format_token(),
+        if self._slot is None or self._embedding_provider is None:
+            raise RuntimeError("_require_vectors() must be called before _open_store()")
+        rebuild = (
+            (lambda: self.build_embeddings(force=True))
+            if self._slot.owns_files
+            else None
         )
+        return self._slot.writable(rebuild=rebuild)
 
     # ------------------------------------------------------------------
     # Inline reindex embedding
     # ------------------------------------------------------------------
 
-    def _embed_note_inline(self, vectors: VectorStore, note: ParsedNote) -> int:
+    def _embed_note_inline(self, vectors: EmbeddingStore, note: ParsedNote) -> int:
         """Embed one changed note's chunks inline, resiliently (#930).
 
         Mirrors the cold-build / convergence contract: chunks are embedded
@@ -414,27 +385,21 @@ class EmbeddingsManager:
         the index is mutated, so a mid-note failure can neither drop the
         old vectors nor leave a partial row set.
 
-        The index mutation is likewise guarded (#935): an embedding-dimension
-        mismatch raises :class:`ValueError` from
-        :meth:`~markdown_vault_mcp.vector_index.VectorIndex.add_vectors`, and
-        that too must skip only this one note rather than abort the whole
-        reindex loop. The two failure dispositions differ, though — a provider
-        failure is caught *before* the index is touched (old vectors kept),
-        while a dimension mismatch is caught *after* ``delete_by_path`` (old
-        vectors removed) — so they return distinct codes for accurate
-        aggregate logging. Either way the note is left for the next
+        The store write is likewise guarded (#935): the store refuses a
+        vector of another dimension, or one holding a NaN, before it changes
+        anything (#1778), so that too skips only this one note and keeps its
+        old vectors. Either way the note is left for the next
         ``build_embeddings`` convergence pass to re-embed (its FTS row differs
         from the stale vector, so the signature diff refreshes it).
 
         Args:
-            vectors: The loaded vector index to mutate.
+            vectors: The store to write.
             note: The parsed note whose chunks to (re-)embed.
 
         Returns:
-            :data:`_EMBED_OK` on success (including an empty chunk set),
-            :data:`_EMBED_KEPT` when the provider failed before any mutation
-            (existing vectors preserved), or :data:`_EMBED_DROPPED` when the
-            vector mutation was rejected after the stale vectors were removed.
+            :data:`_EMBED_OK` on success (including an empty chunk set), or
+            :data:`_EMBED_KEPT` when the provider failed or the store refused
+            a vector (existing vectors preserved).
         """
         if self._embedding_provider is None:
             return _EMBED_OK
@@ -447,7 +412,7 @@ class EmbeddingsManager:
         )
         if not texts:
             # No embeddable content — drop any stale vectors for the path.
-            vectors.delete_by_path(note.path)
+            vectors.remove_document(note.path, expected_token=ANY_TOKEN)
             return _EMBED_OK
         raw: list[list[float]] = []
         try:
@@ -471,14 +436,11 @@ class EmbeddingsManager:
             )
             return _EMBED_KEPT
         try:
-            vectors.delete_by_path(note.path)
-            vectors.add_vectors(raw, meta)
+            _replace(vectors, note.path, raw, meta)
         except ValueError as exc:
-            # A dimension mismatch (add_vectors, vector_index.py) must not
-            # abort the reindex loop with the note half-updated (#935).
-            # Narrow to ValueError so genuine programming errors still
-            # surface; delete_by_path has already run, so the note's old
-            # vectors are gone until the next convergence pass re-embeds it.
+            # The store refuses a vector of another dimension or a NaN before
+            # it changes anything, so the note's old vectors stay (#1778);
+            # the next convergence pass retries it.
             logger.warning(
                 "reindex_inline_embed_dim_mismatch path=%s chunks=%d err=%s",
                 note.path,
@@ -486,23 +448,12 @@ class EmbeddingsManager:
                 exc,
                 exc_info=True,
             )
-            return _EMBED_DROPPED
+            return _EMBED_KEPT
         return _EMBED_OK
 
     # ------------------------------------------------------------------
     # Embeddings
     # ------------------------------------------------------------------
-
-    def _install_fresh_vectors(self, provider: EmbeddingProvider) -> None:
-        """Install an empty vector index to rebuild into."""
-        if self._store_access is not None:
-            self._set_vectors(self._store_access.fresh())
-            return
-        from markdown_vault_mcp.vector_index import VectorIndex
-
-        self._set_vectors(
-            VectorIndex(provider, embed_text_format=self._embed_builder.format_token())
-        )
 
     def build_embeddings(self, *, force: bool = False) -> int:
         """Build or converge the vector index against the FTS index.
@@ -532,7 +483,7 @@ class EmbeddingsManager:
             skipped, so this may be less than the total number of chunks
             attempted; if every batch is skipped, ``0`` is returned and no
             vectors are saved. A successful build with no embeddable chunks
-            persists an empty index so stale sidecar vectors cannot survive a
+            publishes an empty generation so stale vectors cannot survive a
             forced rebuild. On the convergence path this counts only the newly
             embedded chunks — a fully converged index returns ``0``.
 
@@ -543,36 +494,30 @@ class EmbeddingsManager:
                 genuine internal ``ValueError``s surface (#774).
         """
         self._require_vectors()
-
-        # _require_vectors() guarantees these are not None.
-        if self._embedding_provider is None:
+        provider = self._embedding_provider
+        if provider is None or self._slot is None:
             raise RuntimeError(
                 "_require_vectors() must be called before build_embeddings()"
             )
-
         if force:
-            self._install_fresh_vectors(self._embedding_provider)
+            store = self._slot.rebuild_target()
         else:
-            self._load_vectors()
-            vectors = self._get_vectors()
-            if vectors is None:
-                raise ValueError("Failed to load vector index after _load_vectors()")
-            if vectors.count > 0:
-                return self._converge_embeddings(vectors)
-            # Empty index — fall through to the full cold build.
+            store = self._open_store()
+            if store.count > 0:
+                return self._converge_embeddings(store)
+            # Empty store: fall through to the full cold build.
 
         rows = self._fts.list_notes()
         indexed_paths = {row["path"] for row in rows}
         texts, meta, had_parse_failure = self._collect_cold_build_inputs(rows)
-
-        vectors = self._get_vectors()
-        if vectors is None:
-            raise ValueError("Vector index unexpectedly None after initialisation")
         total = len(texts)
-        embedded = self._embed_cold_build_batches(vectors, texts, meta)
+        identity = self._slot.identity
+        embedded, vector_rows = self._embed_cold_build_batches(
+            provider, identity.dimension, texts, meta
+        )
 
         if embedded > 0:
-            self.persist(vectors)
+            store.publish_generation(identity, _documents(vector_rows))
             logger.info("build_embeddings_saved chunks=%d", embedded)
         elif total > 0:
             # Every batch was skipped (e.g. provider down for the whole build,
@@ -592,7 +537,7 @@ class EmbeddingsManager:
                 "build_embeddings_empty_not_authoritative outcome=no_vectors_saved"
             )
         else:
-            self.persist(vectors)
+            store.publish_generation(identity, [])
             logger.info("build_embeddings_saved_empty_index")
         return embedded
 
@@ -653,10 +598,11 @@ class EmbeddingsManager:
 
     def _embed_cold_build_batches(
         self,
-        vectors: VectorStore,
+        provider: EmbeddingProvider,
+        dimension: int,
         texts: list[str],
         meta: list[dict[str, Any]],
-    ) -> int:
+    ) -> tuple[int, list[VectorRow]]:
         """Embed the cold-build inputs in bounded batches, skipping failures.
 
         Per-batch detail logs at DEBUG (loud, opt-in via ``-v``); INFO carries
@@ -667,23 +613,30 @@ class EmbeddingsManager:
         (#649).
 
         Args:
-            vectors: The vector index to populate.
+            provider: The provider that embeds the texts.
+            dimension: The dimension every kept vector must have.
             texts: Embedding input texts, one per chunk.
             meta: Metadata rows parallel to *texts*.
 
         Returns:
-            Number of chunks actually vectorised; decile progress runs over
-            attempted chunks.
+            ``(embedded, rows)``: the number of chunks actually vectorised and
+            their rows, to publish as one generation. Decile progress runs
+            over attempted chunks.
         """
         total = len(texts)
         started = time.monotonic()
         last_decile = 0
         embedded = 0
+        rows: list[VectorRow] = []
         for start in range(0, total, self._embedding_batch_size):
             end = min(start + self._embedding_batch_size, total)
             try:
-                vectors.add(texts[start:end], meta[start:end])
-                embedded += end - start
+                batch = provider.embed(texts[start:end])
+                _check_batch(batch, dimension, end - start)
+                kept = [
+                    VectorRow(vector, dict(m))
+                    for vector, m in zip(batch, meta[start:end], strict=True)
+                ]
             except Exception as exc:
                 # Broad by design: providers raise heterogeneous types for an
                 # oversized batch (RuntimeError, httpx errors, ...). Log the
@@ -698,6 +651,9 @@ class EmbeddingsManager:
                     exc,
                     exc_info=True,
                 )
+            else:
+                rows.extend(kept)
+                embedded += end - start
             logger.debug(
                 "build_embeddings_embedded_batch chunks_start=%d chunks_end=%d "
                 "chunks_total=%d",
@@ -720,9 +676,9 @@ class EmbeddingsManager:
                     elapsed,
                     remaining,
                 )
-        return embedded
+        return embedded, rows
 
-    def _converge_embeddings(self, vectors: VectorStore) -> int:
+    def _converge_embeddings(self, vectors: EmbeddingStore) -> int:
         """Reconcile a non-empty vector index with the FTS chunk set (#665).
 
         Chunk identity is the ``(title, heading, content)`` multiset per
@@ -744,8 +700,8 @@ class EmbeddingsManager:
         source (#1130).
         Documents missing from the vector index are embedded; documents
         whose chunk multiset differs in any way (modified content, changed
-        title, re-chunked boundaries) are re-embedded in full.  The sidecar
-        is saved only when something actually changed.
+        title, re-chunked boundaries) are re-embedded in full.  The store is
+        checkpointed only when something changed.
 
         A provider failure while embedding one document's chunks skips
         that document — its existing vectors are left intact — and the
@@ -754,22 +710,16 @@ class EmbeddingsManager:
         also what makes a failed boot ``BuildEmbeddings`` job self-heal:
         the drift it left behind is just a larger diff for the next run.
 
-        The vector mutation is guarded the same way (#935): an
-        embedding-dimension mismatch raises :class:`ValueError` from
-        :meth:`~markdown_vault_mcp.vector_index.VectorIndex.add_vectors`
-        and skips only that document rather than aborting the pass. Unlike
-        a provider failure (caught before the index is touched), this fires
-        *after* ``delete_by_path`` has run, so the document's stale vectors
-        are removed — tallied under the separate ``dropped`` counter (logged
-        as ``build_embeddings_converge_dropped_chunks``) and re-embedded on
-        the next run.
+        A vector the store refuses (another dimension, a NaN) skips that
+        document the same way (#935): the store changes nothing (#1778), so
+        its vectors are kept and tallied with the provider failures.
 
         Thread-safety: runs on the single-owner
         :class:`~markdown_vault_mcp.indexing.IndexWriter` thread via
         :meth:`build_embeddings`, so no internal lock is required.
 
         Args:
-            vectors: The loaded, non-empty vector index to reconcile.
+            vectors: The open, non-empty store to reconcile.
 
         Returns:
             Number of chunks newly embedded (``0`` on an already-converged
@@ -785,26 +735,21 @@ class EmbeddingsManager:
             self._diff_converge_state(vectors)
         )
 
-        added, removed, failed, dropped = self._reembed_converge_documents(
+        added, removed, failed = self._reembed_converge_documents(
             vectors, fts_by_path, missing_paths + refresh_paths
         )
 
         for path in stale_paths:
-            removed += vectors.delete_by_path(path)
+            removed += len(vectors.rows_for(path))
+            vectors.remove_document(path, expected_token=ANY_TOKEN)
 
         if added or removed:
-            self.persist(vectors)
+            vectors.checkpoint()
 
         if failed:
             logger.warning(
                 "build_embeddings_converge_failed_chunks total=%d outcome=vectors_kept",
                 failed,
-            )
-        if dropped:
-            logger.warning(
-                "build_embeddings_converge_dropped_chunks total=%d "
-                "outcome=vectors_removed",
-                dropped,
             )
         logger.info(
             "build_embeddings_converged added=%d removed=%d up_to_date=%d",
@@ -815,7 +760,7 @@ class EmbeddingsManager:
         return added
 
     def _diff_converge_state(
-        self, vectors: VectorStore
+        self, vectors: EmbeddingStore
     ) -> tuple[dict[str, list[dict[str, Any]]], list[str], list[str], list[str], int]:
         """Diff the FTS chunk set against the sidecar for convergence.
 
@@ -824,7 +769,7 @@ class EmbeddingsManager:
         summary-only edits; the vector side stores the preamble per row.
 
         Args:
-            vectors: The loaded, non-empty vector index to diff against.
+            vectors: The open, non-empty store to diff against.
 
         Returns:
             ``(fts_by_path, stale_paths, missing_paths, refresh_paths,
@@ -895,7 +840,7 @@ class EmbeddingsManager:
             # never leaks into a vector row or perturbs the diff.
             row["embed_text"] = text
             fts_by_path.setdefault(row["path"], []).append(row)
-        vec_by_path = vectors.chunks_by_path()
+        vec_by_path = _metadata_by_path(vectors)
 
         stale_paths = [p for p in vec_by_path if p not in fts_by_path]
         # Sidecar paths FTS has no chunk rows for cannot be reclaimed on row
@@ -922,10 +867,10 @@ class EmbeddingsManager:
 
     def _reembed_converge_documents(
         self,
-        vectors: VectorStore,
+        vectors: EmbeddingStore,
         fts_by_path: dict[str, list[dict[str, Any]]],
         paths: list[str],
-    ) -> tuple[int, int, int, int]:
+    ) -> tuple[int, int, int]:
         """Re-embed the missing/refresh documents, one document at a time.
 
         Embeds per document, in bounded batches (#159), so a provider failure
@@ -933,14 +878,14 @@ class EmbeddingsManager:
         other document still converges.
 
         Args:
-            vectors: The vector index to mutate.
+            vectors: The store to write.
             fts_by_path: Embeddable FTS rows grouped by path, each row carrying
                 its precomputed ``embed_text``.
             paths: The missing + refresh paths to (re-)embed, in order.
 
         Returns:
-            ``(added, removed, failed, dropped)`` chunk tallies for the
-            caller's aggregate logging.
+            ``(added, removed, failed)`` chunk tallies for the caller's
+            aggregate logging.
         """
         # _converge_embeddings() re-checked configuration before dispatching
         # here; re-narrow for the type checker without a type: ignore.
@@ -952,7 +897,6 @@ class EmbeddingsManager:
         added = 0
         removed = 0
         failed = 0
-        dropped = 0
         for path in paths:
             rows = fts_by_path[path]
             texts = [r["embed_text"] for r in rows]
@@ -993,16 +937,11 @@ class EmbeddingsManager:
                 )
                 continue
             try:
-                removed += vectors.delete_by_path(path)
-                added += vectors.add_vectors(raw, metas)
+                removed += _replace(vectors, path, raw, metas)
             except ValueError as exc:
-                # A dimension mismatch (add_vectors, vector_index.py) must
-                # skip only this document, not abort the whole convergence
-                # pass (#935). Narrow to ValueError so genuine programming
-                # errors still surface. delete_by_path has already run, so
-                # this document's vectors are removed (unlike the provider
-                # branch above); tracked separately for an accurate log.
-                dropped += len(texts)
+                # Refused before any change (#1778): the document keeps its
+                # vectors and the next pass retries it.
+                failed += len(texts)
                 logger.warning(
                     "build_embeddings_converge_dim_mismatch path=%s chunks=%d err=%s",
                     path,
@@ -1011,7 +950,8 @@ class EmbeddingsManager:
                     exc_info=True,
                 )
                 continue
-        return added, removed, failed, dropped
+            added += len(raw)
+        return added, removed, failed
 
     # ------------------------------------------------------------------
     # Status
@@ -1040,7 +980,7 @@ class EmbeddingsManager:
                 **no_store,
             }
 
-        vectors = self._get_vectors()
+        vectors = self._loaded_store()
         count = 0
         if vectors is not None:
             count = vectors.count
@@ -1074,11 +1014,7 @@ class EmbeddingsManager:
             "provider": type(self._embedding_provider).__name__,
             "chunk_count": count,
             "path": str(self._embeddings_path) if self._embeddings_path else None,
-            **(
-                self._store_access.describe()
-                if self._store_access is not None
-                else no_store
-            ),
+            **(self._slot.describe() if self._slot is not None else no_store),
         }
 
     # ------------------------------------------------------------------
@@ -1104,8 +1040,10 @@ class EmbeddingsManager:
         includes content, title, headings, positions, and the frontmatter
         preamble. Retrying a failed FTS/graph batch therefore does not charge
         again for its unchanged, already embedded siblings.
-        Other exceptions (sqlite3 errors and programming bugs), plus all
-        vector-load/rebuild errors, propagate to the writer's Future.
+        A row the store refuses (another dimension, a NaN) keeps that path's
+        prior rows and is logged (#1778). Other exceptions (sqlite3 errors
+        and programming bugs), plus all store open and rebuild errors,
+        propagate to the writer's Future.
 
         Args:
             paths: Paths to re-embed (relative to source_dir).
@@ -1117,26 +1055,30 @@ class EmbeddingsManager:
 
         pre_embedded = self._pre_embed_dirty_paths(paths, self._embedding_provider)
 
-        # Phase 2: mutate vector index (writer is sole mutator; no lock needed).
-        # Short-circuit when every entry failed parse: there is nothing
-        # to mutate, and calling _load_vectors() in that case could
-        # trigger a full vector rebuild via its
-        # VectorIndexCompatibilityError handler — an expensive no-op
-        # for a flush that has no real work to do.
+        # Phase 2: write the store (writer is sole mutator; no lock needed).
+        # Short-circuit when every entry failed parse: there is nothing to
+        # write, and calling _open_store() then could rebuild a store that
+        # will not open: an expensive no-op for a flush with no real work.
         if not any(entry[3] != "failed" for entry in pre_embedded):
             return
-        vectors = self._load_vectors()
-        for entry in pre_embedded:
-            entry_path, entry_vecs, entry_meta, disposition = entry
+        vectors = self._open_store()
+        for entry_path, entry_vecs, entry_meta, disposition in pre_embedded:
             if disposition != "ready":
                 # Failed parsing or matching metadata: keep the existing rows.
                 continue
-            vectors.delete_by_path(entry_path)
-            if entry_vecs is not None and entry_meta:
-                vectors.add_vectors(entry_vecs, entry_meta)
-        # Save even when all rows were already current: a prior save may have
-        # failed after updating memory, and this retry must persist those rows.
-        self.persist(vectors)
+            if entry_vecs is None or not entry_meta:
+                vectors.remove_document(entry_path, expected_token=ANY_TOKEN)
+                continue
+            try:
+                _replace(vectors, entry_path, entry_vecs, entry_meta)
+            except ValueError as exc:
+                # Refused before any change (#1778): the old rows stay.
+                logger.warning(
+                    "deferred_embedding_refused path=%s err=%s", entry_path, exc
+                )
+        # Checkpoint even when every row was current: a prior checkpoint may
+        # have failed after the rows were published, and this retry persists them.
+        vectors.checkpoint()
         logger.debug("deferred_embeddings_flushed paths=%d", len(paths))
 
     def _pre_embed_dirty_paths(
@@ -1179,7 +1121,7 @@ class EmbeddingsManager:
             # Load lazily, outside the per-note error handlers: sidecar I/O
             # and rebuild failures must retain the writer's retry snapshot.
             if existing_by_path is None:
-                existing_by_path = self._load_vectors().chunks_by_path()
+                existing_by_path = _metadata_by_path(self._open_store())
             if existing_by_path.get(path) == meta:
                 pre_embedded.append((path, None, meta, "unchanged"))
                 continue
@@ -1226,3 +1168,58 @@ def _source_root_available(source_dir: Path) -> bool:
         return is_directory(source_dir)
     except OSError:
         return False
+
+
+def _check_batch(vectors: list[list[float]], dimension: int, expected: int) -> None:
+    """Refuse a batch the store would refuse, before it is kept.
+
+    Raises:
+        ValueError: If the count, a dimension or a value is wrong.
+    """
+    if len(vectors) != expected:
+        raise ValueError(
+            f"The provider returned {len(vectors)} vectors for {expected} texts."
+        )
+    for vector in vectors:
+        if len(vector) != dimension:
+            raise ValueError(
+                f"Embedding dimension mismatch: the store holds dimension "
+                f"{dimension}, a vector has {len(vector)}."
+            )
+        if not all(math.isfinite(x) for x in vector):
+            raise ValueError("Embedding values must be finite; a vector holds NaN.")
+
+
+def _documents(rows: list[VectorRow]) -> list[DocumentRows]:
+    """Group *rows* into one document per path, tokens left for #1768."""
+    by_path: dict[str, list[VectorRow]] = {}
+    for row in rows:
+        by_path.setdefault(row.metadata["path"], []).append(row)
+    return [DocumentRows(path, None, group) for path, group in by_path.items()]
+
+
+def _metadata_by_path(store: EmbeddingStore) -> dict[str, list[dict[str, Any]]]:
+    """Return the stored metadata grouped by path, documents with rows only."""
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for path in store.tokens():
+        rows = store.rows_for(path)
+        if rows:
+            grouped[path] = [dict(row.metadata) for row in rows]
+    return grouped
+
+
+def _replace(
+    store: EmbeddingStore,
+    path: str,
+    vectors: list[list[float]],
+    metadata: list[dict[str, Any]],
+) -> int:
+    """Replace *path*'s rows with *vectors*; return how many rows it had.
+
+    Raises:
+        ValueError: If the store refuses a row; the old rows stay then.
+    """
+    rows = [VectorRow(v, m) for v, m in zip(vectors, metadata, strict=True)]
+    before = len(store.rows_for(path))
+    store.replace_document(DocumentRows(path, None, rows), expected_token=ANY_TOKEN)
+    return before

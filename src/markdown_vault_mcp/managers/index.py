@@ -23,7 +23,6 @@ from markdown_vault_mcp.embed_text import EmbedTextBuilder
 from markdown_vault_mcp.fts_index import should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.managers.embeddings import (
-    _EMBED_DROPPED,
     _EMBED_KEPT,
     _EMBEDDING_BATCH_SIZE,
     EmbeddingsManager,
@@ -34,7 +33,13 @@ from markdown_vault_mcp.scanner import (
     parse_note_categorized,
     scan_directory,
 )
-from markdown_vault_mcp.types import IndexStats, ParsedNote, ReindexResult, SkippedFile
+from markdown_vault_mcp.types import (
+    ANY_TOKEN,
+    IndexStats,
+    ParsedNote,
+    ReindexResult,
+    SkippedFile,
+)
 from markdown_vault_mcp.utils import (
     canonical_attachment_extensions,
     effective_attachment_extensions,
@@ -51,8 +56,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from markdown_vault_mcp.interfaces import KeywordGraphIndex, VectorStore
-    from markdown_vault_mcp.managers._vector_slot import VectorStoreAccess
+    from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordGraphIndex
+    from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
     from markdown_vault_mcp.providers import EmbeddingProvider
     from markdown_vault_mcp.scanner import ChunkStrategy
     from markdown_vault_mcp.tracker import ChangeTracker
@@ -94,10 +99,6 @@ class IndexManager:
             field are excluded from the index entirely.
         indexed_frontmatter_fields: Frontmatter keys promoted to the
             ``document_tags`` table for structured filtering.
-        get_vectors: Callback returning the current
-            :class:`~markdown_vault_mcp.interfaces.VectorStore` (or
-            ``None``).
-        set_vectors: Callback to set the vector index on the owner.
         embed_model_name: Embedding model name in force at build time, or
             ``None`` when no provider is configured. Recorded into FTS meta
             after a successful build so a later warm-restart can detect a
@@ -123,8 +124,7 @@ class IndexManager:
             embedding provider per call in the cold-build, convergence, and
             inline-reindex paths. Defaults to the module constant
             ``_EMBEDDING_BATCH_SIZE``.
-        store_access: Passed to ``EmbeddingsManager``: opens, refreshes and
-            describes the vault's store.
+        vector_slot: Passed to ``EmbeddingsManager``: the vault's vector store.
     """
 
     def __init__(
@@ -139,15 +139,13 @@ class IndexManager:
         exclude_patterns: list[str] | None = None,
         required_frontmatter: list[str] | None = None,
         indexed_frontmatter_fields: list[str] | None = None,
-        get_vectors: Callable[[], VectorStore | None],
-        set_vectors: Callable[[VectorStore | None], None],
         embed_model_name: str | None = None,
         max_chunk_chars_override: int | None = None,
         title_field: str = "title",
         attachment_extensions: Sequence[str] | None = None,
         embed_text_builder: EmbedTextBuilder | None = None,
         embedding_batch_size: int = _EMBEDDING_BATCH_SIZE,
-        store_access: VectorStoreAccess | None = None,
+        vector_slot: VectorStoreSlot | None = None,
     ) -> None:
         self._fts = fts
         self._tracker = tracker
@@ -156,7 +154,6 @@ class IndexManager:
         self._exclude_patterns = exclude_patterns
         self._required_frontmatter = required_frontmatter
         self._indexed_frontmatter_fields: list[str] = indexed_frontmatter_fields or []
-        self._get_vectors = get_vectors
         # Chunking provenance recorded into FTS meta after a successful build
         # (#649): the shared chunker's char cap derives from the embedding
         # model (or an explicit override), so a change to either stable input
@@ -177,14 +174,12 @@ class IndexManager:
             embeddings_path=embeddings_path,
             embedding_provider=embedding_provider,
             chunk_strategy=chunk_strategy,
-            get_vectors=get_vectors,
-            set_vectors=set_vectors,
             title_field=title_field,
             embed_text_builder=self._embed_builder,
             embedding_batch_size=embedding_batch_size,
             is_path_excluded=self._is_path_excluded,
             discover_candidates=self._discover_indexable_candidates,
-            store_access=store_access,
+            vector_slot=vector_slot,
         )
 
     # ------------------------------------------------------------------
@@ -237,19 +232,7 @@ class IndexManager:
             candidates.append((abs_path, rel_str))
         return candidates
 
-    def _load_vectors(self) -> VectorStore:
-        """Load or return the cached vector store, self-healing corrupt sidecars.
-
-        Thin delegation to
-        :meth:`~markdown_vault_mcp.managers.embeddings.EmbeddingsManager._load_vectors`
-        (#1157); see there for the full contract.
-
-        Returns:
-            The loaded :class:`~markdown_vault_mcp.interfaces.VectorStore`.
-        """
-        return self._embeddings._load_vectors()
-
-    def _embed_note_inline(self, vectors: VectorStore, note: ParsedNote) -> int:
+    def _embed_note_inline(self, vectors: EmbeddingStore, note: ParsedNote) -> int:
         """Embed one changed note's chunks inline, resiliently (#930).
 
         Thin delegation to
@@ -257,12 +240,12 @@ class IndexManager:
         (#1157); see there for the full contract.
 
         Args:
-            vectors: The loaded vector index to mutate.
+            vectors: The store to write.
             note: The parsed note whose chunks to (re-)embed.
 
         Returns:
-            One of the ``_EMBED_OK`` / ``_EMBED_KEPT`` / ``_EMBED_DROPPED``
-            disposition codes defined in ``managers/embeddings.py``.
+            ``_EMBED_OK`` or ``_EMBED_KEPT``, the disposition codes defined
+            in ``managers/embeddings.py``.
         """
         return self._embeddings._embed_note_inline(vectors, note)
 
@@ -395,10 +378,10 @@ class IndexManager:
 
     def _purge_stale_excluded(
         self,
-        vectors: VectorStore | None,
+        vectors: EmbeddingStore | None,
         *,
         keep_paths: set[str] | None = None,
-    ) -> tuple[int, VectorStore | None]:
+    ) -> tuple[int, EmbeddingStore | None]:
         """Delete indexed rows that now match ``exclude_patterns`` (#255).
 
         Shared by :meth:`build_index` and :meth:`reindex`, carrying the
@@ -438,14 +421,13 @@ class IndexManager:
             and vectors is None
             and self._embeddings.embedding_provider is not None
         ):
-            self._load_vectors()
-            vectors = self._get_vectors()
+            vectors = self._embeddings._open_store()
 
         purged = 0
         for stale_path in stale_paths:
             self._fts.delete_by_path(stale_path)
             if vectors is not None:
-                vectors.delete_by_path(stale_path)
+                vectors.remove_document(stale_path, expected_token=ANY_TOKEN)
             purged += 1
         return purged, vectors
 
@@ -525,10 +507,10 @@ class IndexManager:
         indexed_paths = {note.path for note in notes}
         docs_before_purge = self._fts.count_documents()
         purged, vectors = self._purge_stale_excluded(
-            self._get_vectors(), keep_paths=indexed_paths
+            self._embeddings._loaded_store(), keep_paths=indexed_paths
         )
         if purged and vectors is not None:
-            self._embeddings.persist(vectors)
+            vectors.checkpoint()
 
         # A bulk purge (e.g. exclude patterns newly configured on an
         # existing index, issue #255) leaves dead FTS5 segments behind;
@@ -663,7 +645,7 @@ class IndexManager:
         )
 
         # Phase 2: apply mutations (writer is sole mutator; no lock needed).
-        vectors = self._get_vectors()
+        vectors = self._embeddings._loaded_store()
 
         # Corpus size before this purge pass, for the optimize threshold.
         docs_before_purge = self._fts.count_documents()
@@ -672,7 +654,7 @@ class IndexManager:
         for path in changes.deleted:
             deleted_purged += self._fts.delete_by_path(path)
             if vectors is not None:
-                vectors.delete_by_path(path)
+                vectors.remove_document(path, expected_token=ANY_TOKEN)
 
         # Purge stale excluded docs (issue #255); the shared helper defers
         # the vector-sidecar load until stale rows are confirmed, keeping
@@ -721,13 +703,13 @@ class IndexManager:
         # stale-excluded entries touches no vectors, so re-serialising the
         # whole index to disk every run is pure churn — particularly under a
         # file watcher that may fire reindex repeatedly (#720). ``stale_excluded``
-        # must be included: purging excluded docs calls ``vectors.delete_by_path``
+        # must be included: purging excluded docs calls ``vectors.remove_document``
         # above, mutating the in-memory index even when the file diff is empty.
         vector_index_changed = bool(
             indexed_added or indexed_modified or changes.deleted or stale_excluded
         )
         if vectors is not None and vector_index_changed:
-            self._embeddings.persist(vectors)
+            vectors.checkpoint()
 
         # Re-resolve vault-wide wikilinks.
         self._fts.resolve_vault_wikilinks()
@@ -828,7 +810,7 @@ class IndexManager:
     def _upsert_parsed_notes(
         self,
         parsed: list[tuple[str, ParsedNote]],
-        vectors: VectorStore | None,
+        vectors: EmbeddingStore | None,
         *,
         added_paths: set[str],
         checkpoint: Callable[[], None] | None = None,
@@ -860,7 +842,6 @@ class IndexManager:
         indexed_added = 0
         indexed_modified = 0
         embed_kept = 0
-        embed_dropped = 0
         last_checkpoint = time.monotonic()
         for path, note in parsed:
             try:
@@ -877,8 +858,6 @@ class IndexManager:
                 outcome = self._embed_note_inline(vectors, note)
                 if outcome == _EMBED_KEPT:
                     embed_kept += 1
-                elif outcome == _EMBED_DROPPED:
-                    embed_dropped += 1
 
             if checkpoint is not None and (
                 time.monotonic() - last_checkpoint >= _CHECKPOINT_INTERVAL_S
@@ -890,12 +869,6 @@ class IndexManager:
                 "reindex_inline_embed_failed_docs total=%d "
                 "action=vectors_kept_retry_on_build",
                 embed_kept,
-            )
-        if embed_dropped:
-            logger.warning(
-                "reindex_inline_embed_dropped_docs total=%d "
-                "action=vectors_removed_reembed_on_build",
-                embed_dropped,
             )
         return indexed_added, indexed_modified
 
