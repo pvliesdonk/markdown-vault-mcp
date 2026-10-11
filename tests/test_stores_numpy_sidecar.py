@@ -666,3 +666,30 @@ class TestSweep:
         store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
         store.close()
         assert (base.parent / "idx-embeddings.mine.npy").read_bytes() == b"not ours"
+
+
+class _CountingRows(tuple):  # type: ignore[type-arg]
+    scans = 0
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        type(self).scans += 1
+        return super().__iter__()
+
+
+class TestRowsByPath:
+    def test_grouping_every_document_scans_the_rows_a_constant_number_of_times(
+        self,
+    ) -> None:
+        from dataclasses import replace
+
+        from tests.fixtures.vectors import metadata_by_path
+
+        store = NumpySidecarBackend().open(None, IDENT)
+        store.publish_generation(
+            IDENT, [doc(f"n{i}.md", [[1, 0, 0]]) for i in range(50)]
+        )
+        store._snap = replace(store._snap, rows=_CountingRows(store._snap.rows))
+        _CountingRows.scans = 0
+        grouped = metadata_by_path(store)
+        assert len(grouped) == 50
+        assert _CountingRows.scans <= 2

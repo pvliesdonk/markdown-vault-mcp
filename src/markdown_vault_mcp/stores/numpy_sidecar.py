@@ -31,6 +31,7 @@ import os
 import tempfile
 import threading
 from dataclasses import dataclass, replace
+from functools import cached_property
 from pathlib import Path
 from types import MappingProxyType
 from typing import IO, TYPE_CHECKING, Any
@@ -83,6 +84,16 @@ class _Snapshot:
     matrix: Any  # np.ndarray (n, dimension), float32, read-only
     rows: tuple[dict[str, Any], ...]
     tokens: Mapping[str, RevisionToken | None]
+
+    @cached_property
+    def by_path(self) -> Mapping[str, tuple[int, ...]]:
+        """Each path's row positions, built once per snapshot on first use."""
+        index: dict[str, list[int]] = {}
+        for i, row in enumerate(self.rows):
+            path = row.get("path")
+            if path is not None:
+                index.setdefault(path, []).append(i)
+        return MappingProxyType({path: tuple(at) for path, at in index.items()})
 
 
 def _frozen(matrix: Any) -> Any:
@@ -313,9 +324,8 @@ class NumpySidecarStore:
         """Return *path*'s rows, vectors normalised, in storage order."""
         snap = self._current()
         return [
-            VectorRow(vector=snap.matrix[i].tolist(), metadata=dict(row))
-            for i, row in enumerate(snap.rows)
-            if row.get("path") == path
+            VectorRow(vector=snap.matrix[i].tolist(), metadata=dict(snap.rows[i]))
+            for i in snap.by_path.get(path, ())
         ]
 
     def tokens(self) -> dict[str, RevisionToken | None]:
