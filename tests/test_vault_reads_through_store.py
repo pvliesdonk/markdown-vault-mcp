@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from markdown_vault_mcp.config_sections import VaultSettings
-from markdown_vault_mcp.exceptions import ConfigurationError, VectorIndexUnusableError
+from markdown_vault_mcp.exceptions import ConfigurationError, StoreIncompatibleError
 from markdown_vault_mcp.stores.numpy_sidecar import (
     NumpySidecarBackend,
     NumpySidecarStore,
@@ -131,7 +131,7 @@ class TestTheVaultUsesTheNumpyStore:
             embedding_provider=MockEmbeddingProvider(dim=16),
         )
         try:
-            with pytest.raises(VectorIndexUnusableError):
+            with pytest.raises(StoreIncompatibleError):
                 reader.reader.search("Boats", limit=1, mode="semantic")
         finally:
             reader.close()

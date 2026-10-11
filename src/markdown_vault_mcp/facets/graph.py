@@ -14,6 +14,7 @@ import logging
 from collections import deque
 from typing import TYPE_CHECKING
 
+from markdown_vault_mcp.exceptions import StoreOpenError
 from markdown_vault_mcp.types import GraphEdge, GraphNode, GraphView
 
 if TYPE_CHECKING:
@@ -266,7 +267,8 @@ class GraphFacet:
 
         Returns ``True`` when the node cap stopped the expansion. A
         ``ValueError`` from :meth:`SearchManager.get_similar` (embeddings
-        not configured) silently skips the node; unexpected failures are
+        not configured) silently skips the node, as does a store this
+        process may not rebuild (logged at DEBUG); unexpected failures are
         logged and skipped.
         """
         truncated = False
@@ -279,6 +281,13 @@ class GraphFacet:
                 similar = self._search_mgr.get_similar(node_path, limit=5)
             except ValueError:
                 # Expected when embeddings are not configured for this vault.
+                continue
+            except StoreOpenError:
+                # Optional enrichment: a store this process may not rebuild
+                # leaves the graph without semantic edges (#1778).
+                logger.debug(
+                    "graph_similar_store_refused path=%s", node_path, exc_info=True
+                )
                 continue
             except Exception:
                 logger.warning("get_similar_failed path=%s", node_path, exc_info=True)

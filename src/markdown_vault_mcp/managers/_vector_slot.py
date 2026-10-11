@@ -6,8 +6,10 @@ some providers answer with a network probe; a provider that is down must
 not stop a vault from being built. On a store the vault owns, a corrupt
 store or one holding another identity (a model change) is rebuilt into a
 fresh generation through the caller's ``rebuild``; without a rebuild (a
-process that does not own the files) both raise
-:class:`~markdown_vault_mcp.exceptions.VectorIndexUnusableError`. A store
+process that does not own the files) the store's own
+:class:`~markdown_vault_mcp.exceptions.StoreCorruptError` or
+:class:`~markdown_vault_mcp.exceptions.StoreIncompatibleError` propagates,
+and such a process never creates or replaces the files (#1778). A store
 that is unavailable or of an unsupported schema always propagates. An
 injected store is the caller's: never rebuilt on a fault, never closed.
 """
@@ -23,7 +25,6 @@ from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
     StoreCorruptError,
     StoreIncompatibleError,
-    VectorIndexUnusableError,
 )
 from markdown_vault_mcp.managers._legacy_vector_writes import LegacyVectorWrites
 from markdown_vault_mcp.types import EmbeddingIdentity
@@ -134,7 +135,7 @@ class VectorStoreSlot:
         """Return the store, opening it on first use.
 
         A store that opens with nothing stored and no known dimension is
-        returned but not installed, so the writer's :meth:`legacy_get` still
+        returned but not installed, so the writer's :meth:`writable` still
         sets the provider's dimension.
 
         Args:
@@ -143,8 +144,10 @@ class VectorStoreSlot:
                 ``None`` forbids it.
 
         Raises:
-            VectorIndexUnusableError: If the store is corrupt or of another
-                identity and no rebuild is allowed.
+            StoreCorruptError: If the store is corrupt and no rebuild is
+                allowed.
+            StoreIncompatibleError: If the store holds another identity and
+                no rebuild is allowed.
             ValueError: If a rebuild installs no store.
             StoreOpenError: If the store is unavailable or of an unsupported
                 schema.
@@ -157,7 +160,7 @@ class VectorStoreSlot:
             )
         except (StoreCorruptError, StoreIncompatibleError) as exc:
             if rebuild is None:
-                raise VectorIndexUnusableError(str(exc)) from exc
+                raise
             logger.warning(
                 "vector_store_rebuild_started location=%s reason=%s",
                 self._location,
@@ -172,7 +175,7 @@ class VectorStoreSlot:
         if store.identity.dimension == 0:
             # Nothing is stored and the dimension is not known: let the read
             # search the empty store, but install nothing, so the writer
-            # opens through legacy_get, which learns the provider's dimension.
+            # opens through writable(), which learns the provider's dimension.
             return store
         self._store = store
         return store
@@ -272,7 +275,7 @@ class VectorStoreSlot:
         identity is rebuilt, or refused without ``rebuild`` or when injected.
 
         Raises:
-            VectorIndexUnusableError: If the store holds another identity and
+            StoreIncompatibleError: If the store holds another identity and
                 may not be rebuilt.
         """
         store = self.get(rebuild=rebuild)
@@ -280,7 +283,11 @@ class VectorStoreSlot:
             if store.count == 0:
                 self.fresh()
             elif rebuild is None or self._injected:
-                raise VectorIndexUnusableError(self._mismatch(store))
+                raise StoreIncompatibleError(
+                    self._mismatch(store),
+                    backend=self.backend_name,
+                    location=str(self._location) if self._location else ":memory:",
+                )
             else:
                 logger.warning(
                     "vector_store_rebuild_started location=%s reason=%s",
@@ -311,9 +318,7 @@ class VectorStoreSlot:
         self._refuse_unowned()
         if self._store is None:
             # A store that will not open is rebuilt into a fresh one below.
-            with contextlib.suppress(
-                StoreCorruptError, StoreIncompatibleError, VectorIndexUnusableError
-            ):
+            with contextlib.suppress(StoreCorruptError, StoreIncompatibleError):
                 self.get(rebuild=None)
         if self._store is not None and self._answers(self._store):
             return self._store

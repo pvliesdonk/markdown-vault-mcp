@@ -8,8 +8,9 @@ import pytest
 
 from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
+    StoreCorruptError,
+    StoreIncompatibleError,
     StoreUnavailableError,
-    VectorIndexUnusableError,
 )
 from markdown_vault_mcp.interfaces import VectorStore
 from markdown_vault_mcp.managers._legacy_vector_writes import LegacyVectorWrites
@@ -93,7 +94,8 @@ class TestOpening:
             )
         before = sorted(p.name for p in tmp_path.iterdir())
         slot = _slot(tmp_path / "vec", owns_files=False)
-        with pytest.raises(VectorIndexUnusableError):
+        expected = StoreCorruptError if fault == "corrupt" else StoreIncompatibleError
+        with pytest.raises(expected):
             slot.get(rebuild=None)
         assert sorted(p.name for p in tmp_path.iterdir()) == before
 
@@ -288,7 +290,7 @@ class TestDimensionOnTheWritePath:
             text_format="v1",
             owns_files=False,
         )
-        with pytest.raises(VectorIndexUnusableError, match="dimension"):
+        with pytest.raises(StoreIncompatibleError, match="dimension"):
             slot.legacy_get(rebuild=None)
 
     def test_an_empty_injected_store_takes_the_provider_dimension(self) -> None:
@@ -313,7 +315,7 @@ class TestDimensionOnTheWritePath:
             text_format="v1",
             store=injected,
         )
-        with pytest.raises(VectorIndexUnusableError, match="dimension"):
+        with pytest.raises(StoreIncompatibleError, match="dimension"):
             slot.legacy_get(rebuild=lambda: pytest.fail("rebuilt"))
         assert injected.count == 1
 
@@ -407,7 +409,7 @@ class TestWritingThroughTheSlot:
         injected = NumpySidecarBackend().open(None, other)
         injected.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
         slot = _slot(None, store=injected)
-        with pytest.raises(VectorIndexUnusableError, match="other-model"):
+        with pytest.raises(StoreIncompatibleError, match="other-model"):
             slot.writable(rebuild=lambda: pytest.fail("rebuilt"))
         assert (injected.count, injected.identity) == (1, other)
 

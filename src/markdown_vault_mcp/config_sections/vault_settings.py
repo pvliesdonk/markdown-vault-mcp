@@ -72,9 +72,10 @@ class VaultSettings:
             one owns, such as the CLI ``search`` reading a running server's
             index, and leaves them as they are: an on-disk index opens
             read-only and ranks with the weights stored in it (#1758), a
-            search that finds the vector sidecar incompatible or corrupt
-            raises :exc:`~markdown_vault_mcp.exceptions.VectorIndexUnusableError`
-            instead of rebuilding it (#1734), and a pre-#1693 state file is
+            search that finds the vector store incompatible or corrupt raises
+            :exc:`~markdown_vault_mcp.exceptions.StoreIncompatibleError` or
+            :exc:`~markdown_vault_mcp.exceptions.StoreCorruptError` instead of
+            rebuilding it (#1734, #1778), and a pre-#1693 state file is
             not copied into place. An in-memory index is this process's own
             and stays writable. A library setting with no configuration knob
             behind it.

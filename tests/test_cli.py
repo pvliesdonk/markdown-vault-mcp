@@ -1464,22 +1464,12 @@ def test_index_refuses_an_absent_source_dir(
 
 
 def test_unusable_vectors_message_names_the_remedy_for_each_fault() -> None:
-    """A mismatch points at the settings that built the vectors; damage at a rebuild (#1777)."""
+    """A mismatch points at the settings that built the vectors; damage at a rebuild (#1778)."""
     from markdown_vault_mcp.cli import _unusable_vectors_message
-    from markdown_vault_mcp.exceptions import (
-        StoreCorruptError,
-        StoreIncompatibleError,
-        VectorIndexUnusableError,
-    )
+    from markdown_vault_mcp.exceptions import StoreCorruptError, StoreIncompatibleError
 
-    def unusable(cause: Exception) -> VectorIndexUnusableError:
-        exc = VectorIndexUnusableError(str(cause))
-        exc.__cause__ = cause
-        return exc
-
-    mismatch = unusable(
-        StoreIncompatibleError("other model", backend="numpy", location="x")
-    )
-    damage = unusable(StoreCorruptError("bad json", backend="numpy", location="x"))
-    assert "settings that built them" in _unusable_vectors_message(mismatch)
-    assert "rebuild" in _unusable_vectors_message(damage)
+    mismatch = StoreIncompatibleError("other model", backend="numpy", location="x")
+    damage = StoreCorruptError("bad json", backend="numpy", location="x")
+    assert "Search with the embedding settings" in _unusable_vectors_message(mismatch)
+    assert "To rebuild them" in _unusable_vectors_message(damage)
+    assert "bad json. The vectors" in _unusable_vectors_message(damage)

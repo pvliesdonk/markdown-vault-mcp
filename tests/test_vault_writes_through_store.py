@@ -14,6 +14,7 @@ from markdown_vault_mcp.types import (
     ANY_TOKEN,
     DocumentRows,
     EmbeddingIdentity,
+    GraphEdge,
     VectorRow,
 )
 from markdown_vault_mcp.vault import Vault
@@ -347,3 +348,47 @@ class TestFloat32:
             assert sorted(metadata_by_path(_stored(vault))) == ["beta.md"]
         finally:
             vault.close()
+
+
+class TestANonOwningProcessReading:
+    def _reader_of_another_model(self, tmp_path: Path) -> Vault:
+        writer = _vault(tmp_path, MockEmbeddingProvider())
+        try:
+            writer.index.build_index()
+            writer.index.build_embeddings()
+        finally:
+            writer.close()
+        # The index is on disk already; a process that does not own it cannot
+        # mark it built, so these tests call the managers behind the facets.
+        return _vault(tmp_path, _ModelB(), owns_index_files=False)
+
+    def test_get_context_degrades_to_no_similar_notes(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        reader = self._reader_of_another_model(tmp_path)
+        try:
+            with caplog.at_level(logging.WARNING):
+                context = reader._search_mgr.get_context("alpha.md")
+            assert context.similar == []
+            assert any(
+                r.msg.startswith("get_context_similar_failed") for r in caplog.records
+            )
+        finally:
+            reader.close()
+
+    def test_the_graph_leaves_out_semantic_edges_quietly(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        reader = self._reader_of_another_model(tmp_path)
+        try:
+            with caplog.at_level(logging.WARNING):
+                edges: list[GraphEdge] = []
+                reader._graph_facet._add_semantic_edges(
+                    {"alpha.md": None}, edges, max_nodes=10
+                )
+            assert edges == []
+            assert not any(
+                r.msg.startswith("get_similar_failed") for r in caplog.records
+            )
+        finally:
+            reader.close()

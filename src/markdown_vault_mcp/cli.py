@@ -141,7 +141,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.config_sections._assembly import VaultInstances
-    from markdown_vault_mcp.exceptions import VectorIndexUnusableError
+    from markdown_vault_mcp.exceptions import StoreCorruptError, StoreIncompatibleError
     from markdown_vault_mcp.vault import Vault
 
 
@@ -308,28 +308,29 @@ def _embed_in_memory(vault: Vault) -> None:
         vault.index.build_embeddings()
 
 
-def _unusable_vectors_message(exc: VectorIndexUnusableError) -> str:
+def _unusable_vectors_message(exc: StoreCorruptError | StoreIncompatibleError) -> str:
     """Explain why search refused stored vectors, and what to do instead.
 
     Args:
-        exc: The refusal; its cause tells a provider mismatch from damage.
+        exc: The store's refusal: another model, or damage.
 
     Returns:
         The ``ERROR:`` line for stderr.
     """
     from markdown_vault_mcp.exceptions import StoreIncompatibleError
 
-    if isinstance(exc.__cause__, StoreIncompatibleError):
+    if isinstance(exc, StoreIncompatibleError):
         remedy = "Search with the embedding settings that built them"
     else:
         remedy = (
             "To rebuild them, run index with the settings that built them "
             "while no server uses them"
         )
+    reason = str(exc).rstrip(".")
     return (
-        f"ERROR: cannot search by meaning: {exc} The vectors are left as they "
-        f"are, since a running server may use them. {remedy}, or search with "
-        "--mode keyword."
+        f"ERROR: cannot search by meaning: {reason}. The vectors are left as "
+        f"they are, since a running server may use them. {remedy}, or search "
+        "with --mode keyword."
     )
 
 
@@ -378,7 +379,7 @@ def search(
     from typing import cast
 
     from markdown_vault_mcp._http_logging import quiet_http_loggers
-    from markdown_vault_mcp.exceptions import VectorIndexUnusableError
+    from markdown_vault_mcp.exceptions import StoreCorruptError, StoreIncompatibleError
 
     quiet_http_loggers()
     # An in-memory index is empty until built, so build it, keeping its state
@@ -415,7 +416,7 @@ def search(
                 mode=cast("Literal['keyword', 'semantic', 'hybrid']", mode),
                 folder=folder,
             )
-        except VectorIndexUnusableError as exc:
+        except (StoreCorruptError, StoreIncompatibleError) as exc:
             typer.echo(_unusable_vectors_message(exc), err=True)
             raise typer.Exit(code=1) from exc
     finally:

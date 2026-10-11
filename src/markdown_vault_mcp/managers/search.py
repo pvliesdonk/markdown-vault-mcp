@@ -22,6 +22,7 @@ from markdown_vault_mcp.exceptions import (
     DocumentNotFoundError,
     EmbeddingsNotConfiguredError,
     InvalidRequestError,
+    StoreOpenError,
 )
 from markdown_vault_mcp.managers._ranking import (
     ChannelRow as _ChannelRow,
@@ -173,9 +174,10 @@ class SearchManager:
             an embedding-identity mismatch (provider, model, or provider
             variant), an embedding-text format mismatch, a row-count
             mismatch, or a truncated/zero-byte/incomplete sidecar. ``None``
-            leaves the sidecar alone and the search raises
-            :exc:`~markdown_vault_mcp.exceptions.VectorIndexUnusableError`
-            (#1734).
+            leaves the store alone and the search raises the store's
+            :exc:`~markdown_vault_mcp.exceptions.StoreCorruptError` or
+            :exc:`~markdown_vault_mcp.exceptions.StoreIncompatibleError`
+            (#1734, #1778).
         folder_weights: Folder-prefix score multipliers applied to every
             search mode just before file grouping.  ``None`` disables the
             boost.
@@ -345,8 +347,10 @@ class SearchManager:
         Raises:
             RuntimeError: If called without a prior ``_require_vectors()``
                 (``_embedding_provider`` is ``None``).
-            VectorIndexUnusableError: If the store is corrupt or of another
-                identity and this manager has no ``rebuild_embeddings``.
+            StoreCorruptError: If the store is damaged and this manager has
+                no ``rebuild_embeddings``.
+            StoreIncompatibleError: If the store is of another identity and
+                this manager has no ``rebuild_embeddings``.
             ValueError: If a rebuild fails to produce a usable store.
         """
         if self._embedding_provider is None:
@@ -1797,10 +1801,10 @@ class SearchManager:
                 similar_grouped = self.get_similar(
                     path, limit=similar_limit, chunks_per_file=1
                 )
-            except ValueError as exc:
+            except (ValueError, StoreOpenError) as exc:
                 # The outer guard + get_similar's own not-configured check mean
-                # this only fires on a genuine internal failure (e.g. a corrupt
-                # vector sidecar surfaced by _load_vectors()) — surface it at
+                # this only fires on a genuine internal failure (e.g. a store
+                # this process may not rebuild, #1778) — surface it at
                 # WARNING instead of silently reducing the dossier to similar=[]
                 # (#804). Not broadened to Exception: unexpected types propagate.
                 logger.warning("get_context_similar_failed path=%s error=%s", path, exc)
