@@ -1,7 +1,8 @@
-"""The vault's vector slot and the temporary legacy write adapter (#1777)."""
+"""The vault's vector slot (#1777, #1778)."""
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -12,8 +13,6 @@ from markdown_vault_mcp.exceptions import (
     StoreIncompatibleError,
     StoreUnavailableError,
 )
-from markdown_vault_mcp.interfaces import VectorStore
-from markdown_vault_mcp.managers._legacy_vector_writes import LegacyVectorWrites
 from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
 from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
 from markdown_vault_mcp.types import ANY_TOKEN, EmbeddingIdentity
@@ -129,9 +128,7 @@ class TestInjectedStore:
 class TestLifecycleAndDescription:
     def test_close_closes_what_the_slot_opened(self, tmp_path: Path) -> None:
         slot = _slot(tmp_path / "vec")
-        store = slot.legacy_get(
-            rebuild=None
-        ).store  # the writer's open fixes the dimension
+        store = slot.writable(rebuild=None)  # the writer's open fixes the dimension
         store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
         slot.close()
         with pytest.raises(RuntimeError, match="closed"):
@@ -145,7 +142,7 @@ class TestLifecycleAndDescription:
             "identity": None,
             "generation": None,
         }
-        slot.legacy_get(rebuild=None)
+        slot.writable(rebuild=None)
         assert slot.describe() == {
             "backend": "numpy",
             "identity": {
@@ -157,76 +154,6 @@ class TestLifecycleAndDescription:
             },
             "generation": 0,
         }
-
-
-class TestLegacyVectorWrites:
-    def _writes(self) -> LegacyVectorWrites:
-        return LegacyVectorWrites(NumpySidecarBackend().open(None, IDENTITY), PROVIDER)
-
-    def test_satisfies_the_released_protocol(self) -> None:
-        assert isinstance(self._writes(), VectorStore)
-
-    def test_add_vectors_appends_per_document_and_chunks_group(self) -> None:
-        writes = self._writes()
-        writes.add_vectors([[1, 0, 0]], [{"path": "a.md", "content": "a0"}])
-        writes.add_vectors(
-            [[0, 1, 0], [0, 0, 1]],
-            [{"path": "a.md", "content": "a1"}, {"path": "b.md", "content": "b0"}],
-        )
-        grouped = writes.chunks_by_path()
-        assert [m["content"] for m in grouped["a.md"]] == ["a0", "a1"]
-        assert [m["content"] for m in grouped["b.md"]] == ["b0"]
-        assert writes.count == 3
-
-    def test_a_wrong_dimension_in_a_batch_changes_nothing(self) -> None:
-        writes = self._writes()
-        writes.add_vectors([[1, 0, 0]], [{"path": "a.md"}])
-        batch = [[0, 1, 0], [1, 0]]
-        metas = [{"path": "b.md"}, {"path": "c.md"}]
-        with pytest.raises(ValueError, match="dimension"):
-            writes.add_vectors(batch, metas)
-        assert set(writes.chunks_by_path()) == {"a.md"}
-
-    def test_add_embeds_with_the_provider(self) -> None:
-        writes = self._writes()
-        assert writes.add(["hello"], [{"path": "a.md"}]) == 1
-        assert writes.count == 1
-
-    def test_delete_by_path_counts_and_removes(self) -> None:
-        writes = self._writes()
-        writes.add_vectors([[1, 0, 0], [0, 1, 0]], [{"path": "a.md"}, {"path": "a.md"}])
-        assert writes.delete_by_path("a.md") == 2
-        assert writes.delete_by_path("a.md") == 0
-        assert writes.count == 0
-
-    def test_save_checkpoints(self, tmp_path: Path) -> None:
-        store = NumpySidecarBackend().open(tmp_path / "vec", IDENTITY)
-        writes = LegacyVectorWrites(store, PROVIDER)
-        writes.add_vectors([[1, 0, 0]], [{"path": "a.md"}])
-        writes.save(tmp_path / "ignored")
-        assert (
-            NumpySidecarBackend()
-            .open(tmp_path / "vec", IDENTITY, owns_files=False)
-            .count
-            == 1
-        )
-
-    def test_search_embeds_the_query(self) -> None:
-        writes = self._writes()
-        writes.add(["hello"], [{"path": "a.md"}])
-        assert [r["path"] for r in writes.search("hello", limit=1)] == ["a.md"]
-        assert writes.search("   ", limit=1) == []
-
-    def test_the_slot_caches_one_adapter_per_store(self, tmp_path: Path) -> None:
-        slot = _slot(tmp_path / "vec")
-        assert slot.legacy() is None
-        first = slot.legacy_get(rebuild=None)
-        assert slot.legacy() is first
-        slot.replace_any(first)
-        assert slot.legacy() is first
-        fresh = slot.legacy_fresh()
-        assert fresh is not first
-        assert slot.legacy() is fresh
 
 
 class TestDimensionOnTheWritePath:
@@ -273,9 +200,9 @@ class TestDimensionOnTheWritePath:
             rebuilt.append(1)
             slot.fresh()
 
-        writes = slot.legacy_get(rebuild=rebuild)
+        writes = slot.writable(rebuild=rebuild)
         assert rebuilt == [1]
-        assert writes.store.identity.dimension == 4
+        assert writes.identity.dimension == 4
 
     def test_without_ownership_a_dimension_change_is_unusable_for_writes(
         self, tmp_path: Path
@@ -291,15 +218,15 @@ class TestDimensionOnTheWritePath:
             owns_files=False,
         )
         with pytest.raises(StoreIncompatibleError, match="dimension"):
-            slot.legacy_get(rebuild=None)
+            slot.writable(rebuild=None)
 
     def test_an_empty_injected_store_takes_the_provider_dimension(self) -> None:
         injected = NumpySidecarBackend().open(
             None, EmbeddingIdentity("mock", "mock-dim-3", "", "v1", 0)
         )
         slot = _slot(None, store=injected)
-        writes = slot.legacy_get(rebuild=None)
-        assert writes.store is injected
+        writes = slot.writable(rebuild=None)
+        assert writes is injected
         assert injected.identity.dimension == 3
 
     def test_a_populated_injected_store_of_another_dimension_is_refused(
@@ -316,7 +243,7 @@ class TestDimensionOnTheWritePath:
             store=injected,
         )
         with pytest.raises(StoreIncompatibleError, match="dimension"):
-            slot.legacy_get(rebuild=lambda: pytest.fail("rebuilt"))
+            slot.writable(rebuild=lambda: pytest.fail("rebuilt"))
         assert injected.count == 1
 
 
@@ -440,3 +367,31 @@ class TestWritingThroughTheSlot:
         slot = _slot(None, store=injected)
         assert slot.rebuild_target() is injected
         assert (injected.count, injected.generation) == (1, 0)
+
+
+class TestLoaderCasesPorted:
+    def test_a_rebuild_that_raises_is_logged_then_propagates(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        (tmp_path / "vec.json").write_text("{not json")
+        slot = _slot(tmp_path / "vec")
+
+        def rebuild() -> None:
+            raise RuntimeError("provider down")
+
+        with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError):
+            slot.get(rebuild=rebuild)
+        assert any(
+            r.msg.startswith("vector_store_rebuild_failed") for r in caplog.records
+        )
+
+    def test_an_empty_rebuild_is_accepted(self, tmp_path: Path) -> None:
+        (tmp_path / "vec.json").write_text("{not json")
+        slot = _slot(tmp_path / "vec")
+        store = slot.get(rebuild=slot.rebuild_target)
+        assert store.count == 0
+
+    def test_a_location_ending_in_npy_finds_its_store(self, tmp_path: Path) -> None:
+        _persist_with(tmp_path / "vec", IDENTITY)
+        slot = _slot(tmp_path / "vec.npy")
+        assert slot.get(rebuild=None).count == 1

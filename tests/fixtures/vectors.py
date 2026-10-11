@@ -56,3 +56,50 @@ def write_legacy_sidecar(
     base.with_suffix(".json").write_text(
         json.dumps({"rows": metadata, "index_metadata": index_metadata})
     )
+
+
+def write_store(
+    base: Path,
+    provider: EmbeddingProvider,
+    texts: list[str],
+    metadata: list[dict[str, Any]],
+    *,
+    text_format: str = "v1",
+) -> None:
+    """Embed *texts* with *provider* and persist them at *base*, as the vault does."""
+    from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+    from markdown_vault_mcp.types import (
+        ANY_TOKEN,
+        DocumentRows,
+        EmbeddingIdentity,
+        VectorRow,
+    )
+
+    store = NumpySidecarBackend().open(
+        base, EmbeddingIdentity.of(provider, text_format)
+    )
+    by_path: dict[str, list[VectorRow]] = {}
+    vectors = provider.embed(texts) if texts else []
+    for vector, meta in zip(vectors, metadata, strict=True):
+        by_path.setdefault(meta["path"], []).append(VectorRow(vector, dict(meta)))
+    for path, rows in by_path.items():
+        store.replace_document(DocumentRows(path, None, rows), expected_token=ANY_TOKEN)
+    store.close()
+
+
+class StoreWriter:
+    """Collect texts and metadata, then embed and persist them with :func:`write_store`."""
+
+    def __init__(self, provider: EmbeddingProvider) -> None:
+        self._provider = provider
+        self._texts: list[str] = []
+        self._metadata: list[dict[str, Any]] = []
+
+    def add(self, texts: list[str], metadata: list[dict[str, Any]]) -> None:
+        """Queue *texts* against *metadata*."""
+        self._texts.extend(texts)
+        self._metadata.extend(metadata)
+
+    def save(self, base: Path) -> None:
+        """Embed everything queued and persist it at *base*."""
+        write_store(base, self._provider, self._texts, self._metadata)

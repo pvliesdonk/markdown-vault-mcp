@@ -27,6 +27,7 @@ from markdown_vault_mcp.types import (
     NoteInfo,
 )
 from markdown_vault_mcp.utils.fts import fts_row_to_note_info as _fts_row_to_note_info
+from tests.fixtures.vectors import StoreWriter
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -636,7 +637,6 @@ def test_keyword_search_returns_snippet(search_mgr: SearchManager) -> None:
 @pytest.fixture()
 def search_mgr_with_embeddings(search_vault: Path) -> SearchManager:
     """Build a SearchManager with a deterministic mock embedding provider."""
-    from markdown_vault_mcp.vector_index import VectorIndex
     from tests.conftest import MockEmbeddingProvider
 
     fts = FTSIndex(db_path=":memory:", indexed_frontmatter_fields=["tags"])
@@ -645,7 +645,7 @@ def search_mgr_with_embeddings(search_vault: Path) -> SearchManager:
     fts.resolve_vault_wikilinks()
     provider = MockEmbeddingProvider()
     embeddings_path = search_vault / "embeddings"
-    vectors = VectorIndex(provider)
+    vectors = StoreWriter(provider)
     for note in scan_directory(search_vault):
         texts = [c.content for c in note.chunks]
         from pathlib import Path as _Path
@@ -807,10 +807,8 @@ def _semantic_mgr_with_ranked_chunks(base: Path) -> SearchManager:
     """
     import numpy as np
 
-    from markdown_vault_mcp.vector_index import VectorIndex
-
     provider = _FixedQueryProvider()
-    vi = VectorIndex(provider)
+    vi = StoreWriter(provider)
     texts: list[str] = []
     meta: list[dict[str, object]] = []
     vecs: list[np.ndarray] = []
@@ -944,7 +942,6 @@ def buried_folder_mgr(
     starvation a 27k-chunk vault shows at the default floor without
     building a 27k-chunk fixture.
     """
-    from markdown_vault_mcp.vector_index import VectorIndex
     from tests.conftest import MockEmbeddingProvider
 
     monkeypatch.setattr(
@@ -952,7 +949,7 @@ def buried_folder_mgr(
     )
     fts = FTSIndex(db_path=":memory:")
     provider = MockEmbeddingProvider()
-    vectors = VectorIndex(provider)
+    vectors = StoreWriter(provider)
     for note in scan_directory(buried_folder_vault):
         fts.upsert_note(note)
         texts = [c.content for c in note.chunks]
@@ -1393,15 +1390,22 @@ def test_semantic_search_does_not_have_flush_embeddings_attr(tmp_path):
 
 
 class TestSearchLoadVectorsSelfHeal:
-    """SearchManager._load_vectors must self-heal a corrupt sidecar.
+    """SearchManager._load_vectors must self-heal a corrupt store.
 
-    SearchManager owns the shared VectorIndex and has its own ``_load_vectors``
-    that loads the sidecar from disk; if a search query is the first access
-    after a crash-interrupted save, it — not IndexManager — sees the corrupt
-    pair. ``VectorIndex.load`` raises ``VectorIndexCorruptError`` (a
-    ``RuntimeError``) on a row-count mismatch, so this path must catch it and
-    route to the injected rebuild rather than crash the search call (#734).
+    SearchManager reads the vault's store through the shared slot; if a
+    search query is the first access after a crash-interrupted persist, it —
+    not IndexManager — sees the damage. The store reports it as corrupt, and
+    this path must route to the injected rebuild rather than crash the search
+    call (#734).
     """
+
+    @staticmethod
+    def _matrix(mgr: SearchManager) -> Path:
+        """The matrix file the store's commit file names."""
+        base = mgr._embeddings_path
+        assert base is not None
+        (matrix,) = base.parent.glob(f"{base.name}.m*.npy")
+        return matrix
 
     @staticmethod
     def _corrupt_json_drop_row(mgr: SearchManager) -> None:
@@ -1494,7 +1498,7 @@ class TestSearchLoadVectorsSelfHeal:
         search_mgr_with_embeddings: SearchManager,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """A zero-byte .npy raises EOFError from numpy — must rebuild, not propagate.
+        """A zero-byte matrix (an interrupted write) must rebuild, not propagate.
 
         EOFError is neither a ValueError nor an OSError, so the SearchManager
         catch tuple must name it explicitly (parity with IndexManager).
@@ -1502,7 +1506,7 @@ class TestSearchLoadVectorsSelfHeal:
         import logging
 
         mgr = search_mgr_with_embeddings
-        npy_path = mgr._embeddings_path.with_suffix(".npy")  # type: ignore[union-attr]
+        npy_path = TestSearchLoadVectorsSelfHeal._matrix(mgr)
         npy_path.write_bytes(b"")
         self._arm_rebuild(mgr)
 
@@ -1521,11 +1525,11 @@ class TestSearchLoadVectorsSelfHeal:
         search_mgr_with_embeddings: SearchManager,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """A garbage (non-numpy) .npy raises ValueError — must rebuild."""
+        """A garbage (non-numpy) matrix must rebuild."""
         import logging
 
         mgr = search_mgr_with_embeddings
-        npy_path = mgr._embeddings_path.with_suffix(".npy")  # type: ignore[union-attr]
+        npy_path = TestSearchLoadVectorsSelfHeal._matrix(mgr)
         npy_path.write_bytes(b"this is not a numpy array at all")
         self._arm_rebuild(mgr)
 
@@ -1539,27 +1543,17 @@ class TestSearchLoadVectorsSelfHeal:
             "vector_store_rebuild_started" in r.getMessage() for r in caplog.records
         )
 
-    def test_missing_json_with_present_npy_triggers_rebuild(
-        self,
-        search_mgr_with_embeddings: SearchManager,
-        caplog: pytest.LogCaptureFixture,
+    def test_a_matrix_without_its_commit_file_opens_empty(
+        self, search_mgr_with_embeddings: SearchManager
     ) -> None:
-        """A missing .json while the .npy exists (incomplete pair) rebuilds."""
-        import logging
-
+        """No commit file means nothing was committed: an empty store, no rebuild."""
         mgr = search_mgr_with_embeddings
         mgr._embeddings_path.with_suffix(".json").unlink()  # type: ignore[union-attr]
-        self._arm_rebuild(mgr)
-
-        with caplog.at_level(
-            logging.WARNING, logger="markdown_vault_mcp.managers._vector_slot"
-        ):
-            result = mgr._load_vectors()
-
-        assert result.count >= 1
-        assert any(
-            "vector_store_rebuild_started" in r.getMessage() for r in caplog.records
-        )
+        mgr._rebuild_embeddings = lambda: pytest.fail("rebuilt")
+        mgr.vectors = None
+        result = mgr._load_vectors()
+        assert result is not None
+        assert result.count == 0
 
     def test_permission_error_propagates_without_rebuild(
         self,
@@ -1677,7 +1671,6 @@ def boost_vault(tmp_path: Path) -> Path:
 
 def _boost_mgr(boost_vault: Path, **mgr_kwargs) -> SearchManager:
     """SearchManager over the boost vault with a controlled vector store."""
-    from markdown_vault_mcp.vector_index import VectorIndex
 
     fts = FTSIndex(db_path=":memory:")
     notes = list(scan_directory(boost_vault))
@@ -1685,7 +1678,7 @@ def _boost_mgr(boost_vault: Path, **mgr_kwargs) -> SearchManager:
         fts.upsert_note(note)
 
     provider = _UnitQueryProvider()
-    vectors = VectorIndex(provider)
+    vectors = StoreWriter(provider)
     for note in notes:
         folder = note.path.rsplit("/", 1)[0] if "/" in note.path else ""
         vectors.add(

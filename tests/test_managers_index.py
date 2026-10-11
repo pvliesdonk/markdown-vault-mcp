@@ -651,7 +651,7 @@ class TestSkipStateMemory:
         """A reindex that only purges stale-excluded entries must still save.
 
         Purging an excluded-but-already-indexed doc calls
-        ``vectors.delete_by_path`` (mutating the in-memory index) while the
+        ``vectors.remove_document`` (mutating the open store) while the
         file diff stays empty (the file is still on disk, just filtered).
         Skipping the save would leave the stale vectors on disk to reload on
         the next startup (#720 follow-up).
@@ -677,7 +677,7 @@ class TestSkipStateMemory:
     ) -> None:
         """A reindex whose only change is a deleted file must still save.
 
-        A pure deletion purges vectors via ``vectors.delete_by_path`` while
+        A pure deletion purges vectors via ``vectors.remove_document`` while
         ``indexed_added``/``indexed_modified``/``stale_excluded`` all stay 0, so
         ``changes.deleted`` is the sole term that must keep the save alive (#720).
         """

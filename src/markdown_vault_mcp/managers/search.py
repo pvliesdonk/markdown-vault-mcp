@@ -103,7 +103,7 @@ _RRF_K = 60
 
 # Floor for the vector-search candidate pool, applied by both the semantic and
 # the hybrid path. Vector search does a full linear scan and sort regardless of
-# limit (see VectorIndex.search), so a wide floor only costs the final slice,
+# limit (see EmbeddingStore.search), so a wide floor only costs the final slice,
 # not extra distance work. It keeps recall of the best-scoring documents from
 # depending on how large a limit the caller passed.
 _SEMANTIC_CANDIDATE_FLOOR = 1000
@@ -260,7 +260,7 @@ class SearchManager:
 
     @vectors.setter
     def vectors(self, value: EmbeddingStore | None) -> None:
-        self._slot.replace_any(value)
+        self._slot.replace(value)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -628,7 +628,7 @@ class SearchManager:
     ) -> Callable[[dict[str, Any]], bool] | None:
         """Build a vector-row predicate for a folder scope, or ``None``.
 
-        Handing this to :meth:`VectorIndex.search` applies the scope
+        Handing this to the store's ``search`` applies the scope
         *inside* the similarity scan, so the cap selects the best rows
         within the folder rather than the best rows in the vault that
         happen to be in the folder (#1108).
@@ -669,12 +669,12 @@ class SearchManager:
         :meth:`_widen_for_post_filter`).
 
         The folder scope is deliberately absent: it is applied inside
-        :meth:`VectorIndex.search` before the candidate cap, so repeating
+        the store's ``search`` before the candidate cap, so repeating
         it here would be a second place for one rule to live (#1108).
 
         Args:
-            raw: Result dicts from :meth:`VectorIndex.search` /
-                :meth:`VectorIndex.search_by_path`.
+            raw: Result dicts from the store's ``search`` /
+                ``similar_to_document``.
             filters: Optional ``{frontmatter_key: value}`` equality filters.
             okf_filters: Optional OKF-dimension filters.
 
@@ -819,12 +819,12 @@ class SearchManager:
         An empty or whitespace-only query carries no signal, and every
         OpenAI-compatible provider rejects ``[""]`` with a hard HTTP 400
         (#1111) — the read-side twin of the indexing failure in #1087. The
-        guard sits here rather than only in :class:`VectorIndex` so the
+        guard sits here rather than in the store so the
         hybrid channel, which would otherwise reach the provider through its
         own call site, takes the same path.
 
         Returning ``[]`` matches the posture of the adjacent ``limit <= 0``
-        guard in :meth:`VectorIndex.search`.
+        guard in the store's ``search``.
 
         Args:
             mode: The requested search mode, for the log line only.
@@ -845,8 +845,8 @@ class SearchManager:
         channels and :meth:`get_similar`.
 
         Args:
-            rows: Post-filtered dicts from :meth:`VectorIndex.search` /
-                :meth:`VectorIndex.search_by_path`.
+            rows: Post-filtered dicts from the store's ``search`` /
+                ``similar_to_document``.
 
         Returns:
             :class:`_SemanticRow` adapter rows.
@@ -1110,7 +1110,7 @@ class SearchManager:
         # The two channels size their candidate pools independently. FTS keeps a
         # floor of 50 (a BM25 query does real work per candidate). The vector
         # channel uses the same full-scan floor as _semantic_search, since it
-        # goes through the identical VectorIndex.search and the same recall cap
+        # goes through the identical store search and the same recall cap
         # applies: a floor-50 pool drops a document whose best chunk ranks just
         # past 50 from the RRF merge at small limits.
         fts_candidate_limit = self._widen_for_post_filter(

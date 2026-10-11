@@ -528,8 +528,8 @@ class Vault:
             exclude_patterns=self._exclude_patterns,
             attachment_extensions=self._attachment_extensions,
             link_manager=self._link_mgr,
-            # rebuild_embeddings is invoked from SearchManager._load_vectors when a
-            # VectorIndexCompatibilityError fires (embedding model upgrade).  The
+            # rebuild_embeddings is invoked from SearchManager._load_vectors when an
+            # owned store is corrupt or of another identity (a model change).  The
             # coordinator routes it through the writer thread, preserving the
             # single-owner invariant (#559): only the writer thread mutates indexes.
             # Without it a search raises instead (#1734).

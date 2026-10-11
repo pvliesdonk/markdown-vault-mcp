@@ -1,8 +1,8 @@
 """Tests for the search/index storage seam (#1230).
 
-These pin two claims the annotations make.  That ``FTSIndex`` and
-``VectorIndex`` really satisfy the protocols the managers are now typed
-against — mypy checks this statically at the composition root, but a runtime
+These pin two claims the annotations make.  That ``FTSIndex`` really
+satisfies the protocols the managers are now typed against (the vector
+store's conformance lives with the store's own tests) — mypy checks this statically at the composition root, but a runtime
 check catches a drift a `type: ignore` could hide.  And that the split is
 real: satisfying the keyword facet does not imply satisfying the graph facet,
 which is what makes a backend that separates them expressible.
@@ -21,7 +21,6 @@ from markdown_vault_mcp.interfaces import (
     GraphStore,
     KeywordGraphIndex,
     KeywordIndex,
-    VectorStore,
 )
 
 if TYPE_CHECKING:
@@ -47,25 +46,6 @@ class TestFTSIndexConformance:
     def test_satisfies_facet(self, fts: FTSIndex, protocol: type) -> None:
         """One SQLite backend answers both concepts today."""
         assert isinstance(fts, protocol)
-
-
-class TestVectorIndexConformance:
-    """``VectorIndex`` serves the semantic facet."""
-
-    def test_satisfies_vector_store(self) -> None:
-        """The numpy implementation matches the seam the managers hold."""
-        from markdown_vault_mcp.vector_index import VectorIndex
-
-        class _StubProvider:
-            dimension = 3
-            provider_name = "stub"
-            model_name = "stub"
-            context_length = 128
-
-            def embed(self, texts: list[str]) -> list[list[float]]:
-                return [[0.0, 0.0, 0.0] for _ in texts]
-
-        assert isinstance(VectorIndex(_StubProvider()), VectorStore)  # type: ignore[arg-type]
 
 
 class _GraphOnlyStore:
@@ -106,7 +86,6 @@ class TestFacetsAreIndependent:
         """The runtime checks are real checks."""
         assert not isinstance(object(), KeywordIndex)
         assert not isinstance(object(), GraphStore)
-        assert not isinstance(object(), VectorStore)
 
 
 class TestManagersAcceptAnyConformingStore:

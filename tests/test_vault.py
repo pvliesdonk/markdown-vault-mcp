@@ -2827,7 +2827,7 @@ class TestSemanticSearch:
         tmp_path: Path,
         mock_provider: MockEmbeddingProvider,
     ) -> None:
-        """_load_vectors() creates an empty VectorIndex when no .npy file exists."""
+        """_load_vectors() opens an empty store when no files exist."""
         embeddings_path = tmp_path / "embeddings"
         col = Vault(
             source_dir=vault_path,

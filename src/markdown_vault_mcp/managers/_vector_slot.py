@@ -26,7 +26,6 @@ from markdown_vault_mcp.exceptions import (
     StoreCorruptError,
     StoreIncompatibleError,
 )
-from markdown_vault_mcp.managers._legacy_vector_writes import LegacyVectorWrites
 from markdown_vault_mcp.types import EmbeddingIdentity
 
 if TYPE_CHECKING:
@@ -72,7 +71,6 @@ class VectorStoreSlot:
         self._store = store
         self._injected = store is not None
         self._identity: EmbeddingIdentity | None = None
-        self._legacy: LegacyVectorWrites | None = None
 
     @property
     def location(self) -> Path | None:
@@ -127,6 +125,16 @@ class VectorStoreSlot:
             dimension=0,
         )
 
+    def _run_rebuild(self, rebuild: Callable[[], object]) -> None:
+        """Run *rebuild*, logging a failure before it propagates."""
+        try:
+            rebuild()
+        except Exception:
+            logger.error(
+                "vector_store_rebuild_failed location=%s", self._location, exc_info=True
+            )
+            raise
+
     def current(self) -> EmbeddingStore | None:
         """Return the installed store, opening nothing."""
         return self._store
@@ -166,7 +174,7 @@ class VectorStoreSlot:
                 self._location,
                 type(exc).__name__,
             )
-            rebuild()
+            self._run_rebuild(rebuild)
             if self._store is None:
                 raise ValueError(
                     "Failed to rebuild the vector store after it would not open."
@@ -184,11 +192,6 @@ class VectorStoreSlot:
         """Install *store* (or clear the slot)."""
         self._store = store
 
-    def replace_any(self, value: object) -> None:
-        """Install a store, or the store under a :class:`LegacyVectorWrites`."""
-        store = value.store if isinstance(value, LegacyVectorWrites) else value
-        self._store = store  # type: ignore[assignment]
-
     def fresh(self) -> EmbeddingStore:
         """Install and return an empty store at the identity, to rebuild into.
 
@@ -205,14 +208,6 @@ class VectorStoreSlot:
             return self._store
         self._store = self._backend.open_fresh(self._location, self.identity)
         return self._store
-
-    def legacy(self) -> LegacyVectorWrites | None:
-        """Return the cached adapter over the installed store, or ``None``."""
-        if self._store is None or self._provider is None:
-            return None
-        if self._legacy is None or self._legacy.store is not self._store:
-            self._legacy = LegacyVectorWrites(self._store, self._provider)
-        return self._legacy
 
     def _answers(self, store: EmbeddingStore) -> bool:
         """Whether *store*'s rows answer this provider's queries: the same identity."""
@@ -294,7 +289,7 @@ class VectorStoreSlot:
                     self._location,
                     "identity",
                 )
-                rebuild()
+                self._run_rebuild(rebuild)
         installed = self._store
         if installed is None:  # pragma: no cover - get() or fresh() installed one
             raise RuntimeError("The vector store did not install.")
@@ -323,22 +318,6 @@ class VectorStoreSlot:
         if self._store is not None and self._answers(self._store):
             return self._store
         return self.fresh()
-
-    def legacy_get(self, *, rebuild: Callable[[], object] | None) -> LegacyVectorWrites:
-        """Open the store for writing and return the adapter over it (#1778 removes)."""
-        self.writable(rebuild=rebuild)
-        adapter = self.legacy()
-        if adapter is None:  # pragma: no cover - writable() installed a store
-            raise RuntimeError("The vector store did not install.")
-        return adapter
-
-    def legacy_fresh(self) -> LegacyVectorWrites:
-        """Install a fresh store and return the adapter over it."""
-        self.fresh()
-        adapter = self.legacy()
-        if adapter is None:  # pragma: no cover - fresh() installed a store
-            raise RuntimeError("The vector store did not install.")
-        return adapter
 
     def describe(self) -> dict[str, Any]:
         """Return backend, identity and generation for ``embeddings_status``."""

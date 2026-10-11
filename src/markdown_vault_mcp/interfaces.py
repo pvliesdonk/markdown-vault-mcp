@@ -1,14 +1,12 @@
 """Storage protocols for the search/index seam (#1230).
 
-The managers depend on three distinct concepts, all currently served by two
-concrete classes:
+The managers depend on these concepts:
 
 - :class:`KeywordIndex` — the relational document store plus full-text search
   and the build-state bookkeeping the indexing pipeline keeps.
 - :class:`GraphStore` — the link graph.  Distinct from search because it
   answers a different question: *structure* (what links to what) rather than
   *relevance* (what matches a query).
-- :class:`VectorStore` — the semantic surface.
 - :class:`StoreBackend`, :class:`StoreLifecycle` and :class:`SourceProbe`
   — the storage contract every store shares (#1766): how a store is opened
   and by whom it is closed, and the one question the indexing side asks a
@@ -18,8 +16,8 @@ concrete classes:
   no embedding provider inside the store.
 
 ``FTSIndex`` implements the first two over one SQLite database and
-``VectorIndex`` implements the third over numpy; both satisfy these protocols
-structurally, without inheriting from them.  This mirrors the move already
+``NumpySidecarStore`` the vector contract over numpy; both satisfy these
+protocols structurally, without inheriting from them.  This mirrors the move already
 made for the embedding *provider*
 (:class:`~markdown_vault_mcp.providers.EmbeddingProvider`) and applies it to
 the storage that provider feeds — which is what the design doc's standing note
@@ -70,7 +68,6 @@ __all__ = [
     "VectorBackend",
     "VectorPublisher",
     "VectorReader",
-    "VectorStore",
 ]
 
 StoreT_co = TypeVar("StoreT_co", covariant=True)
@@ -330,89 +327,6 @@ class KeywordGraphIndex(KeywordIndex, GraphStore, Protocol):
     combination keeps those annotations honest without collapsing the two
     concepts, so a backend that separates them stays expressible.
     """
-
-
-@runtime_checkable
-class VectorStore(Protocol):
-    """The semantic surface: embeddings in, nearest neighbours out."""
-
-    @property
-    def count(self) -> int:
-        """Return the number of stored vectors."""
-        ...
-
-    def chunks_by_path(self) -> dict[str, list[dict[str, Any]]]:
-        """Return the stored chunk metadata, grouped by note path."""
-        ...
-
-    def add(self, texts: list[str], metadata: list[dict[str, Any]]) -> int:
-        """Embed *texts* and store them against *metadata*.
-
-        Returns:
-            The number of vectors added.
-        """
-        ...
-
-    def add_vectors(
-        self, raw_vectors: list[list[float]], metadata: list[dict[str, Any]]
-    ) -> int:
-        """Store already-computed *raw_vectors* against *metadata*.
-
-        Returns:
-            The number of vectors added.
-        """
-        ...
-
-    def search(
-        self,
-        query: str,
-        *,
-        limit: int = 10,
-        predicate: Callable[[dict[str, Any]], bool] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return the chunks most similar to *query*.
-
-        Args:
-            query: Text to embed and compare against.
-            limit: Maximum number of results.
-            predicate: Keeps only the chunks it accepts, applied before
-                *limit* so filtering does not silently shrink the result.
-
-        Returns:
-            The nearest chunks, most similar first.
-        """
-        ...
-
-    def search_by_path(
-        self,
-        path: str,
-        *,
-        limit: int = 10,
-        predicate: Callable[[dict[str, Any]], bool] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return the chunks most similar to the note at *path*.
-
-        Args:
-            path: The note to find neighbours for.
-            limit: Maximum number of results.
-            predicate: Keeps only the chunks it accepts.
-
-        Returns:
-            The nearest chunks, most similar first.
-        """
-        ...
-
-    def delete_by_path(self, path: str) -> int:
-        """Remove every vector belonging to *path*.
-
-        Returns:
-            The number of vectors removed.
-        """
-        ...
-
-    def save(self, path: Path) -> None:
-        """Persist the store to *path*."""
-        ...
 
 
 @runtime_checkable

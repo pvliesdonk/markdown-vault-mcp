@@ -616,19 +616,16 @@ class TestPreambleConvergence:
     def test_v2_sidecar_search_path_loads_clean_without_rebuild(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """SearchManager's lazy vector load carries the v2 format token.
+        """A semantic search opens a v2 store with the v2 format token.
 
-        ``Vault`` wires ``embed_text_format`` into two independent
-        consumers — ``IndexManager`` and ``SearchManager`` — each loading the
-        shared sidecar with its own slot. The convergence tests exercise only
-        the IndexManager path; a semantic search is the sole trigger for
-        SearchManager's lazy load. If SearchManager's token were mis-wired to
-        the default ``"v1"``, the first semantic search after every boot would
-        see the ``"v2;fields=summary"`` sidecar as incompatible and route to a
-        full re-embed — a silent per-boot rebuild the IndexManager-only tests
-        miss. ``load_or_self_heal`` logs that mismatch (``Rebuilding
-        embeddings.``) synchronously before queueing the rebuild, so its
-        absence proves the token matched; the doc is also returned.
+        ``IndexManager`` and ``SearchManager`` share the vault's slot, which
+        carries ``embed_text_format``; a semantic search is the sole trigger
+        for the slot's lazy read when no build ran. If the read used the
+        default ``"v1"``, it would see the ``"v2;fields=summary"`` store as
+        incompatible and rebuild it on every boot. The slot logs
+        ``vector_store_rebuild_started`` synchronously before running the
+        rebuild, so its absence proves the token matched; the doc is also
+        returned.
         """
         import logging
 
@@ -659,14 +656,14 @@ class TestPreambleConvergence:
         v2.index.build_index()
         try:
             with caplog.at_level(
-                logging.WARNING, logger="markdown_vault_mcp.managers.search"
+                logging.WARNING, logger="markdown_vault_mcp.managers._vector_slot"
             ):
                 results = v2.reader.search("crisp summary", mode="semantic", limit=50)
             assert any(r.path == "doc.md" for r in results)
-            # A mis-wired token would raise VectorIndexCompatibilityError and
-            # log this before rebuilding; a matching token loads clean.
+            # A mis-wired token would open as incompatible and log this before
+            # rebuilding; a matching token loads clean.
             assert not any(
-                "Rebuilding embeddings" in r.getMessage() for r in caplog.records
+                "vector_store_rebuild_started" in r.getMessage() for r in caplog.records
             )
         finally:
             v2.close()

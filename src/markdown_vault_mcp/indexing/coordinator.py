@@ -357,8 +357,8 @@ class IndexWriteCoordinator:
     def rebuild_embeddings(self) -> None:
         """Force-rebuild the vector index for the search-recovery path.
 
-        Invoked by ``SearchManager._load_vectors`` on a
-        ``VectorIndexCompatibilityError`` (embedding-model upgrade). Runs on
+        Invoked by ``SearchManager._load_vectors`` when an owned store is
+        corrupt or of another identity (an embedding-model upgrade). Runs on
         the writer thread to preserve the single-owner invariant. Carries NO
         ``require_built`` gate: the index is necessarily built when vectors
         are being loaded. The rebuilt-chunk count is discarded — the caller

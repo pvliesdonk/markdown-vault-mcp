@@ -26,8 +26,7 @@ src/markdown_vault_mcp/
     fs.py              -- filesystem traversal helpers: symlink-aware iteration, directory pruning (#508, #835)
     fts.py             -- fts_row_to_note_info: FTS row → NoteInfo conversion shared across managers
   managers/
-    _vector_slot.py    -- VectorStoreSlot: the vault's one vector store, opened lazily through a VectorBackend, rebuilt when owned and corrupt or of another identity, closed when the vault opened it (#1777)
-    _legacy_vector_writes.py -- LegacyVectorWrites: the released VectorStore calls on an EmbeddingStore, for the write paths until #1778 deletes it (#1777)
+    _vector_slot.py    -- VectorStoreSlot: the vault's one vector store, opened lazily through a VectorBackend for the readers and the writer, rebuilt when owned and corrupt or of another identity, closed when the vault opened it (#1777, #1778)
     __init__.py        -- package aggregator: re-exports DocumentManager/IndexManager/LinkManager/SearchManager
     link.py            -- LinkManager: backlinks, outlinks, broken, orphans, hubs, paths
     link_report.py     -- UnresolvedLinkReporter: the unresolved links one write/edit/append added, read back from the index rows get_broken_links uses (#1725); internal collaborator, not re-exported
@@ -42,7 +41,6 @@ src/markdown_vault_mcp/
     summarize.py       -- SummarizeManager: LLM-backed note/subtree summarization, map-reduce batching (#922)
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
-    _vector_loader.py  -- shared load-or-self-heal routine for the vector sidecar (#736)
   stores/
     __init__.py        -- store backends package; exports nothing, import a backend from its module (#1766)
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the vector store held as one immutable snapshot (matrix, rows, tokens), persisted as a JSON commit point naming a per-persist matrix; reads legacy VectorIndex sidecars (#1767)
@@ -74,10 +72,9 @@ src/markdown_vault_mcp/
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, which decides which links the index holds while utils/links.py decides what a link is (#1521, #1526); reference openers still read their brackets through the escape-aware find_bracket_span (#1517, #1519) and wikilinks through the linear _find_wikilink (#1343)
-  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex/VectorStore: the search/index storage seam (#1230); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767)
+  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex: the search/index storage seam (#1230); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766); VectorReader/VectorPublisher/EmbeddingStore: the vector store contract (#1767)
   fts_index.py         -- SQLite FTS5 schema, BM25 search; schema_version layout marker and checkpoint() (#1766)
   _fts_connection.py   -- per-thread sqlite connection registry + SQLITE_LOCKED retry (#760)
-  vector_index.py      -- numpy embeddings, cosine similarity
   embed_text.py        -- EmbedTextBuilder: single shared builder for (context-enriched) embedding input text
   providers.py         -- embedding provider ABC + implementations
   tracker.py           -- hash-based change detection

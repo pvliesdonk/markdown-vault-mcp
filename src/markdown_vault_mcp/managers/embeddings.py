@@ -1,13 +1,12 @@
 """Vector-embedding lifecycle manager, composed into IndexManager (#1157).
 
-Owns the vector sidecar's whole lifecycle — cold build, boot convergence,
+Owns the vector store's whole write lifecycle — cold build, boot convergence,
 inline re-embedding during reindex, the deferred two-phase flush, and status
 reporting. Extracted verbatim from
 :class:`~markdown_vault_mcp.managers.index.IndexManager` so the FTS pipeline
 and the embedding pipeline each have a single reason to change; the shared
 helpers that stayed behind (`_is_path_excluded`,
-`_discover_indexable_candidates`) are injected as callables, following the
-#736 `_vector_loader` precedent.
+`_discover_indexable_candidates`) are injected as callables (#736).
 """
 
 from __future__ import annotations
@@ -988,8 +987,8 @@ class EmbeddingsManager:
         if vectors is not None:
             count = vectors.count
         elif self._embeddings_path is not None:
-            # Derive sidecar paths the way VectorIndex.load/save do
-            # (Path.with_suffix), so an EMBEDDINGS_PATH that carries an
+            # Derive sidecar paths the way the store does (Path.with_suffix),
+            # so an EMBEDDINGS_PATH that carries an
             # extension resolves to the real files instead of {path}.npy.npy
             # and misreporting chunk_count=0 (#819).
             # Both layouts keep the rows in the JSON: the legacy pair beside

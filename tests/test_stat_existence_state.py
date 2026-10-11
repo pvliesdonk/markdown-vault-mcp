@@ -35,23 +35,24 @@ def shut(tmp_path: Path) -> Iterator[Path]:
     d.chmod(0o755)
 
 
-def test_vector_loader_refuses_instead_of_cold_building(shut: Path) -> None:
+def test_vector_slot_refuses_instead_of_cold_building(shut: Path) -> None:
     """A cold build here would later overwrite the real store (#819)."""
-    from markdown_vault_mcp.managers._vector_loader import load_or_self_heal
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+    from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
+    from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
+    from tests.conftest import MockEmbeddingProvider
 
     rebuild = MagicMock()
-    set_vectors = MagicMock()
-    with pytest.raises(PermissionError):
-        load_or_self_heal(
-            embeddings_path=shut / "embeddings",
-            embedding_provider=MagicMock(),
-            get_vectors=lambda: None,
-            set_vectors=set_vectors,
-            rebuild=rebuild,
-            logger=logging.getLogger("test"),
-        )
+    slot = VectorStoreSlot(
+        backend=NumpySidecarBackend(),
+        location=shut / "embeddings",
+        provider=MockEmbeddingProvider(),
+        text_format="v1",
+    )
+    with pytest.raises(StoreUnavailableError):
+        slot.get(rebuild=rebuild)
     rebuild.assert_not_called()
-    set_vectors.assert_not_called()
+    assert slot.current() is None
 
 
 def test_okf_audit_of_an_unstatable_vault_is_a_fault(shut: Path) -> None:
