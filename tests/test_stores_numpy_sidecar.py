@@ -31,6 +31,7 @@ from tests.fixtures.vector_store_contract import (
     VectorStoreContract,
     doc,
 )
+from tests.fixtures.vectors import write_legacy_sidecar
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -269,16 +270,14 @@ class TestOpenOutcomes:
 
 class TestLegacySidecar:
     def _legacy(self, tmp_path: Path) -> tuple[Path, EmbeddingIdentity]:
-        from markdown_vault_mcp.vector_index import VectorIndex
-
         provider = MockEmbeddingProvider(dim=3)
         base = tmp_path / "legacy-embeddings"
-        index = VectorIndex(provider)
-        index.add_vectors(
+        write_legacy_sidecar(
+            base,
             [[3.0, 4.0, 0.0], [0.0, 1.0, 0.0]],
             [{"path": "a.md", "folder": ""}, {"path": "b.md", "folder": ""}],
+            provider=provider,
         )
-        index.save(base)
         return base, EmbeddingIdentity.of(provider, "v1")
 
     def test_a_vector_index_sidecar_opens_without_tokens(self, tmp_path: Path) -> None:
@@ -322,13 +321,61 @@ class TestLegacySidecar:
         )
 
     def test_an_empty_legacy_sidecar_opens_empty(self, tmp_path: Path) -> None:
-        from markdown_vault_mcp.vector_index import VectorIndex
-
         provider = MockEmbeddingProvider(dim=3)
         base = tmp_path / "empty-embeddings"
-        VectorIndex(provider).save(base)
+        write_legacy_sidecar(base, [], [], provider=provider)
         store = NumpySidecarBackend().open(base, EmbeddingIdentity.of(provider, "v1"))
         assert store.count == 0
+
+    def test_a_sidecar_without_a_format_opens_as_v1(self, tmp_path: Path) -> None:
+        provider = MockEmbeddingProvider(dim=3)
+        base = tmp_path / "old"
+        write_legacy_sidecar(
+            base, [[1, 0, 0]], [{"path": "a.md"}], provider=provider, text_format=None
+        )
+        store = NumpySidecarBackend().open(base, EmbeddingIdentity.of(provider, "v1"))
+        assert store.count == 1
+
+    def test_a_sidecar_without_a_variant_opens_for_a_variantless_provider(
+        self, tmp_path: Path
+    ) -> None:
+        provider = MockEmbeddingProvider(dim=3)
+        base = tmp_path / "old"
+        write_legacy_sidecar(base, [[1, 0, 0]], [{"path": "a.md"}], provider=provider)
+        payload = json.loads(base.with_suffix(".json").read_text())
+        del payload["index_metadata"]["provider_variant"]
+        base.with_suffix(".json").write_text(json.dumps(payload))
+        store = NumpySidecarBackend().open(base, EmbeddingIdentity.of(provider, "v1"))
+        assert store.count == 1
+
+    def test_a_sidecar_without_a_variant_is_incompatible_for_a_variant_provider(
+        self, tmp_path: Path
+    ) -> None:
+        provider = MockEmbeddingProvider(dim=3)
+        base = tmp_path / "old"
+        write_legacy_sidecar(base, [[1, 0, 0]], [{"path": "a.md"}], provider=provider)
+        variant = EmbeddingIdentity("mock", provider.model_name, "q8", "v1", 3)
+        backend = NumpySidecarBackend()
+        with pytest.raises(StoreIncompatibleError):
+            backend.open(base, variant)
+
+    @pytest.mark.parametrize("extra", ["row", "vector"])
+    def test_a_legacy_sidecar_whose_rows_and_matrix_disagree_is_corrupt(
+        self, tmp_path: Path, extra: str
+    ) -> None:
+        provider = MockEmbeddingProvider(dim=3)
+        base = tmp_path / "old"
+        vectors = [[1, 0, 0], [0, 1, 0]]
+        rows = [{"path": "a.md"}, {"path": "b.md"}]
+        if extra == "row":
+            rows.append({"path": "c.md"})
+        else:
+            vectors.append([0, 0, 1])
+        write_legacy_sidecar(base, vectors, rows, provider=provider)
+        backend = NumpySidecarBackend()
+        identity = EmbeddingIdentity.of(provider, "v1")
+        with pytest.raises(StoreCorruptError):
+            backend.open(base, identity)
 
 
 _CHILD = textwrap.dedent(

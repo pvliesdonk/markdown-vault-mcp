@@ -99,6 +99,11 @@ class VectorStoreSlot:
         return self._injected
 
     @property
+    def owns_files(self) -> bool:
+        """Whether this process may rebuild the store's files."""
+        return self._owns_files
+
+    @property
     def backend_name(self) -> str:
         """The backend's registry name."""
         return str(self._backend.name)
@@ -217,37 +222,69 @@ class VectorStoreSlot:
             self._legacy = LegacyVectorWrites(self._store, self._provider)
         return self._legacy
 
-    def legacy_get(self, *, rebuild: Callable[[], object] | None) -> LegacyVectorWrites:
-        """Open (installing) and return the adapter over the store, for writing.
+    def _answers(self, store: EmbeddingStore) -> bool:
+        """Whether *store*'s rows answer this provider's queries: the same identity."""
+        return store.identity == self.identity
 
-        Writing needs the provider, so here its dimension is checked against
-        the store's: an empty store takes the full identity (an owned one is
-        replaced by a fresh one, an injected one is emptied in place, losing
-        nothing); a populated one of another dimension is rebuilt, or refused
-        without ``rebuild`` or when injected.
+    def _mismatch(self, store: EmbeddingStore) -> str:
+        """Say which embeddings *store* holds and which the provider makes."""
+        held, wanted = store.identity, self.identity
+        return (
+            f"The vector store holds {held.model} vectors of dimension "
+            f"{held.dimension}; the provider embeds {wanted.model} at "
+            f"dimension {wanted.dimension}."
+        )
+
+    def writable(self, *, rebuild: Callable[[], object] | None) -> EmbeddingStore:
+        """Open (installing) and return the store, for writing.
+
+        Writing needs the provider, so here its identity, dimension included,
+        is checked against the store's: an empty store takes the provider's
+        identity (an owned one is replaced by a fresh one, an injected one is
+        emptied in place, losing nothing); a populated one of another
+        identity is rebuilt, or refused without ``rebuild`` or when injected.
 
         Raises:
-            VectorIndexUnusableError: If the store holds another dimension
-                and no rebuild is allowed.
+            VectorIndexUnusableError: If the store holds another identity and
+                may not be rebuilt.
         """
         store = self.get(rebuild=rebuild)
-        if store.identity.dimension != self.identity.dimension:
+        if not self._answers(store):
             if store.count == 0:
                 self.fresh()
             elif rebuild is None or self._injected:
-                raise VectorIndexUnusableError(
-                    f"The vector store holds dimension {store.identity.dimension}; "
-                    f"the provider embeds {self.identity.dimension}."
-                )
+                raise VectorIndexUnusableError(self._mismatch(store))
             else:
                 logger.warning(
                     "vector_store_rebuild_started location=%s reason=%s",
                     self._location,
-                    "dimension",
+                    "identity",
                 )
                 rebuild()
+        installed = self._store
+        if installed is None:  # pragma: no cover - get() or fresh() installed one
+            raise RuntimeError("The vector store did not install.")
+        return installed
+
+    def rebuild_target(self) -> EmbeddingStore:
+        """Return the store a full rebuild publishes into.
+
+        The installed store, when its rows answer this provider's queries:
+        the rebuild publishes one generation into it at the end, so readers
+        keep its rows meanwhile and a rebuild that embeds nothing leaves
+        them. Otherwise :meth:`fresh`: a fresh store over the location for an
+        owned slot (the old files survive until the rebuild publishes), the
+        injected store emptied in place.
+        """
+        if self._store is not None and self._answers(self._store):
+            return self._store
+        return self.fresh()
+
+    def legacy_get(self, *, rebuild: Callable[[], object] | None) -> LegacyVectorWrites:
+        """Open the store for writing and return the adapter over it (#1778 removes)."""
+        self.writable(rebuild=rebuild)
         adapter = self.legacy()
-        if adapter is None:  # pragma: no cover - get() installed a store
+        if adapter is None:  # pragma: no cover - writable() installed a store
             raise RuntimeError("The vector store did not install.")
         return adapter
 

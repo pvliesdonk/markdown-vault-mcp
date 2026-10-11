@@ -315,3 +315,95 @@ class TestDimensionOnTheWritePath:
         with pytest.raises(VectorIndexUnusableError, match="dimension"):
             slot.legacy_get(rebuild=lambda: pytest.fail("rebuilt"))
         assert injected.count == 1
+
+
+class TestWritingThroughTheSlot:
+    def test_writable_returns_the_installed_store(self, tmp_path: Path) -> None:
+        slot = _slot(tmp_path / "vec")
+        store = slot.writable(rebuild=None)
+        assert slot.current() is store
+        assert store.identity == IDENTITY
+
+    def test_ownership_is_visible(self) -> None:
+        assert _slot(None).owns_files
+        assert not _slot(None, owns_files=False).owns_files
+
+    def test_an_open_owned_store_is_its_own_rebuild_target(
+        self, tmp_path: Path
+    ) -> None:
+        _persist_with(tmp_path / "vec", IDENTITY)
+        slot = _slot(tmp_path / "vec")
+        store = slot.get(rebuild=None)
+        assert slot.rebuild_target() is store
+        assert store.count == 1
+
+    def test_an_unopened_owned_store_rebuilds_into_a_fresh_one(
+        self, tmp_path: Path
+    ) -> None:
+        _persist_with(tmp_path / "vec", IDENTITY)
+        slot = _slot(tmp_path / "vec")
+        target = slot.rebuild_target()
+        assert target.count == 0
+        assert slot.current() is target
+        assert (tmp_path / "vec.json").exists()
+
+    def test_a_dimension_rebuild_does_not_publish_into_the_old_store(
+        self, tmp_path: Path
+    ) -> None:
+        _persist_with(
+            tmp_path / "vec", EmbeddingIdentity("mock", "same-name", "", "v1", 3)
+        )
+
+        class SameName(MockEmbeddingProvider):
+            @property
+            def model_name(self) -> str:
+                return "same-name"
+
+        slot = VectorStoreSlot(
+            backend=NumpySidecarBackend(),
+            location=tmp_path / "vec",
+            provider=SameName(dim=4),
+            text_format="v1",
+        )
+        old = slot.get(rebuild=None)
+        targets: list[object] = []
+        slot.writable(rebuild=lambda: targets.append(slot.rebuild_target()))
+        assert targets
+        assert targets[0] is not old
+
+    def test_an_injected_store_of_another_model_is_refused_for_writing(self) -> None:
+        other = EmbeddingIdentity("mock", "other-model", "", "v1", 3)
+        injected = NumpySidecarBackend().open(None, other)
+        injected.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        slot = _slot(None, store=injected)
+        with pytest.raises(VectorIndexUnusableError, match="other-model"):
+            slot.writable(rebuild=lambda: pytest.fail("rebuilt"))
+        assert (injected.count, injected.identity) == (1, other)
+
+    def test_an_empty_injected_store_of_another_model_takes_the_provider_identity(
+        self,
+    ) -> None:
+        injected = NumpySidecarBackend().open(
+            None, EmbeddingIdentity("mock", "other-model", "", "v1", 3)
+        )
+        slot = _slot(None, store=injected)
+        assert slot.writable(rebuild=None) is injected
+        assert injected.identity == IDENTITY
+
+    def test_an_injected_store_of_another_model_is_emptied_before_a_rebuild(
+        self,
+    ) -> None:
+        injected = NumpySidecarBackend().open(
+            None, EmbeddingIdentity("mock", "other-model", "", "v1", 3)
+        )
+        injected.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        slot = _slot(None, store=injected)
+        assert slot.rebuild_target() is injected
+        assert (injected.count, injected.identity) == (0, IDENTITY)
+
+    def test_an_injected_rebuild_target_keeps_its_rows(self) -> None:
+        injected = NumpySidecarBackend().open(None, IDENTITY)
+        injected.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        slot = _slot(None, store=injected)
+        assert slot.rebuild_target() is injected
+        assert (injected.count, injected.generation) == (1, 0)
