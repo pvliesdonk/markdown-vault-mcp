@@ -369,7 +369,8 @@ provider.
     while keeping the same model name goes undetected: vectors from two
     different models end up in one index, and search quality degrades
     quietly. Force the rebuild yourself by deleting the embeddings files
-    (the `.json` file and the `.m<N>.npy` matrix it names, at
+    (the `.json` file, the `.m<N>.npy` matrix it names, and a plain `.npy`
+    file of the same name that a vault upgraded from 5.x may still hold, at
     `EMBEDDINGS_PATH` or beside the index) and restarting.
 
 !!! note "Unknown context length falls back to a 1500-character chunk cap"

@@ -69,7 +69,7 @@ Two packages, one dependency edge (eventual):
 markdown-vault-mcp (new package)
 +-- scanner.py        -- file discovery, frontmatter parsing, chunking
 +-- fts_index.py      -- SQLite FTS5 schema, BM25 search
-+-- vector_index.py   -- numpy embeddings, cosine similarity
++-- stores/           -- store backends: the numpy embedding store, the SQLite keyword backend
 +-- providers.py      -- Ollama / OpenAI / Voyage / SentenceTransformers
 +-- tracker.py        -- hash-based change detection
 +-- vault.py          -- thin composition root: settings-only construction (#1225), lifecycle, wiring, facet accessors (index-write → indexing/coordinator.py)
@@ -378,10 +378,10 @@ configuring structured filters activates it too:
    so convergence cannot "heal" enriched vectors back to plain; the chunk's
    preamble participates in the convergence signature so offline
    summary-only edits re-embed. The active format token
-   (`v1` / `v2;fields=...`) is persisted in the vector sidecar's
-   `index_metadata`; a mismatch at load raises
-   `VectorIndexCompatibilityError`, which routes to the existing
-   `build_embeddings(force=True)` self-heal.
+   (`v1` / `v2;fields=...`) is part of the embedding store's identity;
+   a mismatch at open raises `StoreIncompatibleError`, which on a store the
+   vault owns routes to the existing `build_embeddings(force=True)`
+   self-heal.
 
 `TITLE_FIELD`, `SEARCHABLE_FIELDS`, and `INDEXED_FIELDS` are recorded in
 the FTS chunking provenance (alongside the embedding model and char-cap
@@ -453,7 +453,7 @@ pool is capped at `max(limit × (chunks_per_file + 4), 1000)`, so on a
 large vault a folder whose chunks all score below that cap was discarded
 wholesale and the call returned `[]` — indistinguishable from a folder
 with no related content, and surfacing its notes needed a `limit` in the
-thousands. `VectorIndex.search` / `.search_by_path` therefore take an
+thousands. The store's `search` / `similar_to_document` therefore take an
 optional `predicate` over each candidate's metadata, applied while
 walking the descending-score order and before the cap, so the cap selects
 the top-k *within* the scope. This costs nothing: the similarity pass is
@@ -695,12 +695,14 @@ invisible to every reader.
 
 ### Incremental Reindex
 
-Full numpy array rebuild on every reindex (filter unchanged rows + append new).
-Only changed files are re-embedded (the expensive API call part). This is
-correct and simple at vault scale (even 10k chunks at 768 dimensions is ~60 MB).
+Each changed document's rows are replaced in one `replace_document` call
+(the numpy store rebuilds its matrix per call); only changed files are
+re-embedded (the expensive API call part). This is correct and simple at
+vault scale (even 10k chunks at 768 dimensions is ~60 MB); how often the full
+matrix is rewritten is #1497's.
 
-The `VectorIndex` maintains a sidecar metadata list mapping each row index to
-its source document path, enabling bulk deletion when a document is reindexed.
+The store keeps each row's metadata, including its document path, so a
+document's rows are replaced or removed as a unit.
 
 ### Index Lifecycle
 
@@ -918,24 +920,23 @@ convergence pass, inline reindex embedding, the deferred flush, and
 `EmbeddingsManager`, a collaborator composed into `IndexManager`.
 `IndexManager` keeps thin delegations (`build_embeddings`,
 `embeddings_status`, `flush_dirty_embeddings`, plus the internal
-`_load_vectors` / `_embed_note_inline` its FTS pipeline uses), so
+`_open_store` / `_embed_note_inline` its FTS pipeline uses), so
 everything below still holds when read against the `IndexManager`
 surface; the shared `_is_path_excluded` / `_discover_indexable_candidates`
 helpers stay on `IndexManager` and are injected into the collaborator as
-callables (the #736 `_vector_loader` pattern).
+callables (#736).
 
 `build_embeddings(force=False)` over a **non-empty** vector index does not
 skip and does not rebuild: it diffs the FTS `sections` table (the
 canonical chunk set, via `FTSIndex.list_chunks()`) against the stored
-vector metadata grouped by path (`VectorIndex.chunks_by_path()`) and
+vector metadata grouped by path (the store's `tokens()` and `rows_for()`) and
 reconciles:
 
 - Documents missing from the vector index are embedded and added.
 - Documents whose per-path `(title, heading, content)` chunk multiset
   differs in any way (modified content, changed title, re-chunked
   boundaries) are re-embedded in full. The multiset is the chunk identity
-  (`VectorIndex` has no per-chunk keys, only a parallel metadata list
-  with path-level deletion).
+  (the store has no per-chunk keys, only rows replaced per document).
 - Vectors for documents no longer in the FTS index are removed — but only
   when the absence is **authoritative** (#1130). FTS row absence alone also
   covers a source the producing build failed to parse or a walk failed to
@@ -948,7 +949,7 @@ reconciles:
   `missing_frontmatter` skip, or a note with no embeddable chunk text,
   #930/#1087). Deletions and exclusions reclaim as before; a body-less note
   that still has FTS chunk rows reclaims without touching the disk.
-- Unchanged documents are untouched; the sidecar is saved only when
+- Unchanged documents are untouched; the store is checkpointed only when
   something actually changed, and the run is summarised in a single
   `build_embeddings_converged added=N removed=M up_to_date=K` log line.
 
@@ -963,12 +964,12 @@ the vault, so a steady-state boot does zero embedding work.
 Convergence embeds per document, in the same bounded batches as the cold
 build (#159): a provider failure on one document's chunks (token-context
 rejection, transient outage) skips exactly that document (its existing
-vectors stay intact) and the rest still converge. The subsequent vector
-mutation is guarded the same way (#935): an embedding-dimension mismatch
-raises `ValueError` from `VectorIndex.add_vectors`, and that too skips only
-the offending document rather than aborting the pass — tallied separately
-(its stale vectors were already removed, so it is logged as *dropped*
-rather than *kept*) and re-tried on the next run. This is also the
+vectors stay intact) and the rest still converge. The store write is
+guarded the same way (#935): `replace_document` refuses a vector of another
+dimension, or one that is not finite, before it changes anything, so that
+too skips only the offending document, keeps its old vectors (#1778; until
+then its rows were deleted before the add and logged as *dropped*), and is
+re-tried on the next run. This is also the
 self-healing property: a boot `BuildEmbeddings` job that failed outright
 (recorded in `last_build_embeddings_error`, never retried in-process)
 merely leaves a larger diff for the next successful run to converge. A
@@ -1036,11 +1037,10 @@ embeds the query verbatim, so a blank or whitespace-only query would reach
 the provider as `[""]` and return a vendor-shaped HTTP 400 rather than a
 statement about the caller's own input. `SearchManager.search()` applies
 `is_embeddable()` to the query on both the semantic and the hybrid channel
-— at the manager boundary rather than only inside `VectorIndex`, because
-hybrid reaches the provider through its own vector-channel call site — and
-returns `[]`, matching the posture of the adjacent `limit <= 0` guard.
-`VectorIndex.search()` carries the same guard as a backstop for a library
-consumer calling it directly. The guard runs *after* `_require_vectors()`,
+— at the manager boundary, because hybrid reaches the provider through its
+own vector-channel call site, and because the store takes query vectors,
+not text (#1777) — and returns `[]`, matching the posture of the adjacent
+`limit <= 0` guard. The guard runs *after* `_require_vectors()`,
 so a server with no embedding provider still raises
 `EmbeddingsNotConfiguredError` instead of silently answering `[]`.
 
@@ -1048,7 +1048,7 @@ so a server with no embedding provider still raises
 
 Two-layer model:
 
-- **Library layer** (`Vault`, `FTSIndex`, `VectorIndex`, etc.): raises
+- **Library layer** (`Vault`, `FTSIndex`, the embedding store, etc.): raises
   specific exceptions. Callers catch and handle.
 - **MCP tool layer**: every tool call ends in one of the four outcomes
   defined by the template's `designing-tool-outcomes` skill
@@ -1074,7 +1074,7 @@ Two-layer model:
 | `ConcurrentModificationError` | Refresh, then retry |
 | `DocumentUnreadableError` | The server failed |
 | `IndexUnavailableError` | The server failed |
-| `VectorIndexUnusableError` | The server failed |
+| `StoreCorruptError`, `StoreIncompatibleError` | The server failed |
 
 For `read_attachment()` and `attachment_size()`, an attachment whose `stat` or
 read the file system refuses is a plain `ValueError`, never "not found": absence is judged from `stat()`, not
@@ -1121,7 +1121,7 @@ operator learns why the note was left out.
 |-|-|-|
 | `InvalidRequestError` | The path helpers; `read()`, `get_toc()`, `edit()`, `append()`, `write()` and `move_folder()` arguments; search's `chunks_per_file`; the OKF `stale` filter; `get_diff()`'s ref; revision reads; attachment paths (a `.md` path, an extension off the allowlist); `summarize()` arguments, and paths that hold no note that exists within the read limit | The caller's request cannot be served as sent: an argument out of range or missing, a path outside the vault or of the wrong type, a heading that does not exist. A `ValueError` subclass, so `except ValueError` still catches it (#1608) |
 | `DocumentNotFoundError` | `edit()`, `append()`, `delete()`, `rename()`, `move_folder()`, attachment `delete()`/`rename()`/`read_attachment()`/`attachment_size()`, section `read()`, `get_toc()`, the graph and context lookups | The document or folder is not on disk or, for lookups that read the index, not in the index. A subclass of `InvalidRequestError` |
-| `ReadOnlyError` | `write()`, `edit()`, `delete()`, `rename()` | `read_only=True` |
+| `ReadOnlyError` | `write()`, `edit()`, `delete()`, `rename()`; `build_embeddings(force=True)` | `read_only=True`; for a forced rebuild, a vault built with `owns_index_files=False`, which never creates or replaces the embedding store's files (#1778) |
 | `EditConflictError` | `edit()` | `old_text` not found or appears more than once. Includes optional diagnostic fields: `closest_match_line`, `first_diff_char`, `expected_snippet`, `found_snippet` |
 | `DocumentExistsError` | `rename()` | `new_path` already exists |
 | `ConcurrentModificationError` | `write()`, `edit()`, `delete()`, `rename()`, `write_attachment()` | `if_match` provided and current file hash does not match |
@@ -1131,7 +1131,7 @@ operator learns why the note was left out.
 | `None` return | `read()` | No file at the path: it escapes `source_dir`, does not exist, or is not a regular file |
 | `DocumentUnreadableError` | `read()`, revision reads | The file exists but cannot be read: a failed stat or read, invalid UTF-8, or frontmatter that does not parse. At a revision: invalid UTF-8, or a Git LFS pointer in place of the note. The cause is chained (#1608) |
 | `IndexUnavailableError` | Queries and mutations that need the FTS index | The index was never built or its build failed (`reason` `never_built`, `build_failed`), or waiting for a build timed out (`timeout`). The tool layer adds `busy` and `broken` for SQLite errors |
-| `VectorIndexUnusableError` | `search()` (semantic/hybrid mode), `get_similar()` | The stored vectors do not fit the embedding provider, or are corrupt, and the vault was built with `owns_index_files=False`, so they are left as they are instead of rebuilt; only the CLI `search` builds one so. The load error is chained. A `ValueError`, like the error a rebuild that leaves no index raises, so `get_context()` still leaves its similar notes out instead of failing (#1734) |
+| `StoreIncompatibleError`, `StoreCorruptError` | `search()` (semantic/hybrid mode), `get_similar()` | The stored vectors were embedded with another provider, model, variant, text format or dimension, or are corrupt, and the vault was built with `owns_index_files=False`, so they are left as they are instead of rebuilt; only the CLI `search` builds one so. The store's own open outcome, raised as it is (#1734, #1778). Not a `ValueError`: `get_context()` and the graph view catch `StoreOpenError` explicitly to leave their similar notes and semantic edges out instead of failing |
 
 `build_embeddings()` processes chunks in bounded batches (configurable via
 `MARKDOWN_VAULT_MCP_EMBEDDING_BATCH_SIZE`, default 4) to avoid pathological
@@ -3889,48 +3889,22 @@ managers are typed against those protocols rather than against this class, so
 the concrete backend is substitutable; `Vault` constructs the `FTSIndex` and
 that construction is where mypy proves the conformance.
 
-### `vector_index.py`: Numpy Embeddings
+### `vector_index.py`: removed (#1778)
 
-Adapted from ifcraftcorpus `embeddings.py`. Rename `EmbeddingIndex` to
-`VectorIndex`. The `load()` classmethod **must** import from
-`markdown_vault_mcp.providers`, not `ifcraftcorpus.providers`.
-
-The `VectorIndex` maintains a sidecar metadata list where each entry maps a
-row index to `{path, title, folder, heading, content}`. This enables:
-- Bulk deletion by document path (for reindex)
-- Returning rich metadata with semantic search results
-
-Key methods:
-- `add(texts, metadata)`: embeds texts via the provider then appends rows.
-- `add_vectors(raw_vectors, metadata)`: appends pre-computed float vectors
-  (L2-normalised internally) **without** calling the provider. Use this when
-  embeddings have been computed outside a lock section (see Thread Safety).
-- `delete_by_path(path)`: removes all rows for a document.
-- `save(path)` / `load(path, provider)`: persist/restore sidecar files.
-  `save()` writes each sidecar (`.npy`, `.json`) to a temp file in the same
-  directory and atomically `replace()`s the final path (mirrors
-  `tracker._save_state`), so an interrupted write can never corrupt a
-  previously persisted index.
-  `load()` also verifies that the embeddings matrix and metadata
-  list agree on row count and raises `VectorIndexCorruptError` on a
-  mismatch (the residue of a crash between the two independent atomic
-  replaces), which the load-time self-heal routes to a `force=True`
-  rebuild (#734).
-
-`VectorIndex` satisfies the `VectorStore` protocol (`interfaces.py`, #1230)
-structurally. A vault no longer builds one: its `VectorStoreSlot` opens
-the store through a `VectorBackend` (#1777). `_vector_loader.py` and
-`EmbeddingsManager` remain the factory sites for managers built without a
-vault, naming `VectorIndex` concretely, because constructing one is
-exactly what they are for. `load()`
-is deliberately outside the protocol for the same reason — how a backend is
-built is not part of what consumers ask of it.
+The released `VectorIndex`, adapted from ifcraftcorpus `embeddings.py`, held
+the vectors as a numpy matrix with a parallel metadata list and persisted
+them as a `{base}.npy` + `{base}.json` pair. #1777 moved the vault's reads
+and #1778 its writes onto the embedding store contract, served by the numpy
+store (`stores/numpy_sidecar.py`, below), which reads that released pair
+unchanged; the class, its `VectorStore` protocol, the sidecar loader
+(`managers/_vector_loader.py`) and the `VectorIndex*Error` exceptions are
+gone.
 
 ### `interfaces.py`: Storage Protocols (#1230)
 
-Three concepts, four protocols, mirroring the move already
+Two concepts, three protocols, mirroring the move already
 made for `EmbeddingProvider` and applying it to the storage that provider
-feeds:
+feeds (the vector store's contract is below, with the storage contract):
 
 - `KeywordIndex` — the relational document store, full-text search,
   enumeration, tombstones, and the build-state bookkeeping.
@@ -3940,7 +3914,6 @@ feeds:
   Consumers needing members from both facets are typed against this, so the
   two concepts stay separable without pretending the current backend
   separates them.
-- `VectorStore` — the semantic surface.
 
 Each protocol carries exactly what its consumers call, not everything the
 current implementation exposes; grow one when a consumer needs more. A
@@ -3974,8 +3947,8 @@ live under `stores/`.
 - **Open outcomes**: `StoreNotConfiguredError`, `StoreUnavailableError`,
   `StoreIncompatibleError`, `StoreUnsupportedSchemaError`,
   `StoreCorruptError`, all `StoreOpenError`. None is read as an empty store;
-  only corrupt may lead to a self-heal, and only when the vault owns the
-  files. For the SQLite keyword backend, *not configured* and *incompatible
+  only corrupt, or for a vector store another identity, may lead to a
+  self-heal, and only when the vault owns the files (decision 31). For the SQLite keyword backend, *not configured* and *incompatible
   identity* are unreachable: no location means in memory, and a keyword
   store has no identity.
 - **`StoreLifecycle`**: `close()` (idempotent; use after close raises) and
@@ -4010,10 +3983,10 @@ reader never sees a matrix and a row list that disagree. On disk the JSON
 is the commit point and names a matrix written under a new name per
 persist; `replace_document` publishes in memory and becomes durable at
 `checkpoint()`, while `publish_generation` is durable before it returns.
-One process writes a base path at a time, as with the `VectorIndex`
-sidecar: two writers would pick the same next matrix name. Another
-process opens it with `owns_files=False`, read-only. A sidecar
-`VectorIndex.save` wrote opens unchanged, its rows without tokens;
+One process writes a base path at a time, as with the released sidecar:
+two writers would pick the same next matrix name. Another
+process opens it with `owns_files=False`, read-only. A sidecar the
+released `VectorIndex.save` wrote opens unchanged, its rows without tokens;
 after this store's first persist a 5.1 binary finds no `{base}.npy`
 and re-embeds once.
 
@@ -4028,13 +4001,32 @@ the provider down. The writer path, which needs the provider anyway,
 checks the dimension before writing; a read that finds nothing stored
 installs nothing, so the writer always sets the dimension. On an owned store, corrupt or
 another identity rebuilds through `VectorBackend.open_fresh`; without
-ownership both raise `VectorIndexUnusableError`; unavailable and
-unsupported always propagate. `SearchManager` embeds queries itself; the
-write paths keep the released calls through `LegacyVectorWrites` until
-#1778.
+ownership the store's `StoreCorruptError` or `StoreIncompatibleError`
+propagates, and such a process never creates or replaces the files (a
+forced rebuild raises `ReadOnlyError` before embedding); unavailable and
+unsupported always propagate. `SearchManager` embeds queries itself.
 
-Bounds: the write paths move in #1778; the file-backed `SourceProbe` is
-#1768's; the store's size in `embeddings_status` is #1377's.
+**Writes (#1778).** `IndexManager` and `EmbeddingsManager` take the slot
+and write the store directly; each site keeps its algorithm (convergence
+diff, dirty flush, purge loops) and changes only how it mutates. A
+document's rows are replaced in one `replace_document` call, so a vector
+the store refuses (another dimension, a NaN) keeps the document's old rows
+instead of deleting them first. A removal is `remove_document`; the
+points that saved the sidecar call `checkpoint()`. The cold build collects
+every row as float32 and publishes one generation with
+`publish_generation`. A forced rebuild publishes into the open store when
+its identity is the provider's, so readers keep its rows meanwhile and a
+rebuild that embeds nothing leaves them; a store that will not open or
+holds another identity is rebuilt into a fresh one (owned) or emptied in
+place first (injected). The writer never writes into a store of another
+model: the reindex path writes only into an open store of the provider's
+model, and a populated injected store of another identity is refused
+outright. Rows carry no token yet and every write passes
+`expected_token=ANY_TOKEN`.
+
+Bounds: tokens, the one reconciler and the file-backed `SourceProbe` are
+#1768's; the store's size in `embeddings_status` is #1377's; how often the
+full matrix is rewritten is #1497's.
 
 ### `providers.py`: Embedding Providers
 
@@ -4086,8 +4078,9 @@ an additive ``feat`` rather than an ABC break. ``VoyageProvider`` overrides
 both, sending Voyage's ``input_type`` (``"document"`` / ``"query"``) as
 ``extra_body`` through the shared transport, which omits the field entirely
 unless a caller asks for it — OpenAI and Ollama answer unknown request fields
-with the same HTTP 400 as the three above. ``VectorIndex.search`` is the only
-query-side call site; every other embedding call is document-side.
+with the same HTTP 400 as the three above. ``SearchManager``'s query embedding
+is the only query-side call site; every other embedding call is
+document-side.
 
 Typed vectors sit in a different space from the untyped ones a pre-#1135
 Voyage vault holds, so the provider also reports a ``provider_variant``
@@ -5876,7 +5869,7 @@ real release runs. No committed manifest bump is needed for the bundle.
 | Risk | Mitigation |
 |-|-|
 | VRAM contention (Ollama on RTX 4060 8 GB) | `cpu_only` mode, batch embeddings |
-| Vault scale (numpy in-memory) | Fine for thousands of documents. If tens of thousands, evaluate Qdrant behind the `VectorStore` protocol (`interfaces.py`, #1230). |
+| Vault scale (numpy in-memory) | Fine for thousands of documents. If tens of thousands, evaluate Qdrant behind the embedding store contract (`interfaces.py`, #1767). |
 | Concurrent writes (Obsidian + MCP) | Use git as sync layer. MCP server should not write directly to live Obsidian vault without git in between. |
 | FastMCP breaking changes | Pin `>=3.0,<4`. Monitor for 4.0 migration. |
 | `Vault` API doesn't fit ifcraftcorpus | Validate in Phase 1 before building MCP server. |
@@ -5956,5 +5949,5 @@ Later decisions (2026-10-08, #1503):
 | # | Topic | Decision | Rationale |
 |-|-|-|-|
 | 30 | Resource ownership | The vault closes what it opens; the caller closes what it injects (#1765). Applies to every store backend. | A store or strategy shared with another consumer must not be closed under it; one rule for every injected collaborator, stated in `docs/decisions/0001`. |
-| 31 | Store open outcomes | Five typed outcomes under `StoreOpenError`; none reads as empty. On a store the vault owns, corrupt or another identity rebuilds into a fresh generation (a model change re-embeds, as documented); a process that does not own the files refuses (#1766, #1777). | An unreachable or unknown store rebuilt as empty is how a server overwrites another process's index; the type says what the operator can do about it. |
+| 31 | Store open outcomes | Five typed outcomes under `StoreOpenError`; none reads as empty. On a store the vault owns, corrupt or another identity rebuilds into a fresh generation (a model change re-embeds, as documented); a process that does not own the files refuses with the store's own outcome and never creates or replaces them (#1766, #1777, #1778). | An unreachable or unknown store rebuilt as empty is how a server overwrites another process's index; the type says what the operator can do about it. |
 | 32 | Numpy store persistence | JSON commit point naming a per-persist matrix; in-memory publish with durability at checkpoint; `publish_generation` durable at once (#1767). | Crash-safe two-file commit without rewriting the whole matrix per document; write amplification is #1497's. |
