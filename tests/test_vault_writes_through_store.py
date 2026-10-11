@@ -284,6 +284,43 @@ class TestAnInjectedStoreOfAnotherModel:
             vault.close()
             store.close()
 
+    def test_a_newly_excluded_note_still_leaves_the_keyword_index(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        builder = _vault(tmp_path, MockEmbeddingProvider())
+        try:
+            builder.index.build_index()
+        finally:
+            builder.close()
+        model_a = EmbeddingIdentity.of(MockEmbeddingProvider(), "v1")
+        store = NumpySidecarBackend().open(None, model_a)
+        store.replace_document(
+            DocumentRows("old.md", None, [VectorRow([1.0] + [0.0] * 31, {})]),
+            expected_token=ANY_TOKEN,
+        )
+        vault = Vault(
+            source_dir=_source(tmp_path),
+            settings=VaultSettings(
+                index_path=tmp_path / "index.db",
+                read_only=False,
+                exclude_patterns=["beta.md"],
+            ),
+            embedding_provider=_ModelB(),
+            vector_store=store,
+        )
+        try:
+            vault.index.build_index()
+            with caplog.at_level(logging.WARNING):
+                vault.index.reindex()
+            assert "beta.md" not in {r["path"] for r in vault._fts.list_notes()}
+            assert sorted(store.tokens()) == ["old.md"]
+            assert any(
+                r.msg.startswith("purge_vectors_skipped") for r in caplog.records
+            )
+        finally:
+            vault.close()
+            store.close()
+
 
 class TestAProcessThatDoesNotOwnTheFiles:
     def test_a_forced_rebuild_is_refused_before_embedding(self, tmp_path: Path) -> None:

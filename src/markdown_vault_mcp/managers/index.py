@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
+from markdown_vault_mcp.exceptions import StoreIncompatibleError
 from markdown_vault_mcp.fts_index import should_optimize
 from markdown_vault_mcp.hashing import compute_file_hash
 from markdown_vault_mcp.managers.embeddings import (
@@ -421,7 +422,12 @@ class IndexManager:
             and vectors is None
             and self._embeddings.embedding_provider is not None
         ):
-            vectors = self._embeddings._open_store()
+            try:
+                vectors = self._embeddings._open_store()
+            except StoreIncompatibleError as exc:
+                # A store this provider may not write (an injected store of
+                # another model): the keyword purge still runs (#1778).
+                logger.warning("purge_vectors_skipped reason=store_refused err=%s", exc)
 
         purged = 0
         for stale_path in stale_paths:
