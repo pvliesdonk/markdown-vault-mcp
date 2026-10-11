@@ -9,6 +9,10 @@ concrete classes:
   answers a different question: *structure* (what links to what) rather than
   *relevance* (what matches a query).
 - :class:`VectorStore` — the semantic surface.
+- :class:`StoreBackend`, :class:`StoreLifecycle` and :class:`SourceProbe`
+  — the storage contract every store shares (#1766): how a store is opened
+  and by whom it is closed, and the one question the indexing side asks a
+  source about an identity.
 
 ``FTSIndex`` implements the first two over one SQLite database and
 ``VectorIndex`` implements the third over numpy; both satisfy these protocols
@@ -29,7 +33,7 @@ seam never drags in an implementation.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -40,6 +44,8 @@ if TYPE_CHECKING:
         FTSResult,
         ParsedNote,
         SkippedFile,
+        SourceState,
+        StoreFamily,
         SubtreeNote,
         TocEntry,
     )
@@ -48,8 +54,13 @@ __all__ = [
     "GraphStore",
     "KeywordGraphIndex",
     "KeywordIndex",
+    "SourceProbe",
+    "StoreBackend",
+    "StoreLifecycle",
     "VectorStore",
 ]
+
+StoreT_co = TypeVar("StoreT_co", covariant=True)
 
 
 @runtime_checkable
@@ -388,4 +399,80 @@ class VectorStore(Protocol):
 
     def save(self, path: Path) -> None:
         """Persist the store to *path*."""
+        ...
+
+
+@runtime_checkable
+class StoreLifecycle(Protocol):
+    """What every open store owes its owner (#1766).
+
+    Whoever opened a store closes it: the vault closes the stores its
+    backends opened, a caller closes the store it passed in.
+    """
+
+    def close(self) -> None:
+        """Release the store's resources. Idempotent; use after close raises."""
+        ...
+
+    def checkpoint(self) -> None:
+        """Make committed state durable where that is a separate step.
+
+        A no-op for a store with nothing to flush: in memory, or opened
+        read-only.
+        """
+        ...
+
+
+@runtime_checkable
+class StoreBackend(Protocol[StoreT_co]):
+    """A named opener for one kind of store (#1766).
+
+    A backend carries its own configuration; :meth:`open` takes only what
+    varies per vault: where the store is and whether this process owns its
+    files. The registry in :mod:`markdown_vault_mcp.stores.registry` maps
+    ``(family, name)`` to a backend factory.
+    """
+
+    @property
+    def family(self) -> StoreFamily:
+        """Which kind of store this backend opens."""
+        ...
+
+    @property
+    def name(self) -> str:
+        """The registry name a configuration value selects."""
+        ...
+
+    def open(
+        self,
+        location: Path | str | None,
+        identity: object | None = None,
+        *,
+        owns_files: bool = True,
+    ) -> StoreT_co:
+        """Open the store at *location*.
+
+        Args:
+            location: Where the store lives, in the backend's own terms; a
+                file-backed backend takes a path, ``None`` means in memory.
+            identity: The family's identity value, checked against what the
+                store holds; ``None`` for a family without one.
+            owns_files: Whether this process owns the store's files. ``False``
+                opens read-only and forbids any self-heal.
+
+        Returns:
+            The open store.
+
+        Raises:
+            StoreOpenError: One of its five subclasses, never an empty store.
+        """
+        ...
+
+
+@runtime_checkable
+class SourceProbe(Protocol):
+    """The one question the indexing side asks a source about an identity."""
+
+    def probe(self, path: str) -> SourceState:
+        """Return whether *path* is present (with its token), absent or unavailable."""
         ...

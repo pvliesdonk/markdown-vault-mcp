@@ -1112,8 +1112,18 @@ class TestWALMode:
         db_path = tmp_path / "nowarn.db"
 
         mock_conn = MagicMock()
-        # WAL pragma returns "delete" (simulating a filesystem without WAL support).
-        mock_conn.execute.return_value.fetchone.return_value = ["delete"]
+
+        def execute(sql: str, *_args: object) -> MagicMock:
+            result = MagicMock()
+            # The schema-version check (#1766) asks sqlite_master for the meta
+            # table; a fresh database has none. Every other statement keeps
+            # the "delete" answer that makes the WAL pragma look refused.
+            result.fetchone.return_value = (
+                None if "sqlite_master" in sql else ["delete"]
+            )
+            return result
+
+        mock_conn.execute.side_effect = execute
 
         with (
             patch(

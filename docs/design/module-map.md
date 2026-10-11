@@ -41,6 +41,10 @@ src/markdown_vault_mcp/
     okf_migrate.py     -- OkfMigrationManager: one-shot OKF transforms — link conversion, index generation (creates missing subfolder indexes, #1647), log seeding (#963)
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
     _vector_loader.py  -- shared load-or-self-heal routine for the vector sidecar (#736)
+  stores/
+    __init__.py        -- store backends package; exports nothing, import a backend from its module (#1766)
+    registry.py        -- the (family, name) registry of backend factories: register_backend/get_backend/backend_names (#1766)
+    sqlite_keyword.py  -- SqliteKeywordBackend: opens FTSIndex, classifies SQLite failures as unavailable or corrupt (#1766)
   indexing/
     __init__.py        -- package aggregator: re-exports IndexWriteCoordinator, IndexWriter + writer job dataclasses, ReadinessState
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
@@ -67,16 +71,16 @@ src/markdown_vault_mcp/
     query.py           -- read-only git history/diff/revision-read queries; lock-free pure functions
     types.py           -- PullResult/PushResult/RevisionQuery + pull/push reason-code constants
   scanner.py           -- file discovery, frontmatter parsing, chunking; link extraction, which decides which links the index holds while utils/links.py decides what a link is (#1521, #1526); reference openers still read their brackets through the escape-aware find_bracket_span (#1517, #1519) and wikilinks through the linear _find_wikilink (#1343)
-  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex/VectorStore: the search/index storage seam (#1230)
-  fts_index.py         -- SQLite FTS5 schema, BM25 search
+  interfaces.py        -- KeywordIndex/GraphStore/KeywordGraphIndex/VectorStore: the search/index storage seam (#1230); StoreBackend/StoreLifecycle/SourceProbe: the storage contract every store shares (#1766)
+  fts_index.py         -- SQLite FTS5 schema, BM25 search; schema_version layout marker and checkpoint() (#1766)
   _fts_connection.py   -- per-thread sqlite connection registry + SQLITE_LOCKED retry (#760)
   vector_index.py      -- numpy embeddings, cosine similarity
   embed_text.py        -- EmbedTextBuilder: single shared builder for (context-enriched) embedding input text
   providers.py         -- embedding provider ABC + implementations
   tracker.py           -- hash-based change detection
   hashing.py           -- compute_etag / compute_file_hash: shared SHA-256 helpers
-  types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...)
-  exceptions.py        -- exception hierarchy; re-exports pvl-core's ConfigurationError as the canonical config error (#638)
+  types.py             -- shared dataclasses and result types (NoteInfo, SkippedFile, SKIP_CATEGORIES, ...); storage-contract value types StoreFamily/RevisionToken/PublicationOutcome/SourceState (#1766)
+  exceptions.py        -- exception hierarchy; re-exports pvl-core's ConfigurationError as the canonical config error (#638); StoreOpenError and its five outcomes (#1766)
   conventions.py       -- ConventionsResolver: per-folder _conventions.md authoring policy, accumulated root-first
   okf.py               -- OKF detection probe + pure read-side annotations: type/status/staleness/trust (#961)
   okf_bundle.py        -- OKF bundle-zip export from live vault state, served via an okf-bundle download ref (#963)

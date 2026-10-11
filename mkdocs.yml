@@ -208,6 +208,7 @@ nav:
       - Python API:
           - Vault: reference/api/vault.md
           - Facets: reference/api/facets.md
+          - Storage: reference/api/storage.md
           - Git integration: reference/api/git.md
           - Configuration: reference/api/config.md
           - Embedding providers: reference/api/providers.md

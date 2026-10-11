@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
 
 if TYPE_CHECKING:
     from markdown_vault_mcp._identity import Principal
@@ -1098,3 +1098,46 @@ DEFAULT_ATTACHMENT_EXTENSIONS: frozenset[str] = frozenset(
         "ts",
     ]
 )
+
+
+# --- Storage contract (#1766) -------------------------------------------------
+
+#: Which kind of store a backend opens; the registry is keyed by family and name.
+StoreFamily = Literal["keyword", "vector"]
+
+#: An opaque per-document revision marker, compared only for equality. The
+#: keyword index's ``content_hash`` is the file-backed one.
+RevisionToken: TypeAlias = str
+
+#: What a conditional publication reports: the rows were published, or the
+#: store held a different token than the caller expected and nothing changed.
+PublicationOutcome = Literal["published", "conflict"]
+
+#: A source's answer about one identity. Only ``"absent"`` authorises deleting
+#: derived rows; ``"unavailable"`` means the answer could not be obtained.
+SourceStatus = Literal["present", "absent", "unavailable"]
+
+
+@dataclass(frozen=True)
+class SourceState:
+    """The answer a :class:`~markdown_vault_mcp.interfaces.SourceProbe` gives.
+
+    Attributes:
+        status: Whether the identity is present, absent, or could not be
+            checked.
+        token: The present revision's token; ``None`` for the other two
+            statuses.
+
+    Raises:
+        ValueError: If ``present`` comes without a token, or another status
+            comes with one.
+    """
+
+    status: SourceStatus
+    token: RevisionToken | None = None
+
+    def __post_init__(self) -> None:
+        if self.status == "present" and self.token is None:
+            raise ValueError("A present source carries a token.")
+        if self.status != "present" and self.token is not None:
+            raise ValueError(f"An {self.status} source carries no token.")

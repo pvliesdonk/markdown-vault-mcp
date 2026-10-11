@@ -13,6 +13,10 @@ import subprocess
 import threading
 from typing import TYPE_CHECKING, Any
 
+# Importing the backend module registers it; the vault then opens the index
+# through the registry, as every store will (#1766).
+import markdown_vault_mcp.stores.sqlite_keyword  # noqa: F401
+
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
 # state-path default historically lived in this module). They now name only
 # the pre-#1693 location that _adopt_legacy_state_file reads from.
@@ -34,7 +38,6 @@ from markdown_vault_mcp.facets import (
     SummarizeFacet,
     WriterFacet,
 )
-from markdown_vault_mcp.fts_index import FTSIndex
 from markdown_vault_mcp.indexing import IndexWriteCoordinator
 from markdown_vault_mcp.indexing.head_reconciler import IndexHeadReconciler
 from markdown_vault_mcp.okf import (
@@ -48,6 +51,7 @@ from markdown_vault_mcp.scanner import (
     HeadingChunker,
     WholeDocumentChunker,
 )
+from markdown_vault_mcp.stores.registry import get_backend
 from markdown_vault_mcp.tracker import ChangeTracker
 from markdown_vault_mcp.utils.content_kind import (
     canonical_attachment_extensions,
@@ -384,16 +388,17 @@ class Vault:
                 knobs and the OKF write toggle are consumed here).
         """
         # Sub-module construction.
-        db_path: Path | str = (
-            self._index_path if self._index_path is not None else ":memory:"
-        )
-        self._fts = FTSIndex(
-            db_path=db_path,
+        keyword_backend = get_backend("keyword", "sqlite")(
             indexed_frontmatter_fields=self._indexed_frontmatter_fields or None,
             searchable_frontmatter_fields=self._searchable_frontmatter_fields or None,
             fts_weights=settings.fts_weights,
-            # Another process's index is only read; an in-memory one is ours.
-            read_only=not settings.owns_index_files and str(db_path) != ":memory:",
+        )
+        # None opens in memory, which is always this process's own; a file
+        # another process owns is only read (#1758). Open outcomes are typed
+        # (#1766) and propagate: a vault never cold-builds over a store it
+        # could not open.
+        self._fts = keyword_backend.open(
+            self._index_path, owns_files=settings.owns_index_files
         )
         self._tracker = ChangeTracker(self._state_path)
 
