@@ -62,6 +62,7 @@
 - [Command line](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/cli/index.md): The `markdown-vault-mcp` command line: commands, options and their environment variables.
 - [Vault](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/vault/index.md): The Vault class, the library's entry point, and how to construct and configure it.
 - [Facets](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/facets/index.md): The reader, writer, graph and index facets that carry the library's operations.
+- [Storage](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/storage/index.md): How stores are opened, owned and closed: the backend registry, the open outcomes and the lifecycle every store shares.
 - [Git integration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/git/index.md): The git module: commit strategies, history and diffs for a vault under git.
 - [Configuration](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/config/index.md): The configuration module: loading settings from environment variables into typed dataclasses.
 - [Embedding providers](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/providers/index.md): The embedding providers the library supports, and how one is chosen.

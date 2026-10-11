@@ -125,6 +125,57 @@ Bases: `MarkdownMCPError`
 
 Raised when a write operation is attempted on a read-only vault.
 
+## Store open outcomes
+
+Opening a store fails in one of five ways, each its own subclass of `StoreOpenError`. None of them means the store is empty: a vault that cannot open its store never builds over it.
+
+## `StoreOpenError(message, *, backend, location)`
+
+Bases: `MarkdownMCPError`
+
+Opening a store failed in a way its backend could classify (#1766).
+
+One subclass per outcome. None of them means "empty store": a caller that cannot open its store never cold-builds over it. Only :class:`StoreCorruptError` may lead to a self-heal, and only when the vault owns the files.
+
+Attributes:
+
+| Name       | Type | Description                                    |
+| ---------- | ---- | ---------------------------------------------- |
+| `backend`  |      | The registry name of the backend that refused. |
+| `location` |      | The location it was asked to open, as given.   |
+
+## `StoreNotConfiguredError(message, *, backend, location)`
+
+Bases: `StoreOpenError`
+
+The backend needs a location or service that is not configured.
+
+## `StoreUnavailableError(message, *, backend, location)`
+
+Bases: `StoreOpenError`
+
+The store exists, or may, but cannot be reached now.
+
+A service that is down, a volume that is not mounted, a parent that is not a directory, a permission that is refused. Possibly transient; never a reason to rebuild.
+
+## `StoreIncompatibleError(message, *, backend, location)`
+
+Bases: `StoreOpenError`
+
+The store holds data for a different identity than the one asked for.
+
+## `StoreUnsupportedSchemaError(message, *, backend, location)`
+
+Bases: `StoreOpenError`
+
+The store's layout is newer than, or unknown to, this version.
+
+## `StoreCorruptError(message, *, backend, location)`
+
+Bases: `StoreOpenError`
+
+The store's bytes are not a store of this backend's kind.
+
 ## Configuration Errors
 
 `markdown_vault_mcp.exceptions.ConfigurationError` is re-exported from [`fastmcp-pvl-core`](https://github.com/pvliesdonk/fastmcp-pvl-core), the shared base library across the `*-mcp` server series, so the whole ecosystem raises one canonical config error. It is raised for invalid or out-of-range configuration at startup (such as a non-numeric env var, a value outside its documented range, or a missing required variable). Unlike the other exceptions on this page it is not a subclass of `MarkdownMCPError`.

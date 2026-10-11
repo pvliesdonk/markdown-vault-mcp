@@ -6,17 +6,17 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="The configuration module: loading settings from environment variables into typed dataclasses.">
+        <meta name="description" content="How stores are opened, owned and closed: the backend registry, the open outcomes and the lifecycle every store shares.">
       
       
       
-        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/config/">
+        <link rel="canonical" href="https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/api/storage/">
       
       
-        <link rel="prev" href="../git/">
+        <link rel="prev" href="../facets/">
       
       
-        <link rel="next" href="../providers/">
+        <link rel="next" href="../git/">
       
       
         
@@ -27,7 +27,7 @@
     
     
       
-        <title>Configuration - markdown-vault-mcp</title>
+        <title>Storage - markdown-vault-mcp</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#configuration" class="md-skip">
+        <a href="#storage" class="md-skip">
           Skip to content
         </a>
       
@@ -120,7 +120,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Configuration
+              Storage
             
           </span>
         </div>
@@ -2000,10 +2000,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../storage/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -2019,6 +2046,248 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#opening-a-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Opening a store
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.StoreBackend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreBackend
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="StoreBackend">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.StoreBackend.family" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        family
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.StoreBackend.name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        name
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.StoreBackend.open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        open
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.registry.get_backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_backend
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.registry.register_backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        register_backend
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.registry.backend_names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        backend_names
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.sqlite_keyword.SqliteKeywordBackend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqliteKeywordBackend
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqliteKeywordBackend">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.sqlite_keyword.SqliteKeywordBackend.open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        open
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.StoreLifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreLifecycle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="StoreLifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.StoreLifecycle.close" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        close
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.StoreLifecycle.checkpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        checkpoint
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sources-and-revisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sources and revisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.SourceProbe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SourceProbe
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SourceProbe">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.SourceProbe.probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        probe
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.types.SourceState" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SourceState
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -2056,37 +2325,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Configuration
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../config/" class="md-nav__link">
         
   
   
@@ -2102,175 +2344,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#quick-start" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Quick Start
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#migrating-from-4x" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Migrating from 4.x
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#api-reference" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        API Reference
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ProjectConfig
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="ProjectConfig">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.git" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        git
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.indexing" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        indexing
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.embeddings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        embeddings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.search" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        search
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.summarize" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        summarize
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.sync" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        sync
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.content" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        content
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.__post_init__" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        __post_init__
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.from_env" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        from_env
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -2748,10 +2821,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#quick-start" class="md-nav__link">
+  <a href="#opening-a-store" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Quick Start
+        Opening a store
       
     </span>
   </a>
@@ -2759,44 +2832,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#migrating-from-4x" class="md-nav__link">
+  <a href="#markdown_vault_mcp.interfaces.StoreBackend" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Migrating from 4.x
+        StoreBackend
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#api-reference" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        API Reference
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ProjectConfig
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="ProjectConfig">
+    <nav class="md-nav" aria-label="StoreBackend">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.git" class="md-nav__link">
+  <a href="#markdown_vault_mcp.interfaces.StoreBackend.family" class="md-nav__link">
     <span class="md-ellipsis">
       
-        git
+        family
       
     </span>
   </a>
@@ -2804,10 +2855,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.indexing" class="md-nav__link">
+  <a href="#markdown_vault_mcp.interfaces.StoreBackend.name" class="md-nav__link">
     <span class="md-ellipsis">
       
-        indexing
+        name
       
     </span>
   </a>
@@ -2815,76 +2866,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.embeddings" class="md-nav__link">
+  <a href="#markdown_vault_mcp.interfaces.StoreBackend.open" class="md-nav__link">
     <span class="md-ellipsis">
       
-        embeddings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.search" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        search
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.summarize" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        summarize
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.sync" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        sync
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.content" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        content
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.__post_init__" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        __post_init__
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#markdown_vault_mcp.config.ProjectConfig.from_env" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        from_env
+        open
       
     </span>
   </a>
@@ -2893,6 +2878,167 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.registry.get_backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        get_backend
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.registry.register_backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        register_backend
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.registry.backend_names" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        backend_names
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.sqlite_keyword.SqliteKeywordBackend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SqliteKeywordBackend
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SqliteKeywordBackend">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.sqlite_keyword.SqliteKeywordBackend.open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        open
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.StoreLifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreLifecycle
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="StoreLifecycle">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.StoreLifecycle.close" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        close
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.StoreLifecycle.checkpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        checkpoint
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sources-and-revisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sources and revisions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.SourceProbe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SourceProbe
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SourceProbe">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.interfaces.SourceProbe.probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        probe
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.types.SourceState" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SourceState
+      
+    </span>
+  </a>
   
 </li>
       
@@ -2916,41 +3062,14 @@
   
 
 
-<h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
-<p>The <code>config</code> module loads configuration from environment variables and provides a typed dataclass for all settings.</p>
-<h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
-<p><code>to_vault_settings</code> maps a loaded configuration onto a <code>VaultSettings</code>, and <code>to_vault_instances</code> resolves the constructed collaborators (embedding provider, summarizer, git strategy). Together they feed <code>Vault</code> construction:</p>
-<div class="fragment highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.config</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProjectConfig</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.config_sections._assembly</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">to_vault_instances</span><span class="p">,</span>
-    <span class="n">to_vault_settings</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.vault</span><span class="w"> </span><span class="kn">import</span> <span class="n">Vault</span>
-
-<span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="p">[</span><span class="s2">"MARKDOWN_VAULT_MCP_SOURCE_DIR"</span><span class="p">]</span> <span class="o">=</span> <span class="s2">"/path/to/vault"</span>
-<span class="n">config</span> <span class="o">=</span> <span class="n">ProjectConfig</span><span class="o">.</span><span class="n">from_env</span><span class="p">()</span>
-<span class="n">instances</span> <span class="o">=</span> <span class="n">to_vault_instances</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
-<span class="n">settings</span> <span class="o">=</span> <span class="n">to_vault_settings</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">instances</span><span class="o">=</span><span class="n">instances</span><span class="p">)</span>
-<span class="n">vault</span> <span class="o">=</span> <span class="n">Vault</span><span class="p">(</span>
-    <span class="n">source_dir</span><span class="o">=</span><span class="n">config</span><span class="o">.</span><span class="n">source_dir</span><span class="p">,</span>
-    <span class="n">settings</span><span class="o">=</span><span class="n">settings</span><span class="p">,</span>
-    <span class="n">embedding_provider</span><span class="o">=</span><span class="n">instances</span><span class="o">.</span><span class="n">embedding_provider</span><span class="p">,</span>
-    <span class="n">summarizer</span><span class="o">=</span><span class="n">instances</span><span class="o">.</span><span class="n">summarizer</span><span class="p">,</span>
-    <span class="n">git_strategy</span><span class="o">=</span><span class="n">instances</span><span class="o">.</span><span class="n">git_strategy</span><span class="p">,</span>
-    <span class="n">on_write</span><span class="o">=</span><span class="n">instances</span><span class="o">.</span><span class="n">on_write</span><span class="p">,</span>
-<span class="p">)</span>
+<h1 id="storage">Storage<a class="headerlink" href="#storage" title="Permanent link">&para;</a></h1>
+<p>Every store the vault uses is opened by a named backend and closed by whoever opened it. The protocols are importable from <code>markdown_vault_mcp.interfaces</code>, the value types from <code>markdown_vault_mcp.types</code>, the backends from their modules under <code>markdown_vault_mcp.stores</code>.</p>
+<div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.interfaces</span><span class="w"> </span><span class="kn">import</span> <span class="n">StoreBackend</span><span class="p">,</span> <span class="n">StoreLifecycle</span><span class="p">,</span> <span class="n">SourceProbe</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.stores.registry</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_backend</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">markdown_vault_mcp.stores.sqlite_keyword</span><span class="w"> </span><span class="kn">import</span> <span class="n">SqliteKeywordBackend</span>
 </code></pre></div>
-<h2 id="migrating-from-4x">Migrating from 4.x<a class="headerlink" href="#migrating-from-4x" title="Permanent link">&para;</a></h2>
-<p><code>to_vault_kwargs</code> has been removed from both <code>markdown_vault_mcp.config</code> and <code>markdown_vault_mcp.config_sections._assembly</code>. Replace <code>Vault(**to_vault_kwargs(config))</code> with the construction shown above. Resolve <code>instances</code> once and pass it to <code>to_vault_settings</code> so the provider is loaded once and its context limit determines the chunk size.</p>
-<p>For overrides formerly applied to the keyword dictionary, use <code>dataclasses.replace</code> on the settings before constructing the vault:</p>
-<div class="fragment highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">replace</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
-
-<span class="n">settings</span> <span class="o">=</span> <span class="n">replace</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="n">index_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="s2">"/path/to/other-index.db"</span><span class="p">))</span>
-</code></pre></div>
-<p>Keep collaborator overrides on the corresponding <code>Vault</code> keyword arguments.</p>
-<h2 id="api-reference">API Reference<a class="headerlink" href="#api-reference" title="Permanent link">&para;</a></h2>
+<h2 id="opening-a-store">Opening a store<a class="headerlink" href="#opening-a-store" title="Permanent link">&para;</a></h2>
+<p>A backend carries its own configuration; <code>open()</code> takes only the location and whether this process owns the files. An open that fails raises one of five <code>StoreOpenError</code> subclasses (see <a href="../exceptions/#store-open-outcomes">Exceptions</a>); none of them means the store is empty.</p>
 <!-- vale off -->
 
 
@@ -2958,21 +3077,24 @@
 
 
 
-<h2 id="markdown_vault_mcp.config.ProjectConfig" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ProjectConfig</span><span class="p">(</span><span class="n">server</span><span class="o">=</span><span class="n">ServerConfig</span><span class="p">(),</span> <span class="n">server_name</span><span class="o">=</span><span class="n">_default_server_name</span><span class="p">(),</span> <span class="n">source_dir</span><span class="o">=</span><span class="n">DEFAULT_SOURCE_DIR</span><span class="p">,</span> <span class="n">read_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">write_protect_existing</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">report_unresolved_links</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">disable_apps_ui</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">index_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">state_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embeddings_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">indexed_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">required_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exclude</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">title_field</span><span class="o">=</span><span class="s1">'title'</span><span class="p">,</span> <span class="n">searchable_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">templates_folder</span><span class="o">=</span><span class="s1">'_templates'</span><span class="p">,</span> <span class="n">prompts_folder</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">conventions_file</span><span class="o">=</span><span class="s1">'_conventions.md'</span><span class="p">,</span> <span class="n">okf_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">okf_write</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">okf_verify</span><span class="o">=</span><span class="s1">'elicit'</span><span class="p">,</span> <span class="n">attachment_extensions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_attachment_size_mb</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">max_note_read_bytes</span><span class="o">=</span><span class="mi">262144</span><span class="p">,</span> <span class="n">default_search_mode</span><span class="o">=</span><span class="s1">'auto'</span><span class="p">,</span> <span class="n">chunks_per_file</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">snippet_words</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">length_downweight_alpha</span><span class="o">=</span><span class="mf">0.25</span><span class="p">,</span> <span class="n">max_chunk_words</span><span class="o">=</span><span class="mi">400</span><span class="p">,</span> <span class="n">max_chunk_chars</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">chunk_overlap_words</span><span class="o">=</span><span class="mi">40</span><span class="p">,</span> <span class="n">folder_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fts_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embedding_provider</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ollama_host</span><span class="o">=</span><span class="s1">'http://localhost:11434'</span><span class="p">,</span> <span class="n">openai_api_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">voyage_api_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">voyage_model</span><span class="o">=</span><span class="s1">'voyage-4'</span><span class="p">,</span> <span class="n">ollama_model</span><span class="o">=</span><span class="s1">'nomic-embed-text'</span><span class="p">,</span> <span class="n">ollama_cpu_only</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">openai_base_url</span><span class="o">=</span><span class="s1">'https://api.openai.com/v1'</span><span class="p">,</span> <span class="n">openai_embedding_model</span><span class="o">=</span><span class="s1">'text-embedding-3-small'</span><span class="p">,</span> <span class="n">fastembed_model</span><span class="o">=</span><span class="s1">'BAAI/bge-small-en-v1.5'</span><span class="p">,</span> <span class="n">fastembed_cache_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">embed_context</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">embed_timeout_s</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">embedding_batch_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">git_repo_url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_token</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_username</span><span class="o">=</span><span class="s1">'x-access-token'</span><span class="p">,</span> <span class="n">git_pull_interval_s</span><span class="o">=</span><span class="mi">600</span><span class="p">,</span> <span class="n">git_push_delay_s</span><span class="o">=</span><span class="mf">30.0</span><span class="p">,</span> <span class="n">git_commit_name</span><span class="o">=</span><span class="s1">'markdown-vault-mcp'</span><span class="p">,</span> <span class="n">git_commit_email</span><span class="o">=</span><span class="s1">'noreply@markdown-vault-mcp'</span><span class="p">,</span> <span class="n">git_commit_name_claim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_commit_email_claim</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">git_lfs</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">file_watcher</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">file_watcher_debounce_s</span><span class="o">=</span><span class="mf">2.0</span><span class="p">,</span> <span class="n">file_watcher_root_floor</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">boot_reindex</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">github_webhook_secret</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">gitlab_webhook_signing_token</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">gitlab_webhook_secret_token</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">summarize_provider</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">summarize_openai_api_key</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">summarize_openai_base_url</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">summarize_openai_model</span><span class="o">=</span><span class="s1">'gpt-5-mini'</span><span class="p">,</span> <span class="n">summarize_max_tokens</span><span class="o">=</span><span class="mi">8192</span><span class="p">,</span> <span class="n">summarize_max_notes</span><span class="o">=</span><span class="mi">50</span><span class="p">,</span> <span class="n">summarize_max_input_chars</span><span class="o">=</span><span class="mi">200000</span><span class="p">,</span> <span class="n">summarize_timeout</span><span class="o">=</span><span class="mf">120.0</span><span class="p">,</span> <span class="n">transfer</span><span class="o">=</span><span class="n">TransferConfig</span><span class="p">(),</span> <span class="n">jobs</span><span class="o">=</span><span class="n">JobsConfig</span><span class="p">())</span></code>
+<h2 id="markdown_vault_mcp.interfaces.StoreBackend" class="doc doc-heading">
+            <code>StoreBackend</code>
 
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span>
 
-<a href="#markdown_vault_mcp.config.ProjectConfig" class="headerlink" title="Permanent link">&para;</a></h2>
+<a href="#markdown_vault_mcp.interfaces.StoreBackend" class="headerlink" title="Permanent link">&para;</a></h2>
 
 
     <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="typing.Protocol">Protocol</span>[<span title="markdown_vault_mcp.interfaces.StoreT_co">StoreT_co</span>]</code></p>
 
 
 
-        <p>Domain config for Markdown Vault MCP.  Compose — don't inherit.</p>
+        <p>A named opener for one kind of store (#1766).</p>
+<p>A backend carries its own configuration; :meth:<code>open</code> takes only what
+varies per vault: where the store is and whether this process owns its
+files. The registry in :mod:<code>markdown_vault_mcp.stores.registry</code> maps
+<code>(family, name)</code> to a backend factory.</p>
 
 
 
@@ -2996,22 +3118,19 @@
 
 
 
-<h3 id="markdown_vault_mcp.config.ProjectConfig.git" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">git</span></code>
+<h3 id="markdown_vault_mcp.interfaces.StoreBackend.family" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">family</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-property"><code>property</code></small>
   </span>
 
-<a href="#markdown_vault_mcp.config.ProjectConfig.git" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#markdown_vault_mcp.interfaces.StoreBackend.family" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents ">
 
-        <p>The git section assembled from the flat <code>git_*</code> fields.</p>
-<p>A property rather than a composed field so the config-surface
-generator documents the flat fields' metadata. Construction runs
-<code>GitConfig.__post_init__</code> validation.</p>
+        <p>Which kind of store this backend opens.</p>
 
     </div>
 
@@ -3021,131 +3140,19 @@ generator documents the flat fields' metadata. Construction runs
 
 
 
-<h3 id="markdown_vault_mcp.config.ProjectConfig.indexing" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">indexing</span></code>
+<h3 id="markdown_vault_mcp.interfaces.StoreBackend.name" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">name</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-property"><code>property</code></small>
   </span>
 
-<a href="#markdown_vault_mcp.config.ProjectConfig.indexing" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#markdown_vault_mcp.interfaces.StoreBackend.name" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents ">
 
-        <p>The indexing section assembled from the flat index/frontmatter fields.</p>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-attribute">
-
-
-
-<h3 id="markdown_vault_mcp.config.ProjectConfig.embeddings" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">embeddings</span></code>
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-property"><code>property</code></small>
-  </span>
-
-<a href="#markdown_vault_mcp.config.ProjectConfig.embeddings" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-
-        <p>The embeddings section assembled from the flat embedding fields.</p>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-attribute">
-
-
-
-<h3 id="markdown_vault_mcp.config.ProjectConfig.search" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">search</span></code>
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-property"><code>property</code></small>
-  </span>
-
-<a href="#markdown_vault_mcp.config.ProjectConfig.search" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-
-        <p>The search section assembled from the flat ranking/chunking fields.</p>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-attribute">
-
-
-
-<h3 id="markdown_vault_mcp.config.ProjectConfig.summarize" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">summarize</span></code>
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-property"><code>property</code></small>
-  </span>
-
-<a href="#markdown_vault_mcp.config.ProjectConfig.summarize" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-
-        <p>The summarize section assembled from the flat <code>summarize_*</code> fields.</p>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-attribute">
-
-
-
-<h3 id="markdown_vault_mcp.config.ProjectConfig.sync" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">sync</span></code>
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-property"><code>property</code></small>
-  </span>
-
-<a href="#markdown_vault_mcp.config.ProjectConfig.sync" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-
-        <p>The sync section assembled from the flat watcher/webhook fields.</p>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-attribute">
-
-
-
-<h3 id="markdown_vault_mcp.config.ProjectConfig.content" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">content</span></code>
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-property"><code>property</code></small>
-  </span>
-
-<a href="#markdown_vault_mcp.config.ProjectConfig.content" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-
-        <p>The content section assembled from the flat attachment/folder fields.</p>
-<p>A relative <code>prompts_folder</code> is resolved against <code>source_dir</code> here,
-so direct construction and <code>from_env</code> behave identically.</p>
+        <p>The registry name a configuration value selects.</p>
 
     </div>
 
@@ -3157,36 +3164,177 @@ so direct construction and <code>from_env</code> behave identically.</p>
 <div class="doc doc-object doc-function">
 
 
-<h3 id="markdown_vault_mcp.config.ProjectConfig.__post_init__" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">__post_init__</span><span class="p">()</span></code>
+<h3 id="markdown_vault_mcp.interfaces.StoreBackend.open" class="doc doc-heading">
+            <code class="highlight language-python"><span class="nb">open</span><span class="p">(</span><span class="n">location</span><span class="p">,</span> <span class="n">identity</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">owns_files</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
 
-<a href="#markdown_vault_mcp.config.ProjectConfig.__post_init__" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#markdown_vault_mcp.interfaces.StoreBackend.open" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents ">
 
-        <p>Validate composed domain fields.  Raise <code>ConfigurationError</code> when invalid.</p>
-<p><code>ConfigurationError</code> is what <code>serve</code> turns into its one-line
-<code>ERROR: configuration error: ...</code> exit; any other exception,
-<code>ValueError</code> included, escapes as a full traceback.  Name the
-variable and the problem in the message.</p>
-<p>This hook checks <em>values</em> — bounds, formats, cross-field rules.  A
-variable that must be <em>set</em> belongs on <code>env(..., required=True)</code> in
-CONFIG-FROM-ENV instead: that refuses at startup and marks the var
-required in the generated docs.  Never refuse an empty required field
-here — tests and programmatic callers construct <code>ProjectConfig(...)</code>
-directly, without the environment.</p>
-<p>Runs on EVERY construction path — <code>from_env</code> and a direct
-<code>ProjectConfig(field=...)</code> alike.  That is what makes this the right
-home for a field invariant: <code>env_float</code> / <code>env_int</code> bounds check
-only the <em>env-sourced</em> value, never the default, so a direct
-construction slips past them.  They also cannot express an exclusive
-bound (their <code>minimum</code> / <code>maximum</code> are inclusive, so "must be &gt; 0"
-lets <code>0</code> through) or a cross-field rule (A requires B,
-mutually-exclusive pairs).  All three belong here.</p>
-<p>The dataclass is <code>frozen=True</code>: read fields freely, but plain
-assignment raises.  To <em>normalise</em> rather than merely check, use
-<code>object.__setattr__(self, "name", value)</code>.</p>
+        <p>Open the store at <em>location</em>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>location</code>
+            </td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | <span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Where the store lives, in the backend's own terms; a
+file-backed backend takes a path, <code>None</code> means in memory.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>identity</code>
+            </td>
+            <td>
+                  <code><span title="object">object</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The family's identity value, checked against what the
+store holds; <code>None</code> for a family without one.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>owns_files</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Whether this process owns the store's files. <code>False</code>
+opens read-only and forbids any self-heal.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp.interfaces.StoreT_co">StoreT_co</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The open store.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="StoreOpenError">StoreOpenError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>One of its five subclasses, never an empty store.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="markdown_vault_mcp.stores.registry.get_backend" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">get_backend</span><span class="p">(</span><span class="n">family</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.stores.registry.get_backend" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Return the factory registered under <code>(family, name)</code>.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="LookupError">LookupError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If nothing is registered there; the message names the
+registered backends of that family.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
@@ -3196,24 +3344,662 @@ assignment raises.  To <em>normalise</em> rather than merely check, use
 <div class="doc doc-object doc-function">
 
 
-<h3 id="markdown_vault_mcp.config.ProjectConfig.from_env" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">from_env</span><span class="p">()</span></code>
+<h2 id="markdown_vault_mcp.stores.registry.register_backend" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">register_backend</span><span class="p">(</span><span class="n">family</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">factory</span><span class="p">)</span></code>
 
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
-  </span>
-
-<a href="#markdown_vault_mcp.config.ProjectConfig.from_env" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#markdown_vault_mcp.stores.registry.register_backend" class="headerlink" title="Permanent link">&para;</a></h2>
 
 
-    <div class="doc doc-contents ">
+    <div class="doc doc-contents first">
 
-        <p>Load :class:<code>ProjectConfig</code> from <code>MARKDOWN_VAULT_MCP_*</code> env vars.</p>
+        <p>Register <em>factory</em> under <code>(family, name)</code>.</p>
+<p>Registering the same factory twice is fine (a module imported twice);
+a different one under a taken key is a programming error.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>family</code>
+            </td>
+            <td>
+                  <code><span title="markdown_vault_mcp.types.StoreFamily">StoreFamily</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The store family.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>name</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The configuration value that selects the backend.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>factory</code>
+            </td>
+            <td>
+                  <code><span title="collections.abc.Callable">Callable</span>[..., <a class="autorefs autorefs-internal" title="StoreBackend (markdown_vault_mcp.interfaces.StoreBackend)" href="#markdown_vault_mcp.interfaces.StoreBackend">StoreBackend</a>[<span title="typing.Any">Any</span>]]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>What the caller constructs the backend with.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the key holds a different factory already.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
 
 </div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="markdown_vault_mcp.stores.registry.backend_names" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">backend_names</span><span class="p">(</span><span class="n">family</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.stores.registry.backend_names" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+        <p>Return the registered names of <em>family</em>, sorted.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.stores.sqlite_keyword.SqliteKeywordBackend" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">SqliteKeywordBackend</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">indexed_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">searchable_frontmatter_fields</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">fts_weights</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.stores.sqlite_keyword.SqliteKeywordBackend" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>Open the keyword index SQLite serves, classifying what goes wrong.</p>
+<p>The backend carries the index's configuration; :meth:<code>open</code> takes the
+location and whether this process owns the file. <code>None</code> or
+<code>":memory:"</code> opens an in-memory index, which is always this process's
+own and therefore writable whatever <em>owns_files</em> says (#1758).</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>indexed_frontmatter_fields</code>
+            </td>
+            <td>
+                  <code><span title="list">list</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frontmatter keys indexed for filtering.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>searchable_frontmatter_fields</code>
+            </td>
+            <td>
+                  <code><span title="list">list</span>[<span title="str">str</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Frontmatter keys folded into search.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>fts_weights</code>
+            </td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="float">float</span>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Per-column BM25 weights.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.stores.sqlite_keyword.SqliteKeywordBackend.open" class="doc doc-heading">
+            <code class="highlight language-python"><span class="nb">open</span><span class="p">(</span><span class="n">location</span><span class="p">,</span> <span class="n">identity</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">owns_files</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.stores.sqlite_keyword.SqliteKeywordBackend.open" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Open the index at <em>location</em>.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>location</code>
+            </td>
+            <td>
+                  <code><span title="pathlib.Path">Path</span> | <span title="str">str</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The SQLite file, or <code>None</code> / <code>":memory:"</code> for an
+in-memory index.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>identity</code>
+            </td>
+            <td>
+                  <code><span title="object">object</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Must be <code>None</code>; a keyword store has no identity.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>owns_files</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p><code>False</code> opens a file read-only (#1758) and is
+ignored for an in-memory index.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="markdown_vault_mcp.fts_index.FTSIndex">FTSIndex</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The open :class:<code>~markdown_vault_mcp.fts_index.FTSIndex</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <em>identity</em> is given.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="StoreUnavailableError(message, *, backend, location) (markdown_vault_mcp.exceptions.StoreUnavailableError)" href="../exceptions/#markdown_vault_mcp.exceptions.StoreUnavailableError">StoreUnavailableError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the file cannot be opened or written.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="StoreCorruptError(message, *, backend, location) (markdown_vault_mcp.exceptions.StoreCorruptError)" href="../exceptions/#markdown_vault_mcp.exceptions.StoreCorruptError">StoreCorruptError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the file is not a SQLite database.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="StoreUnsupportedSchemaError">StoreUnsupportedSchemaError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If its <code>schema_version</code> is newer.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><!-- vale on -->
+
+<h2 id="lifecycle">Lifecycle<a class="headerlink" href="#lifecycle" title="Permanent link">&para;</a></h2>
+<!-- vale off -->
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.interfaces.StoreLifecycle" class="doc doc-heading">
+            <code>StoreLifecycle</code>
+
+
+<a href="#markdown_vault_mcp.interfaces.StoreLifecycle" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="typing.Protocol">Protocol</span></code></p>
+
+
+
+        <p>What every open store owes its owner (#1766).</p>
+<p>Whoever opened a store closes it: the vault closes the stores its
+backends opened, a caller closes the store it passed in.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.interfaces.StoreLifecycle.close" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">close</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.interfaces.StoreLifecycle.close" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Release the store's resources. Idempotent; use after close raises.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.interfaces.StoreLifecycle.checkpoint" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">checkpoint</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.interfaces.StoreLifecycle.checkpoint" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Make committed state durable where that is a separate step.</p>
+<p>A no-op for a store with nothing to flush: in memory, or opened
+read-only.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><!-- vale on -->
+
+<h2 id="sources-and-revisions">Sources and revisions<a class="headerlink" href="#sources-and-revisions" title="Permanent link">&para;</a></h2>
+<!-- vale off -->
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.interfaces.SourceProbe" class="doc doc-heading">
+            <code>SourceProbe</code>
+
+
+<a href="#markdown_vault_mcp.interfaces.SourceProbe" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="typing.Protocol">Protocol</span></code></p>
+
+
+
+        <p>The one question the indexing side asks a source about an identity.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.interfaces.SourceProbe.probe" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">probe</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.interfaces.SourceProbe.probe" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return whether <em>path</em> is present (with its token), absent or unavailable.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.types.SourceState" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">SourceState</span><span class="p">(</span><span class="n">status</span><span class="p">,</span> <span class="n">token</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#markdown_vault_mcp.types.SourceState" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>The answer a :class:<code>~markdown_vault_mcp.interfaces.SourceProbe</code> gives.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.SourceState.status">status</span></code></td>
+            <td>
+                  <code><span title="markdown_vault_mcp.types.SourceStatus">SourceStatus</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Whether the identity is present, absent, or could not be
+checked.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.types.SourceState.token">token</span></code></td>
+            <td>
+                  <code><span title="markdown_vault_mcp.types.RevisionToken">RevisionToken</span> | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The present revision's token; <code>None</code> for the other two
+statuses.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="ValueError">ValueError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>present</code> comes without a token, or another status
+comes with one.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
 
 
 

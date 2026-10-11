@@ -2003,6 +2003,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../git/" class="md-nav__link">
         
   
@@ -2361,6 +2389,83 @@
     <span class="md-ellipsis">
       
         ReadOnlyError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#store-open-outcomes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Store open outcomes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreOpenError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreOpenError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreNotConfiguredError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreNotConfiguredError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreUnavailableError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreUnavailableError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreIncompatibleError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreIncompatibleError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreUnsupportedSchemaError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreUnsupportedSchemaError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreCorruptError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreCorruptError
       
     </span>
   </a>
@@ -2961,6 +3066,83 @@
     <span class="md-ellipsis">
       
         ReadOnlyError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#store-open-outcomes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Store open outcomes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreOpenError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreOpenError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreNotConfiguredError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreNotConfiguredError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreUnavailableError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreUnavailableError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreIncompatibleError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreIncompatibleError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreUnsupportedSchemaError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreUnsupportedSchemaError
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.exceptions.StoreCorruptError" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        StoreCorruptError
       
     </span>
   </a>
@@ -3605,6 +3787,334 @@ that revision is not valid UTF-8 or is a Git LFS pointer. Not a
 
 
 
+
+    </div>
+
+</div><!-- vale on -->
+
+<h2 id="store-open-outcomes">Store open outcomes<a class="headerlink" href="#store-open-outcomes" title="Permanent link">&para;</a></h2>
+<p>Opening a store fails in one of five ways, each its own subclass of <code>StoreOpenError</code>. None of them means the store is empty: a vault that cannot open its store never builds over it.</p>
+<!-- vale off -->
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.exceptions.StoreOpenError" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">StoreOpenError</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="n">location</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.exceptions.StoreOpenError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="MarkdownMCPError (markdown_vault_mcp.exceptions.MarkdownMCPError)" href="#markdown_vault_mcp.exceptions.MarkdownMCPError">MarkdownMCPError</a></code></p>
+
+
+
+        <p>Opening a store failed in a way its backend could classify (#1766).</p>
+<p>One subclass per outcome. None of them means "empty store": a caller
+that cannot open its store never cold-builds over it. Only
+:class:<code>StoreCorruptError</code> may lead to a self-heal, and only when the
+vault owns the files.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.exceptions.StoreOpenError.backend">backend</span></code></td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The registry name of the backend that refused.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="markdown_vault_mcp.exceptions.StoreOpenError.location">location</span></code></td>
+            <td>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The location it was asked to open, as given.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.exceptions.StoreNotConfiguredError" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">StoreNotConfiguredError</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="n">location</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.exceptions.StoreNotConfiguredError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="StoreOpenError(message, *, backend, location) (markdown_vault_mcp.exceptions.StoreOpenError)" href="#markdown_vault_mcp.exceptions.StoreOpenError">StoreOpenError</a></code></p>
+
+
+
+        <p>The backend needs a location or service that is not configured.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.exceptions.StoreUnavailableError" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">StoreUnavailableError</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="n">location</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.exceptions.StoreUnavailableError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="StoreOpenError(message, *, backend, location) (markdown_vault_mcp.exceptions.StoreOpenError)" href="#markdown_vault_mcp.exceptions.StoreOpenError">StoreOpenError</a></code></p>
+
+
+
+        <p>The store exists, or may, but cannot be reached now.</p>
+<p>A service that is down, a volume that is not mounted, a parent that is
+not a directory, a permission that is refused. Possibly transient; never
+a reason to rebuild.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.exceptions.StoreIncompatibleError" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">StoreIncompatibleError</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="n">location</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.exceptions.StoreIncompatibleError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="StoreOpenError(message, *, backend, location) (markdown_vault_mcp.exceptions.StoreOpenError)" href="#markdown_vault_mcp.exceptions.StoreOpenError">StoreOpenError</a></code></p>
+
+
+
+        <p>The store holds data for a different identity than the one asked for.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.exceptions.StoreUnsupportedSchemaError" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">StoreUnsupportedSchemaError</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="n">location</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.exceptions.StoreUnsupportedSchemaError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="StoreOpenError(message, *, backend, location) (markdown_vault_mcp.exceptions.StoreOpenError)" href="#markdown_vault_mcp.exceptions.StoreOpenError">StoreOpenError</a></code></p>
+
+
+
+        <p>The store's layout is newer than, or unknown to, this version.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="markdown_vault_mcp.exceptions.StoreCorruptError" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">StoreCorruptError</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">backend</span><span class="p">,</span> <span class="n">location</span><span class="p">)</span></code>
+
+<a href="#markdown_vault_mcp.exceptions.StoreCorruptError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="StoreOpenError(message, *, backend, location) (markdown_vault_mcp.exceptions.StoreOpenError)" href="#markdown_vault_mcp.exceptions.StoreOpenError">StoreOpenError</a></code></p>
+
+
+
+        <p>The store's bytes are not a store of this backend's kind.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
 
     </div>
 
