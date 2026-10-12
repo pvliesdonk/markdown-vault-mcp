@@ -678,7 +678,7 @@ class _CountingRows(tuple):  # type: ignore[type-arg]
 
 class TestRowsByPath:
     def test_grouping_every_document_scans_the_rows_a_constant_number_of_times(
-        self,
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from dataclasses import replace
 
@@ -689,7 +689,7 @@ class TestRowsByPath:
             IDENT, [doc(f"n{i}.md", [[1, 0, 0]]) for i in range(50)]
         )
         store._snap = replace(store._snap, rows=_CountingRows(store._snap.rows))
-        _CountingRows.scans = 0
+        monkeypatch.setattr(_CountingRows, "scans", 0)
         grouped = metadata_by_path(store)
         assert len(grouped) == 50
         assert _CountingRows.scans <= 2

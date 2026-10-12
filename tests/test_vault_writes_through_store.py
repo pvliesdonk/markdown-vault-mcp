@@ -102,7 +102,8 @@ class TestTheColdBuild:
             before = (store.count, store.generation)
             provider.fail = True
             assert vault.index.build_embeddings(force=True) == 0
-            assert (store.count, store.generation) == before
+            after = (store.count, store.generation)
+            assert after == before
         finally:
             vault.close()
             store.close()

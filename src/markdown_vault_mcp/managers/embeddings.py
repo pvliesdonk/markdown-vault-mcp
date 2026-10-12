@@ -503,6 +503,8 @@ class EmbeddingsManager:
         if force:
             store = self._slot.rebuild_target()
         else:
+            # An owned store that will not open is rebuilt inside _open_store;
+            # the convergence below then finds it up to date and embeds 0.
             store = self._open_store()
             if store.count > 0:
                 return self._converge_embeddings(store)

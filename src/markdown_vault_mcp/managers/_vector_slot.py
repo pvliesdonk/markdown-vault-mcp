@@ -130,9 +130,7 @@ class VectorStoreSlot:
         try:
             rebuild()
         except Exception:
-            logger.error(
-                "vector_store_rebuild_failed location=%s", self._location, exc_info=True
-            )
+            logger.exception("vector_store_rebuild_failed location=%s", self._location)
             raise
 
     def current(self) -> EmbeddingStore | None:
