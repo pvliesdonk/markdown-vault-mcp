@@ -9856,17 +9856,18 @@ Attributes:
 | `updated_links` | `int` | Number of source documents whose links were actually rewritten. A source the rewrite left byte-identical is not counted, because it still names the old path (#1521). |
 | `hint`          | \`str | None\`                                                                                                                                                                |
 
-## `IndexStats(documents_indexed, chunks_indexed, skipped)`
+## `IndexStats(documents_indexed, chunks_indexed, skipped, walk_complete=True)`
 
 Statistics from :meth:`~markdown_vault_mcp.facets.index.IndexFacet.build_index`.
 
 Attributes:
 
-| Name                | Type  | Description                                      |
-| ------------------- | ----- | ------------------------------------------------ |
-| `documents_indexed` | `int` | Number of documents successfully indexed.        |
-| `chunks_indexed`    | `int` | Total number of chunks indexed.                  |
-| `skipped`           | `int` | Number of documents skipped due to parse errors. |
+| Name                | Type   | Description                                                                                                                                                             |
+| ------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `documents_indexed` | `int`  | Number of documents successfully indexed.                                                                                                                               |
+| `chunks_indexed`    | `int`  | Total number of chunks indexed.                                                                                                                                         |
+| `skipped`           | `int`  | Number of documents skipped due to parse errors.                                                                                                                        |
+| `walk_complete`     | `bool` | False when a directory could not be read, so the scan may have missed notes; the keyword index records it, and no empty cold embedding build trusts that build (#1785). |
 
 ## `ReindexResult(added, modified, deleted, unchanged, skipped=0)`
 
