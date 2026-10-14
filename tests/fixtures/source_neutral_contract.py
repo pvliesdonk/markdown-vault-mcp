@@ -6,7 +6,8 @@ the same ``make_store`` fixture. The source is a dict: notes reach the
 keyword index as :class:`ParsedNote` objects, the reconciler reads only the
 keyword index, and the dict answers the source probe. Nothing on disk is
 the source. Writer B's interleavings run inside writer A's provider or
-probe call, the windows the reconciler leaves open (#1508).
+probe call, or just after A reads the keyword index: every window
+between A's reads and its write (#1508).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
@@ -31,7 +32,7 @@ from tests.conftest import MockEmbeddingProvider
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection
 
-    from markdown_vault_mcp.interfaces import EmbeddingStore
+    from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordIndex
 
 SITE = "conformance"
 
@@ -108,6 +109,28 @@ class HookedProvider(MockEmbeddingProvider):
         return super().embed(texts)
 
 
+class ReadHookedIndex:
+    """Writer A's view of the keyword index: runs ``after_read`` once.
+
+    The hook runs after a ``list_chunks`` read returns its rows, so a test
+    can publish a newer revision between the reconciler's reads.
+    """
+
+    def __init__(self, inner: FTSIndex) -> None:
+        self._inner = inner
+        self.after_read: Callable[[], None] | None = None
+
+    def list_chunks(self, paths: Collection[str] | None = None) -> list[dict[str, Any]]:
+        rows = self._inner.list_chunks(paths=paths)
+        hook, self.after_read = self.after_read, None
+        if hook is not None:
+            hook()
+        return rows
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
 @dataclass
 class _World:
     """One source, one keyword index and one store, written by two writers."""
@@ -119,6 +142,7 @@ class _World:
     identity: EmbeddingIdentity
     writer: EmbeddingReconciler
     other: EmbeddingReconciler
+    reads: ReadHookedIndex
 
     def write(
         self, path: str, body: str, *, frontmatter: dict[str, Any] | None = None
@@ -163,9 +187,11 @@ class SourceNeutralContract:
         builder = EmbedTextBuilder()
         identity = EmbeddingIdentity.of(provider, builder.format_token())
 
-        def writer() -> EmbeddingReconciler:
+        reads = ReadHookedIndex(fts)
+
+        def writer(index: KeywordIndex) -> EmbeddingReconciler:
             return EmbeddingReconciler(
-                fts=fts,
+                fts=index,
                 provider=provider,
                 embed_builder=builder,
                 batch_size=4,
@@ -174,7 +200,14 @@ class SourceNeutralContract:
             )
 
         return _World(
-            source, fts, provider, make_store(identity), identity, writer(), writer()
+            source,
+            fts,
+            provider,
+            make_store(identity),
+            identity,
+            writer(cast("KeywordIndex", reads)),
+            writer(fts),
+            reads,
         )
 
     # -- convergence -------------------------------------------------------
@@ -320,6 +353,25 @@ class SourceNeutralContract:
         newer = world.reconcile(by=world.other)
         assert (newer.embedded, newer.conflicts) == (1, set())
         assert world.holds("n.md", "Revision two.")
+        assert world.store.tokens()["n.md"] == world.token("n.md")
+
+    def test_a_newer_publish_between_the_reads_still_conflicts(
+        self, world: _World
+    ) -> None:
+        self._at_r1(world)
+        published: list[ReconcileResult] = []
+
+        def newer_writer() -> None:
+            world.write("n.md", "Revision two.")
+            published.append(world.reconcile(by=world.other))
+
+        world.reads.after_read = newer_writer
+        result = world.reconcile()
+        assert published[0].embedded == 1
+        assert result.conflicts == {"n.md"}
+        assert world.holds("n.md", "Revision two.")
+        retry = world.reconcile(result.conflicts)
+        assert (retry.up_to_date, retry.conflicts) == (1, set())
         assert world.store.tokens()["n.md"] == world.token("n.md")
 
     def test_a_removal_racing_a_recreate_keeps_the_new_rows(

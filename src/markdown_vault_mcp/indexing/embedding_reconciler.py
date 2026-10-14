@@ -202,8 +202,11 @@ class EmbeddingReconciler:
     ) -> ReconcileResult:
         """Bring *paths* (or every document) in the store in line with the keyword index.
 
-        Removals run first, then each document's re-embed, then the
-        re-tokens, so a bulk re-token publish sees the pass's other writes.
+        The store's tokens are read before the keyword index: a revision
+        the inputs miss was published after that read, so this pass's write
+        of that document conflicts instead of replacing it (#1786). Removals run
+        first, then each document's re-embed, then the re-tokens, so a bulk
+        re-token publish sees the pass's other writes.
 
         Args:
             store: The store to write.
@@ -213,8 +216,8 @@ class EmbeddingReconciler:
         Returns:
             What the pass did; ``conflicts`` holds the paths to re-queue.
         """
-        docs = self.documents(paths)
         stored = store.tokens()
+        docs = self.documents(paths)
         held = set(stored) if paths is None else set(paths) & set(stored)
         state = _Pass(store, stored, ReconcileResult(), site)
         self._remove_unbacked(state, sorted(held - set(docs)))

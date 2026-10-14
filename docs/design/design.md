@@ -4062,8 +4062,9 @@ when the keyword index's last build completed and read every directory
 (`is_build_walk_complete()`); the source walk and root check are gone
 from the embedding path. It embeds before
 touching the store and publishes with `replace_document` /
-`remove_document` passing the token it observed, so a write that crosses
-another writer's returns `"conflict"`; the writer's runners re-queue
+`remove_document` passing the token it observed, read before the
+keyword-index rows (a revision the rows miss was published after that
+read), so a write that crosses another writer's returns `"conflict"`; the writer's runners re-queue
 conflicts with a flush and hold provider-failure paths for the next one,
 outside the pending work that drain status counts. At or above `_BULK_RETOKEN` (64) re-tokens in one pass, one
 `publish_generation` replaces the per-document replaces (each copies the
@@ -4080,7 +4081,8 @@ no working tree: notes reach an in-memory keyword index as `ParsedNote`s,
 and the dict answers the source probe. It pins convergence for free after
 a cold build, deleted against unavailable, and #1508's out-of-order
 revision replay. A writer that publishes over a newer revision conflicts,
-and its retry lands nothing; a stale publish carries its own token, so
+whether that revision landed during its provider call or between its token
+and keyword-index reads, and its retry lands nothing; a stale publish carries its own token, so
 the next pass replaces it; a removal that races a recreate conflicts
 instead of removing the new rows. Both writers read one keyword index, as
 two processes over one vault's database do; a writer whose keyword index
