@@ -265,3 +265,109 @@ class SourceNeutralContract:
         world.fts.delete_by_path("a.md")
         assert world.reconcile().removed == 0
         assert world.holds("a.md", "Apples are red.")
+
+    # -- the out-of-order revision replay (#1508) --------------------------
+
+    def _at_r1(self, world: _World) -> None:
+        world.write("n.md", "Revision zero.")
+        world.reconcile()
+        world.write("n.md", "Revision one.")
+
+    def test_a_slow_stale_writer_conflicts_and_its_retry_lands_nothing(
+        self, world: _World
+    ) -> None:
+        self._at_r1(world)
+
+        def newer_writer() -> None:
+            world.write("n.md", "Revision two.")
+            assert world.reconcile(by=world.other).embedded == 1
+
+        world.provider.during = newer_writer
+        result = world.reconcile()
+        assert result.conflicts == {"n.md"}
+        assert world.holds("n.md", "Revision two.")
+        calls = world.provider.calls
+        retry = world.reconcile(result.conflicts)
+        assert (retry.up_to_date, retry.conflicts, world.provider.calls) == (
+            1,
+            set(),
+            calls,
+        )
+        assert world.store.tokens()["n.md"] == world.token("n.md")
+
+    def test_writers_in_order_never_conflict(self, world: _World) -> None:
+        self._at_r1(world)
+        first = world.reconcile()
+        world.write("n.md", "Revision two.")
+        second = world.reconcile(by=world.other)
+        assert (first.conflicts, second.conflicts) == (set(), set())
+        assert world.holds("n.md", "Revision two.")
+        assert world.store.tokens()["n.md"] == world.token("n.md")
+
+    def test_a_stale_publish_is_tied_to_its_revision_and_replaced_next_pass(
+        self, world: _World
+    ) -> None:
+        self._at_r1(world)
+        r1 = world.token("n.md")
+
+        def source_moves_on() -> None:
+            world.write("n.md", "Revision two.")
+
+        world.provider.during = source_moves_on
+        assert world.reconcile().conflicts == set()
+        assert world.holds("n.md", "Revision one.")
+        assert world.store.tokens()["n.md"] == r1
+        newer = world.reconcile(by=world.other)
+        assert (newer.embedded, newer.conflicts) == (1, set())
+        assert world.holds("n.md", "Revision two.")
+        assert world.store.tokens()["n.md"] == world.token("n.md")
+
+    def test_a_removal_racing_a_recreate_keeps_the_new_rows(
+        self, world: _World
+    ) -> None:
+        world.write("n.md", "Revision zero.")
+        world.reconcile()
+        world.delete("n.md")
+
+        def recreated() -> None:
+            world.write("n.md", "Revision three.")
+            assert world.reconcile(by=world.other).embedded == 1
+
+        world.source.after_probe = recreated
+        result = world.reconcile()
+        assert (result.removed, result.conflicts) == (0, {"n.md"})
+        retry = world.reconcile(result.conflicts)
+        assert (retry.removed, retry.up_to_date) == (0, 1)
+        assert world.holds("n.md", "Revision three.")
+
+    def test_a_provider_failure_after_the_newer_publish_keeps_it(
+        self, world: _World
+    ) -> None:
+        self._at_r1(world)
+
+        def newer_writer() -> None:
+            world.write("n.md", "Revision two.")
+            world.reconcile(by=world.other)
+
+        world.provider.during = newer_writer
+        world.provider.fail_after_hook = True
+        result = world.reconcile()
+        assert (result.retry, result.conflicts) == ({"n.md"}, set())
+        assert world.holds("n.md", "Revision two.")
+        assert world.reconcile(result.retry).up_to_date == 1
+
+    def test_a_requeued_path_deleted_before_its_retry_is_removed(
+        self, world: _World
+    ) -> None:
+        self._at_r1(world)
+
+        def newer_writer() -> None:
+            world.write("n.md", "Revision two.")
+            world.reconcile(by=world.other)
+
+        world.provider.during = newer_writer
+        result = world.reconcile()
+        assert result.conflicts == {"n.md"}
+        world.delete("n.md")
+        retry = world.reconcile(result.conflicts)
+        assert (retry.removed, world.store.tokens()) == (1, {})

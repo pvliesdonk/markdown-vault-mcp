@@ -4074,13 +4074,23 @@ makes safe and #1504's pgvector backend must revisit. The cold build
 publishes one generation under each document's token; a failed batch
 leaves its documents to the next convergence pass.
 
-Bounds: the source-neutral conformance case (an in-memory keyword index,
-a fake `SourceProbe`) is #1786's; an empty mount-point directory reads as
-an available, empty source, so its vectors go as they always did (a spec
-gap, #1791: "an unmounted volume removes nothing" holds only when the
-mount point itself is missing or unreadable); the store's size in
-`embeddings_status` is #1377's; how often the full matrix is rewritten is
-#1497's.
+Conformance case 6 (`tests/fixtures/source_neutral_contract.py`, run by
+every vector backend, #1786) drives the reconciler from a dict source with
+no working tree: notes reach an in-memory keyword index as `ParsedNote`s,
+and the dict answers the source probe. It pins convergence for free after
+a cold build, deleted against unavailable, and #1508's out-of-order
+revision replay. A writer that publishes over a newer revision conflicts,
+and its retry lands nothing; a stale publish carries its own token, so
+the next pass replaces it; a removal that races a recreate conflicts
+instead of removing the new rows. Both writers read one keyword index, as
+two processes over one vault's database do; a writer whose keyword index
+lags the store is #1504's.
+
+Bounds: an empty mount-point directory reads as an available, empty
+source, so its vectors go as they always did (a spec gap, #1791: "an
+unmounted volume removes nothing" holds only when the mount point itself
+is missing or unreadable); the store's size in `embeddings_status` is
+#1377's; how often the full matrix is rewritten is #1497's.
 
 ### `providers.py`: Embedding Providers
 
