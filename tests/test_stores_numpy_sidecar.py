@@ -24,6 +24,7 @@ from markdown_vault_mcp.stores import numpy_sidecar
 from markdown_vault_mcp.stores.numpy_sidecar import NumpySidecarBackend
 from markdown_vault_mcp.types import ANY_TOKEN, EmbeddingIdentity
 from tests.conftest import MockEmbeddingProvider
+from tests.fixtures.source_neutral_contract import SourceNeutralContract
 from tests.fixtures.store_contract import StoreLifecycleContract
 from tests.fixtures.vector_store_contract import (
     IDENT,
@@ -70,7 +71,7 @@ class TestBackend:
         )
 
 
-class TestInMemoryConformance(VectorStoreContract):
+class TestInMemoryConformance(VectorStoreContract, SourceNeutralContract):
     @pytest.fixture
     def make_store(self) -> Callable[..., Any]:
         return lambda identity: NumpySidecarBackend().open(None, identity)
@@ -97,7 +98,9 @@ def _base(tmp_path: Path) -> Path:
     return tmp_path / "vectors" / "idx-embeddings"
 
 
-class TestFileConformance(VectorStoreContract, PersistentVectorStoreContract):
+class TestFileConformance(
+    VectorStoreContract, PersistentVectorStoreContract, SourceNeutralContract
+):
     @pytest.fixture
     def make_store(self, tmp_path: Path) -> Callable[..., Any]:
         return lambda identity: NumpySidecarBackend().open(_base(tmp_path), identity)
