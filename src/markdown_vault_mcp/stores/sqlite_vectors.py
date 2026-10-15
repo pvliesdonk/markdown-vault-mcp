@@ -11,7 +11,10 @@ Each write is one ``BEGIN IMMEDIATE`` transaction that checks the token the
 database holds, writes, and commits with ``synchronous=FULL``; only then is
 the next snapshot installed. A published write is durable when it returns,
 and a failed one leaves the file and the reads as they were.
-``checkpoint()`` only folds the WAL into the main file.
+``checkpoint()`` only folds the WAL into the main file. What WAL with
+``synchronous=FULL`` promises, and why the WAL-reset bug does not reach this
+single-lock, single-writer use, is recorded in
+``docs/design/reference/sqlite-wal-durability.md``.
 
 A store from :meth:`SqliteVectorBackend.open_fresh` reads nothing at its
 location: its first write empties the database inside the same

@@ -87,10 +87,12 @@ page adds only what a read-only connection does to checkpoints.
 - "Transactions are durable across application crashes regardless of the
   synchronous setting or journal mode." So a killed process never loses a
   committed transaction under either `FULL` or `NORMAL`. [source: pragma-docs]
+  [pins: tests/test_stores_sqlite_vectors_durability.py::TestKills::test_a_generation_committed_then_killed_without_close_is_kept, tests/test_stores_sqlite_vectors_durability.py::TestKills::test_a_replace_committed_then_killed_without_close_is_kept]
 - In WAL mode, `FULL` is fully ACID: "FULL is atomic, consistent, isolated,
   and durable (ACID) in WAL mode". The cost is that "an additional sync
   operation of the WAL file happens after each transaction commit".
   [source: pragma-docs]
+  [pins: tests/test_stores_sqlite_vectors.py::TestBackend::test_every_connection_commits_with_full_sync]
 - `NORMAL` in WAL mode keeps consistency but not durability. "WAL mode is
   always consistent with synchronous=NORMAL, but WAL mode does lose
   durability." A transaction committed under `NORMAL` "might roll back
@@ -147,6 +149,7 @@ page adds only what a read-only connection does to checkpoints.
   immediately, without waiting for a write statement". It "might fail with
   SQLITE_BUSY if another write transaction is already active on another
   database connection". [source: transaction-docs]
+  [pins: tests/test_stores_sqlite_vectors_durability.py::TestKills::test_a_kill_before_a_generation_commits_keeps_the_previous_one, tests/test_stores_sqlite_vectors_durability.py::TestKills::test_a_kill_during_a_model_change_keeps_the_old_model]
 - `EXCLUSIVE` and `IMMEDIATE` are the same in WAL mode. SQLite allows "only
   one simultaneous write transaction". [source: transaction-docs]
 - `busy_timeout` sets the busy handler that retries a `SQLITE_BUSY`, and
@@ -159,6 +162,7 @@ page adds only what a read-only connection does to checkpoints.
   and leave the transaction open, or may roll back the whole transaction.
   [source: transaction-docs] So a writer that sees an error rolls back
   explicitly, rather than assuming either outcome.
+  [pins: tests/test_stores_sqlite_vectors_durability.py::TestFailedCommits::test_a_failed_replace_changes_neither_the_file_nor_the_reads, tests/test_stores_sqlite_vectors_durability.py::TestFailedCommits::test_a_failed_generation_keeps_the_previous_one]
 
 ### Python's transaction control
 
