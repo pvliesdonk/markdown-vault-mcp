@@ -150,7 +150,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_STORE",
-          "description": "Where embeddings are stored. 'numpy' keeps them in files beside the index (or in memory without INDEX_PATH).",
+          "description": "Where embeddings are stored. 'numpy' (the default) keeps them in files beside the index; 'sqlite' keeps them in one SQLite database there (index-db-embeddings.sqlite3), each change written durably on its own. Without INDEX_PATH or EMBEDDINGS_PATH both keep them in memory.",
           "default": "numpy"
         },
         {
@@ -759,7 +759,7 @@
         },
         {
           "name": "MARKDOWN_VAULT_MCP_EMBEDDING_STORE",
-          "description": "Where embeddings are stored. 'numpy' keeps them in files beside the index (or in memory without INDEX_PATH).",
+          "description": "Where embeddings are stored. 'numpy' (the default) keeps them in files beside the index; 'sqlite' keeps them in one SQLite database there (index-db-embeddings.sqlite3), each change written durably on its own. Without INDEX_PATH or EMBEDDINGS_PATH both keep them in memory.",
           "default": "numpy"
         },
         {
