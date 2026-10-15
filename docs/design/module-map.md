@@ -47,6 +47,7 @@ src/markdown_vault_mcp/
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as a JSON commit point naming a per-persist matrix; reads legacy VectorIndex sidecars (#1767)
     registry.py        -- the (family, name) registry of backend factories: register_backend/get_backend/backend_names (#1766)
     sqlite_keyword.py  -- SqliteKeywordBackend: opens FTSIndex, classifies SQLite failures as unavailable or corrupt (#1766)
+    sqlite_vectors.py  -- SqliteVectorBackend/SqliteVectorStore: vectors as SQLite rows in their own database, one BEGIN IMMEDIATE + synchronous=FULL commit per write, served from a resident snapshot (#1497)
   indexing/
     __init__.py        -- package aggregator: re-exports IndexWriteCoordinator, IndexWriter + writer job dataclasses, ReadinessState
     index_writer.py    -- IndexWriter: single-owner FIFO writer thread + job dataclasses/runners
