@@ -40,6 +40,11 @@ _SQLITE_LOCKED_RETRY_TIMEOUT_S = 5.0
 _SQLITE_LOCKED_INITIAL_SLEEP_S = 0.01
 _SQLITE_LOCKED_MAX_SLEEP_S = 0.5
 
+_SYNCHRONOUS_PRAGMAS = {
+    "NORMAL": "PRAGMA synchronous = NORMAL",
+    "FULL": "PRAGMA synchronous = FULL",
+}
+
 
 def retry_on_sqlite_locked(
     operation: Callable[[], _T],
@@ -110,7 +115,7 @@ def retry_on_locked(method: Callable[..., _T]) -> Callable[..., _T]:
 
 
 def resolve_connect_uri(
-    db_path: Path | str, *, read_only: bool = False
+    db_path: Path | str, *, read_only: bool = False, memory_prefix: str = "fts"
 ) -> tuple[str, bool, bool]:
     """Resolve a db_path into (connect_string, uses_uri, is_memory).
 
@@ -127,6 +132,7 @@ def resolve_connect_uri(
     Args:
         db_path: Database file path, or ``":memory:"``.
         read_only: Open a database file read-only.
+        memory_prefix: Names the shared in-memory database.
 
     Returns:
         The connect string, whether it is a URI, and whether it is in memory.
@@ -139,7 +145,7 @@ def resolve_connect_uri(
         if read_only:
             raise ValueError("An in-memory index cannot be opened read-only.")
         token = uuid.uuid4().hex
-        return f"file:fts_{token}?mode=memory&cache=shared", True, True
+        return f"file:{memory_prefix}_{token}?mode=memory&cache=shared", True, True
     if read_only:
         # as_uri() percent-encodes "?", "#" and spaces, which SQLite decodes
         # in a URI path; a hand-built "file:{path}" would cut the path at "?".
@@ -163,6 +169,14 @@ class SqliteConnectionRegistry:
         owner_name: Class name used in the closed-error message so callers
             see the facade they actually hold.
         read_only: Open the database file read-only (``mode=ro``).
+        synchronous: ``"NORMAL"`` (the keyword index) or ``"FULL"`` (a commit
+            survives power loss).
+        autocommit: Open connections with ``isolation_level=None``: no
+            implicit transactions, the caller issues ``BEGIN`` and ``COMMIT``.
+        memory_prefix: Names the shared in-memory database.
+
+    Raises:
+        ValueError: If *synchronous* is neither level.
     """
 
     def __init__(
@@ -171,13 +185,23 @@ class SqliteConnectionRegistry:
         *,
         owner_name: str = "FTSIndex",
         read_only: bool = False,
+        synchronous: str = "NORMAL",
+        autocommit: bool = False,
+        memory_prefix: str = "fts",
     ) -> None:
+        if synchronous not in _SYNCHRONOUS_PRAGMAS:
+            raise ValueError(
+                f"synchronous must be one of {', '.join(_SYNCHRONOUS_PRAGMAS)}; "
+                f"got {synchronous!r}."
+            )
         self.db_path = db_path
         self._owner_name = owner_name
+        self._synchronous = _SYNCHRONOUS_PRAGMAS[synchronous]
+        self._autocommit = autocommit
         # Resolve URI (translates ``:memory:`` to a shared-cache URI so that
         # per-thread opens see the same in-memory DB).
         self.connect_uri, self.uses_uri, self.is_memory = resolve_connect_uri(
-            db_path, read_only=read_only
+            db_path, read_only=read_only, memory_prefix=memory_prefix
         )
         # Thread-safety state — see #519 and docs/design/design.md.
         self.local = threading.local()
@@ -188,11 +212,17 @@ class SqliteConnectionRegistry:
 
     def connect(self) -> sqlite3.Connection:
         """Open a raw sqlite3 connection to this registry's URI."""
-        conn = sqlite3.connect(
-            self.connect_uri,
-            check_same_thread=False,
-            uri=self.uses_uri,
-        )
+        if self._autocommit:
+            conn = sqlite3.connect(
+                self.connect_uri,
+                check_same_thread=False,
+                uri=self.uses_uri,
+                isolation_level=None,
+            )
+        else:
+            conn = sqlite3.connect(
+                self.connect_uri, check_same_thread=False, uri=self.uses_uri
+            )
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -205,7 +235,7 @@ class SqliteConnectionRegistry:
         """
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA busy_timeout = 5000")
-        conn.execute("PRAGMA synchronous = NORMAL")
+        conn.execute(self._synchronous)
 
     def open_primary(
         self,
