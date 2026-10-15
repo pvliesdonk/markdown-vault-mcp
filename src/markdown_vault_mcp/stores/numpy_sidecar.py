@@ -1,10 +1,7 @@
 """The numpy sidecar vector backend (#1767).
 
-Rows live in memory as one float32 matrix with a parallel metadata list,
-held together with the tokens, identity and generation in one immutable
-snapshot. A writer builds a new snapshot and replaces the old one with a
-single reference assignment, so a reader sees the old rows or the new
-ones, never a mix.
+Reads are served from a resident snapshot (:mod:`._resident`): one float32
+matrix with a parallel metadata list, replaced whole by each write.
 
 On disk a store is ``{base}.json``, the commit point, and the matrix it
 names, ``{base}.m{seq}.npy``. A persist writes the matrix under a new name
@@ -29,24 +26,32 @@ import json
 import logging
 import os
 import tempfile
-import threading
 from dataclasses import dataclass, replace
-from functools import cached_property
 from pathlib import Path
 from types import MappingProxyType
 from typing import IO, TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import (
-    ReadOnlyError,
     StoreCorruptError,
     StoreIncompatibleError,
     StoreOpenError,
     StoreUnavailableError,
     StoreUnsupportedSchemaError,
 )
+from markdown_vault_mcp.stores._resident import (
+    ResidentStore,
+    Snapshot,
+    conflicts,
+    fresh_snapshot,
+    frozen,
+    generation_snapshot,
+    row_vectors,
+    validated_generation,
+    with_document,
+    without_document,
+)
 from markdown_vault_mcp.stores.registry import register_backend
-from markdown_vault_mcp.types import ANY_TOKEN, EmbeddingIdentity, VectorRow
-from markdown_vault_mcp.utils import folder_matches
+from markdown_vault_mcp.types import EmbeddingIdentity
 from markdown_vault_mcp.utils.fs import is_directory, path_exists
 
 try:
@@ -57,7 +62,7 @@ except ImportError:  # pragma: no cover - exercised only without the extra
     _NUMPY_AVAILABLE = False
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable
 
     from markdown_vault_mcp.types import (
         DocumentRows,
@@ -73,72 +78,6 @@ logger = logging.getLogger(__name__)
 FORMAT_VERSION = 2
 
 _BACKEND_NAME = "numpy"
-
-
-@dataclass(frozen=True)
-class _Snapshot:
-    """One committed state: what every read observes, whole."""
-
-    identity: EmbeddingIdentity
-    generation: int
-    matrix: Any  # np.ndarray (n, dimension), float32, read-only
-    rows: tuple[dict[str, Any], ...]
-    tokens: Mapping[str, RevisionToken | None]
-
-    @cached_property
-    def by_path(self) -> Mapping[str, tuple[int, ...]]:
-        """Each path's row positions, built once per snapshot on first use."""
-        index: dict[str, list[int]] = {}
-        for i, row in enumerate(self.rows):
-            path = row.get("path")
-            if path is not None:
-                index.setdefault(path, []).append(i)
-        return MappingProxyType({path: tuple(at) for path, at in index.items()})
-
-
-def _frozen(matrix: Any) -> Any:
-    matrix.setflags(write=False)
-    return matrix
-
-
-def _fresh(identity: EmbeddingIdentity) -> _Snapshot:
-    empty = _frozen(np.zeros((0, identity.dimension), dtype=np.float32))
-    return _Snapshot(identity, 0, empty, (), MappingProxyType({}))
-
-
-def _normalised(vectors: Any) -> Any:
-    norms = np.linalg.norm(vectors, axis=1, keepdims=True)
-    norms = np.where(norms == 0, 1.0, norms)
-    return (vectors / norms).astype(np.float32, copy=False)
-
-
-def _unit(vector: Any) -> Any:
-    norm = float(np.linalg.norm(vector))
-    return vector / norm if norm > 0 else vector
-
-
-def _row_vectors(rows: Sequence[VectorRow], dimension: int) -> Any:
-    """Return *rows*' vectors as a normalised matrix, refusing bad ones."""
-    if not rows:
-        return np.zeros((0, dimension), dtype=np.float32)
-    try:
-        vectors = np.asarray([row.vector for row in rows], dtype=np.float32)
-    except ValueError as exc:
-        raise ValueError(f"Rows of unequal dimension: {exc}") from exc
-    if vectors.ndim != 2 or vectors.shape[1] != dimension:
-        raise ValueError(
-            f"Embedding dimension mismatch: the store holds dimension {dimension}, "
-            f"the rows have {vectors.shape[-1]}."
-        )
-    if not np.isfinite(vectors).all():
-        raise ValueError(
-            "Embedding values must be finite; a row holds NaN or infinity."
-        )
-    return _normalised(vectors)
-
-
-def _metadata(document: DocumentRows) -> list[dict[str, Any]]:
-    return [{**row.metadata, "path": document.path} for row in document.rows]
 
 
 def _matrix_path(base: Path, seq: int) -> Path:
@@ -194,7 +133,7 @@ def _highest_seq(base: Path) -> int:
     return max(_numbered_matrices(base), default=0)
 
 
-def _payload(snap: _Snapshot, matrix_name: str, seq: int) -> bytes:
+def _payload(snap: Snapshot, matrix_name: str, seq: int) -> bytes:
     ident = snap.identity
     body = {
         "format_version": FORMAT_VERSION,
@@ -214,7 +153,7 @@ def _payload(snap: _Snapshot, matrix_name: str, seq: int) -> bytes:
     return json.dumps(body, ensure_ascii=False).encode("utf-8")
 
 
-class NumpySidecarStore:
+class NumpySidecarStore(ResidentStore):
     """A vector store held in memory, optionally persisted beside a base path.
 
     Construct through :class:`NumpySidecarBackend`.
@@ -222,150 +161,20 @@ class NumpySidecarStore:
 
     def __init__(
         self,
-        snapshot: _Snapshot,
+        snapshot: Snapshot,
         *,
         base: Path | None,
         read_only: bool,
         seq: int,
         matrix_path: Path | None,
     ) -> None:
-        self._snap = snapshot
+        super().__init__(snapshot, read_only=read_only)
         self._base = base
-        self._read_only = read_only
         self._seq = seq
         self._matrix_path = matrix_path
         self._dirty = False
-        self._closed = False
-        self._lock = threading.Lock()
-
-    # -- reading -------------------------------------------------------------
-
-    def _current(self) -> _Snapshot:
-        if self._closed:
-            raise RuntimeError("The vector store is closed.")
-        return self._snap
-
-    @property
-    def identity(self) -> EmbeddingIdentity:
-        """The embedding space of the stored rows."""
-        return self._current().identity
-
-    @property
-    def generation(self) -> int:
-        """Bumped by each :meth:`publish_generation`."""
-        return self._current().generation
-
-    @property
-    def count(self) -> int:
-        """The number of stored rows."""
-        return len(self._current().rows)
-
-    def search(
-        self,
-        vector: Sequence[float],
-        *,
-        limit: int = 10,
-        predicate: Callable[[dict[str, Any]], bool] | None = None,
-        folder: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return the rows nearest *vector*; see :class:`~markdown_vault_mcp.interfaces.VectorReader`.
-
-        Raises:
-            ValueError: If *vector* is not of the store's dimension.
-        """
-        snap = self._current()
-        if not snap.rows or limit <= 0:
-            return []
-        query = np.asarray(vector, dtype=np.float32)
-        if query.shape != (snap.matrix.shape[1],):
-            raise ValueError(
-                f"Query dimension mismatch: the store holds dimension "
-                f"{snap.matrix.shape[1]}, the query has {query.shape[-1]}."
-            )
-        scores = snap.matrix @ _unit(query)
-        results: list[dict[str, Any]] = []
-        for index in np.argsort(scores)[::-1]:
-            i = int(index)
-            row = snap.rows[i]
-            if folder is not None and not folder_matches(row.get("folder", ""), folder):
-                continue
-            if predicate is not None and not predicate(row):
-                continue
-            results.append({**row, "score": float(scores[i])})
-            if len(results) >= limit:
-                break
-        return results
-
-    def similar_to_document(
-        self,
-        path: str,
-        *,
-        limit: int = 10,
-        predicate: Callable[[dict[str, Any]], bool] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return the rows nearest the mean of *path*'s rows, excluding *path*."""
-        snap = self._current()
-        if not snap.rows or limit <= 0:
-            return []
-        own = [i for i, row in enumerate(snap.rows) if row.get("path") == path]
-        if not own:
-            return []
-        scores = snap.matrix @ _unit(np.mean(snap.matrix[own], axis=0))
-        candidates = [
-            (float(score), i)
-            for i, score in enumerate(scores)
-            if snap.rows[i].get("path") != path
-            and (predicate is None or predicate(snap.rows[i]))
-        ]
-        candidates.sort(key=lambda candidate: candidate[0], reverse=True)
-        return [{**snap.rows[i], "score": score} for score, i in candidates[:limit]]
-
-    def rows_for(self, path: str) -> list[VectorRow]:
-        """Return *path*'s rows, vectors normalised, in storage order."""
-        snap = self._current()
-        return [
-            VectorRow(vector=snap.matrix[i].tolist(), metadata=dict(snap.rows[i]))
-            for i in snap.by_path.get(path, ())
-        ]
-
-    def tokens(self) -> dict[str, RevisionToken | None]:
-        """Return each stored document's token; ``None`` when unknown."""
-        snap = self._current()
-        found: dict[str, RevisionToken | None] = {
-            row["path"]: None for row in snap.rows if "path" in row
-        }
-        found.update(snap.tokens)
-        return found
 
     # -- publishing ----------------------------------------------------------
-
-    def _writable(self) -> _Snapshot:
-        snap = self._current()
-        if self._read_only:
-            raise ReadOnlyError(
-                "This vector store was opened read-only: another process owns its files."
-            )
-        return snap
-
-    @staticmethod
-    def _conflicts(snap: _Snapshot, path: str, expected: ExpectedToken) -> bool:
-        return expected is not ANY_TOKEN and snap.tokens.get(path) != expected
-
-    def _swap(
-        self,
-        snap: _Snapshot,
-        matrix: Any,
-        rows: tuple[dict[str, Any], ...],
-        tokens: dict[str, RevisionToken | None],
-    ) -> None:
-        self._snap = _Snapshot(
-            snap.identity,
-            snap.generation,
-            _frozen(matrix),
-            rows,
-            MappingProxyType(tokens),
-        )
-        self._dirty = True
 
     def replace_document(
         self, document: DocumentRows, *, expected_token: ExpectedToken
@@ -378,16 +187,11 @@ class NumpySidecarStore:
         """
         with self._lock:
             snap = self._writable()
-            if self._conflicts(snap, document.path, expected_token):
+            if conflicts(snap, document.path, expected_token):
                 return "conflict"
-            vectors = _row_vectors(document.rows, snap.identity.dimension)
-            keep = [
-                i for i, row in enumerate(snap.rows) if row.get("path") != document.path
-            ]
-            matrix = np.vstack([snap.matrix[keep], vectors])
-            rows = tuple(snap.rows[i] for i in keep) + tuple(_metadata(document))
-            tokens = {**snap.tokens, document.path: document.token}
-            self._swap(snap, matrix, rows, tokens)
+            vectors = row_vectors(document.rows, snap.identity.dimension)
+            self._snap = with_document(snap, document, vectors)
+            self._dirty = True
         return "published"
 
     def remove_document(
@@ -400,15 +204,12 @@ class NumpySidecarStore:
         """
         with self._lock:
             snap = self._writable()
-            if self._conflicts(snap, path, expected_token):
+            if conflicts(snap, path, expected_token):
                 return "conflict"
-            keep = [i for i, row in enumerate(snap.rows) if row.get("path") != path]
-            if len(keep) == len(snap.rows) and path not in snap.tokens:
-                return "published"
-            tokens = {k: v for k, v in snap.tokens.items() if k != path}
-            self._swap(
-                snap, snap.matrix[keep], tuple(snap.rows[i] for i in keep), tokens
-            )
+            new = without_document(snap, path)
+            if new is not None:
+                self._snap = new
+                self._dirty = True
         return "published"
 
     def publish_generation(
@@ -421,37 +222,22 @@ class NumpySidecarStore:
             ValueError: If a path appears twice, or a row is of another
                 dimension or not finite.
         """
-        docs = list(documents)
-        seen: set[str] = set()
-        for document in docs:
-            if document.path in seen:
-                raise ValueError(f"publish_generation got {document.path} twice.")
-            seen.add(document.path)
-        blocks = [_row_vectors(d.rows, identity.dimension) for d in docs]
-        matrix = (
-            np.vstack(blocks)
-            if blocks
-            else np.zeros((0, identity.dimension), dtype=np.float32)
-        )
-        rows = tuple(meta for d in docs for meta in _metadata(d))
-        tokens = MappingProxyType({d.path: d.token for d in docs})
+        docs, blocks = validated_generation(identity, documents)
         with self._lock:
             snap = self._writable()
-            new = _Snapshot(
-                identity, snap.generation + 1, _frozen(matrix), rows, tokens
-            )
+            new = generation_snapshot(identity, snap.generation + 1, docs, blocks)
             self._persist(new)
             self._snap = new
             self._dirty = False
         logger.info(
             "numpy_store_generation_published generation=%d rows=%d",
             new.generation,
-            len(rows),
+            len(new.rows),
         )
 
     # -- lifecycle -----------------------------------------------------------
 
-    def _persist(self, snap: _Snapshot) -> None:
+    def _persist(self, snap: Snapshot) -> None:
         """Write *snap* to disk, committing with the JSON; a no-op in memory.
 
         The payload is encoded before any file is written, so metadata JSON
@@ -692,7 +478,7 @@ def _check_identity(
 
 def _snapshot_from(
     stored: _Stored, matrix: Any, identity: EmbeddingIdentity, where: str
-) -> _Snapshot:
+) -> Snapshot:
     if not identity.dimension:
         known = stored.dimension or (
             matrix.shape[1] if matrix.ndim == 2 and matrix.shape[0] else 0
@@ -714,10 +500,10 @@ def _snapshot_from(
             f"matrix has {matrix.shape[1]} columns.",
             where,
         )
-    return _Snapshot(
+    return Snapshot(
         identity,
         stored.generation,
-        _frozen(np.array(matrix, dtype=np.float32)),
+        frozen(np.array(matrix, dtype=np.float32)),
         tuple(stored.rows),
         MappingProxyType(stored.tokens),
     )
@@ -769,7 +555,11 @@ def _open_file(
                 where,
             )
         return NumpySidecarStore(
-            _fresh(identity), base=base, read_only=read_only, seq=0, matrix_path=None
+            fresh_snapshot(identity),
+            base=base,
+            read_only=read_only,
+            seq=0,
+            matrix_path=None,
         )
     stored, matrix = _load_committed(json_path, base, where)
     _check_identity(stored, matrix, identity, where)
@@ -832,7 +622,11 @@ class NumpySidecarBackend:
             raise ValueError("A vector store opens against an EmbeddingIdentity.")
         if location is None or str(location) == ":memory:":
             return NumpySidecarStore(
-                _fresh(identity), base=None, read_only=False, seq=0, matrix_path=None
+                fresh_snapshot(identity),
+                base=None,
+                read_only=False,
+                seq=0,
+                matrix_path=None,
             )
         return _open_file(Path(location), identity, read_only=not owns_files)
 
@@ -854,14 +648,22 @@ class NumpySidecarBackend:
             )
         if location is None or str(location) == ":memory:":
             return NumpySidecarStore(
-                _fresh(identity), base=None, read_only=False, seq=0, matrix_path=None
+                fresh_snapshot(identity),
+                base=None,
+                read_only=False,
+                seq=0,
+                matrix_path=None,
             )
         base = Path(location)
         seq = _highest_seq(base) if is_directory(base.parent) else 0
         # Not dirty: a rebuild that writes nothing (every provider call
         # failed) must not commit an empty store over the previous one.
         return NumpySidecarStore(
-            _fresh(identity), base=base, read_only=False, seq=seq, matrix_path=None
+            fresh_snapshot(identity),
+            base=base,
+            read_only=False,
+            seq=seq,
+            matrix_path=None,
         )
 
 
