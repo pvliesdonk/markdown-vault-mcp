@@ -13,7 +13,7 @@ the next snapshot installed. A published write is durable when it returns,
 and a failed one leaves the file and the reads as they were.
 ``checkpoint()`` only folds the WAL into the main file. What WAL with
 ``synchronous=FULL`` promises, and why the WAL-reset bug does not reach this
-single-lock, single-writer use, is recorded in
+single-writer use, is recorded in
 ``docs/design/reference/sqlite-wal-durability.md``.
 
 A store from :meth:`SqliteVectorBackend.open_fresh` reads nothing at its
@@ -418,8 +418,26 @@ def _write_meta(
     )
 
 
+def _check_pages(conn: sqlite3.Connection, where: str) -> None:
+    """Refuse a database whose pages SQLite's ``quick_check`` finds damaged.
+
+    Raises:
+        StoreCorruptError: If the check reports anything but ``ok``.
+    """
+    verdict = str(conn.execute("PRAGMA quick_check").fetchone()[0])
+    if verdict != "ok":
+        raise _outcome(
+            StoreCorruptError,
+            f"Vector store at {where} has damaged pages: {verdict}",
+            where,
+        )
+
+
 def _replace_if_unusable(path: Path) -> None:
     """Remove *path* (and its WAL files) unless it is a vector store to empty.
+
+    A store whose own tables read but whose pages are damaged is unusable
+    too: emptying it in place would fail on those pages.
 
     Raises:
         StoreUnsupportedSchemaError: If it is a vector store of a newer format.
@@ -428,7 +446,9 @@ def _replace_if_unusable(path: Path) -> None:
     where = str(path)
     probe = _registry(path, read_only=True)
     try:
-        _format_meta(probe.conn(), where)
+        conn = probe.conn()
+        _format_meta(conn, where)
+        _check_pages(conn, where)
         return
     except StoreCorruptError:
         pass
@@ -451,6 +471,33 @@ def _create(path: Path, *, replace_unusable: bool) -> SqliteConnectionRegistry:
     registry = _registry(path, read_only=False)
     registry.open_primary(_prepare_writable, _memory_probe(registry))
     return registry
+
+
+def stored_chunk_count(location: Path | str) -> int:
+    """Count the chunks the database at *location* holds, opening no store.
+
+    For ``embeddings_status`` before the vault has opened its store.
+
+    Args:
+        location: The store's base path.
+
+    Returns:
+        The number of chunk rows; 0 when there is no database or no tables.
+
+    Raises:
+        sqlite3.Error: If the database cannot be read.
+    """
+    path = _db_file(location)
+    if not path_exists(path):
+        return 0
+    registry = _registry(path, read_only=True)
+    try:
+        conn = registry.conn()
+        if "chunks" not in _tables(conn):
+            return 0
+        return int(conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
+    finally:
+        registry.close()
 
 
 class SqliteVectorStore(ResidentStore):
@@ -602,6 +649,7 @@ class SqliteVectorStore(ResidentStore):
 
             self._commit("publish_generation", work)
             self._snap = new
+            self._truncate_wal()
         logger.info(
             "sqlite_vector_store_generation_published path=%s generation=%d rows=%d",
             self._where,
@@ -623,25 +671,28 @@ class SqliteVectorStore(ResidentStore):
         with self._lock:
             self._registry.conn().execute("PRAGMA wal_checkpoint(PASSIVE)")
 
+    def _truncate_wal(self) -> None:
+        """Fold the WAL into the database and truncate it, best effort.
+
+        After a generation publish the WAL holds the whole store; a passive
+        checkpoint folds it but leaves the file that size until close.
+        """
+        if self._registry is None or self._path is None or self._read_only:
+            return
+        try:
+            self._registry.conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.Error as exc:
+            logger.warning(
+                "sqlite_vector_store_truncate_failed path=%s err=%s", self._where, exc
+            )
+
     def close(self) -> None:
         """Fold the WAL away and release the database. Idempotent."""
         if self._closed:
             return
         with self._lock:
             try:
-                if (
-                    self._registry is not None
-                    and self._path is not None
-                    and not self._read_only
-                ):
-                    try:
-                        self._registry.conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                    except sqlite3.Error as exc:
-                        logger.warning(
-                            "sqlite_vector_store_truncate_failed path=%s err=%s",
-                            self._where,
-                            exc,
-                        )
+                self._truncate_wal()
             finally:
                 self._closed = True
                 if self._registry is not None:

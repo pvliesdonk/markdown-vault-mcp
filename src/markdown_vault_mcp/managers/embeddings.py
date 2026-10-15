@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
@@ -346,6 +347,48 @@ class EmbeddingsManager:
     # Status
     # ------------------------------------------------------------------
 
+    def _unopened_count(self, base: Path) -> int:
+        """Count the stored chunks from the backend's files, opening no store.
+
+        A refused stat raises (#1625); a file that will not parse counts 0,
+        logged at WARNING.
+        """
+        if self._slot is not None and self._slot.backend_name == "sqlite":
+            from markdown_vault_mcp.stores.sqlite_vectors import stored_chunk_count
+
+            try:
+                return stored_chunk_count(base)
+            except sqlite3.Error as exc:
+                logger.warning(
+                    "embeddings_status_count_failed path=%s err=%s", base, exc
+                )
+                return 0
+        count = 0
+        # Derive sidecar paths the way the store does (Path.with_suffix),
+        # so an EMBEDDINGS_PATH that carries an
+        # extension resolves to the real files instead of {path}.npy.npy
+        # and misreporting chunk_count=0 (#819).
+        # Both layouts keep the rows in the JSON: the legacy pair beside
+        # {base}.npy and the store's commit file naming {base}.m<N>.npy.
+        json_path = base.with_suffix(".json")
+        # A refused stat raises: a status of "no vectors" for a store the
+        # server cannot read would be wrong (#1625).
+        if path_exists(json_path):
+            try:
+                with json_path.open(encoding="utf-8") as fh:
+                    loaded_meta = json.load(fh)
+                if isinstance(loaded_meta, list):
+                    count = len(loaded_meta)
+                else:
+                    count = len(loaded_meta.get("rows", []))
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning(
+                    "embeddings_status_metadata_read_failed path=%s err=%s",
+                    json_path,
+                    exc,
+                )
+        return count
+
     def embeddings_status(self) -> dict[str, Any]:
         """Return status information about the vector index.
 
@@ -374,29 +417,7 @@ class EmbeddingsManager:
         if vectors is not None:
             count = vectors.count
         elif self._embeddings_path is not None:
-            # Derive sidecar paths the way the store does (Path.with_suffix),
-            # so an EMBEDDINGS_PATH that carries an
-            # extension resolves to the real files instead of {path}.npy.npy
-            # and misreporting chunk_count=0 (#819).
-            # Both layouts keep the rows in the JSON: the legacy pair beside
-            # {base}.npy and the store's commit file naming {base}.m<N>.npy.
-            json_path = self._embeddings_path.with_suffix(".json")
-            # A refused stat raises: a status of "no vectors" for a store the
-            # server cannot read would be wrong (#1625).
-            if path_exists(json_path):
-                try:
-                    with json_path.open(encoding="utf-8") as fh:
-                        loaded_meta = json.load(fh)
-                    if isinstance(loaded_meta, list):
-                        count = len(loaded_meta)
-                    else:
-                        count = len(loaded_meta.get("rows", []))
-                except (OSError, json.JSONDecodeError) as exc:
-                    logger.warning(
-                        "embeddings_status_metadata_read_failed path=%s err=%s",
-                        json_path,
-                        exc,
-                    )
+            count = self._unopened_count(self._embeddings_path)
 
         return {
             "available": True,

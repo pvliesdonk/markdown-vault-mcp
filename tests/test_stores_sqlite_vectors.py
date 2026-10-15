@@ -338,3 +338,40 @@ class TestOpenFresh:
         store = SqliteVectorBackend().open_fresh(None, IDENT)
         assert store.count == 0
         store.close()
+
+
+class TestDamagedPages:
+    def test_a_rebuild_replaces_a_database_with_damaged_pages(
+        self, tmp_path: Path
+    ) -> None:
+        store = SqliteVectorBackend().open(_base(tmp_path), IDENT)
+        store.publish_generation(
+            IDENT, [doc(f"n{i}.md", [[1, 0, 0]], pad="x" * 400) for i in range(2000)]
+        )
+        store.close()
+        size = _db(tmp_path).stat().st_size
+        with _db(tmp_path).open("r+b") as fh:
+            fh.seek(size // 2)
+            fh.write(os.urandom(32 * 1024))
+        with pytest.raises(StoreCorruptError):
+            SqliteVectorBackend().open(_base(tmp_path), IDENT)
+        fresh = SqliteVectorBackend().open_fresh(_base(tmp_path), IDENT)
+        fresh.publish_generation(IDENT, [doc("new.md", [[0, 1, 0]])])
+        fresh.close()
+        again = SqliteVectorBackend().open(_base(tmp_path), IDENT)
+        assert again.tokens() == {"new.md": "t1"}
+        again.close()
+
+
+class TestWalAfterAGeneration:
+    def test_a_generation_publish_leaves_no_store_sized_wal(
+        self, tmp_path: Path
+    ) -> None:
+        store = SqliteVectorBackend().open(_base(tmp_path), IDENT)
+        store.publish_generation(
+            IDENT, [doc(f"n{i}.md", [[1, 0, 0]], pad="x" * 400) for i in range(2000)]
+        )
+        wal = _db(tmp_path).with_name(_db(tmp_path).name + "-wal")
+        size = wal.stat().st_size if wal.exists() else 0
+        assert size < 64 * 1024, size
+        store.close()

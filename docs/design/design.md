@@ -4028,10 +4028,13 @@ on a 3,000-document, 14 MB store adds about 29 KB of WAL); a failed one
 changes neither the file nor the reads. `checkpoint()` only folds the WAL.
 No file exists before the first write. `open_fresh` empties the database
 inside its first write's transaction, so a conflict or an interrupt keeps
-the old rows, and replaces a file that is not a vector store but refuses a
-newer format. Vectors keep their own file so keyword rebuilds never touch
+the old rows, and replaces a file that is not a vector store or whose pages
+`PRAGMA quick_check` finds damaged, but refuses a newer format. After a
+generation publish the WAL is truncated, so it does not stay store-sized
+until close, and `embeddings_status` counts the database's rows read-only
+before the store opens. Vectors keep their own file so keyword rebuilds never touch
 them; what WAL with `FULL` promises, why the WAL-reset bug does not reach
-this single-lock, single-writer use, and how to back up a live database
+this single-writer use, and how to back up a live database
 are in `docs/design/reference/sqlite-wal-durability.md`.
 
 **The vault's slot (#1777).** `Vault` holds its vector store in a
@@ -4086,7 +4089,8 @@ touching the store and publishes with `replace_document` /
 `remove_document` passing the token it observed, read before the
 keyword-index rows (a revision the rows miss was published after that
 read), so a write that crosses another writer's returns `"conflict"`; the writer's runners re-queue
-conflicts with a flush and hold provider-failure paths for the next one,
+conflicts with a flush and hold the paths a provider or a store write
+failed for (a full disk, a lock timeout) for the next one,
 outside the pending work that drain status counts. At or above `_BULK_RETOKEN` (64) re-tokens in one pass, one
 `publish_generation` replaces the per-document replaces (each copies the
 whole matrix), holding every row as float32; that publish has no

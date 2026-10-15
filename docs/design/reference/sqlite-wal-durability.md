@@ -225,11 +225,16 @@ page adds only what a read-only connection does to checkpoints.
 
 - **WAL-reset bug affects this usage: no.**
   - The SQLite vector store has one writing process per file.
-  - Inside that process, every write transaction, `checkpoint()` and
-    `close()` (including the automatic checkpoint a commit runs, and the
-    final checkpoint of the last connection's close) happens under the
-    store's single lock. So no two connections write or checkpoint at the
-    same instant.
+  - Inside that process, one thread writes: the index writer runs the
+    vault's write jobs one at a time, and each store serialises its writes,
+    `checkpoint()` and `close()` under its own lock, including the automatic
+    checkpoint a commit runs.
+  - A store object the vault replaces (`VectorStoreSlot.fresh()` drops it
+    without closing it) keeps idle connections to the same file until
+    garbage collection closes them. Only the last connection to close runs a
+    checkpoint (§6) [source: wal-docs], and the replacement store still
+    holds its own connections, so those closes write nothing.
+  - So no two connections write or checkpoint at the same instant.
   - Another process opens the file `mode=ro`, and such a connection cannot
     checkpoint [observed above].
   - **The residual case** is two processes both opening the same file as
