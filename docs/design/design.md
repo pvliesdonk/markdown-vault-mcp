@@ -4004,14 +4004,35 @@ both with `StoreLifecycle`. The numpy backend (`stores/numpy_sidecar.py`)
 holds one immutable snapshot that writers replace in one assignment, so a
 reader never sees a matrix and a row list that disagree. On disk the JSON
 is the commit point and names a matrix written under a new name per
-persist; `replace_document` publishes in memory and becomes durable at
-`checkpoint()`, while `publish_generation` is durable before it returns.
+persist; in this backend `replace_document` publishes in memory and
+becomes durable at `checkpoint()`, while `publish_generation` is durable
+before it returns.
 One process writes a base path at a time, as with the released sidecar:
 two writers would pick the same next matrix name. Another
 process opens it with `owns_files=False`, read-only. A sidecar the
 released `VectorIndex.save` wrote opens unchanged, its rows without tokens;
 after this store's first persist a 5.1 binary finds no `{base}.npy`
 and re-embeds once.
+
+The SQLite backend (`stores/sqlite_vectors.py`, #1497) keeps the same
+resident snapshot (`stores/_resident.py`, shared with numpy) and persists it
+as rows in its own database, `{base}.sqlite3`: `meta` (format version,
+identity, generation), `documents` (path, token) and `chunks` (one float32
+BLOB per vector with its metadata as JSON, and a `folder` column for
+#1377's filter). Each `replace_document` / `remove_document` /
+`publish_generation` is one `BEGIN IMMEDIATE` transaction that checks the
+token the database holds, writes, and commits with `synchronous=FULL`
+before the snapshot is swapped, so a published write is durable when it
+returns and costs the pages of that document, not the corpus (one update
+on a 3,000-document, 14 MB store adds about 29 KB of WAL); a failed one
+changes neither the file nor the reads. `checkpoint()` only folds the WAL.
+No file exists before the first write. `open_fresh` empties the database
+inside its first write's transaction, so a conflict or an interrupt keeps
+the old rows, and replaces a file that is not a vector store but refuses a
+newer format. Vectors keep their own file so keyword rebuilds never touch
+them; what WAL with `FULL` promises, why the WAL-reset bug does not reach
+this single-lock, single-writer use, and how to back up a live database
+are in `docs/design/reference/sqlite-wal-durability.md`.
 
 **The vault's slot (#1777).** `Vault` holds its vector store in a
 `VectorStoreSlot` that opens it on first use through the backend
