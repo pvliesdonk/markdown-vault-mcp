@@ -22,6 +22,7 @@ identity*. *Not configured* cannot happen: no location means in memory.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -39,6 +40,7 @@ from markdown_vault_mcp.exceptions import (
     StoreUnsupportedSchemaError,
 )
 from markdown_vault_mcp.stores._resident import (
+    NUMPY_AVAILABLE,
     ResidentStore,
     Snapshot,
     conflicts,
@@ -54,12 +56,8 @@ from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity
 from markdown_vault_mcp.utils.fs import is_directory, path_exists
 
-try:
+with contextlib.suppress(ImportError):  # numpy is the embeddings extra
     import numpy as np
-
-    _NUMPY_AVAILABLE = True
-except ImportError:  # pragma: no cover - exercised only without the extra
-    _NUMPY_AVAILABLE = False
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -613,7 +611,7 @@ class NumpySidecarBackend:
             StoreUnsupportedSchemaError: If their format is newer.
             StoreIncompatibleError: If they hold another identity.
         """
-        if not _NUMPY_AVAILABLE:  # pragma: no cover - exercised only without the extra
+        if not NUMPY_AVAILABLE:  # pragma: no cover - exercised only without the extra
             raise ImportError(
                 "NumpySidecarBackend requires 'numpy'. "
                 "Install it with: pip install 'markdown-vault-mcp[embeddings]'"
@@ -641,7 +639,7 @@ class NumpySidecarBackend:
         Raises:
             ImportError: If numpy is not installed.
         """
-        if not _NUMPY_AVAILABLE:  # pragma: no cover - exercised only without the extra
+        if not NUMPY_AVAILABLE:  # pragma: no cover - exercised only without the extra
             raise ImportError(
                 "NumpySidecarBackend requires 'numpy'. "
                 "Install it with: pip install 'markdown-vault-mcp[embeddings]'"
