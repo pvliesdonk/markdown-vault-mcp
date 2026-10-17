@@ -627,6 +627,28 @@ class TestWalAfterAGeneration:
         assert size < 64 * 1024, size
         store.close()
 
+    def test_an_open_read_neither_stalls_the_publish_nor_hides_the_skipped_truncate(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import time
+
+        store = _streamed().open(_base(tmp_path), IDENT)
+        store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        reader = sqlite3.connect(_db(tmp_path), isolation_level=None)
+        reader.execute("BEGIN")
+        reader.execute("SELECT * FROM chunks").fetchone()  # a streamed scan's snapshot
+        documents = [doc(f"n{i}.md", [[1, 0, 0]], pad="x" * 400) for i in range(2000)]
+        started = time.monotonic()
+        with caplog.at_level(logging.WARNING):
+            store.publish_generation(IDENT, documents)
+        assert time.monotonic() - started < 2.0
+        assert [r for r in caplog.records if "truncate_busy" in r.msg]
+        reader.execute("ROLLBACK")
+        reader.close()
+        store.close()
+        wal = _db(tmp_path).with_name(_db(tmp_path).name + "-wal")
+        assert (wal.stat().st_size if wal.exists() else 0) < 64 * 1024
+
 
 def _queued_behind_close(store: Any, call: Callable[[], Any]) -> list[Exception]:
     """Run *call* on a thread while a close holds the store's lock; return its error."""

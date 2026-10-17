@@ -1074,16 +1074,29 @@ class SqliteVectorStore(ResidentStore):
         """Fold the WAL into the database and truncate it, best effort.
 
         After a generation publish the WAL holds the whole store; a passive
-        checkpoint folds it but leaves the file that size until close.
+        checkpoint folds it but leaves the file that size until close. The
+        truncate does not wait for readers: a read transaction still open
+        (a streamed scan, here or in another process) makes SQLite skip it,
+        which is logged, and the WAL keeps its size until a later
+        truncate succeeds (#1377).
         """
         if self._registry is None or self._path is None or self._read_only:
             return
         try:
-            self._registry.conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            conn = self._registry.conn()
+            waits = int(conn.execute("PRAGMA busy_timeout").fetchone()[0])
+            conn.execute("PRAGMA busy_timeout = 0")
+            try:
+                busy = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()[0]
+            finally:
+                conn.execute(f"PRAGMA busy_timeout = {waits:d}")
         except sqlite3.Error as exc:
             logger.warning(
                 "sqlite_vector_store_truncate_failed path=%s err=%s", self._where, exc
             )
+            return
+        if busy:
+            logger.warning("sqlite_vector_store_truncate_busy path=%s", self._where)
 
     def close(self) -> None:
         """Fold the WAL away and release the database. Idempotent."""

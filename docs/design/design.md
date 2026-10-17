@@ -4030,7 +4030,10 @@ on a 3,000-document, 14 MB store adds about 29 KB of WAL); a failed one
 leaves the database's rows and the reads as they were. `checkpoint()` only
 folds the WAL, so one that fails loses nothing and is logged rather than
 raised; after a generation publish the WAL is also truncated, so it does
-not stay store-sized until close. No file exists before the first
+not stay store-sized until close. The truncate never waits for a reader:
+while a read transaction is open (a streamed scan, here or in another
+process) it is skipped and logged, and the WAL keeps its size until a
+later truncate, at the next generation or at close. No file exists before the first
 write; a first write that cannot create the database raises *unavailable*,
 logged like any failed write. A writable open takes no write lock on an
 existing store and changes nothing in a database that is not a vector
