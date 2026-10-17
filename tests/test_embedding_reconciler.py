@@ -6,6 +6,7 @@ import logging
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import pytest
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
@@ -19,6 +20,7 @@ from markdown_vault_mcp.types import (
     EmbeddingIdentity,
     SkippedFile,
     SourceState,
+    VectorRow,
 )
 from tests.conftest import MockEmbeddingProvider
 from tests.fixtures.vectors import metadata_by_path
@@ -49,12 +51,16 @@ def _close_indexes() -> Iterator[None]:
         _OPEN.pop().close()
 
 
-def _index(tmp_path: Path, notes: dict[str, str]) -> FTSIndex:
+def _index(
+    tmp_path: Path, notes: dict[str, str], chunker: HeadingChunker | None = None
+) -> FTSIndex:
     fts = FTSIndex(db_path=":memory:")
     _OPEN.append(fts)
     for name, text in notes.items():
         (tmp_path / name).write_text(text)
-        fts.upsert_note(parse_note(tmp_path / name, tmp_path, HeadingChunker()))
+        fts.upsert_note(
+            parse_note(tmp_path / name, tmp_path, chunker or HeadingChunker())
+        )
     return fts
 
 
@@ -76,14 +82,20 @@ def _setup(
     notes: dict[str, str],
     probe: _Probe | None = None,
     excluded: tuple[str, ...] = (),
+    *,
+    chunker: HeadingChunker | None = None,
+    builder: EmbedTextBuilder | None = None,
 ):
-    fts = _index(tmp_path, notes)
+    fts = _index(tmp_path, notes, chunker)
     provider = _Counting()
-    store = NumpySidecarBackend().open(None, EmbeddingIdentity.of(provider, "v1"))
+    builder = builder or EmbedTextBuilder()
+    store = NumpySidecarBackend().open(
+        None, EmbeddingIdentity.of(provider, builder.format_token())
+    )
     reconciler = EmbeddingReconciler(
         fts=fts,
         provider=provider,
-        embed_builder=EmbedTextBuilder(),
+        embed_builder=builder,
         batch_size=4,
         source_probe=probe or _Probe(),
         is_excluded=lambda p: p in excluded,
@@ -578,3 +590,127 @@ class TestBulkRetokenWriteFailures:
         monkeypatch.setattr(store, "publish_generation", read_only)
         with pytest.raises(ReadOnlyError):
             rec.reconcile(store, site="test")
+
+
+SECTIONS = HeadingChunker(short_doc_lines=0)
+SECTIONED = {
+    "s.md": "# S\n\nIntro.\n\n## One\n\nApples.\n\n## Two\n\nBoats.\n\n## End\n\nFin.\n"
+}
+EDITED = SECTIONED["s.md"].replace("Boats", "Barges")
+
+
+def _edit(fts: FTSIndex, tmp_path: Path, name: str, text: str) -> None:
+    (tmp_path / name).write_text(text)
+    fts.upsert_note(parse_note(tmp_path / name, tmp_path, SECTIONS))
+
+
+def _vectors(store: Any, path: str) -> dict[str, np.ndarray]:
+    return {
+        r.metadata["content"]: np.asarray(r.vector, dtype=np.float32)
+        for r in store.rows_for(path)
+    }
+
+
+class TestChunkReuse:
+    def test_only_the_changed_chunk_is_embedded(self, tmp_path):
+        fts, provider, store, rec = _setup(tmp_path, SECTIONED, chunker=SECTIONS)
+        rec.reconcile(store, site="test")
+        _edit(fts, tmp_path, "s.md", EDITED)
+        provider.texts.clear()
+        result = rec.reconcile(store, ["s.md"], site="test")
+        assert (result.embedded, result.reused) == (1, 3)
+        assert len(provider.texts) == 1
+        assert "Barges" in provider.texts[0]
+        token = fts.list_chunks(paths=["s.md"])[0]["content_hash"]
+        assert store.tokens()["s.md"] == token
+
+    def test_moved_sections_embed_nothing_and_their_rows_move(self, tmp_path):
+        fts, provider, store, rec = _setup(tmp_path, SECTIONED, chunker=SECTIONS)
+        rec.reconcile(store, site="test")
+        swapped = (
+            "# S\n\nIntro.\n\n## Two\n\nBoats.\n\n## One\n\nApples.\n\n## End\n\nFin.\n"
+        )
+        _edit(fts, tmp_path, "s.md", swapped)
+        provider.texts.clear()
+        result = rec.reconcile(store, ["s.md"], site="test")
+        assert (result.embedded, result.reused, provider.texts) == (0, 4, [])
+        stored = sorted(
+            (r.metadata["heading"], r.metadata["start_line"])
+            for r in store.rows_for("s.md")
+        )
+        indexed = sorted(
+            (r["heading"], r["start_line"]) for r in fts.list_chunks(paths=["s.md"])
+        )
+        assert stored == indexed
+
+    def test_a_reused_vector_equals_the_stored_one(self, tmp_path):
+        fts, provider, store, rec = _setup(tmp_path, SECTIONED, chunker=SECTIONS)
+        rec.reconcile(store, site="test")
+        before = _vectors(store, "s.md")
+        _edit(fts, tmp_path, "s.md", EDITED)
+        real = provider.embed
+        # A provider that no longer reproduces the stored vectors: only a
+        # chunk that was not sent to it can still carry its stored vector.
+        provider.embed = lambda texts: real([f"salt {t}" for t in texts])  # type: ignore[method-assign]
+        rec.reconcile(store, ["s.md"], site="test")
+        after = _vectors(store, "s.md")
+        kept = [content for content in before if content in after]
+        assert len(kept) == 3
+        for content in kept:
+            np.testing.assert_array_max_ulp(after[content], before[content], maxulp=1)
+
+    def test_a_repeated_new_input_is_embedded_once(self, tmp_path):
+        fts, provider, store, rec = _setup(tmp_path, SECTIONED, chunker=SECTIONS)
+        rec.reconcile(store, site="test")
+        twice = SECTIONED["s.md"].replace("Apples", "Carts").replace("Boats", "Carts")
+        _edit(fts, tmp_path, "s.md", twice.replace("## Two", "## One"))
+        provider.texts.clear()
+        result = rec.reconcile(store, ["s.md"], site="test")
+        assert (result.embedded, result.reused) == (2, 2)
+        assert len(provider.texts) == 1
+
+    def test_a_provider_failure_on_the_changed_chunk_keeps_every_row(self, tmp_path):
+        fts, provider, store, rec = _setup(tmp_path, SECTIONED, chunker=SECTIONS)
+        rec.reconcile(store, site="test")
+        before = metadata_by_path(store)["s.md"]
+        _edit(fts, tmp_path, "s.md", EDITED)
+
+        def down(_texts: list[str]) -> list[list[float]]:
+            raise RuntimeError("provider down")
+
+        provider.embed = down  # type: ignore[method-assign]
+        result = rec.reconcile(store, ["s.md"], site="test")
+        assert (result.kept, result.reused, result.retry) == (4, 0, {"s.md"})
+        assert metadata_by_path(store)["s.md"] == before
+
+    def test_the_first_chunk_preamble_is_part_of_the_reused_input(self, tmp_path):
+        builder = EmbedTextBuilder(searchable_fields=("summary",))
+        note = "---\nsummary: Fruit\n---\n# S\n\nIntro.\n\n## One\n\nApples.\n"
+        fts, provider, store, rec = _setup(
+            tmp_path, {"s.md": note}, chunker=SECTIONS, builder=builder
+        )
+        rec.reconcile(store, site="test")
+        pears = note.replace("Apples", "Pears")
+        _edit(fts, tmp_path, "s.md", pears)
+        provider.texts.clear()
+        result = rec.reconcile(store, ["s.md"], site="test")
+        assert (result.embedded, result.reused) == (1, 1)
+        assert "Pears" in provider.texts[0]
+        _edit(fts, tmp_path, "s.md", pears.replace("Fruit", "Food"))
+        provider.texts.clear()
+        result = rec.reconcile(store, ["s.md"], site="test")
+        assert (result.embedded, result.reused) == (1, 1)
+        assert len(provider.texts) == 1
+        assert "Food" in provider.texts[0]
+
+    def test_a_row_without_its_input_metadata_is_embedded(self, tmp_path):
+        _fts, provider, store, rec = _setup(tmp_path, SECTIONED, chunker=SECTIONS)
+        rec.reconcile(store, site="test")
+        stripped = [
+            VectorRow(r.vector, {k: v for k, v in r.metadata.items() if k != "title"})
+            for r in store.rows_for("s.md")
+        ]
+        store.publish_generation(store.identity, [DocumentRows("s.md", None, stripped)])
+        provider.texts.clear()
+        result = rec.reconcile(store, ["s.md"], site="test")
+        assert (result.embedded, result.reused, len(provider.texts)) == (4, 0, 4)
