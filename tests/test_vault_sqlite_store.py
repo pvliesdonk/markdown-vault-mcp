@@ -309,3 +309,51 @@ def test_a_failed_streamed_read_is_not_an_empty_result(
     finally:
         monkeypatch.undo()
         vault.close()
+
+
+def test_status_reports_a_streamed_store_and_its_files(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "alpha.md").write_text("# Alpha\n\nApples and pears.\n")
+    vault = _streamed_vault(root, tmp_path, embedding_search_workspace_bytes=4096)
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        status = vault.index.embeddings_status()
+        assert status["search_mode"] == "streamed"
+        assert status["search_workspace_bytes"] == 4096
+        assert status["resident_vector_bytes"] == 0
+        assert (
+            status["stored_bytes"]
+            >= (tmp_path / "index-db-embeddings.sqlite3").stat().st_size
+            > 0
+        )
+    finally:
+        vault.close()
+
+
+def test_status_raises_when_a_streamed_store_cannot_be_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "alpha.md").write_text("# Alpha\n\nApples and pears.\n")
+    vault = _streamed_vault(root, tmp_path)
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        store = vault._vectors
+        assert store is not None
+
+        class _Refusing:
+            def execute(self, *_args: object) -> None:
+                raise sqlite3.OperationalError("disk I/O error")
+
+        monkeypatch.setattr(store._registry, "conn", _Refusing)
+        with pytest.raises(StoreUnavailableError):
+            vault.index.embeddings_status()
+    finally:
+        monkeypatch.undo()
+        vault.close()

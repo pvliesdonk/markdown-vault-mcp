@@ -350,6 +350,10 @@ class TestStateLocation:
             "backend": "numpy",
             "identity": None,
             "generation": None,
+            "search_mode": None,
+            "search_workspace_bytes": None,
+            "stored_bytes": None,
+            "resident_vector_bytes": None,
         }
         assert hits == []
         assert installed is None

@@ -40,6 +40,16 @@ Dict with the following fields:
   or null until the store is first opened.
 - generation (int | None): Count of full rebuilds the store has
   published, or null until the store is first opened.
+- `search_mode` (str | None): "resident" when semantic search holds
+  the vectors in memory, "streamed" when each search reads them
+  in batches; null until the store is first opened.
+- `search_workspace_bytes` (int | None): The vector bytes one
+  streamed batch may hold; null when resident.
+- `stored_bytes` (int | None): Measured size of the store's files;
+  null when the vectors are held in memory.
+- `resident_vector_bytes` (int | None): Measured bytes of the
+  vectors held in memory; 0 when streamed. Other memory the
+  server uses is not counted.
 
 <!-- DOMAIN-EXAMPLE-embeddings_status-START -->
 <!-- A worked example for this tool; kept across regeneration. -->

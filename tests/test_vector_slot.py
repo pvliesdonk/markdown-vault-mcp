@@ -141,6 +141,10 @@ class TestLifecycleAndDescription:
             "backend": "numpy",
             "identity": None,
             "generation": None,
+            "search_mode": None,
+            "search_workspace_bytes": None,
+            "stored_bytes": None,
+            "resident_vector_bytes": None,
         }
         slot.writable(rebuild=None)
         assert slot.describe() == {
@@ -153,7 +157,44 @@ class TestLifecycleAndDescription:
                 "dimension": 3,
             },
             "generation": 0,
+            "search_mode": "resident",
+            "search_workspace_bytes": None,
+            "stored_bytes": 0,
+            "resident_vector_bytes": 0,
         }
+
+    def test_describe_a_store_that_reports_no_resources(self) -> None:
+        injected = NumpySidecarBackend().open(None, IDENTITY)
+
+        class _Opaque:
+            """A store that does not report its resources."""
+
+            def __getattr__(self, name: str) -> Any:
+                if name == "resources":
+                    raise AttributeError(name)
+                return getattr(injected, name)
+
+        slot = _slot(None, store=_Opaque())
+        slot.get(rebuild=None)
+        described = slot.describe()
+        assert described["generation"] == 0
+        assert {
+            k: described[k]
+            for k in (
+                "search_mode",
+                "search_workspace_bytes",
+                "stored_bytes",
+                "resident_vector_bytes",
+            )
+        } == dict.fromkeys(
+            (
+                "search_mode",
+                "search_workspace_bytes",
+                "stored_bytes",
+                "resident_vector_bytes",
+            )
+        )
+        injected.close()
 
 
 class TestDimensionOnTheWritePath:

@@ -396,12 +396,28 @@ class EmbeddingsManager:
             Dict with keys ``provider``, ``chunk_count``, ``path``,
             ``available``, and the store's ``backend``, ``identity`` and
             ``generation`` (``None`` until it is opened). ``path`` is
-            ``None`` when the vectors are held in memory (#1708).
+            ``None`` when the vectors are held in memory (#1708). The cost
+            keys (#1377), ``None`` until the store is opened or when it
+            does not report them: ``search_mode`` (``"resident"`` or
+            ``"streamed"``, as the store runs), ``search_workspace_bytes``
+            (configured; ``None`` when resident), ``stored_bytes``
+            (measured size of its files; ``None`` in memory) and
+            ``resident_vector_bytes`` (measured bytes of its resident
+            matrix; ``0`` when streamed).
 
         Raises:
             OSError: If a sidecar file cannot be statted (#1625).
+            StoreOpenError: If a streamed store cannot be read: a status
+                this method cannot determine is not reported (#1625).
         """
-        no_store = {"backend": None, "identity": None, "generation": None}
+        from markdown_vault_mcp.managers._vector_slot import NO_RESOURCES
+
+        no_store = {
+            "backend": None,
+            "identity": None,
+            "generation": None,
+            **NO_RESOURCES,
+        }
         if self._embedding_provider is None:
             # No provider, no store: nothing to describe.
             return {
