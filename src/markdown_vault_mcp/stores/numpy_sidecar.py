@@ -243,16 +243,29 @@ class NumpySidecarStore(ResidentStore):
         snap = self._current()
         stored = None
         if self._base is not None:
-            files = [self._base.with_suffix(".json")]
-            if self._matrix_path is not None:
-                files.append(self._matrix_path)
-            stored = sum(file_bytes(p) for p in files)
+            # A checkpoint may swap and sweep the matrix between reading its
+            # name and stating it; then the files are measured once more.
+            for _attempt in range(2):
+                matrix = self._matrix_path
+                stored = self._stored_bytes(self._base, matrix)
+                if self._matrix_path == matrix:
+                    break
         return StoreResources(
             search_mode="resident",
             search_workspace_bytes=None,
             stored_bytes=stored,
             resident_vector_bytes=int(snap.matrix.nbytes),
         )
+
+    @staticmethod
+    def _stored_bytes(base: Path, matrix: Path | None) -> int:
+        """Return the size of the commit file and *matrix*, a missing one 0.
+
+        Raises:
+            OSError: If a stat is refused (#1625).
+        """
+        files = [base.with_suffix(".json"), *([matrix] if matrix is not None else [])]
+        return sum(file_bytes(p) for p in files)
 
     # -- lifecycle -----------------------------------------------------------
 

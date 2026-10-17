@@ -727,6 +727,29 @@ class TestResources:
         assert r.stored_bytes == sum(p.stat().st_size for p in files)
         store.close()
 
+    def test_a_checkpoint_during_the_measurement_is_measured_again(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        base = tmp_path / "vectors" / "idx-embeddings"
+        store = NumpySidecarBackend().open(base, IDENT)
+        store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        store.checkpoint()
+        store.replace_document(doc("b.md", [[0, 1, 0]]), expected_token=ANY_TOKEN)
+        real = numpy_sidecar.file_bytes
+        fired: list[bool] = []
+
+        def racing(path: Path) -> int:
+            if not fired:  # a flush lands mid-measurement: the matrix is swapped
+                fired.append(True)
+                store.checkpoint()
+            return real(path)
+
+        monkeypatch.setattr(numpy_sidecar, "file_bytes", racing)
+        measured = store.resources().stored_bytes
+        files = [base.with_suffix(".json"), *base.parent.glob("*.npy")]
+        assert measured == sum(p.stat().st_size for p in files)
+        store.close()
+
     def test_a_legacy_sidecar_counts_its_matrix(self, tmp_path: Path) -> None:
         provider = MockEmbeddingProvider(dim=3)
         base = tmp_path / "legacy-embeddings"
