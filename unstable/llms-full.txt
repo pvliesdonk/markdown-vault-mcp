@@ -8399,43 +8399,11 @@ Raises:
 
 ## `NumpySidecarStore(snapshot, *, base, read_only, seq, matrix_path)`
 
+Bases: `ResidentStore`
+
 A vector store held in memory, optionally persisted beside a base path.
 
 Construct through :class:`NumpySidecarBackend`.
-
-### `identity`
-
-The embedding space of the stored rows.
-
-### `generation`
-
-Bumped by each :meth:`publish_generation`.
-
-### `count`
-
-The number of stored rows.
-
-### `search(vector, *, limit=10, predicate=None, folder=None)`
-
-Return the rows nearest *vector*; see :class:`~markdown_vault_mcp.interfaces.VectorReader`.
-
-Raises:
-
-| Type         | Description                                |
-| ------------ | ------------------------------------------ |
-| `ValueError` | If vector is not of the store's dimension. |
-
-### `similar_to_document(path, *, limit=10, predicate=None)`
-
-Return the rows nearest the mean of *path*'s rows, excluding *path*.
-
-### `rows_for(path)`
-
-Return *path*'s rows, vectors normalised, in storage order.
-
-### `tokens()`
-
-Return each stored document's token; `None` when unknown.
 
 ### `replace_document(document, *, expected_token)`
 
