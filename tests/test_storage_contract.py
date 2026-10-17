@@ -119,9 +119,12 @@ class TestRegistry:
             register_backend("keyword", "sqlite", object)  # type: ignore[arg-type]
 
     def test_families_do_not_collide(self) -> None:
-        from markdown_vault_mcp.stores.registry import backend_names
+        from markdown_vault_mcp.stores.registry import get_backend
+        from markdown_vault_mcp.stores.sqlite_keyword import SqliteKeywordBackend
+        from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
 
-        assert "sqlite" not in backend_names("vector")
+        assert get_backend("keyword", "sqlite") is SqliteKeywordBackend
+        assert get_backend("vector", "sqlite") is SqliteVectorBackend
 
 
 class TestVectorValueTypes:

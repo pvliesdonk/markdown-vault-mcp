@@ -30,7 +30,7 @@ from markdown_vault_mcp.types import EmbeddingIdentity, ParsedNote, SourceState
 from tests.conftest import MockEmbeddingProvider
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection
+    from collections.abc import Callable, Collection, Iterator
 
     from markdown_vault_mcp.interfaces import EmbeddingStore, KeywordIndex
 
@@ -180,7 +180,7 @@ class SourceNeutralContract:
     """Convergence from a source with no working tree (spec §4, case 6)."""
 
     @pytest.fixture
-    def world(self, make_store: Callable[..., Any]) -> _World:
+    def world(self, make_store: Callable[..., Any]) -> Iterator[_World]:
         source = DictSource()
         fts = FTSIndex(db_path=":memory:")
         provider = HookedProvider()
@@ -199,7 +199,7 @@ class SourceNeutralContract:
                 is_excluded=lambda _path: False,
             )
 
-        return _World(
+        yield _World(
             source,
             fts,
             provider,
@@ -209,6 +209,7 @@ class SourceNeutralContract:
             writer(fts),
             reads,
         )
+        fts.close()
 
     # -- convergence -------------------------------------------------------
 
