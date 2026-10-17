@@ -26,6 +26,7 @@ from markdown_vault_mcp.types import (
     NoteContext,
     NoteInfo,
 )
+from markdown_vault_mcp.utils import folder_matches
 from markdown_vault_mcp.utils.fts import fts_row_to_note_info as _fts_row_to_note_info
 from tests.fixtures.vectors import StoreWriter
 
@@ -1036,8 +1037,13 @@ def test_folder_scoped_get_similar_keeps_room_for_other_files(
         }
     )
 
-    def fake_similar(_path, *, limit, predicate=None):
-        eligible = [r for r in ranking if predicate is None or predicate(r)]
+    def fake_similar(_path, *, limit, predicate=None, folder=None):
+        eligible = [
+            r
+            for r in ranking
+            if (folder is None or folder_matches(r.get("folder", ""), folder))
+            and (predicate is None or predicate(r))
+        ]
         return [dict(r) for r in eligible[:limit]]
 
     store = search_mgr_with_embeddings._load_vectors()

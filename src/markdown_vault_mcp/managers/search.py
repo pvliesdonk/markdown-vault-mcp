@@ -605,9 +605,9 @@ class SearchManager:
         capped (each needs a per-path lookup, so they cannot ride along in
         the similarity scan), and every candidate they discard is one the
         result list never gets back.  Widening mitigates that; it does not
-        remove it.  The folder scope is treated exactly instead — see
-        :meth:`_folder_predicate` — so it is deliberately not a reason to
-        widen (#1108).
+        remove it.  The folder scope is treated exactly instead — it is
+        passed to the store as ``folder`` — so it is deliberately not a
+        reason to widen (#1108).
 
         Args:
             candidate_limit: The mode's normal candidate cap.
@@ -621,33 +621,6 @@ class SearchManager:
         if not filters and not okf_filters:
             return candidate_limit
         return max(candidate_limit * 4, 200)
-
-    @staticmethod
-    def _folder_predicate(
-        folder: str | None,
-    ) -> Callable[[dict[str, Any]], bool] | None:
-        """Build a vector-row predicate for a folder scope, or ``None``.
-
-        Handing this to the store's ``search`` applies the scope
-        *inside* the similarity scan, so the cap selects the best rows
-        within the folder rather than the best rows in the vault that
-        happen to be in the folder (#1108).
-
-        Args:
-            folder: Folder scope, already folded through
-                :func:`normalize_folder`.  ``None`` means no restriction
-                and yields no predicate.
-
-        Returns:
-            A predicate over vector-row metadata dicts, or ``None``.
-        """
-        if folder is None:
-            return None
-
-        def _in_folder(row: dict[str, Any]) -> bool:
-            return folder_matches(row.get("folder", ""), folder)
-
-        return _in_folder
 
     def _post_filter_semantic_rows(
         self,
@@ -664,12 +637,13 @@ class SearchManager:
         not limited to ``indexed_frontmatter_fields``), *okf_filters*
         against the OKF annotations.  Both need a per-path lookup, which is
         why they cannot ride along in the similarity scan the way the
-        folder scope does (see :meth:`_folder_predicate`), and why callers
+        folder scope does (it is the store's ``folder`` argument), and why callers
         widen the candidate pool for them (see
         :meth:`_widen_for_post_filter`).
 
         The folder scope is deliberately absent: it is applied inside
-        the store's ``search`` before the candidate cap, so repeating
+        the store's ``search`` / ``similar_to_document`` before the
+        candidate cap, so repeating
         it here would be a second place for one rule to live (#1108).
 
         Args:
@@ -1654,7 +1628,7 @@ class SearchManager:
             okf_filters=okf_filters,
         )
         if folder is not None:
-            # The scope itself is exact now — the predicate below runs inside
+            # The scope itself is exact now — the store applies ``folder`` inside
             # the similarity scan — but the pool still has to be wide enough
             # that one long document *inside* the folder cannot fill it and
             # collapse the grouped result to a single file: grouping keeps
@@ -1665,7 +1639,7 @@ class SearchManager:
         raw_results = store.similar_to_document(
             path,
             limit=candidate_limit,
-            predicate=self._folder_predicate(folder),
+            folder=folder,
         )
         raw_results = self._post_filter_semantic_rows(
             raw_results, filters=filters, okf_filters=okf_filters

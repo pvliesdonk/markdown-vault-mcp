@@ -180,6 +180,28 @@ class VectorStoreContract:
         )
         assert paths(filtered) == ["q.md", "r.md"]
 
+    def test_similar_takes_the_folder_and_below_before_the_limit(
+        self, make_store: Callable[..., Any]
+    ) -> None:
+        store = make_store(IDENT)
+        store.replace_document(doc("s.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        for i in range(4):
+            store.replace_document(
+                doc(f"near{i}.md", [[1, 0.01 * i, 0]], folder="other"),
+                expected_token=ANY_TOKEN,
+            )
+        store.replace_document(
+            doc("in.md", [[0, 1, 0]], folder="x"), expected_token=ANY_TOKEN
+        )
+        store.replace_document(
+            doc("deep.md", [[0, 0, 1]], folder="x/y"), expected_token=ANY_TOKEN
+        )
+        store.replace_document(
+            doc("sib.md", [[1, 0, 0]], folder="xy"), expected_token=ANY_TOKEN
+        )
+        results = store.similar_to_document("s.md", limit=2, folder="x")
+        assert sorted(paths(results)) == ["deep.md", "in.md"]
+
     def test_a_cancelling_mean_scores_zero_and_excludes_itself(
         self, make_store: Callable[..., Any]
     ) -> None:

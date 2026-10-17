@@ -466,8 +466,17 @@ class VectorReader(Protocol):
         *,
         limit: int = 10,
         predicate: Callable[[dict[str, Any]], bool] | None = None,
+        folder: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return the rows nearest the mean of *path*'s rows, excluding *path*.
+
+        Args:
+            path: The document whose rows are averaged.
+            limit: Maximum number of rows; zero or less returns ``[]``.
+            predicate: Keeps only the rows it accepts, applied before
+                *limit*.
+            folder: Keeps only rows in this folder or below it, applied
+                before *limit*; a backend may push it down.
 
         Returns:
             As :meth:`search`; ``[]`` when *path* has no rows.

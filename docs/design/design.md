@@ -453,13 +453,14 @@ pool is capped at `max(limit × (chunks_per_file + 4), 1000)`, so on a
 large vault a folder whose chunks all score below that cap was discarded
 wholesale and the call returned `[]` — indistinguishable from a folder
 with no related content, and surfacing its notes needed a `limit` in the
-thousands. The store's `search` / `similar_to_document` therefore take an
-optional `predicate` over each candidate's metadata, applied while
-walking the descending-score order and before the cap, so the cap selects
-the top-k *within* the scope. This costs nothing: the similarity pass is
-a full dot product over every stored chunk regardless of `limit`. Folder
-is the dimension that rides along, because matching it is a string
-compare on metadata the vector store already holds; frontmatter and OKF
+thousands. The store's `search` / `similar_to_document` therefore take the
+folder scope (`folder`), applied before the cap, so the cap selects the
+top-k *within* the scope; a backend may push it into its query. Both also
+take an optional `predicate` over each candidate's metadata, likewise
+applied before the cap. This costs nothing: the similarity pass is a full
+dot product over every stored chunk regardless of `limit`. Folder is the
+dimension that rides along, because every backend holds it beside the
+vector; frontmatter and OKF
 dimensions stay post-hoc (per-path lookups are too expensive to run over
 every chunk — see #875) and keep the widening.
 
@@ -467,7 +468,7 @@ every chunk — see #875) and keep the widening.
 reason than the post-filter one: grouping keeps only `chunks_per_file`
 chunks per path, so a pool filled by one long in-scope document collapses
 the grouped result to a single file however exact the scope is. The
-predicate answers "are these rows in scope"; the widening answers "are
+scope answers "are these rows in scope"; the widening answers "are
 there enough distinct paths among them".
 
 **The `folder` argument has three states, not two** (issue #1106). `None`
