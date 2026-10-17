@@ -3949,6 +3949,18 @@ starting points live under <code>examples/</code>: <code>obsidian-readonly.env</
 <td>Where embeddings are stored. 'numpy' (the default) keeps them in files beside the index; 'sqlite' keeps them in one SQLite database there (index-db-embeddings.sqlite3), each change written durably on its own. Without INDEX_PATH or EMBEDDINGS_PATH both keep them in memory.</td>
 </tr>
 <tr>
+<td><code>MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH</code></td>
+<td><code>resident</code></td>
+<td>No</td>
+<td>How semantic search reads the embeddings. 'resident' (the default) holds them all in memory, the fastest; 'streamed' keeps none in memory and reads them from the store in batches for each search, slower as the vault grows. 'streamed' needs EMBEDDING_STORE=sqlite; vectors kept in memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident.</td>
+</tr>
+<tr>
+<td><code>MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB</code></td>
+<td><code>1</code></td>
+<td>No</td>
+<td>With EMBEDDING_SEARCH=streamed, the embeddings one batch of a search may hold, in MiB (at least 1). It bounds the search's working memory, not the process's.</td>
+</tr>
+<tr>
 <td><code>MARKDOWN_VAULT_MCP_INDEXED_FIELDS</code></td>
 <td>(none)</td>
 <td>No</td>
