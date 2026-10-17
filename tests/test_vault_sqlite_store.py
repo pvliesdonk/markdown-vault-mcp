@@ -281,3 +281,31 @@ def test_a_bad_workspace_from_a_library_caller_is_refused(tmp_path: Path) -> Non
     root.mkdir()
     with pytest.raises(ConfigurationError, match="workspace"):
         _streamed_vault(root, tmp_path, embedding_search_workspace_bytes=0)
+
+
+@pytest.mark.parametrize("mode", ["semantic", "hybrid"])
+def test_a_failed_streamed_read_is_not_an_empty_result(
+    tmp_path: Path, mode: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "alpha.md").write_text("# Alpha\n\nApples and pears.\n")
+    vault = _streamed_vault(root, tmp_path)
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        store = vault._vectors
+        assert store is not None
+
+        class _Refusing:
+            def execute(self, *_args: object) -> None:
+                raise sqlite3.OperationalError("disk I/O error")
+
+        monkeypatch.setattr(store._registry, "conn", _Refusing)
+        with pytest.raises(StoreUnavailableError):
+            vault.reader.search("pears", mode=mode)
+    finally:
+        monkeypatch.undo()
+        vault.close()
