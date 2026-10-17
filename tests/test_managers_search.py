@@ -1006,7 +1006,7 @@ def test_folder_scoped_get_similar_keeps_room_for_other_files(
 ) -> None:
     """A long in-folder document must not crowd every other file out (#1108).
 
-    The folder predicate stops out-of-scope rows from consuming the cap, but
+    The store's folder scope stops out-of-scope rows from consuming the cap, but
     not one in-scope document's own chunks: grouping keeps ``chunks_per_file``
     per path, so a pool filled by a single path collapses to a single result.
     ``get_similar`` has always widened its pool when a folder is given, and

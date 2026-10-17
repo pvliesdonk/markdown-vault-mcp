@@ -13,6 +13,7 @@ import pytest
 from markdown_vault_mcp.exceptions import (
     ReadOnlyError,
     StoreCorruptError,
+    StoreIncompatibleError,
     StoreUnavailableError,
     StoreUnsupportedSchemaError,
 )
@@ -303,6 +304,31 @@ class TestStreamedBackend:
         )
         assert reader.tokens() == {"a.md": "ta", "b.md": "tb"}
         assert reader.count == 2
+        reader.close()
+        owner.close()
+
+    @pytest.mark.parametrize("dimension", [3, 4], ids=["same-width", "wider"])
+    def test_a_reader_refuses_rows_of_another_identity(
+        self, tmp_path: Path, dimension: int
+    ) -> None:
+        _seed(tmp_path)
+        owner = _streamed().open(_base(tmp_path), IDENT)
+        reader = _streamed().open(_base(tmp_path), IDENT, owns_files=False)
+        other = EmbeddingIdentity("fake", "other", "", "v1", dimension)
+        owner.publish_generation(other, [doc("b.md", [[0, 1, 0, 0][:dimension]])])
+        with pytest.raises(StoreIncompatibleError):
+            reader.search([0, 1, 0])
+        with pytest.raises(StoreIncompatibleError):
+            reader.similar_to_document("b.md")
+        reader.close()
+        owner.close()
+
+    def test_a_reader_reports_the_owners_generation(self, tmp_path: Path) -> None:
+        _seed(tmp_path)
+        owner = _streamed().open(_base(tmp_path), IDENT)
+        reader = _streamed().open(_base(tmp_path), IDENT, owns_files=False)
+        owner.publish_generation(IDENT, [doc("b.md", [[0, 1, 0]])])
+        assert reader.generation == owner.generation == 1
         reader.close()
         owner.close()
 

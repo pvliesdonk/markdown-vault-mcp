@@ -441,7 +441,8 @@ which thinned duplicates but did not group them.
 `search`. The frontmatter and OKF dimensions are applied post-hoc via the
 shared `_post_filter_semantic_rows` helper (the vector store carries no
 structured metadata, and each dimension needs a per-path lookup); the
-folder scope is not, and lives solely in the scan-time predicate below. The
+folder scope is not, and lives solely in the store's `folder` argument
+below. The
 post-filter matches against full frontmatter, so — unlike keyword-mode
 `search` filters — it is not limited to `indexed_frontmatter_fields`; the
 candidate pool is widened (×4, floor 200) when either is active so narrow
@@ -4048,7 +4049,10 @@ live database are in `docs/design/reference/sqlite-wal-durability.md`.
 modes, fixed when its backend opens it. *Resident* holds every row in the
 shared snapshot: a float32 matrix of 4 × chunks × dimension bytes plus each
 chunk's metadata, including its text. *Streamed* keeps only the identity
-and generation: each read is one SQL read transaction, `tokens`, `count`
+and generation: each read is one SQL read transaction that starts by
+reading the identity and generation the database holds, since another
+process may have published since open (another identity is refused as
+incompatible, never scored); `tokens`, `count`
 and `rows_for` are queries, and `search` / `similar_to_document` scan
 `(id, vector)` rows a batch at a time (`stores/_streamed.py`), keeping the
 running top *limit*, then read the winners' metadata by id in the same

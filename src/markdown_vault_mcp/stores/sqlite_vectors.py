@@ -140,6 +140,7 @@ _ANY_ROW = "SELECT 1 FROM chunks LIMIT 1"
 _ROW_METADATA = "SELECT metadata FROM chunks WHERE id = ?"
 _DOCUMENT_ROWS = "SELECT vector, metadata FROM chunks WHERE path = ? ORDER BY ordinal"
 _HOLDS_DOCUMENT = "SELECT 1 FROM documents WHERE path = ?"
+_STATE = "SELECT key, value FROM meta WHERE key IN ('identity', 'generation')"
 
 _T = TypeVar("_T")
 
@@ -614,6 +615,25 @@ def stored_chunk_count(location: Path | str) -> int:
         registry.close()
 
 
+def _live_state(conn: sqlite3.Connection, snap: Snapshot, where: str) -> Snapshot:
+    """Return the identity and generation the database holds now, as a snapshot.
+
+    Another process may have published since this store opened; a read
+    must score the rows it reads with their own identity, or refuse them.
+
+    Raises:
+        StoreIncompatibleError: If the database now holds another identity.
+        StoreCorruptError: If the identity or generation is malformed.
+    """
+    meta = {str(k): str(v) for k, v in conn.execute(_STATE)}
+    stored = _stored_identity(meta.get("identity"), where)
+    if stored is None:
+        return snap
+    served = _served_identity(stored, snap.identity, where)
+    generation = _count(meta.get("generation", "0"), "generation", where)
+    return hollow_snapshot(served, generation)
+
+
 def _row_count(conn: sqlite3.Connection, _snap: Snapshot) -> int:
     return int(conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
 
@@ -725,10 +745,13 @@ class SqliteVectorStore(ResidentStore):
         """Run *read* in one read transaction; *empty* when there is nothing to read.
 
         Before the database exists, and until a fresh store's first write
-        commits, the store is empty whatever the file holds.
+        commits, the store is empty whatever the file holds. *read* gets the
+        identity and generation the database holds at this transaction.
 
         Raises:
             RuntimeError: If the store is closed.
+            StoreIncompatibleError: If another process has since published
+                another identity.
             StoreCorruptError: If the database or a row is damaged.
             StoreUnavailableError: If the database cannot be read.
         """
@@ -740,7 +763,7 @@ class SqliteVectorStore(ResidentStore):
             conn = registry.conn()
             conn.execute("BEGIN")
             try:
-                return read(conn, snap)
+                return read(conn, _live_state(conn, snap, self._where))
             finally:
                 with contextlib.suppress(sqlite3.Error):
                     conn.execute("ROLLBACK")
@@ -776,6 +799,15 @@ class SqliteVectorStore(ResidentStore):
         return self._reading(read, [])
 
     @property
+    def generation(self) -> int:
+        """Bumped by each ``publish_generation``, whichever process published."""
+        if not self._streamed:
+            return super().generation
+        return self._reading(
+            lambda _conn, snap: snap.generation, self._current().generation
+        )
+
+    @property
     def count(self) -> int:
         """The number of stored rows."""
         return self._reading(_row_count, 0) if self._streamed else super().count
@@ -808,6 +840,8 @@ class SqliteVectorStore(ResidentStore):
         Raises:
             ValueError: If *vector* is not of the store's dimension.
             RuntimeError: If the store is closed.
+            StoreIncompatibleError: If a streamed read finds another identity
+                published since open.
             StoreCorruptError: If a streamed read meets a damaged row.
             StoreUnavailableError: If a streamed read cannot read the database.
         """
@@ -834,6 +868,8 @@ class SqliteVectorStore(ResidentStore):
 
         Raises:
             RuntimeError: If the store is closed.
+            StoreIncompatibleError: If a streamed read finds another identity
+                published since open.
             StoreCorruptError: If a streamed read meets a damaged row.
             StoreUnavailableError: If a streamed read cannot read the database.
         """
@@ -939,7 +975,12 @@ class SqliteVectorStore(ResidentStore):
         Raises:
             ReadOnlyError: If the store was opened read-only.
             StoreUnavailableError: If the first write cannot create the
-                database; nothing changed.
+                database, or a streamed store cannot read whether it holds
+                *path*; nothing changed.
+            StoreIncompatibleError: If a streamed store finds another
+                identity published since open; nothing changed.
+            StoreCorruptError: If a streamed store finds the database
+                damaged; nothing changed.
             sqlite3.Error: If the write fails; nothing changed.
         """
         with self._lock:
