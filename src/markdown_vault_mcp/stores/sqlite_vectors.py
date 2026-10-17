@@ -69,6 +69,7 @@ from markdown_vault_mcp.stores._resident import (
 )
 from markdown_vault_mcp.stores._streamed import (
     DEFAULT_WORKSPACE_BYTES,
+    batches,
     folder_params,
     rows_per_batch,
     scan,
@@ -693,12 +694,10 @@ def _streamed_rows(
     )
     width = len(request.query) * 4
     winners = scan(
-        cursor,
+        batches(cursor, batch_rows, keep),
         request.query,
         limit=request.limit,
-        batch_rows=batch_rows,
         check_blob=lambda blob: _checked_blob(blob, width, where),
-        keep=keep,
     )
     return [
         {

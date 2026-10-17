@@ -11,6 +11,7 @@ import pytest
 from markdown_vault_mcp.stores import _streamed
 from markdown_vault_mcp.stores._streamed import (
     DEFAULT_WORKSPACE_BYTES,
+    batches,
     folder_params,
     rows_per_batch,
     scan,
@@ -63,10 +64,9 @@ class TestScan:
         _fill(table, vectors)
         query = rng.normal(size=8).astype(np.float32)
         got = scan(
-            table.execute("SELECT id, vector FROM t"),
+            batches(table.execute("SELECT id, vector FROM t"), batch_rows),
             query,
             limit=limit,
-            batch_rows=batch_rows,
             check_blob=lambda b: b,  # type: ignore[arg-type,return-value]
         )
         scores = vectors @ query
@@ -86,12 +86,14 @@ class TestScan:
         )
         _fill(table, vectors)
         got = scan(
-            table.execute("SELECT id, vector FROM t"),
+            batches(
+                table.execute("SELECT id, vector FROM t"),
+                4,
+                keep=lambda row: row[0] > 20,
+            ),
             np.array([1, 0], np.float32),
             limit=5,
-            batch_rows=4,
             check_blob=lambda b: b,  # type: ignore[arg-type,return-value]
-            keep=lambda row: row[0] > 20,
         )
         assert [rowid for rowid, _ in got] == [25, 24, 23, 22, 21]
 
@@ -110,10 +112,9 @@ class TestScan:
 
         monkeypatch.setattr(_streamed, "merged", recording)
         scan(
-            table.execute("SELECT id, vector FROM t"),
+            batches(table.execute("SELECT id, vector FROM t"), 9),
             np.ones(4, np.float32),
             limit=6,
-            batch_rows=9,
             check_blob=lambda b: b,  # type: ignore[arg-type,return-value]
         )
         assert len(seen) == 12  # ceil(100 / 9)
@@ -122,10 +123,9 @@ class TestScan:
 
     def test_an_empty_cursor_returns_nothing(self, table: sqlite3.Connection) -> None:
         got = scan(
-            table.execute("SELECT id, vector FROM t"),
+            batches(table.execute("SELECT id, vector FROM t"), 2),
             np.ones(2, np.float32),
             limit=3,
-            batch_rows=2,
             check_blob=lambda b: b,  # type: ignore[arg-type,return-value]
         )
         assert got == []
@@ -139,7 +139,7 @@ class TestScan:
         cursor = table.execute("SELECT id, vector FROM t")
         query = np.ones(2, np.float32)
         with pytest.raises(ValueError, match="bad width"):
-            scan(cursor, query, limit=1, batch_rows=2, check_blob=refuse)
+            scan(batches(cursor, 2), query, limit=1, check_blob=refuse)
 
 
 class TestFolderParams:

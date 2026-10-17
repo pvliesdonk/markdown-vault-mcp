@@ -1,7 +1,7 @@
 """Bounded exact search over a vector table, a batch at a time (#1377).
 
 A scan reads rows of ``(rowid, vector BLOB, ...)`` from a cursor at most
-``batch_rows`` at a time, scores each batch against a unit query, and keeps
+``batch_rows`` at a time (:func:`batches`), scores each batch against a unit query, and keeps
 a running top *limit*. A row outside the top *limit* of the rows seen so
 far cannot be in the final one, so the result is exact; rows of equal score
 may order differently from a full sort. Working memory is one batch plus
@@ -19,7 +19,7 @@ with contextlib.suppress(ImportError):  # numpy is the embeddings extra
 
 if TYPE_CHECKING:
     import sqlite3
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
 
 #: The default search workspace: bytes of vector data per batch (#1377).
 DEFAULT_WORKSPACE_BYTES = 1 << 20
@@ -84,25 +84,41 @@ def merged(
     return all_ids[keep], all_scores[keep]
 
 
-def scan(
+def batches(
     cursor: sqlite3.Cursor,
+    batch_rows: int,
+    keep: Callable[[Sequence[Any]], bool] | None = None,
+) -> Iterator[list[Any]]:
+    """Yield *cursor*'s rows at most *batch_rows* at a time, *keep*'s choice only.
+
+    Args:
+        cursor: The rows to read.
+        batch_rows: The most rows fetched at once.
+        keep: Keeps only the rows it accepts, before a batch is scored.
+
+    Yields:
+        One batch of rows; possibly empty when *keep* refused them all.
+    """
+    while batch := cursor.fetchmany(batch_rows):
+        yield batch if keep is None else [row for row in batch if keep(row)]
+
+
+def scan(
+    batched: Iterable[Sequence[Sequence[Any]]],
     query: Any,
     *,
     limit: int,
-    batch_rows: int,
     check_blob: Callable[[object], bytes],
-    keep: Callable[[Sequence[Any]], bool] | None = None,
 ) -> list[tuple[int, float]]:
-    """Return the *limit* rows of *cursor* nearest *query*, most similar first.
+    """Return the *limit* rows nearest *query*, most similar first.
 
     Args:
-        cursor: Rows whose ``[0]`` is the rowid and ``[1]`` a float32
-            little-endian vector of ``len(query)`` values.
+        batched: Batches of rows (see :func:`batches`) whose ``[0]`` is the
+            rowid and ``[1]`` a float32 little-endian vector of
+            ``len(query)`` values.
         query: The unit query vector, float32.
         limit: How many rows to return; positive.
-        batch_rows: The most rows held at once.
         check_blob: Returns a vector BLOB of the right width or raises.
-        keep: Keeps only the rows it accepts, before a batch is cut.
 
     Returns:
         ``(rowid, score)`` pairs.
@@ -110,11 +126,9 @@ def scan(
     dimension = len(query)
     best_ids = np.empty(0, dtype=np.int64)
     best_scores = np.empty(0, dtype=np.float32)
-    while batch := cursor.fetchmany(batch_rows):
-        if keep is not None:
-            batch = [row for row in batch if keep(row)]
-            if not batch:
-                continue
+    for batch in batched:
+        if not batch:
+            continue
         ids = np.fromiter((row[0] for row in batch), dtype=np.int64, count=len(batch))
         matrix = np.frombuffer(
             b"".join(check_blob(row[1]) for row in batch), dtype="<f4"
