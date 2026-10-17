@@ -43,7 +43,7 @@ src/markdown_vault_mcp/
     _ranking.py        -- pure ranking pipeline: downweight/boost/grouping/snippets (#759)
   stores/
     __init__.py        -- store backends package; exports nothing, import a backend from its module (#1766)
-    _resident.py       -- Snapshot and ResidentStore: the resident float32 matrix, rows and tokens both vector backends read from, and the next-snapshot builders (#1497)
+    _resident.py       -- Snapshot and ResidentStore: the resident float32 matrix, rows and tokens the numpy store and a resident-mode SQLite store read from, and the next-snapshot builders (#1497, #1377)
     _streamed.py       -- the bounded exact scan: rows per batch, the folder condition's parameters, a running top-limit over a cursor (#1377)
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as a JSON commit point naming a per-persist matrix; reads legacy VectorIndex sidecars (#1767)
     registry.py        -- the (family, name) registry of backend factories: register_backend/get_backend/backend_names (#1766)

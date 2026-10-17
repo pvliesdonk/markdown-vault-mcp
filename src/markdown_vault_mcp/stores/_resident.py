@@ -1,4 +1,7 @@
-"""The resident vector snapshot both built-in stores read from (#1497).
+"""The resident vector snapshot the built-in stores read from (#1497).
+
+The numpy store always reads from it, the SQLite store in its resident
+mode; a streamed SQLite store keeps only a rowless one (#1377).
 
 Rows live in memory as one float32 matrix with a parallel metadata list,
 held together with the tokens, identity and generation in one immutable
@@ -190,6 +193,7 @@ def generation_snapshot(
 class ResidentStore:
     """The reads of a store served from an installed :class:`Snapshot`.
 
+    A streamed SQLite store overrides these reads with queries (#1377).
     A subclass publishes: it builds the next snapshot, persists it, and
     assigns it to ``_snap`` under ``_lock``.
 

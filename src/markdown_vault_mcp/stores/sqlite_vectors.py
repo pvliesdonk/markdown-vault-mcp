@@ -70,6 +70,7 @@ from markdown_vault_mcp.stores._resident import (
 from markdown_vault_mcp.stores._streamed import (
     DEFAULT_WORKSPACE_BYTES,
     batches,
+    blob_matrix,
     folder_params,
     rows_per_batch,
     scan,
@@ -141,6 +142,7 @@ _ANY_ROW = "SELECT 1 FROM chunks LIMIT 1"
 _ROW_METADATA = "SELECT metadata FROM chunks WHERE id = ?"
 _DOCUMENT_ROWS = "SELECT vector, metadata FROM chunks WHERE path = ? ORDER BY ordinal"
 _HOLDS_DOCUMENT = "SELECT 1 FROM documents WHERE path = ?"
+_DOCUMENT_VECTORS = "SELECT vector FROM chunks WHERE path = ?"
 _STATE = "SELECT key, value FROM meta WHERE key IN ('identity', 'generation')"
 
 _T = TypeVar("_T")
@@ -660,6 +662,24 @@ def _document_rows(
     ]
 
 
+def _document_mean(
+    conn: sqlite3.Connection, path: str, dimension: int, batch_rows: int, where: str
+) -> Any | None:
+    """Return the mean of *path*'s vectors, read a batch at a time; ``None`` if none.
+
+    Raises:
+        StoreCorruptError: If a vector is of the wrong width.
+    """
+    width = dimension * 4
+    total = np.zeros(dimension, dtype=np.float64)
+    count = 0
+    for batch in batches(conn.execute(_DOCUMENT_VECTORS, (path,)), batch_rows):
+        blobs = [_checked_blob(row[0], width, where) for row in batch]
+        total += blob_matrix(blobs, dimension).sum(axis=0, dtype=np.float64)
+        count += len(blobs)
+    return (total / count).astype(np.float32) if count else None
+
+
 def _query_unit(vector: Sequence[float], dimension: int) -> Any:
     """Return *vector* as a unit float32 query, refusing another dimension.
 
@@ -780,11 +800,11 @@ class SqliteVectorStore(ResidentStore):
             if conn.execute(_ANY_ROW).fetchone() is None:
                 return []
             dimension = snap.identity.dimension
+            batch_rows = rows_per_batch(self._workspace_bytes, dimension)
             if path is not None:
-                own = _document_rows(conn, path, dimension, self._where)
-                if not own:
+                mean = _document_mean(conn, path, dimension, batch_rows, self._where)
+                if mean is None:
                     return []
-                mean = np.mean(np.asarray([r.vector for r in own], np.float32), axis=0)
                 todo = dataclasses.replace(
                     request, query=unit_vector(mean), exclude=path
                 )
@@ -792,14 +812,21 @@ class SqliteVectorStore(ResidentStore):
                 todo = dataclasses.replace(
                     request, query=_query_unit(request.query, dimension)
                 )
-            batch_rows = rows_per_batch(self._workspace_bytes, dimension)
             return _streamed_rows(conn, todo, batch_rows, self._where)
 
         return self._reading(read, [])
 
     @property
     def generation(self) -> int:
-        """Bumped by each ``publish_generation``, whichever process published."""
+        """Bumped by each ``publish_generation``, whichever process published.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreIncompatibleError: If a streamed read finds another identity
+                published since open.
+            StoreCorruptError: If a streamed read finds the database damaged.
+            StoreUnavailableError: If a streamed read cannot read the database.
+        """
         if not self._streamed:
             return super().generation
         return self._reading(
@@ -808,15 +835,39 @@ class SqliteVectorStore(ResidentStore):
 
     @property
     def count(self) -> int:
-        """The number of stored rows."""
+        """The number of stored rows.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreIncompatibleError: If a streamed read finds another identity
+                published since open.
+            StoreCorruptError: If a streamed read finds the database damaged.
+            StoreUnavailableError: If a streamed read cannot read the database.
+        """
         return self._reading(_row_count, 0) if self._streamed else super().count
 
     def tokens(self) -> dict[str, RevisionToken | None]:
-        """Return each stored document's token; ``None`` when unknown."""
+        """Return each stored document's token; ``None`` when unknown.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreIncompatibleError: If a streamed read finds another identity
+                published since open.
+            StoreCorruptError: If a streamed read finds the database damaged.
+            StoreUnavailableError: If a streamed read cannot read the database.
+        """
         return self._reading(_stored_tokens, {}) if self._streamed else super().tokens()
 
     def rows_for(self, path: str) -> list[VectorRow]:
-        """Return *path*'s rows, vectors normalised, in storage order."""
+        """Return *path*'s rows, vectors normalised, in storage order.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreIncompatibleError: If a streamed read finds another identity
+                published since open.
+            StoreCorruptError: If a streamed read finds the database damaged.
+            StoreUnavailableError: If a streamed read cannot read the database.
+        """
         if not self._streamed:
             return super().rows_for(path)
         return self._reading(

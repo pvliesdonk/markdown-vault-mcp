@@ -84,6 +84,19 @@ def merged(
     return all_ids[keep], all_scores[keep]
 
 
+def blob_matrix(blobs: Sequence[bytes], dimension: int) -> Any:
+    """Return float32 little-endian *blobs* as one ``(len(blobs), dimension)`` matrix.
+
+    Args:
+        blobs: Vectors of ``4 * dimension`` bytes each, already checked.
+        dimension: Their dimension.
+
+    Returns:
+        A read-only float32 matrix over one joined buffer.
+    """
+    return np.frombuffer(b"".join(blobs), dtype="<f4").reshape(len(blobs), dimension)
+
+
 def batches(
     cursor: sqlite3.Cursor,
     batch_rows: int,
@@ -130,9 +143,7 @@ def scan(
         if not batch:
             continue
         ids = np.fromiter((row[0] for row in batch), dtype=np.int64, count=len(batch))
-        matrix = np.frombuffer(
-            b"".join(check_blob(row[1]) for row in batch), dtype="<f4"
-        ).reshape(len(batch), dimension)
+        matrix = blob_matrix([check_blob(row[1]) for row in batch], dimension)
         best_ids, best_scores = merged(
             best_ids, best_scores, ids, matrix @ query, limit
         )

@@ -458,8 +458,10 @@ thousands. The store's `search` / `similar_to_document` therefore take the
 folder scope (`folder`), applied before the cap, so the cap selects the
 top-k *within* the scope; a backend may push it into its query. Both also
 take an optional `predicate` over each candidate's metadata, likewise
-applied before the cap. This costs nothing: the similarity pass is a full
-dot product over every stored chunk regardless of `limit`. Folder is the
+applied before the cap. On a resident store this costs nothing: the
+similarity pass is a full dot product over every stored chunk regardless
+of `limit`; a streamed store filters the scope in SQL, and a predicate
+costs it decoding each batch's metadata (Search memory, below). Folder is the
 dimension that rides along, because every backend holds it beside the
 vector; frontmatter and OKF
 dimensions stay post-hoc (per-path lookups are too expensive to run over
@@ -4016,15 +4018,16 @@ released `VectorIndex.save` wrote opens unchanged, its rows without tokens;
 after this store's first persist a 5.1 binary finds no `{base}.npy`
 and re-embeds once.
 
-The SQLite backend (`stores/sqlite_vectors.py`, #1497) keeps the same
-resident snapshot (`stores/_resident.py`, shared with numpy) and persists it
-as rows in its own database, `{base}.sqlite3`: `meta` (format version,
-identity, generation), `documents` (path, token) and `chunks` (one float32
-BLOB per vector with its metadata as JSON, and a `folder` column for
-#1377's filter). Each `replace_document` / `remove_document` /
-`publish_generation` is one `BEGIN IMMEDIATE` transaction that checks the
-token the database holds, writes, and commits with `synchronous=FULL`
-before the snapshot is swapped, so a published write is durable when it
+The SQLite backend (`stores/sqlite_vectors.py`, #1497) keeps its rows in
+its own database, `{base}.sqlite3`: `meta` (format version, identity,
+generation), `documents` (path, token) and `chunks` (one float32 BLOB per
+vector with its metadata as JSON, and a `folder` column for #1377's
+filter). In resident mode it serves them from the same resident snapshot
+as numpy (`stores/_resident.py`); streamed mode is below. Each
+`replace_document` / `remove_document` / `publish_generation` is one
+`BEGIN IMMEDIATE` transaction that checks the token the database holds,
+writes, and commits with `synchronous=FULL` before a resident snapshot is
+swapped, so a published write is durable when it
 returns and costs the pages of that document, not the corpus (one update
 on a 3,000-document, 14 MB store adds about 29 KB of WAL); a failed one
 leaves the database's rows and the reads as they were. `checkpoint()` only
@@ -4057,8 +4060,9 @@ reading the identity and generation the database holds, since another
 process may have published since open (another identity is refused as
 incompatible, never scored); `tokens`, `count`
 and `rows_for` are queries, and `search` / `similar_to_document` scan
-`(id, vector)` rows a batch at a time (`stores/_streamed.py`), keeping the
-running top *limit*, then read the winners' metadata by id in the same
+`(id, vector)` rows a batch at a time (`stores/_streamed.py`; the source
+document of `similar_to_document` is averaged a batch at a time too),
+keeping the running top *limit*, then read the winners' metadata by id in the same
 transaction, so a write committed meanwhile is not mixed in. The folder
 scope is a condition on the `folder` column; an arbitrary predicate makes
 the scan read and decode each batch's metadata before the batch is cut.

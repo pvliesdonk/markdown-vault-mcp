@@ -115,6 +115,36 @@ class TestBound:
         assert max(k for _, k in seen) <= 4
 
 
+class TestSimilarBound:
+    def test_the_source_document_is_averaged_a_batch_at_a_time(
+        self, tmp_path: Path
+    ) -> None:
+        import tracemalloc
+
+        dim = 256
+        ident = EmbeddingIdentity("fake", "m", "", "v1", dim)
+        store = SqliteVectorBackend(
+            search="streamed", workspace_bytes=dim * 4 * 8
+        ).open(tmp_path / "s", ident)
+        rng = np.random.default_rng(9)
+        big = doc("big.md", rng.normal(size=(2000, dim)).tolist())
+        store.replace_document(big, expected_token=ANY_TOKEN)
+        store.replace_document(
+            doc("small.md", rng.normal(size=(1, dim)).tolist()),
+            expected_token=ANY_TOKEN,
+        )
+        raw = 2000 * dim * 4
+        tracemalloc.start()
+        try:
+            results = store.similar_to_document("big.md", limit=1)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert [r["path"] for r in results] == ["small.md"]
+        assert peak < raw / 4, (peak, raw)
+        store.close()
+
+
 class TestConsistency:
     def test_a_write_committed_mid_scan_is_not_seen(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
