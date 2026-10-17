@@ -76,6 +76,7 @@ logger = logging.getLogger(__name__)
 FORMAT_VERSION = 2
 
 _BACKEND_NAME = "numpy"
+_COMMIT_SUFFIX = ".json"
 
 
 def _matrix_path(base: Path, seq: int) -> Path:
@@ -264,7 +265,10 @@ class NumpySidecarStore(ResidentStore):
         Raises:
             OSError: If a stat is refused (#1625).
         """
-        files = [base.with_suffix(".json"), *([matrix] if matrix is not None else [])]
+        files = [
+            base.with_suffix(_COMMIT_SUFFIX),
+            *([matrix] if matrix is not None else []),
+        ]
         return sum(file_bytes(p) for p in files)
 
     # -- lifecycle -----------------------------------------------------------
@@ -284,7 +288,7 @@ class NumpySidecarStore(ResidentStore):
         _write_atomic(
             matrix_path, lambda fh: np.save(fh, np.ascontiguousarray(snap.matrix))
         )
-        _commit_file(self._base.with_suffix(".json"), data)
+        _commit_file(self._base.with_suffix(_COMMIT_SUFFIX), data)
         self._seq, self._matrix_path = seq, matrix_path
         _sweep(self._base, matrix_path)
         logger.debug(
@@ -564,7 +568,7 @@ def _open_file(
     base: Path, identity: EmbeddingIdentity, *, read_only: bool
 ) -> NumpySidecarStore:
     where = str(base)
-    json_path, legacy = base.with_suffix(".json"), base.with_suffix(".npy")
+    json_path, legacy = base.with_suffix(_COMMIT_SUFFIX), base.with_suffix(".npy")
     try:
         if path_exists(base.parent) and not is_directory(base.parent):
             raise _outcome(
