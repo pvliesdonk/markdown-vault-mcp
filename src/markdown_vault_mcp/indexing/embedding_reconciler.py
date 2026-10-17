@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.embed_text import is_embeddable
+from markdown_vault_mcp.exceptions import ReadOnlyError
 from markdown_vault_mcp.types import DocumentRows, VectorRow
 
 if TYPE_CHECKING:
@@ -58,13 +59,13 @@ class ReconcileResult:
         embedded: Chunks embedded and published.
         removed: Rows removed.
         retokened: Documents republished under a new token without embedding.
-        kept: Chunks left as they were: the provider failed or the store
-            refused a vector.
+        kept: Chunks left as they were: the provider failed, the store
+            refused a vector, or a store write failed.
         up_to_date: Chunks already converged.
         conflicts: Paths another writer changed underneath; the caller
             re-queues them for another flush.
-        retry: Paths the provider failed for; their rows stay, and the
-            caller keeps them dirty for the next flush.
+        retry: Paths the provider or a store write failed for; their rows
+            stay, and the caller keeps them dirty for the next flush.
     """
 
     embedded: int = 0
@@ -261,9 +262,16 @@ class EmbeddingReconciler:
     def _remove(self, state: _Pass, path: str) -> None:
         """Remove *path*'s rows, conditional on the token observed."""
         removed = len(state.store.rows_for(path))
-        outcome = state.store.remove_document(
-            path, expected_token=state.stored.get(path)
-        )
+        try:
+            outcome = state.store.remove_document(
+                path, expected_token=state.stored.get(path)
+            )
+        except ReadOnlyError:
+            raise
+        except Exception as exc:
+            # Broad by design: each backend raises its own I/O error.
+            self._write_failed(state, path, removed, exc)
+            return
         if outcome == "conflict":
             self._conflict(state, path)
             return
@@ -326,6 +334,12 @@ class EmbeddingReconciler:
                 exc,
             )
             return
+        except ReadOnlyError:
+            raise
+        except Exception as exc:
+            # Broad by design: each backend raises its own I/O error.
+            self._write_failed(state, doc.path, len(doc.texts), exc)
+            return
         if outcome == "conflict":
             self._conflict(state, doc.path)
             return
@@ -350,10 +364,17 @@ class EmbeddingReconciler:
         if len(docs) < _BULK_RETOKEN:
             for doc in docs:
                 rows = state.store.rows_for(doc.path)
-                outcome = state.store.replace_document(
-                    DocumentRows(doc.path, doc.token, rows),
-                    expected_token=state.stored.get(doc.path),
-                )
+                try:
+                    outcome = state.store.replace_document(
+                        DocumentRows(doc.path, doc.token, rows),
+                        expected_token=state.stored.get(doc.path),
+                    )
+                except ReadOnlyError:
+                    raise
+                except Exception as exc:
+                    # Broad by design: each backend raises its own I/O error.
+                    self._write_failed(state, doc.path, len(rows), exc)
+                    continue
                 if outcome == "conflict":
                     self._conflict(state, doc.path)
                 else:
@@ -453,6 +474,23 @@ class EmbeddingReconciler:
             )
             last_decile = _log_progress(end, total, started, last_decile)
         return kept
+
+    @staticmethod
+    def _write_failed(state: _Pass, path: str, chunks: int, exc: Exception) -> None:
+        """Keep *path*'s rows after a store write failed, for the next flush.
+
+        A store that writes durably raises its own I/O errors (a full disk,
+        a lock timeout); like a provider failure, it costs this path, not
+        the pass (#1497).
+        """
+        state.result.kept += chunks
+        state.result.retry.add(path)
+        logger.warning(
+            "embedding_reconcile_write_failed site=%s path=%s err=%s",
+            state.site,
+            path,
+            exc,
+        )
 
     @staticmethod
     def _conflict(state: _Pass, path: str) -> None:

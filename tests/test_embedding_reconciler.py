@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 from typing import TYPE_CHECKING, Any
+
+import pytest
 
 from markdown_vault_mcp.embed_text import EmbedTextBuilder
 from markdown_vault_mcp.fts_index import FTSIndex
@@ -22,8 +25,6 @@ from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 class _Counting(MockEmbeddingProvider):
@@ -394,3 +395,59 @@ class TestRemovalRule:
             if r.msg.startswith("embedding_reconcile_source_unavailable")
         ]
         assert len(unavailable) == 1
+
+
+class _FailingWrites:
+    """A store whose writes for one path fail as an I/O fault would."""
+
+    def __init__(self, inner: Any, path: str) -> None:
+        self._inner = inner
+        self._path = path
+
+    def replace_document(self, document: DocumentRows, *, expected_token: Any) -> str:
+        if document.path == self._path:
+            raise sqlite3.OperationalError("database or disk is full")
+        return self._inner.replace_document(document, expected_token=expected_token)
+
+    def remove_document(self, path: str, *, expected_token: Any) -> str:
+        if path == self._path:
+            raise sqlite3.OperationalError("database or disk is full")
+        return self._inner.remove_document(path, expected_token=expected_token)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+
+class TestStoreWriteFailures:
+    def test_a_failed_write_is_retried_and_the_pass_continues(self, tmp_path, caplog):
+        _fts, _provider, store, rec = _setup(tmp_path, NOTES)
+        with caplog.at_level(logging.WARNING):
+            result = rec.reconcile(_FailingWrites(store, "a.md"), site="test")
+        assert result.retry == {"a.md"}
+        assert set(store.tokens()) == {"b.md"}
+        assert any(
+            r.msg.startswith("embedding_reconcile_write_failed") for r in caplog.records
+        )
+
+    def test_a_failed_removal_is_retried(self, tmp_path):
+        fts, _provider, store, rec = _setup(
+            tmp_path, NOTES, probe=_Probe({"a.md": "absent"})
+        )
+        rec.reconcile(store, site="test")
+        fts.delete_by_path("a.md")
+        result = rec.reconcile(_FailingWrites(store, "a.md"), site="test")
+        assert result.retry == {"a.md"}
+        assert "a.md" in store.tokens()
+
+    def test_a_read_only_store_still_raises(self, tmp_path):
+        from markdown_vault_mcp.exceptions import ReadOnlyError
+
+        _fts, _provider, store, rec = _setup(tmp_path, NOTES)
+
+        class _ReadOnly(_FailingWrites):
+            def replace_document(self, *_args: Any, **_kwargs: Any) -> str:
+                raise ReadOnlyError("read-only")
+
+        read_only = _ReadOnly(store, "a.md")
+        with pytest.raises(ReadOnlyError):
+            rec.reconcile(read_only, site="test")
