@@ -1,5 +1,23 @@
 # Reference research log
 
+## 2026-10-15
+
+- Added [SQLite WAL durability, checkpoints, the WAL-reset bug and backup](sqlite-wal-durability.md),
+  checked against sqlite.org's WAL, pragma, transaction, backup and VACUUM
+  pages and Python's sqlite3 docs, with a probe on SQLite 3.50.4 (the venv's
+  stdlib) and 3.53.4. Found:
+  - `synchronous=FULL` is fully durable in WAL mode, while `NORMAL` may lose
+    the last commits on power loss but never on an application crash;
+  - a `mode=ro` connection cannot checkpoint, and leaves `-wal`/`-shm`
+    behind when it closes last;
+  - the WAL-reset bug (3.7.0 through 3.51.2, fixed in 3.51.3, 3.50.7 and
+    3.44.6) needs two connections writing or checkpointing at the same
+    instant, which the vector store's single lock and single writing
+    process rule out.
+
+  How `busy_timeout` applies to `BEGIN IMMEDIATE` is not covered. Next
+  review: 2027-04-15.
+
 ## 2026-10-07
 
 - Added [SQLite read-only connections, WAL and FTS5's persisted rank](sqlite-read-only-connections.md),

@@ -33,6 +33,12 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   (#1350, #1358: the tie-break, aliases never resolving, markdown destinations
   looked up vault-wide, what Obsidian writes). Read before `scanner.py`
   wikilink extraction or `fts_index.py` resolution.
+- [SQLite WAL durability, checkpoints, the WAL-reset bug and backup](sqlite-wal-durability.md) —
+  what a WAL commit promises under `synchronous=FULL` and `NORMAL`,
+  checkpoint modes and the `-wal`/`-shm` lifetime, `BEGIN IMMEDIATE` and
+  Python's explicit transactions, which usage the WAL-reset bug threatens,
+  and how to back up a live database (#1497). Read before changing how the
+  SQLite vector store writes, checkpoints or closes.
 - [SQLite read-only connections, WAL and FTS5's persisted rank](sqlite-read-only-connections.md) —
   what a `mode=ro` connection reads and refuses on a WAL database, how a
   path becomes a URI, and why FTS5's rank weights belong to the file and
