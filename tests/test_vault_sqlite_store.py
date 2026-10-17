@@ -6,6 +6,8 @@ import logging
 import sqlite3
 from typing import TYPE_CHECKING
 
+import pytest
+
 from markdown_vault_mcp.config_sections import VaultSettings
 from markdown_vault_mcp.vault import Vault
 from tests.conftest import MockEmbeddingProvider
@@ -13,8 +15,6 @@ from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 
 class _Counting(MockEmbeddingProvider):
@@ -227,3 +227,57 @@ class TestStatusBeforeTheStoreOpens:
             for r in caplog.records
             if r.msg.startswith("embeddings_status_metadata_read_failed")
         ]
+
+
+def _streamed_vault(root: Path, tmp_path: Path, **kw: object) -> Vault:
+    return Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            index_path=tmp_path / "index.db",
+            read_only=False,
+            embedding_store="sqlite",
+            embedding_search="streamed",
+            **kw,  # type: ignore[arg-type]
+        ),
+        embedding_provider=MockEmbeddingProvider(dim=16),
+    )
+
+
+def test_a_vault_on_streamed_search_keeps_no_rows_resident(tmp_path: Path) -> None:
+    root = tmp_path / "vault"
+    root.mkdir()
+    (root / "alpha.md").write_text("# Alpha\n\nApples and pears.\n")
+    vault = _streamed_vault(root, tmp_path, embedding_search_workspace_bytes=64)
+    try:
+        vault.index.build_index()
+        vault.index.build_embeddings()
+        store = vault._vectors
+        assert store is not None
+        assert store._streamed is True
+        assert store._workspace_bytes == 64
+        assert store._snap.rows == ()
+        assert vault.reader.search("pears", mode="semantic")
+    finally:
+        vault.close()
+
+
+def test_streamed_search_on_the_numpy_store_is_refused(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import ConfigurationError
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    settings = VaultSettings(
+        index_path=tmp_path / "index.db", read_only=False, embedding_search="streamed"
+    )
+    provider = MockEmbeddingProvider(dim=16)
+    with pytest.raises(ConfigurationError, match="EMBEDDING_STORE"):
+        Vault(source_dir=root, settings=settings, embedding_provider=provider)
+
+
+def test_a_bad_workspace_from_a_library_caller_is_refused(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import ConfigurationError
+
+    root = tmp_path / "vault"
+    root.mkdir()
+    with pytest.raises(ConfigurationError, match="workspace"):
+        _streamed_vault(root, tmp_path, embedding_search_workspace_bytes=0)

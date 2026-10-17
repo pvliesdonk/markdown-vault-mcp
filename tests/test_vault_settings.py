@@ -614,3 +614,17 @@ class TestEmbeddingStoreSetting:
     def test_reaches_vault_settings(self, tmp_path: Path) -> None:
         settings = VaultSettings.from_project_config(ProjectConfig(source_dir=tmp_path))
         assert settings.embedding_store == "numpy"
+
+    def test_search_mode_and_workspace_reach_vault_settings(
+        self, tmp_path: Path
+    ) -> None:
+        settings = VaultSettings.from_project_config(
+            ProjectConfig(
+                source_dir=tmp_path,
+                embedding_store="sqlite",
+                embedding_search="streamed",
+                embedding_search_workspace_mb=3,
+            )
+        )
+        assert settings.embedding_search == "streamed"
+        assert settings.embedding_search_workspace_bytes == 3 << 20
