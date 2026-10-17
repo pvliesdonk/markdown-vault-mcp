@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,7 @@ from markdown_vault_mcp.utils import is_path_excluded
 from markdown_vault_mcp.utils.fs import (
     _dir_prune_rules,
     _should_prune_dir,
+    file_bytes,
     iter_markdown_files,
 )
 
@@ -322,3 +324,27 @@ def test_prune_walk_equals_glob_then_filter(tmp_path: Path) -> None:
         if not is_path_excluded(rel_of(p), LIVE_EXCLUDES)
     )
     assert walked == truth
+
+
+class TestFileBytes:
+    def test_counts_a_file(self, tmp_path: Path) -> None:
+        f = tmp_path / "a"
+        f.write_bytes(b"x" * 10)
+        assert file_bytes(f) == 10
+
+    def test_a_missing_file_is_zero(self, tmp_path: Path) -> None:
+        assert file_bytes(tmp_path / "nope") == 0
+
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0, reason="root ignores modes"
+    )
+    def test_a_refused_stat_raises(self, tmp_path: Path) -> None:
+        d = tmp_path / "locked"
+        d.mkdir()
+        (d / "a").write_bytes(b"x")
+        d.chmod(0)
+        try:
+            with pytest.raises(OSError):
+                file_bytes(d / "a")
+        finally:
+            d.chmod(0o755)

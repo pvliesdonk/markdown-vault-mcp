@@ -52,6 +52,7 @@ if TYPE_CHECKING:
         SkippedFile,
         SourceState,
         StoreFamily,
+        StoreResources,
         SubtreeNote,
         TocEntry,
         VectorRow,
@@ -489,6 +490,20 @@ class VectorReader(Protocol):
 
     def tokens(self) -> dict[str, RevisionToken | None]:
         """Return each stored document's token; ``None`` when unknown."""
+        ...
+
+
+@runtime_checkable
+class ReportsResources(Protocol):
+    """A store that reports what it costs (#1377); optional for a vector store."""
+
+    def resources(self) -> StoreResources:
+        """Return the store's search mode, workspace and measured sizes.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            OSError: If a stat of one of its files is refused.
+        """
         ...
 
 

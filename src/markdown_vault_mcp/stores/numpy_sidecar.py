@@ -53,8 +53,8 @@ from markdown_vault_mcp.stores._resident import (
     without_document,
 )
 from markdown_vault_mcp.stores.registry import register_backend
-from markdown_vault_mcp.types import EmbeddingIdentity
-from markdown_vault_mcp.utils.fs import is_directory, path_exists
+from markdown_vault_mcp.types import EmbeddingIdentity, StoreResources
+from markdown_vault_mcp.utils.fs import file_bytes, is_directory, path_exists
 
 with contextlib.suppress(ImportError):  # numpy is the embeddings extra
     import numpy as np
@@ -231,6 +231,27 @@ class NumpySidecarStore(ResidentStore):
             "numpy_store_generation_published generation=%d rows=%d",
             new.generation,
             len(new.rows),
+        )
+
+    def resources(self) -> StoreResources:
+        """Return the search mode and measured sizes (#1377): always resident.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            OSError: If a stat of the store's files is refused.
+        """
+        snap = self._current()
+        stored = None
+        if self._base is not None:
+            files = [self._base.with_suffix(".json")]
+            if self._matrix_path is not None:
+                files.append(self._matrix_path)
+            stored = sum(file_bytes(p) for p in files)
+        return StoreResources(
+            search_mode="resident",
+            search_workspace_bytes=None,
+            stored_bytes=stored,
+            resident_vector_bytes=int(snap.matrix.nbytes),
         )
 
     # -- lifecycle -----------------------------------------------------------

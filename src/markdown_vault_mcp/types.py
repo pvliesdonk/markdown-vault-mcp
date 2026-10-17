@@ -1198,6 +1198,27 @@ class EmbeddingIdentity:
 
 
 @dataclass(frozen=True)
+class StoreResources:
+    """What a vector store costs, as ``embeddings_status`` reports it (#1377).
+
+    Attributes:
+        search_mode: ``"resident"`` when the rows are searched in memory,
+            ``"streamed"`` when each search reads them in batches.
+        search_workspace_bytes: The configured vector bytes per streamed
+            batch; ``None`` when resident.
+        stored_bytes: The measured size of the store's files; ``None`` when
+            it is held in memory.
+        resident_vector_bytes: The measured bytes of the resident vector
+            matrix; ``0`` when streamed.
+    """
+
+    search_mode: Literal["resident", "streamed"]
+    search_workspace_bytes: int | None
+    stored_bytes: int | None
+    resident_vector_bytes: int
+
+
+@dataclass(frozen=True)
 class VectorRow:
     """One stored chunk: its vector and the metadata returned with it.
 
