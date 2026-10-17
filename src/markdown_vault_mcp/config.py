@@ -222,8 +222,11 @@ class ProjectConfig:
         default="numpy",
         metadata={
             "help": (
-                "Where embeddings are stored. 'numpy' keeps them in files "
-                "beside the index (or in memory without INDEX_PATH)."
+                "Where embeddings are stored. 'numpy' (the default) keeps "
+                "them in files beside the index; 'sqlite' keeps them in one "
+                "SQLite database there (index-db-embeddings.sqlite3), each "
+                "change written durably on its own. Without INDEX_PATH or "
+                "EMBEDDINGS_PATH both keep them in memory."
             ),
             "tags": ("indexing",),
             "wizard": {"group": "Indexing"},
@@ -1168,7 +1171,7 @@ class ProjectConfig:
         # (not section-view properties); each validates its own bounds in its
         # ``__post_init__`` at construction time (default_factory and from_env
         # alike), so neither needs re-construction here.
-        embedding_stores = ("numpy",)  # #1497 adds "sqlite"
+        embedding_stores = ("numpy", "sqlite")
         if self.embedding_store not in embedding_stores:
             raise ConfigurationError(
                 f"MARKDOWN_VAULT_MCP_EMBEDDING_STORE must be one of "

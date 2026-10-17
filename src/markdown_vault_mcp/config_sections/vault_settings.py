@@ -65,7 +65,8 @@ class VaultSettings:
             the vectors in memory without an index path (#1708). Semantic
             search is on whenever ``Vault`` is given an embedding provider.
         embedding_store: The vector backend's registry name; ``"numpy"``
-            (the default) keeps the vectors in files at ``embeddings_path``.
+            (the default) keeps the vectors in files at ``embeddings_path``,
+            ``"sqlite"`` in one SQLite database there.
         owns_index_files: When ``True`` (default), this vault owns the
             index files on disk: the SQLite index, the vector sidecar and the
             state file. ``False`` is for a process that reads files another

@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING, Any
 # Importing the backend module registers it; the vault then opens the index
 # through the registry, as every store will (#1766).
 import markdown_vault_mcp.stores.numpy_sidecar  # registers the numpy backend
-import markdown_vault_mcp.stores.sqlite_keyword  # noqa: F401
+import markdown_vault_mcp.stores.sqlite_keyword
+import markdown_vault_mcp.stores.sqlite_vectors  # noqa: F401
 
 # _DEFAULT_STATE_* are re-exported here for backwards compatibility (the
 # state-path default historically lived in this module). They now name only

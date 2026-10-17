@@ -2420,3 +2420,7 @@ class TestEmbeddingStore:
     def test_an_unknown_store_is_refused(self, tmp_path: Path) -> None:
         with pytest.raises(ConfigurationError, match="EMBEDDING_STORE"):
             ProjectConfig(source_dir=tmp_path, embedding_store="milvus")
+
+    def test_sqlite_is_accepted(self, tmp_path: Path) -> None:
+        config = ProjectConfig(source_dir=tmp_path, embedding_store="sqlite")
+        assert config.indexing.embedding_store == "sqlite"

@@ -504,6 +504,33 @@ def _create(path: Path, *, replace_unusable: bool) -> SqliteConnectionRegistry:
     return registry
 
 
+def stored_chunk_count(location: Path | str) -> int:
+    """Count the chunks the database at *location* holds, opening no store.
+
+    For ``embeddings_status`` before the vault has opened its store.
+
+    Args:
+        location: The store's base path.
+
+    Returns:
+        The number of chunk rows; 0 when there is no database or no tables.
+
+    Raises:
+        sqlite3.Error: If the database cannot be read.
+    """
+    path = _db_file(location)
+    if not path_exists(path):
+        return 0
+    registry = _registry(path, read_only=True)
+    try:
+        conn = registry.conn()
+        if "chunks" not in _tables(conn):
+            return 0
+        return int(conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
+    finally:
+        registry.close()
+
+
 class SqliteVectorStore(ResidentStore):
     """A vector store kept in its own SQLite database, read from memory.
 

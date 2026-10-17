@@ -213,6 +213,7 @@ SELinux
 SHAs
 show_context
 SiliconFlow
+sqlite
 stderr
 streamable
 subfolder
