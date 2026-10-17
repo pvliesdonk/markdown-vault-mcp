@@ -26,6 +26,8 @@ class IndexingConfig:
     state_path: Path | None = None
     embeddings_path: Path | None = None
     embedding_store: str = "numpy"
+    embedding_search: str = "resident"
+    embedding_search_workspace_mb: int = 1
     indexed_frontmatter_fields: Sequence[str] | None = None
     required_frontmatter: Sequence[str] | None = None
     exclude_patterns: Sequence[str] | None = None
