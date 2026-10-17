@@ -171,12 +171,13 @@ def _prepare_writable(conn: sqlite3.Connection) -> None:
     if tables and not _TABLES.issubset(tables):
         return
     conn.execute("PRAGMA journal_mode = WAL")
+    if tables:
+        return  # already a vector store: nothing to create, no write lock taken
     conn.execute("BEGIN IMMEDIATE")
     try:
-        if not tables:
-            for statement in _SCHEMA:
-                conn.execute(statement)
-            conn.execute(_UPSERT_META, ("format_version", str(FORMAT_VERSION)))
+        for statement in _SCHEMA:
+            conn.execute(statement)
+        conn.execute(_UPSERT_META, ("format_version", str(FORMAT_VERSION)))
         conn.execute("COMMIT")
     except BaseException:
         with contextlib.suppress(sqlite3.Error):
@@ -478,10 +479,26 @@ def _replace_if_unusable(path: Path) -> None:
 
 
 def _create(path: Path, *, replace_unusable: bool) -> SqliteConnectionRegistry:
-    """Open *path* for writing, creating its directory, file and schema."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if replace_unusable and path_exists(path):
-        _replace_if_unusable(path)
+    """Open *path* for writing, creating its directory, file and schema.
+
+    Raises:
+        StoreUnavailableError: If the directory cannot be created, or an
+            unusable file there cannot be checked or removed.
+        StoreUnsupportedSchemaError: If the file there is a vector store of
+            a newer format.
+        sqlite3.Error: If the database cannot be opened.
+    """
+    where = str(path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if replace_unusable and path_exists(path):
+            _replace_if_unusable(path)
+    except OSError as exc:
+        raise _outcome(
+            StoreUnavailableError,
+            f"Vector store at {where} cannot be created: {exc}",
+            where,
+        ) from exc
     registry = _registry(path, read_only=False)
     registry.open_primary(_prepare_writable, _memory_probe(registry))
     return registry
@@ -524,6 +541,8 @@ class SqliteVectorStore(ResidentStore):
         """Run *work* in one write transaction; commit unless it reports a conflict.
 
         Raises:
+            StoreUnavailableError: If the first write cannot create the
+                database; nothing was written.
             sqlite3.Error: If the transaction fails; nothing was written.
         """
         try:
@@ -538,7 +557,7 @@ class SqliteVectorStore(ResidentStore):
                 with contextlib.suppress(sqlite3.Error):
                     conn.execute("ROLLBACK")
                 raise
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, StoreUnavailableError) as exc:
             logger.warning(
                 "sqlite_vector_store_write_failed path=%s op=%s err=%s",
                 self._where,
@@ -559,6 +578,8 @@ class SqliteVectorStore(ResidentStore):
             ReadOnlyError: If the store was opened read-only.
             ValueError: If a row is of another dimension or not finite, or its
                 metadata cannot be stored as JSON.
+            StoreUnavailableError: If the first write cannot create the
+                database; nothing changed.
             sqlite3.Error: If the write fails; nothing changed.
         """
         with self._lock:
@@ -588,6 +609,8 @@ class SqliteVectorStore(ResidentStore):
 
         Raises:
             ReadOnlyError: If the store was opened read-only.
+            StoreUnavailableError: If the first write cannot create the
+                database; nothing changed.
             sqlite3.Error: If the write fails; nothing changed.
         """
         with self._lock:
@@ -619,6 +642,8 @@ class SqliteVectorStore(ResidentStore):
             ReadOnlyError: If the store was opened read-only.
             ValueError: If a path appears twice, or a row is of another
                 dimension, not finite, or its metadata cannot be stored.
+            StoreUnavailableError: If the first write cannot create the
+                database; the previous generation stands.
             sqlite3.Error: If the write fails; the previous generation stands.
         """
         docs, blocks = validated_generation(identity, documents)
@@ -799,7 +824,10 @@ class SqliteVectorBackend:
         Before the first write, a file that is not a vector store or whose
         pages are damaged is removed, whatever that write's outcome; the
         write empties a usable database in its own transaction. Until then
-        a reader opens the old rows.
+        a reader opens the old rows. Unlike :meth:`open`, this checks
+        nothing at the location: the first write raises
+        :class:`~markdown_vault_mcp.exceptions.StoreUnavailableError` when
+        the database cannot be created there.
 
         Raises:
             ImportError: If numpy is not installed.

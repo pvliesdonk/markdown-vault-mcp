@@ -4029,8 +4029,10 @@ leaves the database's rows and the reads as they were. `checkpoint()` only
 folds the WAL, so one that fails loses nothing and is logged rather than
 raised; after a generation publish the WAL is also truncated, so it does
 not stay store-sized until close. No file exists before the first
-write, and a writable open changes nothing in a database that is not a
-vector store before refusing it. `open_fresh` reads nothing: before its
+write; a first write that cannot create the database raises *unavailable*,
+logged like any failed write. A writable open takes no write lock on an
+existing store and changes nothing in a database that is not a vector
+store before refusing it. `open_fresh` reads and checks nothing: before its
 first write it removes a file that is not a vector store or whose pages
 `PRAGMA quick_check` finds damaged (refusing a newer format instead), and
 that write empties a usable database inside its own transaction, so a

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -33,7 +34,6 @@ from tests.fixtures.vector_store_contract import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
-    from pathlib import Path
 
 
 def _base(tmp_path: Path) -> Path:
@@ -501,3 +501,56 @@ class TestForeignDatabases:
         backend, base = SqliteVectorBackend(), _base(tmp_path)
         with pytest.raises(StoreCorruptError, match="format_version"):
             backend.open(base, IDENT)
+
+
+class TestDeferredCreation:
+    def test_a_first_write_under_a_file_is_unavailable_and_logged(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        (tmp_path / "vectors").write_text("not a directory")
+        fresh = SqliteVectorBackend().open_fresh(_base(tmp_path), IDENT)
+        document = doc("a.md", [[1, 0, 0]])
+        with (
+            caplog.at_level(logging.WARNING),
+            pytest.raises(StoreUnavailableError),
+        ):
+            fresh.replace_document(document, expected_token=ANY_TOKEN)
+        assert [
+            r
+            for r in caplog.records
+            if r.msg.startswith("sqlite_vector_store_write_failed")
+        ]
+        fresh.close()
+
+    def test_an_unusable_file_that_cannot_be_removed_is_unavailable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _db(tmp_path).parent.mkdir(parents=True)
+        _db(tmp_path).write_bytes(b"not a database " * 100)
+        real_unlink = Path.unlink
+
+        def refuse(self: Path, missing_ok: bool = False) -> None:
+            if self == _db(tmp_path):
+                raise PermissionError("refused")
+            real_unlink(self, missing_ok=missing_ok)
+
+        monkeypatch.setattr(Path, "unlink", refuse)
+        fresh = SqliteVectorBackend().open_fresh(_base(tmp_path), IDENT)
+        document = doc("a.md", [[1, 0, 0]])
+        with pytest.raises(StoreUnavailableError):
+            fresh.replace_document(document, expected_token=ANY_TOKEN)
+        fresh.close()
+
+    def test_a_writable_open_of_a_store_takes_no_write_lock(
+        self, tmp_path: Path
+    ) -> None:
+        _seed(tmp_path)
+        holder = sqlite3.connect(_db(tmp_path), isolation_level=None)
+        holder.execute("BEGIN IMMEDIATE")
+        try:
+            store = SqliteVectorBackend().open(_base(tmp_path), IDENT)
+        finally:
+            holder.execute("ROLLBACK")
+            holder.close()
+        assert store.count == 1
+        store.close()  # its TRUNCATE checkpoint would wait out a held write lock
