@@ -4044,6 +4044,25 @@ promises, why the WAL-reset bug does not reach this single-writer use, and
 how to back up a
 live database are in `docs/design/reference/sqlite-wal-durability.md`.
 
+**Search memory (#1377).** The SQLite store serves reads in one of two
+modes, fixed when its backend opens it. *Resident* holds every row in the
+shared snapshot: a float32 matrix of 4 × chunks × dimension bytes plus each
+chunk's metadata, including its text. *Streamed* keeps only the identity
+and generation: each read is one SQL read transaction, `tokens`, `count`
+and `rows_for` are queries, and `search` / `similar_to_document` scan
+`(id, vector)` rows a batch at a time (`stores/_streamed.py`), keeping the
+running top *limit*, then read the winners' metadata by id in the same
+transaction, so a write committed meanwhile is not mixed in. The folder
+scope is a condition on the `folder` column; an arbitrary predicate makes
+the scan read and decode each batch's metadata before the batch is cut.
+The workspace is one batch, `max(1, workspace_bytes ÷ (4 × dimension))`
+rows (1 MiB by default: 256 rows at 1024 dimensions), plus *limit* rows:
+a bound on the scan, not on the process. Results are exact; only rows of
+equal score may order differently. A store held in memory is always
+resident: its rows are in memory anyway, and its shared-cache connections
+would let a read transaction block a writer. The numpy store is resident
+only.
+
 **The vault's slot (#1777).** `Vault` holds its vector store in a
 `VectorStoreSlot` that opens it on first use through the backend
 `EMBEDDING_STORE` names (or an injected `vector_backend`), or uses an
@@ -4125,8 +4144,9 @@ lags the store is #1504's.
 Bounds: an empty mount-point directory reads as an available, empty
 source, so its vectors go as they always did (a spec gap, #1791: "an
 unmounted volume removes nothing" holds only when the mount point itself
-is missing or unreadable); the store's size in `embeddings_status` is
-#1377's; how often the full matrix is rewritten is #1497's.
+is missing or unreadable); what `embeddings_status` reports of the
+store's size and search mode is #1377's; how often the full matrix is
+rewritten is #1497's.
 
 ### `providers.py`: Embedding Providers
 
@@ -6051,3 +6071,4 @@ Later decisions (2026-10-08, #1503):
 | 30 | Resource ownership | The vault closes what it opens; the caller closes what it injects (#1765). Applies to every store backend. | A store or strategy shared with another consumer must not be closed under it; one rule for every injected collaborator, stated in `docs/decisions/0001`. |
 | 31 | Store open outcomes | Five typed outcomes under `StoreOpenError`; none reads as empty. On a store the vault owns, corrupt or another identity rebuilds into a fresh generation (a model change re-embeds, as documented); a process that does not own the files refuses with the store's own outcome and never creates or replaces them (#1766, #1777, #1778). | An unreachable or unknown store rebuilt as empty is how a server overwrites another process's index; the type says what the operator can do about it. |
 | 32 | Numpy store persistence | JSON commit point naming a per-persist matrix; in-memory publish with durability at checkpoint; `publish_generation` durable at once (#1767). | Crash-safe two-file commit without rewriting the whole matrix per document; write amplification is #1497's. |
+| 33 | Vector search memory | The SQLite store's search is resident or streamed, chosen by the operator; streamed keeps nothing per chunk resident, scans in bounded batches with an exact running top-*limit*, and pushes the folder scope into SQL (#1377). | Every vault keeps the fast path, a growing one gets a bound. Rejected: streamed only (every vault pays the scan's latency); switching by a memory budget (an estimate silently changes behaviour, and reads as a process limit); light metadata resident (grows with chunks, so the batch no longer bounds memory); memory-mapping the `.npy` (a full scan's hot set is still the whole matrix); float16 or int8 (recall loss; 015 has no recall allowance). |
