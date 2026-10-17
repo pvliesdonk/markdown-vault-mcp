@@ -77,7 +77,8 @@ page adds only what a read-only connection does to checkpoints.
   - `src/markdown_vault_mcp/_fts_connection.py` (`synchronous` and
     `autocommit` on `SqliteConnectionRegistry`);
   - `docs/design/design.md` § the storage contract (the SQLite backend
-    paragraph).
+    paragraph);
+  - `docs/use/embeddings.md` (backup and size).
 
 ## Claims
 
