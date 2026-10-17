@@ -267,9 +267,9 @@ class GraphFacet:
 
         Returns ``True`` when the node cap stopped the expansion. A
         ``ValueError`` from :meth:`SearchManager.get_similar` (embeddings
-        not configured) silently skips the node, as does a store this
-        process may not rebuild (logged at DEBUG); unexpected failures are
-        logged and skipped.
+        not configured) silently skips the node; a store that cannot be
+        read or rebuilt here ends the semantic expansion, logged once at
+        WARNING; unexpected failures are logged and skipped.
         """
         truncated = False
         sem_seen: set[frozenset[str]] = set()
@@ -282,13 +282,15 @@ class GraphFacet:
             except ValueError:
                 # Expected when embeddings are not configured for this vault.
                 continue
-            except StoreOpenError:
+            except StoreOpenError as exc:
                 # Optional enrichment: a store this process may not rebuild
-                # leaves the graph without semantic edges (#1778).
-                logger.debug(
-                    "graph_similar_store_refused path=%s", node_path, exc_info=True
+                # (#1778), or a streamed store whose read failed (#1377),
+                # leaves the graph without semantic edges. Every other node
+                # would fail the same way, so it is reported once.
+                logger.warning(
+                    "graph_similar_store_failed path=%s error=%s", node_path, exc
                 )
-                continue
+                break
             except Exception:
                 logger.warning("get_similar_failed path=%s", node_path, exc_info=True)
                 continue
