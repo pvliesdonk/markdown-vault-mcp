@@ -2513,6 +2513,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resources
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.checkpoint" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3619,6 +3630,17 @@
     <span class="md-ellipsis">
       
         publish_generation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resources
       
     </span>
   </a>
@@ -6036,6 +6058,57 @@ matrix name above every one already there.</p>
               <div class="doc-md-description">
                 <p>If a path appears twice, or a row is of another
 dimension or not finite.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.resources" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">resources</span><span class="p">()</span></code>
+
+<a href="#markdown_vault_mcp.stores.numpy_sidecar.NumpySidecarStore.resources" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the search mode and measured sizes (#1377): always resident.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="RuntimeError">RuntimeError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the store is closed.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="OSError">OSError</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If a stat of the store's files is refused.</p>
               </div>
             </td>
           </tr>

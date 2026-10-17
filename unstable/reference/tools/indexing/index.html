@@ -2736,7 +2736,19 @@
   or null until the store is first opened.</li>
 <li>generation (int | None): Count of full rebuilds the store has
   published, or null until the store is first opened.</li>
+<li><code>search_mode</code> (str | None): "resident" when semantic search holds
+  the vectors in memory, "streamed" when each search reads them
+  in batches.</li>
+<li><code>search_workspace_bytes</code> (int | None): Configured vector bytes
+  one streamed batch may hold; null when resident.</li>
+<li><code>stored_bytes</code> (int | None): Measured size of the store's files;
+  null when the vectors are held in memory.</li>
+<li><code>resident_vector_bytes</code> (int | None): Measured bytes of the
+  vectors held in memory; 0 when streamed. Other memory the
+  server uses is not counted.</li>
 </ul>
+<p>The four fields above are null until the store is first opened,
+and when the store does not report them.</p>
 <!-- DOMAIN-EXAMPLE-embeddings_status-START -->
 <!-- A worked example for this tool; kept across regeneration. -->
 <!-- DOMAIN-EXAMPLE-embeddings_status-END -->

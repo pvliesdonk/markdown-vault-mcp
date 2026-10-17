@@ -1068,10 +1068,10 @@ Return status information about the vector index.
 
 Returns:
 
-| Type             | Description                                 |
-| ---------------- | ------------------------------------------- |
-| `dict[str, Any]` | Dict with keys provider, chunk_count, path, |
-| `dict[str, Any]` | available.                                  |
+| Type             | Description                                                                       |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `dict[str, Any]` | The status dict described by                                                      |
+| `dict[str, Any]` | meth:~markdown_vault_mcp.managers.embeddings.EmbeddingsManager.embeddings_status. |
 
 ### `skipped_files()`
 

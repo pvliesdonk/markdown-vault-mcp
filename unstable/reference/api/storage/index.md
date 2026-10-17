@@ -397,6 +397,17 @@ Raises:
 | `ReadOnlyError` | If the store was opened read-only.                                       |
 | `ValueError`    | If a path appears twice, or a row is of another dimension or not finite. |
 
+### `resources()`
+
+Return the search mode and measured sizes (#1377): always resident.
+
+Raises:
+
+| Type           | Description                                |
+| -------------- | ------------------------------------------ |
+| `RuntimeError` | If the store is closed.                    |
+| `OSError`      | If a stat of the store's files is refused. |
+
 ### `checkpoint()`
 
 Persist pending changes; a no-op in memory, read-only or clean.

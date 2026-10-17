@@ -2125,7 +2125,7 @@ Regardless of which provider you choose:
 - **Where the vectors live.** At `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when set, otherwise beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (`index-db-embeddings.json` and the `index-db-embeddings.m<N>.npy` matrix it names, beside `index.db`). `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` names the store that keeps them. `numpy`, the default, keeps these files and rewrites them whole at each save; `sqlite` keeps them in one database, `index-db-embeddings.sqlite3`, and writes each change on its own, durable once written. With neither path set, they are held in memory and every note is embedded again at each start, which a paid provider bills each time. The Claude Desktop bundle and the Claude Code plugin set no index path yet, so a provider picked on their install screen embeds again at each Claude Desktop launch or Claude Code session ([#1728](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728)).
 - **Switching to `sqlite` starts with an empty store**, so every note is embedded again, which a paid provider bills. Importing the `numpy` files is [#1505](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1505).
 - **The `sqlite` database does not shrink:** space freed by deleted notes or a model change is reused by later writes.
-- **`MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed` keeps the vectors out of memory.** It needs `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite`. Each semantic search then reads the vectors from the database in batches of `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB` (1 MiB by default) instead of holding them all, as the default `resident` does. Results are the same, apart from the order of notes with equal scores. Each search is slower, by an amount in proportion to the vault's size. On one test host, a 22,764-chunk vault at 1024 dimensions took about 39 ms per search streamed against 3 ms resident, and a vault ten times that size about 383 ms against 33 ms; resident search added about 106 MB and 950 MB to the server's memory for them ([#1501](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1501), [#1502](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1502)). The workspace bounds one batch of a search, not the server's memory. Vectors kept in memory, with no index path, are always resident.
+- **`MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed` keeps the vectors out of memory.** It needs `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite`. Each semantic search then reads the vectors from the database in batches of `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB` (1 MiB by default) instead of holding them all, as the default `resident` does. Results are the same, apart from the order of notes with equal scores. Each search is slower, by an amount in proportion to the vault's size. On one test host, a 22,764-chunk vault at 1024 dimensions took about 39 ms per search streamed against 3 ms resident, and a vault ten times that size about 383 ms against 33 ms; resident search added about 106 MB and 950 MB to the server's memory for them ([#1501](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1501), [#1502](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1502)). The workspace bounds one batch of a search, not the server's memory. Vectors kept in memory, with no index path, are always resident. `embeddings_status` reports the mode the store runs in, its workspace, the size of its files (`stored_bytes`) and the bytes of vectors it holds in memory (`resident_vector_bytes`). That last figure leaves out the server's other memory, such as the note text a resident store also keeps.
 - **Back up the `sqlite` database with the server stopped**, or with SQLite's online backup (`sqlite3 index-db-embeddings.sqlite3 ".backup copy.sqlite3"`). Copying the file while the server runs can miss the latest changes, which sit in `index-db-embeddings.sqlite3-wal`.
 - Embeddings are built automatically on first startup when a provider is configured. Later starts load the stored vectors and only process changed files.
 - The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider is configured, whether or not the build has run. The build has caught up once [`get_index_status`](https://pvliesdonk.github.io/markdown-vault-mcp/unstable/reference/tools/indexing/#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
@@ -5372,6 +5372,12 @@ Dict with the following fields:
 - backend (str | None): Name of the store holding the vectors (such as `"numpy"`), or null if no provider is configured.
 - identity (dict | None): The provider, model, variant, text format and dimension the stored vectors were embedded with, or null until the store is first opened.
 - generation (int | None): Count of full rebuilds the store has published, or null until the store is first opened.
+- `search_mode` (str | None): "resident" when semantic search holds the vectors in memory, "streamed" when each search reads them in batches.
+- `search_workspace_bytes` (int | None): Configured vector bytes one streamed batch may hold; null when resident.
+- `stored_bytes` (int | None): Measured size of the store's files; null when the vectors are held in memory.
+- `resident_vector_bytes` (int | None): Measured bytes of the vectors held in memory; 0 when streamed. Other memory the server uses is not counted.
+
+The four fields above are null until the store is first opened, and when the store does not report them.
 
 ## `get_index_status`
 
@@ -8038,10 +8044,10 @@ Return status information about the vector index.
 
 Returns:
 
-| Type             | Description                                 |
-| ---------------- | ------------------------------------------- |
-| `dict[str, Any]` | Dict with keys provider, chunk_count, path, |
-| `dict[str, Any]` | available.                                  |
+| Type             | Description                                                                       |
+| ---------------- | --------------------------------------------------------------------------------- |
+| `dict[str, Any]` | The status dict described by                                                      |
+| `dict[str, Any]` | meth:~markdown_vault_mcp.managers.embeddings.EmbeddingsManager.embeddings_status. |
 
 ### `skipped_files()`
 
@@ -8453,6 +8459,17 @@ Raises:
 | --------------- | ------------------------------------------------------------------------ |
 | `ReadOnlyError` | If the store was opened read-only.                                       |
 | `ValueError`    | If a path appears twice, or a row is of another dimension or not finite. |
+
+### `resources()`
+
+Return the search mode and measured sizes (#1377): always resident.
+
+Raises:
+
+| Type           | Description                                |
+| -------------- | ------------------------------------------ |
+| `RuntimeError` | If the store is closed.                    |
+| `OSError`      | If a stat of the store's files is refused. |
 
 ### `checkpoint()`
 
