@@ -359,7 +359,10 @@ class EmbeddingReconciler:
         Below :data:`_BULK_RETOKEN` each is a conditional replace; at or
         above it, one generation holding every document's current rows.
         The bulk publish skips the per-document token check, which is safe
-        for a store with one writer per location, as the numpy store is.
+        for a store with one writer per location, as the numpy store is. A
+        store write that fails keeps the rows and puts the documents in the
+        retry set: one document for a replace, all of them for the bulk
+        publish.
         """
         if len(docs) < _BULK_RETOKEN:
             for doc in docs:
@@ -381,15 +384,32 @@ class EmbeddingReconciler:
                     state.result.retokened += 1
             return
         new_tokens = {doc.path: doc.token for doc in docs}
-        state.store.publish_generation(
-            state.store.identity,
-            [
-                DocumentRows(
-                    path, new_tokens.get(path, token), _float32_rows(state.store, path)
-                )
-                for path, token in state.store.tokens().items()
-            ],
-        )
+        try:
+            state.store.publish_generation(
+                state.store.identity,
+                [
+                    DocumentRows(
+                        path,
+                        new_tokens.get(path, token),
+                        _float32_rows(state.store, path),
+                    )
+                    for path, token in state.store.tokens().items()
+                ],
+            )
+        except ReadOnlyError:
+            raise
+        except Exception as exc:
+            # Broad by design: each backend raises its own I/O error. The
+            # generation did not publish, so every document keeps its rows.
+            state.result.kept += sum(len(doc.texts) for doc in docs)
+            state.result.retry.update(new_tokens)
+            logger.warning(
+                "embedding_reconcile_bulk_write_failed site=%s paths=%d err=%s",
+                state.site,
+                len(docs),
+                exc,
+            )
+            return
         state.result.retokened += len(docs)
 
     def rebuild(

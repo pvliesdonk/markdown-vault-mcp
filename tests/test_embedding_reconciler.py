@@ -531,3 +531,50 @@ class TestRetokenOutcomes:
         read_only = _ReadOnly(store, "a.md")
         with pytest.raises(ReadOnlyError):
             rec.reconcile(read_only, ["a.md"], site="test")
+
+
+class TestBulkRetokenWriteFailures:
+    def _legacy(self, tmp_path, monkeypatch: pytest.MonkeyPatch):
+        import markdown_vault_mcp.indexing.embedding_reconciler as module
+
+        monkeypatch.setattr(module, "_BULK_RETOKEN", 2)
+        _fts, _provider, store, rec = _setup(tmp_path, NOTES)
+        rec.reconcile(store, site="test")
+        store.publish_generation(
+            store.identity,
+            [DocumentRows(p, None, store.rows_for(p)) for p in sorted(store.tokens())],
+        )
+        return store, rec
+
+    def test_a_failed_bulk_publish_retries_every_path(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch, caplog
+    ):
+        store, rec = self._legacy(tmp_path, monkeypatch)
+
+        def refuse(*_args: Any, **_kwargs: Any) -> None:
+            raise sqlite3.OperationalError("database or disk is full")
+
+        monkeypatch.setattr(store, "publish_generation", refuse)
+        with caplog.at_level(logging.WARNING):
+            result = rec.reconcile(store, site="test")
+        assert (result.retry, result.retokened) == ({"a.md", "b.md"}, 0)
+        assert set(store.tokens().values()) == {None}
+        assert [
+            r
+            for r in caplog.records
+            if r.msg.startswith("embedding_reconcile_bulk_write_failed")
+        ]
+
+    def test_a_read_only_store_raises_from_a_bulk_publish(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ):
+        from markdown_vault_mcp.exceptions import ReadOnlyError
+
+        store, rec = self._legacy(tmp_path, monkeypatch)
+
+        def read_only(*_args: Any, **_kwargs: Any) -> None:
+            raise ReadOnlyError("read-only")
+
+        monkeypatch.setattr(store, "publish_generation", read_only)
+        with pytest.raises(ReadOnlyError):
+            rec.reconcile(store, site="test")

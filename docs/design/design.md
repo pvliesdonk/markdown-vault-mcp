@@ -4101,7 +4101,9 @@ outside the pending work that drain status counts. At or above `_BULK_RETOKEN` (
 `publish_generation` replaces the per-document replaces (each copies the
 whole matrix), holding every row as float32; that publish has no
 per-document token check, which the numpy store's one writer per location
-makes safe and #1504's pgvector backend must revisit. The cold build
+makes safe and #1504's pgvector backend must revisit. If it fails, every
+document in it keeps its rows and joins the retry set, as a failed
+per-document write does. The cold build
 (`rebuild`) embeds every document in batches across documents and
 publishes one generation under each document's token; a failed batch
 leaves its documents to the next convergence pass.
