@@ -4,8 +4,9 @@ Rows live in their own SQLite database: one ``chunks`` row per vector (a
 float32 BLOB and its metadata as a JSON object), one ``documents`` row per
 document with its token, and a ``meta`` table holding the format version,
 the identity and the generation. Reads are served from a resident snapshot
-loaded at open (:mod:`._resident`); #1377 replaces that with a bounded scan
-over the same tables.
+loaded at open (:mod:`._resident`), or, with ``search="streamed"``, from a
+bounded batch scan of the tables in one read transaction per call
+(:mod:`._streamed`, #1377); a store held in memory is always resident.
 
 Each write is one ``BEGIN IMMEDIATE`` transaction that checks the token the
 database holds, writes, and commits with ``synchronous=FULL``; only then is
@@ -31,13 +32,16 @@ identity*. *Not configured* cannot happen: no location means in memory.
 
 from __future__ import annotations
 
+import collections
 import contextlib
+import dataclasses
 import json
 import logging
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 from markdown_vault_mcp._fts_connection import SqliteConnectionRegistry
 from markdown_vault_mcp.exceptions import (
@@ -55,14 +59,22 @@ from markdown_vault_mcp.stores._resident import (
     fresh_snapshot,
     frozen,
     generation_snapshot,
+    hollow_snapshot,
     row_metadata,
     row_vectors,
+    unit_vector,
     validated_generation,
     with_document,
     without_document,
 )
+from markdown_vault_mcp.stores._streamed import (
+    DEFAULT_WORKSPACE_BYTES,
+    folder_params,
+    rows_per_batch,
+    scan,
+)
 from markdown_vault_mcp.stores.registry import register_backend
-from markdown_vault_mcp.types import ANY_TOKEN, EmbeddingIdentity
+from markdown_vault_mcp.types import ANY_TOKEN, EmbeddingIdentity, VectorRow
 from markdown_vault_mcp.utils.fs import is_directory, path_exists
 
 with contextlib.suppress(ImportError):  # numpy is the embeddings extra
@@ -114,6 +126,45 @@ _UPSERT_META = (
     "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
 )
 
+SearchMode = Literal["resident", "streamed"]
+_SEARCH_MODES: tuple[str, ...] = ("resident", "streamed")
+
+# Streamed reads (#1377): constant statements, optional conditions as
+# "? IS NULL OR ...", so no SQL is ever built from values.
+_SCAN = (
+    "SELECT id, vector, CASE WHEN ? THEN metadata END FROM chunks"
+    " WHERE (? IS NULL OR folder = ? OR substr(folder, 1, ?) = ?)"
+    " AND (? IS NULL OR path != ?)"
+)
+_ANY_ROW = "SELECT 1 FROM chunks LIMIT 1"
+_ROW_METADATA = "SELECT metadata FROM chunks WHERE id = ?"
+_DOCUMENT_ROWS = "SELECT vector, metadata FROM chunks WHERE path = ? ORDER BY ordinal"
+_HOLDS_DOCUMENT = "SELECT 1 FROM documents WHERE path = ?"
+
+_T = TypeVar("_T")
+
+
+@dataclass(frozen=True)
+class _Mode:
+    """How a file-backed store serves reads (#1377)."""
+
+    streamed: bool = False
+    workspace_bytes: int = DEFAULT_WORKSPACE_BYTES
+
+
+_RESIDENT = _Mode()
+
+
+@dataclass(frozen=True)
+class _Scan:
+    """One streamed query: what to score against and what to keep."""
+
+    query: Any  # the query vector; a unit float32 vector once resolved
+    limit: int
+    folder: str | None = None
+    exclude: str | None = None
+    predicate: Callable[[dict[str, Any]], bool] | None = None
+
 
 def _require_numpy() -> None:
     if not NUMPY_AVAILABLE:  # pragma: no cover - exercised only without the extra
@@ -131,8 +182,10 @@ def _outcome(kind: type[StoreOpenError], message: str, where: str) -> StoreOpenE
     return kind(message, backend=_BACKEND_NAME, location=where)
 
 
-def _classified(exc: sqlite3.Error, where: str) -> StoreOpenError:
-    """Return the open outcome a SQLite error stands for."""
+def _classified(
+    exc: sqlite3.Error, where: str, action: str = "opened"
+) -> StoreOpenError:
+    """Return the outcome a SQLite error stands for, for an open or a read."""
     name = getattr(exc, "sqlite_errorname", "")
     if name in _CORRUPT_ERRORNAMES or "not a database" in str(exc):
         return _outcome(
@@ -141,7 +194,9 @@ def _classified(exc: sqlite3.Error, where: str) -> StoreOpenError:
             where,
         )
     return _outcome(
-        StoreUnavailableError, f"Vector store at {where} cannot be opened: {exc}", where
+        StoreUnavailableError,
+        f"Vector store at {where} cannot be {action}: {exc}",
+        where,
     )
 
 
@@ -321,6 +376,32 @@ def _metadata_object(raw: object, where: str) -> dict[str, Any]:
     return value
 
 
+def _checked_blob(blob: object, width: int, where: str) -> bytes:
+    """Return *blob* if it is a vector of *width* bytes.
+
+    Raises:
+        StoreCorruptError: If it is not.
+    """
+    if not isinstance(blob, bytes) or len(blob) != width:
+        size = len(blob) if isinstance(blob, bytes) else 0
+        raise _outcome(
+            StoreCorruptError,
+            f"Vector store at {where} holds a vector of {size} bytes, not {width}.",
+            where,
+        )
+    return blob
+
+
+def _validated_rows(
+    conn: sqlite3.Connection, dimension: int, where: str
+) -> Iterator[tuple[bytes, dict[str, Any]]]:
+    """Yield every chunk's vector and metadata, in storage order, refusing bad ones."""
+    width = dimension * 4
+    cursor = conn.execute("SELECT vector, metadata FROM chunks ORDER BY path, ordinal")
+    for blob, raw in cursor:
+        yield _checked_blob(blob, width, where), _metadata_object(raw, where)
+
+
 def _loaded_rows(
     conn: sqlite3.Connection, dimension: int, where: str
 ) -> tuple[Any, tuple[dict[str, Any], ...]]:
@@ -328,25 +409,24 @@ def _loaded_rows(
     count = int(conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
     matrix = np.empty((count, dimension), dtype=np.float32)
     rows: list[dict[str, Any]] = []
-    width = dimension * 4
-    cursor = conn.execute("SELECT vector, metadata FROM chunks ORDER BY path, ordinal")
-    for i, (blob, raw) in enumerate(cursor):
-        if not isinstance(blob, bytes) or len(blob) != width:
-            size = len(blob) if isinstance(blob, bytes) else 0
-            raise _outcome(
-                StoreCorruptError,
-                f"Vector store at {where} holds a vector of {size} bytes, not {width}.",
-                where,
-            )
+    for i, (blob, meta) in enumerate(_validated_rows(conn, dimension, where)):
         matrix[i] = np.frombuffer(blob, dtype="<f4")
-        rows.append(_metadata_object(raw, where))
+        rows.append(meta)
     return matrix, tuple(rows)
 
 
 def _load(
-    conn: sqlite3.Connection, identity: EmbeddingIdentity, where: str
+    conn: sqlite3.Connection,
+    identity: EmbeddingIdentity,
+    where: str,
+    *,
+    resident: bool = True,
 ) -> Snapshot:
-    """Read the stored state in one read transaction."""
+    """Read the stored state in one read transaction.
+
+    A streamed store (*resident* false) checks every row the same way but
+    keeps none: its snapshot carries the identity and generation only.
+    """
     conn.execute("BEGIN")
     try:
         meta = _format_meta(conn, where)
@@ -364,6 +444,9 @@ def _load(
             return fresh_snapshot(identity)
         served = _served_identity(stored, identity, where)
         generation = _count(meta.get("generation", "0"), "generation", where)  # type: ignore[union-attr]
+        if not resident:
+            collections.deque(_validated_rows(conn, served.dimension, where), maxlen=0)
+            return hollow_snapshot(served, generation)
         matrix, rows = _loaded_rows(conn, served.dimension, where)
         tokens: dict[str, RevisionToken | None] = {
             str(path): token
@@ -531,9 +614,87 @@ def stored_chunk_count(location: Path | str) -> int:
         registry.close()
 
 
-class SqliteVectorStore(ResidentStore):
-    """A vector store kept in its own SQLite database, read from memory.
+def _row_count(conn: sqlite3.Connection, _snap: Snapshot) -> int:
+    return int(conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
 
+
+def _stored_tokens(
+    conn: sqlite3.Connection, _snap: Snapshot
+) -> dict[str, RevisionToken | None]:
+    return {str(p): t for p, t in conn.execute("SELECT path, token FROM documents")}
+
+
+def _document_rows(
+    conn: sqlite3.Connection, path: str, dimension: int, where: str
+) -> list[VectorRow]:
+    """Return *path*'s rows from the database, vectors as stored (normalised)."""
+    return [
+        VectorRow(
+            vector=np.frombuffer(
+                _checked_blob(blob, dimension * 4, where), dtype="<f4"
+            ).tolist(),
+            metadata=_metadata_object(raw, where),
+        )
+        for blob, raw in conn.execute(_DOCUMENT_ROWS, (path,))
+    ]
+
+
+def _query_unit(vector: Sequence[float], dimension: int) -> Any:
+    """Return *vector* as a unit float32 query, refusing another dimension.
+
+    Raises:
+        ValueError: If it is not of *dimension*.
+    """
+    query = np.asarray(vector, dtype=np.float32)
+    if query.shape != (dimension,):
+        raise ValueError(
+            f"Query dimension mismatch: the store holds dimension {dimension}, "
+            f"the query has {query.shape[-1]}."
+        )
+    return unit_vector(query)
+
+
+def _streamed_rows(
+    conn: sqlite3.Connection, request: _Scan, batch_rows: int, where: str
+) -> list[dict[str, Any]]:
+    """Run *request* over the chunks; return the winners' metadata with scores."""
+    wanted = request.predicate
+    cursor = conn.execute(
+        _SCAN,
+        (
+            wanted is not None,
+            *folder_params(request.folder),
+            request.exclude,
+            request.exclude,
+        ),
+    )
+    keep = (
+        None if wanted is None else lambda row: wanted(_metadata_object(row[2], where))
+    )
+    width = len(request.query) * 4
+    winners = scan(
+        cursor,
+        request.query,
+        limit=request.limit,
+        batch_rows=batch_rows,
+        check_blob=lambda blob: _checked_blob(blob, width, where),
+        keep=keep,
+    )
+    return [
+        {
+            **_metadata_object(
+                conn.execute(_ROW_METADATA, (rowid,)).fetchone()[0], where
+            ),
+            "score": score,
+        }
+        for rowid, score in winners
+    ]
+
+
+class SqliteVectorStore(ResidentStore):
+    """A vector store kept in its own SQLite database.
+
+    Reads are served from memory, or streamed from the database (#1377).
     Construct through :class:`SqliteVectorBackend`.
     """
 
@@ -545,15 +706,156 @@ class SqliteVectorStore(ResidentStore):
         read_only: bool,
         registry: SqliteConnectionRegistry | None,
         reset_pending: bool = False,
+        mode: _Mode = _RESIDENT,
     ) -> None:
         super().__init__(snapshot, read_only=read_only)
         self._path = path
         self._registry = registry
         self._reset_pending = reset_pending
+        self._streamed = mode.streamed
+        self._workspace_bytes = mode.workspace_bytes
 
     @property
     def _where(self) -> str:
         return str(self._path) if self._path is not None else _MEMORY
+
+    def _reading(
+        self, read: Callable[[sqlite3.Connection, Snapshot], _T], empty: _T
+    ) -> _T:
+        """Run *read* in one read transaction; *empty* when there is nothing to read.
+
+        Before the database exists, and until a fresh store's first write
+        commits, the store is empty whatever the file holds.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreCorruptError: If the database or a row is damaged.
+            StoreUnavailableError: If the database cannot be read.
+        """
+        snap = self._current()
+        registry = self._registry
+        if registry is None or self._reset_pending:
+            return empty
+        try:
+            conn = registry.conn()
+            conn.execute("BEGIN")
+            try:
+                return read(conn, snap)
+            finally:
+                with contextlib.suppress(sqlite3.Error):
+                    conn.execute("ROLLBACK")
+        except sqlite3.Error as exc:
+            if self._closed:
+                raise RuntimeError("The vector store is closed.") from exc
+            raise _classified(exc, self._where, "read") from exc
+
+    def _streamed_search(
+        self, request: _Scan, path: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Scan for *request*; around the mean of *path*'s rows when given."""
+
+        def read(conn: sqlite3.Connection, snap: Snapshot) -> list[dict[str, Any]]:
+            if conn.execute(_ANY_ROW).fetchone() is None:
+                return []
+            dimension = snap.identity.dimension
+            if path is not None:
+                own = _document_rows(conn, path, dimension, self._where)
+                if not own:
+                    return []
+                mean = np.mean(np.asarray([r.vector for r in own], np.float32), axis=0)
+                todo = dataclasses.replace(
+                    request, query=unit_vector(mean), exclude=path
+                )
+            else:
+                todo = dataclasses.replace(
+                    request, query=_query_unit(request.query, dimension)
+                )
+            batch_rows = rows_per_batch(self._workspace_bytes, dimension)
+            return _streamed_rows(conn, todo, batch_rows, self._where)
+
+        return self._reading(read, [])
+
+    @property
+    def count(self) -> int:
+        """The number of stored rows."""
+        return self._reading(_row_count, 0) if self._streamed else super().count
+
+    def tokens(self) -> dict[str, RevisionToken | None]:
+        """Return each stored document's token; ``None`` when unknown."""
+        return self._reading(_stored_tokens, {}) if self._streamed else super().tokens()
+
+    def rows_for(self, path: str) -> list[VectorRow]:
+        """Return *path*'s rows, vectors normalised, in storage order."""
+        if not self._streamed:
+            return super().rows_for(path)
+        return self._reading(
+            lambda conn, snap: _document_rows(
+                conn, path, snap.identity.dimension, self._where
+            ),
+            [],
+        )
+
+    def search(
+        self,
+        vector: Sequence[float],
+        *,
+        limit: int = 10,
+        predicate: Callable[[dict[str, Any]], bool] | None = None,
+        folder: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the rows nearest *vector*; see :class:`~markdown_vault_mcp.interfaces.VectorReader`.
+
+        Raises:
+            ValueError: If *vector* is not of the store's dimension.
+            RuntimeError: If the store is closed.
+            StoreCorruptError: If a streamed read meets a damaged row.
+            StoreUnavailableError: If a streamed read cannot read the database.
+        """
+        if not self._streamed:
+            return super().search(
+                vector, limit=limit, predicate=predicate, folder=folder
+            )
+        if limit <= 0:
+            self._current()
+            return []
+        return self._streamed_search(
+            _Scan(vector, limit, folder=folder, predicate=predicate)
+        )
+
+    def similar_to_document(
+        self,
+        path: str,
+        *,
+        limit: int = 10,
+        predicate: Callable[[dict[str, Any]], bool] | None = None,
+        folder: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the rows nearest the mean of *path*'s rows, excluding *path*.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreCorruptError: If a streamed read meets a damaged row.
+            StoreUnavailableError: If a streamed read cannot read the database.
+        """
+        if not self._streamed:
+            return super().similar_to_document(
+                path, limit=limit, predicate=predicate, folder=folder
+            )
+        if limit <= 0:
+            self._current()
+            return []
+        return self._streamed_search(
+            _Scan(None, limit, folder=folder, predicate=predicate), path
+        )
+
+    def _holds(self, path: str) -> bool:
+        """Whether the database holds a document row for *path*."""
+        return self._reading(
+            lambda conn, _snap: (
+                conn.execute(_HOLDS_DOCUMENT, (path,)).fetchone() is not None
+            ),
+            False,
+        )
 
     def _connection(self) -> sqlite3.Connection:
         if self._registry is None:
@@ -613,7 +915,7 @@ class SqliteVectorStore(ResidentStore):
             snap = self._writable()
             vectors = row_vectors(document.rows, snap.identity.dimension)
             chunks = _chunk_rows(document.path, row_metadata(document), vectors)
-            new = with_document(snap, document, vectors)
+            new = snap if self._streamed else with_document(snap, document, vectors)
 
             def work(conn: sqlite3.Connection) -> PublicationOutcome:
                 if _token_conflicts(conn, document.path, expected_token):
@@ -642,7 +944,12 @@ class SqliteVectorStore(ResidentStore):
         """
         with self._lock:
             snap = self._writable()
-            new = without_document(snap, path)
+            # No documents row means no rows and no token: chunks reference it.
+            new = (
+                (snap if self._holds(path) else None)
+                if self._streamed
+                else without_document(snap, path)
+            )
             if new is None:
                 return (
                     "conflict" if conflicts(snap, path, expected_token) else "published"
@@ -676,7 +983,11 @@ class SqliteVectorStore(ResidentStore):
         docs, blocks = validated_generation(identity, documents)
         with self._lock:
             snap = self._writable()
-            new = generation_snapshot(identity, snap.generation + 1, docs, blocks)
+            new = (
+                hollow_snapshot(identity, snap.generation + 1)
+                if self._streamed
+                else generation_snapshot(identity, snap.generation + 1, docs, blocks)
+            )
 
             def work(conn: sqlite3.Connection) -> PublicationOutcome:
                 conn.execute("DELETE FROM chunks")
@@ -693,7 +1004,7 @@ class SqliteVectorStore(ResidentStore):
             "sqlite_vector_store_generation_published path=%s generation=%d rows=%d",
             self._where,
             new.generation,
-            len(new.rows),
+            sum(len(d.rows) for d in docs),
         )
 
     def checkpoint(self) -> None:
@@ -758,7 +1069,7 @@ def _open_memory(identity: EmbeddingIdentity) -> SqliteVectorStore:
 
 
 def _open_file(
-    path: Path, identity: EmbeddingIdentity, *, read_only: bool
+    path: Path, identity: EmbeddingIdentity, *, read_only: bool, mode: _Mode
 ) -> SqliteVectorStore:
     where = str(path)
     try:
@@ -778,7 +1089,11 @@ def _open_file(
         ) from exc
     if not exists:
         return SqliteVectorStore(
-            fresh_snapshot(identity), path=path, read_only=read_only, registry=None
+            fresh_snapshot(identity),
+            path=path,
+            read_only=read_only,
+            registry=None,
+            mode=mode,
         )
     registry = _registry(path, read_only=read_only)
     try:
@@ -786,7 +1101,7 @@ def _open_file(
             _prepare_nothing if read_only else _prepare_writable,
             _memory_probe(registry),
         )
-        snap = _load(registry.conn(), identity, where)
+        snap = _load(registry.conn(), identity, where, resident=not mode.streamed)
     except sqlite3.Error as exc:
         registry.close()
         raise _classified(exc, where) from exc
@@ -794,12 +1109,14 @@ def _open_file(
         registry.close()
         raise
     logger.info(
-        "sqlite_vector_store_opened path=%s rows=%d generation=%d",
+        "sqlite_vector_store_opened path=%s search=%s generation=%d",
         where,
-        len(snap.rows),
+        "streamed" if mode.streamed else "resident",
         snap.generation,
     )
-    return SqliteVectorStore(snap, path=path, read_only=read_only, registry=registry)
+    return SqliteVectorStore(
+        snap, path=path, read_only=read_only, registry=registry, mode=mode
+    )
 
 
 class SqliteVectorBackend:
@@ -807,6 +1124,33 @@ class SqliteVectorBackend:
 
     family: StoreFamily = "vector"
     name = _BACKEND_NAME
+
+    def __init__(
+        self,
+        search: SearchMode = "resident",
+        workspace_bytes: int = DEFAULT_WORKSPACE_BYTES,
+    ) -> None:
+        """Choose how the stores this backend opens serve reads (#1377).
+
+        Args:
+            search: ``"resident"`` holds the rows in memory; ``"streamed"``
+                keeps nothing per row resident and scans the database in
+                batches. A store held in memory is always resident.
+            workspace_bytes: The vector bytes one streamed batch may hold.
+
+        Raises:
+            ValueError: If *search* is another mode or *workspace_bytes* is
+                below 1.
+        """
+        if search not in _SEARCH_MODES:
+            raise ValueError(
+                f"search must be one of {', '.join(_SEARCH_MODES)}; got {search!r}."
+            )
+        if workspace_bytes < 1:
+            raise ValueError(
+                f"workspace_bytes must be at least 1; got {workspace_bytes}."
+            )
+        self._mode = _Mode(search == "streamed", workspace_bytes)
 
     def open(
         self,
@@ -841,7 +1185,9 @@ class SqliteVectorBackend:
             raise ValueError("A vector store opens against an EmbeddingIdentity.")
         if location is None or str(location) == _MEMORY:
             return _open_memory(identity)
-        return _open_file(_db_file(location), identity, read_only=not owns_files)
+        return _open_file(
+            _db_file(location), identity, read_only=not owns_files, mode=self._mode
+        )
 
     def open_fresh(
         self, location: Path | str | None, identity: EmbeddingIdentity
@@ -868,6 +1214,7 @@ class SqliteVectorBackend:
             read_only=False,
             registry=None,
             reset_pending=True,
+            mode=self._mode,
         )
 
 

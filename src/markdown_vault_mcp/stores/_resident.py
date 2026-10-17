@@ -11,7 +11,7 @@ Nothing here touches a file.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import cached_property
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -69,6 +69,15 @@ def fresh_snapshot(identity: EmbeddingIdentity) -> Snapshot:
     """Return an empty snapshot at *identity*."""
     empty = frozen(np.zeros((0, identity.dimension), dtype=np.float32))
     return Snapshot(identity, 0, empty, (), MappingProxyType({}))
+
+
+def hollow_snapshot(identity: EmbeddingIdentity, generation: int) -> Snapshot:
+    """Return a rowless snapshot carrying only *identity* and *generation*.
+
+    What a streamed store keeps resident (#1377): its rows stay in the
+    database.
+    """
+    return replace(fresh_snapshot(identity), generation=generation)
 
 
 def _normalised(vectors: Any) -> Any:

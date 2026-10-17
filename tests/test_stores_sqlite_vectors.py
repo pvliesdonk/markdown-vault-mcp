@@ -146,6 +146,177 @@ class TestFileConformance(
         )
 
 
+def _streamed(**kw: Any) -> SqliteVectorBackend:
+    return SqliteVectorBackend(
+        search="streamed", workspace_bytes=24, **kw
+    )  # 2 rows at dimension 3
+
+
+class TestStreamedFileConformance(
+    VectorStoreContract, PersistentVectorStoreContract, SourceNeutralContract
+):
+    @pytest.fixture
+    def make_store(self, tmp_path: Path, opened: list[Any]) -> Callable[..., Any]:
+        return lambda identity: _tracked(
+            opened, _streamed().open(_base(tmp_path), identity)
+        )
+
+    @pytest.fixture
+    def reopen_store(self, tmp_path: Path, opened: list[Any]) -> Callable[..., Any]:
+        return lambda identity, owns: _tracked(
+            opened, _streamed().open(_base(tmp_path), identity, owns_files=owns)
+        )
+
+
+class TestStreamedFileLifecycle(StoreLifecycleContract):
+    @pytest.fixture
+    def open_store(self, tmp_path: Path) -> Callable[[], Any]:
+        return lambda: _streamed().open(_base(tmp_path), IDENT)
+
+    @pytest.fixture
+    def open_store_read_only(self, tmp_path: Path) -> Callable[[], Any]:
+        return lambda: _streamed().open(_base(tmp_path), IDENT, owns_files=False)
+
+    @pytest.fixture
+    def touch_store(self) -> Callable[[Any], None]:
+        return lambda store: store.count
+
+    @pytest.fixture
+    def write_to_store(self) -> Callable[[Any], None]:
+        return lambda store: store.replace_document(
+            doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN
+        )
+
+    @pytest.fixture
+    def closed_error(self) -> type[Exception]:
+        return RuntimeError
+
+
+class TestStreamedBackend:
+    @pytest.mark.parametrize("kw", [{"search": "lazy"}, {"workspace_bytes": 0}])
+    def test_refuses_a_bad_mode_or_workspace(self, kw: dict[str, Any]) -> None:
+        with pytest.raises(ValueError):
+            SqliteVectorBackend(**kw)
+
+    def test_in_memory_stays_resident(self) -> None:
+        store = _streamed().open(None, IDENT)
+        assert store._streamed is False
+        store.close()
+
+    @pytest.mark.parametrize(
+        "statement",
+        [
+            "UPDATE chunks SET vector = x'00000000'",
+            "UPDATE chunks SET metadata = '[1, 2]'",
+        ],
+        ids=["vector", "metadata"],
+    )
+    def test_open_validates_every_row(self, tmp_path: Path, statement: str) -> None:
+        _seed(tmp_path)
+        _sql(tmp_path, statement)
+        backend, base = _streamed(), _base(tmp_path)
+        with pytest.raises(StoreCorruptError):
+            backend.open(base, IDENT)
+
+    @pytest.mark.parametrize(
+        ("statement", "read"),
+        [
+            ("UPDATE chunks SET vector = x'00000000'", "search"),
+            ("UPDATE chunks SET vector = x'00000000'", "rows_for"),
+            ("UPDATE chunks SET metadata = '[1, 2]'", "search"),
+            ("UPDATE chunks SET metadata = '[1, 2]'", "rows_for"),
+        ],
+    )
+    def test_a_row_damaged_after_open_is_corrupt_at_the_read(
+        self, tmp_path: Path, statement: str, read: str
+    ) -> None:
+        _seed(tmp_path)
+        store = _streamed().open(_base(tmp_path), IDENT)
+        _sql(tmp_path, statement)
+        call = {
+            "search": lambda: store.search([1, 0, 0]),
+            "rows_for": lambda: store.rows_for("a.md"),
+        }[read]
+        with pytest.raises(StoreCorruptError):
+            call()
+        store.close()
+
+    def test_a_failing_read_is_unavailable(self, tmp_path: Path) -> None:
+        _seed(tmp_path)
+        store = _streamed().open(_base(tmp_path), IDENT)
+
+        class _Refusing:
+            def execute(self, *_args: Any) -> None:
+                raise sqlite3.OperationalError("disk I/O error")
+
+        real = store._registry.conn
+        store._registry.conn = _Refusing  # type: ignore[method-assign]
+        with pytest.raises(StoreUnavailableError):
+            store.search([1, 0, 0])
+        store._registry.conn = real  # type: ignore[method-assign]
+        store.close()
+
+    def test_a_read_racing_close_reports_the_store_closed(self, tmp_path: Path) -> None:
+        _seed(tmp_path)
+        store = _streamed().open(_base(tmp_path), IDENT)
+
+        def closing_then_refused() -> sqlite3.Connection:
+            store._closed = True  # close() won the race after the check
+            raise sqlite3.ProgrammingError("Cannot operate on a closed database.")
+
+        real = store._registry.conn
+        store._registry.conn = closing_then_refused  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError, match="closed"):
+            store.search([1, 0, 0])
+        store._registry.conn = real  # type: ignore[method-assign]
+        store._closed = False
+        store.close()  # release the database the staged race left open
+
+    def test_a_fresh_store_reads_empty_until_its_first_write_commits(
+        self, tmp_path: Path
+    ) -> None:
+        _seed(tmp_path)
+        fresh = _streamed().open_fresh(_base(tmp_path), IDENT)
+        empty = (0, [], {}, [])
+        read = lambda: (  # noqa: E731
+            fresh.count,
+            fresh.search([1, 0, 0]),
+            fresh.tokens(),
+            fresh.rows_for("a.md"),
+        )
+        assert read() == empty
+        outcome = fresh.replace_document(
+            doc("new.md", [[1, 0, 0]]), expected_token="stale"
+        )
+        assert outcome == "conflict"
+        assert read() == empty
+        fresh.replace_document(doc("new.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        assert fresh.tokens() == {"new.md": "t1"}
+        fresh.close()
+
+    def test_a_reader_sees_the_owners_later_writes(self, tmp_path: Path) -> None:
+        _seed(tmp_path)
+        owner = _streamed().open(_base(tmp_path), IDENT)
+        reader = _streamed().open(_base(tmp_path), IDENT, owns_files=False)
+        owner.replace_document(
+            doc("b.md", [[0, 1, 0]], token="tb"), expected_token=None
+        )
+        assert reader.tokens() == {"a.md": "ta", "b.md": "tb"}
+        assert reader.count == 2
+        reader.close()
+        owner.close()
+
+    def test_removing_an_absent_path_writes_nothing(self, tmp_path: Path) -> None:
+        _seed(tmp_path)
+        store = _streamed().open(_base(tmp_path), IDENT)
+        wal = Path(f"{_db(tmp_path)}-wal")
+        before = wal.stat().st_size if wal.exists() else 0
+        assert store.remove_document("nope.md", expected_token=None) == "published"
+        assert store.remove_document("nope.md", expected_token="t") == "conflict"
+        assert (wal.stat().st_size if wal.exists() else 0) == before
+        store.close()
+
+
 class TestFileLifecycle(StoreLifecycleContract):
     @pytest.fixture
     def open_store(self, tmp_path: Path) -> Callable[[], Any]:
