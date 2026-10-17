@@ -332,6 +332,25 @@ class TestStreamedBackend:
         reader.close()
         owner.close()
 
+    def test_a_store_holding_no_rows_reads_empty(self, tmp_path: Path) -> None:
+        store = _streamed().open(_base(tmp_path), IDENT)
+        store.replace_document(DocumentRows("e.md", "te", []), expected_token=ANY_TOKEN)
+        assert store.search([1, 0, 0]) == []
+        assert store.similar_to_document("e.md") == []
+        assert store.tokens() == {"e.md": "te"}
+        store.close()
+
+    def test_a_database_without_an_identity_yet_reads_empty(
+        self, tmp_path: Path
+    ) -> None:
+        _seed(tmp_path)
+        _sql(tmp_path, "DELETE FROM chunks")
+        _sql(tmp_path, "DELETE FROM documents")
+        _sql(tmp_path, "DELETE FROM meta WHERE key IN ('identity', 'generation')")
+        store = _streamed().open(_base(tmp_path), IDENT)
+        assert (store.count, store.generation, store.search([1, 0, 0])) == (0, 0, [])
+        store.close()
+
     def test_removing_an_absent_path_writes_nothing(self, tmp_path: Path) -> None:
         _seed(tmp_path)
         store = _streamed().open(_base(tmp_path), IDENT)
