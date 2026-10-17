@@ -171,9 +171,18 @@ Returns:
 | `list[dict[str, Any]]` | Copies of the rows' metadata, each with a score: the |
 | `list[dict[str, Any]]` | normalised dot product, 0.0 for a zero vector.       |
 
-### `similar_to_document(path, *, limit=10, predicate=None)`
+### `similar_to_document(path, *, limit=10, predicate=None, folder=None)`
 
 Return the rows nearest the mean of *path*'s rows, excluding *path*.
+
+Parameters:
+
+| Name        | Type                                   | Description                                      | Default                                                                                       |
+| ----------- | -------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `path`      | `str`                                  | The document whose rows are averaged.            | *required*                                                                                    |
+| `limit`     | `int`                                  | Maximum number of rows; zero or less returns []. | `10`                                                                                          |
+| `predicate` | \`Callable\[\[dict[str, Any]\], bool\] | None\`                                           | Keeps only the rows it accepts, applied before limit.                                         |
+| `folder`    | \`str                                  | None\`                                           | Keeps only rows in this folder or below it, applied before limit; a backend may push it down. |
 
 Returns:
 
