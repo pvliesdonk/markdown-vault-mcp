@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from typing import TYPE_CHECKING
 
@@ -156,3 +157,73 @@ def test_status_counts_the_sqlite_rows_before_the_store_opens(tmp_path: Path) ->
         assert (status["backend"], status["chunk_count"]) == ("sqlite", 3)
     finally:
         second.close()
+
+
+def _unbuilt(tmp_path: Path, store: str) -> Vault:
+    root = tmp_path / "vault"
+    root.mkdir(exist_ok=True)
+    (root / "a.md").write_text("# a\n\nWords.\n")
+    return Vault(
+        source_dir=root,
+        settings=VaultSettings(
+            index_path=tmp_path / "index.db", read_only=False, embedding_store=store
+        ),
+        embedding_provider=_Counting(),
+    )
+
+
+class TestStatusBeforeTheStoreOpens:
+    def test_no_sqlite_database_counts_zero(self, tmp_path: Path) -> None:
+        vault = _unbuilt(tmp_path, "sqlite")
+        try:
+            assert vault.index.embeddings_status()["chunk_count"] == 0
+        finally:
+            vault.close()
+
+    def test_an_empty_sqlite_file_counts_zero(self, tmp_path: Path) -> None:
+        (tmp_path / "index-db-embeddings.sqlite3").write_bytes(b"")
+        vault = _unbuilt(tmp_path, "sqlite")
+        try:
+            assert vault.index.embeddings_status()["chunk_count"] == 0
+        finally:
+            vault.close()
+
+    def test_an_unreadable_sqlite_file_counts_zero_and_says_so(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        (tmp_path / "index-db-embeddings.sqlite3").write_bytes(b"not a db " * 200)
+        vault = _unbuilt(tmp_path, "sqlite")
+        try:
+            with caplog.at_level(logging.WARNING):
+                assert vault.index.embeddings_status()["chunk_count"] == 0
+        finally:
+            vault.close()
+        assert [
+            r
+            for r in caplog.records
+            if r.msg.startswith("embeddings_status_count_failed")
+        ]
+
+    def test_a_legacy_numpy_row_list_is_counted(self, tmp_path: Path) -> None:
+        (tmp_path / "index-db-embeddings.json").write_text("[{}, {}]")
+        vault = _unbuilt(tmp_path, "numpy")
+        try:
+            assert vault.index.embeddings_status()["chunk_count"] == 2
+        finally:
+            vault.close()
+
+    def test_a_malformed_numpy_commit_file_counts_zero_and_says_so(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        (tmp_path / "index-db-embeddings.json").write_text("{not json")
+        vault = _unbuilt(tmp_path, "numpy")
+        try:
+            with caplog.at_level(logging.WARNING):
+                assert vault.index.embeddings_status()["chunk_count"] == 0
+        finally:
+            vault.close()
+        assert [
+            r
+            for r in caplog.records
+            if r.msg.startswith("embeddings_status_metadata_read_failed")
+        ]

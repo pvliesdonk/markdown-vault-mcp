@@ -24,6 +24,7 @@ from tests.conftest import MockEmbeddingProvider
 from tests.fixtures.vectors import metadata_by_path
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 
@@ -37,8 +38,20 @@ class _Counting(MockEmbeddingProvider):
         return super().embed(texts)
 
 
+_OPEN: list[FTSIndex] = []
+
+
+@pytest.fixture(autouse=True)
+def _close_indexes() -> Iterator[None]:
+    """Close every keyword index a test built through :func:`_index`."""
+    yield
+    while _OPEN:
+        _OPEN.pop().close()
+
+
 def _index(tmp_path: Path, notes: dict[str, str]) -> FTSIndex:
     fts = FTSIndex(db_path=":memory:")
+    _OPEN.append(fts)
     for name, text in notes.items():
         (tmp_path / name).write_text(text)
         fts.upsert_note(parse_note(tmp_path / name, tmp_path, HeadingChunker()))
@@ -451,3 +464,70 @@ class TestStoreWriteFailures:
         read_only = _ReadOnly(store, "a.md")
         with pytest.raises(ReadOnlyError):
             rec.reconcile(read_only, site="test")
+
+
+class TestStoreWriteFailuresElsewhere:
+    def test_a_failed_retoken_is_retried(self, tmp_path):
+        fts, _provider, store, rec = _setup(tmp_path, NOTES)
+        rec.reconcile(store, site="test")
+        (tmp_path / "a.md").write_text(
+            "---\nmodified: 2026-10-17\n---\n# A\n\nApples.\n"
+        )
+        fts.upsert_note(parse_note(tmp_path / "a.md", tmp_path, HeadingChunker()))
+        result = rec.reconcile(_FailingWrites(store, "a.md"), ["a.md"], site="test")
+        assert (result.retry, result.retokened) == ({"a.md"}, 0)
+
+    def test_a_read_only_store_raises_from_a_removal(self, tmp_path):
+        from markdown_vault_mcp.exceptions import ReadOnlyError
+
+        fts, _provider, store, rec = _setup(
+            tmp_path, NOTES, probe=_Probe({"a.md": "absent"})
+        )
+        rec.reconcile(store, site="test")
+        fts.delete_by_path("a.md")
+
+        class _ReadOnlyRemoval(_FailingWrites):
+            def remove_document(self, *_args: Any, **_kwargs: Any) -> str:
+                raise ReadOnlyError("read-only")
+
+        read_only = _ReadOnlyRemoval(store, "b.md")
+        with pytest.raises(ReadOnlyError):
+            rec.reconcile(read_only, site="test")
+
+
+class _Conflicting(_FailingWrites):
+    """A store whose replace for one path reports another writer got there."""
+
+    def replace_document(self, document: DocumentRows, *, expected_token: Any) -> str:
+        if document.path == self._path:
+            return "conflict"
+        return self._inner.replace_document(document, expected_token=expected_token)
+
+
+class TestRetokenOutcomes:
+    def _retokenable(self, tmp_path):
+        fts, _provider, store, rec = _setup(tmp_path, NOTES)
+        rec.reconcile(store, site="test")
+        (tmp_path / "a.md").write_text(
+            "---\nmodified: 2026-10-17\n---\n# A\n\nApples.\n"
+        )
+        fts.upsert_note(parse_note(tmp_path / "a.md", tmp_path, HeadingChunker()))
+        return store, rec
+
+    def test_a_retoken_conflict_is_requeued(self, tmp_path):
+        store, rec = self._retokenable(tmp_path)
+        result = rec.reconcile(_Conflicting(store, "a.md"), ["a.md"], site="test")
+        assert (result.conflicts, result.retokened) == ({"a.md"}, 0)
+
+    def test_a_read_only_store_raises_from_a_retoken(self, tmp_path):
+        from markdown_vault_mcp.exceptions import ReadOnlyError
+
+        store, rec = self._retokenable(tmp_path)
+
+        class _ReadOnly(_FailingWrites):
+            def replace_document(self, *_args: Any, **_kwargs: Any) -> str:
+                raise ReadOnlyError("read-only")
+
+        read_only = _ReadOnly(store, "a.md")
+        with pytest.raises(ReadOnlyError):
+            rec.reconcile(read_only, ["a.md"], site="test")
