@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import pytest
 
-from markdown_vault_mcp.exceptions import IndexUnavailableError
+from markdown_vault_mcp.exceptions import IndexUnavailableError, StoreUnavailableError
 from markdown_vault_mcp.facets.graph import GraphFacet
 from markdown_vault_mcp.vault import Vault
 
@@ -158,6 +159,37 @@ class TestGraphViews:
                 "center.md", depth=1, include_semantic=True
             )
             assert all(e.link_type != "semantic" for e in view.edges)
+        finally:
+            col.close()
+
+    def test_neighborhood_reports_a_failing_vector_store_once(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        # A streamed store reads the database on every get_similar (#1377): a
+        # failure there is the operator's to see, once, not one DEBUG per node.
+        col = Vault(source_dir=self._linked_vault(tmp_path))
+        col.index.build_index()
+        calls: list[str] = []
+
+        def failing(path: str, **_kw: object) -> list[object]:
+            calls.append(path)
+            raise StoreUnavailableError(
+                "disk I/O error", backend="sqlite", location="v"
+            )
+
+        monkeypatch.setattr(col.graph._search_mgr, "get_similar", failing)
+        try:
+            with caplog.at_level(logging.DEBUG):
+                view = col.graph.get_neighborhood(
+                    "center.md", depth=1, include_semantic=True
+                )
+            assert all(e.link_type != "semantic" for e in view.edges)
+            assert len(calls) == 1
+            failed = [r for r in caplog.records if "graph_similar_store" in r.msg]
+            assert [r.levelno for r in failed] == [logging.WARNING]
         finally:
             col.close()
 

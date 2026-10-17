@@ -2424,3 +2424,58 @@ class TestEmbeddingStore:
     def test_sqlite_is_accepted(self, tmp_path: Path) -> None:
         config = ProjectConfig(source_dir=tmp_path, embedding_store="sqlite")
         assert config.indexing.embedding_store == "sqlite"
+
+
+class TestEmbeddingSearch:
+    def test_defaults_to_resident_with_one_mebibyte(self, tmp_path: Path) -> None:
+        config = ProjectConfig(source_dir=tmp_path)
+        assert (config.embedding_search, config.embedding_search_workspace_mb) == (
+            "resident",
+            1,
+        )
+        assert config.indexing.embedding_search == "resident"
+        assert config.indexing.embedding_search_workspace_mb == 1
+
+    def test_read_from_the_environment(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_STORE", "sqlite")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH", " Streamed ")
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB", "4")
+        config = ProjectConfig.from_env()
+        assert (config.embedding_search, config.embedding_search_workspace_mb) == (
+            "streamed",
+            4,
+        )
+
+    def test_an_unknown_mode_is_refused(self, tmp_path: Path) -> None:
+        with pytest.raises(ConfigurationError, match="EMBEDDING_SEARCH"):
+            ProjectConfig(
+                source_dir=tmp_path, embedding_store="sqlite", embedding_search="lazy"
+            )
+
+    @pytest.mark.parametrize("mb", [0, -1])
+    def test_a_workspace_below_one_is_refused(self, tmp_path: Path, mb: int) -> None:
+        with pytest.raises(ConfigurationError, match="EMBEDDING_SEARCH_WORKSPACE_MB"):
+            ProjectConfig(source_dir=tmp_path, embedding_search_workspace_mb=mb)
+
+    def test_a_non_integer_workspace_is_refused(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_SOURCE_DIR", str(tmp_path))
+        monkeypatch.setenv("MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB", "abc")
+        with pytest.raises(ConfigurationError, match="EMBEDDING_SEARCH_WORKSPACE_MB"):
+            ProjectConfig.from_env()
+
+    def test_streamed_needs_the_sqlite_store(self, tmp_path: Path) -> None:
+        with pytest.raises(ConfigurationError) as caught:
+            ProjectConfig(source_dir=tmp_path, embedding_search="streamed")
+        assert "EMBEDDING_SEARCH" in str(caught.value)
+        assert "EMBEDDING_STORE=sqlite" in str(caught.value)
+
+    def test_streamed_with_sqlite_is_accepted(self, tmp_path: Path) -> None:
+        config = ProjectConfig(
+            source_dir=tmp_path, embedding_store="sqlite", embedding_search="streamed"
+        )
+        assert config.indexing.embedding_search == "streamed"

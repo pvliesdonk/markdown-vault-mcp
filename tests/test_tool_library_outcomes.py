@@ -22,6 +22,9 @@ from markdown_vault_mcp.exceptions import (
     IndexUnavailableError,
     InvalidRequestError,
     ReadOnlyError,
+    StoreCorruptError,
+    StoreIncompatibleError,
+    StoreUnavailableError,
 )
 
 if TYPE_CHECKING:
@@ -69,6 +72,10 @@ def test_transient_index_says_retry_at_warning(reason: Any) -> None:
         IndexUnavailableError("x", reason="broken"),
         IndexUnavailableError("x", reason="never_built"),
         DocumentUnreadableError("a.md", "bad bytes"),
+        # A streamed vector read that fails needs an operator (#1377).
+        StoreUnavailableError("x", backend="sqlite", location="v"),
+        StoreCorruptError("x", backend="sqlite", location="v"),
+        StoreIncompatibleError("x", backend="sqlite", location="v"),
         ValueError("internal"),
         RuntimeError("bug"),
     ],

@@ -232,6 +232,33 @@ class ProjectConfig:
             "wizard": {"group": "Indexing"},
         },
     )
+    embedding_search: str = field(
+        default="resident",
+        metadata={
+            "help": (
+                "How semantic search reads the embeddings. 'resident' (the "
+                "default) holds them all in memory, the fastest; 'streamed' "
+                "keeps none in memory and reads them from the store in "
+                "batches for each search, slower as the vault grows. "
+                "'streamed' needs EMBEDDING_STORE=sqlite; vectors kept in "
+                "memory (no INDEX_PATH or EMBEDDINGS_PATH) are always resident."
+            ),
+            "tags": ("indexing",),
+            "wizard": {"group": "Indexing"},
+        },
+    )
+    embedding_search_workspace_mb: int = field(
+        default=1,
+        metadata={
+            "help": (
+                "With EMBEDDING_SEARCH=streamed, the embeddings one batch of "
+                "a search may hold, in MiB (at least 1). It bounds the "
+                "search's working memory, not the process's."
+            ),
+            "tags": ("indexing",),
+            "wizard": {"group": "Indexing"},
+        },
+    )
     indexed_fields: Sequence[str] | None = field(
         default=None,
         metadata={
@@ -1016,6 +1043,8 @@ class ProjectConfig:
             state_path=self.state_path,
             embeddings_path=self.embeddings_path,
             embedding_store=self.embedding_store,
+            embedding_search=self.embedding_search,
+            embedding_search_workspace_mb=self.embedding_search_workspace_mb,
             indexed_frontmatter_fields=self.indexed_fields,
             required_frontmatter=self.required_fields,
             exclude_patterns=self.exclude,
@@ -1177,6 +1206,24 @@ class ProjectConfig:
                 f"MARKDOWN_VAULT_MCP_EMBEDDING_STORE must be one of "
                 f"{', '.join(embedding_stores)}; got {self.embedding_store!r}."
             )
+        embedding_searches = ("resident", "streamed")
+        if self.embedding_search not in embedding_searches:
+            raise ConfigurationError(
+                f"MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH must be one of "
+                f"{', '.join(embedding_searches)}; got {self.embedding_search!r}."
+            )
+        if self.embedding_search_workspace_mb < 1:
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB must be at "
+                f"least 1; got {self.embedding_search_workspace_mb}."
+            )
+        if self.embedding_search == "streamed" and self.embedding_store != "sqlite":
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed needs "
+                "MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite; the "
+                f"{self.embedding_store!r} store serves its embeddings from memory "
+                "only. Set EMBEDDING_STORE=sqlite, or EMBEDDING_SEARCH=resident."
+            )
         # CONFIG-VALIDATE-END
 
     @classmethod
@@ -1208,6 +1255,12 @@ class ProjectConfig:
             embedding_store=(env(_ENV_PREFIX, "EMBEDDING_STORE") or "numpy")
             .strip()
             .lower(),
+            embedding_search=(env(_ENV_PREFIX, "EMBEDDING_SEARCH") or "resident")
+            .strip()
+            .lower(),
+            embedding_search_workspace_mb=env_int(
+                _ENV_PREFIX, "EMBEDDING_SEARCH_WORKSPACE_MB", 1
+            ),
             indexed_fields=(_indexed := opt_list(env(_ENV_PREFIX, "INDEXED_FIELDS"))),
             required_fields=opt_list(env(_ENV_PREFIX, "REQUIRED_FIELDS")),
             exclude=opt_list(env(_ENV_PREFIX, "EXCLUDE")),

@@ -4077,7 +4077,10 @@ only.
 **The vault's slot (#1777).** `Vault` holds its vector store in a
 `VectorStoreSlot` that opens it on first use through the backend
 `EMBEDDING_STORE` names (or an injected `vector_backend`), or uses an
-injected `vector_store`, which stays the caller's. It opens with the
+injected `vector_store`, which stays the caller's. With
+`EMBEDDING_SEARCH=streamed` (and `EMBEDDING_SEARCH_WORKSPACE_MB`) it
+constructs the SQLite backend in streamed mode; any other store refuses
+`streamed` (Search memory, above). It opens with the
 provider, model, variant and text format from configuration and takes
 the dimension from the stored files, because `provider.dimension` is a
 network probe for several providers: stored vectors stay readable with

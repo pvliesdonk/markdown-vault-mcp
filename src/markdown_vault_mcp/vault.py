@@ -163,6 +163,34 @@ def _resolve_chunk_strategy(strategy: str | ChunkStrategy) -> ChunkStrategy:
     return strategy
 
 
+def _configured_vector_backend(settings: VaultSettings) -> Any:
+    """Construct the vector backend *settings* name, in its search mode (#1377).
+
+    Raises:
+        ConfigurationError: If the store names no registered backend, or the
+            search mode or workspace is one the store cannot serve.
+    """
+    try:
+        factory = get_backend("vector", settings.embedding_store)
+    except LookupError as exc:
+        raise ConfigurationError(str(exc)) from exc
+    if settings.embedding_store != "sqlite":
+        if settings.embedding_search != "resident":
+            raise ConfigurationError(
+                f"embedding_search={settings.embedding_search!r} needs "
+                f"embedding_store='sqlite' (EMBEDDING_STORE=sqlite); the "
+                f"{settings.embedding_store!r} store is resident only."
+            )
+        return factory()
+    try:
+        return factory(
+            search=settings.embedding_search,
+            workspace_bytes=settings.embedding_search_workspace_bytes,
+        )
+    except ValueError as exc:
+        raise ConfigurationError(f"Vector search settings refused: {exc}") from exc
+
+
 class Vault:
     """Facade over FTS5 index, vector index, and change tracker.
 
@@ -406,8 +434,8 @@ class Vault:
 
         Raises:
             ValueError: If a vector store was injected without a provider.
-            ConfigurationError: If ``settings.embedding_store`` names no
-                registered backend.
+            ConfigurationError: If the settings name no registered backend,
+                or a search mode or workspace it cannot serve.
         """
         if self._injected_vector_store is not None and self._embedding_provider is None:
             raise ValueError(
@@ -415,12 +443,9 @@ class Vault:
             )
         backend = self._injected_vector_backend
         if backend is None:
-            try:
-                backend = get_backend("vector", settings.embedding_store)()  # type: ignore[assignment]
-            except LookupError as exc:
-                raise ConfigurationError(str(exc)) from exc
+            backend = _configured_vector_backend(settings)
         return VectorStoreSlot(
-            backend=backend,  # type: ignore[arg-type]
+            backend=backend,
             location=self._embeddings_path,
             provider=self._embedding_provider,
             text_format=self._embed_builder.format_token(),

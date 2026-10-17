@@ -67,6 +67,12 @@ class VaultSettings:
         embedding_store: The vector backend's registry name; ``"numpy"``
             (the default) keeps the vectors in files at ``embeddings_path``,
             ``"sqlite"`` in one SQLite database there.
+        embedding_search: ``"resident"`` (the default) holds the vectors in
+            memory; ``"streamed"`` keeps none resident and reads them in
+            batches per search (#1377). Needs ``embedding_store="sqlite"``;
+            a store held in memory is always resident.
+        embedding_search_workspace_bytes: The vector bytes one streamed
+            batch may hold (default 1 MiB).
         owns_index_files: When ``True`` (default), this vault owns the
             index files on disk: the SQLite index, the vector sidecar and the
             state file. ``False`` is for a process that reads files another
@@ -178,6 +184,8 @@ class VaultSettings:
     index_path: Path | None = None
     embeddings_path: Path | None = None
     embedding_store: str = "numpy"
+    embedding_search: str = "resident"
+    embedding_search_workspace_bytes: int = 1 << 20
     read_only: bool = True
     write_protect_existing: bool = False
     report_unresolved_links: bool = False
@@ -247,6 +255,10 @@ class VaultSettings:
             index_path=config.indexing.index_path,
             embeddings_path=config.indexing.embeddings_path,
             embedding_store=config.indexing.embedding_store,
+            embedding_search=config.indexing.embedding_search,
+            embedding_search_workspace_bytes=(
+                config.indexing.embedding_search_workspace_mb << 20
+            ),
             read_only=config.read_only,
             write_protect_existing=config.write_protect_existing,
             report_unresolved_links=config.report_unresolved_links,
