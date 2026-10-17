@@ -75,8 +75,13 @@ from markdown_vault_mcp.stores._streamed import (
     scan,
 )
 from markdown_vault_mcp.stores.registry import register_backend
-from markdown_vault_mcp.types import ANY_TOKEN, EmbeddingIdentity, VectorRow
-from markdown_vault_mcp.utils.fs import is_directory, path_exists
+from markdown_vault_mcp.types import (
+    ANY_TOKEN,
+    EmbeddingIdentity,
+    StoreResources,
+    VectorRow,
+)
+from markdown_vault_mcp.utils.fs import file_bytes, is_directory, path_exists
 
 with contextlib.suppress(ImportError):  # numpy is the embeddings extra
     import numpy as np
@@ -932,6 +937,25 @@ class SqliteVectorStore(ResidentStore):
             return []
         return self._streamed_search(
             _Scan(None, limit, folder=folder, predicate=predicate), path
+        )
+
+    def resources(self) -> StoreResources:
+        """Return the search mode, workspace and measured sizes (#1377).
+
+        Raises:
+            RuntimeError: If the store is closed.
+            OSError: If a stat of the database files is refused.
+        """
+        snap = self._current()
+        stored = None
+        if self._path is not None:
+            wal, shm = Path(f"{self._path}-wal"), Path(f"{self._path}-shm")
+            stored = sum(file_bytes(p) for p in (self._path, wal, shm))
+        return StoreResources(
+            search_mode="streamed" if self._streamed else "resident",
+            search_workspace_bytes=self._workspace_bytes if self._streamed else None,
+            stored_bytes=stored,
+            resident_vector_bytes=int(snap.matrix.nbytes),
         )
 
     def _holds(self, path: str) -> bool:

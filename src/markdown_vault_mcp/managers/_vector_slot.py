@@ -26,6 +26,7 @@ from markdown_vault_mcp.exceptions import (
     StoreCorruptError,
     StoreIncompatibleError,
 )
+from markdown_vault_mcp.interfaces import ReportsResources
 from markdown_vault_mcp.types import EmbeddingIdentity
 
 if TYPE_CHECKING:
@@ -39,6 +40,14 @@ if TYPE_CHECKING:
     from markdown_vault_mcp.providers import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
+
+#: The cost fields of ``embeddings_status`` when no store reports them (#1377).
+NO_RESOURCES: dict[str, Any] = {
+    "search_mode": None,
+    "search_workspace_bytes": None,
+    "stored_bytes": None,
+    "resident_vector_bytes": None,
+}
 
 
 class VectorStoreSlot:
@@ -321,15 +330,29 @@ class VectorStoreSlot:
         return self.fresh()
 
     def describe(self) -> dict[str, Any]:
-        """Return backend, identity and generation for ``embeddings_status``."""
+        """Return backend, identity, generation and costs for ``embeddings_status``.
+
+        The search mode and sizes come from the open store when it reports
+        them (:class:`~markdown_vault_mcp.interfaces.ReportsResources`, #1377);
+        ``None`` before it opens or when it does not.
+
+        Raises:
+            StoreOpenError: If a streamed store cannot be read: its
+                ``generation`` is read from the database.
+            OSError: If a stat of the store's files is refused (#1625).
+        """
         store = self._store
-        return {
+        described: dict[str, Any] = {
             "backend": self.backend_name,
             "identity": dataclasses.asdict(store.identity)
             if store is not None
             else None,
             "generation": store.generation if store is not None else None,
+            **NO_RESOURCES,
         }
+        if isinstance(store, ReportsResources):
+            described.update(dataclasses.asdict(store.resources()))
+        return described
 
     def close(self) -> None:
         """Close the store if the slot opened it; an injected store is left open."""

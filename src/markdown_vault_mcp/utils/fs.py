@@ -45,6 +45,20 @@ def _mode(path: Path) -> int | None:
         raise
 
 
+def file_bytes(path: Path) -> int:
+    """Return *path*'s size in bytes, ``0`` when nothing is there.
+
+    Raises:
+        OSError: If the stat is refused for another reason (#1625).
+    """
+    try:
+        return path.stat().st_size
+    except OSError as exc:
+        if exc.errno in _ABSENT_ERRNOS:
+            return 0
+        raise
+
+
 def is_regular_file(path: Path) -> bool:
     """True if *path* is a regular file; False if nothing, or something else, is.
 

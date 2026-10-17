@@ -141,6 +141,10 @@ class TestLifecycleAndDescription:
             "backend": "numpy",
             "identity": None,
             "generation": None,
+            "search_mode": None,
+            "search_workspace_bytes": None,
+            "stored_bytes": None,
+            "resident_vector_bytes": None,
         }
         slot.writable(rebuild=None)
         assert slot.describe() == {
@@ -153,7 +157,72 @@ class TestLifecycleAndDescription:
                 "dimension": 3,
             },
             "generation": 0,
+            "search_mode": "resident",
+            "search_workspace_bytes": None,
+            "stored_bytes": 0,
+            "resident_vector_bytes": 0,
         }
+
+    def test_describe_raises_when_a_streamed_store_cannot_be_read(
+        self, tmp_path: Path
+    ) -> None:
+        import sqlite3
+
+        from markdown_vault_mcp.exceptions import StoreUnavailableError
+        from markdown_vault_mcp.stores.sqlite_vectors import SqliteVectorBackend
+
+        slot = VectorStoreSlot(
+            backend=SqliteVectorBackend(search="streamed"),
+            location=tmp_path / "vec",
+            provider=PROVIDER,
+            text_format="v1",
+        )
+        store = slot.writable(rebuild=None)
+        store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+
+        class _Refusing:
+            def execute(self, *_args: object) -> None:
+                raise sqlite3.OperationalError("disk I/O error")
+
+        real = store._registry.conn
+        store._registry.conn = _Refusing  # type: ignore[method-assign]
+        with pytest.raises(StoreUnavailableError):
+            slot.describe()  # the generation is a database read when streamed
+        store._registry.conn = real  # type: ignore[method-assign]
+        slot.close()
+
+    def test_describe_a_store_that_reports_no_resources(self) -> None:
+        injected = NumpySidecarBackend().open(None, IDENTITY)
+
+        class _Opaque:
+            """A store that does not report its resources."""
+
+            def __getattr__(self, name: str) -> Any:
+                if name == "resources":
+                    raise AttributeError(name)
+                return getattr(injected, name)
+
+        slot = _slot(None, store=_Opaque())
+        slot.get(rebuild=None)
+        described = slot.describe()
+        assert described["generation"] == 0
+        assert {
+            k: described[k]
+            for k in (
+                "search_mode",
+                "search_workspace_bytes",
+                "stored_bytes",
+                "resident_vector_bytes",
+            )
+        } == dict.fromkeys(
+            (
+                "search_mode",
+                "search_workspace_bytes",
+                "stored_bytes",
+                "resident_vector_bytes",
+            )
+        )
+        injected.close()
 
 
 class TestDimensionOnTheWritePath:

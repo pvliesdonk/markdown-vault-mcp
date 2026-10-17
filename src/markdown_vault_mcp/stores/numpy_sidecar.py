@@ -53,8 +53,8 @@ from markdown_vault_mcp.stores._resident import (
     without_document,
 )
 from markdown_vault_mcp.stores.registry import register_backend
-from markdown_vault_mcp.types import EmbeddingIdentity
-from markdown_vault_mcp.utils.fs import is_directory, path_exists
+from markdown_vault_mcp.types import EmbeddingIdentity, StoreResources
+from markdown_vault_mcp.utils.fs import file_bytes, is_directory, path_exists
 
 with contextlib.suppress(ImportError):  # numpy is the embeddings extra
     import numpy as np
@@ -76,6 +76,7 @@ logger = logging.getLogger(__name__)
 FORMAT_VERSION = 2
 
 _BACKEND_NAME = "numpy"
+_COMMIT_SUFFIX = ".json"
 
 
 def _matrix_path(base: Path, seq: int) -> Path:
@@ -233,6 +234,43 @@ class NumpySidecarStore(ResidentStore):
             len(new.rows),
         )
 
+    def resources(self) -> StoreResources:
+        """Return the search mode and measured sizes (#1377): always resident.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            OSError: If a stat of the store's files is refused.
+        """
+        snap = self._current()
+        stored = None
+        if self._base is not None:
+            # A checkpoint may swap and sweep the matrix between reading its
+            # name and stating it; then the files are measured once more.
+            for _attempt in range(2):
+                matrix = self._matrix_path
+                stored = self._stored_bytes(self._base, matrix)
+                if self._matrix_path == matrix:
+                    break
+        return StoreResources(
+            search_mode="resident",
+            search_workspace_bytes=None,
+            stored_bytes=stored,
+            resident_vector_bytes=int(snap.matrix.nbytes),
+        )
+
+    @staticmethod
+    def _stored_bytes(base: Path, matrix: Path | None) -> int:
+        """Return the size of the commit file and *matrix*, a missing one 0.
+
+        Raises:
+            OSError: If a stat is refused (#1625).
+        """
+        files = [
+            base.with_suffix(_COMMIT_SUFFIX),
+            *([matrix] if matrix is not None else []),
+        ]
+        return sum(file_bytes(p) for p in files)
+
     # -- lifecycle -----------------------------------------------------------
 
     def _persist(self, snap: Snapshot) -> None:
@@ -250,7 +288,7 @@ class NumpySidecarStore(ResidentStore):
         _write_atomic(
             matrix_path, lambda fh: np.save(fh, np.ascontiguousarray(snap.matrix))
         )
-        _commit_file(self._base.with_suffix(".json"), data)
+        _commit_file(self._base.with_suffix(_COMMIT_SUFFIX), data)
         self._seq, self._matrix_path = seq, matrix_path
         _sweep(self._base, matrix_path)
         logger.debug(
@@ -530,7 +568,7 @@ def _open_file(
     base: Path, identity: EmbeddingIdentity, *, read_only: bool
 ) -> NumpySidecarStore:
     where = str(base)
-    json_path, legacy = base.with_suffix(".json"), base.with_suffix(".npy")
+    json_path, legacy = base.with_suffix(_COMMIT_SUFFIX), base.with_suffix(".npy")
     try:
         if path_exists(base.parent) and not is_directory(base.parent):
             raise _outcome(

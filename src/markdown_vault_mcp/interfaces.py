@@ -13,7 +13,9 @@ The managers depend on these concepts:
   source about an identity.
 - :class:`VectorReader`, :class:`VectorPublisher` and :class:`EmbeddingStore`
   — the vector store contract (#1767): vectors in, nearest rows out, with
-  no embedding provider inside the store.
+  no embedding provider inside the store; :class:`ReportsResources` is the
+  optional part a store implements to report its search mode and sizes
+  (#1377).
 
 ``FTSIndex`` implements the first two over one SQLite database and
 ``NumpySidecarStore`` the vector contract over numpy; both satisfy these
@@ -52,6 +54,7 @@ if TYPE_CHECKING:
         SkippedFile,
         SourceState,
         StoreFamily,
+        StoreResources,
         SubtreeNote,
         TocEntry,
         VectorRow,
@@ -62,6 +65,7 @@ __all__ = [
     "GraphStore",
     "KeywordGraphIndex",
     "KeywordIndex",
+    "ReportsResources",
     "SourceProbe",
     "StoreBackend",
     "StoreLifecycle",
@@ -489,6 +493,20 @@ class VectorReader(Protocol):
 
     def tokens(self) -> dict[str, RevisionToken | None]:
         """Return each stored document's token; ``None`` when unknown."""
+        ...
+
+
+@runtime_checkable
+class ReportsResources(Protocol):
+    """A store that reports what it costs (#1377); optional for a vector store."""
+
+    def resources(self) -> StoreResources:
+        """Return the store's search mode, workspace and measured sizes.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            OSError: If a stat of one of its files is refused.
+        """
         ...
 
 

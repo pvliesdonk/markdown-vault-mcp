@@ -4072,7 +4072,12 @@ a bound on the scan, not on the process. Results are exact; only rows of
 equal score may order differently. A store held in memory is always
 resident: its rows are in memory anyway, and its shared-cache connections
 would let a read transaction block a writer. The numpy store is resident
-only.
+only. `embeddings_status` reports the mode the store runs in, the
+configured workspace and two measured sizes, its files and its resident
+matrix, through the optional `ReportsResources` protocol. It estimates
+nothing, so the text a resident store also holds is not in it; and a
+streamed store it cannot read makes the call fail rather than report a
+partial status (#1625).
 
 **The vault's slot (#1777).** `Vault` holds its vector store in a
 `VectorStoreSlot` that opens it on first use through the backend
@@ -4158,8 +4163,8 @@ lags the store is #1504's.
 Bounds: an empty mount-point directory reads as an available, empty
 source, so its vectors go as they always did (a spec gap, #1791: "an
 unmounted volume removes nothing" holds only when the mount point itself
-is missing or unreadable); what `embeddings_status` reports of the
-store's size and search mode is #1377's; how often the full matrix is
+is missing or unreadable); `embeddings_status` reports the store's
+search mode and measured sizes (Search memory, above); how often the full matrix is
 rewritten is #1497's.
 
 ### `providers.py`: Embedding Providers

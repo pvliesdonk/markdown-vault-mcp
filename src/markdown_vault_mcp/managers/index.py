@@ -955,8 +955,8 @@ class IndexManager:
         (#1157).
 
         Returns:
-            Dict with keys ``provider``, ``chunk_count``, ``path``,
-            ``available``.
+            The status dict described by
+            :meth:`~markdown_vault_mcp.managers.embeddings.EmbeddingsManager.embeddings_status`.
         """
         return self._embeddings.embeddings_status()
 

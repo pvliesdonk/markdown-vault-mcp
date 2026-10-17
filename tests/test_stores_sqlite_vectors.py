@@ -792,3 +792,59 @@ class TestDeferredCreation:
             holder.close()
         assert store.count == 1
         store.close()  # its TRUNCATE checkpoint would wait out a held write lock
+
+
+class TestResources:
+    def test_satisfies_the_protocol(self) -> None:
+        from markdown_vault_mcp.interfaces import ReportsResources
+
+        store = SqliteVectorBackend().open(None, IDENT)
+        assert isinstance(store, ReportsResources)
+        store.close()
+
+    def test_in_memory_is_resident_with_no_files(self) -> None:
+        store = _streamed().open(None, IDENT)  # in memory: always resident
+        store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        r = store.resources()
+        assert (r.search_mode, r.search_workspace_bytes, r.stored_bytes) == (
+            "resident",
+            None,
+            None,
+        )
+        assert r.resident_vector_bytes == 1 * 3 * 4
+        store.close()
+
+    def test_a_file_store_before_its_first_write_stores_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        store = _streamed().open(_base(tmp_path), IDENT)
+        r = store.resources()
+        assert (r.search_mode, r.search_workspace_bytes, r.stored_bytes) == (
+            "streamed",
+            24,
+            0,
+        )
+        assert r.resident_vector_bytes == 0
+        store.close()
+
+    def test_a_file_store_measures_its_files(self, tmp_path: Path) -> None:
+        resident = SqliteVectorBackend().open(_base(tmp_path), IDENT)
+        resident.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        r = resident.resources()
+        db = _db(tmp_path)
+        expected = sum(
+            p.stat().st_size
+            for p in (db, Path(f"{db}-wal"), Path(f"{db}-shm"))
+            if p.exists()
+        )
+        assert r.stored_bytes == expected
+        assert expected > 0
+        assert (r.search_mode, r.search_workspace_bytes) == ("resident", None)
+        assert r.resident_vector_bytes == 12
+        resident.close()
+
+    def test_a_closed_store_refuses(self) -> None:
+        store = SqliteVectorBackend().open(None, IDENT)
+        store.close()
+        with pytest.raises(RuntimeError):
+            store.resources()

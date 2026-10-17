@@ -696,3 +696,67 @@ class TestRowsByPath:
         grouped = metadata_by_path(store)
         assert len(grouped) == 50
         assert _CountingRows.scans <= 2
+
+
+class TestResources:
+    def test_in_memory_has_no_files(self) -> None:
+        store = NumpySidecarBackend().open(None, IDENT)
+        store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        r = store.resources()
+        assert (r.search_mode, r.search_workspace_bytes, r.stored_bytes) == (
+            "resident",
+            None,
+            None,
+        )
+        assert r.resident_vector_bytes == 12
+        store.close()
+
+    def test_counts_the_commit_file_and_the_current_matrix_only(
+        self, tmp_path: Path
+    ) -> None:
+        base = tmp_path / "vectors" / "idx-embeddings"
+        store = NumpySidecarBackend().open(base, IDENT)
+        for i in range(3):  # three persists: older matrices are swept
+            store.replace_document(
+                doc(f"n{i}.md", [[1, 0, 0]]), expected_token=ANY_TOKEN
+            )
+            store.checkpoint()
+        r = store.resources()
+        files = [base.with_suffix(".json"), *base.parent.glob("*.npy")]
+        assert len(files) == 2
+        assert r.stored_bytes == sum(p.stat().st_size for p in files)
+        store.close()
+
+    def test_a_checkpoint_during_the_measurement_is_measured_again(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        base = tmp_path / "vectors" / "idx-embeddings"
+        store = NumpySidecarBackend().open(base, IDENT)
+        store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+        store.checkpoint()
+        store.replace_document(doc("b.md", [[0, 1, 0]]), expected_token=ANY_TOKEN)
+        real = numpy_sidecar.file_bytes
+        fired: list[bool] = []
+
+        def racing(path: Path) -> int:
+            if not fired:  # a flush lands mid-measurement: the matrix is swapped
+                fired.append(True)
+                store.checkpoint()
+            return real(path)
+
+        monkeypatch.setattr(numpy_sidecar, "file_bytes", racing)
+        measured = store.resources().stored_bytes
+        files = [base.with_suffix(".json"), *base.parent.glob("*.npy")]
+        assert measured == sum(p.stat().st_size for p in files)
+        store.close()
+
+    def test_a_legacy_sidecar_counts_its_matrix(self, tmp_path: Path) -> None:
+        provider = MockEmbeddingProvider(dim=3)
+        base = tmp_path / "legacy-embeddings"
+        write_legacy_sidecar(
+            base, [[3.0, 4.0, 0.0]], [{"path": "a.md", "folder": ""}], provider=provider
+        )
+        store = NumpySidecarBackend().open(base, EmbeddingIdentity.of(provider, "v1"))
+        files = (base.with_suffix(".json"), base.with_suffix(".npy"))
+        assert store.resources().stored_bytes == sum(p.stat().st_size for p in files)
+        store.close()

@@ -206,8 +206,8 @@ class IndexFacet:
         """Return status information about the vector index.
 
         Returns:
-            Dict with keys ``provider``, ``chunk_count``, ``path``,
-            ``available``.
+            The status dict described by
+            :meth:`~markdown_vault_mcp.managers.embeddings.EmbeddingsManager.embeddings_status`.
         """
         return self._index_mgr.embeddings_status()
 
