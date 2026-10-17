@@ -337,7 +337,8 @@ class VectorStoreSlot:
         ``None`` before it opens or when it does not.
 
         Raises:
-            StoreOpenError: If a streamed store cannot be read.
+            StoreOpenError: If a streamed store cannot be read: its
+                ``generation`` is read from the database.
             OSError: If a stat of the store's files is refused (#1625).
         """
         store = self._store
