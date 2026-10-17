@@ -14,7 +14,7 @@ Nothing here touches a file.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import cached_property
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -80,7 +80,8 @@ def hollow_snapshot(identity: EmbeddingIdentity, generation: int) -> Snapshot:
     What a streamed store keeps resident (#1377): its rows stay in the
     database.
     """
-    return replace(fresh_snapshot(identity), generation=generation)
+    empty = fresh_snapshot(identity)
+    return Snapshot(identity, generation, empty.matrix, (), empty.tokens)
 
 
 def _normalised(vectors: Any) -> Any:

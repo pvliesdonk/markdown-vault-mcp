@@ -136,10 +136,10 @@ class TestScan:
         def refuse(_blob: object) -> bytes:
             raise ValueError("bad width")
 
-        cursor = table.execute("SELECT id, vector FROM t")
+        batched = batches(table.execute("SELECT id, vector FROM t"), 2)
         query = np.ones(2, np.float32)
         with pytest.raises(ValueError, match="bad width"):
-            scan(batches(cursor, 2), query, limit=1, check_blob=refuse)
+            scan(batched, query, limit=1, check_blob=refuse)
 
 
 class TestFolderParams:

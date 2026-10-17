@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import collections
 import contextlib
-import dataclasses
 import json
 import logging
 import sqlite3
@@ -139,6 +138,7 @@ _SCAN = (
     " AND (? IS NULL OR path != ?)"
 )
 _ANY_ROW = "SELECT 1 FROM chunks LIMIT 1"
+_COUNT_CHUNKS = "SELECT COUNT(*) FROM chunks"
 _ROW_METADATA = "SELECT metadata FROM chunks WHERE id = ?"
 _DOCUMENT_ROWS = "SELECT vector, metadata FROM chunks WHERE path = ? ORDER BY ordinal"
 _HOLDS_DOCUMENT = "SELECT 1 FROM documents WHERE path = ?"
@@ -168,6 +168,10 @@ class _Scan:
     folder: str | None = None
     exclude: str | None = None
     predicate: Callable[[dict[str, Any]], bool] | None = None
+
+    def around(self, query: Any, exclude: str | None = None) -> _Scan:
+        """Return this request scoring against the unit *query*, without *exclude*."""
+        return _Scan(query, self.limit, self.folder, exclude, self.predicate)
 
 
 def _require_numpy() -> None:
@@ -410,7 +414,7 @@ def _loaded_rows(
     conn: sqlite3.Connection, dimension: int, where: str
 ) -> tuple[Any, tuple[dict[str, Any], ...]]:
     """Read every chunk into one float32 matrix and its metadata, in storage order."""
-    count = int(conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
+    count = int(conn.execute(_COUNT_CHUNKS).fetchone()[0])
     matrix = np.empty((count, dimension), dtype=np.float32)
     rows: list[dict[str, Any]] = []
     for i, (blob, meta) in enumerate(_validated_rows(conn, dimension, where)):
@@ -613,7 +617,7 @@ def stored_chunk_count(location: Path | str) -> int:
         conn = registry.conn()
         if "chunks" not in _tables(conn):
             return 0
-        return int(conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
+        return int(conn.execute(_COUNT_CHUNKS).fetchone()[0])
     finally:
         registry.close()
 
@@ -638,7 +642,7 @@ def _live_state(conn: sqlite3.Connection, snap: Snapshot, where: str) -> Snapsho
 
 
 def _row_count(conn: sqlite3.Connection, _snap: Snapshot) -> int:
-    return int(conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0])
+    return int(conn.execute(_COUNT_CHUNKS).fetchone()[0])
 
 
 def _stored_tokens(
@@ -805,13 +809,9 @@ class SqliteVectorStore(ResidentStore):
                 mean = _document_mean(conn, path, dimension, batch_rows, self._where)
                 if mean is None:
                     return []
-                todo = dataclasses.replace(
-                    request, query=unit_vector(mean), exclude=path
-                )
+                todo = request.around(unit_vector(mean), exclude=path)
             else:
-                todo = dataclasses.replace(
-                    request, query=_query_unit(request.query, dimension)
-                )
+                todo = request.around(_query_unit(request.query, dimension))
             return _streamed_rows(conn, todo, batch_rows, self._where)
 
         return self._reading(read, [])
@@ -1035,12 +1035,11 @@ class SqliteVectorStore(ResidentStore):
         """
         with self._lock:
             snap = self._writable()
-            # No documents row means no rows and no token: chunks reference it.
-            new = (
-                (snap if self._holds(path) else None)
-                if self._streamed
-                else without_document(snap, path)
-            )
+            if self._streamed:
+                # No documents row means no rows and no token: chunks reference it.
+                new = snap if self._holds(path) else None
+            else:
+                new = without_document(snap, path)
             if new is None:
                 return (
                     "conflict" if conflicts(snap, path, expected_token) else "published"
