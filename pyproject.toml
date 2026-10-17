@@ -355,6 +355,8 @@ ignore = ["E501"]
 "scripts/migrate_docs_pages.py" = ["S603", "S607"]
 "scripts/check_pins.py" = ["S310"]  # urlopen on a validated api.github.com URL
 "scripts/report_seeded_changes.py" = ["S603", "S606", "S607"]
+# The self-review hook resolves commits with fixed-argv `git rev-parse`.
+"scripts/check_self_review.py" = ["S603", "S607"]
 "scripts/check_template_conformance.py" = ["S603", "S607"]
 
 # PROJECT-RUFF-IGNORES-START — replace, extend, or override the entries below

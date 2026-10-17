@@ -45,8 +45,10 @@ do not try to make them conform, silence them, or reformat them:
   formatter over ordinary `LogRecord`s.
 - pvl-core's middleware handles tool invocation, timing and error logging
   automatically.
-- **pvl-core owns the root logger.** `cli._root` and `make_server()` call
-  `configure_logging_from_env("MARKDOWN_VAULT_MCP", verbose=...)`; it installs
+- **pvl-core owns the root logger.** `cli._root` calls
+  `configure_logging_from_env("MARKDOWN_VAULT_MCP", verbose=...)`, and so does
+  `make_server()` unless its caller passes `configure_logging=False`, as
+  `serve` does to keep `-v`; it installs
   the one console handler chain at root, switches FastMCP's own handlers
   off so `fastmcp.*` propagates into that chain, and is idempotent (its
   own handlers are replaced on every call, any other root handler — OTLP,

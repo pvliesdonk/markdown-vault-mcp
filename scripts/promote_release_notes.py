@@ -28,7 +28,7 @@ PATCH_HEADING_RE = re.compile(
     re.MULTILINE,
 )
 PATCH_HEADING_CANDIDATE_RE = re.compile(
-    r"^ {0,3}##[ \t]+v[0-9]+\.[0-9]+\.[0-9]+.*$", re.MULTILINE
+    r"^ {0,3}##[ \t]+v[0-9]+\.[0-9]+\.[0-9]+", re.MULTILINE
 )
 # The front matter a published page opens with (scripts/check_docs_structure.py
 # reads the same block); a canonical page's title is the first line after it.
@@ -82,13 +82,19 @@ def _masked_line(line: str) -> str:
 
 
 def _opening_fence(line: str) -> tuple[str, int] | None:
-    match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
-    if match is None:
+    """The fence character and run length when *line* opens a code fence.
+
+    Plain string scanning rather than a regex: a fence run followed by
+    ``.*`` is flagged as backtracking (SonarCloud python:S8786).
+    """
+    body = line.lstrip(" ")
+    if len(line) - len(body) > 3 or body[:1] not in ("`", "~"):
         return None
-    marker = match.group(1)
-    if marker[0] == "`" and "`" in match.group(2):
+    character = body[0]
+    length = len(body) - len(body.lstrip(character))
+    if length < 3 or (character == "`" and "`" in body[length:]):
         return None
-    return marker[0], len(marker)
+    return character, length
 
 
 def _closes_fence(line: str, character: str, length: int) -> bool:

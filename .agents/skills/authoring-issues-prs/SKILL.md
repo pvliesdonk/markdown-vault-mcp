@@ -14,50 +14,36 @@ description: >-
 
 # Authoring issues and pull requests
 
-`CONTRIBUTING.md` at the repository root is the single source for the rules:
-issue voice, uncertainty markers, one-issue-one-problem, PR discipline, and
-the three-tier routing. This skill adds only what a document cannot — the
-trigger, the order of operations, and the API mechanics for the steps issue
-forms cannot perform. It deliberately does not restate the rules; a second
-copy would drift from the file silently.
+`CONTRIBUTING.md` holds the issue rules, the agent-post footer and the
+three-tier routing; `AGENTS.md` and `.github/PULL_REQUEST_TEMPLATE.md` hold
+the PR rules. This skill adds the order of operations and the API steps
+issue forms cannot perform; it states none of those rules itself.
 
 ## Procedure
 
 ### 1. Read CONTRIBUTING.md — now, not from memory
 
 Read `CONTRIBUTING.md` (repository root) before drafting a single sentence,
-even if you believe you remember it. You are about to apply these sections,
-and their exact wording matters:
+even if you believe you remember it:
 
 - "Observation, not work order" and "The uncertainty rule" — issue voice
   and the `[verified: how]` / `[unverified]` markers.
 - "One issue, one observed problem" and the "Remove before posting" table —
   run your draft through the table before submitting.
-- "Pull requests" — no orphan PRs, the deliberately-does-not section.
+- "Pull requests" — which `AGENTS.md` sections and template govern a PR,
+  and the merge style.
 - "Where to send fixes" — the routing walked in step 2.
 - "Agent-authored posts" — the footer every post ends with, and how to
   read earlier posts under the account holder's name (step 7).
 
-If anything in this skill appears to conflict with `CONTRIBUTING.md`, the
-file wins.
+Where this skill and `CONTRIBUTING.md` disagree, the file wins.
 
 ### 2. Route before writing
 
-Decide the repo first, then write for that repo. The test: **which file
-would a fix change?**
-
-1. Anything you'd change in `fastmcp_pvl_core` → **library**: file on
-   `pvliesdonk/fastmcp-pvl-core`.
-2. A template-owned file — workflows, `Dockerfile`, the `server.py`
-   skeleton, anything `copier update` re-renders — → **template**: file on
-   `pvliesdonk/fastmcp-server-template`.
-3. Anything inside a `DOMAIN-*` / `CONFIG-*` / `PROJECT-*` sentinel block,
-   or `tools.py` / `resources.py` / `prompts.py` / `domain.py` / `tests/`
-   → **domain**: file on this repository.
-
-`CONTRIBUTING.md`'s "Where to send fixes" defines these tiers with the
-post-merge propagation for each. When the tier is genuinely unclear, say so
-in the issue with an `[unverified]` marker instead of guessing silently.
+Decide the repo before writing: ask **which file a fix would change**, and
+look that file up in `CONTRIBUTING.md`'s "Where to send fixes" (library,
+template or domain). When the tier is unclear, file where you think it
+belongs and say so in the issue with an `[unverified]` marker.
 
 ### 3. Search for duplicates
 
@@ -138,11 +124,9 @@ The `roadmapping` skill defines package ordering and membership.
 
 ### 6. Pull requests
 
-Route first (step 2): the issue and the PR that closes it belong in the
-same repo. Then follow `CONTRIBUTING.md`'s "Pull requests" section and the
-repo's PR template (`.github/PULL_REQUEST_TEMPLATE.md`) — every section,
-including "What this PR deliberately does NOT do" and the docs-impact
-checklist.
+Open the PR in the same repo as its issue (step 2), then follow
+`CONTRIBUTING.md`'s "Pull requests" section: pass the gates and run the
+`self-reviewing` skill first, and fill every section of the PR template.
 
 Pick the base branch before creating the PR: when the epic the work
 belongs to runs on an integration branch (its body names
@@ -151,14 +135,6 @@ belongs to runs on an integration branch (its body names
 does nothing on a non-default base. The final `integration/<epic>` →
 `main` PR carries every `Closes` line and is merged with a merge commit;
 `docs/contribute/integration-branches.md` has the whole workflow.
-
-Include a feature's approved spec in the Design section, folded when long,
-ahead of the review report. The spec is agreed in session or offline
-before the PR; the PR archives the decisions for reviewers and future
-readers. Follow the template's human attachment option if the full body
-exceeds its limit. Do not call undocumented upload endpoints. At merge,
-port enduring decisions missing from code and docs to docs/design/ or an
-ADR, as CONTRIBUTING.md requires.
 
 ### 7. Identify yourself on every post
 

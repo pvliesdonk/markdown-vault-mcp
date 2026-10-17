@@ -77,9 +77,9 @@ def _read_simple_answers(text: str) -> dict[str, object]:
     except ImportError:
         out: dict[str, object] = {}
         for line in text.splitlines():
-            m = re.match(r"^(_commit|_src_path):\s*(.+?)\s*$", line)
-            if m:
-                out[m.group(1)] = m.group(2).strip("'\"")
+            m = re.match(r"^(_commit|_src_path):(.*)$", line)
+            if m and m.group(2).strip():
+                out[m.group(1)] = m.group(2).strip().strip("'\"")
         return out
     data = yaml.safe_load(text) or {}
     return data if isinstance(data, dict) else {}

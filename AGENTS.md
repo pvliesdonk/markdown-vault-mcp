@@ -61,7 +61,7 @@ Assess against the last stable release, not the previous commit: a change to a s
 
 ## Hard PR Acceptance Gates
 
-Run every gate locally and open or push a PR only when all of them pass:
+Before you open a PR, and before every later push to its branch, pass every gate below locally, then run the `self-reviewing` skill on the cumulative diff and fix or justify each finding it reports:
 
 1. Tests: `uv run pytest -x -q`.
 2. Lint: `uv run ruff check --fix .`, then `uv run ruff format .`, then `uv run ruff format --check .`, in that order.
@@ -76,6 +76,7 @@ Run every gate locally and open or push a PR only when all of them pass:
 - Install once per clone with `uv run pre-commit install`; run `uv run pre-commit run --all-files` before pushing.
 - The `structural-diff-gate` hook runs `scripts/structural_gate.sh` at push time.
 - **Template conformance runs at push time:** the `template-conformance` hook fails a push that adds content outside a sentinel block in a file `copier update` re-renders. Move the content into the block the file declares. Skip the hook only for drift a Decay issue tracks: `SKIP=template-conformance git push`.
+- The `self-review` hook fails a push whose commit has no review recorded by the `self-reviewing` skill; clear it by running the skill, which records the review as its last step.
 - Fix a failing hook; never bypass it with `--no-verify`, because the same check fails in CI.
 - Add domain hooks (shellcheck, yamllint, project linters) between the `DOMAIN-HOOKS` markers at the end of the config, never outside them; hooks inside that block on top of the shipped defaults survive `copier update`.
 
