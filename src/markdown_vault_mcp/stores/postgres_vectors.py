@@ -45,7 +45,7 @@ except ImportError as exc:  # pragma: no cover - exercised in a subprocess
 
 from markdown_vault_mcp.exceptions import ReadOnlyError
 from markdown_vault_mcp.stores._identity import served_identity
-from markdown_vault_mcp.stores._postgres_lease import Lease
+from markdown_vault_mcp.stores._postgres_lease import LeaseHandle, LeaseRegistry
 from markdown_vault_mcp.stores._postgres_tables import (
     Layout,
     Meta,
@@ -82,7 +82,7 @@ class _Connection(NamedTuple):
     pool: ConnectionPool[psycopg.Connection[tuple[Any, ...]]]
     conninfo: Conninfo
     extension: Extension
-    lease: Lease | None
+    lease: LeaseHandle | None
 
 
 class PostgresVectorStore:
@@ -241,6 +241,7 @@ class PostgresVectorBackend:
         """
         self._dsn = dsn
         self._pool = pool if pool is not None else PoolSettings()
+        self._leases = LeaseRegistry()
 
     def __repr__(self) -> str:
         """Hide the DSN."""
@@ -312,7 +313,15 @@ class PostgresVectorBackend:
             _bound_waits(conn, schema=schema, settings=self._pool)
             extension = find_extension(conn, schema=schema)
             check_schema(conn, schema=schema)
-            lease = None if read_only else Lease.acquire(conninfo, schema=schema)
+            lease = (
+                None
+                if read_only
+                else self._leases.acquire(
+                    conninfo,
+                    schema=schema,
+                    statement_timeout_ms=statement_timeout_ms(self._pool),
+                )
+            )
             try:
                 return self._open_validated(
                     conn,
@@ -332,7 +341,7 @@ class PostgresVectorBackend:
         request: _Request,
         conninfo: Conninfo,
         extension: Extension,
-        lease: Lease | None,
+        lease: LeaseHandle | None,
     ) -> PostgresVectorStore:
         """Read the state (unless fresh), check a writer's CREATE right, open the pool."""
         schema = request.schema

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from typing import TYPE_CHECKING
 
@@ -11,39 +12,29 @@ import pytest
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
-from markdown_vault_mcp.exceptions import StoreUnavailableError
+from markdown_vault_mcp.exceptions import StoreNotConfiguredError, StoreUnavailableError
 from markdown_vault_mcp.stores import _postgres as pg
-from markdown_vault_mcp.stores._postgres_lease import LEASE_CLASS, Lease
+from markdown_vault_mcp.stores import _postgres_lease as leases
+from markdown_vault_mcp.stores._postgres_lease import Lease, LeaseRegistry
+from tests.fixtures.postgres import lease_is_free
 
 if TYPE_CHECKING:
     from tests.fixtures.postgres import PostgresSchema, PostgresServer
 
 
-def _conninfo(schema: PostgresSchema, *, app: str | None = None) -> pg.Conninfo:
-    dsn = schema.dsn if app is None else make_conninfo(schema.dsn, application_name=app)
+def _conninfo(schema: PostgresSchema, **params: str) -> pg.Conninfo:
+    dsn = make_conninfo(schema.dsn, **params) if params else schema.dsn
     return pg.prepare_conninfo(dsn, schema=schema.name)
 
 
-def _key(schema: PostgresSchema) -> int:
-    with psycopg.connect(schema.dsn) as conn:
-        row = conn.execute(
-            "SELECT (%s::bigint << 32) | n.oid::bigint FROM pg_namespace n WHERE n.nspname = %s",
-            (LEASE_CLASS, schema.name),
-        ).fetchone()
-    assert row is not None
-    return int(row[0])
-
-
 def _free(schema: PostgresSchema) -> bool:
-    """Whether another session can take the lease key right now (and gives it back)."""
-    with psycopg.connect(schema.dsn, autocommit=True) as conn:
-        row = conn.execute(
-            "SELECT pg_try_advisory_lock(%s)", (_key(schema),)
-        ).fetchone()
-        taken = bool(row and row[0])
-        if taken:
-            conn.execute("SELECT pg_advisory_unlock(%s)", (_key(schema),))
-    return taken
+    return lease_is_free(schema.dsn, schema.name)
+
+
+def _terminate(schema: PostgresSchema, pid: int) -> None:
+    """End backend *pid*, waiting up to 5 s for it to exit (PostgreSQL 14+)."""
+    with psycopg.connect(schema.dsn, autocommit=True) as admin:
+        admin.execute("SELECT pg_terminate_backend(%s, 5000)", (pid,))
 
 
 def test_acquire_holds_the_key_until_release(postgres_schema: PostgresSchema) -> None:
@@ -61,7 +52,8 @@ def test_a_second_acquire_is_refused_naming_the_holder(
     postgres_schema: PostgresSchema,
 ) -> None:
     first = Lease.acquire(
-        _conninfo(postgres_schema, app="holder-1504"), schema=postgres_schema.name
+        _conninfo(postgres_schema, application_name="holder-1504"),
+        schema=postgres_schema.name,
     )
     try:
         conninfo = _conninfo(postgres_schema)
@@ -81,14 +73,6 @@ def test_ensure_keeps_a_held_lease(postgres_schema: PostgresSchema) -> None:
         assert lease.pid == pid
     finally:
         lease.release()
-
-
-def _terminate(schema: PostgresSchema, pid: int) -> None:
-    with psycopg.connect(schema.dsn, autocommit=True) as admin:
-        admin.execute("SELECT pg_terminate_backend(%s)", (pid,))
-        admin.execute(
-            "SELECT pg_sleep(0.2) FROM pg_stat_activity WHERE pid = %s", (pid,)
-        )
 
 
 def test_ensure_takes_a_lost_lease_back(
@@ -117,19 +101,22 @@ def test_ensure_refuses_when_another_writer_took_the_lease(
     try:
         _terminate(postgres_schema, lease.pid)
         other = Lease.acquire(
-            _conninfo(postgres_schema, app="usurper-1504"), schema=postgres_schema.name
+            _conninfo(postgres_schema, application_name="usurper-1504"),
+            schema=postgres_schema.name,
         )
-        with pytest.raises(StoreUnavailableError, match="usurper-1504"):
+        with pytest.raises(StoreUnavailableError, match=r"reason=lease") as failure:
             lease.ensure()
+        assert "usurper-1504" in str(failure.value)
     finally:
         lease.release()
         if other is not None:
             other.release()
 
 
-def test_a_holder_this_role_cannot_see_is_another_session(
+def test_another_roles_holder_is_still_named(
     postgres_schema: PostgresSchema, postgres_server: PostgresServer
 ) -> None:
+    """PostgreSQL shows any session's application_name to every role (reference)."""
     if not postgres_server.throwaway:
         pytest.skip("creates a role: runs only against the harness's own container")
     role = f"mvm_test_role_{uuid.uuid4().hex[:8]}"
@@ -143,7 +130,8 @@ def test_a_holder_this_role_cannot_see_is_another_session(
             )
         )
     first = Lease.acquire(
-        _conninfo(postgres_schema, app="hidden-1504"), schema=postgres_schema.name
+        _conninfo(postgres_schema, application_name="other-role-1504"),
+        schema=postgres_schema.name,
     )
     try:
         params = conninfo_to_dict(postgres_schema.dsn)
@@ -153,8 +141,7 @@ def test_a_holder_this_role_cannot_see_is_another_session(
         )
         with pytest.raises(StoreUnavailableError, match="reason=lease") as failure:
             Lease.acquire(conninfo, schema=postgres_schema.name)
-        message = str(failure.value)
-        assert "hidden-1504" in message or "another session" in message
+        assert "other-role-1504" in str(failure.value)
     finally:
         first.release()
         with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:
@@ -191,28 +178,39 @@ def test_ensure_replaces_a_closed_lease_connection(
         lease.release()
 
 
-class _Refusing:
-    """A lease connection stand-in whose queries fail with a refused privilege."""
+class _Failing:
+    """A live lease connection stand-in whose queries fail with *exc*."""
 
     closed = False
     broken = False
 
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
     def execute(self, *_args: object) -> object:
-        raise psycopg.errors.lookup("42501")("permission denied for view pg_locks")
+        raise self._exc
 
     def close(self) -> None:
         return None
 
 
-def test_a_lease_check_that_fails_otherwise_is_unavailable(
-    postgres_schema: PostgresSchema,
+@pytest.mark.parametrize(
+    ("sqlstate", "reason"),
+    [("42501", "privilege"), ("57014", "timeout"), ("53300", "connect")],
+)
+def test_a_failing_check_on_a_live_connection_keeps_the_lease(
+    postgres_schema: PostgresSchema, sqlstate: str, reason: str
 ) -> None:
+    """A transient error is reported, not mistaken for a lost lease."""
     lease = Lease.acquire(_conninfo(postgres_schema), schema=postgres_schema.name)
     real = lease._conn
     try:
-        lease._conn = _Refusing()  # type: ignore[assignment]
-        with pytest.raises(StoreUnavailableError, match="reason=privilege"):
+        stand_in = _Failing(psycopg.errors.lookup(sqlstate)("boom"))
+        lease._conn = stand_in  # type: ignore[assignment]
+        with pytest.raises(StoreUnavailableError, match=f"reason={reason}"):
             lease.ensure()
+        assert lease._conn is stand_in  # no reconnect replaced it
+        assert not _free(postgres_schema)  # the real connection still holds it
     finally:
         lease._conn = real
         lease.release()
@@ -221,13 +219,11 @@ def test_a_lease_check_that_fails_otherwise_is_unavailable(
 def test_a_lock_attempt_on_a_dead_connection_is_unavailable(
     postgres_schema: PostgresSchema,
 ) -> None:
-    from markdown_vault_mcp.stores._postgres_lease import _try_lock
-
     conninfo = _conninfo(postgres_schema)
     closed = pg.connect(conninfo, schema=postgres_schema.name)
     closed.close()
     with pytest.raises(StoreUnavailableError, match="reason=connect"):
-        _try_lock(closed, schema=postgres_schema.name)
+        leases._try_lock(closed, schema=postgres_schema.name)
 
 
 @pytest.mark.parametrize(
@@ -241,6 +237,123 @@ def test_a_lock_attempt_on_a_dead_connection_is_unavailable(
 def test_the_holder_is_named_as_far_as_it_is_visible(
     holder: tuple[str, int] | None, text: str
 ) -> None:
-    from markdown_vault_mcp.stores._postgres_lease import _describe
+    assert leases._describe(holder) == text
 
-    assert _describe(holder) == text
+
+def test_an_idle_session_timeout_does_not_drop_the_lease(
+    postgres_schema: PostgresSchema,
+) -> None:
+    conninfo = _conninfo(postgres_schema, options="-c idle_session_timeout=300")
+    lease = Lease.acquire(conninfo, schema=postgres_schema.name)
+    try:
+        time.sleep(1.0)
+        assert not _free(postgres_schema)
+    finally:
+        lease.release()
+
+
+def test_a_lease_check_behind_a_catalogue_lock_times_out(
+    postgres_schema: PostgresSchema,
+) -> None:
+    lease = Lease.acquire(
+        _conninfo(postgres_schema),
+        schema=postgres_schema.name,
+        statement_timeout_ms=500,
+    )
+    holder = psycopg.connect(postgres_schema.dsn)
+    try:
+        holder.execute("LOCK pg_catalog.pg_namespace IN ACCESS EXCLUSIVE MODE")
+        with pytest.raises(StoreUnavailableError, match="reason=timeout"):
+            lease.ensure()
+    finally:
+        holder.close()
+        lease.release()
+
+
+def test_a_dropped_schema_is_not_configured_not_a_lease_conflict(
+    postgres_server: PostgresServer,
+) -> None:
+    from tests.fixtures.postgres import scratch_schema
+
+    with scratch_schema(postgres_server.dsn) as name:
+        conninfo = pg.prepare_conninfo(postgres_server.dsn, schema=name)
+        lease = Lease.acquire(conninfo, schema=name)
+        try:
+            with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:
+                admin.execute(
+                    sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(name))
+                )
+            with pytest.raises(StoreNotConfiguredError, match="does not exist"):
+                lease.ensure()
+        finally:
+            lease.release()
+            with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:
+                admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
+
+
+def test_a_release_during_a_reconnect_wins(
+    postgres_schema: PostgresSchema, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lease released while ensure() reconnects ends released, holding nothing."""
+    lease = Lease.acquire(_conninfo(postgres_schema), schema=postgres_schema.name)
+    real_try = leases._try_lock
+
+    def release_then_lock(conn: psycopg.Connection[object], *, schema: str) -> int:
+        lease._released = True  # what a concurrent release() has done by now
+        return real_try(conn, schema=schema)
+
+    lease._conn.close()
+    monkeypatch.setattr(leases, "_try_lock", release_then_lock)
+    with pytest.raises(RuntimeError, match="released"):
+        lease.ensure()
+    assert _free(postgres_schema)
+
+
+def test_one_registry_shares_a_schemas_lease_between_its_stores(
+    postgres_schema: PostgresSchema,
+) -> None:
+    registry = LeaseRegistry()
+    conninfo = _conninfo(postgres_schema)
+    first = registry.acquire(conninfo, schema=postgres_schema.name)
+    second = registry.acquire(conninfo, schema=postgres_schema.name)
+    try:
+        assert first.pid == second.pid
+        first.release()
+        first.release()  # one handle's release is idempotent
+        assert not _free(postgres_schema)
+        second.ensure()
+    finally:
+        second.release()
+    assert _free(postgres_schema)
+
+
+def test_two_registries_conflict_like_two_processes(
+    postgres_schema: PostgresSchema,
+) -> None:
+    conninfo = _conninfo(postgres_schema)
+    held = LeaseRegistry().acquire(conninfo, schema=postgres_schema.name)
+    other = LeaseRegistry()
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=lease"):
+            other.acquire(conninfo, schema=postgres_schema.name)
+    finally:
+        held.release()
+
+
+def test_a_handle_after_release_refuses_ensure(postgres_schema: PostgresSchema) -> None:
+    handle = LeaseRegistry().acquire(
+        _conninfo(postgres_schema), schema=postgres_schema.name
+    )
+    handle.release()
+    with pytest.raises(RuntimeError, match="released"):
+        handle.ensure()
+
+
+def test_a_lease_connection_that_cannot_be_set_up_is_unavailable(
+    postgres_schema: PostgresSchema,
+) -> None:
+    conninfo = _conninfo(postgres_schema)
+    closed = pg.connect(conninfo, schema=postgres_schema.name)
+    closed.close()
+    with pytest.raises(StoreUnavailableError, match="reason=connect"):
+        leases._prepare(closed, schema=postgres_schema.name, statement_timeout_ms=1000)
