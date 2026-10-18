@@ -43,7 +43,9 @@ except ImportError as exc:  # pragma: no cover - exercised in a subprocess
         "pip install 'markdown-vault-mcp[postgres]'"
     ) from exc
 
+from markdown_vault_mcp.exceptions import ReadOnlyError
 from markdown_vault_mcp.stores._identity import served_identity
+from markdown_vault_mcp.stores._postgres_lease import Lease
 from markdown_vault_mcp.stores._postgres_tables import (
     Layout,
     Meta,
@@ -74,11 +76,13 @@ class _Connection(NamedTuple):
         pool: The store's own pool, closed with the store.
         conninfo: The prepared connection string (hides itself in a ``repr``).
         extension: Where the ``vector`` extension lives.
+        lease: A writer's lease on the schema; ``None`` for a reader.
     """
 
     pool: ConnectionPool[psycopg.Connection[tuple[Any, ...]]]
     conninfo: Conninfo
     extension: Extension
+    lease: Lease | None
 
 
 class PostgresVectorStore:
@@ -189,15 +193,36 @@ class PostgresVectorStore:
         )
         return read(conn, meta)
 
+    def _ensure_lease(self) -> None:
+        """Make sure this writer still holds the schema's lease; writes call it first.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            ReadOnlyError: If the store was opened read-only.
+            StoreUnavailableError: ``reason=lease`` if another writer took it.
+        """
+        if self._closed:
+            raise RuntimeError("The vector store is closed.")
+        lease = self._conn.lease
+        if lease is None:
+            raise ReadOnlyError(
+                f"The vector store in schema {self._schema} was opened read-only."
+            )
+        lease.ensure()
+
     def checkpoint(self) -> None:
         """Do nothing: every publish is durable when it commits."""
 
     def close(self) -> None:
-        """Close the pool. Idempotent; reads afterwards raise ``RuntimeError``."""
+        """Close the pool and release the lease. Idempotent; reads afterwards raise."""
         if self._closed:
             return
         self._closed = True
-        self._conn.pool.close()
+        try:
+            self._conn.pool.close()
+        finally:
+            if self._conn.lease is not None:
+                self._conn.lease.release()
 
 
 class PostgresVectorBackend:
@@ -281,19 +306,43 @@ class PostgresVectorBackend:
     def _open(
         self, schema: str, wanted: EmbeddingIdentity, *, read_only: bool, fresh: bool
     ) -> PostgresVectorStore:
-        """Validate the environment, read the store unless *fresh*, open the pool."""
+        """Validate the environment, take a writer's lease, then open the store."""
         conninfo = prepare_conninfo(self._dsn, schema=schema)
         with connect(conninfo, schema=schema) as conn:
             _bound_waits(conn, schema=schema, settings=self._pool)
             extension = find_extension(conn, schema=schema)
             check_schema(conn, schema=schema)
-            state = (
-                _State(wanted, 0, "absent")
-                if fresh
-                else _stored_state(conn, schema, extension, wanted)
-            )
-            if not read_only and state.layout == "absent":
-                _require_create(conn, schema=schema)
+            lease = None if read_only else Lease.acquire(conninfo, schema=schema)
+            try:
+                return self._open_validated(
+                    conn,
+                    _Request(schema, wanted, read_only, fresh),
+                    conninfo,
+                    extension,
+                    lease,
+                )
+            except BaseException:
+                if lease is not None:
+                    lease.release()
+                raise
+
+    def _open_validated(
+        self,
+        conn: psycopg.Connection[Any],
+        request: _Request,
+        conninfo: Conninfo,
+        extension: Extension,
+        lease: Lease | None,
+    ) -> PostgresVectorStore:
+        """Read the state (unless fresh), check a writer's CREATE right, open the pool."""
+        schema = request.schema
+        state = (
+            _State(request.wanted, 0, "absent")
+            if request.fresh
+            else _stored_state(conn, schema, extension, request.wanted)
+        )
+        if not request.read_only and state.layout == "absent":
+            _require_create(conn, schema=schema)
         pool = open_pool(
             conninfo, schema=schema, extension=extension, settings=self._pool
         )
@@ -301,16 +350,25 @@ class PostgresVectorBackend:
             "postgres_vector_store_opened schema=%s generation=%d read_only=%s fresh=%s",
             schema,
             state.generation,
-            read_only,
-            fresh,
+            request.read_only,
+            request.fresh,
         )
         return PostgresVectorStore(
             schema=schema,
             identity=state.identity,
-            read_only=read_only,
-            connection=_Connection(pool, conninfo, extension),
-            reset_pending=fresh,
+            read_only=request.read_only,
+            connection=_Connection(pool, conninfo, extension, lease),
+            reset_pending=request.fresh,
         )
+
+
+class _Request(NamedTuple):
+    """What an open was asked for."""
+
+    schema: str
+    wanted: EmbeddingIdentity
+    read_only: bool
+    fresh: bool
 
 
 class _State(NamedTuple):
