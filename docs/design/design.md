@@ -4143,8 +4143,11 @@ configured*. The store never parses the message. *Corrupt* and *incompatible*, t
 slot rebuilds on, come only from the store's own checks of rows it read.
 A writer holds a session advisory lock for its life on a dedicated
 connection, keyed by one `bigint` (a project constant and the schema's
-OID); a second writer is refused naming the holder's `application_name`,
-and a lost lease is re-taken or the write refused. Every write also
+OID); a second writer is refused naming the holder's `application_name`
+and pid, and a lost lease is re-taken or the write refused, checked in
+`pg_locks` before every write. A writer's open takes the lease after the
+environment checks and releases it if any later step fails; `close`
+releases it; a reader takes none. Every write also
 locks the `vector_meta` row `FOR UPDATE`, and `replace_document` and
 `remove_document` compare the document's stored token, so writers are
 serialised by the database and the lease is policy: #1812 holds what more

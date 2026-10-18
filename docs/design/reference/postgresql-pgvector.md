@@ -61,6 +61,10 @@ sources:
     title: PostgreSQL 15.0 release notes
     resource: https://www.postgresql.org/docs/release/15.0/
     accessed: 2026-10-18
+  - id: pg-monitoring-stats
+    title: The Cumulative Statistics System (PostgreSQL 17)
+    resource: https://www.postgresql.org/docs/17/monitoring-stats.html
+    accessed: 2026-10-18
   - id: pg-errcodes
     title: PostgreSQL Error Codes (PostgreSQL 17)
     resource: https://www.postgresql.org/docs/17/errcodes-appendix.html
@@ -201,10 +205,12 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - In `REPEATABLE READ`, `FOR UPDATE` on a row changed since the transaction began raises an error. [source: pg-explicit-locking]
 - A session-level advisory lock is held until released or the session ends, survives a rollback, and is counted per acquisition. [source: pg-explicit-locking]
 - Advisory locks are identified by one 64-bit key or two 32-bit keys, and "these two key spaces do not overlap". [source: pg-admin-functions]
+- In `pg_locks`, a single-`bigint` advisory key shows as `classid` (high 32 bits), `objid` (low 32 bits) and `objsubid = 1`. [observed: #1504 child 4's lease tests, which find their own lock and a rival's by exactly those columns on PostgreSQL 17.4 and 16.10] [pins: tests/test_stores_postgres_lease.py::test_a_second_acquire_is_refused_naming_the_holder]
+- Ordinary roles see only their own sessions in full in `pg_stat_activity`; "in rows about other sessions, many columns will be null", while a session's existence and general properties stay visible to all. [source: pg-monitoring-stats] A non-superuser does see another role's session's `application_name` (its `state` is null). [observed: #1504 child 4, a scratch test as a role with only `USAGE` on the schema, PostgreSQL 17] [pins: tests/test_stores_postgres_lease.py::test_a_holder_this_role_cannot_see_is_another_session]
 - Advisory locks are application-defined: "the system does not enforce their use". [source: pg-explicit-locking] Any session in the same database that takes the same key contends with the holder, whatever application it belongs to; a key chosen by one application cannot rule out a collision with another's. [observed: probe 14, a second session in the same database gets `f`]
 - An advisory-lock key is scoped to one database: while one session holds key 42 in database `postgres`, a session in database `other` takes key 42 at once. [observed: probe 14, `t` in the other database]
 - `pg_try_advisory_lock` takes the lock at once and returns `true`, or returns `false` without waiting. [source: pg-admin-functions]
-- A `bigint` key of the form `(0x4D564D31 << 32) | oid` with an OID above 2^31 is accepted; a second session's `pg_try_advisory_lock` returns `f`; the holder's `application_name` is found by joining `pg_locks` (`locktype = 'advisory'`, `granted`) to `pg_stat_activity` on `pid`; the lock is free again once the holding session ends. [observed: probe 4]
+- A `bigint` key of the form `(0x4D564D31 << 32) | oid` with an OID above 2^31 is accepted; a second session's `pg_try_advisory_lock` returns `f`; the holder's `application_name` is found by joining `pg_locks` (`locktype = 'advisory'`, `granted`) to `pg_stat_activity` on `pid`; the lock is free again once the holding session ends. [observed: probe 4] [pins: tests/test_stores_postgres_lease.py::test_acquire_holds_the_key_until_release, tests/test_stores_postgres_lease.py::test_ensure_takes_a_lost_lease_back]
 - `lock_timeout` aborts a statement whose wait for a lock exceeds it, the limit applying "separately to each lock acquisition attempt"; `statement_timeout` aborts any statement that runs longer, measured per statement; zero disables either. [source: pg-client-config]
 
 ### Durability

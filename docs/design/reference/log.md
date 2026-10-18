@@ -2,6 +2,7 @@
 
 ## 2026-10-18
 
+- Extended [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md) for #1504's writer lease: how a single-`bigint` advisory key appears in `pg_locks` (`classid`, `objid`, `objsubid = 1`), and what an ordinary role sees of other sessions in `pg_stat_activity` (PostgreSQL 17 statistics docs, plus an observation that `application_name` stays visible while `state` is null). Pinned the advisory-lock claims to the lease tests.
 - Added [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md),
   checked against the PostgreSQL 17 documentation (extensions, locking,
   isolation, WAL and client settings, schemas, privileges, error codes,
