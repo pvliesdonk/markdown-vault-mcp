@@ -4079,6 +4079,83 @@ nothing, so the text a resident store also holds is not in it; and a
 streamed store it cannot read makes the call fail rather than report a
 partial status (#1625).
 
+**The PostgreSQL store (#1504).** `stores/postgres_vectors.py` keeps a
+vault's rows in a PostgreSQL schema the operator names, through the
+optional `postgres` extra (psycopg 3, its pool, and pgvector's adapter).
+The backend carries the connection settings; the location is the schema
+name, and there is no in-memory form. The schema is the namespace and the
+ownership boundary: one vault per schema, one role per vault owning only
+its schema. That does not stop a second vault, pointed at another vault's
+schema by a copied configuration while that vault is down, from removing
+the first vault's rows; the embedding identity is still checked on every
+open and read.
+The operator creates the role, the schema (`AUTHORIZATION` the role) and
+the `vector` extension, which is not a trusted extension and needs a
+superuser; the vault creates and migrates only its own three tables,
+`vector_meta` (one row: format version, identity, generation),
+`vector_documents` (path, token) and `vector_chunks` (path, ordinal,
+folder, a `vector` of any dimension, metadata as `jsonb`), lazily inside
+its first write's transaction, so an open changes nothing. It finds the
+extension's schema in `pg_extension`, sets `search_path` to the vault
+schema and that one itself, and checks the vault schema exists in
+`pg_namespace`, because PostgreSQL silently skips a missing schema in the
+path. A schema on the path is trusted with every role that may create in
+it, so the extension's schema must not be writable by untrusted roles.
+PostgreSQL 15 and later create new databases without `CREATE` for
+`PUBLIC` on `public`, but an upgraded cluster or a restored dump keeps the
+old grant, so an operator checks it rather than assuming it.
+
+Opening sorts every failure of the connection or of PostgreSQL into *not
+configured* (no schema, no or too old an extension) or *unavailable*
+(connection, authentication, privilege, resources, a held lease), the
+latter with a `reason`; *unsupported* (a newer format version), *corrupt*
+and *incompatible* come from the store's own checks. After connecting, the
+SQLSTATE class decides; a failed connection carries no SQLSTATE in
+psycopg, so its reason comes only from psycopg's documented attributes,
+tested in this order: `timeout` (`ConnectionTimeout`), `no_password`
+(`needs_password`: the authentication method wanted a password and none
+was available), `refused` (`used_password`: it used a password and the
+session was refused, whether for the password, the role, the database or
+its `CONNECT` privilege; `used_password` is true without a password too,
+hence the order), else `connect`, which is also every refusal under
+`trust` or certificate authentication. libpq's own message is always
+in the error and the log line, and is the authoritative account; the
+store never parses it. *Corrupt* and *incompatible*, the only outcomes the
+slot rebuilds on, come only from the store's own checks of rows it read.
+A writer holds a session advisory lock for its life on a dedicated
+connection, keyed by one `bigint` (a project constant and the schema's
+OID); a second writer is refused naming the holder's `application_name`,
+and a lost lease is re-taken or the write refused. Every write also
+locks the `vector_meta` row `FOR UPDATE`, and `replace_document` and
+`remove_document` compare the document's stored token, so writers are
+serialised by the database and the lease is policy: #1812 holds what more
+writers would need. A publish is one transaction that raises
+`synchronous_commit` to `on` from any weaker value (`off`, `local`,
+`remote_write`) and leaves `on` and `remote_apply` alone, since
+`SET LOCAL … = on` would lower `remote_apply`; `publish_generation`
+deletes rather than truncates, so
+readers keep the previous generation until it commits. A connection lost
+during `COMMIT` raises *unavailable* with `reason=commit_unknown`, never a
+result; the store retries no write, and the reconciler's next pass reads
+the tokens and finds the commit landed or embeds again. `checkpoint()`
+does nothing.
+
+Reads are one `REPEATABLE READ`, read-only transaction each, starting from
+the meta row, as streamed SQLite reads do. PostgreSQL scores and sorts:
+`ORDER BY embedding <#> q, path, ordinal`, scores `-(embedding <#> q)`
+over normalised rows, so a zero vector scores `0.0` (cosine distance,
+`<=>`, gives `NaN` there and is not used). The folder is a
+`starts_with` condition; a predicate reads an ordered server-side cursor
+in batches until *limit* rows pass, and only metadata reaches the vault
+process. `similar_to_document` returns `[]` for a path with no rows;
+otherwise it averages the source rows with `avg` in the same transaction
+and normalises the mean in the vault process. Search is exact and needs
+no index. The store reports `search_mode="streamed"` with no workspace,
+its tables' `pg_total_relation_size` and no resident bytes, and its
+description names host, database, schema, versions and the lease, never
+credentials. What the store relies on in PostgreSQL, pgvector and psycopg
+is in `docs/design/reference/postgresql-pgvector.md`.
+
 **The vault's slot (#1777).** `Vault` holds its vector store in a
 `VectorStoreSlot` that opens it on first use through the backend
 `EMBEDDING_STORE` names (or an injected `vector_backend`), or uses an
@@ -4139,8 +4216,9 @@ failed for (a full disk, a lock timeout) for the next one,
 outside the pending work that drain status counts. At or above `_BULK_RETOKEN` (64) re-tokens in one pass, one
 `publish_generation` replaces the per-document replaces (each copies the
 whole matrix), holding every row as float32; that publish has no
-per-document token check, which the numpy store's one writer per location
-makes safe and #1504's pgvector backend must revisit. If it fails, every
+per-document token check, which one writer per store makes safe: the numpy
+store's one writer per location, the PostgreSQL store's lease and row lock;
+#1812 holds what more writers would need. If it fails, every
 document in it keeps its rows and joins the retry set, as a failed
 per-document write does. The cold build
 (`rebuild`) embeds every document in batches across documents and
@@ -4157,8 +4235,12 @@ whether that revision landed during its provider call or between its token
 and keyword-index reads, and its retry lands nothing; a stale publish carries its own token, so
 the next pass replaces it; a removal that races a recreate conflicts
 instead of removing the new rows. Both writers read one keyword index, as
-two processes over one vault's database do; a writer whose keyword index
-lags the store is #1504's.
+two processes over one vault's database do. A writer whose keyword index
+lags the store can publish an older revision over a newer one. The
+PostgreSQL store admits one writer per schema (#1504), which keeps two
+writers from racing but not a writer that takes over the lease while its
+keyword index lags what the previous holder published; #1812 holds the
+many-writer case.
 
 Bounds: an empty mount-point directory reads as an available, empty
 source, so its vectors go as they always did (a spec gap, #1791: "an
@@ -6091,3 +6173,4 @@ Later decisions (2026-10-08, #1503):
 | 31 | Store open outcomes | Five typed outcomes under `StoreOpenError`; none reads as empty. On a store the vault owns, corrupt or another identity rebuilds into a fresh generation (a model change re-embeds, as documented); a process that does not own the files refuses with the store's own outcome and never creates or replaces them (#1766, #1777, #1778). | An unreachable or unknown store rebuilt as empty is how a server overwrites another process's index; the type says what the operator can do about it. |
 | 32 | Numpy store persistence | JSON commit point naming a per-persist matrix; in-memory publish with durability at checkpoint; `publish_generation` durable at once (#1767). | Crash-safe two-file commit without rewriting the whole matrix per document; write amplification is #1497's. |
 | 33 | Vector search memory | The SQLite store's search is resident or streamed, chosen by the operator; streamed keeps nothing per chunk resident, scans in bounded batches with an exact running top-*limit*, and pushes the folder scope into SQL (#1377). | Every vault keeps the fast path, a growing one gets a bound. Rejected: streamed only (every vault pays the scan's latency); switching by a memory budget (an estimate silently changes behaviour, and reads as a process limit); light metadata resident (grows with chunks, so the batch no longer bounds memory); memory-mapping the `.npy` (a full scan's hot set is still the whole matrix); float16 or int8 (recall loss; 015 has no recall allowance). |
+| 34 | PostgreSQL vector store | One schema per vault is the namespace and the ownership boundary; the vault creates and migrates only its own tables, never extensions; one writer per schema by advisory lease, with every write also row-locked and each per-document write token-conditional; `synchronous_commit` raised to `on` from anything weaker; scored and sorted in PostgreSQL with `<#>` over normalised rows, exact, nothing per chunk in the vault process; connect-time failures tagged only from psycopg's documented attributes; sync psycopg 3 (#1504). | The owner chose schema per vault and "schema is ownership" over a claim id; pgvector is not a trusted extension, so a least-privilege role could never create it, while table rights are needed for upgrades anyway; single writer now, "but be prepared" for strict many-writer (#1812), which the row lock makes a policy change rather than a redesign; `<=>` returns `NaN` for a zero vector, `<#>` returns `-0`; pulling vectors into the vault process would cost the corpus per query; psycopg gives no SQLSTATE for a failed connection and libpq's message is localised, so the owner chose coarse reasons over parsing text; `on` is stronger than `remote_write`, so the owner chose to raise from it too; the library is sync today (#1811). **Rejected:** a vault claim id; shared tables with a namespace column; a resident copy in the vault process; `TRUNCATE` for a generation (blocks readers); parsing libpq's message for an authentication reason. |

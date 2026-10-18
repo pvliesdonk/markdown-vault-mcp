@@ -1,5 +1,27 @@
 # Reference research log
 
+## 2026-10-18
+
+- Added [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md),
+  checked against the PostgreSQL 17 documentation (extensions, locking,
+  isolation, WAL and client settings, schemas, privileges, error codes,
+  `DECLARE`, `pg_dump`, libpq), the PostgreSQL 15 release notes, pgvector's
+  README (v0.8.0) and changelog, and the psycopg 3 and pgvector-python docs,
+  with probes on PostgreSQL 17.4 + pgvector 0.8.0 and 16.10 + 0.8.1 and on
+  psycopg 3.3.6. Found:
+  - `<#>` returns `-0` for a zero vector and `<=>` returns `NaN`;
+  - a missing schema in `search_path` is silently ignored;
+  - `SET LOCAL synchronous_commit = on` lowers a configured `remote_apply`;
+  - psycopg reported every probed connect-time failure without a SQLSTATE,
+    and only `ConnectionTimeout` and `Error.pgconn.needs_password` /
+    `used_password` tell them apart, `needs_password` first, since
+    `used_password` is also true when no password was supplied;
+  - pgvector is not a trusted extension, so installing it needs a superuser.
+
+  Not covered: pins (they arrive with #1504's store children), a lost
+  `COMMIT` reply, crash behaviour, PostgreSQL 15 and 18. Next review:
+  2027-04-18.
+
 ## 2026-10-15
 
 - Added [SQLite WAL durability, checkpoints, the WAL-reset bug and backup](sqlite-wal-durability.md),

@@ -33,6 +33,12 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
   (#1350, #1358: the tie-break, aliases never resolving, markdown destinations
   looked up vault-wide, what Obsidian writes). Read before `scanner.py`
   wikilink extraction or `fts_index.py` resolution.
+- [PostgreSQL and pgvector behaviour behind the vector store](postgresql-pgvector.md) —
+  extension privileges, zero-vector scoring with `<#>` and `<=>`, schemas and
+  `search_path`, snapshots, `DELETE` versus `TRUNCATE`, advisory locks,
+  `synchronous_commit`, SQLSTATEs and connect-time failures in psycopg,
+  cursors, COPY and pooling, connection parameters and schema backups
+  (#1504). Read before changing `stores/postgres_vectors.py`.
 - [SQLite WAL durability, checkpoints, the WAL-reset bug and backup](sqlite-wal-durability.md) —
   what a WAL commit promises under `synchronous=FULL` and `NORMAL`,
   checkpoint modes and the `-wal`/`-shm` lifetime, `BEGIN IMMEDIATE` and
