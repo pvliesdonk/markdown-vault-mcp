@@ -49,6 +49,7 @@ src/markdown_vault_mcp/
     _identity.py       -- the embedding-identity check shared by the SQLite and PostgreSQL stores: persisted mapping, malformed = corrupt, another space = incompatible, wanted dimension 0 takes the stored one (#1504)
     _postgres.py       -- the PostgreSQL connection layer: conninfo defaults, connect/SQLSTATE failures as unavailable-with-reason (never corrupt), the vector extension and schema checks, the configured pool; never emits the DSN (#1504)
     numpy_sidecar.py   -- NumpySidecarBackend/NumpySidecarStore: the resident snapshot persisted as a JSON commit point naming a per-persist matrix; reads legacy VectorIndex sidecars (#1767)
+    postgres_vectors.py -- PostgresVectorBackend/PostgresVectorStore: a vault's vectors in a PostgreSQL schema; open sorts every failure into the five outcomes, reads are REPEATABLE READ from the live meta row (#1504)
     registry.py        -- the (family, name) registry of backend factories: register_backend/get_backend/backend_names (#1766)
     sqlite_keyword.py  -- SqliteKeywordBackend: opens FTSIndex, classifies SQLite failures as unavailable or corrupt (#1766)
     sqlite_vectors.py  -- SqliteVectorBackend/SqliteVectorStore: vectors as SQLite rows in their own database, one BEGIN IMMEDIATE + synchronous=FULL commit per write, served from a resident snapshot (#1497)
