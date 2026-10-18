@@ -156,7 +156,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 ### Extension and privileges
 
 - `CREATE EXTENSION` needs the privileges to create the extension's objects, usually a superuser; only an extension marked `trusted` in its control file can be installed by a role with `CREATE` on the database. [source: pg-create-extension]
-- pgvector's control file carries no `trusted = true` (it reads `comment`, `default_version`, `module_pathname`, `relocatable = true`), so installing it needs a superuser. [observed: probe "control" on pgvector 0.8.0 and 0.8.1]
+- pgvector's control file carries no `trusted = true` (it reads `comment`, `default_version`, `module_pathname`, `relocatable = true`), so installing it needs a superuser. [observed: probe "control" on pgvector 0.8.0 and 0.8.1] [pins: tests/test_stores_postgres_connection.py::test_a_database_without_the_extension_is_not_configured]
 - An extension is loaded into the current database, its name is unique database-wide, and its objects live in a schema chosen at creation (`SCHEMA`, or the current creation schema). [source: pg-create-extension]
 - `CREATE EXTENSION IF NOT EXISTS` checks only the name: "there is no guarantee that the existing extension is anything like the one that would have been created". [source: pg-create-extension]
 - The installed version and schema are in `pg_extension.extversion` and `pg_extension.extnamespace`. [observed: probe "versions", `select extversion from pg_extension where extname='vector'` → `0.8.0` / `0.8.1`]
@@ -177,7 +177,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 
 ### Schemas and `search_path`
 
-- A schema in `search_path` that does not exist, or lacks `USAGE` for the role, is "silently ignored". [source: pg-client-config] [observed: probe 8, `set search_path = no_such_schema, public` leaves `{public}`, and `pg_tables` places the new table in `public`]
+- A schema in `search_path` that does not exist, or lacks `USAGE` for the role, is "silently ignored". [source: pg-client-config] [observed: probe 8, `set search_path = no_such_schema, public` leaves `{public}`, and `pg_tables` places the new table in `public`] [pins: tests/test_stores_postgres_connection.py::test_a_missing_schema_is_not_configured_with_the_sql]
 - `pg_catalog` is always searched, before the path unless the path names it. [source: pg-client-config]
 - The first existing schema in the path is the default creation schema; unqualified names resolve to the first match along the path. [source: pg-schemas]
 - Putting a schema in `search_path` "effectively trusts all users having `CREATE` privilege on that schema". [source: pg-schemas] (§ Secure Schema Usage Patterns)
@@ -225,7 +225,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - Every connect-time failure probed raised `psycopg.OperationalError` with `sqlstate=None`: wrong password, unknown role, missing database, no `CONNECT` privilege, no password supplied, refused port. [observed: probe 10e, both images, `scram-sha-256` and `trust`] An unresolvable host raised `OperationalError` and a connect timeout its subclass `ConnectionTimeout`, both with `sqlstate=None` and `pgconn=None`. [observed: probe 10d, one run against the PostgreSQL 17.4 image; neither case reaches PostgreSQL]
 - After a failed connection, `Error.pgconn` is a closed connection; its `needs_password`, `used_password`, `server_version`, `status` and `error_message` can be read, `parameter_status()` raises `the connection is closed`, and `server_version` reads `0` whether or not PostgreSQL answered. [source: psycopg-errors] [observed: probe 10e, both images]
 - `PQconnectionNeedsPassword` is true when "the connection authentication method required a password, but none was available"; `PQconnectionUsedPassword` is true when "the connection authentication method used a password", which detects "whether the server demanded a password". [source: libpq-status]
-- Under `scram-sha-256`: a wrong password, an unknown role, a missing database and a missing `CONNECT` privilege give `needs_password=False`, `used_password=True`; no password supplied gives `needs_password=True` and also `used_password=True`; a refused port gives both `False`. [observed: probe 10e, both images] So `used_password` alone does not mean a password was sent: `needs_password` must be tested first.
+- Under `scram-sha-256`: a wrong password, an unknown role, a missing database and a missing `CONNECT` privilege give `needs_password=False`, `used_password=True`; no password supplied gives `needs_password=True` and also `used_password=True`; a refused port gives both `False`. [observed: probe 10e, both images] So `used_password` alone does not mean a password was sent: `needs_password` must be tested first. [pins: tests/test_stores_postgres_connection.py::test_connect_reports_a_wrong_password_as_refused, tests/test_stores_postgres_connection.py::test_connect_reports_a_missing_database_as_refused, tests/test_stores_postgres_connection.py::test_connect_reports_no_password_as_no_password, tests/test_stores_postgres_connection.py::test_needs_password_is_tested_before_used_password]
 - Under `trust`: a wrong password and no password both connect; an unknown role, a missing database, a missing `CONNECT` privilege and a refused port all give both flags `False`. [observed: probe 10e, both images]
 - PostgreSQL displays its messages in the language `lc_messages` selects, falling back to English where no translation exists. [source: pg-client-config] A message's wording is therefore not a stable value to match on.
 - What a client should conclude when the connection drops after `COMMIT` was sent is not documented by the transaction-isolation page or by psycopg. [source: pg-isolation] [source: psycopg-transactions] [unverified] That the commit may or may not have landed follows from PostgreSQL naming the condition (`08007 transaction_resolution_unknown`); the store's test of a lost commit reply (#1504 child 5) would pin the behaviour the store relies on.
@@ -313,6 +313,11 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
   attributes (`ConnectionTimeout`, then `Error.pgconn.needs_password`, then
   `used_password`), never by message text, whose language follows
   `lc_messages`.
+- libpq's messages are carried redacted, not verbatim: they quote the token
+  that failed to parse or resolve, which for a mistyped DSN can be part of
+  the password (observed in the final review of #1504 child 3a:
+  `missing "=" after "SECRET"`, `failed to resolve host 'CRET@127.0.0.1'`
+  for an unencoded `@`).
 
 ## Not covered
 
