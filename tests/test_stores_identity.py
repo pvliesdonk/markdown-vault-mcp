@@ -31,6 +31,7 @@ def test_identity_round_trips_through_a_mapping() -> None:
         {**identity_mapping(_ID), "dimension": "768"},
         {**identity_mapping(_ID), "dimension": -1},
         {**identity_mapping(_ID), "dimension": True},
+        {**identity_mapping(_ID), "model": 5},
     ],
 )
 def test_a_malformed_identity_is_corrupt(data: object) -> None:
@@ -66,3 +67,19 @@ def test_a_stored_dimension_of_zero_takes_the_wanted_one() -> None:
 def test_another_identity_is_incompatible(other: EmbeddingIdentity) -> None:
     with pytest.raises(StoreIncompatibleError, match="Vector store at here holds"):
         served_identity(_ID, other, **_where())
+
+
+def test_the_sqlite_store_reads_invalid_identity_json_as_corrupt() -> None:
+    from markdown_vault_mcp.stores import sqlite_vectors
+
+    with pytest.raises(StoreCorruptError, match="malformed identity"):
+        sqlite_vectors._stored_identity("{not json", "here")
+
+
+def test_the_sqlite_store_parses_stored_identity_json() -> None:
+    import json
+
+    from markdown_vault_mcp.stores import sqlite_vectors
+
+    raw = json.dumps(identity_mapping(_ID))
+    assert sqlite_vectors._stored_identity(raw, "here") == _ID
