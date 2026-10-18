@@ -313,6 +313,11 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
   attributes (`ConnectionTimeout`, then `Error.pgconn.needs_password`, then
   `used_password`), never by message text, whose language follows
   `lc_messages`.
+- libpq's messages are carried redacted, not verbatim: they quote the token
+  that failed to parse or resolve, which for a mistyped DSN can be part of
+  the password (observed in the final review of #1504 child 3a:
+  `missing "=" after "SECRET"`, `failed to resolve host 'CRET@127.0.0.1'`
+  for an unencoded `@`).
 
 ## Not covered
 

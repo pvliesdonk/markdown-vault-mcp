@@ -44,8 +44,10 @@ def test_unavailable_names_the_reason_and_logs_it(
     assert str(exc).endswith("(reason=refused)")
     assert (exc.backend, exc.location) == ("postgres", _SCHEMA)
     (record,) = caplog.records
-    assert record.msg == "postgres_vector_store_unavailable schema=%s reason=%s"
-    assert record.args == (_SCHEMA, "refused")
+    assert (
+        record.msg == "postgres_vector_store_unavailable schema=%s reason=%s detail=%s"
+    )
+    assert record.args == (_SCHEMA, "refused", "PostgreSQL refused.")
 
 
 def test_not_configured_carries_backend_and_schema() -> None:
@@ -85,6 +87,8 @@ def test_needs_password_is_tested_before_used_password() -> None:
     [
         ("08006", "connect"),
         ("57P01", "connect"),
+        ("57014", "timeout"),
+        ("55P03", "timeout"),
         ("53300", "connect"),
         ("28P01", "refused"),
         ("42501", "privilege"),
@@ -165,11 +169,11 @@ def silent_port() -> Iterator[int]:
         listener.close()
 
 
-def _with(server: PostgresServer, **params: str) -> str:
-    return make_conninfo(server.dsn, **params)
+def _with(server: PostgresServer, **params: str) -> pg.Conninfo:
+    return pg.prepare_conninfo(make_conninfo(server.dsn, **params), schema=_SCHEMA)
 
 
-def _reason_of(conninfo: str) -> str:
+def _reason_of(conninfo: pg.Conninfo) -> str:
     with pytest.raises(StoreUnavailableError) as failure:
         pg.connect(conninfo, schema=_SCHEMA)
     assert failure.value.__cause__ is None
@@ -180,12 +184,20 @@ def _reason_of(conninfo: str) -> str:
 def test_connect_reports_a_wrong_password_as_refused(
     postgres_server: PostgresServer,
 ) -> None:
+    if not postgres_server.throwaway:
+        pytest.skip(
+            "needs a server that checks passwords (the harness's own container)"
+        )
     assert _reason_of(_with(postgres_server, password="wrong")) == "refused"
 
 
 def test_connect_reports_a_missing_database_as_refused(
     postgres_server: PostgresServer,
 ) -> None:
+    if not postgres_server.throwaway:
+        pytest.skip(
+            "needs a server that checks passwords (the harness's own container)"
+        )
     assert _reason_of(_with(postgres_server, dbname="mvm_no_such_db")) == "refused"
 
 
@@ -200,7 +212,8 @@ def test_connect_reports_no_password_as_no_password(
     monkeypatch.setenv("PGPASSFILE", "/nonexistent")
     params = conninfo_to_dict(postgres_server.dsn)
     params.pop("password", None)
-    assert _reason_of(make_conninfo(**params)) == "no_password"
+    conninfo = pg.prepare_conninfo(make_conninfo("", **params), schema=_SCHEMA)
+    assert _reason_of(conninfo) == "no_password"
 
 
 def test_connect_reports_a_refused_port_as_connect(
@@ -210,9 +223,10 @@ def test_connect_reports_a_refused_port_as_connect(
 
 
 def test_connect_reports_a_silent_peer_as_timeout(silent_port: int) -> None:
-    conninfo = (
+    conninfo = pg.prepare_conninfo(
         f"host=127.0.0.1 port={silent_port} user=u password=p dbname=d "
-        "connect_timeout=1"
+        "connect_timeout=1",
+        schema=_SCHEMA,
     )
     assert _reason_of(conninfo) == "timeout"
 
@@ -263,9 +277,17 @@ def test_no_failure_carries_the_password(
 def test_find_extension_reports_its_schema_and_version(
     postgres_server: PostgresServer,
 ) -> None:
-    with pg.connect(postgres_server.dsn, schema=_SCHEMA) as conn:
+    with pg.connect(
+        pg.prepare_conninfo(postgres_server.dsn, schema=_SCHEMA), schema=_SCHEMA
+    ) as conn:
         ext = pg.find_extension(conn, schema=_SCHEMA)
-    assert ext.schema == "public"
+    with psycopg.connect(postgres_server.dsn) as admin:
+        row = admin.execute(
+            "SELECT n.nspname FROM pg_extension e JOIN pg_namespace n"
+            " ON n.oid = e.extnamespace WHERE e.extname = 'vector'"
+        ).fetchone()
+    assert row is not None
+    assert ext.schema == row[0]
     assert ext.version >= pg.MIN_PGVECTOR
 
 
@@ -274,7 +296,9 @@ def test_an_extension_older_than_the_minimum_is_not_configured(
 ) -> None:
     monkeypatch.setattr(pg, "MIN_PGVECTOR", (99, 0, 0))
     with (
-        pg.connect(postgres_server.dsn, schema=_SCHEMA) as conn,
+        pg.connect(
+            pg.prepare_conninfo(postgres_server.dsn, schema=_SCHEMA), schema=_SCHEMA
+        ) as conn,
         pytest.raises(StoreNotConfiguredError, match=r"99\.0\.0") as failure,
     ):
         pg.find_extension(conn, schema=_SCHEMA)
@@ -318,7 +342,10 @@ def test_a_missing_schema_is_not_configured_with_the_sql(
     postgres_server: PostgresServer,
 ) -> None:
     with (
-        pg.connect(postgres_server.dsn, schema="mvm_no_such_schema") as conn,
+        pg.connect(
+            pg.prepare_conninfo(postgres_server.dsn, schema="mvm_no_such_schema"),
+            schema="mvm_no_such_schema",
+        ) as conn,
         pytest.raises(StoreNotConfiguredError, match="CREATE SCHEMA") as failure,
     ):
         pg.check_schema(conn, schema="mvm_no_such_schema")
@@ -326,7 +353,10 @@ def test_a_missing_schema_is_not_configured_with_the_sql(
 
 
 def test_an_existing_schema_passes(postgres_schema: PostgresSchema) -> None:
-    with pg.connect(postgres_schema.dsn, schema=postgres_schema.name) as conn:
+    with pg.connect(
+        pg.prepare_conninfo(postgres_schema.dsn, schema=postgres_schema.name),
+        schema=postgres_schema.name,
+    ) as conn:
         pg.check_schema(conn, schema=postgres_schema.name)
 
 
@@ -364,7 +394,7 @@ def test_schema_without_usage_is_unavailable_privilege(
         )
 
 
-def _extension_for(conninfo: str, schema: str) -> pg.Extension:
+def _extension_for(conninfo: pg.Conninfo, schema: str) -> pg.Extension:
     with pg.connect(conninfo, schema=schema) as conn:
         pg.check_schema(conn, schema=schema)
         return pg.find_extension(conn, schema=schema)
@@ -397,7 +427,7 @@ def test_pool_connections_are_configured(postgres_schema: PostgresSchema) -> Non
 def test_pool_sets_search_path_for_a_mixed_case_schema(
     postgres_server: PostgresServer,
 ) -> None:
-    name = f"Vault-{uuid.uuid4().hex[:6]}"
+    name = f"mvm_test_Mixed-{uuid.uuid4().hex[:6]}"
     _admin_execute(
         postgres_server, sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name))
     )
@@ -434,9 +464,10 @@ def test_pool_that_cannot_connect_is_unavailable_pool_and_closed(
             opened.append(self)
 
     monkeypatch.setattr(pg, "ConnectionPool", Recording)
-    conninfo = (
+    conninfo = pg.prepare_conninfo(
         f"host=127.0.0.1 port={silent_port} user=u password=p dbname=d "
-        "connect_timeout=1"
+        "connect_timeout=1",
+        schema=_SCHEMA,
     )
     with pytest.raises(StoreUnavailableError, match=r"reason=pool"):
         pg.open_pool(
@@ -447,12 +478,13 @@ def test_pool_that_cannot_connect_is_unavailable_pool_and_closed(
         )
     (pool,) = opened
     assert pool.closed
+    assert not [t for t in threading.enumerate() if t.name.startswith("mvm-vectors-")]
 
 
 def test_a_pool_size_below_one_is_refused() -> None:
     with pytest.raises(ValueError, match="pool_size"):
         pg.open_pool(
-            "host=x",
+            pg.prepare_conninfo("host=x", schema=_SCHEMA),
             schema=_SCHEMA,
             extension=pg.Extension("public", (0, 8, 0)),
             settings=pg.PoolSettings(pool_size=0),
@@ -464,8 +496,125 @@ def test_a_connection_lost_before_the_catalogue_read_is_unavailable_connect(
     postgres_server: PostgresServer, check: str
 ) -> None:
     """A dropped connection is an outage, never a missing extension or schema."""
-    conn = pg.connect(postgres_server.dsn, schema=_SCHEMA)
+    conn = pg.connect(
+        pg.prepare_conninfo(postgres_server.dsn, schema=_SCHEMA), schema=_SCHEMA
+    )
     conn.close()
     with pytest.raises(StoreUnavailableError, match=r"reason=connect") as failure:
         getattr(pg, check)(conn, schema=_SCHEMA)
     assert failure.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    "dsn",
+    [
+        "host=db user=u password=TOP SECRET dbname=x",
+        "postgresql://u:TOP%ZZSECRET@db/x",
+        "postgresql://u:TOPSECRET@[db/x",
+        "host=db password=TOPSECRET bogus_key=1",
+    ],
+)
+def test_an_unparsable_dsn_carries_no_libpq_text(dsn: str) -> None:
+    with pytest.raises(StoreNotConfiguredError, match="percent-encoding") as failure:
+        pg.prepare_conninfo(dsn, schema=_SCHEMA)
+    assert "SECRET" not in str(failure.value)
+    assert failure.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    "dsn",
+    ["postgresql://u:S@CRET@127.0.0.1/x", "host='db CRET' dbname=x"],
+)
+def test_a_host_that_holds_a_password_fragment_is_refused(dsn: str) -> None:
+    with pytest.raises(StoreNotConfiguredError, match="%40") as failure:
+        pg.prepare_conninfo(dsn, schema=_SCHEMA)
+    assert "CRET" not in str(failure.value)
+
+
+def test_empty_settings_take_the_defaults() -> None:
+    params = conninfo_to_dict(
+        pg.prepare_conninfo(
+            "host=db connect_timeout='' application_name=''", schema=_SCHEMA
+        )
+    )
+    assert params["connect_timeout"] == "10"
+    assert params["application_name"] == f"markdown-vault-mcp:{_SCHEMA}"
+
+
+def test_libpq_environment_settings_are_respected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PGCONNECT_TIMEOUT", "4")
+    monkeypatch.setenv("PGAPPNAME", "from-env")
+    params = conninfo_to_dict(pg.prepare_conninfo("host=db", schema=_SCHEMA))
+    assert "connect_timeout" not in params
+    assert "application_name" not in params
+
+
+def test_a_malformed_setting_is_not_configured_not_a_raw_error() -> None:
+    conninfo = pg.prepare_conninfo("host=127.0.0.1 connect_timeout=abc", schema=_SCHEMA)
+    with pytest.raises(StoreNotConfiguredError, match="connect_timeout") as failure:
+        pg.connect(conninfo, schema=_SCHEMA)
+    assert failure.value.__cause__ is None
+
+
+def test_conninfo_hides_itself() -> None:
+    conninfo = pg.prepare_conninfo("host=db password=TOPSECRET", schema=_SCHEMA)
+    assert "TOPSECRET" not in repr(conninfo)
+    assert "TOPSECRET" in conninfo  # still the real string for psycopg
+
+
+def test_redact_keeps_safe_tokens_and_hides_the_rest() -> None:
+    text = (
+        'connection to server at "127.0.0.1", port 1 failed: FATAL: database "x" '
+        "does not exist; failed to resolve host 'CRET@db'; bad value for option "
+        '"connect_timeout"'
+    )
+    redacted = pg.redact(text, safe={"127.0.0.1", "x"})
+    assert '"127.0.0.1"' in redacted
+    assert 'database "x"' in redacted
+    assert '"connect_timeout"' in redacted
+    assert "CRET" not in redacted
+    assert "<redacted>" in redacted
+
+
+def test_connect_failure_messages_keep_the_diagnosis(
+    postgres_server: PostgresServer,
+) -> None:
+    with pytest.raises(StoreUnavailableError) as failure:
+        pg.connect(_with(postgres_server, dbname="mvm_no_such_db"), schema=_SCHEMA)
+    assert '"mvm_no_such_db"' in str(failure.value)
+    assert not str(failure.value).endswith("\n")
+
+
+@pytest.mark.parametrize(
+    ("settings", "match"),
+    [
+        (pg.PoolSettings(statement_timeout_s=-1), "statement_timeout_s"),
+        (pg.PoolSettings(statement_timeout_s=float("inf")), "statement_timeout_s"),
+        (pg.PoolSettings(statement_timeout_s=float("nan")), "statement_timeout_s"),
+        (pg.PoolSettings(wait_s=0), "wait_s"),
+        (pg.PoolSettings(get_timeout_s=-1), "get_timeout_s"),
+    ],
+)
+def test_pool_settings_out_of_range_are_refused(
+    settings: pg.PoolSettings, match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        pg.open_pool(
+            pg.prepare_conninfo("host=x", schema=_SCHEMA),
+            schema=_SCHEMA,
+            extension=pg.Extension("public", (0, 8, 0)),
+            settings=settings,
+        )
+
+
+@pytest.mark.parametrize(
+    ("seconds", "milliseconds"), [(0, 0), (0.0004, 1), (0.0015, 2), (30, 30_000)]
+)
+def test_statement_timeout_rounds_to_milliseconds_without_reaching_none(
+    seconds: float, milliseconds: int
+) -> None:
+    assert pg.statement_timeout_ms(pg.PoolSettings(statement_timeout_s=seconds)) == (
+        milliseconds
+    )
