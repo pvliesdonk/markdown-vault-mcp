@@ -14,9 +14,10 @@ psycopg is in ``docs/design/reference/postgresql-pgvector.md``.
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 import psycopg
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from markdown_vault_mcp.exceptions import StoreNotConfiguredError, StoreUnavailableError
 
@@ -39,6 +40,13 @@ UnavailableReason = Literal[
 ]
 
 _CONNECT_CLASSES = frozenset({"08", "53", "57"})
+_DEFAULTS = (
+    ("connect_timeout", "10"),
+    ("keepalives", "1"),
+    ("keepalives_idle", "30"),
+    ("keepalives_interval", "10"),
+    ("keepalives_count", "3"),
+)
 
 
 def unavailable(
@@ -126,3 +134,58 @@ def classify_error(
     if state == "42501":
         return unavailable(message, reason="privilege", schema=schema)
     return unavailable(f"{message} [SQLSTATE {state}]", reason="error", schema=schema)
+
+
+def prepare_conninfo(dsn: str, *, schema: str) -> str:
+    """Return *dsn* with the store's connection defaults where it sets none.
+
+    Adds ``connect_timeout`` (libpq otherwise waits indefinitely), TCP
+    keepalives and ``application_name=markdown-vault-mcp:<schema>``; every
+    value the DSN sets is kept.
+
+    Args:
+        dsn: The operator's libpq URI or key/value connection string.
+        schema: The vault schema.
+
+    Returns:
+        The connection string to connect with.
+
+    Raises:
+        StoreNotConfiguredError: If *dsn* is not a valid connection string;
+            the message gives psycopg's reason, never the DSN.
+    """
+    try:
+        params = conninfo_to_dict(dsn)
+    except psycopg.ProgrammingError as exc:
+        failure = not_configured(
+            f"The PostgreSQL DSN for schema {schema} is not a valid connection "
+            f"string: {exc}",
+            schema=schema,
+        )
+    else:
+        for key, value in _DEFAULTS:
+            params.setdefault(key, value)
+        params.setdefault("application_name", f"markdown-vault-mcp:{schema}")
+        return make_conninfo("", **params)
+    raise failure from None
+
+
+def connect(conninfo: str, *, schema: str) -> psycopg.Connection[tuple[Any, ...]]:
+    """Open one autocommit connection, failing with the classified outcome.
+
+    Args:
+        conninfo: A connection string from :func:`prepare_conninfo`.
+        schema: The vault schema.
+
+    Returns:
+        The open connection.
+
+    Raises:
+        StoreUnavailableError: If it cannot connect; psycopg's frames, which
+            hold *conninfo*, are not chained to it.
+    """
+    try:
+        return psycopg.connect(conninfo, autocommit=True)
+    except psycopg.OperationalError as exc:
+        failure = classify_connect_failure(exc, schema=schema)
+    raise failure from None
