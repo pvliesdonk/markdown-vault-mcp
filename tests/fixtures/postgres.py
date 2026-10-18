@@ -21,12 +21,14 @@ import shutil
 import subprocess
 import time
 import uuid
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import pytest
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
+
+    import psycopg
 
 DSN_ENV = "MVM_TEST_POSTGRES_DSN"
 IMAGE_ENV = "MVM_TEST_POSTGRES_IMAGE"
@@ -34,6 +36,8 @@ DEFAULT_IMAGE = "pgvector/pgvector:0.8.1-pg17"
 SCHEMA_PREFIX = "mvm_test_"
 _READY_TIMEOUT_S = 90.0
 _DOCKER_TIMEOUT_S = 600.0
+_DROP_LOCK_TIMEOUT_MS = 10_000
+_HIDDEN = "<hidden>"
 
 
 class Source(NamedTuple):
@@ -51,14 +55,26 @@ class Source(NamedTuple):
 class PostgresServer(NamedTuple):
     """The session's database.
 
+    Its ``repr`` hides the DSN, which may carry a real password, so a failing
+    test that shows its arguments does not print it.
+
     Attributes:
         dsn: A libpq connection string for it.
-        superuser: Whether the DSN's role is a superuser; tests that create
-            databases or extensions skip without one.
+        superuser: Whether the DSN's role is a superuser.
+        throwaway: Whether the harness started it; tests that create
+            databases run only against a throwaway server.
     """
 
     dsn: str
     superuser: bool
+    throwaway: bool
+
+    def __repr__(self) -> str:
+        """Describe the server without its DSN."""
+        return (
+            f"PostgresServer(dsn={_HIDDEN}, superuser={self.superuser}, "
+            f"throwaway={self.throwaway})"
+        )
 
 
 class PostgresSchema(NamedTuple):
@@ -71,6 +87,10 @@ class PostgresSchema(NamedTuple):
 
     dsn: str
     name: str
+
+    def __repr__(self) -> str:
+        """Describe the schema without the DSN."""
+        return f"PostgresSchema(dsn={_HIDDEN}, name={self.name!r})"
 
 
 def _driver_installed() -> bool:
@@ -162,8 +182,33 @@ def _published_port(container: str) -> str | None:
     return mapping.stdout.split()[0].rsplit(":", 1)[1]
 
 
-def _wait_until_ready(dsn: str, deadline: float) -> bool:
-    """Connect to *dsn* until it answers or *deadline* (monotonic) passes."""
+def _connect(dsn: str, *, autocommit: bool = False) -> psycopg.Connection[Any]:
+    """Connect to *dsn*; a failure fails the test without a traceback or the DSN.
+
+    Raises:
+        pytest.fail.Exception: If the connection fails. libpq's message is
+            kept; the traceback, whose frames hold the DSN, is not shown.
+    """
+    import psycopg
+
+    try:
+        return psycopg.connect(dsn, autocommit=autocommit)
+    except psycopg.OperationalError as exc:
+        pytest.fail(f"cannot connect to the test database: {exc}", pytrace=False)
+
+
+def _running(container: str) -> bool:
+    """Whether *container* is still running."""
+    state = _docker("inspect", "-f", "{{.State.Running}}", container, timeout=30)
+    return state.returncode == 0 and state.stdout.strip() == "true"
+
+
+def _wait_until_ready(dsn: str, deadline: float, container: str) -> str:
+    """Connect to *dsn* until it answers, *container* exits or *deadline* passes.
+
+    Returns:
+        ``"ready"``, ``"exited"`` or ``"timeout"``.
+    """
     import psycopg
 
     while time.monotonic() < deadline:
@@ -171,10 +216,12 @@ def _wait_until_ready(dsn: str, deadline: float) -> bool:
             with psycopg.connect(dsn, connect_timeout=3) as conn:
                 conn.execute("SELECT 1")
         except psycopg.OperationalError:
+            if not _running(container):
+                return "exited"
             time.sleep(0.5)
         else:
-            return True
-    return False
+            return "ready"
+    return "timeout"
 
 
 def start_container(
@@ -199,10 +246,10 @@ def start_container(
     """
     password = secrets.token_hex(16)
     name = f"mvm-test-pg-{os.getpid()}-{uuid.uuid4().hex[:6]}"
+    # No --rm: a container that exits must keep its logs until they are read.
     run = _docker(
         "run",
         "-d",
-        "--rm",
         "--name",
         name,
         "-p",
@@ -216,18 +263,40 @@ def start_container(
         _remove(name)
         pytest.fail(f"docker run {image} failed: {run.stderr.strip()}")
     container = run.stdout.strip()
+    try:
+        return container, _await_container(container, image, password, ready_timeout_s)
+    except BaseException:
+        _remove(container)
+        raise
+
+
+def _await_container(
+    container: str, image: str, password: str, ready_timeout_s: float
+) -> str:
+    """Wait for *container* to accept connections; return its DSN.
+
+    Raises:
+        pytest.fail.Exception: If it exits or does not answer in time, with
+            its last log lines.
+    """
     port = _published_port(container)
     dsn = (
         f"host=127.0.0.1 port={port} user=postgres password={password} dbname=postgres"
     )
-    if port is None or not _wait_until_ready(dsn, time.monotonic() + ready_timeout_s):
-        logs = _docker("logs", "--tail", "30", container, timeout=30)
-        _remove(container)
-        pytest.fail(
-            f"PostgreSQL in {image} did not accept connections within "
-            f"{ready_timeout_s:.0f}s:\n{logs.stdout}{logs.stderr}"
-        )
-    return container, dsn
+    outcome = (
+        "exited"
+        if port is None
+        else _wait_until_ready(dsn, time.monotonic() + ready_timeout_s, container)
+    )
+    if outcome == "ready":
+        return dsn
+    logs = _docker("logs", "--tail", "30", container, timeout=30)
+    what = (
+        "exited before accepting connections"
+        if outcome == "exited"
+        else f"did not accept connections within {ready_timeout_s:.0f}s"
+    )
+    pytest.fail(f"PostgreSQL in {image} {what}:\n{logs.stdout}{logs.stderr}")
 
 
 def check_vector_extension(dsn: str, *, create: bool) -> None:
@@ -241,9 +310,7 @@ def check_vector_extension(dsn: str, *, create: bool) -> None:
     Raises:
         pytest.fail.Exception: If it is missing and *create* is false.
     """
-    import psycopg
-
-    with psycopg.connect(dsn, autocommit=True) as conn:
+    with _connect(dsn, autocommit=True) as conn:
         if create:
             conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
             return
@@ -259,9 +326,7 @@ def check_vector_extension(dsn: str, *, create: bool) -> None:
 
 def _is_superuser(dsn: str) -> bool:
     """Whether *dsn*'s role is a superuser."""
-    import psycopg
-
-    with psycopg.connect(dsn) as conn:
+    with _connect(dsn) as conn:
         row = conn.execute(
             "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"
         ).fetchone()
@@ -275,18 +340,41 @@ def scratch_schema(dsn: str) -> Iterator[str]:
     Yields:
         The schema's name: ``SCHEMA_PREFIX`` and twelve hex digits.
     """
-    import psycopg
     from psycopg import sql
 
     name = f"{SCHEMA_PREFIX}{uuid.uuid4().hex[:12]}"
-    with psycopg.connect(dsn, autocommit=True) as conn:
+    with _connect(dsn, autocommit=True) as conn:
         conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
     try:
         yield name
     finally:
-        with psycopg.connect(dsn, autocommit=True) as conn:
+        _drop_schema(dsn, name)
+
+
+def _drop_schema(dsn: str, name: str) -> None:
+    """Drop *name*, failing rather than waiting forever on another session's lock.
+
+    Raises:
+        pytest.fail.Exception: If a lock held elsewhere outlasts
+            ``_DROP_LOCK_TIMEOUT_MS``; the schema is then left in place.
+    """
+    import psycopg
+    from psycopg import sql
+
+    with _connect(dsn, autocommit=True) as conn:
+        conn.execute(
+            sql.SQL("SET lock_timeout = {}").format(sql.Literal(_DROP_LOCK_TIMEOUT_MS))
+        )
+        try:
             conn.execute(
                 sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(name))
+            )
+        except psycopg.errors.LockNotAvailable:
+            pytest.fail(
+                f"could not drop test schema {name}: another session holds a lock "
+                f"on it for more than {_DROP_LOCK_TIMEOUT_MS} ms (a connection "
+                "left open in a transaction?)",
+                pytrace=False,
             )
 
 
@@ -298,12 +386,14 @@ def postgres_server() -> Iterator[PostgresServer]:
         report_unavailable(source.detail, os.environ)
     if source.kind == "dsn":
         check_vector_extension(source.detail, create=False)
-        yield PostgresServer(source.detail, _is_superuser(source.detail))
+        yield PostgresServer(
+            source.detail, _is_superuser(source.detail), throwaway=False
+        )
         return
     container, dsn = start_container(source.detail)
     try:
         check_vector_extension(dsn, create=True)
-        yield PostgresServer(dsn, superuser=True)
+        yield PostgresServer(dsn, superuser=True, throwaway=True)
     finally:
         _remove(container)
 

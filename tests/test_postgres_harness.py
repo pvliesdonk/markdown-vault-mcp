@@ -174,13 +174,17 @@ def test_dsn_without_vector_extension_fails_with_the_fix(
     from psycopg import sql
     from psycopg.conninfo import make_conninfo
 
-    if not postgres_server.superuser:
-        pytest.skip("creating a database needs a superuser DSN")
+    if not postgres_server.throwaway:
+        pytest.skip("creates a database: runs only against the harness's own container")
     database = f"mvm_test_noext_{uuid.uuid4().hex[:8]}"
-    with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
-        conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database)))
     other = make_conninfo(postgres_server.dsn, dbname=database)
     try:
+        with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
+            conn.execute(
+                sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(
+                    sql.Identifier(database)
+                )
+            )
         with pytest.raises(pytest.fail.Exception, match="CREATE EXTENSION vector"):
             check_vector_extension(other, create=False)
     finally:
@@ -228,3 +232,92 @@ def test_container_that_cannot_start_is_reported(
     with pytest.raises(pytest.fail.Exception, match=r"docker run .* failed"):
         start_container("pgvector/pgvector:no-such-tag-1504", ready_timeout_s=3)
     assert _containers_named(prefix) == before
+
+
+def test_descriptions_never_show_the_dsn() -> None:
+    secret = "host=db user=u password=TOPSECRET dbname=d"
+    server = PostgresServer(secret, superuser=False, throwaway=False)
+    schema = PostgresSchema(secret, "mvm_test_abc")
+    assert "TOPSECRET" not in repr(server)
+    assert "TOPSECRET" not in repr(schema)
+    assert "mvm_test_abc" in repr(schema)
+
+
+def test_unreachable_dsn_fails_without_the_password_or_a_traceback() -> None:
+    dsn = "host=127.0.0.1 port=1 user=u password=TOPSECRET dbname=d connect_timeout=2"
+    with pytest.raises(pytest.fail.Exception) as failure:
+        check_vector_extension(dsn, create=False)
+    assert "TOPSECRET" not in str(failure.value)
+    assert "cannot connect" in str(failure.value)
+    assert failure.value.pytrace is False
+
+
+def test_container_that_exits_on_start_reports_its_logs(
+    postgres_server: PostgresServer,
+) -> None:
+    """A container that crashes at once fails with its own log lines, not a timeout."""
+    del postgres_server
+    if not docker_available():
+        pytest.skip("needs the Docker CLI")
+    prefix = f"mvm-test-pg-{os.getpid()}-"
+    before = _containers_named(prefix)
+    with pytest.raises(pytest.fail.Exception, match="exited") as failure:
+        start_container(
+            DEFAULT_IMAGE,
+            command=("sh", "-c", "echo BOOM-LOG-LINE >&2; exit 3"),
+            ready_timeout_s=20,
+        )
+    assert "BOOM-LOG-LINE" in str(failure.value)
+    assert _containers_named(prefix) == before
+
+
+def test_interrupted_start_removes_the_container(
+    postgres_server: PostgresServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ctrl-C while waiting for the container leaves no container behind."""
+    del postgres_server
+    if not docker_available():
+        pytest.skip("needs the Docker CLI")
+    import tests.fixtures.postgres as harness
+
+    def interrupted(*_args: object) -> bool:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(harness, "_wait_until_ready", interrupted)
+    prefix = f"mvm-test-pg-{os.getpid()}-"
+    before = _containers_named(prefix)
+    with pytest.raises(KeyboardInterrupt):
+        start_container(DEFAULT_IMAGE, command=("sleep", "60"))
+    assert _containers_named(prefix) == before
+
+
+def test_schema_drop_blocked_by_a_lock_fails_instead_of_hanging(
+    postgres_server: PostgresServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import psycopg
+    from psycopg import sql
+
+    import tests.fixtures.postgres as harness
+
+    monkeypatch.setattr(harness, "_DROP_LOCK_TIMEOUT_MS", 300)
+    holder = psycopg.connect(postgres_server.dsn)
+    try:
+        with (
+            pytest.raises(pytest.fail.Exception, match="could not drop"),
+            scratch_schema(postgres_server.dsn) as name,
+        ):
+            with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
+                conn.execute(
+                    sql.SQL("CREATE TABLE {}.t (i int)").format(sql.Identifier(name))
+                )
+            holder.execute(
+                sql.SQL("LOCK TABLE {}.t IN ACCESS SHARE MODE").format(
+                    sql.Identifier(name)
+                )
+            )
+    finally:
+        holder.close()
+    with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
+        conn.execute(
+            sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(name))
+        )
