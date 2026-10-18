@@ -206,7 +206,7 @@ def classify_error(
         return unavailable(message, reason="timeout", schema=schema)
     if state is None or state[:2] in _CONNECT_CLASSES:
         return unavailable(message, reason="connect", schema=schema)
-    if state[:2] == "28":
+    if state.startswith("28"):
         return unavailable(message, reason="refused", schema=schema)
     if state == "42501":
         return unavailable(message, reason="privilege", schema=schema)

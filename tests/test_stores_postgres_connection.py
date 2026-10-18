@@ -469,26 +469,21 @@ def test_pool_that_cannot_connect_is_unavailable_pool_and_closed(
         "connect_timeout=1",
         schema=_SCHEMA,
     )
+    extension = pg.Extension("public", (0, 8, 0))
+    settings = pg.PoolSettings(pool_size=1, wait_s=2)
     with pytest.raises(StoreUnavailableError, match=r"reason=pool"):
-        pg.open_pool(
-            conninfo,
-            schema=_SCHEMA,
-            extension=pg.Extension("public", (0, 8, 0)),
-            settings=pg.PoolSettings(pool_size=1, wait_s=2),
-        )
+        pg.open_pool(conninfo, schema=_SCHEMA, extension=extension, settings=settings)
     (pool,) = opened
     assert pool.closed
     assert not [t for t in threading.enumerate() if t.name.startswith("mvm-vectors-")]
 
 
 def test_a_pool_size_below_one_is_refused() -> None:
+    conninfo = pg.prepare_conninfo("host=x", schema=_SCHEMA)
+    extension = pg.Extension("public", (0, 8, 0))
+    settings = pg.PoolSettings(pool_size=0)
     with pytest.raises(ValueError, match="pool_size"):
-        pg.open_pool(
-            pg.prepare_conninfo("host=x", schema=_SCHEMA),
-            schema=_SCHEMA,
-            extension=pg.Extension("public", (0, 8, 0)),
-            settings=pg.PoolSettings(pool_size=0),
-        )
+        pg.open_pool(conninfo, schema=_SCHEMA, extension=extension, settings=settings)
 
 
 @pytest.mark.parametrize("check", ["find_extension", "check_schema"])
@@ -500,8 +495,9 @@ def test_a_connection_lost_before_the_catalogue_read_is_unavailable_connect(
         pg.prepare_conninfo(postgres_server.dsn, schema=_SCHEMA), schema=_SCHEMA
     )
     conn.close()
+    read_catalogue = getattr(pg, check)
     with pytest.raises(StoreUnavailableError, match=r"reason=connect") as failure:
-        getattr(pg, check)(conn, schema=_SCHEMA)
+        read_catalogue(conn, schema=_SCHEMA)
     assert failure.value.__cause__ is None
 
 
@@ -581,8 +577,9 @@ def test_redact_keeps_safe_tokens_and_hides_the_rest() -> None:
 def test_connect_failure_messages_keep_the_diagnosis(
     postgres_server: PostgresServer,
 ) -> None:
+    conninfo = _with(postgres_server, dbname="mvm_no_such_db")
     with pytest.raises(StoreUnavailableError) as failure:
-        pg.connect(_with(postgres_server, dbname="mvm_no_such_db"), schema=_SCHEMA)
+        pg.connect(conninfo, schema=_SCHEMA)
     assert '"mvm_no_such_db"' in str(failure.value)
     assert not str(failure.value).endswith("\n")
 
@@ -600,13 +597,10 @@ def test_connect_failure_messages_keep_the_diagnosis(
 def test_pool_settings_out_of_range_are_refused(
     settings: pg.PoolSettings, match: str
 ) -> None:
+    conninfo = pg.prepare_conninfo("host=x", schema=_SCHEMA)
+    extension = pg.Extension("public", (0, 8, 0))
     with pytest.raises(ValueError, match=match):
-        pg.open_pool(
-            pg.prepare_conninfo("host=x", schema=_SCHEMA),
-            schema=_SCHEMA,
-            extension=pg.Extension("public", (0, 8, 0)),
-            settings=settings,
-        )
+        pg.open_pool(conninfo, schema=_SCHEMA, extension=extension, settings=settings)
 
 
 @pytest.mark.parametrize(
