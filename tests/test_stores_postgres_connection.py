@@ -5,11 +5,13 @@ from __future__ import annotations
 import logging
 import socket
 import threading
+import uuid
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import psycopg
 import pytest
+from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from markdown_vault_mcp.exceptions import StoreNotConfiguredError, StoreUnavailableError
@@ -18,7 +20,7 @@ from markdown_vault_mcp.stores import _postgres as pg
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from tests.fixtures.postgres import PostgresServer
+    from tests.fixtures.postgres import PostgresSchema, PostgresServer
 
 _SCHEMA = "vault_a"
 
@@ -255,3 +257,107 @@ def test_no_failure_carries_the_password(
         assert secret not in repr(exc)
         assert getattr(exc, "location", "") == _SCHEMA
     assert secret not in caplog.text
+
+
+def test_find_extension_reports_its_schema_and_version(
+    postgres_server: PostgresServer,
+) -> None:
+    with pg.connect(postgres_server.dsn, schema=_SCHEMA) as conn:
+        ext = pg.find_extension(conn, schema=_SCHEMA)
+    assert ext.schema == "public"
+    assert ext.version >= pg.MIN_PGVECTOR
+
+
+def test_an_extension_older_than_the_minimum_is_not_configured(
+    postgres_server: PostgresServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pg, "MIN_PGVECTOR", (99, 0, 0))
+    with (
+        pg.connect(postgres_server.dsn, schema=_SCHEMA) as conn,
+        pytest.raises(StoreNotConfiguredError, match=r"99\.0\.0") as failure,
+    ):
+        pg.find_extension(conn, schema=_SCHEMA)
+    assert "installed" in str(failure.value)
+
+
+def _admin_execute(server: PostgresServer, statement: sql.Composable) -> None:
+    with psycopg.connect(server.dsn, autocommit=True) as admin:
+        admin.execute(statement)
+
+
+def test_a_database_without_the_extension_is_not_configured(
+    postgres_server: PostgresServer,
+) -> None:
+    if not postgres_server.throwaway:
+        pytest.skip("creates a database: runs only against the harness's own container")
+    database = f"mvm_test_noext_{uuid.uuid4().hex[:8]}"
+    try:
+        _admin_execute(
+            postgres_server,
+            sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(
+                sql.Identifier(database)
+            ),
+        )
+        conn = pg.connect(_with(postgres_server, dbname=database), schema=_SCHEMA)
+        try:
+            with pytest.raises(
+                StoreNotConfiguredError, match="CREATE EXTENSION vector"
+            ):
+                pg.find_extension(conn, schema=_SCHEMA)
+        finally:
+            conn.close()
+    finally:
+        _admin_execute(
+            postgres_server,
+            sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(database)),
+        )
+
+
+def test_a_missing_schema_is_not_configured_with_the_sql(
+    postgres_server: PostgresServer,
+) -> None:
+    with (
+        pg.connect(postgres_server.dsn, schema="mvm_no_such_schema") as conn,
+        pytest.raises(StoreNotConfiguredError, match="CREATE SCHEMA") as failure,
+    ):
+        pg.check_schema(conn, schema="mvm_no_such_schema")
+    assert "AUTHORIZATION" in str(failure.value)
+
+
+def test_an_existing_schema_passes(postgres_schema: PostgresSchema) -> None:
+    with pg.connect(postgres_schema.dsn, schema=postgres_schema.name) as conn:
+        pg.check_schema(conn, schema=postgres_schema.name)
+
+
+def test_schema_without_usage_is_unavailable_privilege(
+    postgres_server: PostgresServer,
+) -> None:
+    if not postgres_server.throwaway:
+        pytest.skip("creates a role: runs only against the harness's own container")
+    role = f"mvm_test_role_{uuid.uuid4().hex[:8]}"
+    schema = f"mvm_test_{uuid.uuid4().hex[:12]}"
+    try:
+        _admin_execute(
+            postgres_server,
+            sql.SQL("CREATE ROLE {} LOGIN PASSWORD 'pw'").format(sql.Identifier(role)),
+        )
+        _admin_execute(
+            postgres_server, sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema))
+        )
+        conn = pg.connect(
+            _with(postgres_server, user=role, password="pw"), schema=schema
+        )
+        try:
+            with pytest.raises(StoreUnavailableError, match=r"reason=privilege"):
+                pg.check_schema(conn, schema=schema)
+        finally:
+            conn.close()
+    finally:
+        _admin_execute(
+            postgres_server,
+            sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)),
+        )
+        _admin_execute(
+            postgres_server,
+            sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)),
+        )

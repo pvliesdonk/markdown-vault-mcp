@@ -14,9 +14,10 @@ psycopg is in ``docs/design/reference/postgresql-pgvector.md``.
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 import psycopg
+from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from markdown_vault_mcp.exceptions import StoreNotConfiguredError, StoreUnavailableError
@@ -189,3 +190,134 @@ def connect(conninfo: str, *, schema: str) -> psycopg.Connection[tuple[Any, ...]
     except psycopg.OperationalError as exc:
         failure = classify_connect_failure(exc, schema=schema)
     raise failure from None
+
+
+class Extension(NamedTuple):
+    """The ``vector`` extension as installed in the database.
+
+    Attributes:
+        schema: The schema holding its type and operators.
+        version: Its version as three integers.
+    """
+
+    schema: str
+    version: tuple[int, int, int]
+
+
+def _version(text: str) -> tuple[int, int, int]:
+    """Parse ``0.8.0`` (or ``0.8``) into three integers; missing parts are 0."""
+    parts = [int(p) for p in text.split(".")[:3] if p.isdigit()]
+    padded = [*parts, 0, 0, 0][:3]
+    return padded[0], padded[1], padded[2]
+
+
+def _dotted(version: tuple[int, int, int]) -> str:
+    """Render *version* as ``major.minor.patch``."""
+    return ".".join(str(part) for part in version)
+
+
+def find_extension(conn: psycopg.Connection[Any], *, schema: str) -> Extension:
+    """Return the ``vector`` extension, refusing a missing or too-old one.
+
+    Args:
+        conn: A connection to the vault's database.
+        schema: The vault schema, for the outcome's location.
+
+    Returns:
+        The extension's schema and version.
+
+    Raises:
+        StoreNotConfiguredError: If it is not installed, or older than
+            ``MIN_PGVECTOR``; installing needs a superuser, so the message
+            gives the SQL to run.
+        StoreUnavailableError: If the catalogue cannot be read.
+    """
+    try:
+        row = conn.execute(
+            "SELECT n.nspname, e.extversion FROM pg_catalog.pg_extension e"
+            " JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace"
+            " WHERE e.extname = 'vector'"
+        ).fetchone()
+    except psycopg.Error as exc:
+        failure = classify_error(exc, schema=schema, action="opened")
+    else:
+        return _checked_extension(row, schema=schema)
+    raise failure from None
+
+
+def _checked_extension(row: tuple[Any, ...] | None, *, schema: str) -> Extension:
+    """Turn the catalogue row into an :class:`Extension`, refusing none or too old."""
+    if row is None:
+        raise not_configured(
+            "The vector extension is not installed in this database; a superuser "
+            "runs: CREATE EXTENSION vector;",
+            schema=schema,
+        )
+    found = Extension(str(row[0]), _version(str(row[1])))
+    if found.version < MIN_PGVECTOR:
+        raise not_configured(
+            f"The vector extension is {_dotted(found.version)} installed; this "
+            f"version needs {_dotted(MIN_PGVECTOR)} or later: a superuser runs "
+            "ALTER EXTENSION vector UPDATE;",
+            schema=schema,
+        )
+    return found
+
+
+def check_schema(conn: psycopg.Connection[Any], *, schema: str) -> None:
+    """Refuse a vault schema that does not exist or that this role cannot use.
+
+    PostgreSQL silently skips a missing schema in ``search_path``, so it is
+    looked up in ``pg_namespace``; ``USAGE`` is checked because without it
+    the store's tables would be invisible and the schema would read as empty.
+
+    Args:
+        conn: A connection to the vault's database.
+        schema: The vault schema.
+
+    Raises:
+        StoreNotConfiguredError: If the schema does not exist; the message
+            gives the ``CREATE SCHEMA`` to run.
+        StoreUnavailableError: If the role lacks ``USAGE`` on it
+            (``reason=privilege``), or the catalogue cannot be read.
+    """
+    try:
+        role_row = conn.execute("SELECT current_user").fetchone()
+        row = conn.execute(
+            "SELECT has_schema_privilege(n.oid, 'USAGE')"
+            " FROM pg_catalog.pg_namespace n WHERE n.nspname = %s",
+            (schema,),
+        ).fetchone()
+    except psycopg.Error as exc:
+        failure = classify_error(exc, schema=schema, action="opened")
+    else:
+        role = str(role_row[0]) if role_row else "<role>"
+        _refuse_unusable_schema(conn, row, schema=schema, role=role)
+        return
+    raise failure from None
+
+
+def _refuse_unusable_schema(
+    conn: psycopg.Connection[Any],
+    row: tuple[Any, ...] | None,
+    *,
+    schema: str,
+    role: str,
+) -> None:
+    """Raise when the ``pg_namespace`` lookup found no schema, or no ``USAGE``."""
+    if row is None:
+        statement = (
+            sql.SQL("CREATE SCHEMA {} AUTHORIZATION {};")
+            .format(sql.Identifier(schema), sql.Identifier(role))
+            .as_string(conn)
+        )
+        raise not_configured(
+            f"Schema {schema} does not exist; the operator runs: {statement}",
+            schema=schema,
+        )
+    if not row[0]:
+        raise unavailable(
+            f"Role {role} has no USAGE on schema {schema}.",
+            reason="privilege",
+            schema=schema,
+        )
