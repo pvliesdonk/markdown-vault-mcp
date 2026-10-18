@@ -40,6 +40,20 @@ _DROP_LOCK_TIMEOUT_MS = 10_000
 _HIDDEN = "<hidden>"
 
 
+class SecretDsn(str):
+    """A connection string whose ``repr`` hides it.
+
+    pytest shows each traceback frame's arguments by ``repr``; a DSN passed as
+    this type never prints, whichever harness function it reaches.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        """Hide the connection string."""
+        return f"'{_HIDDEN}'"
+
+
 class Source(NamedTuple):
     """Where the session's PostgreSQL comes from.
 
@@ -124,7 +138,7 @@ def resolve_source(
         )
     dsn = environ.get(DSN_ENV, "").strip()
     if dsn:
-        return Source("dsn", dsn)
+        return Source("dsn", SecretDsn(dsn))
     if docker_available():
         return Source("docker", environ.get(IMAGE_ENV, "").strip() or DEFAULT_IMAGE)
     return Source(
@@ -183,18 +197,19 @@ def _published_port(container: str) -> str | None:
 
 
 def _connect(dsn: str, *, autocommit: bool = False) -> psycopg.Connection[Any]:
-    """Connect to *dsn*; a failure fails the test without a traceback or the DSN.
+    """Connect to *dsn* without letting psycopg's frames, which hold it, reach a report.
 
     Raises:
-        pytest.fail.Exception: If the connection fails. libpq's message is
-            kept; the traceback, whose frames hold the DSN, is not shown.
+        ConnectionError: If the connection fails, with libpq's message and
+            no chained psycopg traceback.
     """
     import psycopg
 
     try:
         return psycopg.connect(dsn, autocommit=autocommit)
     except psycopg.OperationalError as exc:
-        pytest.fail(f"cannot connect to the test database: {exc}", pytrace=False)
+        message = f"cannot connect to the test database: {exc}"
+    raise ConnectionError(message) from None
 
 
 def _running(container: str) -> bool:
@@ -280,7 +295,7 @@ def _await_container(
             its last log lines.
     """
     port = _published_port(container)
-    dsn = (
+    dsn = SecretDsn(
         f"host=127.0.0.1 port={port} user=postgres password={password} dbname=postgres"
     )
     outcome = (
@@ -352,30 +367,22 @@ def scratch_schema(dsn: str) -> Iterator[str]:
 
 
 def _drop_schema(dsn: str, name: str) -> None:
-    """Drop *name*, failing rather than waiting forever on another session's lock.
+    """Drop *name*, giving up rather than waiting forever on another session's lock.
 
     Raises:
-        pytest.fail.Exception: If a lock held elsewhere outlasts
+        psycopg.errors.LockNotAvailable: If a lock held elsewhere (a
+            connection left open in a transaction) outlasts
             ``_DROP_LOCK_TIMEOUT_MS``; the schema is then left in place.
     """
-    import psycopg
     from psycopg import sql
 
     with _connect(dsn, autocommit=True) as conn:
         conn.execute(
             sql.SQL("SET lock_timeout = {}").format(sql.Literal(_DROP_LOCK_TIMEOUT_MS))
         )
-        try:
-            conn.execute(
-                sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(name))
-            )
-        except psycopg.errors.LockNotAvailable:
-            pytest.fail(
-                f"could not drop test schema {name}: another session holds a lock "
-                f"on it for more than {_DROP_LOCK_TIMEOUT_MS} ms (a connection "
-                "left open in a transaction?)",
-                pytrace=False,
-            )
+        conn.execute(
+            sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(name))
+        )
 
 
 @pytest.fixture(scope="session")
@@ -385,10 +392,9 @@ def postgres_server() -> Iterator[PostgresServer]:
     if source.kind == "unavailable":
         report_unavailable(source.detail, os.environ)
     if source.kind == "dsn":
-        check_vector_extension(source.detail, create=False)
-        yield PostgresServer(
-            source.detail, _is_superuser(source.detail), throwaway=False
-        )
+        given = SecretDsn(source.detail)
+        check_vector_extension(given, create=False)
+        yield PostgresServer(given, _is_superuser(given), throwaway=False)
         return
     container, dsn = start_container(source.detail)
     try:

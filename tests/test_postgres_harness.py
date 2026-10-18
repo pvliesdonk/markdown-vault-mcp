@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import subprocess
 import tomllib
@@ -17,6 +18,7 @@ from tests.fixtures.postgres import (
     SCHEMA_PREFIX,
     PostgresSchema,
     PostgresServer,
+    SecretDsn,
     Source,
     check_vector_extension,
     docker_available,
@@ -128,7 +130,7 @@ def test_inner_product_with_a_zero_vector_is_minus_zero_not_nan(
     assert row is not None
     inner, cosine = row
     assert inner == 0.0
-    assert cosine != cosine  # NaN
+    assert math.isnan(cosine)
 
 
 def _schema_exists(dsn: str, name: str) -> bool:
@@ -153,16 +155,18 @@ def test_scratch_schema_is_dropped_even_when_the_body_raises(
     from psycopg import sql
 
     seen: list[str] = []
-    with (
-        pytest.raises(RuntimeError, match="body failed"),
-        scratch_schema(postgres_server.dsn) as name,
-    ):
-        seen.append(name)
-        with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
-            conn.execute(
-                sql.SQL("CREATE TABLE {}.t (i int)").format(sql.Identifier(name))
-            )
-        raise RuntimeError("body failed")
+
+    def body_that_fails() -> None:
+        with scratch_schema(postgres_server.dsn) as name:
+            seen.append(name)
+            with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
+                conn.execute(
+                    sql.SQL("CREATE TABLE {}.t (i int)").format(sql.Identifier(name))
+                )
+            raise RuntimeError("body failed")
+
+    with pytest.raises(RuntimeError, match="body failed"):
+        body_that_fails()
     assert seen
     assert not _schema_exists(postgres_server.dsn, seen[0])
 
@@ -234,6 +238,13 @@ def test_container_that_cannot_start_is_reported(
     assert _containers_named(prefix) == before
 
 
+def test_secret_dsn_hides_itself_but_still_connects_as_a_string() -> None:
+    dsn = SecretDsn("host=db user=u password=TOPSECRET dbname=d")
+    assert "TOPSECRET" not in repr(dsn)
+    assert "TOPSECRET" not in f"{dsn!r}"
+    assert dsn == "host=db user=u password=TOPSECRET dbname=d"
+
+
 def test_descriptions_never_show_the_dsn() -> None:
     secret = "host=db user=u password=TOPSECRET dbname=d"
     server = PostgresServer(secret, superuser=False, throwaway=False)
@@ -243,13 +254,14 @@ def test_descriptions_never_show_the_dsn() -> None:
     assert "mvm_test_abc" in repr(schema)
 
 
-def test_unreachable_dsn_fails_without_the_password_or_a_traceback() -> None:
+def test_unreachable_dsn_fails_without_the_password_or_psycopg_frames() -> None:
     dsn = "host=127.0.0.1 port=1 user=u password=TOPSECRET dbname=d connect_timeout=2"
-    with pytest.raises(pytest.fail.Exception) as failure:
+    with pytest.raises(ConnectionError, match="cannot connect") as failure:
         check_vector_extension(dsn, create=False)
     assert "TOPSECRET" not in str(failure.value)
-    assert "cannot connect" in str(failure.value)
-    assert failure.value.pytrace is False
+    # psycopg's frames hold the raw connection string; none are chained in.
+    assert failure.value.__cause__ is None
+    assert failure.value.__suppress_context__
 
 
 def test_container_that_exits_on_start_reports_its_logs(
@@ -301,11 +313,11 @@ def test_schema_drop_blocked_by_a_lock_fails_instead_of_hanging(
 
     monkeypatch.setattr(harness, "_DROP_LOCK_TIMEOUT_MS", 300)
     holder = psycopg.connect(postgres_server.dsn)
-    try:
-        with (
-            pytest.raises(pytest.fail.Exception, match="could not drop"),
-            scratch_schema(postgres_server.dsn) as name,
-        ):
+    names: list[str] = []
+
+    def lock_while_dropping() -> None:
+        with scratch_schema(postgres_server.dsn) as name:
+            names.append(name)
             with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
                 conn.execute(
                     sql.SQL("CREATE TABLE {}.t (i int)").format(sql.Identifier(name))
@@ -315,8 +327,13 @@ def test_schema_drop_blocked_by_a_lock_fails_instead_of_hanging(
                     sql.Identifier(name)
                 )
             )
+
+    try:
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            lock_while_dropping()
     finally:
         holder.close()
+    (name,) = names
     with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
         conn.execute(
             sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(name))
