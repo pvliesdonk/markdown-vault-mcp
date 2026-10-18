@@ -225,3 +225,33 @@ def test_connect_returns_an_autocommit_connection(
         assert app == (f"markdown-vault-mcp:{_SCHEMA}",)
     finally:
         conn.close()
+
+
+def test_no_failure_carries_the_password(
+    postgres_server: PostgresServer, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    secret = "LEAK-CANARY-1504"
+    attempts = [
+        lambda: pg.prepare_conninfo(
+            f"host=db password={secret} bogus_key=1", schema=_SCHEMA
+        ),
+        lambda: pg.connect(_with(postgres_server, password=secret), schema=_SCHEMA),
+        lambda: pg.connect(
+            _with(postgres_server, password=secret, port="1"), schema=_SCHEMA
+        ),
+        lambda: pg.connect(
+            _with(postgres_server, password=secret, dbname="mvm_no_such_db"),
+            schema=_SCHEMA,
+        ),
+    ]
+    failures: list[BaseException] = []
+    for attempt in attempts:
+        with pytest.raises((StoreNotConfiguredError, StoreUnavailableError)) as failure:
+            attempt()
+        failures.append(failure.value)
+    for exc in failures:
+        assert secret not in str(exc)
+        assert secret not in repr(exc)
+        assert getattr(exc, "location", "") == _SCHEMA
+    assert secret not in caplog.text
