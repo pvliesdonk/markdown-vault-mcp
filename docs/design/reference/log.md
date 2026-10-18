@@ -12,9 +12,10 @@
   - `<#>` returns `-0` for a zero vector and `<=>` returns `NaN`;
   - a missing schema in `search_path` is silently ignored;
   - `SET LOCAL synchronous_commit = on` lowers a configured `remote_apply`;
-  - psycopg reports every connect-time failure without a SQLSTATE, and only
-    `ConnectionTimeout` and `Error.pgconn.needs_password` / `used_password`
-    tell them apart;
+  - psycopg reported every probed connect-time failure without a SQLSTATE,
+    and only `ConnectionTimeout` and `Error.pgconn.needs_password` /
+    `used_password` tell them apart, `needs_password` first, since
+    `used_password` is also true when no password was supplied;
   - pgvector is not a trusted extension, so installing it needs a superuser.
 
   Not covered: pins (they arrive with #1504's store children), a lost

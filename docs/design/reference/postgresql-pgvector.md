@@ -2,7 +2,7 @@
 type: Reference
 title: PostgreSQL and pgvector behaviour behind the vector store
 description: What the PostgreSQL vector store relies on in PostgreSQL 17, pgvector 0.8 and psycopg 3 — extension privileges, zero-vector scoring, schemas and search_path, snapshots, DELETE against TRUNCATE, advisory locks, durability settings, error codes and connect-time failures, cursors, COPY, pooling, connection parameters and schema backups.
-subject_version: "PostgreSQL 17 documentation; pgvector 0.8.0 README and changelog to 0.8.7; psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18), psycopg-pool 3.3.3 and pgvector-python 0.5.1"
+subject_version: "PostgreSQL 17 documentation; pgvector 0.8.0 README and changelog to 0.8.7; psycopg 3 docs (current as read 2026-10-18); observed on PostgreSQL 17.4 + pgvector 0.8.0 (tensorchord/vchord-suite:pg17-20250620) and PostgreSQL 16.10 + pgvector 0.8.1 (pgvector/pgvector:pg16), with psycopg 3.3.6 (libpq 18) and pgvector-python 0.5.1"
 valid_for: "PostgreSQL 15–18, pgvector 0.8.x, psycopg 3.3.x"
 generated:
   by: process:researching-references
@@ -80,6 +80,10 @@ sources:
   - id: libpq-connect
     title: libpq Database Connection Control Functions (PostgreSQL 17)
     resource: https://www.postgresql.org/docs/17/libpq-connect.html
+    accessed: 2026-10-18
+  - id: libpq-status
+    title: libpq Connection Status Functions (PostgreSQL 17)
+    resource: https://www.postgresql.org/docs/17/libpq-status.html
     accessed: 2026-10-18
   - id: libpq-envars
     title: libpq Environment Variables (PostgreSQL 17)
@@ -167,13 +171,13 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - With a zero vector on either side, `<#>` returns `-0` and `<=>` returns `NaN`; negating `<#>` gives `0`. [observed: probe 1, `-0|-0|NaN|0` on both images]
 - Without an index, pgvector performs exact nearest-neighbour search with perfect recall; the 2,000-dimension limit applies only to `hnsw` and `ivfflat` indexes on `vector`. [source: pgvector-readme] (§ Indexing)
 - `avg(vector)` exists since 0.4.0. [source: pgvector-changelog] (0.4.0) The mean of `[1,0]` and `[-1,0]` is `[0,0]`. [observed: probe 2]
-- `avg` over no rows returns `NULL` on 0.8.0 and 0.8.1. [observed: probe 13] The 0.8.7 changelog entry "Fixed error with `avg` aggregate when no matching rows" names a case these probes did not hit. [source: pgvector-changelog] (0.8.7) [unverified] Which query shape raised that error is not established; a store that returns `[]` for a path with no rows before calling `avg` does not depend on it.
+- `avg` over no rows returns `NULL` on 0.8.0 and 0.8.1. [observed: probe 13] The 0.8.7 changelog entry "Fixed error with `avg` aggregate when no matching rows" names a case these probes did not hit. [source: pgvector-changelog] (0.8.7) [unverified] Which query shape raised that error is not established; the pgvector commit or issue behind the 0.8.7 entry would settle it. A store that returns `[]` for a path with no rows before calling `avg` does not depend on it.
 - pgvector 0.8.0 dropped Postgres 12 and the README states support for Postgres 13+. [source: pgvector-changelog] (0.8.0) [source: pgvector-readme] (§ Installation)
 - `l2_normalize` exists only from 0.7.0. [source: pgvector-changelog] (0.7.0)
 
 ### Schemas and `search_path`
 
-- A schema in `search_path` that does not exist, or lacks `USAGE` for the role, is "silently ignored". [source: pg-client-config] [observed: probe 8, `set search_path = no_such_schema, public` leaves `{public}`, and `CREATE TABLE` lands in `public`]
+- A schema in `search_path` that does not exist, or lacks `USAGE` for the role, is "silently ignored". [source: pg-client-config] [observed: probe 8, `set search_path = no_such_schema, public` leaves `{public}`, and `pg_tables` places the new table in `public`]
 - `pg_catalog` is always searched, before the path unless the path names it. [source: pg-client-config]
 - The first existing schema in the path is the default creation schema; unqualified names resolve to the first match along the path. [source: pg-schemas]
 - Putting a schema in `search_path` "effectively trusts all users having `CREATE` privilege on that schema". [source: pg-schemas] (§ Secure Schema Usage Patterns)
@@ -189,7 +193,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - While a `DELETE` of every row is uncommitted, a `REPEATABLE READ` reader counts the old rows. [observed: probe 5, count `3`]
 - `DELETE` takes `ROW EXCLUSIVE`, which does not conflict with the `ACCESS SHARE` a `SELECT` takes. [source: pg-explicit-locking]
 - `TRUNCATE` takes `ACCESS EXCLUSIVE`, which conflicts with every mode, so a reader waits until it commits. [source: pg-explicit-locking] [observed: probe 5, the reader fails with `canceling statement due to lock timeout`]
-- psycopg starts a transaction implicitly on the first statement and needs `commit()`; `isolation_level` and `read_only` can be changed only while no transaction is open on the connection. [source: psycopg-transactions] [observed: probe 13, `can't change 'isolation_level' now: connection in transaction status INTRANS`]
+- psycopg starts a transaction implicitly on the first statement and needs `commit()`; `isolation_level` and `read_only` can be changed only while no transaction is open on the connection. [source: psycopg-transactions]
 
 ### Locks
 
@@ -197,9 +201,11 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - In `REPEATABLE READ`, `FOR UPDATE` on a row changed since the transaction began raises an error. [source: pg-explicit-locking]
 - A session-level advisory lock is held until released or the session ends, survives a rollback, and is counted per acquisition. [source: pg-explicit-locking]
 - Advisory locks are identified by one 64-bit key or two 32-bit keys, and "these two key spaces do not overlap". [source: pg-admin-functions]
+- Advisory locks are application-defined: "the system does not enforce their use". [source: pg-explicit-locking] Any session in the same database that takes the same key contends with the holder, whatever application it belongs to; a key chosen by one application cannot rule out a collision with another's. [observed: probe 14, a second session in the same database gets `f`]
+- An advisory-lock key is scoped to one database: while one session holds key 42 in database `postgres`, a session in database `other` takes key 42 at once. [observed: probe 14, `t` in the other database]
 - `pg_try_advisory_lock` takes the lock at once and returns `true`, or returns `false` without waiting. [source: pg-admin-functions]
 - A `bigint` key of the form `(0x4D564D31 << 32) | oid` with an OID above 2^31 is accepted; a second session's `pg_try_advisory_lock` returns `f`; the holder's `application_name` is found by joining `pg_locks` (`locktype = 'advisory'`, `granted`) to `pg_stat_activity` on `pid`; the lock is free again once the holding session ends. [observed: probe 4]
-- `lock_timeout` aborts a statement that waits longer for a lock; `statement_timeout` aborts any statement that runs longer, measured per statement; zero disables either. [source: pg-client-config]
+- `lock_timeout` aborts a statement whose wait for a lock exceeds it, the limit applying "separately to each lock acquisition attempt"; `statement_timeout` aborts any statement that runs longer, measured per statement; zero disables either. [source: pg-client-config]
 
 ### Durability
 
@@ -216,9 +222,12 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - The first two characters of a SQLSTATE are its class, and an application that does not know a code "might still be able to infer what to do from the error class". [source: pg-errcodes]
 - A query on a schema without `USAGE` fails with `42501: permission denied for schema`. [observed: probe 10]
 - psycopg exposes `sqlstate` only for errors received from PostgreSQL; client-side failures such as a failed connection usually have none. [source: psycopg-errors]
-- Every connect-time failure probed raised `psycopg.OperationalError` with `sqlstate=None`: wrong password, unknown role, missing database, no `CONNECT` privilege, refused port, unresolvable host; a connect timeout raised its subclass `ConnectionTimeout`. [observed: probes 10c–10e, psycopg 3.3.6, libpq 18]
-- After a failed connection, `Error.pgconn` is a closed connection whose `needs_password` and `used_password` can be read; most other attributes raise `the connection is closed`. [source: psycopg-errors] [observed: probe 10e]
-- Under password authentication, a wrong password, an unknown role, a missing database and a missing `CONNECT` privilege all give `used_password=True`; under `trust` all four give `used_password=False`, as does a refused port; `needs_password=True` means a password was demanded and none supplied; `pgconn` is `None` for an unresolvable host and for a timeout. [observed: probes 10d–10e]
+- Every connect-time failure probed raised `psycopg.OperationalError` with `sqlstate=None`: wrong password, unknown role, missing database, no `CONNECT` privilege, no password supplied, refused port. [observed: probe 10e, both images, `scram-sha-256` and `trust`] An unresolvable host raised `OperationalError` and a connect timeout its subclass `ConnectionTimeout`, both with `sqlstate=None` and `pgconn=None`. [observed: probe 10d, one run against the PostgreSQL 17.4 image; neither case reaches PostgreSQL]
+- After a failed connection, `Error.pgconn` is a closed connection; its `needs_password`, `used_password`, `server_version`, `status` and `error_message` can be read, `parameter_status()` raises `the connection is closed`, and `server_version` reads `0` whether or not PostgreSQL answered. [source: psycopg-errors] [observed: probe 10e, both images]
+- `PQconnectionNeedsPassword` is true when "the connection authentication method required a password, but none was available"; `PQconnectionUsedPassword` is true when "the connection authentication method used a password", which detects "whether the server demanded a password". [source: libpq-status]
+- Under `scram-sha-256`: a wrong password, an unknown role, a missing database and a missing `CONNECT` privilege give `needs_password=False`, `used_password=True`; no password supplied gives `needs_password=True` and also `used_password=True`; a refused port gives both `False`. [observed: probe 10e, both images] So `used_password` alone does not mean a password was sent: `needs_password` must be tested first.
+- Under `trust`: a wrong password and no password both connect; an unknown role, a missing database, a missing `CONNECT` privilege and a refused port all give both flags `False`. [observed: probe 10e, both images]
+- PostgreSQL displays its messages in the language `lc_messages` selects, falling back to English where no translation exists. [source: pg-client-config] A message's wording is therefore not a stable value to match on.
 - What a client should conclude when the connection drops after `COMMIT` was sent is not documented by the transaction-isolation page or by psycopg. [source: pg-isolation] [source: psycopg-transactions] [unverified] That the commit may or may not have landed follows from PostgreSQL naming the condition (`08007 transaction_resolution_unknown`); the store's test of a lost commit reply (#1504 child 5) would pin the behaviour the store relies on.
 
 ### Client: cursors, COPY, pool, connection strings
@@ -253,10 +262,12 @@ named in the frontmatter with the probe scripts listed under "Probes".
 
 ## Probes
 
-Each probe ran on a container started for it and removed after it, from the
-images `tensorchord/vchord-suite:pg17-20250620` (PostgreSQL 17.4, pgvector
-0.8.0) and `pgvector/pgvector:pg16` (PostgreSQL 16.10, pgvector 0.8.1). The
-two images agreed on every probe.
+Every probe started its own throwaway container and removed it afterwards,
+on the images `tensorchord/vchord-suite:pg17-20250620` (PostgreSQL 17.4,
+pgvector 0.8.0) and `pgvector/pgvector:pg16` (PostgreSQL 16.10, pgvector
+0.8.1). Probes 1–12 shared one container per image; probes 10e, 13 and 14
+each started their own. The two images agreed on every probe run on both;
+probe 10d ran once, on the PostgreSQL 17.4 image.
 
 - Probes 1–12: SQL through `psql` inside the container: zero vectors, `avg`,
   mixed dimensions, the advisory lock and its holder, `DELETE` and
@@ -265,16 +276,22 @@ two images agreed on every probe.
   `starts_with`, `search_path` naming a missing schema, DDL in a rolled-back
   transaction, a refused schema privilege, `SHOW` as a plain role, and
   `pg_total_relation_size`.
-- Probes 10c–10e: psycopg 3.3.6 connecting from the host through a published
-  port, under the image's default `scram-sha-256` and under
+- Probe 10d: psycopg 3.3.6 connecting from the host to an unresolvable host
+  and to a non-routable address with `connect_timeout=2`, printing the
+  exception class, `sqlstate` and `pgconn`.
+- Probe 10e: psycopg 3.3.6 (libpq 18) connecting from the host through a
+  published port, under the image's default `scram-sha-256` and under
   `POSTGRES_HOST_AUTH_METHOD=trust`, printing the exception class,
-  `sqlstate` and `Error.pgconn` attributes per failure. (Inside the
-  container, `127.0.0.1` is `trust`, so connect failures must be probed from
-  outside it.)
-- Probe 13: psycopg 3.3.6 with pgvector-python 0.5.1: `avg` over no rows,
+  `sqlstate` and the readable `Error.pgconn` attributes per failure. Its
+  first run also showed `parameter_status()` raising. (Inside the container,
+  `127.0.0.1` is `trust`, so connect failures must be probed from outside
+  it.)
+- Probe 13: psycopg 3.3.6 with pgvector-python 0.5.1 (both pinned): `avg` over no rows,
   binary `COPY` of 1,000 rows, a vector round trip, a named cursor in a
   `REPEATABLE READ` read-only transaction, and named cursors outside a
   transaction and on an autocommit connection.
+- Probe 14: two `psql` sessions taking advisory key 42, in the same database
+  and in another one.
 
 ## Where this project departs from the subject
 
@@ -289,12 +306,13 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
   schema in the path is silently ignored.
 - A new generation deletes the old rows rather than truncating them, so
   readers keep the previous generation until it commits.
-- `synchronous_commit` is raised to `on` only from `off` or `local`, because
-  `SET LOCAL … = on` would lower a configured `remote_write` or
-  `remote_apply`.
+- `synchronous_commit` is raised to `on` from any weaker value (`off`,
+  `local`, `remote_write`) and left alone at `on` or `remote_apply`, because
+  `SET LOCAL … = on` would lower a configured `remote_apply`.
 - Connect-time failures are told apart only by psycopg's documented
-  attributes (`ConnectionTimeout`, `Error.pgconn.needs_password`,
-  `used_password`), never by message text, which PostgreSQL localises.
+  attributes (`ConnectionTimeout`, then `Error.pgconn.needs_password`, then
+  `used_password`), never by message text, whose language follows
+  `lc_messages`.
 
 ## Not covered
 
