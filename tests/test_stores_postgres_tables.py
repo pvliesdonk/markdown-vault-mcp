@@ -240,3 +240,44 @@ def test_an_error_during_the_layout_read_is_unavailable(
     live.close()
     with pytest.raises(StoreUnavailableError, match="reason=connect"):
         tables.check_layout(live, schema=postgres_schema.name, extension=ext)
+
+
+def _loosen(conn: psycopg.Connection[Any], schema: str) -> None:
+    """Drop the meta table's NOT NULL and CHECK constraints, as a hand-built table might lack them."""
+    _run(
+        conn,
+        schema,
+        "ALTER TABLE {s}.vector_meta ALTER COLUMN format_version DROP NOT NULL",
+    )
+    _run(
+        conn,
+        schema,
+        "ALTER TABLE {s}.vector_meta ALTER COLUMN generation DROP NOT NULL",
+    )
+    _run(
+        conn,
+        schema,
+        "ALTER TABLE {s}.vector_meta DROP CONSTRAINT vector_meta_generation_check",
+    )
+
+
+@pytest.mark.parametrize(
+    "values",
+    [{"format_version": None}, {"generation": None}, {"generation": -5}],
+)
+def test_a_null_or_negative_meta_value_is_corrupt_not_a_crash(
+    conn: psycopg.Connection[Any], planted: str, values: dict[str, object]
+) -> None:
+    _loosen(conn, planted)
+    _set_meta(conn, planted, **values)
+    with pytest.raises(StoreCorruptError, match="meta row"):
+        tables.read_meta(conn, schema=planted, action="opened")
+
+
+def test_a_malformed_identity_names_the_schema_as_its_location(
+    conn: psycopg.Connection[Any], planted: str
+) -> None:
+    _set_meta(conn, planted, identity=psycopg.types.json.Jsonb({"provider": "x"}))
+    with pytest.raises(StoreCorruptError) as failure:
+        tables.read_meta(conn, schema=planted, action="opened")
+    assert failure.value.location == planted

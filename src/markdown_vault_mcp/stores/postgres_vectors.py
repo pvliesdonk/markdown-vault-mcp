@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 try:
     import psycopg
+    from psycopg import sql
     from psycopg_pool import PoolTimeout
 
     from markdown_vault_mcp.stores._postgres import (
@@ -33,6 +34,7 @@ try:
         not_configured,
         open_pool,
         prepare_conninfo,
+        statement_timeout_ms,
         unavailable,
     )
 except ImportError as exc:  # pragma: no cover - exercised in a subprocess
@@ -62,6 +64,7 @@ logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 _READ_TRANSACTION = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+_LOCK_TIMEOUT_MS = 10_000  # spec §6.3: waiting for a lock on a store table
 
 
 class _Connection(NamedTuple):
@@ -182,6 +185,7 @@ class PostgresVectorStore:
             self._identity,
             backend=BACKEND_NAME,
             where=where(self._schema),
+            location=self._schema,
         )
         return read(conn, meta)
 
@@ -280,6 +284,7 @@ class PostgresVectorBackend:
         """Validate the environment, read the store unless *fresh*, open the pool."""
         conninfo = prepare_conninfo(self._dsn, schema=schema)
         with connect(conninfo, schema=schema) as conn:
+            _bound_waits(conn, schema=schema, settings=self._pool)
             extension = find_extension(conn, schema=schema)
             check_schema(conn, schema=schema)
             state = (
@@ -349,9 +354,41 @@ def _stored_state(
     if meta is None:  # dropped between the two reads
         return _State(wanted, 0, "absent")
     served = served_identity(
-        meta.identity, wanted, backend=BACKEND_NAME, where=where(schema)
+        meta.identity,
+        wanted,
+        backend=BACKEND_NAME,
+        where=where(schema),
+        location=schema,
     )
     return _State(served, meta.generation, "present")
+
+
+def _bound_waits(
+    conn: psycopg.Connection[Any], *, schema: str, settings: PoolSettings
+) -> None:
+    """Give the validation connection the pool's statement and lock timeouts.
+
+    Without them, an open would wait forever behind a lock another session
+    holds on a store table (a migration, a rebuild's first write).
+
+    Raises:
+        ValueError: If *settings* are out of range.
+        StoreUnavailableError: If the settings cannot be applied.
+    """
+    timeouts = (
+        sql.SQL("SET statement_timeout = {}").format(
+            sql.Literal(statement_timeout_ms(settings))
+        ),
+        sql.SQL("SET lock_timeout = {}").format(sql.Literal(_LOCK_TIMEOUT_MS)),
+    )
+    try:
+        for statement in timeouts:
+            conn.execute(statement)
+    except psycopg.Error as exc:
+        failure = classify_error(exc, schema=schema, action="opened")
+    else:
+        return
+    raise failure from None
 
 
 def _require_create(conn: psycopg.Connection[Any], *, schema: str) -> None:

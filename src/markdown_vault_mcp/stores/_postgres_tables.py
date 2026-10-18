@@ -214,11 +214,22 @@ def read_meta(
     raise failure from None
 
 
+def _is_count(value: object) -> bool:
+    """Whether *value* is a non-negative integer (a bool is not)."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
 def _judge_meta(rows: list[tuple[Any, ...]], *, schema: str) -> Meta:
     """Turn the meta rows into a :class:`Meta`, refusing a malformed one."""
     if len(rows) != 1:
         raise _corrupt(f"has {len(rows)} meta rows, not one.", schema)
     version, raw_identity, generation = rows[0]
+    if not _is_count(version) or not _is_count(generation):
+        raise _corrupt(
+            f"has a meta row with format_version {version!r} and generation "
+            f"{generation!r}; both must be non-negative integers.",
+            schema,
+        )
     if version > FORMAT_VERSION:
         raise StoreUnsupportedSchemaError(
             f"Vector store at {where(schema)} has format_version {version}; this "
@@ -227,6 +238,6 @@ def _judge_meta(rows: list[tuple[Any, ...]], *, schema: str) -> Meta:
             location=schema,
         )
     identity = identity_from_mapping(
-        raw_identity, backend=BACKEND_NAME, where=where(schema)
+        raw_identity, backend=BACKEND_NAME, where=where(schema), location=schema
     )
     return Meta(int(version), identity, int(generation))

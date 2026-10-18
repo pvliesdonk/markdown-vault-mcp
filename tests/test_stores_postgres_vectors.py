@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import psycopg
 import pytest
 from psycopg import sql
-from psycopg.conninfo import make_conninfo
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg_pool import PoolTimeout
 
 from markdown_vault_mcp.exceptions import (
@@ -151,7 +151,7 @@ def test_an_unreachable_server_is_unavailable_never_corrupt() -> None:
     assert "LEAK-1504" not in str(failure.value)
 
 
-def test_an_error_during_the_layout_read_is_unavailable_not_corrupt(
+def test_an_unavailable_layout_read_propagates_from_open(
     postgres_schema: PostgresSchema, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import markdown_vault_mcp.stores.postgres_vectors as module
@@ -295,15 +295,18 @@ def test_opening_logs_once_without_the_dsn(
         r for r in caplog.records if r.msg.startswith("postgres_vector_store_opened")
     ]
     assert record.args == (postgres_schema.name, 0, False, False)
-    assert "password" not in caplog.text
+    password = conninfo_to_dict(postgres_schema.dsn).get("password")
+    assert password
+    assert str(password) not in caplog.text
 
 
 def test_the_store_never_shows_its_dsn(postgres_schema: PostgresSchema) -> None:
     backend = PostgresVectorBackend(postgres_schema.dsn)
     store = backend.open(postgres_schema.name, _ID)
     try:
-        assert "password" not in repr(store)
-        assert "password" not in repr(backend)
+        password = str(conninfo_to_dict(postgres_schema.dsn).get("password"))
+        assert password not in repr(store)
+        assert password not in repr(backend)
     finally:
         store.close()
 
@@ -375,9 +378,11 @@ def test_tables_dropped_between_the_layout_and_meta_reads_open_empty(
 
     _plant(postgres_schema, generation=5)
     monkeypatch.setattr(module, "read_meta", lambda *_a, **_k: None)
-    store = PostgresVectorBackend(postgres_schema.dsn).open(postgres_schema.name, _ID)
+    store = PostgresVectorBackend(postgres_schema.dsn).open(
+        postgres_schema.name, _UNKNOWN_DIM
+    )
     try:
-        assert store.identity == _ID
+        assert store.identity.dimension == 0  # the planted 3 was not read
     finally:
         store.close()
 
@@ -440,3 +445,75 @@ def test_open_fresh_without_a_schema_is_not_configured() -> None:
     backend = PostgresVectorBackend("host=db")
     with pytest.raises(StoreNotConfiguredError):
         backend.open_fresh(None, _ID)
+
+
+def test_an_open_behind_a_lock_times_out_instead_of_hanging(
+    postgres_schema: PostgresSchema,
+) -> None:
+    _plant(postgres_schema)
+    holder = psycopg.connect(postgres_schema.dsn)
+    try:
+        holder.execute(
+            sql.SQL("LOCK TABLE {}.vector_meta IN ACCESS EXCLUSIVE MODE").format(
+                sql.Identifier(postgres_schema.name)
+            )
+        )
+        backend = PostgresVectorBackend(
+            postgres_schema.dsn, pool=pg.PoolSettings(statement_timeout_s=1)
+        )
+        with pytest.raises(StoreUnavailableError, match="reason=timeout"):
+            backend.open(postgres_schema.name, _ID)
+    finally:
+        holder.close()
+
+
+def test_a_store_opens_with_the_extension_outside_public(
+    postgres_server: PostgresServer,
+) -> None:
+    if not postgres_server.throwaway:
+        pytest.skip("creates a database: runs only against the harness's own container")
+    database = f"mvm_test_extschema_{uuid.uuid4().hex[:8]}"
+    with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:
+        admin.execute(
+            sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(
+                sql.Identifier(database)
+            )
+        )
+    try:
+        dsn = make_conninfo(postgres_server.dsn, dbname=database)
+        with psycopg.connect(dsn, autocommit=True) as admin:
+            admin.execute("CREATE SCHEMA vext")
+            admin.execute("CREATE EXTENSION vector SCHEMA vext")
+            admin.execute("CREATE SCHEMA mvm_test_vault")
+        conninfo = pg.prepare_conninfo(dsn, schema="mvm_test_vault")
+        with pg.connect(conninfo, schema="mvm_test_vault") as conn, conn.transaction():
+            ext = pg.find_extension(conn, schema="mvm_test_vault")
+            tables.create_tables(
+                conn, schema="mvm_test_vault", extension=ext, identity=_ID
+            )
+        assert ext.schema == "vext"
+        store = PostgresVectorBackend(dsn).open("mvm_test_vault", _ID)
+        try:
+            assert store.generation == 0
+        finally:
+            store.close()
+    finally:
+        with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:
+            admin.execute(
+                sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
+                    sql.Identifier(database)
+                )
+            )
+
+
+def test_timeouts_that_cannot_be_set_are_unavailable(
+    postgres_schema: PostgresSchema,
+) -> None:
+    from markdown_vault_mcp.stores.postgres_vectors import _bound_waits
+
+    conninfo = pg.prepare_conninfo(postgres_schema.dsn, schema=postgres_schema.name)
+    closed = pg.connect(conninfo, schema=postgres_schema.name)
+    closed.close()
+    settings = pg.PoolSettings()
+    with pytest.raises(StoreUnavailableError, match="reason=connect"):
+        _bound_waits(closed, schema=postgres_schema.name, settings=settings)

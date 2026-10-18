@@ -35,14 +35,15 @@ def identity_mapping(identity: EmbeddingIdentity) -> dict[str, str | int]:
 
 
 def identity_from_mapping(
-    data: object, *, backend: str, where: str
+    data: object, *, backend: str, where: str, location: str | None = None
 ) -> EmbeddingIdentity:
     """Read an identity back from what a store persisted.
 
     Args:
         data: The stored value, parsed from JSON.
         backend: The backend's registry name, for the error.
-        where: The store's location, for the error.
+        where: How the error's message names the store.
+        location: The error's ``location``; *where* when omitted.
 
     Returns:
         The identity.
@@ -56,7 +57,7 @@ def identity_from_mapping(
         raise StoreCorruptError(
             f"Vector store at {where} has a malformed identity: {problem}",
             backend=backend,
-            location=where,
+            location=where if location is None else location,
         )
     return EmbeddingIdentity(
         provider=str(data["provider"]),
@@ -83,7 +84,12 @@ def _identity_problem(data: object) -> str | None:
 
 
 def served_identity(
-    stored: EmbeddingIdentity, wanted: EmbeddingIdentity, *, backend: str, where: str
+    stored: EmbeddingIdentity,
+    wanted: EmbeddingIdentity,
+    *,
+    backend: str,
+    where: str,
+    location: str | None = None,
 ) -> EmbeddingIdentity:
     """Return the identity to serve, refusing another embedding space.
 
@@ -93,7 +99,8 @@ def served_identity(
         stored: The identity the store holds.
         wanted: The identity asked for.
         backend: The backend's registry name, for the error.
-        where: The store's location, for the error.
+        where: How the error's message names the store.
+        location: The error's ``location``; *where* when omitted.
 
     Returns:
         *wanted*, with the stored dimension when *wanted* has none.
@@ -107,14 +114,14 @@ def served_identity(
         raise StoreIncompatibleError(
             f"Vector store at {where} holds {held}, not {asked}.",
             backend=backend,
-            location=where,
+            location=where if location is None else location,
         )
     if stored.dimension and wanted.dimension and stored.dimension != wanted.dimension:
         raise StoreIncompatibleError(
             f"Vector store at {where} holds dimension {stored.dimension}, "
             f"not {wanted.dimension}.",
             backend=backend,
-            location=where,
+            location=where if location is None else location,
         )
     return EmbeddingIdentity(
         provider=wanted.provider,
