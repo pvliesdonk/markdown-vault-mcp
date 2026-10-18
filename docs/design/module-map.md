@@ -44,6 +44,7 @@ src/markdown_vault_mcp/
   stores/
     __init__.py        -- store backends package; exports nothing, import a backend from its module (#1766)
     _resident.py       -- Snapshot and ResidentStore: the resident float32 matrix, rows and tokens the numpy store and a resident-mode SQLite store read from, and the next-snapshot builders (#1497, #1377)
+    _postgres_tables.py -- the PostgreSQL store's three tables: schema-qualified DDL, the pg_catalog layout check (none = empty, some = corrupt), the meta row (#1504)
     _streamed.py       -- the bounded exact scan: rows per batch, the folder condition's parameters, a running top-limit over a cursor (#1377)
     _identity.py       -- the embedding-identity check shared by the SQLite and PostgreSQL stores: persisted mapping, malformed = corrupt, another space = incompatible, wanted dimension 0 takes the stored one (#1504)
     _postgres.py       -- the PostgreSQL connection layer: conninfo defaults, connect/SQLSTATE failures as unavailable-with-reason (never corrupt), the vector extension and schema checks, the configured pool; never emits the DSN (#1504)
