@@ -392,3 +392,51 @@ def test_a_failed_create_privilege_lookup_is_unavailable(
     closed.close()
     with pytest.raises(StoreUnavailableError, match="reason=connect"):
         _require_create(closed, schema=postgres_schema.name)
+
+
+def test_open_fresh_reads_nothing_of_the_store(postgres_schema: PostgresSchema) -> None:
+    _plant(postgres_schema, generation=7)
+    fresh = PostgresVectorBackend(postgres_schema.dsn).open_fresh(
+        postgres_schema.name, _ID
+    )
+    try:
+        assert fresh.generation == 0
+        assert fresh.identity == _ID
+        assert not fresh.read_only
+    finally:
+        fresh.close()
+    with psycopg.connect(postgres_schema.dsn) as admin:
+        row = admin.execute(
+            sql.SQL("SELECT generation FROM {}.vector_meta").format(
+                sql.Identifier(postgres_schema.name)
+            )
+        ).fetchone()
+    assert row == (7,)
+
+
+def test_open_fresh_over_a_corrupt_store_opens(postgres_schema: PostgresSchema) -> None:
+    _plant(postgres_schema)
+    with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+        admin.execute(
+            sql.SQL("DROP TABLE {}.vector_chunks").format(
+                sql.Identifier(postgres_schema.name)
+            )
+        )
+    fresh = PostgresVectorBackend(postgres_schema.dsn).open_fresh(
+        postgres_schema.name, _ID
+    )
+    fresh.close()
+
+
+def test_open_fresh_still_refuses_a_missing_schema(
+    postgres_server: PostgresServer,
+) -> None:
+    backend = PostgresVectorBackend(postgres_server.dsn)
+    with pytest.raises(StoreNotConfiguredError, match="CREATE SCHEMA"):
+        backend.open_fresh("mvm_test_no_such_schema", _ID)
+
+
+def test_open_fresh_without_a_schema_is_not_configured() -> None:
+    backend = PostgresVectorBackend("host=db")
+    with pytest.raises(StoreNotConfiguredError):
+        backend.open_fresh(None, _ID)

@@ -248,6 +248,32 @@ class PostgresVectorBackend:
         schema, wanted = _checked_request(location, identity)
         return self._open(schema, wanted, read_only=not owns_files, fresh=False)
 
+    def open_fresh(
+        self, location: Path | str | None, identity: EmbeddingIdentity
+    ) -> PostgresVectorStore:
+        """Open schema *location* as an empty store at *identity*, reading none of its tables.
+
+        The connection, the ``vector`` extension, the schema and the right to
+        create in it are checked, so a misconfiguration fails here; the
+        store's tables are not read, and stay as they are until the fresh
+        store's first write replaces them (#1504 child 5), so a rebuild that
+        never completes leaves the previous rows for the next open.
+
+        Args:
+            location: The vault schema; ``None`` is refused.
+            identity: The identity the rebuild publishes under.
+
+        Returns:
+            A writable store that reads as empty until its first write.
+
+        Raises:
+            ValueError: If *identity* is not an ``EmbeddingIdentity``.
+            StoreNotConfiguredError: As :meth:`open`.
+            StoreUnavailableError: As :meth:`open`.
+        """
+        schema, wanted = _checked_request(location, identity)
+        return self._open(schema, wanted, read_only=False, fresh=True)
+
     def _open(
         self, schema: str, wanted: EmbeddingIdentity, *, read_only: bool, fresh: bool
     ) -> PostgresVectorStore:
