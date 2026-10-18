@@ -457,3 +457,15 @@ def test_a_pool_size_below_one_is_refused() -> None:
             extension=pg.Extension("public", (0, 8, 0)),
             settings=pg.PoolSettings(pool_size=0),
         )
+
+
+@pytest.mark.parametrize("check", ["find_extension", "check_schema"])
+def test_a_connection_lost_before_the_catalogue_read_is_unavailable_connect(
+    postgres_server: PostgresServer, check: str
+) -> None:
+    """A dropped connection is an outage, never a missing extension or schema."""
+    conn = pg.connect(postgres_server.dsn, schema=_SCHEMA)
+    conn.close()
+    with pytest.raises(StoreUnavailableError, match=r"reason=connect") as failure:
+        getattr(pg, check)(conn, schema=_SCHEMA)
+    assert failure.value.__cause__ is None
