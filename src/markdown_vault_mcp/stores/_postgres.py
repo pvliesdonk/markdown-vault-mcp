@@ -17,8 +17,10 @@ import logging
 from typing import Any, Literal, NamedTuple
 
 import psycopg
+from pgvector.psycopg import register_vector
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 from markdown_vault_mcp.exceptions import StoreNotConfiguredError, StoreUnavailableError
 
@@ -41,6 +43,7 @@ UnavailableReason = Literal[
 ]
 
 _CONNECT_CLASSES = frozenset({"08", "53", "57"})
+_POOL_GET_TIMEOUT_S = 30.0
 _DEFAULTS = (
     ("connect_timeout", "10"),
     ("keepalives", "1"),
@@ -321,3 +324,81 @@ def _refuse_unusable_schema(
             reason="privilege",
             schema=schema,
         )
+
+
+class PoolSettings(NamedTuple):
+    """How the store's pool is sized and timed (spec §6.3).
+
+    Attributes:
+        pool_size: The most connections the pool holds; at least 1.
+        statement_timeout_s: The ``statement_timeout`` each connection sets.
+        wait_s: How long opening waits for the first connection.
+    """
+
+    pool_size: int = 4
+    statement_timeout_s: float = 30.0
+    wait_s: float = 30.0
+
+
+def open_pool(
+    conninfo: str, *, schema: str, extension: Extension, settings: PoolSettings
+) -> ConnectionPool[psycopg.Connection[tuple[Any, ...]]]:
+    """Open the store's pool, every connection set up for the vault schema.
+
+    Each connection is autocommit (the store opens its own transactions),
+    searches the vault schema then the extension's, carries the statement
+    timeout, and knows the ``vector`` type. A connection is checked before it
+    is handed out, so a PostgreSQL restart does not fail the next caller.
+
+    Args:
+        conninfo: A connection string from :func:`prepare_conninfo`.
+        schema: The vault schema, put first on ``search_path``.
+        extension: Where the ``vector`` extension lives.
+        settings: The pool's size and timeouts.
+
+    Returns:
+        The open pool.
+
+    Raises:
+        ValueError: If ``settings.pool_size`` is below 1.
+        StoreUnavailableError: If the first connection is not ready within
+            ``settings.wait_s`` (``reason=pool``); the pool is closed first.
+    """
+    if settings.pool_size < 1:
+        raise ValueError(f"pool_size must be at least 1; got {settings.pool_size}.")
+    path = sql.SQL("SET search_path TO {}, {}").format(
+        sql.Identifier(schema), sql.Identifier(extension.schema)
+    )
+    timeout = sql.SQL("SET statement_timeout = {}").format(
+        sql.Literal(round(settings.statement_timeout_s * 1000))
+    )
+
+    def configure(conn: psycopg.Connection[Any]) -> None:
+        conn.autocommit = True
+        conn.execute(path)
+        conn.execute(timeout)
+        register_vector(conn)
+
+    pool: ConnectionPool[psycopg.Connection[tuple[Any, ...]]] = ConnectionPool(
+        conninfo,
+        min_size=1,
+        max_size=settings.pool_size,
+        timeout=_POOL_GET_TIMEOUT_S,
+        open=False,
+        configure=configure,
+        check=ConnectionPool.check_connection,
+        name=f"mvm-vectors-{schema}",
+    )
+    try:
+        pool.open(wait=True, timeout=settings.wait_s)
+    except PoolTimeout:
+        pool.close()
+        failure = unavailable(
+            f"No PostgreSQL connection for schema {schema} became ready within "
+            f"{settings.wait_s:g}s.",
+            reason="pool",
+            schema=schema,
+        )
+    else:
+        return pool
+    raise failure from None

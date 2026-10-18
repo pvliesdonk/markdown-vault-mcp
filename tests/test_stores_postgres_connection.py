@@ -7,10 +7,11 @@ import socket
 import threading
 import uuid
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import psycopg
 import pytest
+from pgvector import Vector
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
@@ -360,4 +361,99 @@ def test_schema_without_usage_is_unavailable_privilege(
         _admin_execute(
             postgres_server,
             sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)),
+        )
+
+
+def _extension_for(conninfo: str, schema: str) -> pg.Extension:
+    with pg.connect(conninfo, schema=schema) as conn:
+        pg.check_schema(conn, schema=schema)
+        return pg.find_extension(conn, schema=schema)
+
+
+def test_pool_connections_are_configured(postgres_schema: PostgresSchema) -> None:
+    name = postgres_schema.name
+    conninfo = pg.prepare_conninfo(postgres_schema.dsn, schema=name)
+    ext = _extension_for(conninfo, name)
+    pool = pg.open_pool(
+        conninfo,
+        schema=name,
+        extension=ext,
+        settings=pg.PoolSettings(pool_size=2, statement_timeout_s=7),
+    )
+    try:
+        with pool.connection() as conn:
+            assert conn.autocommit
+            path = conn.execute("SELECT current_schemas(false)").fetchone()
+            assert path == ([name, ext.schema],)
+            assert conn.execute("SHOW statement_timeout").fetchone() == ("7s",)
+            vec = conn.execute("SELECT '[1,2]'::vector").fetchone()
+            assert vec is not None
+            assert isinstance(vec[0], Vector)
+        assert pool.max_size == 2
+    finally:
+        pool.close()
+
+
+def test_pool_sets_search_path_for_a_mixed_case_schema(
+    postgres_server: PostgresServer,
+) -> None:
+    name = f"Vault-{uuid.uuid4().hex[:6]}"
+    _admin_execute(
+        postgres_server, sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name))
+    )
+    try:
+        conninfo = pg.prepare_conninfo(postgres_server.dsn, schema=name)
+        ext = _extension_for(conninfo, name)
+        pool = pg.open_pool(
+            conninfo,
+            schema=name,
+            extension=ext,
+            settings=pg.PoolSettings(pool_size=1),
+        )
+        try:
+            with pool.connection() as conn:
+                path = conn.execute("SELECT current_schemas(false)").fetchone()
+            assert path == ([name, ext.schema],)
+        finally:
+            pool.close()
+    finally:
+        _admin_execute(
+            postgres_server,
+            sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(name)),
+        )
+
+
+def test_pool_that_cannot_connect_is_unavailable_pool_and_closed(
+    silent_port: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened: list[pg.ConnectionPool[Any]] = []
+
+    class Recording(pg.ConnectionPool):  # type: ignore[type-arg]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            opened.append(self)
+
+    monkeypatch.setattr(pg, "ConnectionPool", Recording)
+    conninfo = (
+        f"host=127.0.0.1 port={silent_port} user=u password=p dbname=d "
+        "connect_timeout=1"
+    )
+    with pytest.raises(StoreUnavailableError, match=r"reason=pool"):
+        pg.open_pool(
+            conninfo,
+            schema=_SCHEMA,
+            extension=pg.Extension("public", (0, 8, 0)),
+            settings=pg.PoolSettings(pool_size=1, wait_s=2),
+        )
+    (pool,) = opened
+    assert pool.closed
+
+
+def test_a_pool_size_below_one_is_refused() -> None:
+    with pytest.raises(ValueError, match="pool_size"):
+        pg.open_pool(
+            "host=x",
+            schema=_SCHEMA,
+            extension=pg.Extension("public", (0, 8, 0)),
+            settings=pg.PoolSettings(pool_size=0),
         )
