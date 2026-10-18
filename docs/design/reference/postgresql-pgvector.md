@@ -168,7 +168,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - A column declared `vector` without a dimension stores vectors of different dimensions. [source: pgvector-readme] (§ FAQ) [observed: probe 3, `vector_dims` returns 2 and 3 from one column]
 - An operator between vectors of different dimensions raises `different vector dimensions 3 and 2`. [observed: probe 3]
 - `<#>` returns the negative inner product, `<=>` the cosine distance, `<->` the L2 distance. [source: pgvector-readme] (§ Querying)
-- With a zero vector on either side, `<#>` returns `-0` and `<=>` returns `NaN`; negating `<#>` gives `0`. [observed: probe 1, `-0|-0|NaN|0` on both images]
+- With a zero vector on either side, `<#>` returns `-0` and `<=>` returns `NaN`; negating `<#>` gives `0`. [observed: probe 1, `-0|-0|NaN|0` on both images] [pins: tests/test_postgres_harness.py::test_inner_product_with_a_zero_vector_is_minus_zero_not_nan]
 - Without an index, pgvector performs exact nearest-neighbour search with perfect recall; the 2,000-dimension limit applies only to `hnsw` and `ivfflat` indexes on `vector`. [source: pgvector-readme] (§ Indexing)
 - `avg(vector)` exists since 0.4.0. [source: pgvector-changelog] (0.4.0) The mean of `[1,0]` and `[-1,0]` is `[0,0]`. [observed: probe 2]
 - `avg` over no rows returns `NULL` on 0.8.0 and 0.8.1. [observed: probe 13] The 0.8.7 changelog entry "Fixed error with `avg` aggregate when no matching rows" names a case these probes did not hit. [source: pgvector-changelog] (0.8.7) [unverified] Which query shape raised that error is not established; the pgvector commit or issue behind the 0.8.7 entry would settle it. A store that returns `[]` for a path with no rows before calling `avg` does not depend on it.
@@ -316,9 +316,9 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
 
 ## Not covered
 
-- Pins: no test in this repository asserts these claims yet. The store's
-  children of #1504 (open, lease, publishing, searching) add pin markers as
-  their tests land.
+- Pins: one claim is pinned by the test harness (#1504 child 2); the
+  store's children of #1504 (open, lease, publishing, searching) add the
+  rest as their tests land.
 - Which query shape raised the `avg` error fixed in pgvector 0.8.7.
 - A lost reply to `COMMIT`: not probed here; #1504 child 5's test settles
   what the store sees.

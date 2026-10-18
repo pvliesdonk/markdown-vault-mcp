@@ -2,8 +2,29 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import tomllib
+import uuid
 from pathlib import Path
+
+import pytest
+
+from tests.fixtures.postgres import (
+    DEFAULT_IMAGE,
+    DSN_ENV,
+    IMAGE_ENV,
+    SCHEMA_PREFIX,
+    PostgresSchema,
+    PostgresServer,
+    Source,
+    check_vector_extension,
+    docker_available,
+    report_unavailable,
+    resolve_source,
+    scratch_schema,
+    start_container,
+)
 
 _PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 _POSTGRES_PACKAGES = ("psycopg[binary]", "psycopg-pool", "pgvector", "numpy")
@@ -27,3 +48,183 @@ def test_postgres_extra_declares_the_client_libraries() -> None:
 
 def test_all_extra_includes_the_postgres_client_libraries() -> None:
     assert set(_POSTGRES_PACKAGES) <= _names(_extras()["all"])
+
+
+def _never(*_args: object) -> bool:
+    raise AssertionError("docker must not be probed when a DSN is set")
+
+
+def test_resolve_source_prefers_the_dsn() -> None:
+    source = resolve_source({DSN_ENV: " host=db dbname=x "}, docker_available=_never)
+    assert source == Source("dsn", "host=db dbname=x")
+
+
+def test_resolve_source_uses_docker_with_the_default_image() -> None:
+    source = resolve_source({}, docker_available=lambda: True)
+    assert source == Source("docker", DEFAULT_IMAGE)
+
+
+def test_resolve_source_honours_the_image_override() -> None:
+    source = resolve_source(
+        {IMAGE_ENV: "pgvector/pgvector:pg16"}, docker_available=lambda: True
+    )
+    assert source == Source("docker", "pgvector/pgvector:pg16")
+
+
+def test_resolve_source_without_docker_or_dsn_is_unavailable() -> None:
+    source = resolve_source({}, docker_available=lambda: False)
+    assert source.kind == "unavailable"
+    assert DSN_ENV in source.detail
+    assert "Docker" in source.detail
+
+
+def test_resolve_source_without_driver_names_the_extra() -> None:
+    source = resolve_source(
+        {DSN_ENV: "host=db"}, docker_available=_never, driver_available=False
+    )
+    assert source.kind == "unavailable"
+    assert "'postgres' extra" in source.detail
+
+
+@pytest.mark.parametrize(
+    ("environ", "outcome"),
+    [
+        ({"CI": "true"}, pytest.fail.Exception),
+        ({"CI": "TRUE"}, pytest.fail.Exception),
+        ({}, pytest.skip.Exception),
+        ({"CI": "false"}, pytest.skip.Exception),
+    ],
+)
+def test_unavailable_fails_under_ci_and_skips_outside(
+    environ: dict[str, str], outcome: type[BaseException]
+) -> None:
+    with pytest.raises(outcome, match="no PostgreSQL"):
+        report_unavailable("no PostgreSQL", environ)
+
+
+def test_postgres_server_has_the_vector_extension(
+    postgres_server: PostgresServer,
+) -> None:
+    import psycopg
+
+    with psycopg.connect(postgres_server.dsn) as conn:
+        row = conn.execute(
+            "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
+        ).fetchone()
+    assert row is not None
+    assert row[0]
+
+
+def test_inner_product_with_a_zero_vector_is_minus_zero_not_nan(
+    postgres_server: PostgresServer,
+) -> None:
+    import psycopg
+
+    with psycopg.connect(postgres_server.dsn) as conn:
+        row = conn.execute(
+            "SELECT '[0,0,0]'::vector <#> '[1,0,0]'::vector,"
+            " '[0,0,0]'::vector <=> '[1,0,0]'::vector"
+        ).fetchone()
+    assert row is not None
+    inner, cosine = row
+    assert inner == 0.0
+    assert cosine != cosine  # NaN
+
+
+def _schema_exists(dsn: str, name: str) -> bool:
+    import psycopg
+
+    with psycopg.connect(dsn) as conn:
+        found = conn.execute(
+            "SELECT 1 FROM pg_namespace WHERE nspname = %s", (name,)
+        ).fetchone()
+    return found is not None
+
+
+def test_each_test_gets_its_own_schema(postgres_schema: PostgresSchema) -> None:
+    assert postgres_schema.name.startswith(SCHEMA_PREFIX)
+    assert _schema_exists(postgres_schema.dsn, postgres_schema.name)
+
+
+def test_scratch_schema_is_dropped_even_when_the_body_raises(
+    postgres_server: PostgresServer,
+) -> None:
+    import psycopg
+    from psycopg import sql
+
+    seen: list[str] = []
+    with (
+        pytest.raises(RuntimeError, match="body failed"),
+        scratch_schema(postgres_server.dsn) as name,
+    ):
+        seen.append(name)
+        with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
+            conn.execute(
+                sql.SQL("CREATE TABLE {}.t (i int)").format(sql.Identifier(name))
+            )
+        raise RuntimeError("body failed")
+    assert seen
+    assert not _schema_exists(postgres_server.dsn, seen[0])
+
+
+def test_dsn_without_vector_extension_fails_with_the_fix(
+    postgres_server: PostgresServer,
+) -> None:
+    import psycopg
+    from psycopg import sql
+    from psycopg.conninfo import make_conninfo
+
+    if not postgres_server.superuser:
+        pytest.skip("creating a database needs a superuser DSN")
+    database = f"mvm_test_noext_{uuid.uuid4().hex[:8]}"
+    with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
+        conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database)))
+    other = make_conninfo(postgres_server.dsn, dbname=database)
+    try:
+        with pytest.raises(pytest.fail.Exception, match="CREATE EXTENSION vector"):
+            check_vector_extension(other, create=False)
+    finally:
+        with psycopg.connect(postgres_server.dsn, autocommit=True) as conn:
+            conn.execute(
+                sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(database))
+            )
+
+
+def _containers_named(prefix: str) -> set[str]:
+    listing = subprocess.run(
+        ["docker", "ps", "-a", "--filter", f"name={prefix}", "--format", "{{.Names}}"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return {line for line in listing.stdout.split() if line}
+
+
+def test_container_that_never_answers_is_removed(
+    postgres_server: PostgresServer,
+) -> None:
+    """A container that runs but never listens fails with its logs and is removed."""
+    del postgres_server  # orders it after the session container exists
+    if not docker_available():
+        pytest.skip("needs the Docker CLI")
+    prefix = f"mvm-test-pg-{os.getpid()}-"
+    before = _containers_named(prefix)
+    with pytest.raises(
+        pytest.fail.Exception, match="did not accept connections within 3s"
+    ):
+        start_container(DEFAULT_IMAGE, command=("sleep", "60"), ready_timeout_s=3)
+    assert _containers_named(prefix) == before
+
+
+def test_container_that_cannot_start_is_reported(
+    postgres_server: PostgresServer,
+) -> None:
+    """An image that cannot be pulled fails with docker's reason, leaving nothing."""
+    del postgres_server
+    if not docker_available():
+        pytest.skip("needs the Docker CLI")
+    prefix = f"mvm-test-pg-{os.getpid()}-"
+    before = _containers_named(prefix)
+    with pytest.raises(pytest.fail.Exception, match=r"docker run .* failed"):
+        start_container("pgvector/pgvector:no-such-tag-1504", ready_timeout_s=3)
+    assert _containers_named(prefix) == before

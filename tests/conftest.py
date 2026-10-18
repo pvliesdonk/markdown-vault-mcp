@@ -21,6 +21,7 @@ from markdown_vault_mcp.vault import VaultSettings
 # test module without requiring a per-file import (which would trip ruff's
 # F811 redefinition check on the parameter shadowing).
 from tests.fixtures.git import git_repo_pair  # noqa: F401
+from tests.fixtures.postgres import postgres_schema, postgres_server  # noqa: F401
 
 
 @pytest.fixture(autouse=True)
