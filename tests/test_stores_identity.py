@@ -15,12 +15,11 @@ from markdown_vault_mcp.types import EmbeddingIdentity
 _ID = EmbeddingIdentity("ollama", "nomic", "", "v1", 768)
 
 
-def _where() -> dict[str, str]:
-    return {"backend": "test", "where": "here"}
+_WHERE = {"backend": "test", "where": "here"}
 
 
 def test_identity_round_trips_through_a_mapping() -> None:
-    assert identity_from_mapping(identity_mapping(_ID), **_where()) == _ID
+    assert identity_from_mapping(identity_mapping(_ID), **_WHERE) == _ID
 
 
 @pytest.mark.parametrize(
@@ -36,22 +35,22 @@ def test_identity_round_trips_through_a_mapping() -> None:
 )
 def test_a_malformed_identity_is_corrupt(data: object) -> None:
     with pytest.raises(StoreCorruptError, match="malformed identity") as failure:
-        identity_from_mapping(data, **_where())
+        identity_from_mapping(data, **_WHERE)
     assert (failure.value.backend, failure.value.location) == ("test", "here")
 
 
 def test_the_same_identity_is_served() -> None:
-    assert served_identity(_ID, _ID, **_where()) == _ID
+    assert served_identity(_ID, _ID, **_WHERE) == _ID
 
 
 def test_a_wanted_dimension_of_zero_takes_the_stored_one() -> None:
     wanted = EmbeddingIdentity("ollama", "nomic", "", "v1", 0)
-    assert served_identity(_ID, wanted, **_where()).dimension == 768
+    assert served_identity(_ID, wanted, **_WHERE).dimension == 768
 
 
 def test_a_stored_dimension_of_zero_takes_the_wanted_one() -> None:
     stored = EmbeddingIdentity("ollama", "nomic", "", "v1", 0)
-    assert served_identity(stored, _ID, **_where()).dimension == 768
+    assert served_identity(stored, _ID, **_WHERE).dimension == 768
 
 
 @pytest.mark.parametrize(
@@ -66,7 +65,7 @@ def test_a_stored_dimension_of_zero_takes_the_wanted_one() -> None:
 )
 def test_another_identity_is_incompatible(other: EmbeddingIdentity) -> None:
     with pytest.raises(StoreIncompatibleError, match="Vector store at here holds"):
-        served_identity(_ID, other, **_where())
+        served_identity(_ID, other, **_WHERE)
 
 
 def test_the_sqlite_store_reads_invalid_identity_json_as_corrupt() -> None:

@@ -121,8 +121,9 @@ def test_a_view_named_like_a_store_table_is_corrupt(
 ) -> None:
     name = postgres_schema.name
     _run(conn, name, "CREATE VIEW {s}.vector_meta AS SELECT 1 AS id")
+    ext = _ext(conn, name)
     with pytest.raises(StoreCorruptError):
-        tables.check_layout(conn, schema=name, extension=_ext(conn, name))
+        tables.check_layout(conn, schema=name, extension=ext)
 
 
 def test_the_embedding_type_must_be_the_extensions_vector(
