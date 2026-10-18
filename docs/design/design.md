@@ -4099,7 +4099,20 @@ its first write's transaction, so an open changes nothing. It finds the
 extension's schema in `pg_extension`, sets `search_path` to the vault
 schema and that one itself, and checks the vault schema exists in
 `pg_namespace`, because PostgreSQL silently skips a missing schema in the
-path. A schema on the path is trusted with every role that may create in
+path. The layout check reads `pg_catalog`, not `information_schema`, so
+tables the role may not select still count: none of the three is an empty
+store, all three with their exact columns is a store, anything between is
+*corrupt*. A read finds its tables through the meta row, and a missing one
+reads as empty, since another process may create the tables after open.
+The open's own connection carries the pool's statement timeout and a
+10-second lock timeout, so a lock held elsewhere is *unavailable*
+(`reason=timeout`), never a hang. A writer opening a schema without the
+tables needs `CREATE` on it, or is refused (`reason=privilege`); a reader
+is not checked. `open_fresh` checks the connection, the extension, the
+schema and that right, and reads none of the store's tables. `identity`
+is fixed at open and changed only by the store's own publishes, as in the
+streamed SQLite store; a read checks the meta row's identity, and takes
+the dimension from it. A schema on the path is trusted with every role that may create in
 it, so the extension's schema must not be writable by untrusted roles.
 PostgreSQL 15 and later create new databases without `CREATE` for
 `PUBLIC` on `public`, but an upgraded cluster or a restored dump keeps the

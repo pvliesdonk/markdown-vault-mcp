@@ -189,7 +189,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 
 - A `REPEATABLE READ` transaction sees a snapshot taken at its first non-transaction-control statement, the same for every later statement; `READ COMMITTED` takes one per statement. [source: pg-isolation]
 - Read-only transactions never have serialization conflicts. [source: pg-isolation]
-- DDL is transactional: a `CREATE TABLE` inside a rolled-back transaction leaves no table. [observed: probe 9]
+- DDL is transactional: a `CREATE TABLE` inside a rolled-back transaction leaves no table. [observed: probe 9] [pins: tests/test_stores_postgres_tables.py::test_an_interrupted_create_leaves_nothing]
 - While a `DELETE` of every row is uncommitted, a `REPEATABLE READ` reader counts the old rows. [observed: probe 5, count `3`]
 - `DELETE` takes `ROW EXCLUSIVE`, which does not conflict with the `ACCESS SHARE` a `SELECT` takes. [source: pg-explicit-locking]
 - `TRUNCATE` takes `ACCESS EXCLUSIVE`, which conflicts with every mode, so a reader waits until it commits. [source: pg-explicit-locking] [observed: probe 5, the reader fails with `canceling statement due to lock timeout`]
