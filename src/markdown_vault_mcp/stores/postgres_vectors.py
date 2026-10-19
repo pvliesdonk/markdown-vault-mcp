@@ -6,8 +6,10 @@ of the contract's outcomes (``_postgres``), checks the tables through
 ``pg_catalog`` (``_postgres_tables``) and the stored identity
 (``_identity``), and opens the pool. The store reads in ``REPEATABLE READ``,
 read-only transactions that start from the live meta row, as the streamed
-SQLite store does; nothing per chunk is held in the vault process. Writing
-and searching arrive with #1504's later children. What this relies on in
+SQLite store does; nothing per chunk is held in the vault process. Every
+write is one durable transaction under the meta-row lock; a store from
+``open_fresh`` replaces what the schema holds on its first write.
+Searching arrives with #1504 child 6. What this relies on in
 PostgreSQL, pgvector and psycopg is in
 ``docs/design/reference/postgresql-pgvector.md``.
 """
@@ -61,6 +63,7 @@ from markdown_vault_mcp.stores._postgres_tables import (
     lock_meta,
     make_durable,
     read_meta,
+    reset_tables,
     stored_count,
     stored_rows,
     stored_tokens,
@@ -304,17 +307,22 @@ class PostgresVectorStore:
         return self._writing(work)
 
     def _writing(
-        self, work: Callable[[psycopg.Connection[Any]], PublicationOutcome]
+        self,
+        work: Callable[[psycopg.Connection[Any]], PublicationOutcome],
+        *,
+        unbounded: bool = False,
     ) -> PublicationOutcome:
         """Run *work* in one durable write transaction under the meta-row lock.
 
         A conflict rolls back. A connection lost while committing is reported as
         ``commit_unknown``: the write may or may not have landed, and is not retried.
+        *unbounded* lifts the statement timeout for the transaction, as a
+        fresh store's reset always does.
         """
         progress = _Progress()
         try:
             with self._conn.pool.connection() as conn, conn.transaction():
-                outcome = self._apply(conn, work)
+                outcome = self._apply(conn, work, progress, unbounded=unbounded)
                 if outcome == "conflict":
                     raise psycopg.Rollback
                 progress.committing = True
@@ -325,23 +333,44 @@ class PostgresVectorStore:
                 schema=self._schema,
             )
         except psycopg.Error as exc:
-            if isinstance(exc, psycopg.errors.UndefinedTable):
-                self._state.tables_ready = False  # dropped under us: recreate next time
             failure = self._write_failure(exc, committing=progress.committing)
         else:
             if outcome == "published":
-                self._state.tables_ready = True  # a conflict rolled any CREATE back
+                self._published(progress)
             return outcome
         raise failure from None
+
+    def _published(self, progress: _Progress) -> None:
+        """Record what a committed write established, and log a reset it made."""
+        self._state.tables_ready = True  # a conflict rolled any CREATE back
+        self._state.reset_pending = False
+        if progress.reset is not None:
+            logger.info(
+                "postgres_vector_store_reset schema=%s how=%s",
+                self._schema,
+                progress.reset,
+            )
 
     def _apply(
         self,
         conn: psycopg.Connection[Any],
         work: Callable[[psycopg.Connection[Any]], PublicationOutcome],
+        progress: _Progress,
+        *,
+        unbounded: bool,
     ) -> PublicationOutcome:
         """Inside the transaction: durability, tables, the meta lock and identity, then *work*."""
         make_durable(conn, lock_timeout_ms=_WRITE_LOCK_TIMEOUT_MS)
-        if (
+        if unbounded or self._state.reset_pending:
+            conn.execute("SET LOCAL statement_timeout = 0")  # spec §6.3
+        if self._state.reset_pending:
+            progress.reset = reset_tables(
+                conn,
+                schema=self._schema,
+                extension=self._conn.extension,
+                identity=self._identity,
+            )
+        elif (
             not self._state.tables_ready
             and check_layout(
                 conn,
@@ -368,14 +397,19 @@ class PostgresVectorStore:
         return work(conn)
 
     def _write_failure(self, exc: psycopg.Error, *, committing: bool) -> Exception:
-        """The outcome of a failed write.
+        """The outcome of a failed write; forgets what the failure leaves unknown.
 
         Only a lost connection while committing (no SQLSTATE, or class ``08``)
         leaves the outcome unknown; an error PostgreSQL reports at COMMIT (a
         serialization failure, a timeout, a full disk) rolled the write back.
         """
+        if isinstance(exc, psycopg.errors.UndefinedTable):
+            self._state.tables_ready = False  # dropped under us: recreate next time
         lost = exc.sqlstate is None or exc.sqlstate.startswith("08")
         if committing and lost:
+            # It may have landed: read the store back as it is, never reset it again.
+            self._state.reset_pending = False
+            self._state.tables_ready = False
             return unavailable(
                 f"The connection to PostgreSQL was lost while committing a write to "
                 f"schema {self._schema}; the write may have landed: "
@@ -402,9 +436,15 @@ class PostgresVectorStore:
 
 @dataclass
 class _Progress:
-    """How far a write transaction got: whether its commit had begun."""
+    """How far a write transaction got.
+
+    Attributes:
+        committing: Its commit had begun.
+        reset: How a fresh store's reset emptied the schema, once it ran.
+    """
 
     committing: bool = False
+    reset: str | None = None
 
 
 @dataclass
@@ -413,7 +453,7 @@ class _WriteState:
 
     Attributes:
         reset_pending: An ``open_fresh`` store whose first write has not
-            landed (child 5b resets the tables then).
+            landed; that write resets the tables.
         tables_ready: The store's tables are known to exist, so a write need
             not check for them.
     """
@@ -483,8 +523,10 @@ class PostgresVectorBackend:
         The connection, the ``vector`` extension, the schema and the right to
         create in it are checked, so a misconfiguration fails here; the
         store's tables are not read, and stay as they are until the fresh
-        store's first write replaces them (#1504 child 5), so a rebuild that
-        never completes leaves the previous rows for the next open.
+        store's first write replaces them (an intact store of this format is
+        emptied, anything else of ours recreated; a newer format is
+        refused), so a rebuild that never completes leaves the previous rows
+        for the next open.
 
         Args:
             location: The vault schema; ``None`` is refused.

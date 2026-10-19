@@ -138,13 +138,76 @@ def create_tables(
     names = {"s": sql.Identifier(schema), "e": sql.Identifier(extension.schema)}
     for statement in _DDL:
         conn.execute(sql.SQL(statement).format(**names))
+    _insert_meta(conn, sql.Identifier(schema), identity)
+
+
+def _insert_meta(
+    conn: psycopg.Connection[Any], s: sql.Identifier, identity: EmbeddingIdentity
+) -> None:
+    """Insert the meta row of an empty store at *identity*, generation 0."""
     conn.execute(
         sql.SQL(
-            "INSERT INTO {s}.vector_meta (format_version, identity, generation)"
+            "INSERT INTO {}.vector_meta (format_version, identity, generation)"
             " VALUES (%s, %s, 0)"
-        ).format(**names),
+        ).format(s),
         (FORMAT_VERSION, Jsonb(identity_mapping(identity))),
     )
+
+
+_EMPTY = (
+    "DELETE FROM {s}.vector_chunks",
+    "DELETE FROM {s}.vector_documents",
+    "DELETE FROM {s}.vector_meta",
+)
+_DROP = "DROP TABLE IF EXISTS {s}.vector_chunks, {s}.vector_documents, {s}.vector_meta"
+
+
+def reset_tables(
+    conn: psycopg.Connection[Any],
+    *,
+    schema: str,
+    extension: Extension,
+    identity: EmbeddingIdentity,
+) -> Literal["emptied", "recreated"]:
+    """Make *schema* an empty store at *identity*, in the caller's transaction.
+
+    A fresh store's first write calls this (spec §4.3). An intact store of
+    this format is emptied with ``DELETE``, so readers keep its rows until
+    commit and nothing waits for ``ACCESS EXCLUSIVE``; anything else of
+    ours is dropped, never with ``CASCADE``, and created again.
+
+    Args:
+        conn: A connection inside the write transaction.
+        schema: The vault schema.
+        extension: Where the ``vector`` type lives.
+        identity: The fresh store's identity.
+
+    Returns:
+        ``"emptied"`` or ``"recreated"``.
+
+    Raises:
+        StoreUnsupportedSchemaError: If the schema holds a newer format;
+            nothing is reset.
+        StoreUnavailableError: If the catalogue cannot be read.
+        psycopg.Error: If a table cannot be dropped: ``42809`` when one of
+            our names is not a table, ``2BP01`` when another object depends
+            on our tables.
+    """
+    try:
+        layout = check_layout(
+            conn, schema=schema, extension=extension, action="written"
+        )
+    except StoreCorruptError:
+        layout = None
+    names = {"s": sql.Identifier(schema)}
+    if layout == "present":
+        for statement in _EMPTY:
+            conn.execute(sql.SQL(statement).format(**names))
+        _insert_meta(conn, sql.Identifier(schema), identity)
+        return "emptied"
+    conn.execute(sql.SQL(_DROP).format(**names))
+    create_tables(conn, schema=schema, extension=extension, identity=identity)
+    return "recreated"
 
 
 def check_layout(

@@ -642,3 +642,269 @@ def test_ordinary_nested_metadata_is_stored(store: Any) -> None:
     assert isinstance(stored["big"], int)  # jsonb numeric loses the float
     assert math.copysign(1, stored["negzero"]) == 1  # and the sign of zero
     assert stored["keys"] == {"7": "seven"}
+
+
+_OLD = EmbeddingIdentity("fake", "old", "", "v1", 2)
+
+
+def _planted_old(schema: PostgresSchema) -> None:
+    """A store at _OLD holding old.md, as a previous model left it."""
+    old = PostgresVectorBackend(schema.dsn).open(schema.name, _OLD)
+    try:
+        old.replace_document(
+            _doc("old.md", [[1, 0]], revision="to"), expected_token=ANY_TOKEN
+        )
+    finally:
+        old.close()
+
+
+@pytest.fixture
+def fresh(postgres_schema: PostgresSchema) -> Iterator[Any]:
+    _planted_old(postgres_schema)
+    opened = PostgresVectorBackend(postgres_schema.dsn).open_fresh(
+        postgres_schema.name, _ID
+    )
+    yield opened
+    opened.close()
+
+
+def _stored(schema: PostgresSchema) -> tuple[Any, ...]:
+    """What another session sees: the identity's model, the generation, the paths."""
+    with psycopg.connect(schema.dsn) as admin:
+        s = sql.Identifier(schema.name)
+        meta = admin.execute(
+            sql.SQL("SELECT identity->>'model', generation FROM {}.vector_meta").format(
+                s
+            )
+        ).fetchone()
+        paths = admin.execute(
+            sql.SQL("SELECT path FROM {}.vector_documents ORDER BY path").format(s)
+        ).fetchall()
+    return (meta, [p for (p,) in paths])
+
+
+def test_a_fresh_store_reads_empty_and_the_old_rows_stay_until_its_first_write(
+    fresh: Any, postgres_schema: PostgresSchema
+) -> None:
+    assert (fresh.tokens(), fresh.count) == ({}, 0)
+    assert _stored(postgres_schema) == (("old", 0), ["old.md"])
+
+
+def test_the_first_fresh_write_replaces_an_intact_store(
+    fresh: Any, postgres_schema: PostgresSchema
+) -> None:
+    assert (
+        fresh.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=None)
+        == "published"
+    )
+    assert fresh.tokens() == {"a.md": "t1"}
+    assert _stored(postgres_schema) == (("m", 0), ["a.md"])
+    assert (
+        fresh.replace_document(_doc("b.md", [[0, 1, 0]]), expected_token=None)
+        == "published"
+    )
+    assert fresh.tokens() == {"a.md": "t1", "b.md": "t1"}  # reset once only
+
+
+def test_a_first_fresh_remove_also_resets(
+    fresh: Any, postgres_schema: PostgresSchema
+) -> None:
+    assert fresh.remove_document("old.md", expected_token=ANY_TOKEN) == "published"
+    assert _stored(postgres_schema) == (("m", 0), [])
+
+
+def test_the_first_fresh_write_recreates_damaged_tables(
+    postgres_schema: PostgresSchema,
+) -> None:
+    _planted_old(postgres_schema)
+    with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+        admin.execute(
+            sql.SQL("DROP TABLE {}.vector_chunks").format(
+                sql.Identifier(postgres_schema.name)
+            )
+        )
+    store = PostgresVectorBackend(postgres_schema.dsn).open_fresh(
+        postgres_schema.name, _ID
+    )
+    try:
+        store.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=None)
+        assert store.rows_for("a.md")[0].vector == pytest.approx([1, 0, 0])
+    finally:
+        store.close()
+    assert _stored(postgres_schema) == (("m", 0), ["a.md"])
+
+
+def test_a_conflict_on_the_first_fresh_write_resets_nothing(
+    fresh: Any, postgres_schema: PostgresSchema
+) -> None:
+    assert (
+        fresh.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token="stale")
+        == "conflict"
+    )
+    assert _stored(postgres_schema) == (("old", 0), ["old.md"])
+    assert fresh.tokens() == {}  # still reads empty: the reset is still pending
+
+
+@pytest.mark.parametrize(
+    ("damage", "sqlstate"),
+    [
+        (
+            "DROP TABLE {s}.vector_chunks; CREATE VIEW {s}.vector_chunks AS SELECT 1 AS x",
+            "42809",
+        ),
+        ("CREATE VIEW {s}.depends_on_ours AS SELECT * FROM {s}.vector_meta", "2BP01"),
+    ],
+    ids=["view_under_our_name", "dependent_view"],
+)
+def test_a_reset_that_cannot_drop_changes_nothing(
+    postgres_schema: PostgresSchema, damage: str, sqlstate: str
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    _planted_old(postgres_schema)
+    s = sql.Identifier(postgres_schema.name)
+    with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+        for statement in damage.split("; "):
+            admin.execute(sql.SQL(statement).format(s=s))
+        if sqlstate == "2BP01":  # make the layout damaged so the reset drops
+            admin.execute(
+                sql.SQL("ALTER TABLE {s}.vector_documents ADD COLUMN extra int").format(
+                    s=s
+                )
+            )
+    store = PostgresVectorBackend(postgres_schema.dsn).open_fresh(
+        postgres_schema.name, _ID
+    )
+    write = _doc("a.md", [[1, 0, 0]])
+    try:
+        with pytest.raises(
+            StoreUnavailableError, match=rf"SQLSTATE {sqlstate}\] \(reason=error\)"
+        ):
+            store.replace_document(write, expected_token=None)
+    finally:
+        store.close()
+    with psycopg.connect(postgres_schema.dsn) as admin:
+        kept = admin.execute(
+            sql.SQL("SELECT path FROM {}.vector_documents").format(s)
+        ).fetchall()
+    assert kept == [("old.md",)]
+
+
+def test_a_fresh_store_over_a_newer_format_refuses_its_first_write(
+    postgres_schema: PostgresSchema,
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
+
+    _planted_old(postgres_schema)
+    with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+        admin.execute(
+            sql.SQL("UPDATE {}.vector_meta SET format_version = %s").format(
+                sql.Identifier(postgres_schema.name)
+            ),
+            (pg.FORMAT_VERSION + 1,),
+        )
+    store = PostgresVectorBackend(postgres_schema.dsn).open_fresh(
+        postgres_schema.name, _ID
+    )
+    write = _doc("a.md", [[1, 0, 0]])
+    try:
+        with pytest.raises(StoreUnsupportedSchemaError):
+            store.replace_document(write, expected_token=None)
+    finally:
+        store.close()
+    assert _stored(postgres_schema)[1] == ["old.md"]
+
+
+def test_a_reader_is_not_blocked_by_a_fresh_store_reset(
+    fresh: Any, postgres_schema: PostgresSchema, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from markdown_vault_mcp.stores import postgres_vectors as pv
+    from markdown_vault_mcp.stores._postgres import PoolSettings
+
+    reader = PostgresVectorBackend(
+        postgres_schema.dsn, pool=PoolSettings(statement_timeout_s=3)
+    ).open(postgres_schema.name, _OLD, owns_files=False)
+    reset_done, finish = threading.Event(), threading.Event()
+    real_reset = pv.reset_tables
+
+    def reset_then_wait(*args: Any, **kwargs: Any) -> Any:
+        how = real_reset(*args, **kwargs)
+        reset_done.set()
+        finish.wait(10)
+        return how
+
+    monkeypatch.setattr(pv, "reset_tables", reset_then_wait)
+    writer = threading.Thread(
+        target=fresh.replace_document,
+        args=(_doc("a.md", [[1, 0, 0]]),),
+        kwargs={"expected_token": None},
+    )
+    writer.start()
+    try:
+        assert reset_done.wait(10)
+        assert reader.tokens() == {"old.md": "to"}  # the previous rows, at once
+    finally:
+        finish.set()
+        writer.join(10)
+        reader.close()
+    assert _stored(postgres_schema) == (("m", 0), ["a.md"])
+
+
+def test_a_lost_reply_on_the_first_fresh_write_does_not_reset_again(fresh: Any) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    real = fresh._conn
+    fresh._conn = real._replace(pool=_LosesTheReply(real.pool))
+    write = _doc("a.md", [[1, 0, 0]], revision="ta")
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=commit_unknown"):
+            fresh.replace_document(write, expected_token=None)
+    finally:
+        fresh._conn = real
+    # It landed: the store now reads the database, and the next write keeps a.md.
+    assert fresh.tokens() == {"a.md": "ta"}
+    fresh.replace_document(_doc("b.md", [[0, 1, 0]]), expected_token=None)
+    assert fresh.tokens() == {"a.md": "ta", "b.md": "t1"}
+
+
+def test_a_reset_outlasting_the_statement_timeout_completes(
+    postgres_schema: PostgresSchema, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.stores import postgres_vectors as pv
+    from markdown_vault_mcp.stores._postgres import PoolSettings
+
+    _planted_old(postgres_schema)
+    real_reset = pv.reset_tables
+
+    def slow_reset(conn: Any, **kwargs: Any) -> Any:
+        conn.execute("SELECT pg_sleep(0.6)")
+        return real_reset(conn, **kwargs)
+
+    monkeypatch.setattr(pv, "reset_tables", slow_reset)
+    store = PostgresVectorBackend(
+        postgres_schema.dsn, pool=PoolSettings(statement_timeout_s=0.3)
+    ).open_fresh(postgres_schema.name, _ID)
+    try:
+        assert (
+            store.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=None)
+            == "published"
+        )
+    finally:
+        store.close()
+
+
+def test_the_reset_is_logged_after_it_commits(
+    fresh: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    with caplog.at_level(
+        logging.INFO, logger="markdown_vault_mcp.stores.postgres_vectors"
+    ):
+        fresh.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=None)
+    events = [
+        r for r in caplog.records if r.msg.startswith("postgres_vector_store_reset ")
+    ]
+    assert [r.args[1] for r in events] == ["emptied"]
