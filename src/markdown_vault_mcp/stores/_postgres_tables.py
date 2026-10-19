@@ -24,9 +24,12 @@ from markdown_vault_mcp.stores._postgres import (
     Extension,
     classify_error,
 )
+from markdown_vault_mcp.types import ANY_TOKEN, VectorRow
 
 if TYPE_CHECKING:
-    from markdown_vault_mcp.types import EmbeddingIdentity
+    from collections.abc import Sequence
+
+    from markdown_vault_mcp.types import EmbeddingIdentity, ExpectedToken
 
 TABLES = ("vector_meta", "vector_documents", "vector_chunks")
 Layout = Literal["absent", "present"]
@@ -133,7 +136,11 @@ def create_tables(
 
 
 def check_layout(
-    conn: psycopg.Connection[Any], *, schema: str, extension: Extension
+    conn: psycopg.Connection[Any],
+    *,
+    schema: str,
+    extension: Extension,
+    action: str = "opened",
 ) -> Layout:
     """Say whether *schema* holds the store's tables, refusing anything else.
 
@@ -149,7 +156,7 @@ def check_layout(
     try:
         rows = conn.execute(_CATALOGUE, (schema, list(TABLES))).fetchall()
     except psycopg.Error as exc:
-        failure = classify_error(exc, schema=schema, action="opened")
+        failure = classify_error(exc, schema=schema, action=action)
     else:
         return _judge_layout(rows, schema=schema, extension=extension)
     raise failure from None
@@ -241,3 +248,177 @@ def _judge_meta(rows: list[tuple[Any, ...]], *, schema: str) -> Meta:
         raw_identity, backend=BACKEND_NAME, where=where(schema), location=schema
     )
     return Meta(int(version), identity, int(generation))
+
+
+_WEAKER_COMMITS = frozenset({"off", "local", "remote_write"})
+
+
+def make_durable(conn: psycopg.Connection[Any], *, lock_timeout_ms: int) -> None:
+    """Make this transaction's commit wait for a local flush, and bound its lock waits.
+
+    ``synchronous_commit`` is raised to ``on`` only from a weaker value; a
+    stronger one (``remote_apply``) is left as configured.
+
+    Args:
+        conn: A connection inside the write transaction.
+        lock_timeout_ms: The ``lock_timeout`` for this transaction.
+    """
+    row = conn.execute("SHOW synchronous_commit").fetchone()
+    if row is not None and str(row[0]) in _WEAKER_COMMITS:
+        conn.execute("SET LOCAL synchronous_commit = on")
+    conn.execute(
+        sql.SQL("SET LOCAL lock_timeout = {}").format(sql.Literal(lock_timeout_ms))
+    )
+
+
+def lock_meta(conn: psycopg.Connection[Any], *, schema: str) -> Meta:
+    """Lock the meta row for this transaction and return it.
+
+    Raises:
+        StoreCorruptError / StoreUnsupportedSchemaError: As :func:`read_meta`.
+        psycopg.Error: Anything the lock or read raises; the caller classifies it.
+    """
+    query = sql.SQL(
+        "SELECT format_version, identity, generation FROM {}.vector_meta FOR UPDATE"
+    ).format(sql.Identifier(schema))
+    return _judge_meta(conn.execute(query).fetchall(), schema=schema)
+
+
+def token_conflicts(
+    conn: psycopg.Connection[Any], *, schema: str, path: str, expected: ExpectedToken
+) -> bool:
+    """Whether the token stored for *path* is not *expected*.
+
+    Args:
+        conn: A connection inside the write transaction.
+        schema: The vault schema.
+        path: The document.
+        expected: The token the writer saw; ``ANY_TOKEN`` matches anything,
+            and an absent document holds ``None``.
+
+    Returns:
+        ``True`` when the write must not proceed.
+    """
+    if expected is ANY_TOKEN:
+        return False
+    row = conn.execute(
+        sql.SQL("SELECT token FROM {}.vector_documents WHERE path = %s").format(
+            sql.Identifier(schema)
+        ),
+        (path,),
+    ).fetchone()
+    return (row[0] if row is not None else None) != expected
+
+
+def stored_tokens(
+    conn: psycopg.Connection[Any], *, schema: str
+) -> dict[str, str | None]:
+    """Every stored document's token.
+
+    Args:
+        conn: A connection inside a read transaction.
+        schema: The vault schema.
+
+    Returns:
+        Each document path with its token (``None`` when it has none).
+    """
+    query = sql.SQL("SELECT path, token FROM {}.vector_documents").format(
+        sql.Identifier(schema)
+    )
+    return {str(path): token for path, token in conn.execute(query)}
+
+
+def stored_rows(
+    conn: psycopg.Connection[Any], *, schema: str, path: str
+) -> list[VectorRow]:
+    """*path*'s rows in ordinal order: normalised vectors and their metadata.
+
+    Args:
+        conn: A connection inside a read transaction.
+        schema: The vault schema.
+        path: The document.
+
+    Returns:
+        The rows; empty when the document has none.
+    """
+    query = sql.SQL(
+        "SELECT embedding, metadata FROM {}.vector_chunks WHERE path = %s ORDER BY ordinal"
+    ).format(sql.Identifier(schema))
+    return [
+        VectorRow(
+            vector=[float(x) for x in embedding.to_numpy()], metadata=dict(metadata)
+        )
+        for embedding, metadata in conn.execute(query, (path,))
+    ]
+
+
+def stored_count(conn: psycopg.Connection[Any], *, schema: str) -> int:
+    """The number of stored chunks.
+
+    Args:
+        conn: A connection inside a read transaction.
+        schema: The vault schema.
+
+    Returns:
+        The row count.
+    """
+    row = conn.execute(
+        sql.SQL("SELECT count(*) FROM {}.vector_chunks").format(sql.Identifier(schema))
+    ).fetchone()
+    return int(row[0]) if row is not None else 0
+
+
+def write_document(
+    conn: psycopg.Connection[Any],
+    *,
+    schema: str,
+    path: str,
+    token: str | None,
+    chunks: Sequence[tuple[str, int, str, Any, Jsonb]],
+) -> None:
+    """Replace *path*'s rows with *chunks* and record its *token*.
+
+    Args:
+        conn: A connection inside the write transaction.
+        schema: The vault schema.
+        path: The document.
+        token: Its revision token.
+        chunks: Its rows, as :func:`~markdown_vault_mcp.stores._postgres_rows.chunk_values`
+            returns them.
+    """
+    s = sql.Identifier(schema)
+    conn.execute(
+        sql.SQL("DELETE FROM {}.vector_chunks WHERE path = %s").format(s), (path,)
+    )
+    conn.execute(
+        sql.SQL(
+            "INSERT INTO {}.vector_documents (path, token) VALUES (%s, %s)"
+            " ON CONFLICT (path) DO UPDATE SET token = excluded.token"
+        ).format(s),
+        (path, token),
+    )
+    if chunks:
+        with conn.cursor() as cur:
+            cur.executemany(
+                sql.SQL(
+                    "INSERT INTO {}.vector_chunks (path, ordinal, folder, embedding, metadata)"
+                    " VALUES (%s, %s, %s, %s, %s)"
+                ).format(s),
+                chunks,
+            )
+
+
+def delete_document(conn: psycopg.Connection[Any], *, schema: str, path: str) -> None:
+    """Remove *path*'s token and, by cascade, its rows.
+
+    Args:
+        conn: A connection inside the write transaction.
+        schema: The vault schema.
+        path: The document.
+    """
+    conn.execute(
+        sql.SQL("DELETE FROM {}.vector_documents WHERE path = %s").format(
+            sql.Identifier(schema)
+        ),
+        (path,),
+    )

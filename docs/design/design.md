@@ -4166,9 +4166,18 @@ writers would need. A publish is one transaction that raises
 `remote_write`) and leaves `on` and `remote_apply` alone, since
 `SET LOCAL … = on` would lower `remote_apply`; `publish_generation`
 deletes rather than truncates, so
-readers keep the previous generation until it commits. A connection lost
-during `COMMIT` raises *unavailable* with `reason=commit_unknown`, never a
-result; the store retries no write, and the reconciler's next pass reads
+readers keep the previous generation until it commits. Rows are checked before any transaction
+(`stores/_postgres_rows.py`), as they will actually be sent: an unknown
+store dimension, another dimension, a non-finite value, metadata that is
+not JSON (`NaN` and infinity included), a `NUL` character or lone
+surrogate in any string, or a path or folder too long to index raise
+`ValueError` and change nothing, so the reconciler keeps the old rows
+(SQLite would store some of these). The store's tables are taken as
+existing only after a write publishes, so a conflict that rolled back the
+first write's `CREATE` leaves the next write to create them again. A connection lost
+during `COMMIT` (no reply, or class `08`) raises *unavailable* with
+`reason=commit_unknown`, never a result; an error PostgreSQL reports at
+`COMMIT` rolled the write back and is classified as usual; the store retries no write, and the reconciler's next pass reads
 the tokens and finds the commit landed or embeds again. `checkpoint()`
 does nothing.
 

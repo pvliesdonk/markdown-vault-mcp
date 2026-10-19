@@ -45,6 +45,7 @@ src/markdown_vault_mcp/
     __init__.py        -- store backends package; exports nothing, import a backend from its module (#1766)
     _resident.py       -- Snapshot and ResidentStore: the resident float32 matrix, rows and tokens the numpy store and a resident-mode SQLite store read from, and the next-snapshot builders (#1497, #1377)
     _postgres_lease.py -- the PostgreSQL writer lease: a session advisory lock keyed by schema OID on its own connection; ensure() takes a lost lease back or refuses, naming the holder (#1504)
+    _postgres_rows.py  -- what the PostgreSQL store can store, checked before any write: dimension known, finite vectors, metadata as jsonb would send it (no NaN), no NUL or lone surrogate, paths and folders short enough to index (#1504)
     _postgres_tables.py -- the PostgreSQL store's three tables: schema-qualified DDL, the pg_catalog layout check (none = empty, some = corrupt), the meta row (#1504)
     _streamed.py       -- the bounded exact scan: rows per batch, the folder condition's parameters, a running top-limit over a cursor (#1377)
     _identity.py       -- the embedding-identity check shared by the SQLite and PostgreSQL stores: persisted mapping, malformed = corrupt, another space = incompatible, wanted dimension 0 takes the stored one (#1504)
