@@ -17,6 +17,7 @@ from markdown_vault_mcp.types import (
     EmbeddingIdentity,
     VectorRow,
 )
+from tests.fixtures.store_contract import StoreLifecycleContract
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -275,3 +276,142 @@ def test_writes_reach_another_process(
         assert reader.tokens() == {"a.md": "ta"}
     finally:
         reader.close()
+
+
+class _LosesTheReply:
+    """A pool stand-in whose connections commit, then raise as if the reply was lost."""
+
+    def __init__(self, pool: Any) -> None:
+        self._pool = pool
+
+    def connection(self) -> Any:
+        import contextlib
+
+        @contextlib.contextmanager
+        def lend() -> Iterator[Any]:
+            with self._pool.connection() as real:
+                yield _CommitThenLose(real)
+
+        return lend()
+
+
+class _CommitThenLose:
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+    def transaction(self) -> Any:
+        import contextlib
+
+        @contextlib.contextmanager
+        def tx() -> Iterator[None]:
+            with self._conn.transaction():
+                yield
+            raise psycopg.OperationalError("server closed the connection unexpectedly")
+
+        return tx()
+
+
+def test_a_commit_whose_reply_is_lost_is_commit_unknown_and_landed(store: Any) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    real = store._conn
+    store._conn = real._replace(pool=_LosesTheReply(real.pool))
+    write = _doc("a.md", [[1, 0, 0]], revision="ta")
+    try:
+        with pytest.raises(
+            StoreUnavailableError, match="reason=commit_unknown"
+        ) as failure:
+            store.replace_document(write, expected_token=ANY_TOKEN)
+        assert failure.value.__cause__ is None
+    finally:
+        store._conn = real
+    # The commit landed: a reconciler pass reading the tokens finds "ta" and embeds nothing.
+    assert store.tokens() == {"a.md": "ta"}
+
+
+def test_a_failure_before_commit_is_not_commit_unknown(
+    store: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import markdown_vault_mcp.stores.postgres_vectors as module
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    def broken(*_a: object, **_k: object) -> None:
+        raise psycopg.OperationalError("server closed the connection unexpectedly")
+
+    monkeypatch.setattr(module, "write_document", broken)
+    write = _doc("a.md", [[1, 0, 0]])
+    with pytest.raises(StoreUnavailableError, match="reason=connect"):
+        store.replace_document(write, expected_token=ANY_TOKEN)
+    assert store.tokens() == {}
+
+
+def test_a_write_after_the_lease_was_taken_is_refused(
+    store: Any, postgres_schema: PostgresSchema
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+    from markdown_vault_mcp.stores._postgres_lease import LeaseRegistry
+
+    lease = store._conn.lease
+    with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+        admin.execute("SELECT pg_terminate_backend(%s, 5000)", (lease.pid,))
+    usurper = LeaseRegistry().acquire(
+        pg.prepare_conninfo(postgres_schema.dsn, schema=postgres_schema.name),
+        schema=postgres_schema.name,
+    )
+    write = _doc("a.md", [[1, 0, 0]])
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=lease"):
+            store.replace_document(write, expected_token=ANY_TOKEN)
+    finally:
+        usurper.release()
+    assert store.tokens() == {}
+
+
+class TestPostgresStoreLifecycle(StoreLifecycleContract):
+    @pytest.fixture
+    def open_store(self, postgres_schema: PostgresSchema) -> Any:
+        return lambda: PostgresVectorBackend(postgres_schema.dsn).open(
+            postgres_schema.name, _ID
+        )
+
+    @pytest.fixture
+    def open_store_read_only(self, postgres_schema: PostgresSchema) -> Any:
+        return lambda: PostgresVectorBackend(postgres_schema.dsn).open(
+            postgres_schema.name, _ID, owns_files=False
+        )
+
+    @pytest.fixture
+    def touch_store(self) -> Any:
+        return lambda store: store.count
+
+    @pytest.fixture
+    def write_to_store(self) -> Any:
+        return lambda store: store.replace_document(
+            _doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN
+        )
+
+    @pytest.fixture
+    def closed_error(self) -> type[Exception]:
+        return RuntimeError
+
+
+def test_a_write_with_no_free_connection_is_unavailable_pool(store: Any) -> None:
+    from psycopg_pool import PoolTimeout
+
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    class _Exhausted:
+        def connection(self) -> Any:
+            raise PoolTimeout("couldn't get a connection after 30.00 sec")
+
+    real = store._conn
+    store._conn = real._replace(pool=_Exhausted())
+    write = _doc("a.md", [[1, 0, 0]])
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=pool"):
+            store.replace_document(write, expected_token=ANY_TOKEN)
+    finally:
+        store._conn = real
