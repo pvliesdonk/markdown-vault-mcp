@@ -4143,8 +4143,21 @@ configured*. The store never parses the message. *Corrupt* and *incompatible*, t
 slot rebuilds on, come only from the store's own checks of rows it read.
 A writer holds a session advisory lock for its life on a dedicated
 connection, keyed by one `bigint` (a project constant and the schema's
-OID); a second writer is refused naming the holder's `application_name`,
-and a lost lease is re-taken or the write refused. Every write also
+OID); a second writer is refused naming the holder's `application_name`
+and pid, and a lost lease is re-taken or the write refused, checked in
+`pg_locks` before every write. A writer's open takes the lease after the
+environment checks and releases it if any later step fails; `close`
+releases it; a reader takes none. The lease is per process: the stores
+one backend opens on a schema share it (reference-counted), so the vault
+slot's opening a fresh store before closing the provisional one never
+conflicts with itself, while a second backend, as another process has, is
+refused. The lease connection sets `idle_session_timeout` to 0 (it idles
+between writes by design) and carries the store's statement and lock
+timeouts; a failure on a live lease connection is reported, never taken
+for a lost lease, and a dropped schema is *not configured*, never logged
+as a lost lease. Concurrent `ensure` calls share one reconnect, so a
+writer never refuses itself after a blip, and each schema's acquire and
+release hold only that schema's lock. Every write also
 locks the `vector_meta` row `FOR UPDATE`, and `replace_document` and
 `remove_document` compare the document's stored token, so writers are
 serialised by the database and the lease is policy: #1812 holds what more

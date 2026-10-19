@@ -409,3 +409,28 @@ def postgres_schema(postgres_server: PostgresServer) -> Iterator[PostgresSchema]
     """A schema of its own in the session database, dropped after the test."""
     with scratch_schema(postgres_server.dsn) as name:
         yield PostgresSchema(postgres_server.dsn, name)
+
+
+def lease_is_free(dsn: str, schema: str) -> bool:
+    """Whether another session could take *schema*'s writer lease right now.
+
+    Takes the key and gives it straight back, so it changes nothing.
+    """
+    import psycopg
+
+    from markdown_vault_mcp.stores._postgres_lease import LEASE_CLASS
+
+    key = (
+        "(%s::bigint << 32) | (SELECT n.oid::bigint FROM pg_catalog.pg_namespace n"
+        " WHERE n.nspname = %s)"
+    )
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        row = conn.execute(
+            "SELECT pg_try_advisory_lock(" + key + ")", (LEASE_CLASS, schema)
+        ).fetchone()
+        taken = bool(row and row[0])
+        if taken:
+            conn.execute(
+                "SELECT pg_advisory_unlock(" + key + ")", (LEASE_CLASS, schema)
+            )
+    return taken

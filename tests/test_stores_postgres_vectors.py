@@ -16,6 +16,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg_pool import PoolTimeout
 
 from markdown_vault_mcp.exceptions import (
+    ReadOnlyError,
     StoreCorruptError,
     StoreIncompatibleError,
     StoreNotConfiguredError,
@@ -27,6 +28,7 @@ from markdown_vault_mcp.stores import _postgres_tables as tables
 from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
 from markdown_vault_mcp.stores.registry import get_backend
 from markdown_vault_mcp.types import EmbeddingIdentity
+from tests.fixtures.postgres import lease_is_free
 
 if TYPE_CHECKING:
     from tests.fixtures.postgres import PostgresSchema, PostgresServer
@@ -517,3 +519,159 @@ def test_timeouts_that_cannot_be_set_are_unavailable(
     settings = pg.PoolSettings()
     with pytest.raises(StoreUnavailableError, match="reason=connect"):
         _bound_waits(closed, schema=postgres_schema.name, settings=settings)
+
+
+def _lease_free(schema: PostgresSchema) -> bool:
+    return lease_is_free(schema.dsn, schema.name)
+
+
+def test_a_writer_holds_the_lease_until_close(postgres_schema: PostgresSchema) -> None:
+    store = PostgresVectorBackend(postgres_schema.dsn).open(postgres_schema.name, _ID)
+    try:
+        assert not _lease_free(postgres_schema)
+        store._ensure_lease()
+    finally:
+        store.close()
+    assert _lease_free(postgres_schema)
+
+
+def test_a_second_writer_process_is_refused_and_a_reader_is_not(
+    postgres_schema: PostgresSchema,
+) -> None:
+    """Another backend stands for another process; it shares nothing with the first."""
+    first = PostgresVectorBackend(postgres_schema.dsn).open(postgres_schema.name, _ID)
+    other = PostgresVectorBackend(postgres_schema.dsn)
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=lease"):
+            other.open(postgres_schema.name, _ID)
+        with pytest.raises(StoreUnavailableError, match="reason=lease"):
+            other.open_fresh(postgres_schema.name, _ID)
+        reader = other.open(postgres_schema.name, _ID, owns_files=False)
+        reader.close()
+    finally:
+        first.close()
+    second = other.open(postgres_schema.name, _ID)
+    second.close()
+
+
+def test_a_reader_has_no_lease(postgres_schema: PostgresSchema) -> None:
+    store = PostgresVectorBackend(postgres_schema.dsn).open(
+        postgres_schema.name, _ID, owns_files=False
+    )
+    try:
+        assert _lease_free(postgres_schema)
+        with pytest.raises(ReadOnlyError):
+            store._ensure_lease()
+    finally:
+        store.close()
+
+
+def test_open_fresh_takes_the_lease(postgres_schema: PostgresSchema) -> None:
+    fresh = PostgresVectorBackend(postgres_schema.dsn).open_fresh(
+        postgres_schema.name, _ID
+    )
+    try:
+        assert not _lease_free(postgres_schema)
+    finally:
+        fresh.close()
+    assert _lease_free(postgres_schema)
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ("corrupt", StoreCorruptError),
+        ("incompatible", StoreIncompatibleError),
+        ("pool", StoreUnavailableError),
+        ("interrupt", KeyboardInterrupt),
+    ],
+)
+def test_a_failed_writer_open_releases_the_lease(
+    postgres_schema: PostgresSchema,
+    monkeypatch: pytest.MonkeyPatch,
+    case: str,
+    expected: type[BaseException],
+) -> None:
+    import markdown_vault_mcp.stores.postgres_vectors as module
+
+    _plant(postgres_schema)
+    wanted = _ID
+    if case == "corrupt":
+        with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+            admin.execute(
+                sql.SQL("DROP TABLE {}.vector_chunks").format(
+                    sql.Identifier(postgres_schema.name)
+                )
+            )
+    elif case == "incompatible":
+        wanted = EmbeddingIdentity("ollama", "other", "", "v1", 3)
+    else:
+        raised: BaseException = (
+            KeyboardInterrupt()
+            if case == "interrupt"
+            else pg.unavailable("no pool", reason="pool", schema=postgres_schema.name)
+        )
+
+        def no_pool(*_a: object, **_k: object) -> object:
+            raise raised
+
+        monkeypatch.setattr(module, "open_pool", no_pool)
+    backend = PostgresVectorBackend(postgres_schema.dsn)
+    with pytest.raises(expected) as failure:
+        backend.open(postgres_schema.name, wanted)
+    # Checked while the exception (and its traceback, which keeps the open's
+    # frames and their locals alive) is still held, as a caller logging it
+    # would hold it: only an explicit release frees the lease here.
+    assert failure.value is not None
+    assert _lease_free(postgres_schema)
+
+
+def test_writers_of_two_schemas_do_not_block_each_other(
+    postgres_server: PostgresServer,
+) -> None:
+    from tests.fixtures.postgres import scratch_schema
+
+    backend = PostgresVectorBackend(postgres_server.dsn)
+    with (
+        scratch_schema(postgres_server.dsn) as one,
+        scratch_schema(postgres_server.dsn) as two,
+    ):
+        a = backend.open(one, _ID)
+        try:
+            b = backend.open(two, _ID)
+            b.close()
+        finally:
+            a.close()
+
+
+def test_a_closed_store_refuses_lease_checks(postgres_schema: PostgresSchema) -> None:
+    store = PostgresVectorBackend(postgres_schema.dsn).open(postgres_schema.name, _ID)
+    store.close()
+    with pytest.raises(RuntimeError, match="closed"):
+        store._ensure_lease()
+
+
+def test_one_backend_shares_a_schemas_lease_across_its_stores(
+    postgres_schema: PostgresSchema,
+) -> None:
+    """The slot opens a fresh store before closing the provisional one (#1504)."""
+    backend = PostgresVectorBackend(postgres_schema.dsn)
+    provisional = backend.open(postgres_schema.name, _UNKNOWN_DIM)
+    fresh = backend.open_fresh(postgres_schema.name, _ID)
+    try:
+        provisional.close()
+        assert not _lease_free(postgres_schema)
+        fresh._ensure_lease()
+    finally:
+        fresh.close()
+    assert _lease_free(postgres_schema)
+
+
+def test_two_backends_on_one_schema_conflict(postgres_schema: PostgresSchema) -> None:
+    first = PostgresVectorBackend(postgres_schema.dsn).open(postgres_schema.name, _ID)
+    other = PostgresVectorBackend(postgres_schema.dsn)
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=lease"):
+            other.open(postgres_schema.name, _ID)
+    finally:
+        first.close()
