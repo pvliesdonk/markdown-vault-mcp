@@ -709,3 +709,55 @@ def test_a_non_integer_format_version_is_corrupt_not_read(
     backend = PostgresVectorBackend(postgres_schema.dsn)
     with pytest.raises(StoreCorruptError, match="other columns"):
         backend.open(postgres_schema.name, _ID)
+
+
+def test_a_writer_warns_when_postgresql_runs_without_fsync(
+    postgres_server: PostgresServer,
+    postgres_schema: PostgresSchema,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+    import time
+
+    if not postgres_server.throwaway:
+        pytest.skip(
+            "changes a server setting: runs only against the harness's own container"
+        )
+    with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:  # superuser
+        admin.execute("ALTER SYSTEM SET fsync = off")
+        admin.execute("SELECT pg_reload_conf()")
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:  # the reload is asynchronous
+            with psycopg.connect(postgres_schema.dsn) as probe:
+                if probe.execute("SHOW fsync").fetchone() == ("off",):
+                    break
+            time.sleep(0.05)
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.stores.postgres_vectors"
+        ):
+            backend = PostgresVectorBackend(postgres_schema.dsn)
+            backend.open(postgres_schema.name, _ID, owns_files=False).close()
+            backend.open(postgres_schema.name, _ID).close()
+    finally:
+        with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:
+            admin.execute("ALTER SYSTEM RESET fsync")
+            admin.execute("SELECT pg_reload_conf()")
+    warned = [
+        r
+        for r in caplog.records
+        if r.msg.startswith("postgres_vector_store_not_durable ")
+    ]
+    assert [r.args for r in warned] == [(postgres_schema.name,)]  # the writer only
+
+
+def test_the_durability_check_reports_a_lost_connection(
+    postgres_schema: PostgresSchema,
+) -> None:
+    from markdown_vault_mcp.stores.postgres_vectors import _warn_if_not_durable
+
+    conninfo = pg.prepare_conninfo(postgres_schema.dsn, schema=postgres_schema.name)
+    closed = pg.connect(conninfo, schema=postgres_schema.name)
+    closed.close()
+    with pytest.raises(StoreUnavailableError, match="reason=connect"):
+        _warn_if_not_durable(closed, schema=postgres_schema.name)

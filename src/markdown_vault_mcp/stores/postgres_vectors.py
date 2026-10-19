@@ -640,8 +640,10 @@ class PostgresVectorBackend:
             if request.fresh
             else _stored_state(conn, schema, extension, request.wanted)
         )
-        if not request.read_only and state.layout == "absent":
-            _require_create(conn, schema=schema)
+        if not request.read_only:
+            _warn_if_not_durable(conn, schema=schema)
+            if state.layout == "absent":
+                _require_create(conn, schema=schema)
         pool = open_pool(
             conninfo, schema=schema, extension=extension, settings=self._pool
         )
@@ -746,6 +748,26 @@ def _bound_waits(
     except psycopg.Error as exc:
         failure = classify_error(exc, schema=schema, action="opened")
     else:
+        return
+    raise failure from None
+
+
+def _warn_if_not_durable(conn: psycopg.Connection[Any], *, schema: str) -> None:
+    """Warn once, at a writer's open, when PostgreSQL runs with ``fsync = off`` (spec §5.3).
+
+    The vault cannot fix it: a commit is then durable only until the
+    server's host crashes.
+
+    Raises:
+        StoreUnavailableError: If the setting cannot be read.
+    """
+    try:
+        row = conn.execute("SHOW fsync").fetchone()
+    except psycopg.Error as exc:
+        failure = classify_error(exc, schema=schema, action="opened")
+    else:
+        if row is not None and row[0] == "off":
+            logger.warning("postgres_vector_store_not_durable schema=%s", schema)
         return
     raise failure from None
 
