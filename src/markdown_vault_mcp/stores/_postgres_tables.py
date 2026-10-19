@@ -27,6 +27,8 @@ from markdown_vault_mcp.stores._postgres import (
 from markdown_vault_mcp.types import ANY_TOKEN, VectorRow
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from markdown_vault_mcp.types import EmbeddingIdentity, ExpectedToken
 
 TABLES = ("vector_meta", "vector_documents", "vector_chunks")
@@ -320,3 +322,44 @@ def stored_count(conn: psycopg.Connection[Any], *, schema: str) -> int:
         sql.SQL("SELECT count(*) FROM {}.vector_chunks").format(sql.Identifier(schema))
     ).fetchone()
     return int(row[0]) if row is not None else 0
+
+
+def write_document(
+    conn: psycopg.Connection[Any],
+    *,
+    schema: str,
+    path: str,
+    token: str | None,
+    chunks: Sequence[tuple[str, int, str, Any, Jsonb]],
+) -> None:
+    """Replace *path*'s rows with *chunks* and record its *token*."""
+    s = sql.Identifier(schema)
+    conn.execute(
+        sql.SQL("DELETE FROM {}.vector_chunks WHERE path = %s").format(s), (path,)
+    )
+    conn.execute(
+        sql.SQL(
+            "INSERT INTO {}.vector_documents (path, token) VALUES (%s, %s)"
+            " ON CONFLICT (path) DO UPDATE SET token = excluded.token"
+        ).format(s),
+        (path, token),
+    )
+    if chunks:
+        with conn.cursor() as cur:
+            cur.executemany(
+                sql.SQL(
+                    "INSERT INTO {}.vector_chunks (path, ordinal, folder, embedding, metadata)"
+                    " VALUES (%s, %s, %s, %s, %s)"
+                ).format(s),
+                chunks,
+            )
+
+
+def delete_document(conn: psycopg.Connection[Any], *, schema: str, path: str) -> None:
+    """Remove *path*'s token and, by cascade, its rows."""
+    conn.execute(
+        sql.SQL("DELETE FROM {}.vector_documents WHERE path = %s").format(
+            sql.Identifier(schema)
+        ),
+        (path,),
+    )

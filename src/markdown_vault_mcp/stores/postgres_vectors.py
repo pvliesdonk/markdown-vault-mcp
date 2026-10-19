@@ -14,12 +14,15 @@ PostgreSQL, pgvector and psycopg is in
 
 from __future__ import annotations
 
+import json
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 
 try:
     import psycopg
     from psycopg import sql
+    from psycopg.types.json import Jsonb
     from psycopg_pool import PoolTimeout
 
     from markdown_vault_mcp.stores._postgres import (
@@ -43,19 +46,26 @@ except ImportError as exc:  # pragma: no cover - exercised in a subprocess
         "pip install 'markdown-vault-mcp[postgres]'"
     ) from exc
 
-from markdown_vault_mcp.exceptions import ReadOnlyError
+from markdown_vault_mcp.exceptions import ReadOnlyError, StoreIncompatibleError
 from markdown_vault_mcp.stores._identity import served_identity
 from markdown_vault_mcp.stores._postgres_lease import LeaseHandle, LeaseRegistry
 from markdown_vault_mcp.stores._postgres_tables import (
     Layout,
     Meta,
     check_layout,
+    create_tables,
+    delete_document,
+    lock_meta,
+    make_durable,
     read_meta,
     stored_count,
     stored_rows,
     stored_tokens,
+    token_conflicts,
     where,
+    write_document,
 )
+from markdown_vault_mcp.stores._resident import row_metadata, row_vectors
 from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily
 
@@ -65,11 +75,18 @@ if TYPE_CHECKING:
 
     from psycopg_pool import ConnectionPool
 
-    from markdown_vault_mcp.types import RevisionToken, VectorRow
+    from markdown_vault_mcp.types import (
+        DocumentRows,
+        ExpectedToken,
+        PublicationOutcome,
+        RevisionToken,
+        VectorRow,
+    )
 
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
+_WRITE_LOCK_TIMEOUT_MS = 10_000  # spec §6.3: a write's wait for the meta-row lock
 _READ_TRANSACTION = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
 _LOCK_TIMEOUT_MS = 10_000  # spec §6.3: waiting for a lock on a store table
 
@@ -105,12 +122,14 @@ class PostgresVectorStore:
         read_only: bool,
         connection: _Connection,
         reset_pending: bool = False,
+        tables_ready: bool = False,
     ) -> None:
         self._schema = schema
         self._identity = identity
         self._read_only = read_only
         self._conn = connection
         self._reset_pending = reset_pending
+        self._tables_ready = tables_ready
         self._closed = False
 
     def __repr__(self) -> str:
@@ -234,6 +253,120 @@ class PostgresVectorStore:
             )
         lease.ensure()
 
+    def replace_document(
+        self, document: DocumentRows, *, expected_token: ExpectedToken
+    ) -> PublicationOutcome:
+        """Replace ``document.path``'s rows, durably and on its stored token's condition.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            ReadOnlyError: If it was opened read-only.
+            ValueError: If a row cannot be stored (see :func:`_chunk_values`); nothing changed.
+            StoreIncompatibleError: If another identity has been published; nothing changed.
+            StoreUnavailableError: ``reason=lease``, ``timeout``, ``commit_unknown`` or
+                another; with ``commit_unknown`` the write may have landed.
+        """
+        self._ensure_lease()
+        chunks = _chunk_values(document, self._identity.dimension)
+
+        def work(conn: psycopg.Connection[Any]) -> PublicationOutcome:
+            if token_conflicts(
+                conn, schema=self._schema, path=document.path, expected=expected_token
+            ):
+                return "conflict"
+            write_document(
+                conn,
+                schema=self._schema,
+                path=document.path,
+                token=document.token,
+                chunks=chunks,
+            )
+            return "published"
+
+        return self._writing(work)
+
+    def remove_document(
+        self, path: str, *, expected_token: ExpectedToken
+    ) -> PublicationOutcome:
+        """Remove *path*'s rows and token, durably, with the same condition (raises as :meth:`replace_document`)."""
+        self._ensure_lease()
+
+        def work(conn: psycopg.Connection[Any]) -> PublicationOutcome:
+            if token_conflicts(
+                conn, schema=self._schema, path=path, expected=expected_token
+            ):
+                return "conflict"
+            delete_document(conn, schema=self._schema, path=path)
+            return "published"
+
+        return self._writing(work)
+
+    def _writing(
+        self, work: Callable[[psycopg.Connection[Any]], PublicationOutcome]
+    ) -> PublicationOutcome:
+        """Run *work* in one durable write transaction under the meta-row lock.
+
+        A conflict rolls back. A connection lost while committing is reported as
+        ``commit_unknown``: the write may or may not have landed, and is not retried.
+        """
+        progress = _Progress()
+        try:
+            with self._conn.pool.connection() as conn, conn.transaction():
+                outcome = self._apply(conn, work)
+                if outcome == "conflict":
+                    raise psycopg.Rollback
+                progress.committing = True
+        except PoolTimeout:
+            failure: Exception = unavailable(
+                f"No PostgreSQL connection for schema {self._schema} was free in time.",
+                reason="pool",
+                schema=self._schema,
+            )
+        except psycopg.Error as exc:
+            failure = self._write_failure(exc, committing=progress.committing)
+        else:
+            self._tables_ready = True
+            return outcome
+        raise failure from None
+
+    def _apply(
+        self,
+        conn: psycopg.Connection[Any],
+        work: Callable[[psycopg.Connection[Any]], PublicationOutcome],
+    ) -> PublicationOutcome:
+        """Inside the transaction: durability, tables, the meta lock and identity, then *work*."""
+        make_durable(conn, lock_timeout_ms=_WRITE_LOCK_TIMEOUT_MS)
+        if (
+            not self._tables_ready
+            and check_layout(conn, schema=self._schema, extension=self._conn.extension)
+            == "absent"
+        ):
+            create_tables(
+                conn,
+                schema=self._schema,
+                extension=self._conn.extension,
+                identity=self._identity,
+            )
+        meta = lock_meta(conn, schema=self._schema)
+        if meta.identity != self._identity:
+            raise StoreIncompatibleError(
+                f"Vector store at {where(self._schema)} holds {meta.identity}, not {self._identity}; nothing written.",
+                backend=BACKEND_NAME,
+                location=self._schema,
+            )
+        return work(conn)
+
+    def _write_failure(self, exc: psycopg.Error, *, committing: bool) -> Exception:
+        """The outcome of a failed write; a lost commit is ``commit_unknown``."""
+        if committing and isinstance(exc, psycopg.OperationalError):
+            return unavailable(
+                f"The connection to PostgreSQL was lost while committing a write to schema "
+                f"{self._schema}; the write may have landed: {exc}",
+                reason="commit_unknown",
+                schema=self._schema,
+            )
+        return classify_error(exc, schema=self._schema, action="written")
+
     def checkpoint(self) -> None:
         """Do nothing: every publish is durable when it commits."""
 
@@ -247,6 +380,48 @@ class PostgresVectorStore:
         finally:
             if self._conn.lease is not None:
                 self._conn.lease.release()
+
+
+def _chunk_values(
+    document: DocumentRows, dimension: int
+) -> list[tuple[str, int, str, Any, Jsonb]]:
+    """Validate *document* and return its ``vector_chunks`` rows; nothing is written.
+
+    Raises:
+        ValueError: If a row is of another dimension, not finite, its metadata is
+            not JSON, or the path, a folder or the metadata holds a NUL character,
+            which PostgreSQL text cannot store.
+    """
+    if "\x00" in document.path:
+        raise ValueError(
+            f"{document.path!r}: PostgreSQL cannot store a NUL character in a path."
+        )
+    vectors = row_vectors(document.rows, dimension)
+    rows = []
+    for ordinal, (meta, vector) in enumerate(
+        zip(row_metadata(document), vectors, strict=True)
+    ):
+        folder = str(meta.get("folder") or "")
+        _refuse_unstorable(document.path, folder, meta)
+        rows.append((document.path, ordinal, folder, vector, Jsonb(meta)))
+    return rows
+
+
+def _refuse_unstorable(path: str, folder: str, meta: dict[str, Any]) -> None:
+    """Raise when *meta* is not JSON, or *folder* or *meta* holds a NUL character."""
+    try:
+        encoded = json.dumps(meta, ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Row metadata of {path!r} cannot be stored: {exc}") from exc
+    if "\x00" in folder or "\x00" in encoded or "\\u0000" in encoded:
+        raise ValueError(f"Row of {path!r}: PostgreSQL cannot store a NUL character.")
+
+
+@dataclass
+class _Progress:
+    """How far a write transaction got: whether its commit had begun."""
+
+    committing: bool = False
 
 
 class PostgresVectorBackend:
@@ -392,6 +567,7 @@ class PostgresVectorBackend:
             read_only=request.read_only,
             connection=_Connection(pool, conninfo, extension, lease),
             reset_pending=request.fresh,
+            tables_ready=state.layout == "present",
         )
 
 
