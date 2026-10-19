@@ -24,9 +24,9 @@ from psycopg.types.json import Jsonb
 from markdown_vault_mcp.stores._resident import row_metadata, row_vectors
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
 
-    from markdown_vault_mcp.types import DocumentRows
+    from markdown_vault_mcp.types import DocumentRows, RevisionToken
 
 # A btree index entry holds at most about 2,700 bytes (version 4); paths and
 # folders are indexed, so a longer one would fail inside the transaction.
@@ -65,6 +65,35 @@ def chunk_values(document: DocumentRows, dimension: int) -> list[ChunkValues]:
         _check_metadata(meta, path=document.path)
         rows.append((document.path, ordinal, folder, vector, Jsonb(meta, dumps=_DUMPS)))
     return rows
+
+
+def generation_values(
+    documents: Iterable[DocumentRows], dimension: int
+) -> tuple[list[tuple[str, RevisionToken | None]], list[ChunkValues]]:
+    """Validate a whole generation; return its document and chunk rows. Nothing is written.
+
+    Args:
+        documents: The generation's documents.
+        dimension: The generation identity's dimension.
+
+    Returns:
+        ``(path, token)`` per document, and every document's chunk rows.
+
+    Raises:
+        ValueError: If the dimension is unknown, a path appears twice, or
+            any row cannot be stored (see :func:`chunk_values`).
+    """
+    require_dimension(dimension)
+    seen: set[str] = set()
+    docs: list[tuple[str, RevisionToken | None]] = []
+    chunks: list[ChunkValues] = []
+    for document in documents:
+        if document.path in seen:
+            raise ValueError(f"publish_generation got {document.path[:80]!r} twice.")
+        seen.add(document.path)
+        docs.append((document.path, document.token))
+        chunks.extend(chunk_values(document, dimension))
+    return docs, chunks
 
 
 def require_dimension(dimension: int) -> None:

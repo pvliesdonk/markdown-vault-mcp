@@ -908,3 +908,177 @@ def test_the_reset_is_logged_after_it_commits(
         r for r in caplog.records if r.msg.startswith("postgres_vector_store_reset ")
     ]
     assert [r.args[1] for r in events] == ["emptied"]
+
+
+_OTHER = EmbeddingIdentity("fake", "m2", "", "v1", 2)
+
+
+def test_a_generation_replaces_everything(
+    store: Any, postgres_schema: PostgresSchema
+) -> None:
+    store.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+    store.publish_generation(
+        _OTHER, [_doc("c.md", [[0, 2]], revision="tc", folder="f")]
+    )
+    assert (store.identity, store.generation, store.count) == (_OTHER, 1, 1)
+    assert store.tokens() == {"c.md": "tc"}
+    (row,) = store.rows_for("c.md")
+    assert row.vector == pytest.approx([0, 1])
+    assert row.metadata == {"folder": "f", "content": "c.md#0", "path": "c.md"}
+    store.replace_document(
+        _doc("d.md", [[1, 0]]), expected_token=None
+    )  # the new dimension
+    assert _stored(postgres_schema) == (("m2", 1), ["c.md", "d.md"])
+
+
+def test_generations_count_up_and_may_be_empty(store: Any) -> None:
+    store.publish_generation(_ID, [_doc("a.md", [[1, 0, 0]]), _doc("b.md", [])])
+    store.publish_generation(_ID, [])
+    assert (store.generation, store.count, store.tokens()) == (2, 0, {})
+
+
+def test_a_generation_naming_a_path_twice_changes_nothing(store: Any) -> None:
+    store.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+    twice = [_doc("a.md", [[1, 0, 0]]), _doc("a.md", [[0, 1, 0]])]
+    with pytest.raises(ValueError, match=r"a\.md"):
+        store.publish_generation(_ID, twice)
+    assert (store.generation, store.tokens()) == (0, {"a.md": "t1"})
+
+
+def test_a_generation_with_a_row_that_cannot_be_stored_changes_nothing(
+    store: Any,
+) -> None:
+    store.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+    bad = [_doc("b.md", [[1, 0, 0]]), _doc("c.md", [[1, 0]])]  # another dimension
+    with pytest.raises(ValueError, match="dimension"):
+        store.publish_generation(_ID, bad)
+    assert (store.generation, store.tokens()) == (0, {"a.md": "t1"})
+
+
+def test_a_generation_of_unknown_dimension_is_refused(store: Any) -> None:
+    unknown = EmbeddingIdentity("fake", "m", "", "v1", 0)
+    with pytest.raises(ValueError, match="dimension"):
+        store.publish_generation(unknown, [])
+
+
+def test_a_generation_is_durable_and_reaches_another_process(
+    store: Any, postgres_schema: PostgresSchema
+) -> None:
+    store.publish_generation(_ID, [_doc("a.md", [[1, 0, 0]])])
+    other = PostgresVectorBackend(postgres_schema.dsn).open(
+        postgres_schema.name, _ID, owns_files=False
+    )
+    try:
+        assert (other.generation, other.tokens()) == (1, {"a.md": "t1"})
+    finally:
+        other.close()
+
+
+def test_a_reader_during_a_generation_sees_the_previous_one(
+    store: Any, postgres_schema: PostgresSchema, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    from markdown_vault_mcp.stores import postgres_vectors as pv
+    from markdown_vault_mcp.stores._postgres import PoolSettings
+
+    store.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+    reader = PostgresVectorBackend(
+        postgres_schema.dsn, pool=PoolSettings(statement_timeout_s=3)
+    ).open(postgres_schema.name, _ID, owns_files=False)
+    copied, finish = threading.Event(), threading.Event()
+    real = pv.replace_generation
+
+    def copy_then_wait(*args: Any, **kwargs: Any) -> int:
+        generation = real(*args, **kwargs)
+        copied.set()
+        finish.wait(10)
+        return generation
+
+    monkeypatch.setattr(pv, "replace_generation", copy_then_wait)
+    writer = threading.Thread(
+        target=store.publish_generation, args=(_ID, [_doc("b.md", [[0, 1, 0]])])
+    )
+    writer.start()
+    try:
+        assert copied.wait(10)
+        assert (reader.generation, reader.tokens()) == (0, {"a.md": "t1"})
+    finally:
+        finish.set()
+        writer.join(10)
+    assert (reader.generation, reader.tokens()) == (1, {"b.md": "t1"})
+    reader.close()
+
+
+def test_a_generation_outlasting_the_statement_timeout_publishes(
+    postgres_schema: PostgresSchema, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from markdown_vault_mcp.stores import postgres_vectors as pv
+    from markdown_vault_mcp.stores._postgres import PoolSettings
+
+    real = pv.replace_generation
+
+    def slow(conn: Any, **kwargs: Any) -> int:
+        conn.execute("SELECT pg_sleep(0.6)")
+        return real(conn, **kwargs)
+
+    monkeypatch.setattr(pv, "replace_generation", slow)
+    store = PostgresVectorBackend(
+        postgres_schema.dsn, pool=PoolSettings(statement_timeout_s=0.3)
+    ).open(postgres_schema.name, _ID)
+    try:
+        store.publish_generation(_ID, [_doc("a.md", [[1, 0, 0]])])
+        assert store.generation == 1
+        assert store.count == 1  # reads keep their timeout and still work
+    finally:
+        store.close()
+
+
+def test_a_fresh_store_publishes_its_first_generation(
+    fresh: Any, postgres_schema: PostgresSchema
+) -> None:
+    fresh.publish_generation(_ID, [_doc("a.md", [[1, 0, 0]])])
+    assert (fresh.generation, fresh.tokens()) == (1, {"a.md": "t1"})
+    assert _stored(postgres_schema) == (("m", 1), ["a.md"])
+
+
+def test_a_lost_reply_on_a_generation_is_commit_unknown(store: Any) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    real = store._conn
+    store._conn = real._replace(pool=_LosesTheReply(real.pool))
+    generation = [_doc("a.md", [[1, 0, 0]])]
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=commit_unknown"):
+            store.publish_generation(_ID, generation)
+    finally:
+        store._conn = real
+    assert (store.generation, store.tokens()) == (1, {"a.md": "t1"})
+
+
+def test_a_reader_refuses_a_generation(postgres_schema: PostgresSchema) -> None:
+    from markdown_vault_mcp.exceptions import ReadOnlyError
+
+    reader = PostgresVectorBackend(postgres_schema.dsn).open(
+        postgres_schema.name, _ID, owns_files=False
+    )
+    try:
+        with pytest.raises(ReadOnlyError):
+            reader.publish_generation(_ID, [])
+    finally:
+        reader.close()
+
+
+def test_a_generation_is_logged(store: Any, caplog: pytest.LogCaptureFixture) -> None:
+    import logging
+
+    with caplog.at_level(
+        logging.INFO, logger="markdown_vault_mcp.stores.postgres_vectors"
+    ):
+        store.publish_generation(_ID, [_doc("a.md", [[1, 0, 0], [0, 1, 0]])])
+    (event,) = [
+        r
+        for r in caplog.records
+        if r.msg.startswith("postgres_vector_store_generation_published ")
+    ]
+    assert event.args[1:] == (1, 1, 2)  # generation, documents, rows

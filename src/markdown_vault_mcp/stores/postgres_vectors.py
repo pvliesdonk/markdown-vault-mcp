@@ -52,6 +52,7 @@ from markdown_vault_mcp.stores._postgres_lease import LeaseHandle, LeaseRegistry
 from markdown_vault_mcp.stores._postgres_rows import (
     check_key,
     chunk_values,
+    generation_values,
     require_dimension,
 )
 from markdown_vault_mcp.stores._postgres_tables import (
@@ -63,6 +64,7 @@ from markdown_vault_mcp.stores._postgres_tables import (
     lock_meta,
     make_durable,
     read_meta,
+    replace_generation,
     reset_tables,
     stored_count,
     stored_rows,
@@ -75,7 +77,7 @@ from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
     from pathlib import Path
 
     from psycopg_pool import ConnectionPool
@@ -305,6 +307,55 @@ class PostgresVectorStore:
             return "published"
 
         return self._writing(work)
+
+    def publish_generation(
+        self, identity: EmbeddingIdentity, documents: Iterable[DocumentRows]
+    ) -> None:
+        """Replace the whole store with *documents* under *identity*, in one durable transaction.
+
+        Readers see the previous generation until it commits. The
+        transaction has no statement timeout (a cold build's ``COPY`` may
+        take minutes); TCP keepalives still detect a dead connection.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            ReadOnlyError: If it was opened read-only.
+            ValueError: If a path appears twice or a row cannot be stored;
+                nothing changed.
+            StoreIncompatibleError: If another identity has been published;
+                nothing changed.
+            StoreUnsupportedSchemaError: If a fresh store's schema holds a
+                newer format; nothing changed.
+            StoreUnavailableError: ``reason=lease``, ``timeout``,
+                ``commit_unknown`` or another; with ``commit_unknown`` the
+                generation may have landed.
+        """
+        self._ensure_lease()
+        docs, chunks = generation_values(documents, identity.dimension)
+        generations: list[int] = []
+
+        def work(conn: psycopg.Connection[Any]) -> PublicationOutcome:
+            generations.append(
+                replace_generation(
+                    conn,
+                    schema=self._schema,
+                    identity=identity,
+                    documents=docs,
+                    chunks=chunks,
+                )
+            )
+            return "published"
+
+        self._writing(work, unbounded=True)
+        self._identity = identity
+        logger.info(
+            "postgres_vector_store_generation_published schema=%s generation=%d "
+            "documents=%d rows=%d",
+            self._schema,
+            generations[0],
+            len(docs),
+            len(chunks),
+        )
 
     def _writing(
         self,

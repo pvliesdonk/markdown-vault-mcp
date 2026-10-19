@@ -210,6 +210,59 @@ def reset_tables(
     return "recreated"
 
 
+_COPY_DOCUMENTS = "COPY {}.vector_documents (path, token) FROM STDIN (FORMAT BINARY)"
+_COPY_CHUNKS = (
+    "COPY {}.vector_chunks (path, ordinal, folder, embedding, metadata)"
+    " FROM STDIN (FORMAT BINARY)"
+)
+
+
+def replace_generation(
+    conn: psycopg.Connection[Any],
+    *,
+    schema: str,
+    identity: EmbeddingIdentity,
+    documents: Sequence[tuple[str, str | None]],
+    chunks: Sequence[tuple[str, int, str, Any, Jsonb]],
+) -> int:
+    """Replace every row with *documents* and *chunks* under *identity*.
+
+    ``DELETE``, not ``TRUNCATE``: readers keep the previous generation
+    until commit (spec §5.2). The rows go in by binary ``COPY``.
+
+    Args:
+        conn: A connection inside the write transaction, the meta row locked.
+        schema: The vault schema.
+        identity: The new generation's identity.
+        documents: ``(path, token)`` per document.
+        chunks: Every row, as :func:`~markdown_vault_mcp.stores._postgres_rows.chunk_values`
+            returns them.
+
+    Returns:
+        The new generation number.
+    """
+    s = sql.Identifier(schema)
+    conn.execute(sql.SQL("DELETE FROM {}.vector_chunks").format(s))
+    conn.execute(sql.SQL("DELETE FROM {}.vector_documents").format(s))
+    with conn.cursor() as cur:
+        with cur.copy(sql.SQL(_COPY_DOCUMENTS).format(s)) as copy:
+            copy.set_types(["text", "text"])
+            for document in documents:
+                copy.write_row(document)
+        with cur.copy(sql.SQL(_COPY_CHUNKS).format(s)) as copy:
+            copy.set_types(["text", "int4", "text", "vector", "jsonb"])
+            for chunk in chunks:
+                copy.write_row(chunk)
+    rows = conn.execute(
+        sql.SQL(
+            "UPDATE {}.vector_meta SET identity = %s, generation = generation + 1"
+            " RETURNING generation"
+        ).format(s),
+        (Jsonb(identity_mapping(identity)),),
+    ).fetchall()
+    return int(rows[0][0])  # the one meta row, locked by this transaction
+
+
 def check_layout(
     conn: psycopg.Connection[Any],
     *,

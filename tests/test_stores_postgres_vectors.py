@@ -690,7 +690,7 @@ def test_a_newer_format_with_other_columns_is_unsupported(
     _alter(
         postgres_schema,
         "ALTER TABLE {s}.vector_chunks ADD COLUMN added_later integer",
-        f"UPDATE {{s}}.vector_meta SET format_version = {pg.FORMAT_VERSION + 1}",
+        "UPDATE {s}.vector_meta SET format_version = format_version + 1",
     )
     backend = PostgresVectorBackend(postgres_schema.dsn)
     with pytest.raises(StoreUnsupportedSchemaError, match="format_version"):
