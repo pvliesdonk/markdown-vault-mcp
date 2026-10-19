@@ -201,6 +201,9 @@ named in the frontmatter with the probe scripts listed under "Probes".
 
 - `jsonb` rejects `\u0000`, "because that cannot be represented in PostgreSQL's `text` type"; a JSON string maps to `text`, where `\u0000` is disallowed. [source: pg-json-types] [pins: tests/test_stores_postgres_writes.py::test_rows_that_cannot_be_stored_change_nothing]
 - `jsonb` keeps neither key order, whitespace nor duplicate keys (the last value of a duplicated key wins); `json` stores the input text exactly. [source: pg-json-types]
+- `jsonb` rejects `NaN` and `Infinity` (JSON has no such numbers) and a lone surrogate escape; Python's `json.dumps` writes `NaN` unless told not to. [observed: #1504 child 5a's final review, `Token "NaN" is invalid`, `Unicode low surrogate must follow a high surrogate`] [pins: tests/test_stores_postgres_writes.py::test_metadata_postgresql_cannot_store_is_refused_before_writing]
+- Numbers and keys do not all round-trip through `jsonb` as Python wrote them: `1e20` comes back an integer, `-0.0` as `0.0`, non-string keys as strings, tuples as lists. [observed: #1504 child 5a's final review] [pins: tests/test_stores_postgres_writes.py::test_ordinary_nested_metadata_is_stored]
+- A btree index entry holds at most about 2,700 bytes (`index row size 3648 exceeds btree version 4 maximum 2704`). [observed: #1504 child 5a's final review, a 3,000-byte path] [pins: tests/test_stores_postgres_writes.py::test_a_key_too_long_for_postgresql_indexes_is_refused]
 
 ### Transactions and snapshots
 
@@ -326,7 +329,7 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
   schema in the path is silently ignored.
 - A new generation deletes the old rows rather than truncating them, so
   readers keep the previous generation until it commits.
-- A row whose path, folder or metadata holds a `NUL` character is refused with `ValueError` before any write, where the SQLite store would keep it: PostgreSQL's `text` and `jsonb` cannot hold one.
+- Before any write, a row is refused with `ValueError` where the SQLite store would keep it: a path, folder or metadata string holding a `NUL` character or a lone surrogate, metadata holding `NaN` or infinity, or a path or folder over 2,000 bytes. PostgreSQL's `text`, `jsonb` and btree indexes cannot hold them, and refusing them up front keeps the document's old rows instead of a write the reconciler would retry forever.
 - `synchronous_commit` is raised to `on` from any weaker value (`off`,
   `local`, `remote_write`) and left alone at `on` or `remote_apply`, because
   `SET LOCAL … = on` would lower a configured `remote_apply`.

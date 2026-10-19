@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any
 
 import psycopg
@@ -415,3 +416,230 @@ def test_a_write_with_no_free_connection_is_unavailable_pool(store: Any) -> None
             store.replace_document(write, expected_token=ANY_TOKEN)
     finally:
         store._conn = real
+
+
+def test_a_conflict_on_the_first_write_leaves_the_store_writable(store: Any) -> None:
+    """The rolled-back first write also rolled back the tables it created."""
+    assert store.remove_document("a.md", expected_token="t") == "conflict"
+    later = _doc("a.md", [[1, 0, 0]], revision="ta")
+    assert store.replace_document(later, expected_token=ANY_TOKEN) == "published"
+    assert store.tokens() == {"a.md": "ta"}
+
+
+def test_tables_dropped_under_a_writer_are_recreated_by_a_later_write(
+    store: Any, postgres_schema: PostgresSchema
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    store.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+    with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+        for table in ("vector_chunks", "vector_documents", "vector_meta"):
+            admin.execute(
+                sql.SQL("DROP TABLE {}.{}").format(
+                    sql.Identifier(postgres_schema.name), sql.Identifier(table)
+                )
+            )
+    first = _doc("b.md", [[0, 1, 0]], revision="tb")
+    with pytest.raises(StoreUnavailableError):
+        store.replace_document(first, expected_token=ANY_TOKEN)
+    again = _doc("b.md", [[0, 1, 0]], revision="tb")
+    assert store.replace_document(again, expected_token=ANY_TOKEN) == "published"
+    assert store.tokens() == {"b.md": "tb"}
+
+
+def test_the_new_token_is_stored_when_published(store: Any) -> None:
+    store.replace_document(
+        _doc("a.md", [[1, 0, 0]], revision="t1"), expected_token=ANY_TOKEN
+    )
+    store.replace_document(
+        _doc("a.md", [[0, 1, 0]], revision="t2"), expected_token="t1"
+    )
+    assert store.tokens() == {"a.md": "t2"}
+
+
+def test_literal_escape_text_in_metadata_is_stored(store: Any) -> None:
+    text = 'jsonb rejects "\\u0000" in text'
+    write = DocumentRows("a.md", "t", [VectorRow([1, 0, 0], {"content": text})])
+    assert store.replace_document(write, expected_token=ANY_TOKEN) == "published"
+    assert store.rows_for("a.md")[0].metadata["content"] == text
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [
+        {"x": float("nan")},
+        {"x": float("inf")},
+        {"x": -float("inf")},
+        {"x": "lone \ud800 surrogate"},
+        {"lone \udfff key": 1},
+        {"nested": {"deep": ["ok", "nul\x00"]}},
+    ],
+)
+def test_metadata_postgresql_cannot_store_is_refused_before_writing(
+    store: Any, meta: dict[str, Any]
+) -> None:
+    store.replace_document(
+        _doc("a.md", [[1, 0, 0]], revision="old"), expected_token=ANY_TOKEN
+    )
+    bad = DocumentRows("a.md", "new", [VectorRow([1, 0, 0], meta)])
+    with pytest.raises(ValueError):
+        store.replace_document(bad, expected_token=ANY_TOKEN)
+    assert store.tokens() == {"a.md": "old"}
+
+
+@pytest.mark.parametrize("field", ["path", "folder"])
+def test_a_key_too_long_for_postgresql_indexes_is_refused(
+    store: Any, field: str
+) -> None:
+    long = "x" * 3000
+    bad = (
+        _doc(long + ".md", [[1, 0, 0]])
+        if field == "path"
+        else _doc("a.md", [[1, 0, 0]], folder=long)
+    )
+    with pytest.raises(ValueError, match="too long"):
+        store.replace_document(bad, expected_token=ANY_TOKEN)
+    assert store.tokens() == {}
+
+
+def test_a_store_of_unknown_dimension_refuses_writes(
+    postgres_schema: PostgresSchema,
+) -> None:
+    unknown = EmbeddingIdentity("fake", "m", "", "v1", 0)
+    store = PostgresVectorBackend(postgres_schema.dsn).open(
+        postgres_schema.name, unknown
+    )
+    write = DocumentRows("a.md", "t", [])
+    try:
+        with pytest.raises(ValueError, match="dimension"):
+            store.replace_document(write, expected_token=ANY_TOKEN)
+    finally:
+        store.close()
+
+
+def test_a_dimension_only_identity_change_is_incompatible(
+    store: Any, postgres_schema: PostgresSchema
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreIncompatibleError
+
+    store.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+    with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+        admin.execute(
+            sql.SQL(
+                "UPDATE {}.vector_meta SET identity = jsonb_set(identity, '{{dimension}}', '4')"
+            ).format(sql.Identifier(postgres_schema.name))
+        )
+    write = _doc("b.md", [[0, 1, 0]])
+    with pytest.raises(StoreIncompatibleError):
+        store.replace_document(write, expected_token=ANY_TOKEN)
+
+
+class _FailsAtCommit:
+    """A pool stand-in whose transactions roll back at COMMIT with a given error."""
+
+    def __init__(self, pool: Any, exc: Exception) -> None:
+        self._pool = pool
+        self._exc = exc
+
+    def connection(self) -> Any:
+        import contextlib
+
+        @contextlib.contextmanager
+        def lend() -> Iterator[Any]:
+            with self._pool.connection() as real:
+                yield _RollsBackAtCommit(real, self._exc)
+
+        return lend()
+
+
+class _RollsBackAtCommit:
+    def __init__(self, conn: Any, exc: Exception) -> None:
+        self._conn = conn
+        self._exc = exc
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+    def transaction(self) -> Any:
+        import contextlib
+
+        @contextlib.contextmanager
+        def tx() -> Iterator[None]:
+            with self._conn.transaction():
+                yield
+                raise psycopg.Rollback
+            raise self._exc
+
+        return tx()
+
+
+@pytest.mark.parametrize(
+    ("sqlstate", "reason"),
+    [("40001", "error"), ("57014", "timeout"), ("53100", "connect")],
+)
+def test_a_commit_postgresql_rolled_back_is_not_commit_unknown(
+    store: Any, sqlstate: str, reason: str
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    real = store._conn
+    store._conn = real._replace(
+        pool=_FailsAtCommit(real.pool, psycopg.errors.lookup(sqlstate)("rolled back"))
+    )
+    write = _doc("a.md", [[1, 0, 0]], revision="ta")
+    try:
+        with pytest.raises(StoreUnavailableError, match=f"reason={reason}"):
+            store.replace_document(write, expected_token=ANY_TOKEN)
+    finally:
+        store._conn = real
+    assert store.tokens() == {}
+
+
+def test_a_backend_killed_before_commit_rolled_back_and_the_pool_recovers(
+    store: Any, postgres_schema: PostgresSchema, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import markdown_vault_mcp.stores.postgres_vectors as module
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    store.replace_document(
+        _doc("a.md", [[1, 0, 0]], revision="ta"), expected_token=ANY_TOKEN
+    )
+    real_write = module.write_document
+
+    def write_then_die(conn: Any, **kwargs: Any) -> None:
+        real_write(conn, **kwargs)
+        pid = conn.execute("SELECT pg_backend_pid()").fetchone()[0]
+        with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+            admin.execute("SELECT pg_terminate_backend(%s, 5000)", (pid,))
+
+    monkeypatch.setattr(module, "write_document", write_then_die)
+    write = _doc("a.md", [[0, 1, 0]], revision="tb")
+    # PostgreSQL answers the COMMIT with 57P01 (admin_shutdown): it reported
+    # an error for the command, so the write rolled back; not commit_unknown.
+    with pytest.raises(StoreUnavailableError, match="reason=connect"):
+        store.replace_document(write, expected_token=ANY_TOKEN)
+    monkeypatch.undo()
+    assert store.tokens() == {"a.md": "ta"}  # nothing landed; the pool still serves
+
+
+def test_ordinary_nested_metadata_is_stored(store: Any) -> None:
+    meta = {
+        "n": 1,
+        "f": 0.5,
+        "flag": True,
+        "none": None,
+        "pair": ("a", "b"),
+        "deep": {"k": [1, "x"]},
+        "big": 1e20,
+        "negzero": -0.0,
+        "keys": {7: "seven"},
+    }
+    write = DocumentRows("a.md", "t", [VectorRow([1, 0, 0], meta)])
+    assert store.replace_document(write, expected_token=ANY_TOKEN) == "published"
+    stored = store.rows_for("a.md")[0].metadata
+    assert stored["pair"] == ["a", "b"]  # jsonb has no tuples
+    assert stored["deep"] == {"k": [1, "x"]}
+    assert stored["big"] == 10**20
+    assert isinstance(stored["big"], int)  # jsonb numeric loses the float
+    assert math.copysign(1, stored["negzero"]) == 1  # and the sign of zero
+    assert stored["keys"] == {"7": "seven"}

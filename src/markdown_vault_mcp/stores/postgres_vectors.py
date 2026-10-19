@@ -14,7 +14,6 @@ PostgreSQL, pgvector and psycopg is in
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
@@ -22,7 +21,6 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 try:
     import psycopg
     from psycopg import sql
-    from psycopg.types.json import Jsonb
     from psycopg_pool import PoolTimeout
 
     from markdown_vault_mcp.stores._postgres import (
@@ -49,6 +47,11 @@ except ImportError as exc:  # pragma: no cover - exercised in a subprocess
 from markdown_vault_mcp.exceptions import ReadOnlyError, StoreIncompatibleError
 from markdown_vault_mcp.stores._identity import served_identity
 from markdown_vault_mcp.stores._postgres_lease import LeaseHandle, LeaseRegistry
+from markdown_vault_mcp.stores._postgres_rows import (
+    check_key,
+    chunk_values,
+    require_dimension,
+)
 from markdown_vault_mcp.stores._postgres_tables import (
     Layout,
     Meta,
@@ -65,7 +68,6 @@ from markdown_vault_mcp.stores._postgres_tables import (
     where,
     write_document,
 )
-from markdown_vault_mcp.stores._resident import row_metadata, row_vectors
 from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily
 
@@ -121,15 +123,13 @@ class PostgresVectorStore:
         identity: EmbeddingIdentity,
         read_only: bool,
         connection: _Connection,
-        reset_pending: bool = False,
-        tables_ready: bool = False,
+        state: _WriteState | None = None,
     ) -> None:
         self._schema = schema
         self._identity = identity
         self._read_only = read_only
         self._conn = connection
-        self._reset_pending = reset_pending
-        self._tables_ready = tables_ready
+        self._state = state if state is not None else _WriteState()
         self._closed = False
 
     def __repr__(self) -> str:
@@ -203,7 +203,7 @@ class PostgresVectorStore:
         """
         if self._closed:
             raise RuntimeError("The vector store is closed.")
-        if self._reset_pending:
+        if self._state.reset_pending:
             return empty
         try:
             with self._conn.pool.connection() as conn, conn.transaction():
@@ -267,7 +267,7 @@ class PostgresVectorStore:
                 another; with ``commit_unknown`` the write may have landed.
         """
         self._ensure_lease()
-        chunks = _chunk_values(document, self._identity.dimension)
+        chunks = chunk_values(document, self._identity.dimension)
 
         def work(conn: psycopg.Connection[Any]) -> PublicationOutcome:
             if token_conflicts(
@@ -290,6 +290,8 @@ class PostgresVectorStore:
     ) -> PublicationOutcome:
         """Remove *path*'s rows and token, durably, with the same condition (raises as :meth:`replace_document`)."""
         self._ensure_lease()
+        require_dimension(self._identity.dimension)
+        check_key(path, what="path", path=path)
 
         def work(conn: psycopg.Connection[Any]) -> PublicationOutcome:
             if token_conflicts(
@@ -323,9 +325,12 @@ class PostgresVectorStore:
                 schema=self._schema,
             )
         except psycopg.Error as exc:
+            if isinstance(exc, psycopg.errors.UndefinedTable):
+                self._state.tables_ready = False  # dropped under us: recreate next time
             failure = self._write_failure(exc, committing=progress.committing)
         else:
-            self._tables_ready = True
+            if outcome == "published":
+                self._state.tables_ready = True  # a conflict rolled any CREATE back
             return outcome
         raise failure from None
 
@@ -337,8 +342,13 @@ class PostgresVectorStore:
         """Inside the transaction: durability, tables, the meta lock and identity, then *work*."""
         make_durable(conn, lock_timeout_ms=_WRITE_LOCK_TIMEOUT_MS)
         if (
-            not self._tables_ready
-            and check_layout(conn, schema=self._schema, extension=self._conn.extension)
+            not self._state.tables_ready
+            and check_layout(
+                conn,
+                schema=self._schema,
+                extension=self._conn.extension,
+                action="written",
+            )
             == "absent"
         ):
             create_tables(
@@ -350,18 +360,26 @@ class PostgresVectorStore:
         meta = lock_meta(conn, schema=self._schema)
         if meta.identity != self._identity:
             raise StoreIncompatibleError(
-                f"Vector store at {where(self._schema)} holds {meta.identity}, not {self._identity}; nothing written.",
+                f"Vector store at {where(self._schema)} holds {meta.identity}, "
+                f"not {self._identity}; nothing written.",
                 backend=BACKEND_NAME,
                 location=self._schema,
             )
         return work(conn)
 
     def _write_failure(self, exc: psycopg.Error, *, committing: bool) -> Exception:
-        """The outcome of a failed write; a lost commit is ``commit_unknown``."""
-        if committing and isinstance(exc, psycopg.OperationalError):
+        """The outcome of a failed write.
+
+        Only a lost connection while committing (no SQLSTATE, or class ``08``)
+        leaves the outcome unknown; an error PostgreSQL reports at COMMIT (a
+        serialization failure, a timeout, a full disk) rolled the write back.
+        """
+        lost = exc.sqlstate is None or exc.sqlstate.startswith("08")
+        if committing and lost:
             return unavailable(
-                f"The connection to PostgreSQL was lost while committing a write to schema "
-                f"{self._schema}; the write may have landed: {exc}",
+                f"The connection to PostgreSQL was lost while committing a write to "
+                f"schema {self._schema}; the write may have landed: "
+                f"{str(exc).rstrip()}",
                 reason="commit_unknown",
                 schema=self._schema,
             )
@@ -382,46 +400,26 @@ class PostgresVectorStore:
                 self._conn.lease.release()
 
 
-def _chunk_values(
-    document: DocumentRows, dimension: int
-) -> list[tuple[str, int, str, Any, Jsonb]]:
-    """Validate *document* and return its ``vector_chunks`` rows; nothing is written.
-
-    Raises:
-        ValueError: If a row is of another dimension, not finite, its metadata is
-            not JSON, or the path, a folder or the metadata holds a NUL character,
-            which PostgreSQL text cannot store.
-    """
-    if "\x00" in document.path:
-        raise ValueError(
-            f"{document.path!r}: PostgreSQL cannot store a NUL character in a path."
-        )
-    vectors = row_vectors(document.rows, dimension)
-    rows = []
-    for ordinal, (meta, vector) in enumerate(
-        zip(row_metadata(document), vectors, strict=True)
-    ):
-        folder = str(meta.get("folder") or "")
-        _refuse_unstorable(document.path, folder, meta)
-        rows.append((document.path, ordinal, folder, vector, Jsonb(meta)))
-    return rows
-
-
-def _refuse_unstorable(path: str, folder: str, meta: dict[str, Any]) -> None:
-    """Raise when *meta* is not JSON, or *folder* or *meta* holds a NUL character."""
-    try:
-        encoded = json.dumps(meta, ensure_ascii=False)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Row metadata of {path!r} cannot be stored: {exc}") from exc
-    if "\x00" in folder or "\x00" in encoded or "\\u0000" in encoded:
-        raise ValueError(f"Row of {path!r}: PostgreSQL cannot store a NUL character.")
-
-
 @dataclass
 class _Progress:
     """How far a write transaction got: whether its commit had begun."""
 
     committing: bool = False
+
+
+@dataclass
+class _WriteState:
+    """What a writer knows about its tables.
+
+    Attributes:
+        reset_pending: An ``open_fresh`` store whose first write has not
+            landed (child 5b resets the tables then).
+        tables_ready: The store's tables are known to exist, so a write need
+            not check for them.
+    """
+
+    reset_pending: bool = False
+    tables_ready: bool = False
 
 
 class PostgresVectorBackend:
@@ -566,8 +564,9 @@ class PostgresVectorBackend:
             identity=state.identity,
             read_only=request.read_only,
             connection=_Connection(pool, conninfo, extension, lease),
-            reset_pending=request.fresh,
-            tables_ready=state.layout == "present",
+            state=_WriteState(
+                reset_pending=request.fresh, tables_ready=state.layout == "present"
+            ),
         )
 
 
