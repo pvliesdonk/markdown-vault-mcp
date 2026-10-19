@@ -51,6 +51,9 @@ from markdown_vault_mcp.stores._postgres_tables import (
     Meta,
     check_layout,
     read_meta,
+    stored_count,
+    stored_rows,
+    stored_tokens,
     where,
 )
 from markdown_vault_mcp.stores.registry import register_backend
@@ -61,6 +64,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from psycopg_pool import ConnectionPool
+
+    from markdown_vault_mcp.types import RevisionToken, VectorRow
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +146,25 @@ class PostgresVectorStore:
             StoreUnavailableError: If PostgreSQL cannot be read.
         """
         return self._reading(lambda _conn, meta: meta.generation, 0)
+
+    @property
+    def count(self) -> int:
+        """The number of stored rows (a query; see :meth:`_reading` for errors)."""
+        return self._reading(
+            lambda conn, _meta: stored_count(conn, schema=self._schema), 0
+        )
+
+    def tokens(self) -> dict[str, RevisionToken | None]:
+        """Each stored document's token (a query; see :meth:`_reading` for errors)."""
+        return self._reading(
+            lambda conn, _meta: stored_tokens(conn, schema=self._schema), {}
+        )
+
+    def rows_for(self, path: str) -> list[VectorRow]:
+        """*path*'s rows, vectors normalised, in storage order (a query)."""
+        return self._reading(
+            lambda conn, _meta: stored_rows(conn, schema=self._schema, path=path), []
+        )
 
     def _reading(
         self, read: Callable[[psycopg.Connection[Any], Meta], _T], empty: _T
