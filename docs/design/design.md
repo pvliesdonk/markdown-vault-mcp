@@ -4166,7 +4166,11 @@ writers would need. A publish is one transaction that raises
 `remote_write`) and leaves `on` and `remote_apply` alone, since
 `SET LOCAL … = on` would lower `remote_apply`; `publish_generation`
 deletes rather than truncates, so
-readers keep the previous generation until it commits. A connection lost
+readers keep the previous generation until it commits. Rows are checked before any transaction: another
+dimension, a non-finite value, metadata that is not JSON, or a `NUL`
+character (which PostgreSQL text and `jsonb` cannot hold, unlike SQLite)
+raise `ValueError` and change nothing, so the reconciler keeps the old
+rows. A connection lost
 during `COMMIT` raises *unavailable* with `reason=commit_unknown`, never a
 result; the store retries no write, and the reconciler's next pass reads
 the tokens and finds the commit landed or embeds again. `checkpoint()`

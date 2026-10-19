@@ -61,6 +61,10 @@ sources:
     title: PostgreSQL 15.0 release notes
     resource: https://www.postgresql.org/docs/release/15.0/
     accessed: 2026-10-18
+  - id: pg-json-types
+    title: JSON Types (PostgreSQL 17)
+    resource: https://www.postgresql.org/docs/17/datatype-json.html
+    accessed: 2026-10-19
   - id: pg-locks-view
     title: pg_locks (PostgreSQL 17)
     resource: https://www.postgresql.org/docs/17/view-pg-locks.html
@@ -193,6 +197,11 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - `CREATE SCHEMA name AUTHORIZATION role` creates a schema owned by `role`; by default `PUBLIC` has no privileges on a schema, and `CONNECT` and `TEMPORARY` on a database. [source: pg-schemas] [source: pg-privileges]
 - `SET LOCAL` lasts until the end of the current transaction, committed or not; outside a transaction block it warns and has no effect. [source: pg-set]
 
+### JSON and text
+
+- `jsonb` rejects `\u0000`, "because that cannot be represented in PostgreSQL's `text` type"; a JSON string maps to `text`, where `\u0000` is disallowed. [source: pg-json-types] [pins: tests/test_stores_postgres_writes.py::test_rows_that_cannot_be_stored_change_nothing]
+- `jsonb` keeps neither key order, whitespace nor duplicate keys (the last value of a duplicated key wins); `json` stores the input text exactly. [source: pg-json-types]
+
 ### Transactions and snapshots
 
 - A `REPEATABLE READ` transaction sees a snapshot taken at its first non-transaction-control statement, the same for every later statement; `READ COMMITTED` takes one per statement. [source: pg-isolation]
@@ -205,7 +214,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 
 ### Locks
 
-- `SELECT … FOR UPDATE` blocks other transactions' `UPDATE`, `DELETE` and `FOR UPDATE`/`FOR SHARE` of those rows until it ends, and does not block plain reads. [source: pg-explicit-locking]
+- `SELECT … FOR UPDATE` blocks other transactions' `UPDATE`, `DELETE` and `FOR UPDATE`/`FOR SHARE` of those rows until it ends, and does not block plain reads. [source: pg-explicit-locking] [pins: tests/test_stores_postgres_writes.py::test_lock_meta_returns_the_row_and_holds_it, tests/test_stores_postgres_writes.py::test_a_write_behind_a_held_meta_row_times_out]
 - In `REPEATABLE READ`, `FOR UPDATE` on a row changed since the transaction began raises an error. [source: pg-explicit-locking]
 - A session-level advisory lock is held until released or the session ends, survives a rollback, and is counted per acquisition. [source: pg-explicit-locking]
 - Advisory locks are identified by one 64-bit key or two 32-bit keys, and "these two key spaces do not overlap". [source: pg-admin-functions]
@@ -223,7 +232,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - Every non-`off` value of `synchronous_commit` waits for the local WAL flush; `off` may lose recent commits after a crash but leaves the database consistent. [source: pg-wal-config]
 - `remote_apply`, `on` and `remote_write` differ only in what they wait for from synchronous standbys; without `synchronous_standby_names` they equal `on`. [source: pg-wal-config]
 - The setting in effect at commit decides a transaction's behaviour, so `SET LOCAL synchronous_commit` changes it for one transaction. [source: pg-wal-config]
-- `SET LOCAL synchronous_commit = on` under a configured `remote_apply` shows `on` inside the transaction and `remote_apply` after it: it lowers the level for that transaction. [observed: probe 6]
+- `SET LOCAL synchronous_commit = on` under a configured `remote_apply` shows `on` inside the transaction and `remote_apply` after it: it lowers the level for that transaction. [observed: probe 6] [pins: tests/test_stores_postgres_writes.py::test_make_durable_raises_only_weaker_settings]
 - `fsync = off` can cause unrecoverable corruption after a crash or power failure, and is set only in the configuration file or on the command line. [source: pg-wal-config]
 - A role without special privileges can read `fsync` and `synchronous_commit` with `SHOW`. [observed: probe 11]
 
@@ -317,6 +326,7 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
   schema in the path is silently ignored.
 - A new generation deletes the old rows rather than truncating them, so
   readers keep the previous generation until it commits.
+- A row whose path, folder or metadata holds a `NUL` character is refused with `ValueError` before any write, where the SQLite store would keep it: PostgreSQL's `text` and `jsonb` cannot hold one.
 - `synchronous_commit` is raised to `on` from any weaker value (`off`,
   `local`, `remote_write`) and left alone at `on` or `remote_apply`, because
   `SET LOCAL … = on` would lower a configured `remote_apply`.
