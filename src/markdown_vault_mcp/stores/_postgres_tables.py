@@ -217,7 +217,22 @@ _COPY_CHUNKS = (
 )
 
 
-def replace_generation(
+def empty_rows(conn: psycopg.Connection[Any], *, schema: str) -> None:
+    """Delete every document and chunk, in the caller's transaction.
+
+    ``DELETE``, not ``TRUNCATE``: readers keep the previous generation
+    until commit (spec §5.2).
+
+    Args:
+        conn: A connection inside the write transaction.
+        schema: The vault schema.
+    """
+    s = sql.Identifier(schema)
+    conn.execute(sql.SQL("DELETE FROM {}.vector_chunks").format(s))
+    conn.execute(sql.SQL("DELETE FROM {}.vector_documents").format(s))
+
+
+def load_generation(
     conn: psycopg.Connection[Any],
     *,
     schema: str,
@@ -225,13 +240,14 @@ def replace_generation(
     documents: Sequence[tuple[str, str | None]],
     chunks: Sequence[tuple[str, int, str, Any, Jsonb]],
 ) -> int:
-    """Replace every row with *documents* and *chunks* under *identity*.
+    """Load *documents* and *chunks* into emptied tables and record *identity*.
 
-    ``DELETE``, not ``TRUNCATE``: readers keep the previous generation
-    until commit (spec §5.2). The rows go in by binary ``COPY``.
+    The rows go in by binary ``COPY``; the meta row takes the identity and
+    the next generation number.
 
     Args:
-        conn: A connection inside the write transaction, the meta row locked.
+        conn: A connection inside the write transaction, the meta row
+            locked and the rows emptied (:func:`empty_rows`).
         schema: The vault schema.
         identity: The new generation's identity.
         documents: ``(path, token)`` per document.
@@ -242,8 +258,6 @@ def replace_generation(
         The new generation number.
     """
     s = sql.Identifier(schema)
-    conn.execute(sql.SQL("DELETE FROM {}.vector_chunks").format(s))
-    conn.execute(sql.SQL("DELETE FROM {}.vector_documents").format(s))
     with conn.cursor() as cur:
         with cur.copy(sql.SQL(_COPY_DOCUMENTS).format(s)) as copy:
             copy.set_types(["text", "text"])

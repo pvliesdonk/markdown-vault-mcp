@@ -4120,7 +4120,11 @@ our names, `42809`; another object depending on our tables, `2BP01`) is
 reset: every format keeps `vector_meta.format_version` as an integer
 column, and the layout check reads it before judging the columns, so a
 newer release's store is *unsupported* rather than *corrupt*, which an
-owner would rebuild over. `identity`
+owner would rebuild over. What an operator adds to our tables (an index,
+a dimension typmod such as `vector(768)`) is outside the layout check, so
+an open never calls a tuned store corrupt; an intact store keeps those
+additions through a reset, and a typmod then refuses a rebuild at another
+dimension (`22000`, *unavailable*) until the operator removes it. `identity`
 is fixed at open and changed only by the store's own publishes, as in the
 streamed SQLite store; a read checks the meta row's identity, and takes
 the dimension from it. A schema on the path is trusted with every role that may create in
@@ -4195,7 +4199,8 @@ first write's `CREATE` leaves the next write to create them again. A connection 
 during `COMMIT` (no reply, or class `08`) raises *unavailable* with
 `reason=commit_unknown`, never a result, and the store then reads the
 database as it is: a fresh store's pending reset is dropped, so a first
-write that landed is never reset again. An error PostgreSQL reports at
+write that landed is never reset again, and a generation of another
+identity is adopted once the meta row shows it landed. An error PostgreSQL reports at
 `COMMIT` rolled the write back and is classified as usual; the store retries no write, and the reconciler's next pass reads
 the tokens and finds the commit landed or embeds again. `checkpoint()`
 does nothing.

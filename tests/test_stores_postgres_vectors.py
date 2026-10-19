@@ -723,10 +723,10 @@ def test_a_writer_warns_when_postgresql_runs_without_fsync(
         pytest.skip(
             "changes a server setting: runs only against the harness's own container"
         )
-    with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:  # superuser
-        admin.execute("ALTER SYSTEM SET fsync = off")
-        admin.execute("SELECT pg_reload_conf()")
     try:
+        with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:
+            admin.execute("ALTER SYSTEM SET fsync = off")  # superuser
+            admin.execute("SELECT pg_reload_conf()")
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:  # the reload is asynchronous
             with psycopg.connect(postgres_schema.dsn) as probe:

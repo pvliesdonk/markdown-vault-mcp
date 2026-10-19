@@ -790,19 +790,23 @@ def test_a_reset_that_cannot_drop_changes_nothing(
     assert kept == [("old.md",)]
 
 
+@pytest.mark.parametrize("other_columns", [False, True], ids=["same", "other"])
 def test_a_fresh_store_over_a_newer_format_refuses_its_first_write(
-    postgres_schema: PostgresSchema,
+    postgres_schema: PostgresSchema, other_columns: bool
 ) -> None:
     from markdown_vault_mcp.exceptions import StoreUnsupportedSchemaError
 
     _planted_old(postgres_schema)
+    s = sql.Identifier(postgres_schema.name)
     with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
         admin.execute(
-            sql.SQL("UPDATE {}.vector_meta SET format_version = %s").format(
-                sql.Identifier(postgres_schema.name)
-            ),
+            sql.SQL("UPDATE {}.vector_meta SET format_version = %s").format(s),
             (pg.FORMAT_VERSION + 1,),
         )
+        if other_columns:  # judged first, this would be corrupt and dropped
+            admin.execute(
+                sql.SQL("ALTER TABLE {}.vector_chunks ADD COLUMN later int").format(s)
+            )
     store = PostgresVectorBackend(postgres_schema.dsn).open_fresh(
         postgres_schema.name, _ID
     )
@@ -987,7 +991,7 @@ def test_a_reader_during_a_generation_sees_the_previous_one(
         postgres_schema.dsn, pool=PoolSettings(statement_timeout_s=3)
     ).open(postgres_schema.name, _ID, owns_files=False)
     copied, finish = threading.Event(), threading.Event()
-    real = pv.replace_generation
+    real = pv.load_generation
 
     def copy_then_wait(*args: Any, **kwargs: Any) -> int:
         generation = real(*args, **kwargs)
@@ -995,7 +999,7 @@ def test_a_reader_during_a_generation_sees_the_previous_one(
         finish.wait(10)
         return generation
 
-    monkeypatch.setattr(pv, "replace_generation", copy_then_wait)
+    monkeypatch.setattr(pv, "load_generation", copy_then_wait)
     writer = threading.Thread(
         target=store.publish_generation, args=(_ID, [_doc("b.md", [[0, 1, 0]])])
     )
@@ -1016,20 +1020,21 @@ def test_a_generation_outlasting_the_statement_timeout_publishes(
     from markdown_vault_mcp.stores import postgres_vectors as pv
     from markdown_vault_mcp.stores._postgres import PoolSettings
 
-    real = pv.replace_generation
+    real = pv.load_generation
 
     def slow(conn: Any, **kwargs: Any) -> int:
         conn.execute("SELECT pg_sleep(0.6)")
         return real(conn, **kwargs)
 
-    monkeypatch.setattr(pv, "replace_generation", slow)
+    monkeypatch.setattr(pv, "load_generation", slow)
     store = PostgresVectorBackend(
-        postgres_schema.dsn, pool=PoolSettings(statement_timeout_s=0.3)
+        postgres_schema.dsn, pool=PoolSettings(pool_size=1, statement_timeout_s=0.3)
     ).open(postgres_schema.name, _ID)
     try:
         store.publish_generation(_ID, [_doc("a.md", [[1, 0, 0]])])
         assert store.generation == 1
-        assert store.count == 1  # reads keep their timeout and still work
+        with store._conn.pool.connection() as conn:  # the one pooled connection
+            assert conn.execute("SHOW statement_timeout").fetchone() == ("300ms",)
     finally:
         store.close()
 
@@ -1082,3 +1087,88 @@ def test_a_generation_is_logged(store: Any, caplog: pytest.LogCaptureFixture) ->
         if r.msg.startswith("postgres_vector_store_generation_published ")
     ]
     assert event.args[1:] == (1, 1, 2)  # generation, documents, rows
+
+
+def test_a_lost_reply_on_a_new_identity_is_adopted_once_it_shows(store: Any) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    real = store._conn
+    store._conn = real._replace(pool=_LosesTheReply(real.pool))
+    generation = [_doc("c.md", [[0, 1]], revision="tc")]
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=commit_unknown"):
+            store.publish_generation(_OTHER, generation)
+    finally:
+        store._conn = real
+    # It landed: the next read finds the attempted identity and adopts it.
+    assert store.tokens() == {"c.md": "tc"}
+    assert store.identity == _OTHER
+    store.replace_document(_doc("d.md", [[1, 0]]), expected_token=None)
+    assert store.tokens() == {"c.md": "tc", "d.md": "t1"}
+
+
+def test_a_lost_reply_identity_is_adopted_by_the_next_write_too(store: Any) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    real = store._conn
+    store._conn = real._replace(pool=_LosesTheReply(real.pool))
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=commit_unknown"):
+            store.publish_generation(_OTHER, [])
+    finally:
+        store._conn = real
+    store.remove_document("gone.md", expected_token=ANY_TOKEN)
+    assert store.identity == _OTHER
+
+
+class _LosesBeforeCommit:
+    """A pool stand-in whose connections lose the line before the commit lands."""
+
+    def __init__(self, pool: Any) -> None:
+        self._pool = pool
+
+    def connection(self) -> Any:
+        import contextlib
+
+        @contextlib.contextmanager
+        def lend() -> Iterator[Any]:
+            with self._pool.connection() as real:
+                yield _RollsBackThenLoses(real)
+
+        return lend()
+
+
+class _RollsBackThenLoses:
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+    def transaction(self) -> Any:
+        import contextlib
+
+        @contextlib.contextmanager
+        def tx() -> Iterator[None]:
+            with self._conn.transaction():
+                yield
+                raise psycopg.OperationalError("server closed the connection")
+
+        return tx()
+
+
+def test_an_attempted_identity_that_did_not_land_is_not_adopted(store: Any) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    store.replace_document(_doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+    real = store._conn
+    store._conn = real._replace(pool=_LosesBeforeCommit(real.pool))
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=commit_unknown"):
+            store.publish_generation(_OTHER, [])
+    finally:
+        store._conn = real
+    assert store.tokens() == {"a.md": "t1"}  # it did not land: still _ID
+    assert store.identity == _ID
+    store.replace_document(_doc("b.md", [[0, 1, 0]]), expected_token=None)
+    assert store.identity == _ID
