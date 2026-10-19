@@ -80,14 +80,13 @@ def test_lock_meta_returns_the_row_and_holds_it(
     with conn.transaction():
         meta = tables.lock_meta(conn, schema=name)
         assert meta.identity == _ID
+        locking = sql.SQL("SELECT 1 FROM {}.vector_meta FOR UPDATE").format(
+            sql.Identifier(name)
+        )
         with psycopg.connect(postgres_schema.dsn, autocommit=True) as other:
             other.execute("SET lock_timeout = 200")
             with pytest.raises(psycopg.errors.LockNotAvailable):
-                other.execute(
-                    sql.SQL("SELECT 1 FROM {}.vector_meta FOR UPDATE").format(
-                        sql.Identifier(name)
-                    )
-                )
+                other.execute(locking)
 
 
 def test_reads_of_an_empty_store(postgres_schema: PostgresSchema) -> None:
