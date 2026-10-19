@@ -100,6 +100,18 @@ def where(schema: str) -> str:
     return f"{schema!r} in PostgreSQL"
 
 
+_INTEGER_TYPES = frozenset({"int2", "int4", "int8"})
+
+
+def _unsupported(version: int, schema: str) -> StoreUnsupportedSchemaError:
+    return StoreUnsupportedSchemaError(
+        f"Vector store at {where(schema)} has format_version {version}; this "
+        f"version reads up to {FORMAT_VERSION}.",
+        backend=BACKEND_NAME,
+        location=schema,
+    )
+
+
 def _corrupt(message: str, schema: str) -> StoreCorruptError:
     return StoreCorruptError(
         f"Vector store at {where(schema)} {message}",
@@ -149,17 +161,48 @@ def check_layout(
         ignored); ``"present"`` when all three do, with exactly their columns.
 
     Raises:
+        StoreUnsupportedSchemaError: If ``vector_meta`` records a newer
+            format, whatever the columns.
         StoreCorruptError: If some exist and some do not, one is not an
             ordinary table, or a column set or type differs.
         StoreUnavailableError: If the catalogue cannot be read.
     """
     try:
         rows = conn.execute(_CATALOGUE, (schema, list(TABLES))).fetchall()
+        _refuse_newer_format(conn, rows, schema=schema)
     except psycopg.Error as exc:
         failure = classify_error(exc, schema=schema, action=action)
     else:
         return _judge_layout(rows, schema=schema, extension=extension)
     raise failure from None
+
+
+def _refuse_newer_format(
+    conn: psycopg.Connection[Any], rows: list[tuple[Any, ...]], *, schema: str
+) -> None:
+    """Refuse a store a newer release wrote, before its columns are judged.
+
+    A newer format may change the columns; judged first, it would read as
+    corrupt, and an owner rebuilds over a corrupt store. Every format keeps
+    ``vector_meta.format_version`` as an integer column, so it is read
+    whenever it is one.
+    """
+    if not any(
+        relname == "vector_meta"
+        and relkind == "r"
+        and attname == "format_version"
+        and typname in _INTEGER_TYPES
+        for relname, relkind, attname, typname, _ in rows
+    ):
+        return
+    row = conn.execute(
+        sql.SQL("SELECT max(format_version) FROM {}.vector_meta").format(
+            sql.Identifier(schema)
+        )
+    ).fetchone()
+    version = row[0] if row else None
+    if version is not None and version > FORMAT_VERSION:
+        raise _unsupported(int(version), schema)
 
 
 def _judge_layout(
@@ -238,12 +281,7 @@ def _judge_meta(rows: list[tuple[Any, ...]], *, schema: str) -> Meta:
             schema,
         )
     if version > FORMAT_VERSION:
-        raise StoreUnsupportedSchemaError(
-            f"Vector store at {where(schema)} has format_version {version}; this "
-            f"version reads up to {FORMAT_VERSION}.",
-            backend=BACKEND_NAME,
-            location=schema,
-        )
+        raise _unsupported(version, schema)
     identity = identity_from_mapping(
         raw_identity, backend=BACKEND_NAME, where=where(schema), location=schema
     )

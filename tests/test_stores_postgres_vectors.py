@@ -675,3 +675,37 @@ def test_two_backends_on_one_schema_conflict(postgres_schema: PostgresSchema) ->
             other.open(postgres_schema.name, _ID)
     finally:
         first.close()
+
+
+def _alter(schema: PostgresSchema, *statements: str) -> None:
+    with psycopg.connect(schema.dsn, autocommit=True) as admin:
+        for statement in statements:
+            admin.execute(sql.SQL(statement).format(s=sql.Identifier(schema.name)))
+
+
+def test_a_newer_format_with_other_columns_is_unsupported(
+    postgres_schema: PostgresSchema,
+) -> None:
+    _plant(postgres_schema)
+    _alter(
+        postgres_schema,
+        "ALTER TABLE {s}.vector_chunks ADD COLUMN added_later integer",
+        f"UPDATE {{s}}.vector_meta SET format_version = {pg.FORMAT_VERSION + 1}",
+    )
+    backend = PostgresVectorBackend(postgres_schema.dsn)
+    with pytest.raises(StoreUnsupportedSchemaError, match="format_version"):
+        backend.open(postgres_schema.name, _ID)
+
+
+def test_a_non_integer_format_version_is_corrupt_not_read(
+    postgres_schema: PostgresSchema,
+) -> None:
+    _plant(postgres_schema)
+    _alter(
+        postgres_schema,
+        "ALTER TABLE {s}.vector_meta ALTER COLUMN format_version TYPE text",
+        "UPDATE {s}.vector_meta SET format_version = 'two'",
+    )
+    backend = PostgresVectorBackend(postgres_schema.dsn)
+    with pytest.raises(StoreCorruptError, match="other columns"):
+        backend.open(postgres_schema.name, _ID)
