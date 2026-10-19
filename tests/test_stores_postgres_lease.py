@@ -357,3 +357,142 @@ def test_a_lease_connection_that_cannot_be_set_up_is_unavailable(
     closed.close()
     with pytest.raises(StoreUnavailableError, match="reason=connect"):
         leases._prepare(closed, schema=postgres_schema.name, statement_timeout_ms=1000)
+
+
+def test_concurrent_ensures_after_a_loss_both_recover(
+    postgres_schema: PostgresSchema,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Two writers' ensure() on one lost lease: one reconnects, the other waits for it."""
+    import threading
+
+    caplog.set_level(logging.INFO, logger="markdown_vault_mcp.stores._postgres_lease")
+    lease = Lease.acquire(_conninfo(postgres_schema), schema=postgres_schema.name)
+    real_locked = leases._locked_connection
+    both_in = threading.Barrier(2, timeout=5)
+
+    def slow_locked(*args: object, **kwargs: object) -> object:
+        time.sleep(0.3)  # widen the window in which the second ensure() could race
+        return real_locked(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(leases, "_locked_connection", slow_locked)
+    lease._conn.close()
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            both_in.wait()
+            lease.ensure()
+        except BaseException as exc:  # collected for the assertion in the main thread
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    try:
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+        assert errors == []
+        assert not _free(postgres_schema)
+        reacquired = [
+            r
+            for r in caplog.records
+            if r.msg.startswith("postgres_vector_store_lease_reacquired")
+        ]
+        assert len(reacquired) == 1
+    finally:
+        lease.release()
+
+
+def test_a_dropped_schema_logs_no_lost_lease(
+    postgres_server: PostgresServer, caplog: pytest.LogCaptureFixture
+) -> None:
+    from tests.fixtures.postgres import scratch_schema
+
+    caplog.set_level(logging.INFO, logger="markdown_vault_mcp.stores._postgres_lease")
+    with scratch_schema(postgres_server.dsn) as name:
+        lease = Lease.acquire(
+            pg.prepare_conninfo(postgres_server.dsn, schema=name), schema=name
+        )
+        try:
+            with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:
+                admin.execute(
+                    sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(name))
+                )
+            with pytest.raises(StoreNotConfiguredError, match="does not exist"):
+                lease.ensure()
+            events = [r.msg.split()[0] for r in caplog.records]
+            assert "postgres_vector_store_lease_lost" not in events
+        finally:
+            lease.release()
+            with psycopg.connect(postgres_server.dsn, autocommit=True) as admin:
+                admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
+
+
+def test_acquiring_one_schema_does_not_wait_for_another(
+    postgres_server: PostgresServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A slow first acquire on schema A does not block schema B in the same registry."""
+    import threading
+
+    from tests.fixtures.postgres import scratch_schema
+
+    registry = LeaseRegistry()
+    entered_a = threading.Event()
+    finish_a = threading.Event()
+    real_acquire = Lease.acquire
+
+    def gated(conninfo: pg.Conninfo, *, schema: str, **kwargs: object) -> Lease:
+        if schema == slow_name:
+            entered_a.set()
+            assert finish_a.wait(10)
+        return real_acquire(conninfo, schema=schema, **kwargs)  # type: ignore[arg-type]
+
+    with (
+        scratch_schema(postgres_server.dsn) as slow_name,
+        scratch_schema(postgres_server.dsn) as fast_name,
+    ):
+        monkeypatch.setattr(Lease, "acquire", staticmethod(gated))
+        handles: list[object] = []
+        slow = threading.Thread(
+            target=lambda: handles.append(
+                registry.acquire(
+                    pg.prepare_conninfo(postgres_server.dsn, schema=slow_name),
+                    schema=slow_name,
+                )
+            )
+        )
+        slow.start()
+        try:
+            assert entered_a.wait(5)
+            fast_done = threading.Event()
+
+            def acquire_fast() -> None:
+                registry.acquire(
+                    pg.prepare_conninfo(postgres_server.dsn, schema=fast_name),
+                    schema=fast_name,
+                ).release()
+                fast_done.set()
+
+            fast = threading.Thread(target=acquire_fast)
+            fast.start()
+            # Schema B completes while schema A's acquire is still held open.
+            assert fast_done.wait(3)
+            fast.join(timeout=3)
+        finally:
+            finish_a.set()
+            slow.join(timeout=10)
+            for handle in handles:
+                handle.release()  # type: ignore[attr-defined]
+
+
+def test_a_release_to_zero_finishes_before_the_next_acquire(
+    postgres_schema: PostgresSchema,
+) -> None:
+    registry = LeaseRegistry()
+    conninfo = _conninfo(postgres_schema)
+    for _ in range(5):
+        handle = registry.acquire(conninfo, schema=postgres_schema.name)
+        handle.release()
+    assert _free(postgres_schema)

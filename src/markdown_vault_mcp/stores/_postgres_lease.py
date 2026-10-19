@@ -47,11 +47,13 @@ _KEY = (
     " | (SELECT n.oid::bigint FROM pg_catalog.pg_namespace n WHERE n.nspname = %s)"
 )
 _TRY = "SELECT pg_try_advisory_lock(" + _KEY + "), pg_backend_pid()"
+# (does the schema exist, does this backend hold its key)
 _HELD = (
-    "SELECT 1 FROM pg_catalog.pg_locks l WHERE l.locktype = 'advisory'"
-    " AND l.pid = pg_backend_pid() AND l.granted AND l.objsubid = 1"
-    " AND l.classid = %s::oid"
-    " AND l.objid = (SELECT n.oid FROM pg_catalog.pg_namespace n WHERE n.nspname = %s)"
+    "SELECT s.oid IS NOT NULL, EXISTS (SELECT 1 FROM pg_catalog.pg_locks l"
+    " WHERE l.locktype = 'advisory' AND l.pid = pg_backend_pid() AND l.granted"
+    " AND l.objsubid = 1 AND l.classid = %s::oid AND l.objid = s.oid)"
+    " FROM (SELECT (SELECT n.oid FROM pg_catalog.pg_namespace n"
+    " WHERE n.nspname = %s) AS oid) s"
 )
 _HOLDER = (
     "SELECT a.application_name, l.pid FROM pg_catalog.pg_locks l"
@@ -67,8 +69,9 @@ _HOLDER = (
 class Lease:
     """A held writer lease on one vault schema. Construct with :meth:`acquire`.
 
-    ``ensure`` and ``release`` may be called from different threads; a
-    release that lands while ``ensure`` reconnects wins.
+    ``ensure`` and ``release`` may be called from different threads: one
+    ``ensure`` reconnects while concurrent ones wait for it and find the
+    lease held, and a release that lands while ``ensure`` reconnects wins.
     """
 
     def __init__(
@@ -86,7 +89,8 @@ class Lease:
         self._statement_timeout_ms = statement_timeout_ms
         self.pid = pid
         self._released = False
-        self._mutex = threading.Lock()
+        self._mutex = threading.Lock()  # guards the connection and the flag
+        self._reconnecting = threading.Lock()  # one ensure() reconnects at a time
 
     def __repr__(self) -> str:
         """Name the schema and the backend, never the DSN."""
@@ -141,22 +145,25 @@ class Lease:
                 the check fails on a live connection (which keeps the lease).
             StoreNotConfiguredError: If the schema no longer exists.
         """
-        with self._mutex:
-            self._refuse_released()
-            if self._still_held():
-                return
-            logger.warning("postgres_vector_store_lease_lost schema=%s", self._schema)
-            self._conn.close()
-        conn, pid = _locked_connection(
-            self._conninfo,
-            schema=self._schema,
-            statement_timeout_ms=self._statement_timeout_ms,
-        )
-        with self._mutex:
-            if self._released:
-                conn.close()
+        with self._reconnecting:
+            with self._mutex:
                 self._refuse_released()
-            self._conn, self.pid = conn, pid
+                if self._still_held():
+                    return
+                logger.warning(
+                    "postgres_vector_store_lease_lost schema=%s", self._schema
+                )
+                self._conn.close()
+            conn, pid = _locked_connection(
+                self._conninfo,
+                schema=self._schema,
+                statement_timeout_ms=self._statement_timeout_ms,
+            )
+            with self._mutex:
+                if self._released:
+                    conn.close()
+                    self._refuse_released()
+                self._conn, self.pid = conn, pid
         logger.info(
             "postgres_vector_store_lease_reacquired schema=%s pid=%d", self._schema, pid
         )
@@ -172,6 +179,11 @@ class Lease:
         A failure on a connection that is still alive (a timeout, a refused
         privilege, too many connections) is reported, not taken as a lost
         lease: the lock may well still be held.
+
+        Raises:
+            StoreNotConfiguredError: If the schema no longer exists (said
+                before any reconnect, so it is never logged as a lost lease).
+            StoreUnavailableError: If the check fails on a live connection.
         """
         if self._conn.closed or self._conn.broken:
             return False
@@ -180,9 +192,15 @@ class Lease:
         except psycopg.Error as exc:
             if self._conn.closed or self._conn.broken:
                 return False
-            failure = classify_error(exc, schema=self._schema, action="written")
+            failure: Exception = classify_error(
+                exc, schema=self._schema, action="written"
+            )
         else:
-            return row is not None
+            if row is not None and row[0]:
+                return bool(row[1])
+            failure = not_configured(
+                f"Schema {self._schema} does not exist.", schema=self._schema
+            )
         raise failure from None
 
     def release(self) -> None:
@@ -227,11 +245,22 @@ class LeaseHandle:
 
 
 class LeaseRegistry:
-    """The leases one process (one backend) holds, shared per schema."""
+    """The leases one process (one backend) holds, shared per schema.
+
+    Taking or giving back a schema's lease holds that schema's own lock for
+    the whole step (so a last release finishes before the next acquire
+    starts), never the registry's, so schemas never wait on each other.
+    """
 
     def __init__(self) -> None:
         self._held: dict[str, tuple[Lease, int]] = {}
-        self._mutex = threading.Lock()
+        self._schema_locks: dict[str, threading.Lock] = {}
+        self._mutex = threading.Lock()  # guards the two dictionaries only
+
+    def _schema_lock(self, schema: str) -> threading.Lock:
+        """Return *schema*'s own lock, creating it once."""
+        with self._mutex:
+            return self._schema_locks.setdefault(schema, threading.Lock())
 
     def acquire(
         self,
@@ -246,25 +275,28 @@ class LeaseRegistry:
             StoreUnavailableError: As :meth:`Lease.acquire`.
             StoreNotConfiguredError: As :meth:`Lease.acquire`.
         """
-        with self._mutex:
-            held = self._held.get(schema)
+        with self._schema_lock(schema):
+            with self._mutex:
+                held = self._held.get(schema)
             if held is None:
                 lease = Lease.acquire(
                     conninfo, schema=schema, statement_timeout_ms=statement_timeout_ms
                 )
                 held = (lease, 0)
-            self._held[schema] = (held[0], held[1] + 1)
+            with self._mutex:
+                self._held[schema] = (held[0], held[1] + 1)
             return LeaseHandle(self, schema, held[0])
 
     def _give_back(self, schema: str) -> None:
         """Drop one share of *schema*'s lease; release it with the last."""
-        with self._mutex:
-            lease, count = self._held[schema]
-            if count > 1:
-                self._held[schema] = (lease, count - 1)
-                return
-            del self._held[schema]
-        lease.release()
+        with self._schema_lock(schema):
+            with self._mutex:
+                lease, count = self._held[schema]
+                if count > 1:
+                    self._held[schema] = (lease, count - 1)
+                    return
+                del self._held[schema]
+            lease.release()
 
 
 def _locked_connection(

@@ -4154,7 +4154,10 @@ conflicts with itself, while a second backend, as another process has, is
 refused. The lease connection sets `idle_session_timeout` to 0 (it idles
 between writes by design) and carries the store's statement and lock
 timeouts; a failure on a live lease connection is reported, never taken
-for a lost lease. Every write also
+for a lost lease, and a dropped schema is *not configured*, never logged
+as a lost lease. Concurrent `ensure` calls share one reconnect, so a
+writer never refuses itself after a blip, and each schema's acquire and
+release hold only that schema's lock. Every write also
 locks the `vector_meta` row `FOR UPDATE`, and `replace_document` and
 `remove_document` compare the document's stored token, so writers are
 serialised by the database and the lease is policy: #1812 holds what more
