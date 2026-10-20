@@ -10,6 +10,7 @@ import pytest
 
 from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
 from markdown_vault_mcp.types import ANY_TOKEN, EmbeddingIdentity
+from tests.fixtures.source_neutral_contract import SourceNeutralContract
 from tests.fixtures.vector_store_contract import (
     IDENT,
     PersistentVectorStoreContract,
@@ -43,7 +44,9 @@ def _tracked(stores: list[Any], store: Any) -> Any:
     return store
 
 
-class TestPostgresConformance(VectorStoreContract, PersistentVectorStoreContract):
+class TestPostgresConformance(
+    VectorStoreContract, PersistentVectorStoreContract, SourceNeutralContract
+):
     @pytest.fixture
     def make_store(
         self, backend: Any, postgres_schema: PostgresSchema, opened: list[Any]
@@ -337,3 +340,12 @@ def test_a_search_whose_connection_dies_midway_is_retried_once(
     results = store.search([1, 0, 0], limit=2, predicate=kill_once)
     assert paths(results) == ["far.md"]  # whole: no duplicate, nothing lost
     assert store.count == 151  # the pool serves again
+
+
+def test_similar_to_a_document_without_rows_is_empty(store: Any) -> None:
+    store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+    store.replace_document(
+        doc("e.md", []), expected_token=ANY_TOKEN
+    )  # a token, no rows
+    assert store.similar_to_document("e.md") == []
+    assert store.similar_to_document("nope.md") == []

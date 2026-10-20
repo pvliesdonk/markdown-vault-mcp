@@ -4206,10 +4206,15 @@ the tokens and finds the commit landed or embeds again. `checkpoint()`
 does nothing.
 
 Reads are one `REPEATABLE READ`, read-only transaction each, starting from
-the meta row, as streamed SQLite reads do. PostgreSQL scores and sorts:
-`ORDER BY embedding <#> q, path, ordinal`, scores `-(embedding <#> q)`
-over normalised rows, so a zero vector scores `0.0` (cosine distance,
-`<=>`, gives `NaN` there and is not used). The folder is a
+the meta row, as streamed SQLite reads do; the query's dimension is the
+one that meta row records, and a query of another dimension or not finite
+is a `ValueError`. PostgreSQL computes `embedding <#> q` once and sorts by
+it, then `path`, then `ordinal`; the vault process negates it as the
+score, over normalised rows, so a zero vector scores `0.0` (cosine
+distance, `<=>`, gives `NaN` there and is not used). A read whose
+connection is lost (no SQLSTATE, class `08`, or `57P01` for a terminated
+backend) is retried once on a fresh connection, since nothing is returned
+until a read completes; writes never are. The folder is a
 `starts_with` condition; a predicate reads an ordered server-side cursor
 in batches until *limit* rows pass, and only metadata reaches the vault
 process. `similar_to_document` returns `[]` for a path with no rows;
