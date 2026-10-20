@@ -349,3 +349,37 @@ def test_similar_to_a_document_without_rows_is_empty(store: Any) -> None:
     )  # a token, no rows
     assert store.similar_to_document("e.md") == []
     assert store.similar_to_document("nope.md") == []
+
+
+def test_a_read_finding_no_free_connection_waits_once_and_is_not_retried(
+    postgres_schema: PostgresSchema, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+    import time
+
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+    from markdown_vault_mcp.stores._postgres import PoolSettings
+
+    settings = PoolSettings(pool_size=1, get_timeout_s=0.5)
+    busy = PostgresVectorBackend(postgres_schema.dsn, pool=settings).open(
+        postgres_schema.name, IDENT
+    )
+    try:
+        with busy._conn.pool.connection():  # the only connection, held
+            started = time.monotonic()
+            with (
+                caplog.at_level(
+                    logging.WARNING, logger="markdown_vault_mcp.stores.postgres_vectors"
+                ),
+                pytest.raises(StoreUnavailableError, match="reason=pool"),
+            ):
+                busy.count  # noqa: B018 - the property is the read
+            waited = time.monotonic() - started
+    finally:
+        busy.close()
+    assert waited < 0.9  # one wait, not two
+    assert not [
+        r
+        for r in caplog.records
+        if r.msg.startswith("postgres_vector_store_read_retried ")
+    ]

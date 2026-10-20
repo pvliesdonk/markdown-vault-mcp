@@ -46,6 +46,13 @@ class SearchRequest:
 def query_unit(vector: Sequence[float], dimension: int) -> Any:
     """Return *vector* as a unit float32 query; a zero query stays zero.
 
+    Args:
+        vector: The query embedding.
+        dimension: The stored dimension, from the meta row.
+
+    Returns:
+        The query as a unit (or zero) float32 vector.
+
     Raises:
         ValueError: If it is not of *dimension*, or not finite.
     """
@@ -64,6 +71,14 @@ def document_mean(conn: psycopg.Connection[Any], *, schema: str, path: str) -> A
     """The unit mean of *path*'s rows; ``None`` when it has none.
 
     A cancelling mean stays zero, so every row then scores ``0.0``.
+
+    Args:
+        conn: A connection inside the read's transaction.
+        schema: The vault schema.
+        path: The document whose rows are averaged.
+
+    Returns:
+        The unit (or zero) float32 mean, or ``None``.
     """
     row = conn.execute(
         sql.SQL("SELECT avg(embedding) FROM {}.vector_chunks WHERE path = %s").format(

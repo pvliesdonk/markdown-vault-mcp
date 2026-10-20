@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, TypeVar
 try:
     import psycopg
     from psycopg import sql
-    from psycopg_pool import PoolTimeout
+    from psycopg_pool import PoolClosed, PoolTimeout, TooManyRequests
 
     from markdown_vault_mcp.stores._postgres import (
         BACKEND_NAME,
@@ -207,7 +207,10 @@ class PostgresVectorStore:
     ) -> list[dict[str, Any]]:
         """Return the rows nearest *vector*; see :class:`~markdown_vault_mcp.interfaces.VectorReader`.
 
-        PostgreSQL scores and sorts; only metadata reaches this process.
+        PostgreSQL scores and sorts; only metadata reaches this process. A
+        *predicate* gets each candidate's metadata in order and must neither
+        change it nor count on seeing a row once: a read retried after a lost
+        connection shows it the same rows again.
 
         Raises:
             ValueError: If *vector* is not of the stored dimension, or not finite.
@@ -795,9 +798,13 @@ def _connection_lost(exc: psycopg.Error) -> bool:
 
     No SQLSTATE (the line dropped), class ``08``, or ``57P01`` (the backend
     was terminated); only an ``OperationalError``, so a client-side error
-    is never taken for one.
+    is never taken for one. The pool's own errors are each an ``OperationalError``
+    without a SQLSTATE too, but say the pool is busy or closed, which a
+    second attempt would only wait on again.
     """
-    if not isinstance(exc, psycopg.OperationalError):
+    if not isinstance(exc, psycopg.OperationalError) or isinstance(
+        exc, (PoolTimeout, PoolClosed, TooManyRequests)
+    ):
         return False
     state = exc.sqlstate
     return state is None or state.startswith("08") or state == "57P01"
