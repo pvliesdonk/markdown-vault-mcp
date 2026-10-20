@@ -9,7 +9,7 @@ read-only transactions that start from the live meta row, as the streamed
 SQLite store does; nothing per chunk is held in the vault process. Every
 write is one durable transaction under the meta-row lock; a store from
 ``open_fresh`` replaces what the schema holds on its first write.
-Searching arrives with #1504 child 6. What this relies on in
+PostgreSQL scores and sorts each search (``_postgres_search``). What this relies on in
 PostgreSQL, pgvector and psycopg is in
 ``docs/design/reference/postgresql-pgvector.md``.
 """
@@ -39,6 +39,12 @@ try:
         prepare_conninfo,
         statement_timeout_ms,
         unavailable,
+    )
+    from markdown_vault_mcp.stores._postgres_search import (
+        SearchRequest,
+        document_mean,
+        query_unit,
+        scored_rows,
     )
 except ImportError as exc:  # pragma: no cover - exercised in a subprocess
     raise ImportError(
@@ -78,7 +84,7 @@ from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Sequence
     from pathlib import Path
 
     from psycopg_pool import ConnectionPool
@@ -191,6 +197,82 @@ class PostgresVectorStore:
             lambda conn, _meta: stored_rows(conn, schema=self._schema, path=path), []
         )
 
+    def search(
+        self,
+        vector: Sequence[float],
+        *,
+        limit: int = 10,
+        predicate: Callable[[dict[str, Any]], bool] | None = None,
+        folder: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the rows nearest *vector*; see :class:`~markdown_vault_mcp.interfaces.VectorReader`.
+
+        PostgreSQL scores and sorts; only metadata reaches this process.
+
+        Raises:
+            ValueError: If *vector* is not of the stored dimension, or not finite.
+            RuntimeError: If the store is closed.
+            StoreIncompatibleError: If another process has since published
+                another identity.
+            StoreCorruptError: If the meta row is malformed.
+            StoreUnavailableError: If PostgreSQL cannot be read.
+        """
+        self._check_open()
+        if limit <= 0:
+            return []
+        request = SearchRequest(limit, folder=folder, predicate=predicate)
+        return self._reading(
+            lambda conn, meta: scored_rows(
+                conn,
+                schema=self._schema,
+                query=query_unit(vector, meta.identity.dimension),
+                request=request,
+            ),
+            [],
+        )
+
+    def similar_to_document(
+        self,
+        path: str,
+        *,
+        limit: int = 10,
+        predicate: Callable[[dict[str, Any]], bool] | None = None,
+        folder: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return the rows nearest the mean of *path*'s rows, excluding *path*.
+
+        The mean is taken in the same transaction (``avg``) and normalised
+        here; a path with no rows returns ``[]``.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreIncompatibleError: If another process has since published
+                another identity.
+            StoreCorruptError: If the meta row is malformed.
+            StoreUnavailableError: If PostgreSQL cannot be read.
+        """
+        self._check_open()
+        if limit <= 0:
+            return []
+        request = SearchRequest(limit, folder=folder, exclude=path, predicate=predicate)
+
+        def read(conn: psycopg.Connection[Any], _meta: Meta) -> list[dict[str, Any]]:
+            mean = document_mean(conn, schema=self._schema, path=path)
+            if mean is None:
+                return []
+            return scored_rows(conn, schema=self._schema, query=mean, request=request)
+
+        return self._reading(read, [])
+
+    def _check_open(self) -> None:
+        """Refuse use after close.
+
+        Raises:
+            RuntimeError: If the store is closed.
+        """
+        if self._closed:
+            raise RuntimeError("The vector store is closed.")
+
     def _reading(
         self, read: Callable[[psycopg.Connection[Any], Meta], _T], empty: _T
     ) -> _T:
@@ -207,8 +289,7 @@ class PostgresVectorStore:
             StoreCorruptError: If the meta row is malformed.
             StoreUnavailableError: If PostgreSQL cannot be read.
         """
-        if self._closed:
-            raise RuntimeError("The vector store is closed.")
+        self._check_open()
         if self._state.reset_pending:
             return empty
         try:
@@ -263,8 +344,7 @@ class PostgresVectorStore:
             ReadOnlyError: If the store was opened read-only.
             StoreUnavailableError: ``reason=lease`` if another writer took it.
         """
-        if self._closed:
-            raise RuntimeError("The vector store is closed.")
+        self._check_open()
         lease = self._conn.lease
         if lease is None:
             raise ReadOnlyError(
