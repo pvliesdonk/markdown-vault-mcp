@@ -6,8 +6,10 @@ of the contract's outcomes (``_postgres``), checks the tables through
 ``pg_catalog`` (``_postgres_tables``) and the stored identity
 (``_identity``), and opens the pool. The store reads in ``REPEATABLE READ``,
 read-only transactions that start from the live meta row, as the streamed
-SQLite store does; nothing per chunk is held in the vault process. Writing
-and searching arrive with #1504's later children. What this relies on in
+SQLite store does; nothing per chunk is held in the vault process. Every
+write is one durable transaction under the meta-row lock; a store from
+``open_fresh`` replaces what the schema holds on its first write.
+Searching arrives with #1504 child 6. What this relies on in
 PostgreSQL, pgvector and psycopg is in
 ``docs/design/reference/postgresql-pgvector.md``.
 """
@@ -50,6 +52,7 @@ from markdown_vault_mcp.stores._postgres_lease import LeaseHandle, LeaseRegistry
 from markdown_vault_mcp.stores._postgres_rows import (
     check_key,
     chunk_values,
+    generation_values,
     require_dimension,
 )
 from markdown_vault_mcp.stores._postgres_tables import (
@@ -58,9 +61,12 @@ from markdown_vault_mcp.stores._postgres_tables import (
     check_layout,
     create_tables,
     delete_document,
+    empty_rows,
+    load_generation,
     lock_meta,
     make_durable,
     read_meta,
+    reset_tables,
     stored_count,
     stored_rows,
     stored_tokens,
@@ -72,7 +78,7 @@ from markdown_vault_mcp.stores.registry import register_backend
 from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
     from pathlib import Path
 
     from psycopg_pool import ConnectionPool
@@ -227,6 +233,7 @@ class PostgresVectorStore:
         read: Callable[[psycopg.Connection[Any], Meta], _T],
     ) -> _T:
         """Refuse a live identity of another space, then run *read*."""
+        self._adopt(meta.identity)
         served_identity(
             meta.identity,
             self._identity,
@@ -235,6 +242,18 @@ class PostgresVectorStore:
             location=self._schema,
         )
         return read(conn, meta)
+
+    def _adopt(self, stored: EmbeddingIdentity) -> None:
+        """Take up the identity of this store's own publish whose reply was lost, once it shows.
+
+        After ``commit_unknown`` on a generation of another identity, the
+        meta row says whether it landed: holding that identity, it did.
+        """
+        if self._state.unknown_identity is not None and stored == (
+            self._state.unknown_identity
+        ):
+            self._identity = stored
+            self._state.unknown_identity = None
 
     def _ensure_lease(self) -> None:
         """Make sure this writer still holds the schema's lease; writes call it first.
@@ -303,18 +322,76 @@ class PostgresVectorStore:
 
         return self._writing(work)
 
+    def publish_generation(
+        self, identity: EmbeddingIdentity, documents: Iterable[DocumentRows]
+    ) -> None:
+        """Replace the whole store with *documents* under *identity*, in one durable transaction.
+
+        Readers see the previous generation until it commits. The
+        transaction has no statement timeout (a cold build's ``COPY`` may
+        take minutes); TCP keepalives still detect a dead connection.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            ReadOnlyError: If it was opened read-only.
+            ValueError: If a path appears twice or a row cannot be stored;
+                nothing changed.
+            StoreIncompatibleError: If another identity has been published;
+                nothing changed.
+            StoreUnsupportedSchemaError: If a fresh store's schema holds a
+                newer format; nothing changed.
+            StoreUnavailableError: ``reason=lease``, ``timeout``,
+                ``commit_unknown`` or another; with ``commit_unknown`` the
+                generation may have landed.
+        """
+        self._ensure_lease()
+        docs, chunks = generation_values(documents, identity.dimension)
+        generations: list[int] = []
+
+        def work(conn: psycopg.Connection[Any]) -> PublicationOutcome:
+            if not self._state.reset_pending:  # a reset here already emptied them
+                empty_rows(conn, schema=self._schema)
+            generations.append(
+                load_generation(
+                    conn,
+                    schema=self._schema,
+                    identity=identity,
+                    documents=docs,
+                    chunks=chunks,
+                )
+            )
+            return "published"
+
+        self._writing(work, unbounded=True, identity=identity)
+        self._identity = identity
+        logger.info(
+            "postgres_vector_store_generation_published schema=%s generation=%d "
+            "documents=%d rows=%d",
+            self._schema,
+            generations[0],
+            len(docs),
+            len(chunks),
+        )
+
     def _writing(
-        self, work: Callable[[psycopg.Connection[Any]], PublicationOutcome]
+        self,
+        work: Callable[[psycopg.Connection[Any]], PublicationOutcome],
+        *,
+        unbounded: bool = False,
+        identity: EmbeddingIdentity | None = None,
     ) -> PublicationOutcome:
         """Run *work* in one durable write transaction under the meta-row lock.
 
         A conflict rolls back. A connection lost while committing is reported as
         ``commit_unknown``: the write may or may not have landed, and is not retried.
+        *unbounded* lifts the statement timeout for the transaction, as a
+        fresh store's reset always does. *identity* is the one a generation
+        publishes, adopted later if its reply is lost but it landed.
         """
-        progress = _Progress()
+        progress = _Progress(identity=identity)
         try:
             with self._conn.pool.connection() as conn, conn.transaction():
-                outcome = self._apply(conn, work)
+                outcome = self._apply(conn, work, progress, unbounded=unbounded)
                 if outcome == "conflict":
                     raise psycopg.Rollback
                 progress.committing = True
@@ -325,23 +402,45 @@ class PostgresVectorStore:
                 schema=self._schema,
             )
         except psycopg.Error as exc:
-            if isinstance(exc, psycopg.errors.UndefinedTable):
-                self._state.tables_ready = False  # dropped under us: recreate next time
-            failure = self._write_failure(exc, committing=progress.committing)
+            failure = self._write_failure(exc, progress)
         else:
             if outcome == "published":
-                self._state.tables_ready = True  # a conflict rolled any CREATE back
+                self._published(progress)
             return outcome
         raise failure from None
+
+    def _published(self, progress: _Progress) -> None:
+        """Record what a committed write established, and log a reset it made."""
+        self._state.tables_ready = True  # a conflict rolled any CREATE back
+        self._state.reset_pending = False
+        self._state.unknown_identity = None
+        if progress.reset is not None:
+            logger.info(
+                "postgres_vector_store_reset schema=%s how=%s",
+                self._schema,
+                progress.reset,
+            )
 
     def _apply(
         self,
         conn: psycopg.Connection[Any],
         work: Callable[[psycopg.Connection[Any]], PublicationOutcome],
+        progress: _Progress,
+        *,
+        unbounded: bool,
     ) -> PublicationOutcome:
         """Inside the transaction: durability, tables, the meta lock and identity, then *work*."""
         make_durable(conn, lock_timeout_ms=_WRITE_LOCK_TIMEOUT_MS)
-        if (
+        if unbounded or self._state.reset_pending:
+            conn.execute("SET LOCAL statement_timeout = 0")  # spec §6.3
+        if self._state.reset_pending:
+            progress.reset = reset_tables(
+                conn,
+                schema=self._schema,
+                extension=self._conn.extension,
+                identity=self._identity,
+            )
+        elif (
             not self._state.tables_ready
             and check_layout(
                 conn,
@@ -358,6 +457,7 @@ class PostgresVectorStore:
                 identity=self._identity,
             )
         meta = lock_meta(conn, schema=self._schema)
+        self._adopt(meta.identity)
         if meta.identity != self._identity:
             raise StoreIncompatibleError(
                 f"Vector store at {where(self._schema)} holds {meta.identity}, "
@@ -367,15 +467,22 @@ class PostgresVectorStore:
             )
         return work(conn)
 
-    def _write_failure(self, exc: psycopg.Error, *, committing: bool) -> Exception:
-        """The outcome of a failed write.
+    def _write_failure(self, exc: psycopg.Error, progress: _Progress) -> Exception:
+        """The outcome of a failed write; forgets what the failure leaves unknown.
 
         Only a lost connection while committing (no SQLSTATE, or class ``08``)
         leaves the outcome unknown; an error PostgreSQL reports at COMMIT (a
         serialization failure, a timeout, a full disk) rolled the write back.
         """
+        if isinstance(exc, psycopg.errors.UndefinedTable):
+            self._state.tables_ready = False  # dropped under us: recreate next time
         lost = exc.sqlstate is None or exc.sqlstate.startswith("08")
-        if committing and lost:
+        if progress.committing and lost:
+            # It may have landed: read the store back as it is, never reset it again.
+            self._state.reset_pending = False
+            self._state.tables_ready = False
+            if progress.identity not in (None, self._identity):
+                self._state.unknown_identity = progress.identity
             return unavailable(
                 f"The connection to PostgreSQL was lost while committing a write to "
                 f"schema {self._schema}; the write may have landed: "
@@ -402,9 +509,17 @@ class PostgresVectorStore:
 
 @dataclass
 class _Progress:
-    """How far a write transaction got: whether its commit had begun."""
+    """How far a write transaction got.
+
+    Attributes:
+        committing: Its commit had begun.
+        reset: How a fresh store's reset emptied the schema, once it ran.
+        identity: The identity a generation publishes, if it is one.
+    """
 
     committing: bool = False
+    reset: str | None = None
+    identity: EmbeddingIdentity | None = None
 
 
 @dataclass
@@ -413,13 +528,16 @@ class _WriteState:
 
     Attributes:
         reset_pending: An ``open_fresh`` store whose first write has not
-            landed (child 5b resets the tables then).
+            landed; that write resets the tables.
         tables_ready: The store's tables are known to exist, so a write need
             not check for them.
+        unknown_identity: The identity of a generation whose commit reply
+            was lost; adopted when the meta row shows it landed.
     """
 
     reset_pending: bool = False
     tables_ready: bool = False
+    unknown_identity: EmbeddingIdentity | None = None
 
 
 class PostgresVectorBackend:
@@ -483,8 +601,10 @@ class PostgresVectorBackend:
         The connection, the ``vector`` extension, the schema and the right to
         create in it are checked, so a misconfiguration fails here; the
         store's tables are not read, and stay as they are until the fresh
-        store's first write replaces them (#1504 child 5), so a rebuild that
-        never completes leaves the previous rows for the next open.
+        store's first write replaces them (an intact store of this format is
+        emptied, anything else of ours recreated; a newer format is
+        refused), so a rebuild that never completes leaves the previous rows
+        for the next open.
 
         Args:
             location: The vault schema; ``None`` is refused.
@@ -547,8 +667,10 @@ class PostgresVectorBackend:
             if request.fresh
             else _stored_state(conn, schema, extension, request.wanted)
         )
-        if not request.read_only and state.layout == "absent":
-            _require_create(conn, schema=schema)
+        if not request.read_only:
+            _warn_if_not_durable(conn, schema=schema)
+            if state.layout == "absent":
+                _require_create(conn, schema=schema)
         pool = open_pool(
             conninfo, schema=schema, extension=extension, settings=self._pool
         )
@@ -653,6 +775,26 @@ def _bound_waits(
     except psycopg.Error as exc:
         failure = classify_error(exc, schema=schema, action="opened")
     else:
+        return
+    raise failure from None
+
+
+def _warn_if_not_durable(conn: psycopg.Connection[Any], *, schema: str) -> None:
+    """Warn once, at a writer's open, when PostgreSQL runs with ``fsync = off`` (spec §5.3).
+
+    The vault cannot fix it: a commit is then durable only until the
+    server's host crashes.
+
+    Raises:
+        StoreUnavailableError: If the setting cannot be read.
+    """
+    try:
+        row = conn.execute("SHOW fsync").fetchone()
+    except psycopg.Error as exc:
+        failure = classify_error(exc, schema=schema, action="opened")
+    else:
+        if row is not None and row[0] == "off":
+            logger.warning("postgres_vector_store_not_durable schema=%s", schema)
         return
     raise failure from None
 

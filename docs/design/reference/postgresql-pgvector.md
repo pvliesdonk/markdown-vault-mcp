@@ -228,6 +228,8 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - `pg_try_advisory_lock` takes the lock at once and returns `true`, or returns `false` without waiting. [source: pg-admin-functions]
 - A `bigint` key of the form `(0x4D564D31 << 32) | oid` with an OID above 2^31 is accepted; a second session's `pg_try_advisory_lock` returns `f`; the holder's `application_name` is found by joining `pg_locks` (`locktype = 'advisory'`, `granted`) to `pg_stat_activity` on `pid`; the lock is free again once the holding session ends. [observed: probe 4] [pins: tests/test_stores_postgres_lease.py::test_acquire_holds_the_key_until_release, tests/test_stores_postgres_lease.py::test_ensure_takes_a_lost_lease_back]
 - `idle_session_timeout` ends a session idle (outside a transaction) longer than it, and a session can set it to 0 for itself; a session-level advisory lock then lasts as long as its session. [observed: a probe in #1504 child 4's final review: a lease connection opened with `-c idle_session_timeout=300` lost its lock within a second of idling; with the store setting it to 0, the pinned test shows the lock held after a second idle] [pins: tests/test_stores_postgres_lease.py::test_an_idle_session_timeout_does_not_drop_the_lease]
+- `DROP TABLE` takes `ACCESS EXCLUSIVE`, which conflicts with every mode including the `ACCESS SHARE` a `SELECT` takes; `DELETE` takes `ROW EXCLUSIVE`, which does not conflict with `ACCESS SHARE`. [source: pg-explicit-locking] So emptying a store with `DELETE` leaves readers on the old rows until commit, where a drop would make them wait. [observed: #1504 child 5b, a reader times out behind a drop and reads at once beside a `DELETE`] [pins: tests/test_stores_postgres_writes.py::test_a_reader_is_not_blocked_by_a_fresh_store_reset]
+- `DROP TABLE` naming a view fails with `42809` ("is not a table", hint `DROP VIEW`); dropping a table another object depends on, without `CASCADE`, fails with `2BP01`; `DROP TABLE IF EXISTS a, b, c` drops those that exist. [observed: #1504 child 5b probe, 2026-10-19, PostgreSQL 17] [pins: tests/test_stores_postgres_writes.py::test_a_reset_that_cannot_drop_changes_nothing]
 - `lock_timeout` aborts a statement whose wait for a lock exceeds it, the limit applying "separately to each lock acquisition attempt"; `statement_timeout` aborts any statement that runs longer, measured per statement; zero disables either. [source: pg-client-config]
 
 ### Durability
@@ -236,7 +238,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - `remote_apply`, `on` and `remote_write` differ only in what they wait for from synchronous standbys; without `synchronous_standby_names` they equal `on`. [source: pg-wal-config]
 - The setting in effect at commit decides a transaction's behaviour, so `SET LOCAL synchronous_commit` changes it for one transaction. [source: pg-wal-config]
 - `SET LOCAL synchronous_commit = on` under a configured `remote_apply` shows `on` inside the transaction and `remote_apply` after it: it lowers the level for that transaction. [observed: probe 6] [pins: tests/test_stores_postgres_writes.py::test_make_durable_raises_only_weaker_settings]
-- `fsync = off` can cause unrecoverable corruption after a crash or power failure, and is set only in the configuration file or on the command line. [source: pg-wal-config]
+- `fsync = off` can cause unrecoverable corruption after a crash or power failure, and is set only in the configuration file or on the command line. [source: pg-wal-config] `ALTER SYSTEM SET fsync = off` followed by `pg_reload_conf()` takes effect for new sessions without a restart. [observed: #1504 child 5b] [pins: tests/test_stores_postgres_vectors.py::test_a_writer_warns_when_postgresql_runs_without_fsync]
 - A role without special privileges can read `fsync` and `synchronous_commit` with `SHOW`. [observed: probe 11]
 
 ### Errors
@@ -261,6 +263,7 @@ named in the frontmatter with the probe scripts listed under "Probes".
 - Ordered rows (`ORDER BY e <#> q, path`) stream through a named cursor inside a `REPEATABLE READ`, read-only transaction. [observed: probe 13]
 - Binary `COPY … FROM STDIN` with `write_row()` needs a binary dumper for every type and applies no casts; `Copy.set_types()` names the types. [source: psycopg-copy]
 - After `register_vector(conn)`, binary `COPY` with `set_types(["text", "int4", "vector", "jsonb"])` loads numpy float32 vectors, and a selected `vector` comes back as `pgvector.Vector`, whose `to_numpy()` gives float32. [observed: probe 13, pgvector-python 0.5.1]
+- Binary `COPY` with `set_types(["text", "int4", "text", "vector", "jsonb"])` takes numpy float32 rows and `Jsonb` values with a custom `dumps`; a `vector` column without a typmod takes rows of different dimensions; a foreign-key violation inside `COPY` raises `23503`. [observed: #1504 child 5b probe, 2026-10-19, pgvector 0.8.1-pg17, psycopg 3.3.6] [pins: tests/test_stores_postgres_writes.py::test_a_generation_replaces_everything]
 - pgvector-python registers its types per connection; with a pool it does so in the `configure` callback. [source: pgvector-python]
 - `ConnectionPool` keeps between `min_size` and `max_size` connections; a `check` callback runs before a connection is handed out and a failing check gets a new connection; `ConnectionPool.check_connection` is a ready-made check; `configure` runs on each new connection. [source: psycopg-pool]
 - A pool commits a returned connection's open transaction on a normal exit, rolls it back on an exception, and discards a broken one; a client blocks until `PoolTimeout` when PostgreSQL is unreachable. [source: psycopg-pool]
@@ -329,6 +332,10 @@ Each departure is decided in `docs/design/design.md` § "The storage contract
   schema in the path is silently ignored.
 - A new generation deletes the old rows rather than truncating them, so
   readers keep the previous generation until it commits.
+- A fresh store's first write empties an intact store with `DELETE` and
+  drops our tables only when they are damaged or absent, never with
+  `CASCADE`, so a rebuild over an intact store does not make readers wait
+  behind `ACCESS EXCLUSIVE`.
 - Before any write, a row is refused with `ValueError` where the SQLite store would keep it: a path, folder or metadata string holding a `NUL` character or a lone surrogate, metadata holding `NaN` or infinity, or a path or folder over 2,000 bytes. PostgreSQL's `text`, `jsonb` and btree indexes cannot hold them, and refusing them up front keeps the document's old rows instead of a write the reconciler would retry forever.
 - `synchronous_commit` is raised to `on` from any weaker value (`off`,
   `local`, `remote_write`) and left alone at `on` or `remote_apply`, because
