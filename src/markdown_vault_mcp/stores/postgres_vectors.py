@@ -280,7 +280,9 @@ class PostgresVectorStore:
 
         *read* gets the meta row the transaction sees. A fresh store whose
         first write has not landed, and a schema without the tables, read as
-        *empty*.
+        *empty*. A read whose connection is lost is retried once on a fresh
+        connection: reads are idempotent, and nothing is returned until one
+        completes.
 
         Raises:
             RuntimeError: If the store is closed.
@@ -293,10 +295,17 @@ class PostgresVectorStore:
         if self._state.reset_pending:
             return empty
         try:
-            with self._conn.pool.connection() as conn, conn.transaction():
-                conn.execute(_READ_TRANSACTION)
-                meta = read_meta(conn, schema=self._schema, action="read")
-                return empty if meta is None else self._read_checked(conn, meta, read)
+            try:
+                return self._read_once(read, empty)
+            except psycopg.Error as exc:
+                if not _connection_lost(exc):
+                    raise
+                logger.warning(
+                    "postgres_vector_store_read_retried schema=%s sqlstate=%s",
+                    self._schema,
+                    exc.sqlstate,
+                )
+            return self._read_once(read, empty)
         except PoolTimeout:
             failure = unavailable(
                 f"No PostgreSQL connection for schema {self._schema} was free in time.",
@@ -306,6 +315,15 @@ class PostgresVectorStore:
         except psycopg.Error as exc:
             failure = classify_error(exc, schema=self._schema, action="read")
         raise failure from None
+
+    def _read_once(
+        self, read: Callable[[psycopg.Connection[Any], Meta], _T], empty: _T
+    ) -> _T:
+        """One attempt at :meth:`_reading`'s transaction; psycopg's errors pass through."""
+        with self._conn.pool.connection() as conn, conn.transaction():
+            conn.execute(_READ_TRANSACTION)
+            meta = read_meta(conn, schema=self._schema, action="read")
+            return empty if meta is None else self._read_checked(conn, meta, read)
 
     def _read_checked(
         self,
@@ -770,6 +788,19 @@ class PostgresVectorBackend:
                 reset_pending=request.fresh, tables_ready=state.layout == "present"
             ),
         )
+
+
+def _connection_lost(exc: psycopg.Error) -> bool:
+    """Whether *exc* says the connection itself was lost, so a fresh one may serve.
+
+    No SQLSTATE (the line dropped), class ``08``, or ``57P01`` (the backend
+    was terminated); only an ``OperationalError``, so a client-side error
+    is never taken for one.
+    """
+    if not isinstance(exc, psycopg.OperationalError):
+        return False
+    state = exc.sqlstate
+    return state is None or state.startswith("08") or state == "57P01"
 
 
 class _Request(NamedTuple):

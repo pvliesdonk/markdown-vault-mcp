@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Any
 
+import psycopg
 import pytest
 
 from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
@@ -189,3 +190,150 @@ def test_a_predicate_keeping_fewer_than_the_limit_returns_what_it_keeps(
     results = store.search([1, 0, 0], limit=5, predicate=lambda r: r["folder"] == "t")
     assert paths(results) == ["b.md"]
     assert results[0]["score"] == 0.0
+
+
+class _BrokenReads:
+    """A pool stand-in whose next *failures* connections raise *error* on every statement."""
+
+    def __init__(self, pool: Any, error: Exception, failures: int) -> None:
+        self._pool, self._error, self._failures = pool, error, failures
+        self.attempts = 0
+
+    def connection(self) -> Any:
+        import contextlib
+
+        @contextlib.contextmanager
+        def lend() -> Iterator[Any]:
+            self.attempts += 1
+            with self._pool.connection() as real:
+                if self.attempts <= self._failures:
+                    yield _Raises(real, self._error)
+                else:
+                    yield real
+
+        return lend()
+
+    def close(self) -> None:
+        self._pool.close()
+
+
+class _Raises:
+    def __init__(self, conn: Any, error: Exception) -> None:
+        self._conn, self._error = conn, error
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+    def execute(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise self._error
+
+
+def _with_pool(store: Any, pool: Any) -> Any:
+    real = store._conn
+    store._conn = real._replace(pool=pool)
+    return real
+
+
+def test_a_read_that_loses_its_connection_once_is_retried(
+    store: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    store.replace_document(doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN)
+    broken = _BrokenReads(
+        store._conn.pool,
+        psycopg.OperationalError("server closed the connection unexpectedly"),
+        1,
+    )
+    real = _with_pool(store, broken)
+    try:
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.stores.postgres_vectors"
+        ):
+            assert paths(store.search([1, 0, 0])) == ["a.md"]
+    finally:
+        store._conn = real
+    assert broken.attempts == 2
+    (event,) = [
+        r
+        for r in caplog.records
+        if r.msg.startswith("postgres_vector_store_read_retried ")
+    ]
+    assert event.args == (store.schema, None)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        psycopg.OperationalError("server closed the connection unexpectedly"),
+        psycopg.errors.AdminShutdown(
+            "terminating connection due to administrator command"
+        ),
+    ],
+    ids=["no_sqlstate", "57P01"],
+)
+def test_a_read_that_loses_its_connection_twice_is_unavailable(
+    store: Any, error: Exception
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    broken = _BrokenReads(store._conn.pool, error, 2)
+    real = _with_pool(store, broken)
+    try:
+        with pytest.raises(StoreUnavailableError, match="reason=connect"):
+            store.tokens()
+    finally:
+        store._conn = real
+    assert broken.attempts == 2
+
+
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (
+            psycopg.errors.QueryCanceled(
+                "canceling statement due to statement timeout"
+            ),
+            "timeout",
+        ),
+        (psycopg.ProgrammingError("a client-side error"), "connect"),
+    ],
+    ids=["timeout", "client_side"],
+)
+def test_a_read_failing_otherwise_is_not_retried(
+    store: Any, error: Exception, reason: str
+) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    broken = _BrokenReads(store._conn.pool, error, 2)
+    real = _with_pool(store, broken)
+    try:
+        with pytest.raises(StoreUnavailableError, match=f"reason={reason}"):
+            store.count  # noqa: B018 - the property is the read
+    finally:
+        store._conn = real
+    assert broken.attempts == 1
+
+
+def test_a_search_whose_connection_dies_midway_is_retried_once(
+    store: Any, postgres_schema: PostgresSchema
+) -> None:
+    near = [doc(f"n{i:03}.md", [[1, 0.001 * i, 0]]) for i in range(150)]
+    store.publish_generation(IDENT, [*near, doc("far.md", [[0, 0, 1]], folder="t")])
+    killed: list[bool] = []
+
+    def kill_once(row: dict[str, Any]) -> bool:
+        if not killed:
+            killed.append(True)
+            with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+                admin.execute(
+                    "SELECT pg_terminate_backend(pid, 5000) FROM pg_stat_activity"
+                    " WHERE application_name = %s AND state = 'idle in transaction'"
+                    " AND pid <> pg_backend_pid()",
+                    (f"markdown-vault-mcp:{postgres_schema.name}",),
+                )
+        return row["folder"] == "t"
+
+    results = store.search([1, 0, 0], limit=2, predicate=kill_once)
+    assert paths(results) == ["far.md"]  # whole: no duplicate, nothing lost
+    assert store.count == 151  # the pool serves again
