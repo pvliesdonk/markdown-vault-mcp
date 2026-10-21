@@ -284,6 +284,39 @@ Four properties hold the resolution together:
   verbatim, and `search`'s dispatch — keyword, then semantic, then hybrid as
   the fallthrough — ran hybrid under a name nobody had asked for.
 
+### Exhaustive keyword queries
+
+`query_types.NoteQuery` describes a distinct live-note population. The concrete
+keyword index exposes `query_documents`, `count_documents_matching` and
+`aggregate_documents`; SQL remains in `_fts_queries.py`. These library methods
+do not change ranked search or its computed OKF behavior. Exact queries reject
+computed `status`, `stale` and `trust_tier` filters and unindexed field names.
+
+Scopes are `metadata` (path/title/heading/configured searchable summary), `body`
+(content), and `all`. FTS operators apply within one section row; duplicate
+sections never inflate totals. Malformed syntax becomes quoted literal terms
+before applying scope; lexical NUL input is rejected. Filters intersect exact
+case-sensitive path, normalized folder boundary, path pattern, indexed scalar
+or list values, and inclusive-lower/exclusive-upper RFC3339 modification bounds.
+Bounds use the index's Unix float timestamp precision.
+
+Pages default to 20 notes (maximum 1000); count and bucket projections ignore
+page controls. Each page and total share one nested-safe read view, including
+read-only connections. Later offset pages are live views, so indexing between
+calls can shift them. Metadata items omit sections; other scopes return at most
+2 sections and 200 words per section by default (0 words requests whole sections).
+Text ordering is score descending/path ascending; blank ordering is modified
+time descending/path ascending. Internal `order=path|folded_path` and literal
+casefolded `pattern_mode=prefix|substring` support bounded path discovery without
+adding SQL outside the backend. Raw path order serves candidate scans; folded
+path/raw path order serves bounded direct-match selection.
+
+Aggregates group the full population by folder, UTC modified month or distinct
+indexed tag values. Missing tags have a null bucket and exact `missing` count;
+bucket limits never narrow input. Values retain their case-sensitive identity,
+ordered by count descending, casefolded key then raw key. Multi-value bucket
+sums can exceed the note total. No stored derivation or index migration changes.
+
 ### Search Ranking and Snippet Truncation
 
 Four complementary mechanisms improve result diversity and bound LLM context cost:

@@ -5,7 +5,7 @@ kind: reference
 
 # Types
 
-All data types returned by the `Vault` API are importable from the `markdown_vault_mcp.types` module.
+The existing `Vault` result types are importable from `markdown_vault_mcp.types`. Exact keyword query requests and results live in `markdown_vault_mcp.query_types`.
 
 ```python { .fragment }
 from markdown_vault_mcp.types import NoteContent, GroupedResult, SectionHit, NoteContext
@@ -110,3 +110,23 @@ Arguments received by the callback:
 | `path` | `Path` | Absolute path of the modified file |
 | `content` | `str` | New file content (empty string for binary attachments and deletes) |
 | `op` | `WriteOperation` | Which write operation fired (see `WriteOperation` above) |
+
+## Exact query types
+
+<!-- vale off -->
+::: markdown_vault_mcp.query_types.NoteQuery
+
+::: markdown_vault_mcp.query_types.NoteQueryPage
+
+::: markdown_vault_mcp.query_types.NoteQueryItem
+
+::: markdown_vault_mcp.query_types.NoteSection
+
+::: markdown_vault_mcp.query_types.NoteCount
+
+::: markdown_vault_mcp.query_types.NoteGrouping
+
+::: markdown_vault_mcp.query_types.NoteAggregate
+
+::: markdown_vault_mcp.query_types.NoteBucket
+<!-- vale on -->
