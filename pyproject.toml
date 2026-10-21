@@ -189,6 +189,8 @@ all = ["fastmcp>=4,<5", "httpx>=0.25", "fastembed>=0.3", "numpy", "watchdog>=4.0
 # version range is inherited from the [project] dependency on
 # fastmcp-pvl-core above; pip resolves a single, consistent version.
 debug = ["fastmcp-pvl-core[debug]"]
+# Property tests only; CI installs all extras, runtime and all stay unchanged.
+property-tests = ["hypothesis>=6"]
 # PROJECT-EXTRAS-END
 
 # Tooling lives under PEP 735 [dependency-groups] (not [project.optional-dependencies])
