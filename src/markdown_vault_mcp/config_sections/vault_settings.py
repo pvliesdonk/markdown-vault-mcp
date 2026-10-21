@@ -393,8 +393,11 @@ class VaultSettings:
             The explicit ``embeddings_path``; else ``{index name}-embeddings``
             with the name's dots made dashes,
             beside an on-disk ``index_path``; else ``None``, meaning the
-            vectors are held in memory and rebuilt at each start.
+            vectors are held in memory and rebuilt at each start. ``None``
+            too for a PostgreSQL store, which keeps no files.
         """
+        if self.embedding_store == "postgres":
+            return None  # a database store keeps no files (#1504)
         if self.embeddings_path is not None:
             return self.embeddings_path
         if self.index_path is not None and str(self.index_path) != ":memory:":

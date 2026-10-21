@@ -232,3 +232,137 @@ def test_a_broken_postgres_install_says_why(
         match=r"postgres\].*import of markdown_vault_mcp\.stores\.postgres_vectors",
     ):
         Vault(source_dir=root, settings=settings, embedding_provider=provider)
+
+
+def test_status_counts_an_unopened_postgres_store(
+    tmp_path: Path, postgres_schema: PostgresSchema
+) -> None:
+    root = _root(tmp_path)
+
+    def vault() -> Vault:
+        return Vault(
+            source_dir=root,
+            settings=_settings(tmp_path, postgres_schema),
+            embedding_provider=MockEmbeddingProvider(dim=16),
+        )
+
+    first = vault()
+    try:
+        first.index.build_index()
+        first.index.build_embeddings()
+        built = first.index.embeddings_status()["chunk_count"]
+    finally:
+        first.close()
+    second = vault()
+    try:
+        status = second.index.embeddings_status()  # nothing opened the store yet
+    finally:
+        second.close()
+    assert built > 0
+    assert (status["chunk_count"], status["path"], status["backend"]) == (
+        built,
+        None,
+        "postgres",
+    )
+    assert status["store_details"]["schema"] == postgres_schema.name
+
+
+def test_status_of_an_unreachable_postgres_store_raises(tmp_path: Path) -> None:
+    from markdown_vault_mcp.exceptions import StoreUnavailableError
+
+    settings = VaultSettings(
+        index_path=tmp_path / "index.db",
+        read_only=False,
+        embedding_store="postgres",
+        embedding_search="streamed",
+        embedding_postgres_dsn="host=127.0.0.1 port=1 connect_timeout=2",
+        embedding_postgres_schema="vault_a",
+    )
+    vault = Vault(
+        source_dir=_root(tmp_path),
+        settings=settings,
+        embedding_provider=MockEmbeddingProvider(dim=16),
+    )
+    try:
+        with pytest.raises(StoreUnavailableError):
+            vault.index.embeddings_status()
+    finally:
+        vault.close()
+
+
+def test_status_of_a_store_of_another_model_counts_none_until_it_is_rebuilt(
+    tmp_path: Path, postgres_schema: PostgresSchema, caplog: pytest.LogCaptureFixture
+) -> None:
+    root = _root(tmp_path)
+    first = Vault(
+        source_dir=root,
+        settings=_settings(tmp_path, postgres_schema),
+        embedding_provider=MockEmbeddingProvider(dim=16),
+    )
+    try:
+        first.index.build_index()
+        first.index.build_embeddings()
+    finally:
+        first.close()
+    changed = Vault(  # another model: the stored vectors answer none of its queries
+        source_dir=root,
+        settings=_settings(tmp_path, postgres_schema),
+        embedding_provider=MockEmbeddingProvider(dim=8),
+    )
+    try:
+        with caplog.at_level(
+            logging.INFO, logger="markdown_vault_mcp.managers.embeddings"
+        ):
+            status = changed.index.embeddings_status()  # reports, never raises
+    finally:
+        changed.close()
+    assert (status["chunk_count"], status["backend"]) == (0, "postgres")
+    (event,) = [
+        r
+        for r in caplog.records
+        if r.msg.startswith("embeddings_status_store_not_counted ")
+    ]
+    assert event.args[1] == "StoreIncompatibleError"
+
+
+def test_status_of_a_damaged_store_counts_none_and_warns(
+    tmp_path: Path, postgres_schema: PostgresSchema, caplog: pytest.LogCaptureFixture
+) -> None:
+    import psycopg
+    from psycopg import sql
+
+    root = _root(tmp_path)
+    first = Vault(
+        source_dir=root,
+        settings=_settings(tmp_path, postgres_schema),
+        embedding_provider=MockEmbeddingProvider(dim=16),
+    )
+    try:
+        first.index.build_index()
+        first.index.build_embeddings()
+    finally:
+        first.close()
+    with psycopg.connect(postgres_schema.dsn, autocommit=True) as admin:
+        admin.execute(
+            sql.SQL("DROP TABLE {}.vector_chunks").format(
+                sql.Identifier(postgres_schema.name)
+            )
+        )
+    damaged = Vault(
+        source_dir=root,
+        settings=_settings(tmp_path, postgres_schema),
+        embedding_provider=MockEmbeddingProvider(dim=16),
+    )
+    try:
+        with caplog.at_level(
+            logging.WARNING, logger="markdown_vault_mcp.managers.embeddings"
+        ):
+            status = damaged.index.embeddings_status()
+    finally:
+        damaged.close()
+    assert status["chunk_count"] == 0
+    assert [
+        r.args[1]
+        for r in caplog.records
+        if r.msg.startswith("embeddings_status_store_not_counted ")
+    ] == ["StoreCorruptError"]

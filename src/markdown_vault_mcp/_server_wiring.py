@@ -42,7 +42,8 @@ def wire_domain(mcp: FastMCP, config: ProjectConfig, transport: str) -> None:
         "read-only" if config.read_only else "read-write",
         config.source_dir,
         "configured"
-        if config.indexing.embeddings_path or (config.embeddings.provider or "").strip()
+        if config.indexing.vector_storage_configured
+        or (config.embeddings.provider or "").strip()
         else "disabled",
     )
 

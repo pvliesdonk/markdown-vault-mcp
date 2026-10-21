@@ -38,6 +38,16 @@ class IndexingConfig:
     title_field: str = "title"
     searchable_frontmatter: Sequence[str] | None = None
 
+    @property
+    def vector_storage_configured(self) -> bool:
+        """Whether configuration names somewhere to keep the vectors.
+
+        ``EMBEDDINGS_PATH`` names files; ``EMBEDDING_STORE=postgres`` names a
+        database (#1504). Without either, an on-disk index may still keep
+        them beside itself, which callers that know the index path check.
+        """
+        return self.embeddings_path is not None or self.embedding_store == "postgres"
+
     def __post_init__(self) -> None:
         """Freeze the sequence fields into tuples for deep immutability (#639).
 

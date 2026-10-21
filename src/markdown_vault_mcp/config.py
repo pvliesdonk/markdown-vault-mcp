@@ -621,7 +621,7 @@ class ProjectConfig:
                 "Embedding provider: openai, voyage, ollama, or fastembed; "
                 "setting it turns on search by meaning. Unset auto-detects "
                 "from the environment (never voyage), but only when "
-                "EMBEDDINGS_PATH is set. Any "
+                "EMBEDDINGS_PATH is set or EMBEDDING_STORE=postgres. Any "
                 "OpenAI-compatible endpoint works with openai plus "
                 "OPENAI_BASE_URL; see the embeddings guide."
             ),

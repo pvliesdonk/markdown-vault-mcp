@@ -3451,13 +3451,14 @@ kwargs):
   or the vectors are held in memory without one. Semantic search follows the
   embedding provider alone (#1708). On the server, an explicit
   `EMBEDDING_PROVIDER` is resolved without a path, while auto-detection
-  still waits for `EMBEDDINGS_PATH`, so an install that merely has a backend
+  still waits for configured storage (`EMBEDDINGS_PATH`, or
+  `EMBEDDING_STORE=postgres`, #1504), so an install that merely has a backend
   importable or an API key set never starts embedding, and paying, at every
   start. Such a provider was never loaded before #1708, so if it fails to
   load the server logs `embedding_provider_load_failed` at WARNING and runs
   keyword-only rather than stop a deployment that started before; with
-  `EMBEDDINGS_PATH` set, a failed explicit provider still raises
-  `ConfigurationError`.
+  storage configured (`EMBEDDINGS_PATH`, or a PostgreSQL store), a failed
+  explicit provider still raises `ConfigurationError`.
 - `state_path=None`: defaults to `{index file name}.state.json` beside `index_path`,
   or to memory without one (#1693).
 
@@ -4088,7 +4089,15 @@ The backend carries the connection settings; the location is the schema
 name, and there is no in-memory form. The DSN is a secret: it is left out
 of every `repr` (`ProjectConfig`, `IndexingConfig`, `VaultSettings`), is
 marked secret in the generated configuration surfaces, and no message
-quotes it. The schema is the namespace and the
+quotes it. Provider auto-detection, the CLI's batch commands and the startup log
+treat a PostgreSQL store as keeping the vectors, as they do
+`EMBEDDINGS_PATH` (`IndexingConfig.vector_storage_configured`); it has no
+sidecar, so `effective_embeddings_path()` is `None` and `embeddings_status`
+reports `path: null`, counting an unopened store by opening it as a search
+would: a store that cannot be read fails the status, and one of another
+model or damaged counts 0, logged, until a rebuild replaces it, as a numpy
+or SQLite store that will not serve. The CLI's `search` only reads a
+PostgreSQL store and never embeds into it. The schema is the namespace and the
 ownership boundary: one vault per schema, one role per vault owning only
 its schema. That does not stop a second vault, pointed at another vault's
 schema by a copied configuration while that vault is down, from removing
