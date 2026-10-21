@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1488,3 +1488,44 @@ def test_postgres_keeps_the_vectors_for_the_cli(
     monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_POSTGRES_DSN", "host=db")
     monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_POSTGRES_SCHEMA", "vault_a")
     assert _vectors_kept(ProjectConfig.from_env(), None)
+
+
+@pytest.mark.parametrize("seeded", [True, False], ids=["populated", "empty"])
+def test_search_by_meaning_reads_a_postgres_store_without_an_index_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, postgres_schema: Any, seeded: bool
+) -> None:
+    """The vectors live in PostgreSQL: search reads them, it never embeds over them."""
+    from markdown_vault_mcp.config_sections import VaultSettings
+    from markdown_vault_mcp.vault import Vault
+
+    counting = _embedding_cli_env(tmp_path, monkeypatch, None)
+    settings = VaultSettings(
+        index_path=tmp_path / "seed.db",
+        read_only=False,
+        embedding_store="postgres",
+        embedding_search="streamed",
+        embedding_postgres_dsn=postgres_schema.dsn,
+        embedding_postgres_schema=postgres_schema.name,
+    )
+    if seeded:
+        seed = Vault(
+            source_dir=tmp_path / "vault",
+            settings=settings,
+            embedding_provider=counting(),
+        )
+        try:
+            seed.index.build_index()
+            seed.index.build_embeddings()
+        finally:
+            seed.close()
+    # A note the store does not hold yet: reading must not try to embed it.
+    (tmp_path / "vault" / "b.md").write_text("# Later\n\nanother world\n")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_STORE", "postgres")
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_POSTGRES_DSN", postgres_schema.dsn)
+    monkeypatch.setenv(f"{_ENV_PREFIX}_EMBEDDING_POSTGRES_SCHEMA", postgres_schema.name)
+
+    result = runner.invoke(app, ["search", "--json", "-m", "semantic", "world"])
+
+    assert result.exit_code == 0, result.output
+    found = [r["path"] for r in json.loads(result.stdout)]
+    assert found == (["a.md"] if seeded else [])  # what the store holds, no more

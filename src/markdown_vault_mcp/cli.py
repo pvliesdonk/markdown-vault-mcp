@@ -189,9 +189,9 @@ def _build_vault(
         scratch_state: Keep the change-tracking state in memory, ignoring
             ``STATE_PATH``, for a one-shot in-memory index whose state must
             not overwrite a running server's (#1691).
-        in_memory_vectors: Resolve the embedding provider even when no file
-            would keep the vectors (no ``EMBEDDINGS_PATH`` and no on-disk
-            index), so they are embedded in memory. Off by default: the
+        in_memory_vectors: Resolve the embedding provider even when nothing
+            would keep the vectors (no ``EMBEDDINGS_PATH``, no PostgreSQL
+            store and no on-disk index), so they are embedded in memory. Off by default: the
             provider is then never resolved, since a batch command would pay
             it for vectors it throws away (#1708).
         shared_files: Leave the index files on disk as they are, since a
@@ -302,10 +302,11 @@ def index(
 
 
 def _embed_in_memory(vault: Vault) -> None:
-    """Embed the vault for one search by meaning when no file keeps the vectors.
+    """Embed the vault for one search by meaning when nothing keeps the vectors.
 
-    Vectors that ``EMBEDDINGS_PATH`` or an on-disk index keep are only read:
-    building them here would write files a running server may share (#1708).
+    Vectors that ``EMBEDDINGS_PATH``, an on-disk index or a PostgreSQL store
+    keep are only read: building them here would write vectors a running
+    server may share (#1708, #1504).
 
     Args:
         vault: A vault whose in-memory index is already built.
@@ -394,7 +395,8 @@ def search(
     # index is only read: build_index() would rebuild a server's index
     # whenever this shell's settings differ from the ones it was built with,
     # and even opening it for writing commits the rank weights (#1758).
-    configured_index = ProjectConfig.from_env().indexing.index_path
+    configured = ProjectConfig.from_env().indexing
+    configured_index = configured.index_path
     in_memory = configured_index is None or str(configured_index) == ":memory:"
     if configured_index is not None and not in_memory:
         _require_index_file(configured_index)
@@ -414,7 +416,9 @@ def search(
     try:
         if in_memory:
             built.vault.index.build_index()
-            if by_meaning:
+            # Vectors kept elsewhere (EMBEDDINGS_PATH, or PostgreSQL, #1504)
+            # are only read: this shell does not own them.
+            if by_meaning and not configured.vector_storage_configured:
                 _embed_in_memory(built.vault)
         try:
             results = built.vault.reader.search(

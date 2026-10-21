@@ -249,21 +249,23 @@ def _resolve_embedding_provider(config: ProjectConfig) -> EmbeddingProvider | No
     """Resolve the embedding provider, honouring the explicit-vs-auto posture.
 
     An explicitly configured provider is resolved on its own; auto-detection
-    runs only when the storage path in ``config.indexing`` is set
-    (cross-section coupling, #1708).  With that path set, an explicit
-    provider that fails to load (an unrecognised name included) raises;
-    without it, the failure is logged and the server runs keyword-only.
+    runs only when ``config.indexing`` configures vector storage: the
+    ``EMBEDDINGS_PATH`` storage path, or a PostgreSQL store (cross-section
+    coupling, #1708, #1504).  With storage configured, an explicit provider
+    that fails to load (an unrecognised name included) raises; without it,
+    the failure is logged and the server runs keyword-only.
 
     Args:
         config: The served project configuration.
 
     Returns:
         The provider, or ``None`` (unconfigured, auto-detection failed, or an
-        explicit provider without ``EMBEDDINGS_PATH`` failed to load).
+        explicit provider without configured storage failed to load).
 
     Raises:
         ConfigurationError: If an explicitly configured provider fails to
-            load while ``EMBEDDINGS_PATH`` is set.
+            load while storage is configured (``EMBEDDINGS_PATH``, or
+            ``EMBEDDING_STORE=postgres``).
     """
     explicit_provider = (config.embeddings.provider or "").strip()
     if not config.indexing.vector_storage_configured:
@@ -298,7 +300,7 @@ def _resolve_embedding_provider(config: ProjectConfig) -> EmbeddingProvider | No
 def _load_provider_or_keyword_only(
     config: ProjectConfig, explicit_provider: str
 ) -> EmbeddingProvider | None:
-    """Load an explicit provider configured without ``EMBEDDINGS_PATH``.
+    """Load an explicit provider configured without vector storage.
 
     Before #1708 such a provider was never loaded, so a broken one cost
     nothing. A failure to load it now must not stop a server that starts

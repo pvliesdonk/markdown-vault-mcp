@@ -19,7 +19,11 @@ import logging
 import sqlite3
 from typing import TYPE_CHECKING, Any
 
-from markdown_vault_mcp.exceptions import EmbeddingsNotConfiguredError
+from markdown_vault_mcp.exceptions import (
+    EmbeddingsNotConfiguredError,
+    StoreCorruptError,
+    StoreIncompatibleError,
+)
 from markdown_vault_mcp.indexing.embedding_reconciler import (
     EmbeddingReconciler,
     ReconcileResult,
@@ -347,6 +351,30 @@ class EmbeddingsManager:
     # Status
     # ------------------------------------------------------------------
 
+    def _unopened_database_count(self, slot: VectorStoreSlot) -> int:
+        """Count a database store, which keeps no files, by opening it as a search would.
+
+        One that holds another model's vectors, or is damaged, counts 0 and
+        is logged: a rebuild replaces it, as it does a numpy or SQLite store
+        that will not serve. One that cannot be read at all fails the
+        status (#1504, #1625).
+        """
+        try:
+            return slot.get(rebuild=None).count
+        except StoreIncompatibleError as exc:
+            logger.info(
+                "embeddings_status_store_not_counted location=%s reason=%s",
+                slot.location,
+                type(exc).__name__,
+            )
+        except StoreCorruptError as exc:
+            logger.warning(
+                "embeddings_status_store_not_counted location=%s reason=%s",
+                slot.location,
+                type(exc).__name__,
+            )
+        return 0
+
     def _unopened_count(self, base: Path) -> int:
         """Count the stored chunks from the backend's files, opening no store.
 
@@ -396,7 +424,8 @@ class EmbeddingsManager:
             Dict with keys ``provider``, ``chunk_count``, ``path``,
             ``available``, and the store's ``backend``, ``identity`` and
             ``generation`` (``None`` until it is opened). ``path`` is
-            ``None`` when the vectors are held in memory (#1708). The cost
+            ``None`` when the vectors are held in memory (#1708) or kept in
+            a database (#1504). The cost
             keys (#1377), ``None`` until the store is opened or when it
             does not report them: ``search_mode`` (``"resident"`` or
             ``"streamed"``, as the store runs), ``search_workspace_bytes``
@@ -441,9 +470,7 @@ class EmbeddingsManager:
         elif self._embeddings_path is not None:
             count = self._unopened_count(self._embeddings_path)
         elif self._slot is not None and self._slot.location is not None:
-            # A database store keeps no files to count: open it, as a search
-            # would; one that cannot be read fails the status (#1504, #1625).
-            count = self._slot.get(rebuild=None).count
+            count = self._unopened_database_count(self._slot)
 
         return {
             "available": True,
