@@ -339,18 +339,37 @@ def find_extension(conn: psycopg.Connection[Any], *, schema: str) -> Extension:
         StoreNotConfiguredError: If it is not installed, or older than
             ``MIN_PGVECTOR``; installing needs a superuser, so the message
             gives the SQL to run.
-        StoreUnavailableError: If the catalogue cannot be read.
+        StoreUnavailableError: If the catalogue cannot be read, or this role
+            has no ``USAGE`` on the extension's schema (``reason=privilege``,
+            with the ``GRANT`` to run): without it the ``vector`` type cannot
+            be used, and every pool connection's setup would fail.
     """
     try:
         row = conn.execute(
-            "SELECT n.nspname, e.extversion FROM pg_catalog.pg_extension e"
+            "SELECT n.nspname, e.extversion,"
+            " has_schema_privilege(n.oid, 'USAGE'), current_user"
+            " FROM pg_catalog.pg_extension e"
             " JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace"
             " WHERE e.extname = 'vector'"
         ).fetchone()
     except psycopg.Error as exc:
         failure = classify_error(exc, schema=schema, action="opened")
     else:
-        return _checked_extension(row, schema=schema)
+        found = _checked_extension(row, schema=schema)
+        if row is not None and not row[2]:
+            grant = (
+                sql.SQL("GRANT USAGE ON SCHEMA {} TO {};")
+                .format(sql.Identifier(found.schema), sql.Identifier(str(row[3])))
+                .as_string(conn)
+            )
+            failure = unavailable(
+                f"Role {row[3]} has no USAGE on schema {found.schema}, where the "
+                f"vector extension lives; the operator runs: {grant}",
+                reason="privilege",
+                schema=schema,
+            )
+        else:
+            return found
     raise failure from None
 
 

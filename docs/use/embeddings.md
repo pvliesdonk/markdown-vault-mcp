@@ -420,15 +420,53 @@ Set `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` explicitly to avoid surprises when y
 
 Regardless of which provider you choose:
 
-- **Setting `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` turns search by meaning on.** Left unset, the provider is auto-detected only when `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` is set.
-- **Where the vectors live.** At `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when set, otherwise beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (`index-db-embeddings.json` and the `index-db-embeddings.m<N>.npy` matrix it names, beside `index.db`). `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` names the store that keeps them. `numpy`, the default, keeps these files and rewrites them whole at each save; `sqlite` keeps them in one database, `index-db-embeddings.sqlite3`, and writes each change on its own, durable once written. With neither path set, they are held in memory and every note is embedded again at each start, which a paid provider bills each time. The Claude Desktop bundle and the Claude Code plugin set no index path yet, so a provider picked on their install screen embeds again at each Claude Desktop launch or Claude Code session ([#1728](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728)).
+- **Setting `MARKDOWN_VAULT_MCP_EMBEDDING_PROVIDER` turns search by meaning on.** Left unset, the provider is auto-detected only when `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` is set or the vectors are kept in PostgreSQL (`MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres`).
+- **Where the vectors live.** At `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` when set, otherwise beside `MARKDOWN_VAULT_MCP_INDEX_PATH` (`index-db-embeddings.json` and the `index-db-embeddings.m<N>.npy` matrix it names, beside `index.db`). `MARKDOWN_VAULT_MCP_EMBEDDING_STORE` names the store that keeps them. `numpy`, the default, keeps these files and rewrites them whole at each save; `sqlite` keeps them in one database, `index-db-embeddings.sqlite3`, and writes each change on its own, durable once written; `postgres` keeps them in a PostgreSQL schema instead ([below](#keeping-the-embeddings-in-postgresql)). With neither path set, they are held in memory and every note is embedded again at each start, which a paid provider bills each time. The Claude Desktop bundle and the Claude Code plugin set no index path yet, so a provider picked on their install screen embeds again at each Claude Desktop launch or Claude Code session ([#1728](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1728)).
 - **Switching to `sqlite` starts with an empty store**, so every note is embedded again, which a paid provider bills. Importing the `numpy` files is [#1505](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1505).
 - **The `sqlite` database does not shrink:** space freed by deleted notes or a model change is reused by later writes.
-- **`MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed` keeps the vectors out of memory.** It needs `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite`. Each semantic search then reads the vectors from the database in batches of `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB` (1 MiB by default) instead of holding them all, as the default `resident` does. Results are the same, apart from the order of notes with equal scores. Each search is slower, by an amount in proportion to the vault's size. On one test host, a 22,764-chunk vault at 1024 dimensions took about 39 ms per search streamed against 3 ms resident, and a vault ten times that size about 383 ms against 33 ms; resident search added about 106 MB and 950 MB to the server's memory for them ([#1501](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1501), [#1502](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1502)). The workspace bounds one batch of a search, not the server's memory. Vectors kept in memory, with no index path, are always resident. `embeddings_status` reports the mode the store runs in, its workspace, the size of its files (`stored_bytes`) and the bytes of vectors it holds in memory (`resident_vector_bytes`). That last figure leaves out the server's other memory, such as the note text a resident store also keeps.
+- **`MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed` keeps the vectors out of memory.** It needs `MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite`; the rest of this item describes that store, since `postgres` is always streamed and scores in the database instead. Each semantic search then reads the vectors from the database in batches of `MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB` (1 MiB by default) instead of holding them all, as the default `resident` does. Results are the same, apart from the order of notes with equal scores. Each search is slower, by an amount in proportion to the vault's size. On one test host, a 22,764-chunk vault at 1024 dimensions took about 39 ms per search streamed against 3 ms resident, and a vault ten times that size about 383 ms against 33 ms; resident search added about 106 MB and 950 MB to the server's memory for them ([#1501](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1501), [#1502](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1502)). The workspace bounds one batch of a search, not the server's memory. Vectors kept in memory, with no index path, are always resident. `embeddings_status` reports the mode the store runs in, its workspace, the size of its files (`stored_bytes`) and the bytes of vectors it holds in memory (`resident_vector_bytes`). That last figure leaves out the server's other memory, such as the note text a resident store also keeps.
 - **Back up the `sqlite` database with the server stopped**, or with SQLite's online backup (`sqlite3 index-db-embeddings.sqlite3 ".backup copy.sqlite3"`). Copying the file while the server runs can miss the latest changes, which sit in `index-db-embeddings.sqlite3-wal`.
 - Embeddings are built automatically on first startup when a provider is configured. Later starts load the stored vectors and only process changed files.
 - The build runs in the background. `embeddings_status` reports `available: true` as soon as a provider is configured, whether or not the build has run. The build has caught up once [`get_index_status`](../reference/tools/indexing.md#get_index_status) shows `status` as `"queryable"`, `queue_depth` as `0`, `in_flight` as `null`, and `dirty_paths` and `dirty_embeddings` as `0`.
 - Use `mode="hybrid"` in search for best results; it combines keyword (BM25) and semantic (cosine similarity) scores using Reciprocal Rank Fusion.
+
+### Keeping the embeddings in PostgreSQL
+
+`MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres` keeps a vault's embeddings in a PostgreSQL schema, with the [pgvector](https://github.com/pgvector/pgvector) extension doing the scoring. Use it when the vectors should live with your other data rather than in files beside the index.
+
+1. **Prepare the database once, as a superuser.** The server never creates extensions: pgvector is not a trusted extension, so a least-privilege role could not. Create one schema and one role per vault, the role owning only that schema; the schema is the vault's ownership boundary, so never point two vaults at one. Run this in the database the connection string below names (`psql -d vectors`), which must already exist (`CREATE DATABASE vectors;`):
+
+    ```sql
+    CREATE EXTENSION IF NOT EXISTS vector;
+    CREATE ROLE vault_a LOGIN;
+    GRANT CONNECT ON DATABASE vectors TO vault_a;
+    CREATE SCHEMA vault_a AUTHORIZATION vault_a;
+    ```
+
+    Give the role its password with `\password vault_a` rather than in the script. pgvector 0.7.0 or later is needed. If `vector` was already installed in another schema (`\dx vector` shows which), also grant the role `USAGE` on that schema; without it the server refuses to open the store and says which `GRANT` to run.
+
+2. **Install the extra.** Outside Docker, run `pip install "markdown-vault-mcp[postgres]"`. The Docker image, the Claude Desktop bundle and the Claude Code plugin already install it, but the bundle's and the plugin's install screens do not offer the PostgreSQL settings: set them in the server's environment.
+
+3. **Configure the store.** Set the store, the connection string and the schema:
+
+    ```bash
+    MARKDOWN_VAULT_MCP_EMBEDDING_STORE=postgres
+    MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_DSN=postgresql://vault_a@db.example:5432/vectors
+    MARKDOWN_VAULT_MCP_EMBEDDING_POSTGRES_SCHEMA=vault_a
+    ```
+
+    The connection string is a secret, never logged or shown; the password can stay out of it, in `PGPASSWORD` or a `.pgpass` file. The pool size and statement timeout have defaults; see the [configuration reference](../reference/configuration.md). Semantic search is always `streamed` with this store.
+
+4. **Check it.** `embeddings_status` reports `"backend": "postgres"` and, under `store_details`, the host, database, schema, the PostgreSQL and pgvector versions and `"lease_held": true`; it never shows credentials.
+
+What to expect:
+
+- **One server writes a schema at a time.** A second server started on the same schema still serves keyword search, but its semantic and hybrid searches and `embeddings_status` fail, and its log names the server holding the schema (`postgres_vector_store_unavailable reason=lease`).
+- **Switching to `postgres` starts with an empty store**, so every note is embedded again, which a paid provider bills. Importing existing vectors is [#1505](https://github.com/pvliesdonk/markdown-vault-mcp/issues/1505).
+- **A database that is down makes semantic and hybrid search fail** rather than answer with nothing; `mode="keyword"` keeps working.
+- **A full rebuild writes the new generation in one transaction**, so searches keep answering from the previous one until it commits.
+
+A guide to running the store in production (connection pooling, backups, TLS and least-privilege roles) follows with #1504's last children.
 
 !!! note "A provider without EMBEDDINGS_PATH starts embedding on upgrade"
     Before this behavior, a provider set without `MARKDOWN_VAULT_MCP_EMBEDDINGS_PATH` was ignored and the server searched by keyword only. After the upgrade such a deployment embeds the whole vault once, which a paid provider bills, and rebuilds its keyword index once in the background, as it does after any model change. If that provider fails to load, the server logs `embedding_provider_load_failed` and keeps searching by keyword only.

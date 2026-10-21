@@ -621,3 +621,54 @@ def test_a_statement_timeout_above_postgresqls_maximum_is_refused() -> None:
     assert pg.statement_timeout_ms(
         pg.PoolSettings(statement_timeout_s=2147483.647)
     ) == (2147483647)
+
+
+def test_an_extension_schema_without_usage_is_unavailable_privilege(
+    postgres_server: PostgresServer,
+) -> None:
+    """pgvector installed in a schema the role cannot use (#1504 8d's review).
+
+    Without the check, ``register_vector`` fails in every pool connection's
+    setup and the store reports ``reason=pool`` after the pool's wait.
+    """
+    if not postgres_server.throwaway:
+        pytest.skip("creates a database: runs only against the harness's own container")
+    database = f"mvm_test_extns_{uuid.uuid4().hex[:8]}"
+    role = f"mvm_test_role_{uuid.uuid4().hex[:8]}"
+    try:
+        _admin_execute(
+            postgres_server,
+            sql.SQL("CREATE DATABASE {} TEMPLATE template0").format(
+                sql.Identifier(database)
+            ),
+        )
+        _admin_execute(
+            postgres_server,
+            sql.SQL("CREATE ROLE {} LOGIN PASSWORD 'pw'").format(sql.Identifier(role)),
+        )
+        with psycopg.connect(
+            make_conninfo(postgres_server.dsn, dbname=database), autocommit=True
+        ) as admin:
+            admin.execute("CREATE SCHEMA ext")
+            admin.execute("CREATE EXTENSION vector SCHEMA ext")  # no grant on ext
+        conn = pg.connect(
+            _with(postgres_server, dbname=database, user=role, password="pw"),
+            schema=_SCHEMA,
+        )
+        try:
+            with pytest.raises(
+                StoreUnavailableError,
+                match=r'GRANT USAGE ON SCHEMA "ext" TO .*reason=privilege',
+            ):
+                pg.find_extension(conn, schema=_SCHEMA)
+        finally:
+            conn.close()
+    finally:
+        _admin_execute(
+            postgres_server,
+            sql.SQL("DROP DATABASE IF EXISTS {}").format(sql.Identifier(database)),
+        )
+        _admin_execute(
+            postgres_server,
+            sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)),
+        )
