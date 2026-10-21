@@ -453,6 +453,10 @@ class PoolSettings(NamedTuple):
     get_timeout_s: float = 30.0
 
 
+#: PostgreSQL's ``statement_timeout`` is an int in milliseconds.
+MAX_STATEMENT_TIMEOUT_S = 2147483.647
+
+
 def statement_timeout_ms(settings: PoolSettings) -> int:
     """Validate *settings*; return the statement timeout in milliseconds.
 
@@ -465,6 +469,11 @@ def statement_timeout_ms(settings: PoolSettings) -> int:
     if not math.isfinite(timeout) or timeout < 0:
         raise ValueError(
             f"statement_timeout_s must be finite and at least 0; got {timeout}."
+        )
+    if timeout > MAX_STATEMENT_TIMEOUT_S:
+        raise ValueError(
+            f"statement_timeout_s must be at most {MAX_STATEMENT_TIMEOUT_S} "
+            f"(PostgreSQL's limit); got {timeout}."
         )
     for name in ("wait_s", "get_timeout_s"):
         value = getattr(settings, name)

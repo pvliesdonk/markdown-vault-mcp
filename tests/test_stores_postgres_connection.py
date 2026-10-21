@@ -612,3 +612,12 @@ def test_statement_timeout_rounds_to_milliseconds_without_reaching_none(
     assert pg.statement_timeout_ms(pg.PoolSettings(statement_timeout_s=seconds)) == (
         milliseconds
     )
+
+
+def test_a_statement_timeout_above_postgresqls_maximum_is_refused() -> None:
+    too_long = pg.PoolSettings(statement_timeout_s=1e9)
+    with pytest.raises(ValueError, match="statement_timeout_s"):
+        pg.statement_timeout_ms(too_long)
+    assert pg.statement_timeout_ms(
+        pg.PoolSettings(statement_timeout_s=2147483.647)
+    ) == (2147483647)
