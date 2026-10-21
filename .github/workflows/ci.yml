@@ -114,7 +114,7 @@ jobs:
         # as much as a pull request does, since that analysis is the one the
         # project's ratings and badges show.
         if: matrix.python-version == '3.14'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: coverage-xml
           path: coverage.xml
@@ -185,7 +185,7 @@ jobs:
 
       - name: Upload patch coverage artifact
         if: matrix.python-version == '3.14' && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7
         with:
           name: patch-coverage
           path: patch-coverage.json
@@ -256,7 +256,7 @@ jobs:
 
       - name: Download coverage report
         if: steps.token.outputs.present == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8
         with:
           name: coverage-xml
 
@@ -268,6 +268,12 @@ jobs:
 
   audit:
     name: Dependency Audit
+    # Outside CI Success on purpose: it reports, it does not gate.  An
+    # advisory whose fix sits past another dependency's cap (pillow 13 behind
+    # fastembed's pillow<13, #813) has no remedy but waiting for that
+    # dependency, and as a required check it blocked every pull request
+    # meanwhile, Renovate's lock maintenance included.  A red run here still
+    # shows on the pull request; act on what that pull request introduced.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -290,12 +296,17 @@ jobs:
         # only runtime + user-defined extras land in the audit input — avoids
         # spurious CVE reports against tooling (pip-audit's own `pip` dep, etc.)
         # that does not run in production.
-        run: uv export --all-extras --no-default-groups --frozen --no-emit-project --no-hashes -o ${{ runner.temp }}/requirements.txt
+        run: uv export --all-extras --no-default-groups --frozen --no-emit-project -o ${{ runner.temp }}/requirements.txt
 
       - name: Run pip-audit
         run: |
-          uvx pip-audit --strict --progress-spinner off \
+          uvx pip-audit --strict --progress-spinner off --require-hashes --disable-pip \
             -r ${{ runner.temp }}/requirements.txt
+          # --require-hashes --disable-pip audits the closure uv.lock pins as
+          # exported, instead of re-resolving it with pip: pip cannot see
+          # [tool.uv] override-dependencies and fails ResolutionImpossible on
+          # any override that contradicts a dependency's own cap
+          # (pvliesdonk/fastmcp-server-template#813).
           # No standing --ignore-vuln: a suppression outlives the advisory it
           # was added for and then hides the next one in the same package
           # (#604). Add one only with its removal condition in this comment.
@@ -501,7 +512,6 @@ jobs:
       - typecheck
       - test
       - sonar
-      - audit
       - secrets
       - vale
       - pr-title

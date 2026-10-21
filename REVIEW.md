@@ -9,9 +9,9 @@
 ## Don't reproduce CI
 
 CI already enforces the full gate: ruff (lint + format), mypy, the pytest
-matrix, dependency audit, secret scan, Vale prose, and — when enabled — the
-structural gate. Do **not** report findings those checks already gate, and do
-**not** re-run the gate. When you need a check's result, read it from CI
+matrix, secret scan, Vale prose, and — when enabled — the structural gate. It
+also runs a dependency audit that reports without gating. Do **not** report
+findings those checks already cover, and do **not** re-run them. When you need a check's result, read it from CI
 (`gh run view`) instead of running it yourself.
 
 ## Investigate narrowly

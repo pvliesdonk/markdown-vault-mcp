@@ -30,7 +30,9 @@ found nothing.
 
 ## Local review
 
-- [ ] Ran a local self-review of the cumulative diff before `gh pr create`.
+- [ ] Ran the `self-reviewing` skill on the cumulative diff before opening
+      this PR and before each later push, and fixed or justified every
+      finding.
 - [ ] Any commit carrying `!` breaks an operator or library surface that
       existed at the **last stable release** (see the breaking-change policy
       in `AGENTS.md`) — MCP-surface changes (tools, resources, prompts) alone
