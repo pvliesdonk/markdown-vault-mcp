@@ -289,7 +289,10 @@ Four properties hold the resolution together:
 `query_types.NoteQuery` describes a distinct live-note population. The concrete
 keyword index exposes `query_documents`, `count_documents_matching` and
 `aggregate_documents`; SQL remains in `_fts_queries.py`. These library methods
-do not change ranked search or its computed OKF behavior. Exact queries reject
+are also available through the reader facet. MCP exposes `query_documents`,
+`count_documents` and `aggregate_documents` using the same indexed predicates;
+internal order/pattern-mode switches remain library-only. None changes ranked
+search or its computed OKF behavior. Exact queries reject
 computed `status`, `stale` and `trust_tier` filters and unindexed field names.
 
 Scopes are `metadata` (path/title/heading/configured searchable summary), `body`
@@ -310,6 +313,13 @@ time descending/path ascending. Internal `order=path|folded_path` and literal
 casefolded `pattern_mode=prefix|substring` support bounded path discovery without
 adding SQL outside the backend. Raw path order serves candidate scans; folded
 path/raw path order serves bounded direct-match selection.
+
+All three MCP projections use the shared queryability gate and optional writer
+drain. They answer with one freshness observation in payload `index_stale`,
+text content and `_meta.index_stale`. Existing read payloads keep their shapes.
+Query items retain OKF annotations on active bundles without changing the exact
+population. Unindexed or computed fields raise deliberate request outcomes;
+malformed stored JSON and unexpected database errors remain server faults.
 
 Aggregates group the full population by folder, UTC modified month or distinct
 indexed tag values. Missing tags have a null bucket and exact `missing` count;
@@ -3961,6 +3971,15 @@ unchanged; the class, its `VectorStore` protocol, the sidecar loader
 gone.
 
 ### `interfaces.py`: Storage Protocols (#1230)
+
+The exact query reader requires `KeywordIndex.query_documents`,
+`count_documents_matching` and `aggregate_documents`. Custom keyword backends
+must add these three methods returning the dedicated query result dataclasses;
+`FTSIndex` implements them. This expands the structural protocol shipped in
+v5.1.0 and is a library interface migration. Query types are imported only for
+type checking in `interfaces.py`; the protocol retains its typing-only runtime
+import boundary.
+
 
 Two concepts, three protocols, mirroring the move already
 made for `EmbeddingProvider` and applying it to the storage that provider

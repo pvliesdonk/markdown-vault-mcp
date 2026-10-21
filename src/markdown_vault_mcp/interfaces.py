@@ -43,6 +43,13 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from markdown_vault_mcp.fts_index import ChunkingMeta
+    from markdown_vault_mcp.query_types import (
+        NoteAggregate,
+        NoteCount,
+        NoteGrouping,
+        NoteQuery,
+        NoteQueryPage,
+    )
     from markdown_vault_mcp.types import (
         DocumentRows,
         EmbeddingIdentity,
@@ -109,6 +116,20 @@ class KeywordIndex(Protocol):
         Returns:
             The matching chunks, ranked.
         """
+        ...
+
+    def query_documents(self, spec: NoteQuery) -> NoteQueryPage:
+        """Return a bounded note page with its exhaustive population total."""
+        ...
+
+    def count_documents_matching(self, spec: NoteQuery) -> NoteCount:
+        """Count matching notes without materializing their content."""
+        ...
+
+    def aggregate_documents(
+        self, spec: NoteQuery, grouping: NoteGrouping
+    ) -> NoteAggregate:
+        """Group the exhaustive note population into bounded buckets."""
         ...
 
     # -- reads ----------------------------------------------------------
