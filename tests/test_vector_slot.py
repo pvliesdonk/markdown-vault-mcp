@@ -775,7 +775,9 @@ class TestTheSlotAfterReview:
             logging.WARNING, logger="markdown_vault_mcp.managers._vector_slot"
         ):
             rebuilt = slot.fresh()
-        assert rebuilt is not old and slot.current() is rebuilt is not installed
+        assert rebuilt is not old
+        assert slot.current() is rebuilt
+        assert rebuilt is not installed
         assert [
             r for r in caplog.records if r.msg.startswith("vector_store_close_failed ")
         ]
