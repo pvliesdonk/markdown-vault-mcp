@@ -251,3 +251,61 @@ def test_a_dropped_schema_is_not_configured_for_status_and_reads(
                 read()
     finally:
         reader.close()
+
+
+def test_a_postgres_slot_keeps_one_provisional_store_and_closes_it(
+    postgres_schema: PostgresSchema,
+) -> None:
+    from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
+    from tests.conftest import MockEmbeddingProvider
+    from tests.fixtures.postgres import lease_is_free
+
+    slot = VectorStoreSlot(
+        backend=PostgresVectorBackend(postgres_schema.dsn),
+        location=postgres_schema.name,
+        provider=MockEmbeddingProvider(dim=3),
+        text_format="v1",
+    )
+
+    def sessions() -> int:
+        with psycopg.connect(postgres_schema.dsn) as admin:
+            row = admin.execute(
+                "SELECT count(*) FROM pg_stat_activity WHERE application_name = %s",
+                (f"markdown-vault-mcp:{postgres_schema.name}",),
+            ).fetchone()
+        return int(row[0]) if row else 0
+
+    first = slot.get(rebuild=None)
+    after_first = sessions()
+    for _ in range(5):
+        assert slot.get(rebuild=None) is first
+    assert sessions() == after_first  # one pool, reused
+    slot.writable(rebuild=None).replace_document(
+        doc("a.md", [[1, 0, 0]]), expected_token=ANY_TOKEN
+    )
+    slot.close()
+    assert sessions() == 0
+    assert lease_is_free(postgres_schema.dsn, postgres_schema.name)
+
+
+def test_an_empty_schema_still_says_where_it_lives(
+    postgres_schema: PostgresSchema,
+) -> None:
+    """Status on a fresh deployment, before the first build (#1504 8c's review)."""
+    from markdown_vault_mcp.managers._vector_slot import VectorStoreSlot
+    from tests.conftest import MockEmbeddingProvider
+
+    slot = VectorStoreSlot(
+        backend=PostgresVectorBackend(postgres_schema.dsn),
+        location=postgres_schema.name,
+        provider=MockEmbeddingProvider(dim=3),
+        text_format="v1",
+    )
+    try:
+        slot.get(rebuild=None)  # provisional: nothing stored, dimension unknown
+        described = slot.describe()
+    finally:
+        slot.close()
+    assert described["identity"] is None  # nothing stored yet
+    assert described["store_details"]["schema"] == postgres_schema.name
+    assert described["search_mode"] == "streamed"

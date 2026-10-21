@@ -4252,7 +4252,19 @@ the dimension from the stored files, because `provider.dimension` is a
 network probe for several providers: stored vectors stay readable with
 the provider down. The writer path, which needs the provider anyway,
 checks the dimension before writing; a read that finds nothing stored
-installs nothing, so the writer always sets the dimension. On an owned store, corrupt or
+installs nothing, so the writer always sets the dimension. That read's
+store is kept as provisional and reused by later reads, and the slot
+closes it when a sized store replaces it or the slot closes; `fresh()`
+likewise closes the store it replaces, and does so before opening the
+fresh one, so a numpy store's pending rows land before the rebuild's
+first persist, never over it. The slot closes every store it opens and
+stops using, because a database-backed store holds a pool (#1504), and
+its location may be a directory base or a schema name. The swap holds the
+slot's lock through the old store's close and the fresh open, so a read
+meanwhile waits, and `embeddings_status` may see no store for that moment.
+A search that took a store a first build then closes reads the store the
+build installed instead of failing (`SearchManager._vector_rows`). A
+closed slot opens nothing more. On an owned store, corrupt or
 another identity rebuilds through `VectorBackend.open_fresh`; without
 ownership the store's `StoreCorruptError` or `StoreIncompatibleError`
 propagates, and such a process never creates or replaces the files (a

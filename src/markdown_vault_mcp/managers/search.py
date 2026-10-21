@@ -334,6 +334,29 @@ class SearchManager:
                 "mode='keyword' instead."
             )
 
+    def _vector_rows(
+        self, read: Callable[[EmbeddingStore], list[dict[str, Any]]]
+    ) -> list[dict[str, Any]]:
+        """Run *read* on the vault's store; once more on the store a build swapped in.
+
+        A first build closes the store a read took before any vectors
+        existed (#1504). A read that loses that race reads the store the
+        build installed instead of failing; any other failure propagates.
+
+        Raises:
+            RuntimeError: If the store is closed and was not replaced.
+        """
+        store = self._load_vectors()
+        if store is None:
+            return []
+        try:
+            return read(store)
+        except RuntimeError:
+            replaced = self._load_vectors()
+            if replaced is None or replaced is store:
+                raise
+            return read(replaced)
+
     def _load_vectors(self) -> EmbeddingStore | None:
         """Open or return the vault's vector store through its slot (#1777).
 
@@ -1033,18 +1056,19 @@ class SearchManager:
         okf_filters: dict[str, str] | None = None,
     ) -> list[GroupedResult]:
         okf_filters = okf_filters or {}
-        vectors = self._load_vectors()
         candidate_limit = self._widen_for_post_filter(
             max(limit * (chunks_per_file + 4), _SEMANTIC_CANDIDATE_FLOOR),
             filters=filters,
             okf_filters=okf_filters,
         )
-        raw = (
-            vectors.search(
-                self._query_vector(query), limit=candidate_limit, folder=folder
-            )
-            if vectors is not None and vectors.count
-            else []
+        raw = self._vector_rows(
+            lambda vectors: (
+                vectors.search(
+                    self._query_vector(query), limit=candidate_limit, folder=folder
+                )
+                if vectors.count
+                else []
+            ),
         )
 
         filtered = self._post_filter_semantic_rows(
@@ -1108,13 +1132,14 @@ class SearchManager:
             fts_raw, alpha=self._length_downweight_alpha
         )
 
-        vectors = self._load_vectors()
-        vec_raw = (
-            vectors.search(
-                self._query_vector(query), limit=vec_candidate_limit, folder=folder
-            )
-            if vectors is not None and vectors.count
-            else []
+        vec_raw = self._vector_rows(
+            lambda vectors: (
+                vectors.search(
+                    self._query_vector(query), limit=vec_candidate_limit, folder=folder
+                )
+                if vectors.count
+                else []
+            ),
         )
         vec_filtered = self._post_filter_semantic_rows(
             vec_raw, filters=filters, okf_filters=okf_filters
@@ -1614,10 +1639,6 @@ class SearchManager:
                 "mode='keyword' for the note's key terms."
             )
 
-        store = self._load_vectors()
-        if store is None or store.count == 0:
-            return []
-
         eff_cpf = (
             chunks_per_file if chunks_per_file is not None else self._chunks_per_file
         )
@@ -1636,11 +1657,15 @@ class SearchManager:
             # yields one result. This widening has always been here; it just
             # answers a different question than the post-filter one above.
             candidate_limit = max(candidate_limit * 4, 200)
-        raw_results = store.similar_to_document(
-            path,
-            limit=candidate_limit,
-            folder=folder,
+        raw_results = self._vector_rows(
+            lambda store: (
+                store.similar_to_document(path, limit=candidate_limit, folder=folder)
+                if store.count
+                else []
+            ),
         )
+        if not raw_results:
+            return []
         raw_results = self._post_filter_semantic_rows(
             raw_results, filters=filters, okf_filters=okf_filters
         )
