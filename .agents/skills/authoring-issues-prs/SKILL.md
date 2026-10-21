@@ -3,10 +3,11 @@ name: authoring-issues-prs
 description: >-
   Use when filing a bug, opening or creating a GitHub issue, drafting an
   epic or ticket, writing up a finding or review observation worth
-  tracking, or opening a pull request for this repository. Routes the
-  change to the right repo first (library / template / domain), picks the
-  right issue form, links epic children as native sub-issues, and applies
-  CONTRIBUTING.md before anything is posted.
+  tracking, sizing a change before coding, or opening a pull request for
+  this repository. Routes the change to the right repo first (library /
+  template / domain), picks the right issue form, sizes the change to one
+  PR, links epic children as native sub-issues, and applies CONTRIBUTING.md
+  before anything is posted.
 ---
 
 <!-- ===== TEMPLATE-OWNED — re-rendered on copier update. Project-specific
@@ -14,50 +15,37 @@ description: >-
 
 # Authoring issues and pull requests
 
-`CONTRIBUTING.md` at the repository root is the single source for the rules:
-issue voice, uncertainty markers, one-issue-one-problem, PR discipline, and
-the three-tier routing. This skill adds only what a document cannot — the
-trigger, the order of operations, and the API mechanics for the steps issue
-forms cannot perform. It deliberately does not restate the rules; a second
-copy would drift from the file silently.
+`CONTRIBUTING.md` holds the issue rules, the agent-post footer and the
+three-tier routing; `AGENTS.md` and `.github/PULL_REQUEST_TEMPLATE.md` hold
+the PR rules. This skill adds the order of operations, the sizing
+procedure behind the limits `AGENTS.md` sets, and the API steps issue forms
+cannot perform; it states none of the other rules itself.
 
 ## Procedure
 
 ### 1. Read CONTRIBUTING.md — now, not from memory
 
 Read `CONTRIBUTING.md` (repository root) before drafting a single sentence,
-even if you believe you remember it. You are about to apply these sections,
-and their exact wording matters:
+even if you believe you remember it:
 
 - "Observation, not work order" and "The uncertainty rule" — issue voice
   and the `[verified: how]` / `[unverified]` markers.
 - "One issue, one observed problem" and the "Remove before posting" table —
   run your draft through the table before submitting.
-- "Pull requests" — no orphan PRs, the deliberately-does-not section.
+- "Pull requests" — which `AGENTS.md` sections and template govern a PR,
+  and the merge style.
 - "Where to send fixes" — the routing walked in step 2.
 - "Agent-authored posts" — the footer every post ends with, and how to
-  read earlier posts under the account holder's name (step 7).
+  read earlier posts under the account holder's name (step 8).
 
-If anything in this skill appears to conflict with `CONTRIBUTING.md`, the
-file wins.
+Where this skill and `CONTRIBUTING.md` disagree, the file wins.
 
 ### 2. Route before writing
 
-Decide the repo first, then write for that repo. The test: **which file
-would a fix change?**
-
-1. Anything you'd change in `fastmcp_pvl_core` → **library**: file on
-   `pvliesdonk/fastmcp-pvl-core`.
-2. A template-owned file — workflows, `Dockerfile`, the `server.py`
-   skeleton, anything `copier update` re-renders — → **template**: file on
-   `pvliesdonk/fastmcp-server-template`.
-3. Anything inside a `DOMAIN-*` / `CONFIG-*` / `PROJECT-*` sentinel block,
-   or `tools.py` / `resources.py` / `prompts.py` / `domain.py` / `tests/`
-   → **domain**: file on this repository.
-
-`CONTRIBUTING.md`'s "Where to send fixes" defines these tiers with the
-post-merge propagation for each. When the tier is genuinely unclear, say so
-in the issue with an `[unverified]` marker instead of guessing silently.
+Decide the repo before writing: ask **which file a fix would change**, and
+look that file up in `CONTRIBUTING.md`'s "Where to send fixes" (library,
+template or domain). When the tier is unclear, file where you think it
+belongs and say so in the issue with an `[unverified]` marker.
 
 ### 3. Search for duplicates
 
@@ -93,7 +81,43 @@ last stable release. Apply `breaking` only for a known compatibility
 break to an existing operator or library contract; an additive change
 that merely touches the surface is not breaking. Keep uncertainty visible.
 
-### 5. For epics: finish what the form cannot do
+### 5. Size the change before coding
+
+Estimate the pull request from the plan, before the first edit; a line
+count arrives only after the author's focus has been spent, and a diff
+split after the fact keeps the defects that grew in it. The limits are
+`AGENTS.md`'s ("PR Discipline"); this step is how to apply them.
+
+- **One behaviour.** Write the PR title now, as a conventional commit. If
+  it needs `and`, or a refactoring rides with a behaviour change, that is
+  two PRs; a local rename inside the change may stay. A new tool and its
+  registration are one behaviour.
+- **At most five source files.** Count the files whose logic the plan
+  changes: code, scripts, workflows, config, and instruction files such as
+  `AGENTS.md` and a `SKILL.md`. Leave out tests, docs pages, reference
+  pages, generated files, lockfiles, and a file that only gains a pointer
+  to the change (a skills-list line, a cross-reference). One mechanical
+  edit repeated at every site (a rename, a signature update at each
+  caller) counts as one file. A sixth file for one behaviour means the
+  behaviour is bigger than one PR.
+- **Past either limit**, file the work as an epic (step 6) whose children
+  each pass both tests, stacked when one depends on another. When the
+  children must ship together, run the epic on `integration/<epic>`
+  (`docs/contribute/integration-branches.md`) so trunk stays releasable.
+- **One PR at a time.** Push and self-review the current PR before starting
+  the next; a stacked child branches from the pushed one.
+- **The line count is the backstop.** Count the changed lines in the files
+  the file test counts, so tests, docs and reference pages stay out of it.
+  Past 400, check the diff against the one-behaviour test and say in the
+  PR body why it still passes; a single new module with its tests often
+  does. Past 1,000, stop: re-plan the issue into children that pass the
+  tests above and implement each on a fresh branch in a fresh session.
+  Carving the existing diff into pieces keeps the problems that grew in
+  it.
+
+The numbers and their sources: `docs/design/reference/pull-request-size.md`.
+
+### 6. For epics: finish what the form cannot do
 
 Issue forms cannot create sub-issue links or assign milestones. After the
 epic is filed, perform these steps — this is the mechanical half of the
@@ -136,13 +160,11 @@ An epic spanning packages carries no milestone: children can inherit their
 parent's milestone. Assign packages to the child issues individually.
 The `roadmapping` skill defines package ordering and membership.
 
-### 6. Pull requests
+### 7. Pull requests
 
-Route first (step 2): the issue and the PR that closes it belong in the
-same repo. Then follow `CONTRIBUTING.md`'s "Pull requests" section and the
-repo's PR template (`.github/PULL_REQUEST_TEMPLATE.md`) — every section,
-including "What this PR deliberately does NOT do" and the docs-impact
-checklist.
+Open the PR in the same repo as its issue (step 2), then follow
+`CONTRIBUTING.md`'s "Pull requests" section: pass the gates and run the
+`self-reviewing` skill first, and fill every section of the PR template.
 
 Pick the base branch before creating the PR: when the epic the work
 belongs to runs on an integration branch (its body names
@@ -152,15 +174,7 @@ does nothing on a non-default base. The final `integration/<epic>` →
 `main` PR carries every `Closes` line and is merged with a merge commit;
 `docs/contribute/integration-branches.md` has the whole workflow.
 
-Include a feature's approved spec in the Design section, folded when long,
-ahead of the review report. The spec is agreed in session or offline
-before the PR; the PR archives the decisions for reviewers and future
-readers. Follow the template's human attachment option if the full body
-exceeds its limit. Do not call undocumented upload endpoints. At merge,
-port enduring decisions missing from code and docs to docs/design/ or an
-ADR, as CONTRIBUTING.md requires.
-
-### 7. Identify yourself on every post
+### 8. Identify yourself on every post
 
 `CONTRIBUTING.md`'s "Agent-authored posts" section is the rule; apply it
 to every post this skill produces, not only bodies: the issue or PR body,

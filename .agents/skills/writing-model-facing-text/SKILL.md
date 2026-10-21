@@ -144,8 +144,8 @@ never where the one sentence a call depends on goes: that stays in the
 description, the parameter or the result, and instructions may name the
 skill's URI for hosts that can read it.
 
-The test case is markdown-vault-mcp's PARA guide
-(`docs/guides/para.md`, about 4,500 words): a folder layout, a frontmatter
+The test case is markdown-vault-mcp's PARA guide (about 4,500 words):
+a folder layout, a frontmatter
 schema per note type, a five-stage capture-to-archive loop and the tool
 sequence for each stage. No call depends on any of it, so none of it
 belongs in a tool description or in instructions, which already cannot

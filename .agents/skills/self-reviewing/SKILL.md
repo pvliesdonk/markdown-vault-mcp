@@ -15,9 +15,10 @@ description: >-
 This skill is the local self-review a change gets before its diff becomes
 someone else's problem: before a reviewer reads it, before a hosted bot
 spends the maintainer's tokens on it, before a fix costs a public push.
-It produces a **findings report** — it is not a gate. It never grants or
-withholds permission to push, and no ruleset requires it; deterministic CI
-remains the only merge gate. What it asks instead is honest convergence:
+It produces a **findings report**, not a verdict. The `self-review`
+pre-push hook requires only that a review of the pushed commit is recorded,
+not that it found nothing; deterministic CI remains the only merge gate.
+What it asks instead is honest convergence:
 every finding you report gets fixed or explicitly justified, in writing,
 before the push.
 
@@ -75,6 +76,16 @@ sees — never "since my last push".
    or pull-request-files call is usually an already-granted equivalent —
    see the tool-denial rule below before falling back to "stop and say so".
 
+   The stat is also the size backstop (`AGENTS.md`, "PR Discipline").
+   Count the changed lines in source files only: tests, docs pages,
+   `docs/design/reference/` pages, generated files, lockfiles and
+   pointer-only edits stay out.
+   Past 400, report an `important/verified` finding on the range itself;
+   its justification says why the change is still one behaviour. Past
+   1,000, report a `blocker/verified` finding instead. Its fix is the
+   re-plan that section names, not a review of the whole; the one
+   justification is a mechanical edit repeated across files.
+
    If either value is empty, or the stat output does not look like the
    change you are reviewing, stop and say so. A review of the wrong range
    that reports "clean" is worse than no review — never let a failed step
@@ -88,14 +99,16 @@ sees — never "since my last push".
   of a shell command, a sequential pass in place of a subagent fan-out);
   if none exists, skip that step or charter, name the gap in the report's
   coverage line, and move on — never retry the same denied call.
-- **Read-only.** The review changes nothing: no checkouts, no stashes, no
+- **Read-only.** The review changes nothing except the record it writes
+  under the git directory when it converges: no checkouts, no stashes, no
   fixing-while-reviewing. Unrelated working-tree changes stay untouched.
   Read committed content at its revision (`git show <rev>:<path>`), not
   from the working tree.
 - **Don't reproduce CI.** CI already gates lint, formatting, types, the
-  test matrix, dependency audit, secret scan, prose, and — when enabled —
-  the structural gate. Report nothing those checks gate and re-run none of
-  them; read their results instead.
+  test matrix, secret scan, prose, and — when enabled — the structural
+  gate, and runs a dependency audit that reports without gating. Report
+  nothing those checks cover and re-run none of them; read their results
+  instead.
 - **Diff-introduced only.** Pre-existing problems on lines the diff did
   not touch are not findings. Decay worth tracking gets a Decay issue
   (see `AGENTS.md`), not a review comment.
@@ -267,6 +280,12 @@ reader knows what this review is not.
    what you fixed, what still surfaces, and your best reading of why.
    That handoff is this skill working as designed — the human decides
    with full information, which is precisely what a review is for.
+
+Once every finding is fixed or justified and the fixes are committed,
+record the review of the commit you will push, by piping the report into
+`python3 scripts/check_self_review.py --record`. After a handoff in step 3,
+record nothing; the human decides. The pre-push hook refuses a push of any
+other commit, so review and record again after every later commit.
 
 Then push, with the report where the project expects it. The post-push
 reviewers — human or hosted — see a diff that has already answered its

@@ -39,7 +39,7 @@ Skills live under `.agents/skills/`; Claude Code reads them through the `.claude
 - `writing-documentation` — before adding, moving or substantially changing a page in `docs/` or `README.md`: whether the knowledge is this project's or the template's, and where it goes.
 - `designing-tool-outcomes` — before writing or changing a tool that can fail, refuse, find nothing or hit a conflict: what it returns, raises and logs in each case.
 - `repository-protection` — before changing rulesets, required checks, or the bootstrap workflow.
-- `authoring-issues-prs` — when filing an issue or opening a PR.
+- `authoring-issues-prs` — when filing an issue, sizing a change before coding, or opening a PR.
 - `self-reviewing` — before opening a PR, marking one ready, or pushing further commits to a branch with an open PR: self-review the cumulative diff.
 - `applying-template-updates` — when working through the weekly template update PR (`copier/update` branch) or after running `copier update`.
 - `writing-release-notes` — when drafting a `docs/releases/` page.
@@ -61,7 +61,7 @@ Assess against the last stable release, not the previous commit: a change to a s
 
 ## Hard PR Acceptance Gates
 
-Run every gate locally and open or push a PR only when all of them pass:
+Before you open a PR, and before every later push to its branch, pass every gate below locally, then run the `self-reviewing` skill on the cumulative diff and fix or justify each finding it reports:
 
 1. Tests: `uv run pytest -x -q`.
 2. Lint: `uv run ruff check --fix .`, then `uv run ruff format .`, then `uv run ruff format --check .`, in that order.
@@ -76,6 +76,7 @@ Run every gate locally and open or push a PR only when all of them pass:
 - Install once per clone with `uv run pre-commit install`; run `uv run pre-commit run --all-files` before pushing.
 - The `structural-diff-gate` hook runs `scripts/structural_gate.sh` at push time.
 - **Template conformance runs at push time:** the `template-conformance` hook fails a push that adds content outside a sentinel block in a file `copier update` re-renders. Move the content into the block the file declares. Skip the hook only for drift a Decay issue tracks: `SKIP=template-conformance git push`.
+- The `self-review` hook fails a push whose commit has no review recorded by the `self-reviewing` skill; clear it by running the skill, which records the review as its last step.
 - Fix a failing hook; never bypass it with `--no-verify`, because the same check fails in CI.
 - Add domain hooks (shellcheck, yamllint, project linters) between the `DOMAIN-HOOKS` markers at the end of the config, never outside them; hooks inside that block on top of the shipped defaults survive `copier update`.
 
@@ -99,6 +100,8 @@ Run every gate locally and open or push a PR only when all of them pass:
 ## PR Discipline
 
 Every PR closes or references at least one issue: create the issue first when none exists, then put `Closes #N` (or `Refs #N`) in the PR body. One PR may close several issues (`Closes #A, closes #B`). Pure typo fixes and automated dependency bumps (Renovate) need no issue.
+
+Size a PR from its plan before coding: one behaviour, named in the title without `and`, in at most five source files (tests, docs, generated files and files that only gain a pointer uncounted; one mechanical edit repeated across files counts as one). Larger work is split into child issues, one PR each, or run as an epic on an integration branch. The changed lines in the counted files are the backstop: past 400, the PR body says why the change is still one behaviour; past 1,000, it is re-planned and reimplemented, never carved. Procedure: the `authoring-issues-prs` skill, "Size the change before coding"; evidence: `docs/design/reference/pull-request-size.md`.
 
 <!-- TEMPLATE-TRACKING-START -->
 Request Claude on a pull request or issue with an explicit `@claude` mention.

@@ -407,6 +407,21 @@ def output_path(value: str) -> Path:
     return Path(resolved)
 
 
+def _write_report(target: Path, report: str) -> None:
+    """Write *report* to *target*, confining the path again at the write.
+
+    ``--output`` is already confined by :func:`output_path` as argparse's
+    converter, but SonarCloud's taint analysis does not follow argparse's
+    ``type=`` call, and it reads every argument of ``Path.write_text`` as a
+    path, so the report text, which quotes ``--rev`` and ``--since``, counted
+    as one too (#783).  Confining here and writing through the handle keeps
+    both checks where it looks; the re-check also refuses a symlink planted
+    after parsing.
+    """
+    with open(output_path(os.fspath(target)), "w", encoding="utf-8") as fh:  # noqa: PTH123 - see above
+        fh.write(report)
+
+
 def read_revision(rev: str) -> ReadProject:
     """File bytes, symlink target (str), or None, from a git revision."""
     rev = git_revision(rev)
@@ -736,7 +751,7 @@ def _run(args: argparse.Namespace) -> int:
     if drifts and args.hook:
         report += _HOOK_FOOTER
     if args.output:
-        args.output.write_text(report, encoding="utf-8")
+        _write_report(args.output, report)
     else:
         print(report, end="")
     return 1 if drifts else 0

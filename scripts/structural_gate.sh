@@ -17,7 +17,7 @@
 set -euo pipefail
 
 base="${STRUCTURAL_GATE_BASE:-}"
-if [ -z "$base" ]; then
+if [[ -z "$base" ]]; then
     best_ts=0
     # origin/main is listed first by hand: for-each-ref sorts by refname, and
     # origin/integration/* sorts before it.  A missing origin/main fails the
@@ -26,7 +26,7 @@ if [ -z "$base" ]; then
         mb="$(git merge-base HEAD "$ref" 2>/dev/null)" || continue
         ts="$(git log -1 --format=%ct "$mb")"
         # Strict > prefers the earlier-listed origin/main on a timestamp tie.
-        if [ "$ts" -gt "$best_ts" ]; then
+        if [[ "$ts" -gt "$best_ts" ]]; then
             best_ts="$ts"
             base="$ref"
         fi
@@ -36,7 +36,7 @@ base="${base:-origin/main}"
 
 # Test seam: print the resolved base and exit, so the derivation is testable
 # without diff-quality or a venv (see tests/test_structural_gate.py).
-if [ -n "${STRUCTURAL_GATE_PRINT_BASE:-}" ]; then
+if [[ -n "${STRUCTURAL_GATE_PRINT_BASE:-}" ]]; then
     printf '%s\n' "$base"
     exit 0
 fi
@@ -44,7 +44,7 @@ fi
 # No Python in the diff → nothing for the gate to measure (mirrors the
 # diff-cover guard; the pre-push hook also skips via `types: [python]`).
 has_py="$(git diff --name-only "${base}...HEAD" | grep -c '\.py$' || true)"
-if [ "$has_py" -eq 0 ]; then
+if [[ "$has_py" -eq 0 ]]; then
     echo "No Python source changes — skipping structural diff gate"
     exit 0
 fi

@@ -52,6 +52,7 @@ def make_server(
     transport: str = "stdio",
     config: ProjectConfig | None = None,
     http_path: str | None = None,
+    configure_logging: bool = True,
 ) -> FastMCP:
     """Construct the Markdown Vault MCP FastMCP server.
 
@@ -73,12 +74,20 @@ def make_server(
             CLI uses applies, so a direct ``make_server(transport="http")``
             and ``serve --transport http`` publish the routes at the same
             place.
+        configure_logging: Install pvl-core's root logging from the
+            environment, as a caller with no logging setup of its own
+            needs.  The CLI passes ``False``: its root callback has
+            already configured logging and honoured ``-v``, which a
+            second call here would reset to the environment's level,
+            logging any ``FASTMCP_LOG_LEVEL`` deprecation warning twice
+            (#726).
 
     Returns:
         A configured :class:`fastmcp.FastMCP` instance.
     """
     config = config or ProjectConfig.from_env()
-    configure_logging_from_env(_ENV_PREFIX)
+    if configure_logging:
+        configure_logging_from_env(_ENV_PREFIX)
     mount_path = normalise_http_path(http_path or env(_ENV_PREFIX, "HTTP_PATH"))
 
     # One source for the name, so `FastMCP(name=...)` below and the shaped

@@ -28,6 +28,10 @@ its `stale_after` date passes. Project decisions belong in `docs/design/`.
 - [Negative outcomes and faults outside MCP](negative-outcomes-and-faults.md) —
   how HTTP, gRPC, OpenTelemetry, GraphQL, JSON-RPC and five language error
   models separate a valid "no" from a fault; the companion to the MCP page.
+- [Pull request size and review effectiveness](pull-request-size.md) — what
+  review studies, practice guides and coding-agent benchmarks say about
+  lines, files and concerns per change; the evidence behind the PR sizing
+  rule in `AGENTS.md` and the `authoring-issues-prs` skill.
 - [Obsidian markdown dialect and link resolution](obsidian-markdown.md) —
   wikilinks, embeds, aliases, tags, link resolution as observed on 1.13.7
   (#1350, #1358: the tie-break, aliases never resolving, markdown destinations

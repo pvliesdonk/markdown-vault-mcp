@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.promote_release_notes import (
     PromotionError,
     PromotionPlan,
+    _opening_fence,
     apply_plan,
     main,
     normalize_target,
@@ -830,3 +831,21 @@ def test_cli_canonical_refusals_preserve_every_source_byte(
 
     assert snapshot(tmp_path) == before
     assert cached_status(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("```", ("`", 3)),
+        ("   ````python", ("`", 4)),
+        ("~~~ info with `ticks`", ("~", 3)),
+        ("``", None),
+        ("    ```", None),
+        ("```py`thon", None),
+        ("text ```", None),
+        ("", None),
+    ],
+)
+def test_opening_fence(line: str, expected: tuple[str, int] | None) -> None:
+    """CommonMark opening fences, scanned without a regex (S8786, #785)."""
+    assert _opening_fence(line) == expected

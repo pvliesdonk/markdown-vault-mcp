@@ -42,8 +42,9 @@ def _root(
     ``MARKDOWN_VAULT_MCP_LOG_LEVEL``, and governs the noisy third-party
     loggers (``httpx``, ``httpcore``, the MCP SDK request line) itself.
     Nothing to attach or quiet here: a second root handler would render
-    every line twice.  The call is idempotent, so ``make_server()``
-    repeating it in the same process is safe.
+    every line twice.  ``serve`` builds its server with
+    ``configure_logging=False`` so this stays the process's only call: a
+    second one would drop ``-v`` back to the environment's level.
     """
     configure_logging_from_env(_ENV_PREFIX, verbose=verbose)
 
@@ -92,7 +93,12 @@ def serve(
         path = normalise_http_path(
             http_path or os.environ.get(f"{_ENV_PREFIX}_HTTP_PATH")
         )
-        server = make_server(transport=transport, config=config, http_path=path)
+        server = make_server(
+            transport=transport,
+            config=config,
+            http_path=path,
+            configure_logging=False,
+        )
         # Inside the guard: since pvl-core 9 ``build_event_store`` raises
         # ``ConfigurationError`` for a malformed ``MARKDOWN_VAULT_MCP_KV_STORE_URL``
         # or legacy ``MARKDOWN_VAULT_MCP_EVENT_STORE_URL``, which must get the

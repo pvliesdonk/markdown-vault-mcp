@@ -261,5 +261,14 @@ async function init() {
   render();
 }
 
-if (document.readyState !== "loading") init();
-else document.addEventListener("DOMContentLoaded", init);
+// init() reports a failed spec load itself; this reports anything after it,
+// such as a render() error, in the same place instead of leaving the mount
+// empty with an unhandled rejection.
+function start() {
+  init().catch((e) => {
+    if (ROOT) ROOT.textContent = `Failed to start the configuration generator: ${e.message}`;
+  });
+}
+
+if (document.readyState !== "loading") start();
+else document.addEventListener("DOMContentLoaded", start);
