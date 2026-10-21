@@ -1193,6 +1193,44 @@ class ProjectConfig:
             okf_verify=self.okf_verify,
         )
 
+    def _check_embedding_store(self) -> None:
+        """Check the embedding store and search settings; resolve an unset search mode."""
+        embedding_stores = ("numpy", "sqlite", "postgres")
+        if self.embedding_store not in embedding_stores:
+            raise ConfigurationError(
+                f"MARKDOWN_VAULT_MCP_EMBEDDING_STORE must be one of "
+                f"{', '.join(embedding_stores)}; got {self.embedding_store!r}."
+            )
+        if not self.embedding_search:  # unset: the store's default
+            object.__setattr__(
+                self,
+                "embedding_search",
+                "streamed" if self.embedding_store == "postgres" else "resident",
+            )
+        embedding_searches = ("resident", "streamed")
+        if self.embedding_search not in embedding_searches:
+            raise ConfigurationError(
+                f"MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH must be one of "
+                f"{', '.join(embedding_searches)}; got {self.embedding_search!r}."
+            )
+        if self.embedding_search_workspace_mb < 1:
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB must be at "
+                f"least 1; got {self.embedding_search_workspace_mb}."
+            )
+        if self.embedding_search == "streamed" and self.embedding_store not in (
+            "sqlite",
+            "postgres",
+        ):
+            raise ConfigurationError(
+                "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed needs "
+                "MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite or postgres; the "
+                f"{self.embedding_store!r} store serves its embeddings from memory "
+                "only. Set EMBEDDING_STORE=sqlite, or EMBEDDING_SEARCH=resident."
+            )
+        if self.embedding_store == "postgres":
+            self._check_postgres()
+
     def _check_postgres(self) -> None:
         """Refuse PostgreSQL store settings that cannot work; never quotes the DSN."""
         if self.embedding_search != "streamed":
@@ -1294,41 +1332,7 @@ class ProjectConfig:
         # (not section-view properties); each validates its own bounds in its
         # ``__post_init__`` at construction time (default_factory and from_env
         # alike), so neither needs re-construction here.
-        embedding_stores = ("numpy", "sqlite", "postgres")
-        if self.embedding_store not in embedding_stores:
-            raise ConfigurationError(
-                f"MARKDOWN_VAULT_MCP_EMBEDDING_STORE must be one of "
-                f"{', '.join(embedding_stores)}; got {self.embedding_store!r}."
-            )
-        if not self.embedding_search:  # unset: the store's default
-            object.__setattr__(
-                self,
-                "embedding_search",
-                "streamed" if self.embedding_store == "postgres" else "resident",
-            )
-        embedding_searches = ("resident", "streamed")
-        if self.embedding_search not in embedding_searches:
-            raise ConfigurationError(
-                f"MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH must be one of "
-                f"{', '.join(embedding_searches)}; got {self.embedding_search!r}."
-            )
-        if self.embedding_search_workspace_mb < 1:
-            raise ConfigurationError(
-                "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH_WORKSPACE_MB must be at "
-                f"least 1; got {self.embedding_search_workspace_mb}."
-            )
-        if self.embedding_search == "streamed" and self.embedding_store not in (
-            "sqlite",
-            "postgres",
-        ):
-            raise ConfigurationError(
-                "MARKDOWN_VAULT_MCP_EMBEDDING_SEARCH=streamed needs "
-                "MARKDOWN_VAULT_MCP_EMBEDDING_STORE=sqlite or postgres; the "
-                f"{self.embedding_store!r} store serves its embeddings from memory "
-                "only. Set EMBEDDING_STORE=sqlite, or EMBEDDING_SEARCH=resident."
-            )
-        if self.embedding_store == "postgres":
-            self._check_postgres()
+        self._check_embedding_store()
         # CONFIG-VALIDATE-END
 
     @classmethod
