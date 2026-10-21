@@ -242,6 +242,7 @@ def test_a_dropped_schema_is_not_configured_for_status_and_reads(
                 )
             )
         for read in (
+            lambda: reader.describe(),  # first: no earlier read may stand in for it
             lambda: reader.resources(),
             lambda: reader.generation,
             lambda: reader.tokens(),

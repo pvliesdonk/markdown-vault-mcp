@@ -309,34 +309,32 @@ class PostgresVectorStore:
 
         Raises:
             RuntimeError: If the store is closed.
+            StoreNotConfiguredError: If the schema no longer exists.
             StoreUnavailableError: If PostgreSQL cannot be read.
         """
         self._check_open()
-        try:
-            with self._conn.pool.connection() as conn:
-                check_schema(conn, schema=self._schema, action="read")
-                measured = stored_bytes(conn, schema=self._schema)
-        except PoolTimeout:
-            failure = self._pool_unavailable()
-        except psycopg.Error as exc:
-            failure = classify_error(exc, schema=self._schema, action="read")
-        else:
-            return StoreResources("streamed", None, measured, 0)
-        raise failure from None
+        measured = self._on_connection(
+            lambda conn: stored_bytes(conn, schema=self._schema)
+        )
+        return StoreResources("streamed", None, measured, 0)
 
     def describe(self) -> dict[str, Any]:
         """Name where the store lives, for ``embeddings_status``; never a credential.
 
         Host, port and database are libpq's resolved values from the open,
-        never the DSN. ``lease_held`` is checked now, and a lost lease is
-        reported, not taken back: the next write does that.
+        never the DSN. The schema is looked up now, for a reader too, so a
+        store whose schema is gone never describes itself as if it were
+        there. ``lease_held`` is checked now, and a lost lease is reported,
+        not taken back: the next write does that.
 
         Raises:
             RuntimeError: If the store is closed.
-            StoreUnavailableError: If the lease check fails on a live connection.
+            StoreUnavailableError: If PostgreSQL cannot be read, or the lease
+                check fails on a live connection.
             StoreNotConfiguredError: If the schema no longer exists.
         """
         self._check_open()
+        self._on_connection(lambda _conn: None)  # the schema is still there
         server = self._conn.server
         lease = self._conn.lease
         return {
@@ -349,6 +347,23 @@ class PostgresVectorStore:
             "writer": lease is not None,
             "lease_held": lease is not None and lease.held(),
         }
+
+    def _on_connection(self, use: Callable[[psycopg.Connection[Any]], _T]) -> _T:
+        """Look the schema up on a pool connection, then run *use* on it.
+
+        Raises:
+            StoreNotConfiguredError: If the schema no longer exists.
+            StoreUnavailableError: If PostgreSQL cannot be read.
+        """
+        try:
+            with self._conn.pool.connection() as conn:
+                check_schema(conn, schema=self._schema, action="read")
+                return use(conn)
+        except PoolTimeout:
+            failure = self._pool_unavailable()
+        except psycopg.Error as exc:
+            failure = classify_error(exc, schema=self._schema, action="read")
+        raise failure from None
 
     def _pool_unavailable(self) -> StoreUnavailableError:
         """The outcome of finding no free pool connection in time."""
