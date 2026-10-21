@@ -19,7 +19,7 @@ Give Claude, or any MCP client, a folder of Markdown notes to search, read and w
 
 - **Hybrid search.** Keyword search with SQLite FTS5 and, once an embedding provider is configured, search by meaning, fused by Reciprocal Rank Fusion. Results are short snippets; `read` fetches the whole section. See [Embeddings](docs/use/embeddings.md).
 - **Hosted CLI search.** Query a running vault with `markdown-vault-mcp search "term" --server https://vault.example/mcp`; apply frontmatter filters, choose snippet widths or use `--agent` records. See the [CLI reference](docs/reference/cli.md).
-- **Exact library queries.** The keyword index provides scoped note pages, exact counts and grouped totals. See [Storage](docs/reference/api/storage.md#exact-keyword-queries).
+- **Exact queries.** Page through indexed notes, count every match, or group the full population with `query_documents`, `count_documents` and `aggregate_documents`. See [Reader tools](docs/reference/tools/reader.md#query_documents) and the [library API](docs/reference/api/storage.md#exact-keyword-queries).
 - **Frontmatter as data.** YAML frontmatter fields become search filters, and long notes are split at their headings.
 - **Careful writes.** The write tools (`write`, `edit`, `append`, `delete`, `rename`, `move_folder`, `fetch`, `git_sync`, the `okf_*` tools, `create_upload_link`) are on by default and hidden when `MARKDOWN_VAULT_MCP_READ_ONLY=true`. Replacing a file takes the etag from reading it, and per-folder `_conventions.md` rules reach the client as it writes.
 - **Git.** Optional commit per write with a delayed push, pull or webhook sync, and history and diffs; an overwritten note can be read back at the revision it replaced. See [Git integration](docs/use/git-integration.md).
