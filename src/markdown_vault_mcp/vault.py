@@ -170,6 +170,8 @@ def _configured_vector_backend(settings: VaultSettings) -> Any:
         ConfigurationError: If the store names no registered backend, or the
             search mode or workspace is one the store cannot serve.
     """
+    if settings.embedding_store == "postgres":
+        return _postgres_backend(settings)
     try:
         factory = get_backend("vector", settings.embedding_store)
     except LookupError as exc:
@@ -189,6 +191,55 @@ def _configured_vector_backend(settings: VaultSettings) -> Any:
         )
     except ValueError as exc:
         raise ConfigurationError(f"Vector search settings refused: {exc}") from exc
+
+
+def _postgres_backend(settings: VaultSettings) -> Any:
+    """Build the PostgreSQL backend *settings* describe (#1504).
+
+    The module is imported here, not at the top: it needs the ``postgres``
+    extra, which only this store does.
+
+    Raises:
+        ConfigurationError: If the ``postgres`` extra is missing, the search
+            mode is not ``streamed``, the DSN or schema is missing, or the
+            pool settings are out of range. No message quotes the DSN.
+    """
+    try:
+        from markdown_vault_mcp.stores._postgres import (
+            PoolSettings,
+            statement_timeout_ms,
+        )
+        from markdown_vault_mcp.stores.postgres_vectors import PostgresVectorBackend
+    except ImportError as exc:
+        raise ConfigurationError(
+            "EMBEDDING_STORE=postgres needs the postgres extra: "
+            "pip install 'markdown-vault-mcp[postgres]'."
+        ) from exc
+    if settings.embedding_search != "streamed":
+        raise ConfigurationError(
+            "embedding_store='postgres' searches in the database: set "
+            "embedding_search='streamed' (EMBEDDING_SEARCH=streamed)."
+        )
+    dsn = (settings.embedding_postgres_dsn or "").strip()
+    if not dsn:
+        raise ConfigurationError(
+            "embedding_store='postgres' needs embedding_postgres_dsn "
+            "(EMBEDDING_POSTGRES_DSN)."
+        )
+    if not (settings.embedding_postgres_schema or "").strip():
+        raise ConfigurationError(
+            "embedding_store='postgres' needs embedding_postgres_schema "
+            "(EMBEDDING_POSTGRES_SCHEMA)."
+        )
+    pool = PoolSettings(
+        pool_size=settings.embedding_postgres_pool_size,
+        statement_timeout_s=settings.embedding_postgres_statement_timeout_s,
+    )
+    try:
+        statement_timeout_ms(pool)  # refuse bad pool settings now, not at first use
+    except ValueError as exc:
+        raise ConfigurationError(f"PostgreSQL pool settings refused: {exc}") from exc
+    return PostgresVectorBackend(dsn, pool=pool)
 
 
 class Vault:
@@ -442,11 +493,14 @@ class Vault:
                 "vector_store needs an embedding_provider: the vault embeds queries."
             )
         backend = self._injected_vector_backend
+        location: Path | str | None = self._embeddings_path
         if backend is None:
             backend = _configured_vector_backend(settings)
+            if settings.embedding_store == "postgres":
+                location = settings.embedding_postgres_schema  # the schema is the place
         return VectorStoreSlot(
             backend=backend,
-            location=self._embeddings_path,
+            location=location,
             provider=self._embedding_provider,
             text_format=self._embed_builder.format_token(),
             owns_files=settings.owns_index_files,

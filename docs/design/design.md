@@ -4085,7 +4085,10 @@ partial status (#1625).
 vault's rows in a PostgreSQL schema the operator names, through the
 optional `postgres` extra (psycopg 3, its pool, and pgvector's adapter).
 The backend carries the connection settings; the location is the schema
-name, and there is no in-memory form. The schema is the namespace and the
+name, and there is no in-memory form. The DSN is a secret: it is left out
+of every `repr` (`ProjectConfig`, `IndexingConfig`, `VaultSettings`), is
+marked secret in the generated configuration surfaces, and no message
+quotes it. The schema is the namespace and the
 ownership boundary: one vault per schema, one role per vault owning only
 its schema. That does not stop a second vault, pointed at another vault's
 schema by a copied configuration while that vault is down, from removing
@@ -4245,8 +4248,14 @@ is in `docs/design/reference/postgresql-pgvector.md`.
 `EMBEDDING_STORE` names (or an injected `vector_backend`), or uses an
 injected `vector_store`, which stays the caller's. With
 `EMBEDDING_SEARCH=streamed` (and `EMBEDDING_SEARCH_WORKSPACE_MB`) it
-constructs the SQLite backend in streamed mode; any other store refuses
-`streamed` (Search memory, above). It opens with the
+constructs the SQLite backend in streamed mode; the numpy store refuses
+`streamed` (Search memory, above). `EMBEDDING_STORE=postgres` builds the
+PostgreSQL backend from `EMBEDDING_POSTGRES_DSN`, `_SCHEMA`, `_POOL_SIZE`
+and `_STATEMENT_TIMEOUT_S`, and hands the slot the schema as its location;
+the module is imported only then, so a missing `postgres` extra is a
+`ConfigurationError` at startup, and the store searches only `streamed`
+(the default when the store is postgres; an explicit `resident` is
+refused, naming `streamed`). It opens with the
 provider, model, variant and text format from configuration and takes
 the dimension from the stored files, because `provider.dimension` is a
 network probe for several providers: stored vectors stay readable with
