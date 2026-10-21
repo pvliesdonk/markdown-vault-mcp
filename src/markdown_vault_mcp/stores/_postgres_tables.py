@@ -520,6 +520,29 @@ def stored_rows(
     ]
 
 
+_SIZES = (
+    "SELECT coalesce(sum(pg_catalog.pg_total_relation_size(c.oid)), 0)"
+    " FROM pg_catalog.pg_class c"
+    " JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace"
+    " WHERE n.nspname = %s AND c.relname = ANY(%s) AND c.relkind = 'r'"
+)
+
+
+def stored_bytes(conn: psycopg.Connection[Any], *, schema: str) -> int:
+    """The bytes our tables take in *schema*, with their indexes and TOAST.
+
+    Args:
+        conn: A connection.
+        schema: The vault schema.
+
+    Returns:
+        The sum of ``pg_total_relation_size`` over the store's tables that
+        exist; ``0`` when none does.
+    """
+    rows = conn.execute(_SIZES, (schema, list(TABLES))).fetchall()
+    return int(rows[0][0])  # an aggregate: always one row
+
+
 def stored_count(conn: psycopg.Connection[Any], *, schema: str) -> int:
     """The number of stored chunks.
 

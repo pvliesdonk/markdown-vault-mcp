@@ -73,6 +73,7 @@ from markdown_vault_mcp.stores._postgres_tables import (
     make_durable,
     read_meta,
     reset_tables,
+    stored_bytes,
     stored_count,
     stored_rows,
     stored_tokens,
@@ -81,7 +82,7 @@ from markdown_vault_mcp.stores._postgres_tables import (
     write_document,
 )
 from markdown_vault_mcp.stores.registry import register_backend
-from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily
+from markdown_vault_mcp.types import EmbeddingIdentity, StoreFamily, StoreResources
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -267,6 +268,38 @@ class PostgresVectorStore:
 
         return self._reading(read, [])
 
+    def resources(self) -> StoreResources:
+        """Report the store's costs for ``embeddings_status``.
+
+        PostgreSQL scores every search, so no vector batch passes through
+        this process and no vector is held in it. ``stored_bytes`` measures
+        the store's tables as the schema holds them now, a fresh store's
+        old tables included until its first write replaces them.
+
+        Raises:
+            RuntimeError: If the store is closed.
+            StoreUnavailableError: If PostgreSQL cannot be read.
+        """
+        self._check_open()
+        try:
+            with self._conn.pool.connection() as conn:
+                measured = stored_bytes(conn, schema=self._schema)
+        except PoolTimeout:
+            failure = self._pool_unavailable()
+        except psycopg.Error as exc:
+            failure = classify_error(exc, schema=self._schema, action="read")
+        else:
+            return StoreResources("streamed", None, measured, 0)
+        raise failure from None
+
+    def _pool_unavailable(self) -> Exception:
+        """The outcome of finding no free pool connection in time."""
+        return unavailable(
+            f"No PostgreSQL connection for schema {self._schema} was free in time.",
+            reason="pool",
+            schema=self._schema,
+        )
+
     def _check_open(self) -> None:
         """Refuse use after close.
 
@@ -310,11 +343,7 @@ class PostgresVectorStore:
                 )
             return self._read_once(read, empty)
         except PoolTimeout:
-            failure = unavailable(
-                f"No PostgreSQL connection for schema {self._schema} was free in time.",
-                reason="pool",
-                schema=self._schema,
-            )
+            failure = self._pool_unavailable()
         except psycopg.Error as exc:
             failure = classify_error(exc, schema=self._schema, action="read")
         raise failure from None
@@ -497,11 +526,7 @@ class PostgresVectorStore:
                     raise psycopg.Rollback
                 progress.committing = True
         except PoolTimeout:
-            failure: Exception = unavailable(
-                f"No PostgreSQL connection for schema {self._schema} was free in time.",
-                reason="pool",
-                schema=self._schema,
-            )
+            failure: Exception = self._pool_unavailable()
         except psycopg.Error as exc:
             failure = self._write_failure(exc, progress)
         else:

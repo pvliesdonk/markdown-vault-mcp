@@ -44,9 +44,10 @@ Dict with the following fields:
   the vectors in memory, "streamed" when each search reads them
   in batches.
 - `search_workspace_bytes` (int | None): Configured vector bytes
-  one streamed batch may hold; null when resident.
-- `stored_bytes` (int | None): Measured size of the store's files;
-  null when the vectors are held in memory.
+  one streamed batch may hold; null when resident or when the
+  database scores the vectors itself.
+- `stored_bytes` (int | None): Measured size of the store's files
+  or database tables; null when the vectors are held in memory.
 - `resident_vector_bytes` (int | None): Measured bytes of the
   vectors held in memory; 0 when streamed. Other memory the
   server uses is not counted.
