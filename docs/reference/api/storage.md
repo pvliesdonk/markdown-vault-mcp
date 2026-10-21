@@ -88,7 +88,11 @@ bounds are RFC3339 instants with a timezone, inclusive `modified_after` and
 exclusive `modified_before`. Metadata scope omits body sections. A lexical
 query containing NUL is invalid; other malformed FTS expressions fall back to
 literal terms within the same scope. See [query types](types.md#exact-query-types)
-for defaults and bounds. This additive library surface reads indexed data only.
+for defaults and bounds. This library surface reads indexed data only. Custom backends using the
+v5.1.0 `KeywordIndex` protocol must add the three methods below with the dedicated
+query result types before using the new reader. `FTSIndex` already provides them.
+The MCP tools and reader methods share these predicates; internal `order` and
+`pattern_mode` switches are available only to typed library callers.
 
 <!-- vale off -->
 ::: markdown_vault_mcp.fts_index.FTSIndex.query_documents
