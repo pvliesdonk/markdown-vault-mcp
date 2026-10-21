@@ -12,6 +12,11 @@ process that does not own the files) the store's own
 and such a process never creates or replaces the files (#1778). A store
 that is unavailable or of an unsupported schema always propagates. An
 injected store is the caller's: never rebuilt on a fault, never closed.
+
+The slot closes every store it opens and stops using: a database-backed
+store holds a pool, and dropping one unclosed would leak it (#1504). The
+store a read opens before anything is stored, with no known dimension,
+is kept as provisional and reused until a sized store replaces it.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 from markdown_vault_mcp.exceptions import (
@@ -55,7 +61,8 @@ class VectorStoreSlot:
 
     Args:
         backend: Opens the store.
-        location: Where the store lives; ``None`` keeps it in memory.
+        location: Where the store lives: a directory base, or a schema
+            name; ``None`` keeps it in memory.
         provider: Supplies the identity; ``None`` means no semantic search.
         text_format: The embedding-text format token.
         owns_files: ``False`` opens read-only.
@@ -66,7 +73,7 @@ class VectorStoreSlot:
         self,
         *,
         backend: VectorBackend,
-        location: Path | None,
+        location: Path | str | None,
         provider: EmbeddingProvider | None,
         text_format: str,
         owns_files: bool = True,
@@ -80,10 +87,14 @@ class VectorStoreSlot:
         self._store = store
         self._injected = store is not None
         self._identity: EmbeddingIdentity | None = None
+        # The store a read opened before the dimension was known (#1504).
+        self._provisional: EmbeddingStore | None = None
+        # Guards opening, swapping and closing; never held across a rebuild.
+        self._lock = threading.Lock()
 
     @property
-    def location(self) -> Path | None:
-        """Where the store lives; ``None`` in memory."""
+    def location(self) -> Path | str | None:
+        """Where the store lives: a directory base or a schema; ``None`` in memory."""
         return self._location
 
     @property
@@ -151,7 +162,8 @@ class VectorStoreSlot:
 
         A store that opens with nothing stored and no known dimension is
         returned but not installed, so the writer's :meth:`writable` still
-        sets the provider's dimension.
+        sets the provider's dimension; it is kept as provisional and
+        returned again until a sized store replaces it.
 
         Args:
             rebuild: Rebuilds an owned store that is corrupt or holds another
@@ -169,42 +181,78 @@ class VectorStoreSlot:
         """
         if self._store is not None:
             return self._store
+        with self._lock:
+            if self._store is not None:
+                return self._store
+            if self._provisional is not None:
+                return self._provisional
+            try:
+                store = self._backend.open(
+                    self._location, self._open_identity(), owns_files=self._owns_files
+                )
+            except (StoreCorruptError, StoreIncompatibleError) as exc:
+                failure = exc
+            else:
+                if store.identity.dimension == 0:
+                    # Nothing is stored and the dimension is not known: let
+                    # reads search the empty store, but install nothing, so
+                    # the writer opens through writable(), which learns the
+                    # provider's dimension.
+                    self._provisional = store
+                else:
+                    self._store = store
+                return store
+        return self._rebuilt(failure, rebuild)
+
+    def _rebuilt(
+        self, exc: Exception, rebuild: Callable[[], object] | None
+    ) -> EmbeddingStore:
+        """Rebuild a store that would not open, outside the lock; re-raise without one."""
+        if rebuild is None:
+            raise exc
+        logger.warning(
+            "vector_store_rebuild_started location=%s reason=%s",
+            self._location,
+            type(exc).__name__,
+        )
+        self._run_rebuild(rebuild)
+        if self._store is None:
+            raise ValueError(
+                "Failed to rebuild the vector store after it would not open."
+            ) from exc
+        return self._store
+
+    def _discard(self, store: EmbeddingStore | None) -> None:
+        """Close a store the slot stops using; a failure is logged, not raised."""
+        if store is None:
+            return
         try:
-            store = self._backend.open(
-                self._location, self._open_identity(), owns_files=self._owns_files
-            )
-        except (StoreCorruptError, StoreIncompatibleError) as exc:
-            if rebuild is None:
-                raise
+            store.close()
+        except Exception:
+            # Broad by design: each backend fails its close its own way, and
+            # the store is abandoned either way.
             logger.warning(
-                "vector_store_rebuild_started location=%s reason=%s",
-                self._location,
-                type(exc).__name__,
+                "vector_store_close_failed location=%s", self._location, exc_info=True
             )
-            self._run_rebuild(rebuild)
-            if self._store is None:
-                raise ValueError(
-                    "Failed to rebuild the vector store after it would not open."
-                ) from exc
-            return self._store
-        if store.identity.dimension == 0:
-            # Nothing is stored and the dimension is not known: let the read
-            # search the empty store, but install nothing, so the writer
-            # opens through writable(), which learns the provider's dimension.
-            return store
-        self._store = store
-        return store
 
     def replace(self, store: EmbeddingStore | None) -> None:
-        """Install *store* (or clear the slot)."""
-        self._store = store
+        """Install *store* (or clear the slot), closing a provisional store.
+
+        The store it replaces stays the caller's to close.
+        """
+        with self._lock:
+            provisional, self._provisional = self._provisional, None
+            self._store = store
+            self._discard(provisional)
 
     def fresh(self) -> EmbeddingStore:
         """Install and return an empty store at the identity, to rebuild into.
 
-        An owned slot opens a fresh store over the location and drops the
-        old object without closing it, so its unsaved rows are not written
-        over the rebuild. An injected store is emptied in place.
+        An owned slot closes the store it replaces (and a provisional one)
+        before it opens a fresh store over the location: the close lands any
+        pending rows first, the fresh store's first persist replaces them,
+        and a rebuild that persists nothing leaves them. An injected store
+        is emptied in place.
 
         Raises:
             ReadOnlyError: If this process does not own the store's files.
@@ -213,8 +261,16 @@ class VectorStoreSlot:
         if self._injected and self._store is not None:
             self._store.publish_generation(self.identity, [])
             return self._store
-        self._store = self._backend.open_fresh(self._location, self.identity)
-        return self._store
+        with self._lock:
+            old, self._store = self._store, None
+            provisional, self._provisional = self._provisional, None
+            # Closed before the fresh store opens, never after: a numpy store
+            # flushes pending rows on close, which must land before the
+            # rebuild's own first persist, never over it.
+            self._discard(old)
+            self._discard(provisional)
+            self._store = self._backend.open_fresh(self._location, self.identity)
+            return self._store
 
     def _answers(self, store: EmbeddingStore) -> bool:
         """Whether *store*'s rows answer this provider's queries: the same identity."""
@@ -363,6 +419,9 @@ class VectorStoreSlot:
         return described
 
     def close(self) -> None:
-        """Close the store if the slot opened it; an injected store is left open."""
+        """Close the store if the slot opened it, and a provisional one; an injected store is left open."""
         if self._store is not None and not self._injected:
             self._store.close()
+        with self._lock:
+            provisional, self._provisional = self._provisional, None
+        self._discard(provisional)
